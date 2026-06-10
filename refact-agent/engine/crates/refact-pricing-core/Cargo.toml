@@ -1,0 +1,7 @@
+[package]
+name = "refact-pricing-core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+refact-core = { path = "../refact-core" }

@@ -1,0 +1,395 @@
+.kanbanBoard {
+  composes: scrollbarThin from "../../components/shared/scrollbar.module.css";
+  display: flex;
+  gap: var(--space-3);
+  justify-content: center;
+  align-items: flex-start;
+  padding: var(--space-2);
+  overflow-x: auto;
+}
+
+.kanbanColumn {
+  flex: 0 0 200px;
+  min-width: 160px;
+  background: var(--gray-2);
+  border-radius: var(--radius-3);
+  border-top: 3px solid var(--gray-5);
+  display: flex;
+  flex-direction: column;
+}
+
+.kanbanColumnContent {
+  padding: var(--space-1);
+}
+
+.kanbanCard {
+  background: var(--color-background);
+  transition: transform 0.1s ease;
+  padding: var(--space-2);
+}
+
+.kanbanCard:hover {
+  transform: translateY(-1px);
+}
+
+.kanbanCardTopRow {
+  min-width: 0;
+}
+
+.kanbanCardTitle {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  word-break: break-word;
+}
+
+.kanbanCardBadges {
+  min-width: 0;
+}
+
+.agentBadgeButton {
+  appearance: none;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+.agentBadgeButton:hover {
+  background: var(--blue-4);
+}
+
+.kanbanColumnHeader {
+  padding: var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--gray-4);
+}
+
+.taskWorkspace {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.boardSection {
+  composes: scrollbarThin from "../../components/shared/scrollbar.module.css";
+  flex: 0 0 auto;
+  min-height: 80px;
+  overflow: auto;
+}
+
+.workspaceChromeCollapse {
+  flex-shrink: 0;
+}
+
+.panelsWrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+}
+
+.panelsHeader,
+.chatHeader {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  justify-content: space-between;
+  gap: var(--space-2);
+  background: transparent;
+  user-select: none;
+  min-height: 28px;
+  box-sizing: border-box;
+  padding: 0 var(--space-3);
+}
+
+.panelsSection {
+  display: flex;
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-3);
+  min-height: 120px;
+  max-height: 240px;
+  overflow: hidden;
+}
+
+.panelsCollapse {
+  flex-shrink: 0;
+}
+
+.panelList {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.sectionHeaderActionButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--gray-a5);
+  border-radius: var(--radius-2);
+  background: transparent;
+  color: var(--gray-11);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.sectionHeaderActionButton:hover,
+.sectionHeaderActionButton:focus-visible {
+  background: var(--gray-a3);
+  border-color: var(--gray-a7);
+}
+
+.sectionHeaderActionButton:focus-visible {
+  outline: 2px solid var(--accent-8);
+  outline-offset: 1px;
+}
+
+.panelContent {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.chatSection {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.workspaceTabs {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.workspaceTabContent {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.chatContent {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
+
+.chevron {
+  transition: transform 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chevron.chevronExpanded {
+  transform: rotate(180deg);
+}
+
+.sectionHeaderToggle {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-2);
+  color: var(--gray-11);
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  gap: var(--space-2);
+  min-width: 0;
+  flex: 1;
+  text-align: left;
+}
+
+.chatHeaderToggle {
+  align-self: stretch;
+}
+
+.sectionHeaderToggle:focus-visible {
+  outline: 2px solid var(--accent-8);
+  outline-offset: 1px;
+}
+
+.sectionHeaderLabel {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sectionHeaderMeta {
+  flex-shrink: 0;
+}
+
+.chatHeaderLabel {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.panelItem {
+  padding: 2px 0;
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.panelItem:hover {
+  background: var(--gray-a3);
+}
+
+.panelItemSelected {
+  background: var(--accent-a3);
+}
+
+.panelItemSelected:hover {
+  background: var(--accent-a4);
+}
+
+.panelItemLead {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+.panelItemContent {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.panelItemTitle {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cardDetailSection {
+  composes: scrollbarThin from "../../components/shared/scrollbar.module.css";
+  background: var(--gray-2);
+  border-radius: var(--radius-2);
+  padding: var(--space-2);
+  margin-top: var(--space-1);
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.cardDetailTitle {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.cardDetailOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.cardDetail {
+  composes: scrollbarThin from "../../components/shared/scrollbar.module.css";
+  background: var(--color-background);
+  border-radius: var(--radius-4);
+  padding: var(--space-4);
+  max-width: 600px;
+  max-height: 80vh;
+  overflow: auto;
+  width: 90%;
+}
+
+@keyframes pulseBlue {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1.2);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes pulseGreen {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.1);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.agentDotSmall {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.agentDotMedium {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.agentDotDoing {
+  background-color: var(--blue-9);
+  animation: pulseBlue 1.5s ease-in-out infinite;
+}
+
+.agentDotDone {
+  background-color: var(--green-9);
+  animation: pulseGreen 2s ease-in-out infinite;
+}
+
+.agentDotFailed {
+  background-color: var(--red-9);
+}
+
+.plannerWaitingChips {
+  min-width: 0;
+  flex-shrink: 1;
+  overflow: hidden;
+}
+
+.plannerWaitingMore {
+  white-space: nowrap;
+}

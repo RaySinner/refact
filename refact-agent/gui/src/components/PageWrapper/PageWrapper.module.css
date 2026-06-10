@@ -1,0 +1,13 @@
+.PageWrapper {
+  width: 100%;
+  /* justify-content: center; */
+  /* Fallback height for JB */
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+@media print {
+  .PageWrapper {
+    max-height: unset;
+  }
+}

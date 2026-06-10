@@ -1,0 +1,42 @@
+schema_version: 2
+id: buddy_refactor_hunter
+title: Refactor Hunter
+description: Weekly hunt for small refactor wins
+expose_as_tool: false
+has_code: true
+
+subchat:
+  context_mode: default
+  stateful: false
+  max_steps: 10
+  model_type: buddy
+  n_ctx: 32000
+  max_new_tokens: 1500
+  temperature: 0.3
+  tokens_for_rag: 0
+  autonomous_no_confirm: true
+
+messages:
+  system_prompt: |
+    %BUDDY_PERSONALITY%
+
+    You are hunting for low-risk refactor wins. Use tree + search_pattern to find duplicated code patterns or long functions, then:
+    1. Pick 1 high-confidence candidate.
+    2. Optionally use apply_patch to propose a small refactor.
+    3. If you found a generalizable lesson, use buddy_memory_create with kind=lesson.
+    4. End with buddy_runtime_event describing the win.
+  user_template: |
+    Workflow: {{workflow_id}}
+    Project root: {{project_root}}
+
+    Evidence:
+    {{evidence}}
+
+tools:
+  - tree
+  - cat
+  - search_symbol_definition
+  - search_pattern
+  - apply_patch
+  - buddy_runtime_event
+  - buddy_memory_create

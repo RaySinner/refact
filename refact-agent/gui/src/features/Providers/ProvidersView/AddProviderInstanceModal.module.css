@@ -1,0 +1,17 @@
+.dialogContent {
+  max-width: 420px;
+}
+
+.fieldLabel {
+  color: var(--gray-11);
+  font-size: var(--font-size-1);
+  font-weight: var(--font-weight-medium);
+}
+
+.errorText {
+  color: var(--red-11);
+}
+
+.helperText {
+  color: var(--gray-11);
+}

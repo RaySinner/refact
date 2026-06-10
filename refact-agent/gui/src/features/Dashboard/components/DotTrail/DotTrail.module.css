@@ -1,0 +1,79 @@
+.trail {
+  flex-shrink: 0;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.dot {
+  display: inline-block;
+  border-radius: 50%;
+  border: none;
+  padding: 0;
+  flex-shrink: 0;
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
+}
+
+.dot:hover {
+  opacity: 0.8;
+  transform: scale(1.15);
+}
+
+.dot:focus-visible {
+  outline: 2px solid var(--accent-8);
+  outline-offset: 1px;
+}
+
+.connector {
+  width: 6px;
+  height: 1px;
+  background: var(--gray-6);
+  flex-shrink: 0;
+}
+
+.user {
+  background: var(--blue-8);
+}
+
+.assistant {
+  background: var(--green-8);
+}
+
+.subagent {
+  background: var(--purple-8);
+}
+
+.fork {
+  background: var(--amber-8);
+}
+
+.active {
+  background: var(--blue-9);
+  animation: dotPulse 1.5s ease-in-out infinite;
+}
+
+.completed {
+  background: var(--green-9);
+}
+
+@keyframes dotPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .active {
+    animation: none;
+  }
+}
+
+.hoverCard {
+  max-width: 280px;
+  z-index: 100;
+}

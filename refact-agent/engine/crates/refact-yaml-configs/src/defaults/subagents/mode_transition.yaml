@@ -1,0 +1,122 @@
+schema_version: 5
+id: mode_transition
+title: Mode Transition Context Extraction
+description: Analyze conversation to extract context for transitioning to a new chat mode
+expose_as_tool: false
+has_code: false
+
+subchat:
+  context_mode: bare
+  stateful: false
+  model_type: default
+  n_ctx: 200000
+  max_new_tokens: 32000
+  temperature: 0.0
+  tokens_for_rag: 0
+
+messages:
+  user_template: |
+    You are analyzing a conversation to extract context for transitioning to a new chat mode.
+
+    TARGET MODE: {target_mode}
+    TARGET MODE DESCRIPTION: {target_mode_description}
+
+    ## Available References
+
+    ### Messages (use MSG_ID to reference)
+    {annotated_message_list}
+
+    ### Files Seen in Conversation
+    {file_list}
+
+    ### Memory/Knowledge Files
+    {memory_list}
+
+    ### Context Budget
+    {budget_summary}
+
+    ## Your Task
+
+    Analyze this conversation and output what should be preserved for the new chat. Use the EXACT IDs and paths provided above.
+
+    Output your decisions using these XML tags:
+
+    <summary>
+    A detailed summary of:
+    - What the user is trying to accomplish
+    - What has been done so far
+    - Current state and blockers
+    - Key technical decisions
+    </summary>
+
+    <files_to_open>
+    List file paths to include in the new chat. One per line.
+    For edited files, they will be included with full content.
+    For referenced files, just the path will be noted.
+    Keep files and memories within the file/memory budget above.
+    Example:
+    /src/main.rs
+    /src/config.rs
+    </files_to_open>
+
+    <messages_to_preserve>
+    List MSG_IDs of messages to keep verbatim. One per line.
+    Only include truly essential exchanges (user requirements, key decisions).
+    Keep preserved messages, tool outputs, summary, pending tasks, and handoff message within the message budget above.
+    Example:
+    MSG_ID:5
+    MSG_ID:12
+    </messages_to_preserve>
+
+    <memories_to_include>
+    List full paths to memory/knowledge files to include. These memories come mainly from agentic tools like code review, planning, .... One per line.
+    Example:
+    /project/.refact/knowledge/2024-01-15_abc123_api-design.md
+    </memories_to_include>
+
+    <tool_outputs_to_include>
+    List MSG_IDs of tool outputs that contain important results (e.g., search results, code analysis, web research).
+    These will be included as reference context in the new chat. One per line.
+    Prefer compact/high-signal outputs; the backend will truncate outputs if needed to enforce the message budget.
+    Example:
+    MSG_ID:7
+    MSG_ID:15
+    </tool_outputs_to_include>
+
+    <pending_tasks>
+    List tasks that still need to be done. One per line.
+    </pending_tasks>
+
+    <plan_source>
+    If the conversation already contains an authoritative plan / spec / decision artifact that should guide the new chat, put the SINGLE MSG_ID that contains it here (for example: MSG_ID:12). The backend pins that message verbatim as the new chat's plan banner, so the new chat starts with the plan as ground truth.
+    Choose the most authoritative artifact, in priority order:
+    1. An existing pinned plan (a message already shown as a plan).
+    2. A strategic planning report — shown as [tool: plan].
+    3. A completion / task report — shown as [tool: task_done].
+    4. Planner output or a plan document referenced in the conversation.
+    Prefer this MSG_ID reference over re-writing the plan yourself, because it preserves the exact artifact. Leave this empty if no such artifact exists.
+    </plan_source>
+
+    <handoff_message>
+    A brief message to start the new chat, telling the assistant what to continue working on.
+    </handoff_message>
+
+    Pinning a plan is independent of the target mode: if a plan-like artifact exists, set <plan_source> regardless of which mode you are transitioning to.
+
+    If TARGET MODE is plan and the conversation contains an approved design/spec, include that design in <handoff_message> so Plan mode can turn it into implementation tasks.
+
+    If TARGET MODE is agent and the conversation contains a complete implementation plan, put a compact execution instruction in <handoff_message> and pin the full plan via <plan_source>. The Agent should receive the plan as ground truth.
+
+    Only if there is NO single message that already holds the full plan (so <plan_source> cannot point to one) and you must author it yourself, include it verbatim instead:
+
+    <plan>
+    Full plan text, including waves/cards or tasks, dependencies, exact files, tests, verification commands, acceptance criteria, risks, and non-goals.
+    </plan>
+
+    Do not set both <plan_source> and <plan>; prefer <plan_source>.
+
+    For plan handoffs, prefer a clean phase boundary: preserve finalized design/plan artifacts and high-signal decisions, not brainstorming noise or stale alternatives.
+
+    Be thorough but selective. The goal is to preserve everything important while keeping the new chat focused. Do not select more than one image-bearing message unless it is absolutely necessary; only one image can be carried over.
+
+tools: []

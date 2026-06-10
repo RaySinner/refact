@@ -1,0 +1,137 @@
+.sticky {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  width: 100%;
+  box-sizing: border-box;
+  background: transparent;
+  padding-bottom: var(--space-1);
+}
+
+.container {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.card {
+  overflow: hidden;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  border-left: 2px solid var(--red-9);
+  padding-left: var(--space-2);
+}
+
+.header {
+  cursor: pointer;
+  padding: var(--space-1) 0;
+  transition: filter 0.15s ease;
+}
+
+.header:hover {
+  filter: brightness(1.3);
+}
+
+.icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  min-width: 20px;
+  height: 16px;
+  flex-shrink: 0;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 1 auto;
+}
+
+.body {
+  composes: scrollbarThin from "../../shared/scrollbar.module.css";
+  padding: var(--space-2) 0 var(--space-1);
+  max-height: 400px;
+  overflow: auto;
+}
+
+.body pre {
+  background-color: transparent !important;
+}
+
+.body code {
+  background-color: transparent !important;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.actionButton {
+  all: unset;
+  box-sizing: border-box;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-1);
+  color: var(--gray-11);
+  transition:
+    background-color 0.1s,
+    color 0.1s;
+}
+
+.actionButton:hover {
+  color: var(--gray-12);
+}
+
+.actionButton:focus-visible {
+  outline: 2px solid var(--accent-8);
+  outline-offset: 2px;
+}
+
+.actionButton svg {
+  width: 13px;
+  height: 13px;
+}
+
+.copiedButton {
+  color: var(--green-11);
+}
+
+.modalContent {
+  max-width: 720px;
+}
+
+.historyList {
+  max-height: 60vh;
+  overflow-y: auto;
+  composes: scrollbarThin from "../../shared/scrollbar.module.css";
+}
+
+.historyItem {
+  padding: var(--space-3);
+  border: 1px solid var(--gray-a4);
+  border-radius: var(--radius-3);
+  background: var(--gray-a2);
+}
+
+.historyTitle {
+  margin-bottom: var(--space-2);
+}
+
+.historyBody {
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--gray-a4);
+}

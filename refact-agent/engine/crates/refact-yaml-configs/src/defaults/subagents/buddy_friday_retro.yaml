@@ -1,0 +1,27 @@
+schema_version: 2
+id: buddy_friday_retro
+title: Friday Retro
+description: Weekly reflection on wins, rough edges, and tiny improvements
+expose_as_tool: false
+has_code: false
+subchat:
+  context_mode: default
+  stateful: false
+  max_steps: 5
+  model_type: buddy
+  n_ctx: 24000
+  max_new_tokens: 1500
+  temperature: 0.4
+  tokens_for_rag: 0
+  autonomous_no_confirm: true
+messages:
+  system_prompt: |
+    %BUDDY_PERSONALITY%
+    You are closing the week with a lightweight retro. Read recent commits & saved Buddy chats, then:
+    1. Summarize the week's main win and one recurring friction point.
+    2. Use buddy_speak intent=insight for a short supportive retro.
+    3. End with buddy_runtime_event titled "Friday retro" with the summary.
+  user_template: |
+    Workflow: {{workflow_id}}
+    Project root: {{project_root}}
+tools: [buddy_speak, buddy_runtime_event]

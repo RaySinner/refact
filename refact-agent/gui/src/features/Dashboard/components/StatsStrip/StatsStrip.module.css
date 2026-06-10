@@ -1,0 +1,104 @@
+.statsGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: var(--space-3);
+}
+
+.statsGrid[data-breakpoint="medium"] {
+  grid-template-columns: 1fr 1fr;
+}
+
+.compactRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-1) 0;
+  flex-shrink: 0;
+}
+
+.narrowStats {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-2);
+  background: var(--gray-a2);
+  flex-shrink: 0;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-2);
+  background: var(--gray-a2);
+  overflow: hidden;
+  min-width: 0;
+}
+
+.cardTitle {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--gray-a4);
+}
+
+.cardSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.cardDivider {
+  height: 1px;
+  background: var(--gray-a3);
+}
+
+.modeFill {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--accent-8);
+  min-width: 4px;
+  flex-shrink: 0;
+}
+
+.configureButton {
+  display: flex;
+  align-items: center;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-2);
+  border: 1px solid var(--gray-a5);
+  background: transparent;
+  cursor: pointer;
+  color: var(--gray-11);
+  transition: background var(--motion-fast) ease;
+  flex-shrink: 0;
+}
+
+.configureButton:hover {
+  background: var(--gray-a3);
+}
+
+.configureButton:focus-visible {
+  outline: 2px solid var(--accent-8);
+  outline-offset: 1px;
+}
+
+.hoverTrigger {
+  cursor: help;
+  border-bottom: 1px dotted var(--gray-8);
+  font-size: var(--font-size-1);
+  color: var(--gray-11);
+  line-height: 1.4;
+}
+
+.hoverTrigger:hover {
+  border-bottom-color: var(--accent-8);
+  color: var(--gray-12);
+}
+
+.hoverContent {
+  max-width: 300px;
+  z-index: 100;
+}

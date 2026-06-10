@@ -1,0 +1,145 @@
+.root {
+  display: inline-block;
+  font-family: var(--code-font-family);
+  font-weight: 900;
+  color: var(--red-9);
+  line-height: 1;
+  width: 2ch;
+  text-align: center;
+}
+
+/* Streaming: cycle through ASCII char pairs */
+.streaming::after {
+  content: "_[";
+  animation: logo-chars steps(1, end) 1.65s infinite;
+}
+
+@keyframes logo-chars {
+  0% {
+    content: "_[";
+  }
+  4% {
+    content: "![";
+  }
+  7% {
+    content: '"!';
+  }
+  11% {
+    content: "^@";
+  }
+  14% {
+    content: "*&";
+  }
+  18% {
+    content: "_[";
+  }
+  21% {
+    content: '"|';
+  }
+  25% {
+    content: "($";
+  }
+  29% {
+    content: "}_";
+  }
+  32% {
+    content: "?;";
+  }
+  36% {
+    content: "|^";
+  }
+  39% {
+    content: ";-";
+  }
+  43% {
+    content: "\\>";
+  }
+  46% {
+    content: "<.";
+  }
+  50% {
+    content: ")%";
+  }
+  54% {
+    content: "%!";
+  }
+  57% {
+    content: ":,";
+  }
+  61% {
+    content: "=/";
+  }
+  64% {
+    content: "\\>";
+  }
+  68% {
+    content: ":,";
+  }
+  71% {
+    content: "?;";
+  }
+  75% {
+    content: "<.";
+  }
+  79% {
+    content: "=/";
+  }
+  82% {
+    content: "\\>";
+  }
+  86% {
+    content: "$~";
+  }
+  89% {
+    content: ",(";
+  }
+  93% {
+    content: "`\\";
+  }
+  96% {
+    content: "..";
+  }
+}
+
+/* Waiting: two small dots pulsing/spinning */
+.waiting {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  width: auto;
+}
+
+.waiting .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--red-9);
+  animation: logo-spin-dot 1.2s ease-in-out infinite;
+}
+
+.waiting .dot:nth-child(2) {
+  animation-delay: -0.4s;
+}
+
+@keyframes logo-spin-dot {
+  0%,
+  100% {
+    transform: rotate(0deg);
+    opacity: 1;
+  }
+  50% {
+    transform: rotate(90deg);
+    opacity: 0.4;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .streaming::after {
+    animation: none;
+    content: "_[";
+  }
+
+  .waiting .dot {
+    animation: none;
+  }
+}

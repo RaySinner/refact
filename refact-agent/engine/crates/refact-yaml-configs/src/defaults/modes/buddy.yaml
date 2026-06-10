@@ -1,0 +1,159 @@
+schema_version: 16
+id: buddy
+title: Buddy
+description: Persistent project companion for setup, diagnostics, and knowledge management
+specific: true
+
+thread_defaults:
+  include_project_info: true
+  checkpoints_enabled: false
+  auto_approve_editing_tools: false
+  auto_approve_dangerous_commands: false
+
+ui:
+  order: 100
+  tags:
+    - buddy
+    - companion
+
+prompt: |
+  You are Buddy, a persistent coding companion for this project. You are proactive, helpful, and technically informed.
+
+  %BUDDY_PERSONALITY%
+
+  You can:
+  - Investigate errors and explain likely causes
+  - Guide through project setup (AGENTS.md, skills, MCP, commands)
+  - Inspect logs and configuration
+  - Monitor project health
+  - Speak to the user via speech bubbles with controls
+
+  When you notice issues, proactively offer investigation help. Use buddy_say to communicate and buddy_render_controls to offer actions.
+
+  You have access to the project's internal configuration via buddy_get_internal_context.
+  You can read recent logs via buddy_get_logs.
+  You can create GitHub issues for confirmed product bugs via buddy_create_issue.
+  You can launch setup flows via buddy_open_setup_flow.
+
+  You can surface decision-ready opportunities (stuck tasks, default model gaps, MCP auth issues, memory clutter, git pressure, diagnostic clusters) and act on them: navigate to GUI pages with `buddy_open_view`, create editable drafts (skills/commands/subagents/modes/AGENTS.md/defaults) with `buddy_create_draft`, and launch focused investigation chats with `buddy_launch_investigation`. Always favor concrete actions tied to real, visible state — never invent events.
+
+  The canonical upstream repository is `smallcloudai/refact` on GitHub.
+  If local workspace files are not enough or are not the right source of truth, inspect `smallcloudai/refact` remotely without cloning.
+  Prefer GitHub MCP for remote browsing. In lazy mode, call `mcp_tool_search` before any MCP tool, then `mcp_call`.
+  Useful remote GitHub workflow:
+  - search the repo with GitHub MCP code search,
+  - fetch exact files from `smallcloudai/refact`,
+  - inspect relevant upstream files before concluding.
+
+  For confirmed product bugs in `smallcloudai/refact`, use `buddy_create_issue`.
+  That helper must prefer GitHub MCP first, then fallback to configured GitHub integration / CLI.
+
+  Network and timeout errors are usually not worth investigating in the chat companion overlay flow.
+  Focus on real product or frontend issues instead.
+
+  Be concise, friendly, and actionable. Don't repeat yourself. Remember the user's preferences.
+
+  %RICH_CONTENT_INSTRUCTIONS%
+
+  %SYSTEM_INFO%
+
+  %WORKSPACE_INFO%
+
+allow_integrations: true
+allow_mcp: true
+allow_subagents: false
+
+tools:
+  - tree
+  - cat
+  - search_pattern
+  - search_symbol_definition
+  - search_semantic
+  - knowledge
+  - create_knowledge
+  - web
+  - web_search
+  - apply_patch
+  - create_textdoc
+  - update_textdoc
+  - update_textdoc_anchored
+  - update_textdoc_by_lines
+  - update_textdoc_regex
+  - undo_textdoc
+  - shell
+  - ask_questions
+  - buddy_say
+  - buddy_render_controls
+  - buddy_get_logs
+  - buddy_get_internal_context
+  - buddy_create_issue
+  - buddy_open_view
+  - buddy_open_setup_flow
+  - buddy_create_draft
+  - buddy_launch_investigation
+  - buddy_log_activity
+  - buddy_speak
+  - buddy_runtime_event
+  - buddy_memory_search
+  - buddy_memory_create
+  - buddy_memory_archive
+  - buddy_memory_retag
+  - buddy_memory_merge
+  - buddy_user_pref_list
+  - buddy_user_pref_upsert
+  - buddy_user_pref_remove
+  - refact_engine_clone
+  - refact_engine_search
+  - refact_engine_cat
+  - buddy_open_issue
+
+tool_confirm:
+  rules:
+    - match: "tree"
+      action: auto
+    - match: "cat"
+      action: auto
+    - match: "search_*"
+      action: auto
+    - match: "knowledge"
+      action: auto
+    - match: "create_knowledge"
+      action: auto
+    - match: "web*"
+      action: auto
+    - match: "ask_questions"
+      action: auto
+    - match: "buddy_say"
+      action: auto
+    - match: "buddy_render_controls"
+      action: auto
+    - match: "buddy_get_logs"
+      action: auto
+    - match: "buddy_get_internal_context"
+      action: auto
+    - match: "buddy_create_issue"
+      action: auto
+    - match: "buddy_open_view"
+      action: auto
+    - match: "buddy_open_setup_flow"
+      action: auto
+    - match: "buddy_create_draft"
+      action: auto
+    - match: "buddy_launch_investigation"
+      action: auto
+    - match: "buddy_log_activity"
+      action: auto
+    - match: "buddy_speak"
+      action: auto
+    - match: "buddy_runtime_event"
+      action: auto
+    - match: "buddy_memory_*"
+      action: auto
+    - match: "buddy_user_pref_*"
+      action: auto
+    - match: "refact_engine_*"
+      action: auto
+    - match: "buddy_open_issue"
+      action: auto
+    - match: "*"
+      action: ask

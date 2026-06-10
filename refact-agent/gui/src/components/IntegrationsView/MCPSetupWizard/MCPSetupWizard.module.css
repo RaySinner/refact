@@ -1,0 +1,11 @@
+.inputField {
+  width: 100%;
+}
+
+.advancedToggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}

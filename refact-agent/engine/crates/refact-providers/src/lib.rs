@@ -1,0 +1,36 @@
+pub mod config;
+pub mod config_store;
+pub mod identity;
+pub mod instance;
+pub mod llm_http_retry;
+pub mod models_dev_provider;
+pub mod oauth_refresh;
+mod registry;
+pub mod traits;
+
+pub mod anthropic;
+pub mod claude_code;
+pub mod claude_code_oauth;
+pub mod custom;
+pub mod deepseek;
+pub mod doubao;
+pub mod github_copilot;
+pub mod github_copilot_oauth;
+pub mod google_gemini;
+pub mod groq;
+pub mod kimi;
+pub mod lmstudio;
+pub mod minimax;
+pub mod ollama;
+pub mod openai;
+pub mod openai_codex;
+pub mod openai_codex_oauth;
+pub mod openai_responses;
+pub mod openrouter;
+pub mod qwen;
+pub mod vllm;
+pub mod xai;
+pub mod xai_responses;
+pub mod zhipu;
+
+pub use registry::*;

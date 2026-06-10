@@ -1,0 +1,24 @@
+.radix-themes {
+  --default-font-family: system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --code-font-family: "SF Mono", "Fira Code", "JetBrains Mono", Consolas,
+    "Liberation Mono", Menlo, monospace;
+  --default-font-size: 14px;
+  --default-line-height: 1.5;
+}
+
+:where(.radix-themes) :where(.rt-Code) {
+  font-family: var(--code-font-family);
+}
+
+:where(.radix-themes) :where(.rt-TooltipContent) {
+  background-color: #1a1a1a !important;
+  color: #fcfcfc !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+:where(.radix-themes[data-appearance="light"]) :where(.rt-TooltipContent) {
+  background-color: #fcfcfc !important;
+  color: #1a1a1a !important;
+  border: 1px solid rgba(0, 0, 0, 0.1) !important;
+}

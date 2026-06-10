@@ -1,0 +1,402 @@
+.trigger {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  color: var(--gray-12);
+  transition: background-color 0.15s ease;
+  max-width: 220px;
+  min-width: 0;
+}
+
+.triggerInner {
+  min-width: 0;
+}
+
+.trigger:hover:not(:disabled) {
+  background-color: var(--gray-a3);
+}
+
+.trigger:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.triggerActive {
+  background-color: var(--green-a2);
+  border-color: var(--green-a6);
+  color: var(--green-12);
+}
+
+.triggerText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.branchIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  color: var(--gray-10);
+}
+
+.trigger:hover:not(:disabled) .branchIcon {
+  color: var(--gray-12);
+}
+
+.diffStatsBadge {
+  display: inline-flex;
+  gap: var(--space-1);
+  margin-left: var(--space-1);
+  font-variant-numeric: tabular-nums;
+}
+
+.diffStatsAdd {
+  color: var(--green-11);
+}
+
+.diffStatsRemove {
+  color: var(--red-11);
+}
+
+.content {
+  min-width: 280px;
+  max-width: min(360px, 90vw);
+  padding: var(--space-2);
+}
+
+.menu {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.sectionHeader {
+  padding: 0 var(--space-1);
+}
+
+.list {
+  composes: scrollbarThin from "../../components/shared/scrollbar.module.css";
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.item {
+  display: flex;
+  align-items: flex-start;
+  width: 100%;
+  padding: var(--space-1) var(--space-2);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-2);
+  color: var(--gray-12);
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 0.15s ease;
+}
+
+.item:hover:not(:disabled) {
+  background-color: var(--gray-a3);
+}
+
+.item:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.itemSelected {
+  background-color: var(--accent-a3);
+}
+
+.itemSelected:hover:not(:disabled) {
+  background-color: var(--accent-a4);
+}
+
+.itemTitle {
+  min-width: 0;
+}
+
+.path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 300px;
+}
+
+.actionGrid,
+.reviewActions {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.actionGrid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.reviewActions {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.actionButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-1) var(--space-2);
+  background: transparent;
+  border: 1px solid var(--gray-a5);
+  border-radius: var(--radius-2);
+  color: var(--gray-11);
+  cursor: pointer;
+  line-height: var(--line-height-1);
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.actionButton:hover:not(:disabled) {
+  background-color: var(--gray-a3);
+  border-color: var(--gray-a7);
+  color: var(--gray-12);
+}
+
+.actionButton:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  background: transparent;
+  border-color: transparent;
+}
+
+.actionPrimary {
+  background: var(--accent-a2);
+  border-color: var(--accent-a6);
+  color: var(--accent-11);
+}
+
+.actionPrimary:hover:not(:disabled) {
+  background: var(--accent-a3);
+  border-color: var(--accent-a7);
+  color: var(--accent-12);
+}
+
+.actionDanger {
+  background: var(--red-a2);
+  border-color: var(--red-a6);
+  color: var(--red-11);
+}
+
+.actionDanger:hover:not(:disabled) {
+  background: var(--red-a3);
+  border-color: var(--red-a7);
+  color: var(--red-12);
+}
+
+.actionIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.actionIcon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.actionLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menuHint,
+.feedback {
+  padding: 0 var(--space-1);
+}
+
+.menuHint {
+  line-height: var(--line-height-1);
+}
+
+.modalFields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.createDialog {
+  overflow: visible;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.branchPicker {
+  position: relative;
+}
+
+.branchOptions {
+  position: absolute;
+  z-index: 20;
+  left: 0;
+  right: 0;
+  top: calc(100% + var(--space-1));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: var(--space-1);
+  border: 1px solid var(--gray-a6);
+  border-radius: var(--radius-3);
+  background: var(--color-panel-solid);
+  box-shadow: var(--shadow-4);
+}
+
+.branchOption {
+  width: 100%;
+  padding: var(--space-2);
+  border: none;
+  border-radius: var(--radius-2);
+  background: transparent;
+  color: var(--gray-12);
+  cursor: pointer;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.branchOption:hover {
+  background: var(--accent-a3);
+}
+
+.modalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.diffDialog,
+.mergeDialog {
+  max-width: min(900px, 90vw);
+}
+
+.diffFileList,
+.resultBox,
+.warningBox {
+  border: 1px solid var(--gray-5);
+  border-radius: var(--radius-3);
+  padding: var(--space-2);
+  background: var(--gray-2);
+}
+
+.diffFileList {
+  composes: scrollbarThin from "../../components/shared/scrollbar.module.css";
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.diffFileItem {
+  padding: var(--space-2);
+  border-radius: var(--radius-2);
+  background: var(--color-background);
+}
+
+.patchScroller {
+  composes: scrollbarThin from "../../components/shared/scrollbar.module.css";
+  max-height: 360px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border: 1px solid var(--gray-5);
+  border-radius: var(--radius-3);
+  background: var(--gray-2);
+}
+
+.patchScroller pre {
+  overflow-x: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.patchPreview {
+  margin: 0;
+  padding: var(--space-2) 0;
+  white-space: pre-wrap;
+  font-family: var(--code-font-family);
+  font-size: var(--font-size-1);
+  line-height: var(--line-height-1);
+}
+
+.patchLine {
+  display: block;
+  padding: 0 var(--space-3);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.patchLineMeta {
+  color: var(--violet-11);
+  background: var(--violet-a2);
+}
+
+.patchLineFile {
+  color: var(--blue-11);
+  background: var(--blue-a2);
+}
+
+.patchLineHunk {
+  color: var(--cyan-11);
+  background: var(--cyan-a2);
+}
+
+.patchLineAdd {
+  color: var(--green-11);
+  background: var(--green-a2);
+}
+
+.patchLineRemove {
+  color: var(--red-11);
+  background: var(--red-a2);
+}
+
+.patchLineContext {
+  color: var(--gray-11);
+}
+
+.conflictList {
+  margin: 0;
+  padding-left: var(--space-4);
+}
+
+.dialogOverlayText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}

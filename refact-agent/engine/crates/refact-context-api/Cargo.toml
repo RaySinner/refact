@@ -1,0 +1,11 @@
+[package]
+name = "refact-context-api"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = []
+http-client = ["dep:reqwest"]
+
+[dependencies]
+reqwest = { version = "0.13", default-features = false, features = ["json", "form", "stream", "rustls", "charset", "http2"], optional = true }

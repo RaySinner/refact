@@ -1,0 +1,198 @@
+name: Refact Agent Engine CI build (Rust)
+
+on:
+  push:
+    tags:
+      - "*"
+  workflow_call:
+#  workflow_run:
+#    workflows: ["Cache cleanup"]
+#    types:
+#      - completed
+
+concurrency:
+  group: agent-engine-build-${{ github.run_id }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: refact-agent/engine
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_RETRY: 10
+  # RUSTFLAGS: "-D warnings -W unreachable-pub"
+  RUSTUP_MAX_RETRIES: 10
+  FETCH_DEPTH: 0 # pull in the tags for the version string
+  MACOSX_DEPLOYMENT_TARGET: 10.15
+
+jobs:
+  dist:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            code-target: win32-x64
+            ext: .exe
+          - os: windows-latest
+            target: i686-pc-windows-msvc
+            code-target: win32-ia32
+            ext: .exe
+          - os: windows-latest
+            target: aarch64-pc-windows-msvc
+            code-target: win32-arm64
+            ext: .exe
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            code-target: linux-x64
+            cross: true
+          - os: ubuntu-22.04
+            target: aarch64-unknown-linux-gnu
+            code-target: linux-arm64
+            cross: true
+#          - os: ubuntu-22.04
+#            target: arm-unknown-linux-gnueabihf
+#            code-target: linux-armhf
+          # x86_64-apple-darwin (macOS Intel) is disabled — GitHub-hosted macos-15-large runners
+          # incur significant costs and Intel Mac support is being phased out. Re-enable only if
+          # explicitly needed and billing is confirmed.
+          #- os: macos-15-large
+          #  target: x86_64-apple-darwin
+          #  code-target: darwin-x64
+          - os: macos-14
+            target: aarch64-apple-darwin
+            code-target: darwin-arm64 
+
+    env:
+      LLM_LS_TARGET: ${{ matrix.target }}
+
+    name: dist (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: ${{ env.FETCH_DEPTH }}
+
+      - name: Install Rust toolchain
+        run: |
+          rustup update --no-self-update stable
+          rustup target add ${{ matrix.target }}
+          rustup component add rust-src
+
+      - name: Install Node.js for engine-served GUI bundle
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "npm"
+          cache-dependency-path: refact-agent/gui/package-lock.json
+
+      - name: Install LLVM (Windows)
+        if: startsWith(matrix.os, 'windows')
+        run: choco install llvm -y
+
+      - name: Install LLVM (macOS)
+        if: startsWith(matrix.os, 'macos')
+        run: brew install llvm
+
+      - name: Install build tools
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang mold lld
+
+      - name: Add swap space (Linux cross-compilation needs extra RAM for LTO)
+        if: matrix.cross
+        run: |
+          sudo swapoff /swapfile 2>/dev/null || true
+          sudo rm -f /swapfile
+          sudo dd if=/dev/zero of=/swapfile bs=128M count=64
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
+
+      - name: Install ARM target toolchain
+        if: matrix.target == 'arm-unknown-linux-gnueabihf'
+        run: sudo apt-get install gcc-arm-linux-gnueabihf
+
+      - name: Restore cached cargo
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            refact-agent/engine -> target
+          key: ${{ matrix.os }}-${{ matrix.target }}-cargo
+          shared-key: ${{ matrix.os }}-${{ matrix.target }}-cargo
+          cache-bin: false
+
+      - name: Install cross-rs
+        if: matrix.cross
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cross
+          fallback: none
+
+      - name: Build GUI for linux-like artifact
+        if: matrix.cross
+        working-directory: refact-agent/gui
+        run: |
+          npm ci
+          npm run build
+
+      - name: Test artifact
+        if: matrix.cross == null && startsWith(matrix.os, 'windows')
+        env:
+          REFACT_GUI_DIR: ${{ github.workspace }}\refact-agent\gui
+        shell: bash
+        run: cargo test --workspace --profile ci-release --lib --tests
+
+      - name: Build artifact
+        if: matrix.cross == null && startsWith(matrix.os, 'windows')
+        env:
+          REFACT_GUI_DIR: ${{ github.workspace }}\refact-agent\gui
+        shell: bash
+        run: |
+          cargo build --workspace --profile ci-release
+          cp ./target/ci-release/refact-lsp${{ matrix.ext }} ../..
+
+      - name: Test artifact
+        if: matrix.cross == null && !startsWith(matrix.os, 'windows')
+        env:
+          CARGO_PROFILE_CI_RELEASE_LTO: ${{ endsWith(matrix.target, 'apple-darwin') && 'thin' || 'true' }}
+        run: OPENSSL_STATIC=1 cargo test --workspace --profile ci-release --lib --tests --target ${{ matrix.target }}
+
+      - name: Build artifact
+        if: matrix.cross == null && !startsWith(matrix.os, 'windows')
+        env:
+          CARGO_PROFILE_CI_RELEASE_LTO: ${{ endsWith(matrix.target, 'apple-darwin') && 'thin' || 'true' }}
+        run: |
+          OPENSSL_STATIC=1 cargo build --workspace --profile ci-release --target ${{ matrix.target }}
+          cp ./target/${{ matrix.target }}/ci-release/refact-lsp${{ matrix.ext }} ../..
+
+      - name: Test linux-like artifact
+        if: matrix.cross
+        env:
+          CARGO_BUILD_JOBS: ${{ matrix.target == 'aarch64-unknown-linux-gnu' && '1' || '2' }}
+          CROSS_CONTAINER_OPTS: --volume "${{ github.workspace }}/refact-agent/gui:/gui:ro"
+        run: CROSS_NO_WARNINGS=0 cross test --workspace --profile ci-release --lib --tests --target ${{ matrix.target }}
+
+      - name: Build linux-like artifact
+        if: matrix.cross
+        env:
+          CARGO_BUILD_JOBS: ${{ matrix.target == 'aarch64-unknown-linux-gnu' && '1' || '2' }}
+          CROSS_CONTAINER_OPTS: --volume "${{ github.workspace }}/refact-agent/gui:/gui:ro"
+        run: |
+          CROSS_NO_WARNINGS=0 cross build --workspace --profile ci-release --target ${{ matrix.target }}
+          cp ./target/${{ matrix.target }}/ci-release/refact-lsp${{ matrix.ext }} ../..
+      
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.target }}
+          if-no-files-found: ignore
+          path: |
+            refact-lsp
+            refact-lsp.exe

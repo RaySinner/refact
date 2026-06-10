@@ -1,0 +1,471 @@
+.scene {
+  position: relative;
+  height: 280px;
+  min-height: 220px;
+  margin: 0 var(--space-3) var(--space-2);
+  overflow: hidden;
+  border: 1px solid var(--gray-a3);
+  border-radius: var(--radius-4);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  flex-shrink: 0;
+}
+
+.compact {
+  height: 210px;
+  min-height: 180px;
+  margin: 0;
+}
+
+.scene[data-weather="storm"] {
+  box-shadow:
+    inset 0 0 0 1px rgba(239, 68, 68, 0.16),
+    0 0 18px rgba(239, 68, 68, 0.08);
+}
+
+.scene[data-weather="dream"] {
+  filter: saturate(0.86);
+}
+
+.canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+
+.hotspot,
+.objectHotspot,
+.sceneButton,
+.sceneButtonGhost {
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.hotspot,
+.objectHotspot {
+  position: absolute;
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transform: translate(-50%, -50%);
+  border: 1px solid transparent;
+  border-radius: 9999px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.82);
+  transition:
+    transform 0.12s ease,
+    background 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.hotspot {
+  width: 82px;
+  height: 82px;
+  padding: 0;
+}
+
+.objectHotspot {
+  width: 58px;
+  height: 58px;
+  padding: 0;
+}
+
+.hotspot:hover,
+.hotspot:focus-visible,
+.objectHotspot:hover,
+.objectHotspot:focus-visible {
+  transform: translate(-50%, -52%) scale(1.04);
+  background: rgba(255, 255, 255, 0.08);
+  outline: none;
+}
+
+.hotspot:focus-visible,
+.objectHotspot:focus-visible {
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.48);
+}
+
+.homeHotspot {
+  width: 78px;
+  height: 64px;
+}
+
+.objectTooltip {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 6px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 88px;
+  max-width: 122px;
+  padding: 4px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: var(--radius-3);
+  background: rgba(17, 24, 39, 0.64);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%) translateY(4px);
+  transition:
+    opacity 0.12s ease,
+    transform 0.12s ease;
+  backdrop-filter: blur(8px);
+}
+
+.objectHotspot:hover .objectTooltip,
+.objectHotspot:focus-visible .objectTooltip {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.objectLabel {
+  max-width: 96px;
+  overflow: hidden;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.objectValue {
+  max-width: 96px;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.characterAnchor {
+  position: absolute;
+  z-index: 5;
+  left: 50%;
+  bottom: -32px;
+  transform: translateX(-50%) scale(var(--buddy-scene-scale, 1));
+  transform-origin: 50% 100%;
+  filter: drop-shadow(0 14px 18px rgba(0, 0, 0, 0.18));
+  transition:
+    left 3.8s cubic-bezier(0.4, 0, 0.2, 1),
+    bottom 3.8s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 3.8s cubic-bezier(0.4, 0, 0.2, 1),
+    filter 0.18s ease;
+}
+
+.characterBody {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.scene:hover .characterAnchor {
+  filter: drop-shadow(0 16px 22px rgba(0, 0, 0, 0.26));
+}
+
+.scene[data-showcase-phase="cooldown"] .characterAnchor {
+  filter: drop-shadow(0 10px 14px rgba(0, 0, 0, 0.16));
+}
+
+.characterBody[data-pose="spin"] {
+  animation: buddySceneSpin 2.8s ease-in-out;
+}
+
+.characterBody[data-pose="bounce"] {
+  animation: buddySceneBounce 3.6s ease-in-out;
+}
+
+.characterBody[data-pose="look"] {
+  animation: buddySceneLook 4.4s ease-in-out;
+}
+
+.characterBody[data-pose="stargaze"],
+.characterBody[data-pose="meditate"],
+.characterBody[data-pose="cheer"],
+.characterBody[data-pose="pounce"],
+.characterBody[data-pose="dance"],
+.characterBody[data-pose="shield"],
+.characterBody[data-pose="carry"],
+.characterBody[data-pose="dig"],
+.characterBody[data-pose="sleepy"] {
+  transition: transform 1.2s ease;
+}
+
+.characterBody[data-pose="stargaze"] {
+  transform: translateY(-4px) rotate(-1.5deg);
+}
+
+.characterBody[data-pose="meditate"] {
+  transform: translateY(-5px) scale(1.012);
+}
+
+.characterBody[data-pose="cheer"] {
+  transform: translateY(-5px) rotate(-1deg);
+}
+
+.characterBody[data-pose="pounce"],
+.characterBody[data-pose="dance"],
+.characterBody[data-pose="shield"],
+.characterBody[data-pose="carry"],
+.characterBody[data-pose="dig"],
+.characterBody[data-pose="sleepy"] {
+  transform: translateY(-3px);
+}
+
+.characterBody[data-pose="sleepy"] {
+  opacity: 0.94;
+}
+
+.waypointPing {
+  position: absolute;
+  z-index: 3;
+  width: 10px;
+  height: 10px;
+  pointer-events: none;
+  border: 2px solid rgba(255, 255, 255, 0.72);
+  border-radius: 9999px;
+  transform: translate(-50%, -50%);
+  animation: buddyWaypointPing 1.4s ease-out forwards;
+}
+
+.stageBadge {
+  margin-top: -10px;
+  padding: 3px 9px;
+  border: 1px solid;
+  border-radius: 9999px;
+  background: rgba(17, 24, 39, 0.58);
+  font-size: 10px;
+  font-weight: 700;
+  backdrop-filter: blur(6px);
+}
+
+.setupDock,
+.careDock {
+  position: absolute;
+  z-index: 6;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+.setupDock {
+  left: var(--space-2);
+  bottom: var(--space-2);
+  max-width: 36%;
+}
+
+.careDock {
+  right: var(--space-2);
+  bottom: var(--space-2);
+  justify-content: flex-end;
+  max-width: 36%;
+}
+
+.scene:hover .setupDock,
+.scene:focus-within .setupDock,
+.scene:hover .careDock,
+.scene:focus-within .careDock,
+.setupDock:focus-within,
+.careDock:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.sceneButton,
+.sceneButtonGhost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 7px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 9999px;
+  background: rgba(17, 24, 39, 0.28);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 11px;
+  backdrop-filter: blur(4px);
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease,
+    transform 0.12s ease;
+}
+
+.sceneButtonGhost {
+  color: rgba(255, 255, 255, 0.68);
+}
+
+.sceneButton:hover,
+.sceneButton:focus-visible,
+.sceneButtonGhost:hover,
+.sceneButtonGhost:focus-visible {
+  background: rgba(17, 24, 39, 0.64);
+  border-color: rgba(255, 255, 255, 0.36);
+  transform: translateY(-1px);
+  outline: none;
+}
+
+.compact .characterAnchor {
+  bottom: -18px;
+}
+
+.compact .objectHotspot {
+  width: 50px;
+  height: 50px;
+}
+
+.compact .setupDock,
+.compact .careDock {
+  bottom: var(--space-1);
+}
+
+@keyframes buddyWaypointPing {
+  0% {
+    opacity: 0.9;
+    transform: translate(-50%, -50%) scale(0.4);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(4.6);
+  }
+}
+
+@keyframes buddySceneSpin {
+  0%,
+  100% {
+    transform: rotate(0deg) scale(1);
+  }
+
+  50% {
+    transform: rotate(5deg) scale(1.03);
+  }
+}
+
+@keyframes buddySceneBounce {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  40% {
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes buddySceneLook {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+
+  35% {
+    transform: translateX(-4%);
+  }
+
+  70% {
+    transform: translateX(4%);
+  }
+}
+
+@keyframes buddySceneStargaze {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+
+  45% {
+    transform: translateY(-5px) rotate(-2deg);
+  }
+}
+
+@keyframes buddySceneMeditate {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+
+  50% {
+    transform: translateY(-7px) scale(1.015);
+  }
+}
+
+@keyframes buddySceneCheer {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+
+  32% {
+    transform: translateY(-10px) rotate(-2deg);
+  }
+
+  58% {
+    transform: translateY(-3px) rotate(2deg);
+  }
+}
+
+@keyframes buddyScenePoseSoft {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hotspot,
+  .objectHotspot,
+  .objectTooltip,
+  .setupDock,
+  .careDock,
+  .sceneButton,
+  .sceneButtonGhost {
+    transition-duration: 0.01ms;
+  }
+
+  .characterAnchor,
+  .characterBody[data-pose] {
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+    transition-duration: 0.01ms;
+  }
+
+  .waypointPing {
+    animation-duration: 0.01ms;
+  }
+}
+
+@media (max-width: 720px) {
+  .scene:not(.compact) {
+    height: 250px;
+  }
+
+  .objectHotspot {
+    width: 64px;
+    height: 64px;
+  }
+
+  .objectTooltip {
+    bottom: calc(100% + 4px);
+    min-width: 72px;
+    max-width: min(108px, 32vw);
+    padding: 3px 5px;
+  }
+
+  .objectLabel,
+  .objectValue {
+    max-width: 92px;
+  }
+
+  .setupDock,
+  .careDock {
+    max-width: 48%;
+  }
+}

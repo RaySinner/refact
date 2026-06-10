@@ -1,0 +1,57 @@
+.region {
+  position: fixed;
+  top: var(--space-4);
+  right: var(--space-4);
+  z-index: var(--z-overlay);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: min(360px, calc(100vw - var(--space-8)));
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+  border: 1px solid var(--gray-a6);
+  box-shadow: var(--shadow-4);
+  background: var(--color-panel-solid);
+}
+
+.icon {
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.body {
+  min-width: 0;
+  flex: 1;
+}
+
+.title {
+  min-width: 0;
+  flex: 1;
+}
+
+.closeButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: var(--radius-1);
+  background: transparent;
+  color: var(--gray-10);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.closeButton:hover {
+  background: var(--gray-a4);
+  color: var(--gray-12);
+}
+
+.closeButton:focus-visible {
+  outline: 2px solid var(--accent-8);
+  outline-offset: -2px;
+}

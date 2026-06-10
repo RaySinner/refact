@@ -1,0 +1,134 @@
+<?xml version="1.0" ?>
+<!-- Plugin Configuration File. Read more: https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
+<idea-plugin require-restart="true">
+    <id>com.smallcloud.codify</id>
+    <name><![CDATA[Refact - Open-Source AI Agent, Code Generator & Chat]]></name>
+    <vendor email="info@smallcloud.ai"
+            url="https://refact.ai/?utm_source=jb&amp;utm_medium=marketplace&amp;utm_campaign=plugin">smallcloudai
+    </vendor>
+
+    <description><![CDATA[
+<h2>Refact.ai - Open-Source AI Software Engineering Agent</h2>
+<p>
+    Refact runs with BYOK or local model providers that you configure on your machine.
+</p>
+<p>
+    Configure at least one provider in Provider Setup, choose default models, then use in-IDE chat,
+    code completion, AI toolbox actions, and autonomous agent workflows directly from JetBrains IDEs.
+</p>
+<ul>
+    <li>Connect BYOK providers such as OpenAI, Anthropic, Gemini, DeepSeek, OpenRouter, Groq, and xAI.</li>
+    <li>Use local runtimes such as Ollama, LM Studio, vLLM, or custom OpenAI-compatible endpoints.</li>
+    <li>Integrate with GitHub, GitLab, PostgreSQL, MySQL, PDB, Docker, shell commands, MCP servers, and browser tools.</li>
+</ul>
+<p>
+    Use GitHub issues or discussions to ask questions, report bugs, or propose features.
+</p>
+]]></description>
+
+    <change-notes><![CDATA[
+<ul>
+    <li>More efficient and faster code suggestion system</li>
+    <li>Enhanced performance for large codebases and extended AI sessions</li>
+    <li>New "Xperimental" settings section to access features in Beta</li>
+    <li>Stability & UI/UX improvements</li>
+</ul>
+]]></change-notes>
+
+
+    <!-- Product and plugin compatibility requirements.
+         Read more: https://plugins.jetbrains.com/docs/intellij/plugin-compatibility.html -->
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.lang</depends>
+    <depends>com.intellij.modules.vcs</depends>
+
+    <!-- Extension points defined by the plugin.
+         Read more: https://plugins.jetbrains.com/docs/intellij/plugin-extension-points.html -->
+    <extensions defaultExtensionNs="com.intellij">
+        <applicationService serviceImplementation="com.smallcloud.refactai.PluginState"/>
+        <postStartupActivity implementation="com.smallcloud.refactai.Initializer"/>
+        <config.codeVisionGroupSettingProvider implementation="com.smallcloud.refactai.code_lens.RefactOpenChatSettingProvider"/>
+        <config.codeVisionGroupSettingProvider implementation="com.smallcloud.refactai.code_lens.RefactOpenProblemsSettingProvider"/>
+        <config.codeVisionGroupSettingProvider implementation="com.smallcloud.refactai.code_lens.RefactOpenExplainSettingProvider"/>
+        <editorFactoryDocumentListener implementation="com.smallcloud.refactai.listeners.DocumentListener"/>
+        <editorFactoryDocumentListener implementation="com.smallcloud.refactai.codecompletion.RefactInlineCompletionDocumentListener"/>
+        <editorFactoryDocumentListener implementation="com.smallcloud.refactai.listeners.LSPDocumentListener"/>
+        <statusBarWidgetFactory id="Refact AI Status Bar"
+                                implementation="com.smallcloud.refactai.status_bar.SMCStatusBarWidgetFactory"/>
+        <notificationGroup id="Refact AI Notification Group" displayType="BALLOON"/>
+
+        <applicationConfigurable parentId="tools"
+                                 instance="com.smallcloud.refactai.settings.AppSettingsConfigurable"
+                                 id="refactai_advanced_settings"
+                                 displayName="Refact.ai"/>
+        <errorHandler implementation="com.smallcloud.refactai.PluginErrorReportSubmitter"/>
+
+        <actionPromoter implementation="com.smallcloud.refactai.listeners.InlineActionsPromoter"/>
+        <actionPromoter implementation="com.smallcloud.refactai.listeners.AcceptActionsPromoter"/>
+        <actionPromoter implementation="com.smallcloud.refactai.listeners.ForceCompletionActionPromoter"/>
+        <actionPromoter implementation="com.smallcloud.refactai.panes.sharedchat.ChatPaneInvokeActionPromoter"/>
+        <inline.completion.provider implementation="com.smallcloud.refactai.codecompletion.RefactAICompletionProvider" order="first"/>
+        <toolWindow id="Refact" anchor="right"
+                    canCloseContents="true"
+                    factoryClass="com.smallcloud.refactai.panes.RefactAIToolboxPaneFactory"/>
+
+        <applicationService serviceImplementation="com.smallcloud.refactai.settings.AppSettingsState"/>
+        
+        <editorFactoryListener implementation="com.smallcloud.refactai.listeners.LastEditorGetterListener"/>
+
+        <applicationService serviceImplementation="com.smallcloud.refactai.io.InferenceGlobalContext"/>
+        <applicationService serviceImplementation="com.smallcloud.refactai.UpdateChecker"/>
+        <projectService serviceImplementation="com.smallcloud.refactai.lsp.LSPProcessHolder"/>
+        <projectService serviceImplementation="com.smallcloud.refactai.lsp.LSPActiveDocNotifierService" />
+        <projectService serviceImplementation="com.smallcloud.refactai.code_lens.CodeLensInvalidatorService" />
+        <projectService serviceImplementation="com.smallcloud.refactai.io.NotificationSSEClient" />
+        <codeInsight.codeVisionProviderFactory implementation="com.smallcloud.refactai.code_lens.RefactCodeVisionProviderFactory"/>
+    </extensions>
+    <actions>
+        <action class="com.smallcloud.refactai.listeners.TabPressedAction"
+                id="InsertInlineCompletionAction"
+                text="Accept Inline Completion"
+                overrides="true"
+                description="Refact AI Accept Inline Completion">
+            <add-to-group group-id="InlineCompletion" anchor="first"/>
+            <keyboard-shortcut first-keystroke="TAB" keymap="$default"/>
+        </action>
+        <action class="com.smallcloud.refactai.listeners.CancelPressedAction"
+                id="CancelPressedAction"
+                text="Cancel Inline Completion"
+                description="Refact AI Cancel Inline Completion">
+            <keyboard-shortcut first-keystroke="ESCAPE" keymap="$default"/>
+        </action>
+        <action class="com.smallcloud.refactai.listeners.ForceCompletionAction"
+                id="ForceCompletionAction"
+                text="Run Code Completion Manually"
+                description="Refact AI Make A Manual Trigger Completion">
+            <keyboard-shortcut first-keystroke="alt SLASH" keymap="$default"/>
+        </action>
+<!--        For display shortcut on the pane, action must be with mask "Activate${id.filterNot { it.isWhitespace() }}ToolWindow"-->
+        <action id="ActivateRefactChatToolWindow"
+                text="Open Chat"
+                class="com.smallcloud.refactai.panes.sharedchat.ChatPaneInvokeAction">
+            <keyboard-shortcut first-keystroke="F1" keymap="$default"/>
+        </action>
+
+        <group id="RefactAIChatGroup">
+            <add-to-group group-id="EditorPopupMenu" anchor="first"/>
+            <separator/>
+        </group>
+
+        <action id="RefactAI.GenerateCommitMessage"
+                class="com.smallcloud.refactai.vcs.RefactCommitAction"
+                text="Generate Commit Message with Refact AI"
+                description="Generate a commit message using Refact AI based on staged changes">
+            <add-to-group group-id="Vcs.MessageActionGroup" anchor="first"/>
+        </action>
+    </actions>
+    <resource-bundle>bundles.RefactAI</resource-bundle>
+    <applicationListeners>
+        <listener class="com.smallcloud.refactai.listeners.PluginListener"
+                  topic="com.intellij.ide.plugins.DynamicPluginListener"
+                  activeInHeadlessMode="true"
+        />
+    </applicationListeners>
+</idea-plugin>

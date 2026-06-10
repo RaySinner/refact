@@ -1,0 +1,65 @@
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.section[data-collapsed] {
+  gap: 0;
+}
+
+.headerToggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: var(--space-1) 0;
+  width: 100%;
+  text-align: left;
+  gap: var(--space-2);
+}
+
+.headerToggle:hover {
+  opacity: 0.8;
+}
+
+.label {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  flex: 1;
+}
+
+.buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding-bottom: var(--space-1);
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-2);
+  border: 1px solid var(--gray-a6);
+  background: var(--gray-a2);
+  color: var(--gray-12);
+  cursor: pointer;
+  transition:
+    background var(--motion-fast) ease,
+    border-color var(--motion-fast) ease;
+}
+
+.button:hover {
+  background: var(--gray-a3);
+  border-color: var(--gray-a7);
+}
+
+.button:focus-visible {
+  outline: 2px solid var(--accent-8);
+  outline-offset: 1px;
+}

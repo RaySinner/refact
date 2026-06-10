@@ -1,0 +1,257 @@
+.card {
+  overflow: hidden;
+}
+
+.header {
+  padding: var(--space-2) 0;
+  cursor: pointer;
+  user-select: none;
+  transition: filter 0.15s ease;
+}
+
+.header:hover {
+  filter: brightness(1.15);
+}
+
+.icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  min-width: 22px;
+  height: 18px;
+  color: var(--gray-11);
+}
+
+.summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meta {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.livePreview {
+  display: block;
+  min-width: 0;
+  margin-left: 28px;
+  padding-bottom: var(--space-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--code-font-family);
+}
+
+.processChip {
+  max-width: 180px;
+  font-family: var(--code-font-family);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ptyChip {
+  color: var(--purple-11);
+  background: var(--purple-a3);
+}
+
+.statusBadge {
+  text-transform: capitalize;
+}
+
+.statusStarting {
+  color: var(--blue-11);
+  background: var(--blue-a3);
+}
+
+.statusRunning {
+  color: var(--green-11);
+  background: var(--green-a3);
+}
+
+.statusRunningInBackground {
+  color: var(--amber-11);
+  background: var(--amber-a3);
+  animation: exec-status-pulse 1.5s ease-in-out infinite;
+}
+
+.statusExited {
+  color: var(--gray-12);
+  background: var(--gray-a3);
+}
+
+.statusFailed,
+.statusKilled,
+.statusTimedOut {
+  color: var(--red-11);
+  background: var(--red-a3);
+}
+
+.statusUnknown {
+  color: var(--gray-11);
+  background: var(--gray-a3);
+}
+
+.contentWrapper {
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 0.2s ease-out,
+    opacity 0.15s ease-out;
+}
+
+.contentWrapperOpen {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.contentInner {
+  overflow: hidden;
+}
+
+.content {
+  padding: var(--space-2) 0 var(--space-1) 28px;
+}
+
+.noTransition {
+  transition: none !important;
+}
+
+.detailsGrid {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--space-1) var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.detailLabel {
+  color: var(--gray-11);
+}
+
+.detailValue {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.codeValue {
+  font-family: var(--code-font-family);
+}
+
+.controls {
+  margin-bottom: var(--space-2);
+}
+
+.logButton {
+  cursor: pointer;
+}
+
+.copyButton {
+  cursor: pointer;
+}
+
+.outputView {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.outputSection {
+  border: 1px solid var(--gray-a4);
+  border-radius: var(--radius-3);
+  overflow: hidden;
+  background: var(--gray-a2);
+}
+
+.outputHeader {
+  padding: var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--gray-a4);
+  background: var(--gray-a3);
+}
+
+.outputBody {
+  composes: scrollbarThin from "../../shared/scrollbar.module.css";
+  max-height: 360px;
+  overflow: auto;
+  padding: var(--space-2);
+}
+
+.outputPre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--code-font-family);
+  font-size: var(--font-size-1);
+  line-height: var(--line-height-1);
+}
+
+.outputEmpty {
+  padding: var(--space-2);
+  color: var(--gray-11);
+}
+
+.truncationNotice {
+  border: 1px solid var(--amber-a5);
+  border-radius: var(--radius-3);
+  background: var(--amber-a2);
+  padding: var(--space-2);
+}
+
+.processList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.processListItem {
+  border: 1px solid var(--gray-a4);
+  border-radius: var(--radius-3);
+  padding: var(--space-2);
+  background: var(--gray-a2);
+}
+
+.stdinInputRow {
+  margin-top: var(--space-3);
+  border: 1px solid var(--blue-a4);
+  border-radius: var(--radius-3);
+  background: var(--blue-a2);
+  padding: var(--space-2);
+}
+
+.stdinBanner {
+  color: var(--blue-11);
+}
+
+.stdinTextField {
+  flex: 1 1 auto;
+}
+
+@keyframes exec-status-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 var(--amber-a5);
+  }
+
+  50% {
+    box-shadow: 0 0 0 3px var(--amber-a3);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .contentWrapper {
+    transition: none;
+  }
+
+  .statusRunningInBackground {
+    animation: none;
+  }
+}

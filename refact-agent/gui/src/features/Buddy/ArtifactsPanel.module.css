@@ -1,0 +1,4 @@
+.panel {
+  margin: var(--space-2) 0;
+  padding: var(--space-3);
+}

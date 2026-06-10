@@ -1,0 +1,54 @@
+[
+  {
+    "provider_ids": ["anthropic", "claude-code", "github-copilot"],
+    "model_prefixes": ["claude-opus-4-7"],
+    "reasoning_effort_options": ["low", "medium", "high", "xhigh", "max"],
+    "supports_adaptive_thinking_budget": true,
+    "supports_thinking_budget": false
+  },
+  {
+    "provider_ids": ["anthropic", "claude-code", "github-copilot"],
+    "model_prefixes": ["claude-opus-4-6", "claude-sonnet-4-6"],
+    "reasoning_effort_options": ["low", "medium", "high", "max"],
+    "supports_adaptive_thinking_budget": true,
+    "supports_thinking_budget": false
+  },
+  {
+    "provider_ids": ["anthropic", "claude-code", "github-copilot"],
+    "model_prefixes": ["claude-opus-4-5"],
+    "reasoning_effort_options": ["low", "medium", "high", "max"],
+    "supports_adaptive_thinking_budget": false,
+    "supports_thinking_budget": true
+  },
+  {
+    "provider_ids": ["anthropic", "claude-code", "github-copilot"],
+    "model_prefixes": ["claude-3-7", "claude-sonnet-4", "claude-opus-4"],
+    "reasoning_effort_options": null,
+    "supports_adaptive_thinking_budget": false,
+    "supports_thinking_budget": true
+  },
+  {
+    "provider_ids": ["openai", "openrouter", "openai-codex", "openai_codex", "github-copilot"],
+    "family_prefixes": ["gpt"],
+    "model_prefixes": ["gpt-5.4", "gpt-5.5"],
+    "reasoning_effort_options": ["minimal", "low", "medium", "high", "xhigh"],
+    "supports_adaptive_thinking_budget": false,
+    "supports_thinking_budget": false
+  },
+  {
+    "provider_ids": ["openai", "openrouter", "openai-codex", "openai_codex", "github-copilot"],
+    "family_prefixes": ["gpt", "o"],
+    "model_prefixes": ["gpt-5", "o1", "o3", "o4", "o5"],
+    "reasoning_effort_options": ["minimal", "low", "medium", "high"],
+    "supports_adaptive_thinking_budget": false,
+    "supports_thinking_budget": false
+  },
+  {
+    "provider_ids": ["google", "google-gemini", "gemini", "openrouter"],
+    "family_prefixes": ["gemini"],
+    "model_prefixes": ["gemini-2.5", "gemini-3"],
+    "reasoning_effort_options": null,
+    "supports_adaptive_thinking_budget": false,
+    "supports_thinking_budget": true
+  }
+]

@@ -1,0 +1,40 @@
+schema_version: 2
+id: buddy_onboarding
+title: Onboarding
+description: Keep AGENTS.md aligned with new top-level project areas
+expose_as_tool: false
+has_code: true
+
+subchat:
+  context_mode: default
+  stateful: false
+  max_steps: 6
+  model_type: buddy
+  n_ctx: 24000
+  max_new_tokens: 1000
+  temperature: 0.3
+  tokens_for_rag: 0
+  autonomous_no_confirm: true
+
+messages:
+  system_prompt: |
+    %BUDDY_PERSONALITY%
+
+    You keep project onboarding notes useful when new top-level files or directories appear.
+    1. Inspect AGENTS.md and the listed top-level candidates.
+    2. Update AGENTS.md only if there is a clear missing onboarding note.
+    3. Keep edits small and factual.
+    4. End with buddy_runtime_event describing what changed or why nothing changed.
+  user_template: |
+    Workflow: {{workflow_id}}
+    Project root: {{project_root}}
+
+    Evidence:
+    {{evidence}}
+
+tools:
+  - tree
+  - cat
+  - update_textdoc
+  - replace_textdoc
+  - buddy_runtime_event

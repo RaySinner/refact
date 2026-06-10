@@ -1,0 +1,168 @@
+.diffContent {
+  overflow-x: visible;
+  padding-left: var(--space-2);
+  font-family: var(--code-font-family);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.diffBlock {
+  --edit-diff-add-line-bg: var(--diffBlob-additionLine-bgColor, #2ea04326);
+  --edit-diff-add-num-bg: var(--diffBlob-additionNum-bgColor, #3fb9504d);
+  --edit-diff-remove-line-bg: var(--diffBlob-deletionLine-bgColor, #f851491a);
+  --edit-diff-remove-num-bg: var(--diffBlob-deletionNum-bgColor, #f851494d);
+  padding: 0 0 var(--space-1);
+}
+
+.diffBlock:last-child {
+  border-bottom: 0;
+}
+
+.hunkHeader {
+  min-width: 0;
+  padding: 2px 0;
+  white-space: pre-wrap;
+  user-select: none;
+}
+
+.hunkFileButton,
+.hunkFileName {
+  all: unset;
+  color: var(--accent-11);
+  font-family: var(--code-font-family);
+}
+
+.hunkFileButton {
+  cursor: pointer;
+}
+
+.hunkFileButton:hover {
+  text-decoration: underline;
+}
+
+.hunkTitle {
+  color: inherit;
+  font-family: var(--code-font-family);
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.statsInline {
+  font-family: var(--code-font-family);
+  font-size: 12px;
+  flex: 1 1 auto;
+}
+
+.added {
+  color: var(--green-11);
+}
+
+.removed {
+  color: var(--red-11);
+  margin-left: 4px;
+}
+
+.hunkActions {
+  margin-left: auto;
+}
+
+.hunkActionButton {
+  cursor: pointer;
+}
+
+.diffLine {
+  display: flex;
+  min-width: 0;
+}
+
+.lineNumber {
+  width: 40px;
+  min-width: 40px;
+  text-align: center;
+  padding: 0 var(--space-1);
+  color: var(--gray-12);
+  border-right: 1px solid var(--gray-a4);
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.remove .lineNumber {
+  background-color: var(--edit-diff-remove-num-bg);
+}
+
+.add .lineNumber {
+  background-color: var(--edit-diff-add-num-bg);
+}
+
+.sign {
+  width: 16px;
+  min-width: 16px;
+  text-align: center;
+  flex-shrink: 0;
+  font-family: var(--default-font-family);
+  font-weight: 600;
+}
+
+.lineContent {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-right: var(--space-2);
+  color: color-mix(in oklab, var(--gray-12) 90%, white 10%);
+  background: transparent;
+  font-family: var(--code-font-family);
+  font-size: inherit;
+  line-height: inherit;
+  filter: brightness(1.18) saturate(1.04);
+}
+
+.context {
+  color: var(--gray-12);
+}
+
+.context .sign {
+  color: var(--gray-12);
+}
+
+.remove {
+  background-color: var(--edit-diff-remove-line-bg);
+}
+
+.remove .sign {
+  color: var(--diffBlob-deletionLine-fgColor, var(--gray-12));
+}
+
+.add {
+  background-color: var(--edit-diff-add-line-bg);
+}
+
+.add .sign {
+  color: var(--diffBlob-additionLine-fgColor, var(--gray-12));
+}
+
+.showMoreButton {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-1) 0;
+  color: var(--accent-11);
+  background: transparent;
+  border: 0;
+  font-family: var(--code-font-family);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.showMoreButton:hover {
+  text-decoration: underline;
+}
+
+.fileList {
+  gap: var(--space-1);
+}
+
+.fileItem {
+  overflow: visible;
+}

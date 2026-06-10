@@ -1,0 +1,140 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { selectThreadMode } from "../features/Chat/Thread/selectors";
+import { useAppSelector, useGetCapsQuery, useAppDispatch } from ".";
+import { useGetChatModesQuery } from "../services/refact/chatModes";
+
+import { getSelectedChatModel, setChatModel } from "../features/Chat";
+import { isLegacyRefactModel } from "../utils/modelProviders";
+
+export const PAID_AGENT_LIST = [
+  "gpt-4o",
+  "claude-3-5-sonnet",
+  "grok-2-1212",
+  "grok-beta",
+  "gemini-2.0-flash-exp",
+  "claude-3-7-sonnet",
+];
+
+export const UNLIMITED_PRO_MODELS_LIST = ["gpt-4o-mini"];
+
+export function useCapsForToolUse() {
+  const [wasAdjusted, setWasAdjusted] = useState(false);
+  const caps = useGetCapsQuery();
+  const modesQuery = useGetChatModesQuery(undefined);
+  const currentMode = useAppSelector(selectThreadMode);
+  const dispatch = useAppDispatch();
+
+  const defaultCap = caps.data?.chat_default_model ?? "";
+  const selectedModel = useAppSelector(getSelectedChatModel);
+  const currentModel = selectedModel || defaultCap;
+
+  const modeInfo = useMemo(() => {
+    if (!modesQuery.data?.modes) return null;
+    return modesQuery.data.modes.find((m) => m.id === currentMode) ?? null;
+  }, [modesQuery.data?.modes, currentMode]);
+
+  const modeRequiresTools = useMemo(() => {
+    if (!modeInfo) return false;
+    return modeInfo.tools_count > 0;
+  }, [modeInfo]);
+
+  const modeRequiresAgent = useMemo(() => {
+    if (!modeInfo) return false;
+    return modeInfo.ui.tags.includes("editing");
+  }, [modeInfo]);
+
+  const setCapModel = useCallback(
+    (value: string) => {
+      const model =
+        caps.data?.chat_default_model === value
+          ? caps.data.chat_default_model
+          : value;
+      const tokens = caps.data?.chat_models[value]?.n_ctx;
+      const previousTokens = caps.data?.chat_models[currentModel]?.n_ctx;
+      dispatch(
+        setChatModel({
+          model,
+          modelMaxContextTokens: tokens,
+          previousModelMaxContextTokens: previousTokens,
+        }),
+      );
+    },
+    [
+      caps.data?.chat_default_model,
+      caps.data?.chat_models,
+      currentModel,
+      dispatch,
+    ],
+  );
+
+  const isMultimodalitySupportedForCurrentModel = useMemo(() => {
+    const models = caps.data?.chat_models;
+    const item = models?.[currentModel];
+    if (!item) return false;
+    if (!item.supports_multimodality) return false;
+    return true;
+  }, [caps.data?.chat_models, currentModel]);
+
+  const modelsSupportingTools = useMemo(() => {
+    const models = caps.data?.chat_models ?? {};
+    return Object.entries(models)
+      .filter(([_, value]) => value.supports_tools)
+      .map(([key]) => key);
+  }, [caps.data?.chat_models]);
+
+  const modelsSupportingAgent = useMemo(() => {
+    const models = caps.data?.chat_models ?? {};
+    return Object.entries(models)
+      .filter(([_, value]) => value.supports_agent)
+      .map(([key]) => key);
+  }, [caps.data?.chat_models]);
+
+  const usableModels = useMemo(() => {
+    const models = caps.data?.chat_models ?? {};
+    return Object.keys(models).filter((model) => !isLegacyRefactModel(model));
+  }, [caps.data?.chat_models]);
+
+  const usableModelsForPlan = useMemo(() => {
+    return usableModels.map((model) => {
+      return {
+        value: model,
+        disabled: false,
+        textValue: model,
+      };
+    });
+  }, [usableModels]);
+
+  useEffect(() => {
+    if (usableModelsForPlan.length > 0) {
+      const models: string[] = usableModelsForPlan.map(
+        (elem) => elem.textValue,
+      );
+      const toChange =
+        models.find((elem) => currentModel === elem) ?? models[0];
+
+      if (toChange && toChange !== currentModel) {
+        setCapModel(toChange);
+      }
+    }
+  }, [setCapModel, currentModel, usableModels, usableModelsForPlan]);
+
+  useEffect(() => {
+    if (!caps.isSuccess || wasAdjusted) return;
+    setWasAdjusted(true);
+  }, [caps.isSuccess, wasAdjusted]);
+
+  return {
+    usableModels,
+    usableModelsForPlan,
+    currentModel,
+    setCapModel,
+    isMultimodalitySupportedForCurrentModel,
+    loading: !caps.data && (caps.isFetching || caps.isLoading),
+    uninitialized: caps.isUninitialized,
+    data: caps.data,
+    modelsSupportingTools,
+    modelsSupportingAgent,
+    modeRequiresTools,
+    modeRequiresAgent,
+  };
+}

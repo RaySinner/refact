@@ -1,0 +1,11 @@
+pub use refact_buddy_core::diagnostics::{
+    collect_diagnostics_from_error, diagnostic_id, diagnostic_signature, DiagnosticContext,
+    DiagnosticSeverity,
+};
+pub(crate) use refact_buddy_core::diagnostics::classify_error;
+
+use crate::app_state::AppState;
+
+pub async fn collect_diagnostics(_gcx: AppState, error: &str) -> DiagnosticContext {
+    collect_diagnostics_from_error(error)
+}

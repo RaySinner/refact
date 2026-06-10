@@ -1,0 +1,11 @@
+wire_format: openai_chat_completions
+chat_endpoint: https://openrouter.ai/api/v1/chat/completions
+embedding_endpoint: https://openrouter.ai/api/v1/embeddings
+supports_completion: false
+
+api_key: "sk-or-..."
+
+running_models:
+  - anthropic/claude-3.7-sonnet
+  - openai/o3-mini
+  - openai/gpt-4.1

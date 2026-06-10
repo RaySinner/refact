@@ -1,0 +1,391 @@
+use std::sync::Arc;
+use tokio::sync::Mutex as AMutex;
+use regex::Regex;
+use serde_json::json;
+use tokenizers::Tokenizer;
+use tracing::{info, warn};
+
+use crate::at_commands::at_commands::{
+    AtCommandsContext, AtParam, filter_only_context_file_from_context_tool,
+};
+use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
+use crate::postprocessing::pp_context_files::postprocess_context_files;
+use crate::postprocessing::pp_plain_text::postprocess_plain_text;
+use crate::scratchpads::scratchpad_utils::{HasRagResults, max_tokens_for_rag_chat};
+
+pub const MIN_RAG_CONTEXT_LIMIT: usize = 256;
+
+pub async fn run_at_commands_locally(
+    ccx: Arc<AMutex<AtCommandsContext>>,
+    tokenizer: Option<Arc<Tokenizer>>,
+    maxgen: usize,
+    mut original_messages: Vec<ChatMessage>,
+    stream_back_to_user: &mut HasRagResults,
+) -> (Vec<ChatMessage>, bool) {
+    let (n_ctx, top_n, is_preview, app) = {
+        let cgcx = ccx.lock().await;
+        (cgcx.n_ctx, cgcx.top_n, cgcx.is_preview, cgcx.app.clone())
+    };
+    if !is_preview {
+        let preview_cache = app.workspace.at_commands_preview_cache.clone();
+        preview_cache.lock().await.clear();
+    }
+    let reserve_for_context = max_tokens_for_rag_chat(n_ctx, maxgen);
+    info!("reserve_for_context {} tokens", reserve_for_context);
+
+    let mut any_context_produced = false;
+
+    let mut user_msg_starts = original_messages.len();
+    let mut messages_with_at: usize = 0;
+    while user_msg_starts > 0 {
+        let message = original_messages.get(user_msg_starts - 1).unwrap().clone();
+        if message.role == "user" {
+            user_msg_starts -= 1;
+            if message.content.content_text_only().contains("@") {
+                messages_with_at += 1;
+            }
+        } else {
+            break;
+        }
+    }
+
+    // Token limit works like this:
+    // - if there's only 1 user message at the bottom, it receives reserve_for_context tokens for context
+    // - if there are N user messages, they receive reserve_for_context/N tokens each (and there's no taking from one to give to the other)
+    // This is useful to give prefix and suffix of the same file precisely the position necessary for FIM-like operation of a chat model
+    let messages_after_user_msg = original_messages.split_off(user_msg_starts);
+    let mut new_messages = original_messages;
+    for (idx, mut msg) in messages_after_user_msg.into_iter().enumerate() {
+        let (mut content, original_images) = if let ChatContent::Multimodal(parts) = &msg.content {
+            let text = parts
+                .iter()
+                .filter_map(|p| {
+                    if p.m_type == "text" {
+                        Some(p.m_content.as_str())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            let images = parts
+                .iter()
+                .filter(|p| p.m_type.starts_with("image/"))
+                .cloned()
+                .collect::<Vec<_>>();
+            (text, Some(images))
+        } else {
+            (msg.content.content_text_only(), None)
+        };
+        let content_n_tokens = msg
+            .content
+            .count_tokens(tokenizer.clone(), &None)
+            .unwrap_or(0) as usize;
+
+        let mut context_limit = reserve_for_context / messages_with_at.max(1);
+        context_limit = context_limit.saturating_sub(content_n_tokens);
+
+        info!("msg {} user_posted {:?} which is {} tokens, that leaves {} tokens for context of this message", idx + user_msg_starts, crate::nicer_logs::first_n_chars(&content, 50), content_n_tokens, context_limit);
+
+        let mut messages_exec_output = vec![];
+        if content.contains("@") {
+            let (res, _) = execute_at_commands_in_query(ccx.clone(), &mut content).await;
+            messages_exec_output.extend(res);
+        }
+
+        let mut context_file_pp = filter_only_context_file_from_context_tool(&messages_exec_output);
+
+        let mut plain_text_messages = vec![];
+        for exec_result in messages_exec_output.into_iter() {
+            // at commands exec() can produce role "user" "assistant" "diff" "plain_text"
+            if let ContextEnum::ChatMessage(raw_msg) = exec_result {
+                // means not context_file
+                if raw_msg.role != "plain_text" {
+                    stream_back_to_user.push_in_json(json!(raw_msg));
+                    new_messages.push(raw_msg);
+                } else {
+                    plain_text_messages.push(raw_msg);
+                }
+            }
+        }
+
+        if !plain_text_messages.is_empty() || !context_file_pp.is_empty() {
+            let effective_context_limit = context_limit.max(MIN_RAG_CONTEXT_LIMIT);
+            let (tokens_limit_plain, mut tokens_limit_files) = {
+                if context_file_pp.is_empty() {
+                    (effective_context_limit, 0)
+                } else {
+                    (effective_context_limit / 2, effective_context_limit / 2)
+                }
+            };
+            info!(
+                "context_limit {} tokens_limit_plain {} tokens_limit_files: {}",
+                context_limit, tokens_limit_plain, tokens_limit_files
+            );
+
+            let t0 = std::time::Instant::now();
+
+            let (pp_plain_text, non_used_plain) = postprocess_plain_text(
+                plain_text_messages,
+                tokenizer.clone(),
+                tokens_limit_plain,
+                &None,
+            )
+            .await;
+            for m in pp_plain_text {
+                // OUTPUT: plain text after all custom messages
+                stream_back_to_user.push_in_json(json!(m));
+                new_messages.push(m);
+            }
+            tokens_limit_files += non_used_plain;
+            info!("tokens_limit_files {}", tokens_limit_files);
+            let (gcx, mut pp_settings, pp_skeleton) = {
+                let cgcx = ccx.lock().await;
+                (
+                    cgcx.global_context.clone(),
+                    cgcx.postprocess_parameters.clone(),
+                    cgcx.pp_skeleton,
+                )
+            };
+            pp_settings.use_ast_based_pp = false;
+            pp_settings.max_files_n = top_n;
+            if pp_skeleton {
+                pp_settings.take_floor = 50.0;
+            }
+            let post_processed = postprocess_context_files(
+                gcx.clone(),
+                &mut context_file_pp,
+                tokenizer.clone(),
+                tokens_limit_files,
+                false,
+                &pp_settings,
+            )
+            .await;
+            let (post_processed_files, _notes) = post_processed;
+            if !post_processed_files.is_empty() {
+                any_context_produced = true;
+                let message = ChatMessage {
+                    role: "context_file".to_string(),
+                    content: ChatContent::ContextFiles(post_processed_files),
+                    ..Default::default()
+                };
+                stream_back_to_user.push_in_json(json!(message));
+                new_messages.push(message);
+            }
+            info!(
+                "postprocess_plain_text_messages + postprocess_context_files {:.3}s",
+                t0.elapsed().as_secs_f32()
+            );
+        }
+
+        if content.trim().len() > 0 || original_images.is_some() {
+            msg.content = if let Some(mut images) = original_images {
+                let mut parts = vec![];
+                if !content.trim().is_empty() {
+                    parts.push(crate::scratchpads::multimodality::MultimodalElement {
+                        m_type: "text".to_string(),
+                        m_content: content,
+                    });
+                }
+                parts.append(&mut images);
+                ChatContent::Multimodal(parts)
+            } else {
+                ChatContent::SimpleText(content)
+            };
+            stream_back_to_user.push_in_json(json!(msg));
+            new_messages.push(msg);
+        }
+    }
+
+    (new_messages, any_context_produced)
+}
+
+pub async fn correct_at_arg(
+    ccx: Arc<AMutex<AtCommandsContext>>,
+    param: &Box<dyn AtParam>,
+    arg: &mut AtCommandMember,
+) {
+    if param.is_value_valid(ccx.clone(), &arg.text).await {
+        return;
+    }
+    let completion = match param.param_completion(ccx.clone(), &arg.text).await.get(0) {
+        Some(x) => x.clone(),
+        None => {
+            arg.ok = false;
+            arg.reason = Some("incorrect argument; failed to complete".to_string());
+            return;
+        }
+    };
+    if !param.is_value_valid(ccx.clone(), &completion).await {
+        arg.ok = false;
+        arg.reason = Some("incorrect argument; completion did not help".to_string());
+        return;
+    }
+    arg.text = completion;
+}
+
+pub async fn execute_at_commands_in_query(
+    ccx: Arc<AMutex<AtCommandsContext>>,
+    query: &mut String,
+) -> (Vec<ContextEnum>, Vec<AtCommandMember>) {
+    let at_commands = ccx.lock().await.at_commands.clone();
+    let at_command_names = at_commands.keys().map(|x| x.clone()).collect::<Vec<_>>();
+    let mut context_enums = vec![];
+    let mut highlight_members = vec![];
+    let mut clips: Vec<(String, usize, usize)> = vec![];
+
+    let words = parse_words_from_line(query);
+    for (w_idx, (word, pos1, pos2)) in words.iter().enumerate() {
+        let cmd = match at_commands.get(word) {
+            Some(c) => c,
+            None => {
+                continue;
+            }
+        };
+        let args = words
+            .iter()
+            .skip(w_idx + 1)
+            .map(|x| x.clone())
+            .collect::<Vec<_>>();
+
+        let mut cmd_member = AtCommandMember::new("cmd".to_string(), word.clone(), *pos1, *pos2);
+        let mut arg_members = vec![];
+        for (text, pos1, pos2) in args.iter().map(|x| x.clone()) {
+            if at_command_names.contains(&text) {
+                break;
+            }
+            // TODO: break if there's \n\n
+            arg_members.push(AtCommandMember::new(
+                "arg".to_string(),
+                text.clone(),
+                pos1,
+                pos2,
+            ));
+        }
+
+        match cmd
+            .at_execute(ccx.clone(), &mut cmd_member, &mut arg_members)
+            .await
+        {
+            Ok((res, text_on_clip)) => {
+                context_enums.extend(res);
+                clips.push((
+                    text_on_clip,
+                    cmd_member.pos1,
+                    arg_members
+                        .last()
+                        .map(|x| x.pos2)
+                        .unwrap_or(cmd_member.pos2),
+                ));
+            }
+            Err(e) => {
+                cmd_member.ok = false;
+                cmd_member.reason = Some(format!("incorrect argument; failed to complete: {}", e));
+                warn!("can't execute command that indicated it can execute: {}", e);
+            }
+        }
+        highlight_members.push(cmd_member);
+        highlight_members.extend(arg_members);
+    }
+    for (text_on_clip, pos1, pos2) in clips.iter().rev() {
+        // info!("replacing {:?}..{:?} with {:?}", *pos1, *pos2, text_on_clip);
+        query.replace_range(*pos1..*pos2, text_on_clip);
+    }
+    // info!("query after at-commands: \n{:?}\n", query);
+    (context_enums, highlight_members)
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct AtCommandMember {
+    pub kind: String,
+    pub text: String,
+    pub pos1: usize,
+    pub pos2: usize,
+    pub ok: bool,
+    pub reason: Option<String>,
+}
+
+impl AtCommandMember {
+    pub fn new(kind: String, text: String, pos1: usize, pos2: usize) -> Self {
+        Self {
+            kind,
+            text,
+            pos1,
+            pos2,
+            ok: true,
+            reason: None,
+        }
+    }
+}
+
+pub fn parse_words_from_line(line: &String) -> Vec<(String, usize, usize)> {
+    fn trim_punctuation(s: &str) -> &str {
+        s.trim_end_matches(&['!', '.', ',', '?'][..])
+    }
+
+    let word_regex = Regex::new(r"@?\S+").expect("Invalid regex");
+
+    let mut results = vec![];
+    for m in word_regex.find_iter(line) {
+        let trimmed = trim_punctuation(m.as_str());
+        if !trimmed.is_empty() {
+            results.push((trimmed.to_string(), m.start(), m.start() + trimmed.len()));
+        }
+    }
+    results
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_words_from_line_with_link() {
+        let line =
+            "Check out this link: https://doc.rust-lang.org/book/ch03-04-comments.html".to_string();
+        let parsed_words = parse_words_from_line(&line);
+
+        let link = parsed_words
+            .iter()
+            .find(|(word, _, _)| word == "https://doc.rust-lang.org/book/ch03-04-comments.html");
+        assert!(link.is_some(), "The link should be parsed as a single word");
+        if let Some((word, _start, _end)) = link {
+            assert_eq!(word, "https://doc.rust-lang.org/book/ch03-04-comments.html");
+        }
+    }
+
+    #[test]
+    fn test_parse_words_from_line_no_empty_tokens() {
+        let line = "hello  world    test @file".to_string();
+        let parsed_words = parse_words_from_line(&line);
+
+        for (word, _, _) in parsed_words.iter() {
+            assert!(!word.is_empty(), "No empty tokens should be produced");
+        }
+    }
+
+    #[test]
+    fn test_parse_words_from_line_long_input() {
+        let line = (0..1000).map(|i| format!("word{} ", i)).collect::<String>();
+        let parsed_words = parse_words_from_line(&line);
+
+        assert!(
+            parsed_words.len() < 2000,
+            "Performance regression: too many tokens for long input"
+        );
+        assert!(
+            parsed_words.iter().all(|(w, _, _)| !w.is_empty()),
+            "No empty tokens"
+        );
+    }
+
+    #[test]
+    fn test_parse_words_from_line_punctuation_trimming() {
+        let line = "@file.txt, src/main.rs! code?".to_string();
+        let parsed_words = parse_words_from_line(&line);
+
+        assert_eq!(parsed_words[0].0, "@file.txt");
+        assert_eq!(parsed_words[1].0, "src/main.rs");
+        assert_eq!(parsed_words[2].0, "code");
+    }
+}

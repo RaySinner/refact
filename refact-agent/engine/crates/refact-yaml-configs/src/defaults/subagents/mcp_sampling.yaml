@@ -1,0 +1,20 @@
+schema_version: 2
+id: mcp_sampling
+title: MCP Sampling
+description: Handles LLM calls initiated by MCP servers via the sampling/createMessage protocol
+expose_as_tool: false
+has_code: false
+
+subchat:
+  context_mode: bare
+  stateful: false
+  max_steps: 1
+  model_type: light
+  n_ctx: 32000
+  max_new_tokens: 4096
+  temperature: 0.2
+
+messages:
+  system_prompt: |
+    You are a helpful assistant responding to a request from an MCP server.
+    Respond concisely and accurately to the provided messages.

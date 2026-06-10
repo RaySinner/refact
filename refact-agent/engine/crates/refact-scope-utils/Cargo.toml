@@ -1,0 +1,11 @@
+[package]
+name = "refact-scope-utils"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+refact-core = { path = "../refact-core" }
+refact-worktrees = { path = "../refact-worktrees" }
+
+[dev-dependencies]
+tempfile.workspace = true

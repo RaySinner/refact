@@ -1,0 +1,361 @@
+use std::sync::Arc;
+use axum::Json;
+use axum::http::{Response, StatusCode};
+use axum::extract::State;
+use hyper::Body;
+use indexmap::IndexMap;
+use serde::{Deserialize, Serialize};
+use tokio::sync::Mutex as AMutex;
+
+use crate::app_state::AppState;
+use crate::at_commands::at_commands::AtCommandsContext;
+use crate::call_validation::{
+    ChatMessage, ChatMeta, ChatToolCall, PostprocessSettings, SubchatParameters,
+};
+use crate::chat::tools::{execute_tools, ExecuteToolsOptions};
+use crate::chat::types::ThreadParams;
+use crate::indexing_utils::wait_for_indexing_if_needed;
+use crate::tools::tools_description::{
+    set_tool_config, MatchConfirmDenyResult, ToolConfig, ToolDesc, ToolGroupCategory, ToolSource,
+};
+use crate::tools::tools_list::{get_available_tool_groups, get_available_tools};
+use crate::custom_error::ScratchError;
+
+#[derive(Serialize, Deserialize, Clone)]
+struct ToolsPermissionCheckPost {
+    pub tool_calls: Vec<ChatToolCall>,
+    #[serde(default)]
+    pub messages: Vec<ChatMessage>,
+    #[serde(default)]
+    pub meta: ChatMeta,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "lowercase")]
+enum PauseReasonType {
+    Confirmation,
+    Denial,
+}
+
+#[derive(Serialize)]
+struct PauseReason {
+    #[serde(rename = "type")]
+    reason_type: PauseReasonType,
+    command: String,
+    rule: String,
+    tool_call_id: String,
+    integr_config_path: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct ToolsExecutePost {
+    pub messages: Vec<ChatMessage>,
+    pub n_ctx: usize,
+    pub maxgen: usize,
+    pub subchat_tool_parameters: IndexMap<String, SubchatParameters>, // tool_name: {model, allowed_context, temperature}
+    pub postprocess_parameters: PostprocessSettings,
+    pub model_name: String,
+    pub chat_id: String,
+    pub style: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ToolExecuteResponse {
+    pub messages: Vec<ChatMessage>,
+    pub tools_ran: bool,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ToolResponse {
+    pub spec: ToolDesc,
+    pub enabled: bool,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ToolGroupResponse {
+    pub name: String,
+    pub description: String,
+    pub category: ToolGroupCategory,
+    pub tools: Vec<ToolResponse>,
+}
+
+pub async fn handle_v1_get_tools(State(app): State<AppState>) -> Json<Vec<ToolGroupResponse>> {
+    let gcx = app.gcx.clone();
+    let tool_groups = get_available_tool_groups(gcx.clone()).await;
+
+    let tool_groups: Vec<ToolGroupResponse> = tool_groups
+        .into_iter()
+        .filter_map(|tool_group| {
+            if tool_group.tools.is_empty() {
+                return None;
+            }
+
+            let tools: Vec<ToolResponse> = tool_group
+                .tools
+                .into_iter()
+                .map(|tool| {
+                    let spec = tool.tool_description();
+                    ToolResponse {
+                        spec,
+                        enabled: tool.config().unwrap_or_default().enabled,
+                    }
+                })
+                .collect();
+
+            Some(ToolGroupResponse {
+                name: tool_group.name,
+                description: tool_group.description,
+                category: tool_group.category,
+                tools,
+            })
+        })
+        .collect();
+
+    Json(tool_groups)
+}
+
+#[derive(Deserialize)]
+pub struct ToolPost {
+    name: String,
+    source: ToolSource,
+    enabled: bool,
+}
+
+#[derive(Deserialize)]
+pub struct ToolPostReq {
+    tools: Vec<ToolPost>,
+}
+
+#[derive(Serialize)]
+pub struct ToolPostResponse {
+    success: bool,
+}
+
+pub async fn handle_v1_post_tools(
+    body_bytes: hyper::body::Bytes,
+) -> Result<Json<ToolPostResponse>, ScratchError> {
+    let tools = serde_json::from_slice::<ToolPostReq>(&body_bytes)
+        .map_err(|e| {
+            ScratchError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                format!("JSON problem: {}", e),
+            )
+        })?
+        .tools;
+
+    for tool in tools {
+        set_tool_config(
+            tool.source.config_path,
+            tool.name,
+            ToolConfig {
+                enabled: tool.enabled,
+                allow_parallel: None,
+            },
+        )
+        .await
+        .map_err(|e| {
+            ScratchError::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Error setting tool config: {}", e),
+            )
+        })?;
+    }
+
+    Ok(Json(ToolPostResponse { success: true }))
+}
+
+pub async fn handle_v1_tools_check_if_confirmation_needed(
+    State(app): State<AppState>,
+    body_bytes: hyper::body::Bytes,
+) -> Result<Response<Body>, ScratchError> {
+    let gcx = app.gcx.clone();
+    fn reply(pause: bool, pause_reasons: &Vec<PauseReason>) -> Response<Body> {
+        let body = serde_json::json!({
+            "pause": pause,
+            "pause_reasons": pause_reasons
+        })
+        .to_string();
+        Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "application/json")
+            .body(Body::from(body))
+            .unwrap()
+    }
+
+    let post = serde_json::from_slice::<ToolsPermissionCheckPost>(&body_bytes).map_err(|e| {
+        ScratchError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!("JSON problem: {}", e),
+        )
+    })?;
+
+    let ccx = Arc::new(AMutex::new(
+        AtCommandsContext::new_from_app(
+            app.clone(),
+            1000,
+            1,
+            false,
+            post.messages.clone(),
+            "".to_string(),
+            None,
+            "".to_string(),
+            None,
+            None,
+        )
+        .await,
+    )); // used only for should_confirm
+
+    let all_tools = get_available_tools(gcx.clone())
+        .await
+        .into_iter()
+        .map(|tool| {
+            let spec = tool.tool_description();
+            (spec.name, tool)
+        })
+        .collect::<IndexMap<_, _>>();
+
+    let mut result_messages = vec![];
+    for tool_call in &post.tool_calls {
+        let tool = match all_tools.get(&tool_call.function.name) {
+            Some(x) => x,
+            None => {
+                tracing::error!("Unknown tool: {}", tool_call.function.name);
+                // Not returning error here, because we don't want to stop the chat, it will fail later
+                // in `/chat` and provide error to the model
+                continue;
+            }
+        };
+
+        let args = match tool_call.function.parse_args() {
+            Ok(args) => args,
+            Err(e) => {
+                return Ok(reply(
+                    false,
+                    &vec![PauseReason {
+                        reason_type: PauseReasonType::Denial,
+                        command: tool_call.function.name.clone(),
+                        rule: format!("tool parsing problem: {}", e),
+                        tool_call_id: tool_call.id.clone(),
+                        integr_config_path: tool.has_config_path(),
+                    }],
+                ));
+            }
+        };
+
+        let should_confirm = match tool.match_against_confirm_deny(ccx.clone(), &args).await {
+            Ok(should_confirm) => should_confirm,
+            Err(e) => {
+                tracing::error!("Error getting tool command to match: {e}");
+                // Not returning error here, because we don't want to stop the chat, it will fail later
+                // in `/chat` and provide error to the model
+                continue;
+            }
+        };
+
+        match should_confirm.result {
+            MatchConfirmDenyResult::DENY => {
+                result_messages.push(PauseReason {
+                    reason_type: PauseReasonType::Denial,
+                    command: should_confirm.command.clone(),
+                    rule: should_confirm.rule.clone(),
+                    tool_call_id: tool_call.id.clone(),
+                    integr_config_path: tool.has_config_path(),
+                });
+            }
+            MatchConfirmDenyResult::CONFIRMATION => {
+                result_messages.push(PauseReason {
+                    reason_type: PauseReasonType::Confirmation,
+                    command: should_confirm.command.clone(),
+                    rule: should_confirm.rule.clone(),
+                    tool_call_id: tool_call.id.clone(),
+                    integr_config_path: tool.has_config_path(),
+                });
+            }
+            _ => {}
+        }
+    }
+
+    Ok(reply(!result_messages.is_empty(), &result_messages))
+}
+
+pub async fn handle_v1_tools_execute(
+    State(app): State<AppState>,
+    body_bytes: hyper::body::Bytes,
+) -> Result<Response<Body>, ScratchError> {
+    let gcx = app.gcx.clone();
+    wait_for_indexing_if_needed(gcx.clone()).await;
+
+    let tools_execute_post =
+        serde_json::from_slice::<ToolsExecutePost>(&body_bytes).map_err(|e| {
+            ScratchError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                format!("JSON problem: {}", e),
+            )
+        })?;
+
+    let tool_calls: Vec<ChatToolCall> = tools_execute_post
+        .messages
+        .last()
+        .and_then(|m| m.tool_calls.clone())
+        .unwrap_or_default();
+
+    if tool_calls.is_empty() {
+        let response = ToolExecuteResponse {
+            messages: vec![],
+            tools_ran: false,
+        };
+        let response_json = serde_json::to_string(&response).map_err(|e| {
+            ScratchError::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Response JSON problem: {}", e),
+            )
+        })?;
+        return Ok(Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "application/json")
+            .body(Body::from(response_json))
+            .unwrap());
+    }
+
+    let thread = ThreadParams {
+        id: tools_execute_post.chat_id.clone(),
+        model: tools_execute_post.model_name.clone(),
+        context_tokens_cap: Some(tools_execute_post.n_ctx),
+        ..Default::default()
+    };
+
+    let options = ExecuteToolsOptions {
+        subchat_tool_parameters: Some(tools_execute_post.subchat_tool_parameters.clone()),
+        postprocess_settings: Some(tools_execute_post.postprocess_parameters.clone()),
+        ..Default::default()
+    };
+
+    let (messages, tools_ran) = execute_tools(
+        app,
+        &tool_calls,
+        &tools_execute_post.messages,
+        &thread,
+        "agent",
+        Some(&thread.model),
+        options,
+    )
+    .await;
+
+    let response = ToolExecuteResponse {
+        messages,
+        tools_ran,
+    };
+
+    let response_json = serde_json::to_string(&response).map_err(|e| {
+        ScratchError::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Response JSON problem: {}", e),
+        )
+    })?;
+
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", "application/json")
+        .body(Body::from(response_json))
+        .unwrap())
+}

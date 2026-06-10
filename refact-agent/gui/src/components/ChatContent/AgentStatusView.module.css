@@ -1,0 +1,107 @@
+.root {
+  width: 100%;
+  overflow: hidden;
+}
+
+.stickyAlerts {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin-bottom: var(--space-2);
+}
+
+.tabsList {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.filters {
+  padding: var(--space-1) 0;
+}
+
+.tableWrap {
+  width: 100%;
+  overflow-x: auto;
+  composes: scrollbarThin from "../shared/scrollbar.module.css";
+}
+
+.table {
+  min-width: 720px;
+}
+
+.titleCell {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cardLink {
+  color: var(--accent-11);
+  text-decoration: none;
+}
+
+.cardLink:hover {
+  color: var(--accent-12);
+  text-decoration: underline;
+}
+
+.stateText {
+  white-space: nowrap;
+}
+
+.stateRunning {
+  color: var(--blue-11);
+}
+
+.stateStuck {
+  color: var(--amber-11);
+}
+
+.stateFailed {
+  color: var(--red-11);
+}
+
+.stateDone {
+  color: var(--green-11);
+}
+
+.statePaused {
+  color: var(--orange-11);
+}
+
+.actions {
+  min-width: 180px;
+}
+
+.detailsCell {
+  background: var(--gray-a2);
+}
+
+.details {
+  padding: var(--space-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.emptyState {
+  padding: var(--space-2) 0;
+}
+
+.dialogContent {
+  max-width: 520px;
+}
+
+.dialogInput {
+  min-height: 120px;
+}
+
+.commandPreview {
+  margin-top: var(--space-3);
+  padding: var(--space-2);
+  border-radius: var(--radius-2);
+  background: var(--gray-a2);
+  font-family: var(--code-font-family);
+  white-space: pre-wrap;
+  word-break: break-word;
+}

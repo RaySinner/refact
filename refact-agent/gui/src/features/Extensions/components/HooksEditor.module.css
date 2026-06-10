@@ -1,0 +1,57 @@
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.formContent {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.hookRow {
+  padding: var(--space-2);
+  border: 1px solid var(--gray-5);
+  border-radius: var(--radius-2);
+  background-color: var(--gray-1);
+}
+
+.commandTextarea {
+  min-height: 60px;
+  font-family: var(--code-font-family);
+  font-size: var(--font-size-1);
+  padding: var(--space-2);
+  border: 1px solid var(--gray-6);
+  border-radius: var(--radius-2);
+  background-color: var(--gray-2);
+  color: var(--gray-12);
+  resize: vertical;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.commandTextarea:focus {
+  outline: none;
+  border-color: var(--accent-8);
+}
+
+.rawTextarea {
+  flex: 1;
+  min-height: 300px;
+  font-family: var(--code-font-family);
+  font-size: var(--font-size-1);
+  padding: var(--space-2);
+  border: 1px solid var(--gray-6);
+  border-radius: var(--radius-2);
+  background-color: var(--gray-2);
+  color: var(--gray-12);
+  resize: vertical;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.rawTextarea:focus {
+  outline: none;
+  border-color: var(--accent-8);
+}

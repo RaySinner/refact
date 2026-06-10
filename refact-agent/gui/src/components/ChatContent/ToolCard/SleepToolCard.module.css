@@ -1,0 +1,62 @@
+.sleepCard {
+  border-left: 2px solid var(--accent-9);
+  padding-left: var(--space-2);
+}
+
+.summarySuccess {
+  color: var(--green-11);
+}
+
+.summaryInterrupted {
+  color: var(--amber-11);
+}
+
+.countdown {
+  padding: var(--space-3);
+  border: 1px solid var(--gray-a4);
+  border-radius: var(--radius-3);
+  background: var(--gray-a2);
+}
+
+.countdownText {
+  font-size: var(--font-size-5);
+  line-height: var(--line-height-5);
+}
+
+.description {
+  color: var(--gray-11);
+}
+
+.tickStream {
+  min-height: 22px;
+  padding-top: var(--space-1);
+}
+
+.tickDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent-9);
+  animation: tickBlip 1.4s ease-in-out infinite;
+}
+
+@keyframes tickBlip {
+  0% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  20% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+  100% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tickDot {
+    animation: none;
+  }
+}

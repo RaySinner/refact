@@ -1,0 +1,11 @@
+[package]
+name = "refact-tool-api"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+glob = "0.3.1"
+md5 = "0.7"

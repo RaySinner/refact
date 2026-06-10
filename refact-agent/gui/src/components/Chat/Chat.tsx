@@ -1,0 +1,143 @@
+import React, { useCallback, useState } from "react";
+import { ChatForm, ChatFormProps } from "../ChatForm";
+import { ChatContent } from "../ChatContent";
+import { Flex, Button, Card, Container } from "@radix-ui/themes";
+import { useAppSelector, useAppDispatch, useChatActions } from "../../hooks";
+import { type Config } from "../../features/Config/configSlice";
+import {
+  enableSend,
+  selectIsStreaming,
+  selectPreventSend,
+  selectChatId,
+  selectIsBuddyChat,
+} from "../../features/Chat/Thread";
+import { BuddyChatCompanion } from "../../features/Buddy";
+import { DropzoneProvider } from "../Dropzone";
+import { useCheckpoints } from "../../hooks/useCheckpoints";
+import { Checkpoints } from "../../features/Checkpoints";
+import { TaskProgressWidget } from "../TaskProgressWidget";
+import { BrowserPanel } from "../../features/Browser/BrowserPanel";
+import { BrowserContextGuard } from "../../features/Browser/BrowserContextGuard";
+import {
+  selectBrowserContextOversize,
+  selectBrowserUiOpen,
+} from "../../features/Browser/browserSlice";
+import { SkillsIndicator } from "../ChatContent/SkillsIndicator";
+
+export type ChatProps = {
+  host: Config["host"];
+  tabbed: Config["tabbed"];
+  backFromChat: () => void;
+  style?: React.CSSProperties;
+  unCalledTools: boolean;
+  maybeSendToSidebar: ChatFormProps["onClose"];
+};
+
+export const Chat: React.FC<ChatProps> = ({
+  style,
+  unCalledTools,
+  maybeSendToSidebar,
+}) => {
+  const dispatch = useAppDispatch();
+
+  const [isViewingRawJSON, setIsViewingRawJSON] = useState(false);
+  const isStreaming = useAppSelector(selectIsStreaming);
+
+  const chatId = useAppSelector(selectChatId);
+  const isBuddyChat = useAppSelector((state) =>
+    selectIsBuddyChat(state, chatId),
+  );
+  const isBrowserOpen = useAppSelector((state) =>
+    selectBrowserUiOpen(state, chatId),
+  );
+  const browserOversizeInfo = useAppSelector((state) =>
+    selectBrowserContextOversize(state, chatId),
+  );
+
+  const { submit, abort, retryFromIndex } = useChatActions();
+
+  const { shouldCheckpointsPopupBeShown } = useCheckpoints();
+
+  const preventSend = useAppSelector(selectPreventSend);
+  const onEnableSend = () => dispatch(enableSend({ id: chatId }));
+
+  const handleSubmit = useCallback(
+    (value: string, sendPolicy?: "immediate" | "after_flow") => {
+      const priority = sendPolicy === "immediate";
+      void submit(value, priority);
+      if (isViewingRawJSON) {
+        setIsViewingRawJSON(false);
+      }
+    },
+    [submit, isViewingRawJSON],
+  );
+
+  const handleAbort = useCallback(() => {
+    void abort();
+  }, [abort]);
+
+  const handleRetry = useCallback(
+    (index: number, content: Parameters<typeof retryFromIndex>[1]) => {
+      void retryFromIndex(index, content);
+    },
+    [retryFromIndex],
+  );
+
+  return (
+    <DropzoneProvider asChild>
+      <Flex
+        style={{ ...style, minHeight: 0, height: "100%" }}
+        direction="column"
+        flexGrow="1"
+        width="100%"
+        px="1"
+      >
+        {isBrowserOpen && <BrowserPanel chatId={chatId} />}
+        <Flex
+          direction="column"
+          style={{ flex: "1 1 auto", minHeight: 0, overflow: "hidden" }}
+        >
+          <ChatContent onRetry={handleRetry} onStopStreaming={handleAbort} />
+        </Flex>
+
+        <Flex direction="column" style={{ flex: "0 0 auto" }}>
+          <Container>
+            <SkillsIndicator chatId={chatId} />
+          </Container>
+
+          <Container>
+            <TaskProgressWidget />
+          </Container>
+
+          {!isBuddyChat && shouldCheckpointsPopupBeShown && <Checkpoints />}
+
+          {browserOversizeInfo && (
+            <Container>
+              <BrowserContextGuard chatId={chatId} />
+            </Container>
+          )}
+
+          {!isStreaming && preventSend && unCalledTools && (
+            <Flex py="4">
+              <Card style={{ width: "100%" }}>
+                <Flex direction="column" align="center" gap="2" width="100%">
+                  Chat was interrupted with uncalled tools calls.
+                  <Button onClick={onEnableSend}>Resume</Button>
+                </Flex>
+              </Card>
+            </Flex>
+          )}
+
+          <Container style={{ position: "relative" }}>
+            {!isBuddyChat && <BuddyChatCompanion chatId={chatId} />}
+            <ChatForm
+              key={chatId}
+              onSubmit={handleSubmit}
+              onClose={maybeSendToSidebar}
+            />
+          </Container>
+        </Flex>
+      </Flex>
+    </DropzoneProvider>
+  );
+};

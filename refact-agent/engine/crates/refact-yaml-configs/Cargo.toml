@@ -1,0 +1,18 @@
+[package]
+name = "refact-yaml-configs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+refact-core = { path = "../refact-core" }
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml = "0.9.31"
+tokio.workspace = true
+tracing.workspace = true
+rust-embed = "8.5.0"
+md5 = "0.7"
+dunce = "1.0.5"
+
+[dev-dependencies]
+tempfile.workspace = true

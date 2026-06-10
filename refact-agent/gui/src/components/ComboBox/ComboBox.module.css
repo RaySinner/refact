@@ -1,0 +1,44 @@
+.popover {
+  position: relative;
+  z-index: 50;
+  min-width: 180px;
+  max-width: 400px;
+  border-radius: max(var(--radius-2), var(--radius-full));
+  /* Force GPU compositing to fix JCEF repaint issues in JetBrains IDEs */
+  transform: translateZ(0);
+  will-change: transform;
+}
+
+.popover__scroll {
+  --scrollarea-scrollbar-vertical-margin-right: 2px;
+  max-height: min(var(--popover-available-height, 186px), 186px);
+}
+
+.popover__box {
+  overflow-y: hidden;
+  overflow-x: hidden;
+  display: flex !important;
+  flex-direction: column !important;
+  padding-top: 0px !important;
+  padding-bottom: 0px !important;
+}
+
+.item {
+  display: flex;
+  cursor: default;
+  /* TODO: negative margin ? */
+  margin: 0 -4px !important;
+  padding: 2px 4px !important;
+}
+
+.item[data-active-item] {
+  background-color: var(--accent-a5);
+}
+
+.combobox__item {
+  display: flex;
+  align-items: center !important;
+  flex-direction: row !important;
+  width: 100%;
+  overflow: hidden;
+}

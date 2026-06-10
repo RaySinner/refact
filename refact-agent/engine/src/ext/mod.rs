@@ -1,0 +1,12 @@
+pub mod competitor_import;
+pub mod config_dirs;
+pub mod extensions_marketplace;
+pub mod hooks;
+pub mod hooks_runner;
+pub mod plugins;
+pub mod skills;
+pub mod skills_context;
+pub mod skills_matcher;
+pub mod slash_commands;
+pub mod slash_expand;
+pub mod yaml_util;

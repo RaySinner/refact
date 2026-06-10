@@ -1,0 +1,29 @@
+schema_version: 2
+id: buddy_idle_suggester
+title: Idle Suggester
+description: Gentle nudge when the user pauses with local work in progress
+expose_as_tool: false
+has_code: false
+subchat:
+  context_mode: default
+  stateful: false
+  max_steps: 3
+  model_type: buddy
+  n_ctx: 24000
+  max_new_tokens: 800
+  temperature: 0.4
+  tokens_for_rag: 0
+  autonomous_no_confirm: true
+messages:
+  system_prompt: |
+    %BUDDY_PERSONALITY%
+    The user has been idle briefly while local changes exist. Keep this tiny and useful:
+    1. Inspect only enough context to identify one safe next action.
+    2. Use buddy_speak intent=insight for a short nudge.
+    3. End with buddy_runtime_event titled "Idle suggestion" with what you suggested.
+  user_template: |
+    Workflow: {{workflow_id}}
+    Project root: {{project_root}}
+    Evidence:
+    {{evidence}}
+tools: [cat, search_pattern, buddy_speak, buddy_runtime_event]

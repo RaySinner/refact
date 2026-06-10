@@ -1,0 +1,52 @@
+.root {
+  width: 100%;
+  overflow: hidden;
+}
+
+.header {
+  margin-bottom: var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--gray-a4);
+  border-radius: var(--radius-3);
+  background: var(--gray-a2);
+}
+
+.row {
+  padding: var(--space-2);
+  border: 1px solid var(--gray-a3);
+  border-radius: var(--radius-2);
+  background: var(--gray-a1);
+}
+
+.identity {
+  min-width: 0;
+}
+
+.identityText {
+  min-width: 0;
+}
+
+.star,
+.starPinned {
+  color: var(--gray-10);
+  font-size: 16px;
+  line-height: 1;
+}
+
+.starPinned {
+  color: var(--amber-11);
+}
+
+.updatedAt {
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.markdown {
+  padding: var(--space-2);
+  border: 1px solid var(--gray-a3);
+  border-radius: var(--radius-2);
+  background: var(--gray-a1);
+}

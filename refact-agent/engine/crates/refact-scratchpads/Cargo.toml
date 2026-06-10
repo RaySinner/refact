@@ -1,0 +1,19 @@
+[package]
+name = "refact-scratchpads"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+refact-core = { path = "../refact-core" }
+refact-ast = { path = "../refact-ast" }
+refact-postprocessing = { path = "../refact-postprocessing" }
+async-trait = "0.1.73"
+serde.workspace = true
+serde_json.workspace = true
+tokenizers.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+regex.workspace = true
+ropey.workspace = true
+image = "0.25.2"
+base64 = "0.22.1"

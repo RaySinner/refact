@@ -1,0 +1,57 @@
+import React from "react";
+import { Flex } from "@radix-ui/themes";
+
+import { ScrollArea } from "../../components/ScrollArea";
+import { PageWrapper } from "../../components/PageWrapper";
+import { Spinner } from "../../components/Spinner";
+import { ProvidersView } from "./ProvidersView";
+import styles from "./Providers.module.css";
+
+import { useGetConfiguredProvidersQuery } from "../../hooks/useProvidersQuery";
+
+import type { Config } from "../Config/configSlice";
+
+export type ProvidersProps = {
+  backFromProviders: () => void;
+  host: Config["host"];
+  tabbed: Config["tabbed"];
+};
+export const Providers: React.FC<ProvidersProps> = ({
+  backFromProviders,
+  host,
+}) => {
+  const { data: configuredProvidersData, isSuccess } =
+    useGetConfiguredProvidersQuery();
+
+  if (!isSuccess) return <Spinner spinning />;
+  return (
+    <PageWrapper
+      host={host}
+      style={{
+        padding: 0,
+        marginTop: 0,
+      }}
+    >
+      <ScrollArea
+        scrollbars="vertical"
+        fullHeight
+        className={styles.scrollArea}
+      >
+        <Flex
+          direction="column"
+          justify="between"
+          flexGrow="1"
+          style={{
+            width: "inherit",
+            minHeight: "100%",
+          }}
+        >
+          <ProvidersView
+            configuredProviders={configuredProvidersData.providers}
+            backFromProviders={backFromProviders}
+          />
+        </Flex>
+      </ScrollArea>
+    </PageWrapper>
+  );
+};

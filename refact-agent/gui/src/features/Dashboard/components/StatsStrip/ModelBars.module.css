@@ -1,0 +1,26 @@
+.bars {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+}
+
+.barRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  cursor: default;
+}
+
+.barFill {
+  height: 4px;
+  border-radius: 2px;
+  min-width: 4px;
+  transition: width var(--motion-slow) ease;
+}
+
+.barLabel {
+  max-width: 60px;
+  font-size: 10px;
+  color: var(--gray-10);
+}

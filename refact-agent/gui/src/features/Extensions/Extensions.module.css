@@ -1,0 +1,15 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.panelContainer {
+  composes: scrollbarThin from "../../components/shared/scrollbar.module.css";
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-top: var(--space-2);
+}

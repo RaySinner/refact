@@ -1,0 +1,350 @@
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { render, screen, waitFor, fireEvent } from "../utils/test-utils";
+import { http, HttpResponse } from "msw";
+import { server } from "../utils/mockServer";
+import { MCPOAuth } from "../components/IntegrationsView/MCPServerView/MCPOAuth";
+
+const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+
+const CONFIG_PATH =
+  "/home/user/.config/refact/integrations.d/mcp_http_myserver.yaml";
+
+const PRELOADED_STATE = {
+  config: {
+    apiKey: "test",
+    lspPort: 8001,
+    themeProps: {},
+    host: "vscode" as const,
+  },
+};
+
+function mockStatus(body: object) {
+  server.use(
+    http.get("*/v1/mcp/oauth/status", () => {
+      return HttpResponse.json(body);
+    }),
+  );
+}
+
+describe("MCPOAuth", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    openSpy.mockImplementation(() => null);
+  });
+
+  afterEach(() => {
+    openSpy.mockImplementation(() => null);
+  });
+
+  test("renders nothing when auth_type is not oauth2_pkce", async () => {
+    mockStatus({ auth_type: "bearer", authenticated: false });
+
+    render(<MCPOAuth configPath={CONFIG_PATH} />, {
+      preloadedState: PRELOADED_STATE,
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(
+      screen.queryByRole("button", { name: /Login with OAuth/i }),
+    ).toBeNull();
+    expect(screen.queryByText("Authenticated")).toBeNull();
+    expect(screen.queryByText("Not authenticated")).toBeNull();
+  });
+
+  test("renders Login button when not authenticated", async () => {
+    mockStatus({ auth_type: "oauth2_pkce", authenticated: false });
+
+    render(<MCPOAuth configPath={CONFIG_PATH} />, {
+      preloadedState: PRELOADED_STATE,
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /Login with OAuth/i }),
+      ).toBeInTheDocument();
+    });
+  });
+
+  test("shows not authenticated badge when auth_type is oauth2_pkce and not authenticated", async () => {
+    mockStatus({ auth_type: "oauth2_pkce", authenticated: false });
+
+    render(<MCPOAuth configPath={CONFIG_PATH} />, {
+      preloadedState: PRELOADED_STATE,
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Not authenticated")).toBeInTheDocument();
+    });
+  });
+
+  test("shows waiting state after login click", async () => {
+    mockStatus({ auth_type: "oauth2_pkce", authenticated: false });
+    server.use(
+      http.post("*/v1/mcp/oauth/start", () => {
+        return HttpResponse.json({
+          session_id: "test-session-123",
+          authorize_url:
+            "https://auth.example.com/authorize?code_challenge=abc",
+        });
+      }),
+    );
+
+    const { user } = render(<MCPOAuth configPath={CONFIG_PATH} />, {
+      preloadedState: PRELOADED_STATE,
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /Login with OAuth/i }),
+      ).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: /Login with OAuth/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("Waiting for authorization..."),
+      ).toBeInTheDocument();
+    });
+  });
+
+  test("shows authenticated state with logout button", async () => {
+    mockStatus({
+      auth_type: "oauth2_pkce",
+      authenticated: true,
+      expires_at: Date.now() + 3600000,
+    });
+
+    render(<MCPOAuth configPath={CONFIG_PATH} />, {
+      preloadedState: PRELOADED_STATE,
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Authenticated")).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /Logout/i }),
+      ).toBeInTheDocument();
+    });
+  });
+
+  test("shows session expired badge when expires_at is in the past", async () => {
+    mockStatus({
+      auth_type: "oauth2_pkce",
+      authenticated: false,
+      expires_at: Date.now() - 10000,
+    });
+
+    render(<MCPOAuth configPath={CONFIG_PATH} />, {
+      preloadedState: PRELOADED_STATE,
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Session expired")).toBeInTheDocument();
+      expect(
+        screen.getByText(/Session expired, please re-login/i),
+      ).toBeInTheDocument();
+    });
+  });
+
+  test("manual code entry shows Submit Code button in waiting state", async () => {
+    mockStatus({ auth_type: "oauth2_pkce", authenticated: false });
+    server.use(
+      http.post("*/v1/mcp/oauth/start", () => {
+        return HttpResponse.json({
+          session_id: "test-session-456",
+          authorize_url: "https://auth.example.com/authorize",
+        });
+      }),
+    );
+
+    const { user } = render(<MCPOAuth configPath={CONFIG_PATH} />, {
+      preloadedState: PRELOADED_STATE,
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /Login with OAuth/i }),
+      ).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: /Login with OAuth/i }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Authorization code")).toBeInTheDocument();
+    });
+
+    const codeInput = screen.getByLabelText("Authorization code");
+    fireEvent.change(codeInput, { target: { value: "test-auth-code" } });
+
+    expect(
+      screen.getByRole("button", { name: /Submit Code/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Submit Code/i }),
+    ).not.toBeDisabled();
+  });
+
+  test("logout calls logout endpoint", async () => {
+    let logoutCalled = false;
+
+    mockStatus({
+      auth_type: "oauth2_pkce",
+      authenticated: true,
+    });
+    server.use(
+      http.post("*/v1/mcp/oauth/logout", () => {
+        logoutCalled = true;
+        return HttpResponse.json({ success: true });
+      }),
+    );
+
+    const { user } = render(<MCPOAuth configPath={CONFIG_PATH} />, {
+      preloadedState: PRELOADED_STATE,
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /Logout/i }),
+      ).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: /Logout/i }));
+
+    await waitFor(() => {
+      expect(logoutCalled).toBe(true);
+    });
+  });
+
+  test("shows error message on failed login start", async () => {
+    mockStatus({ auth_type: "oauth2_pkce", authenticated: false });
+    server.use(
+      http.post("*/v1/mcp/oauth/start", () => {
+        return HttpResponse.json(
+          { detail: "Server unreachable" },
+          { status: 500 },
+        );
+      }),
+    );
+
+    const { user } = render(<MCPOAuth configPath={CONFIG_PATH} />, {
+      preloadedState: PRELOADED_STATE,
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /Login with OAuth/i }),
+      ).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: /Login with OAuth/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Failed to start OAuth/i)).toBeInTheDocument();
+    });
+  });
+
+  test("cancel button shown during waiting state", async () => {
+    mockStatus({ auth_type: "oauth2_pkce", authenticated: false });
+    server.use(
+      http.post("*/v1/mcp/oauth/start", () => {
+        return HttpResponse.json({
+          session_id: "test-session-cancel-show",
+          authorize_url: "https://auth.example.com/authorize",
+        });
+      }),
+    );
+
+    const { user } = render(<MCPOAuth configPath={CONFIG_PATH} />, {
+      preloadedState: PRELOADED_STATE,
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /Login with OAuth/i }),
+      ).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: /Login with OAuth/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /Cancel/i }),
+      ).toBeInTheDocument();
+    });
+  });
+
+  test("cancel calls backend with session_id", async () => {
+    let cancelledSessionId: string | null = null;
+
+    mockStatus({ auth_type: "oauth2_pkce", authenticated: false });
+    server.use(
+      http.post("*/v1/mcp/oauth/start", () => {
+        return HttpResponse.json({
+          session_id: "test-session-to-cancel",
+          authorize_url: "https://auth.example.com/authorize",
+        });
+      }),
+      http.post("*/v1/mcp/oauth/cancel", async ({ request }) => {
+        const body = (await request.json()) as { session_id: string };
+        cancelledSessionId = body.session_id;
+        return HttpResponse.json({ cancelled: true });
+      }),
+    );
+
+    const { user } = render(<MCPOAuth configPath={CONFIG_PATH} />, {
+      preloadedState: PRELOADED_STATE,
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /Login with OAuth/i }),
+      ).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: /Login with OAuth/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("Waiting for authorization..."),
+      ).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: /Cancel/i }));
+
+    await waitFor(() => {
+      expect(cancelledSessionId).toBe("test-session-to-cancel");
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Not authenticated")).toBeInTheDocument();
+    });
+  });
+
+  test("polling stops when authenticated", async () => {
+    let callCount = 0;
+
+    server.use(
+      http.get("*/v1/mcp/oauth/status", () => {
+        callCount++;
+        return HttpResponse.json({
+          auth_type: "oauth2_pkce",
+          authenticated: true,
+          expires_at: Date.now() + 3600000,
+          scopes: [],
+        });
+      }),
+    );
+
+    render(<MCPOAuth configPath={CONFIG_PATH} />, {
+      preloadedState: PRELOADED_STATE,
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Authenticated")).toBeInTheDocument();
+    });
+
+    const countAfterAuth = callCount;
+    await new Promise((r) => setTimeout(r, 100));
+    expect(callCount).toBe(countAfterAuth);
+  });
+});

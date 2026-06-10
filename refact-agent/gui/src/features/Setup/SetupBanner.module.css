@@ -1,0 +1,7 @@
+.banner {
+  margin: 0 var(--space-2);
+}
+
+.text {
+  white-space: pre-line;
+}

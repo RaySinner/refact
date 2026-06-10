@@ -1,0 +1,54 @@
+schema_version: 2
+id: kg_enrich
+title: Knowledge Graph Enrich
+description: Enrich knowledge graph entries with metadata
+expose_as_tool: false
+has_code: false
+
+subchat:
+  context_mode: bare
+  stateful: false
+  model_type: light
+  n_ctx: 32000
+  max_new_tokens: 4096
+  temperature: 0.0
+  tokens_for_rag: 0
+
+messages:
+  user_template: |
+    Analyze the following knowledge content and extract metadata.
+
+    CONTENT:
+    {content}
+
+    EXTRACTED ENTITIES (backticked identifiers found):
+    {entities}
+
+    CANDIDATE FILES (from workspace, pick only relevant ones):
+    {candidate_files}
+
+    CANDIDATE RELATED DOCS (from knowledge base, pick only relevant ones):
+    {candidate_docs}
+
+    Return a JSON object with:
+    - title: a concise title for this knowledge (max 80 chars)
+    - tags: array of 6-12 precise, lowercase tags for semantic search and KG linking
+    - filenames: array of file paths this knowledge relates to (only from candidates)
+    - kind: one of "code", "decision", "domain", "process" (based on content)
+    - links: array of related doc IDs (only from candidates)
+    - review_after_days: suggested review period (90 for code/decision, 180 for domain)
+
+    Tag rules:
+    - Prefer namespaced tags that describe why memories should link, not generic labels.
+    - Use `domain:<area>` for product/problem areas, e.g. `domain:buddy`, `domain:knowledge-graph`, `domain:browser-automation`.
+    - Use `component:<subsystem>` for code subsystems, e.g. `component:buddy-scheduler`, `component:subchat`, `component:trajectory-persistence`, `component:knowledge-index`.
+    - Use `workflow:<flow>` for repeated processes, e.g. `workflow:background-chat`, `workflow:memory-enrichment`, `workflow:patch-verification`.
+    - Use `tool:<tool-name>` for tool-specific memories, e.g. `tool:playwright-mcp`, `tool:chrome`, `tool:apply-patch`.
+    - Use `verification:<check>` for validation memories, e.g. `verification:cargo-check`, `verification:git-sanity`, `verification:eslint`.
+    - Use `language:<language>` and `framework:<framework>` only when they materially improve retrieval.
+    - Avoid standalone broad tags like `insight`, `lesson`, `pattern`, `trajectory`, `frontend`, `backend`, `ui`, or `bug` unless the caller already supplied them.
+    - Tags must be stable slugs using `:` namespaces and `-` separators; no spaces, no underscores.
+
+    JSON only, no explanation:
+
+tools: []

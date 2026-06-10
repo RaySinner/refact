@@ -1,0 +1,74 @@
+fields:
+  command:
+    f_type: string
+    f_desc: "For local MCP servers: the command to execute, e.g. `npx -y @org/mcp-server`. Leave empty if using a URL."
+  url:
+    f_type: string
+    f_desc: "For remote MCP servers: the HTTP endpoint URL, e.g. 'https://api.example.com/mcp'. Leave empty if using a command."
+  env:
+    f_type: string_to_string_map
+    f_desc: "Environment variables (for command-based servers)."
+  headers:
+    f_type: string_to_string_map
+    f_desc: "HTTP headers (for URL-based servers)."
+    f_default:
+      User-Agent: "Refact.ai (+https://github.com/smallcloudai/refact)"
+      Accept: "application/json, text/event-stream"
+    f_extra: true
+  auth_type:
+    f_type: string_short
+    f_desc: "Authentication: none, bearer, or oauth2 (for URL-based servers)."
+    f_default: "none"
+    f_extra: true
+  bearer_token:
+    f_type: string_long
+    f_desc: "Bearer token (for auth_type=bearer)."
+    f_default: ""
+    f_extra: {"password": true}
+  oauth2_client_id:
+    f_type: string_short
+    f_desc: "OAuth2 client ID."
+    f_default: ""
+    f_extra: true
+  oauth2_client_secret:
+    f_type: string_long
+    f_desc: "OAuth2 client secret."
+    f_default: ""
+    f_extra: {"password": true}
+  oauth2_token_url:
+    f_type: string_long
+    f_desc: "OAuth2 token endpoint."
+    f_default: ""
+    f_extra: true
+  oauth2_scopes:
+    f_type: string_long
+    f_desc: "OAuth2 scopes (comma-separated)."
+    f_default: ""
+    f_extra: true
+  init_timeout:
+    f_type: string_short
+    f_desc: "Init timeout seconds."
+    f_default: "60"
+    f_extra: true
+  request_timeout:
+    f_type: string_short
+    f_desc: "Request timeout seconds."
+    f_default: "30"
+    f_extra: true
+description: |
+  Add an MCP (Model Context Protocol) server. Enter a command for local servers or a URL for remote servers.
+  The transport type (stdio vs HTTP) is determined automatically.
+available:
+  on_your_laptop_possible: true
+  when_isolated_possible: true
+confirmation:
+  ask_user_default: ["*"]
+  deny_default: []
+smartlinks:
+  - sl_label: "Test"
+    sl_chat:
+      - role: "user"
+        content: >
+          🔧 Your job is to test %CURRENT_CONFIG%. Tools that this MCP server has created should be visible to you. Don't search anything, it should be visible as
+          a tools already. Run one and express happiness. If something does wrong, or you don't see the tools, ask user if they want to fix it by rewriting the config.
+    sl_enable_only_with_tool: true

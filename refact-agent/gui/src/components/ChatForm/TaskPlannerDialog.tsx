@@ -1,0 +1,288 @@
+import React, { useCallback, useState } from "react";
+import {
+  Dialog,
+  Flex,
+  Text,
+  Button,
+  Callout,
+  Badge,
+  Spinner,
+} from "@radix-ui/themes";
+import { ExclamationTriangleIcon } from "@radix-ui/react-icons";
+import {
+  createChatWithId,
+  requestSseRefresh,
+} from "../../features/Chat/Thread/actions";
+import {
+  openTask,
+  addPlannerChat,
+  setTaskActiveChat,
+} from "../../features/Tasks/tasksSlice";
+import { push } from "../../features/Pages/pagesSlice";
+import { useAppDispatch, useAppSelector } from "../../hooks";
+import { selectConfig, selectApiKey } from "../../features/Config/configSlice";
+import {
+  selectMessages,
+  selectCurrentThreadId,
+  selectThreadWorktree,
+} from "../../features/Chat/Thread";
+import { regenerate } from "../../services/refact/chatCommands";
+import { dialogNonInteractiveCloseHandlers } from "../../utils/dialogPointerClose";
+import {
+  useCreateTaskMutation,
+  useDeleteTaskMutation,
+  useCreatePlannerChatMutation,
+  useCreatePlannerChatFromTransitionMutation,
+} from "../../services/refact/tasks";
+import styles from "./ModeTransitionDialog.module.css";
+
+function extractErrorMessage(err: unknown): string {
+  if (err && typeof err === "object") {
+    const obj = err as Record<string, unknown>;
+    if (obj.data && typeof obj.data === "object") {
+      const data = obj.data as Record<string, unknown>;
+      if (typeof data.detail === "string") return data.detail;
+    }
+    if (typeof obj.data === "string") return obj.data;
+    if (typeof obj.message === "string") return obj.message;
+  }
+  if (err instanceof Error) return err.message;
+  return "Failed to create task planner";
+}
+
+type TaskPlannerDialogProps = {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** Present when opened from inside a task workspace; otherwise a new task is created */
+  taskId?: string;
+  /** Description of the task_planner mode, used for context-transfer analysis */
+  targetModeDescription?: string;
+};
+
+type PendingTask = { id: string; name: string };
+
+export const TaskPlannerDialog: React.FC<TaskPlannerDialogProps> = ({
+  open,
+  onOpenChange,
+  taskId,
+  targetModeDescription,
+}) => {
+  const dispatch = useAppDispatch();
+  const config = useAppSelector(selectConfig);
+  const apiKey = useAppSelector(selectApiKey);
+  const messages = useAppSelector(selectMessages);
+  const sourceChatId = useAppSelector(selectCurrentThreadId);
+  const sourceWorktree = useAppSelector(selectThreadWorktree);
+
+  const [error, setError] = useState<string | null>(null);
+  // Cache the created task so retries after a planner-creation failure don't
+  // create more tasks. Persists across cancel/reopen so we don't leak tasks
+  // that the user gave up on; cleared only on success or explicit rollback.
+  const [pendingTask, setPendingTask] = useState<PendingTask | null>(null);
+
+  const [createTask, { isLoading: isCreatingTask }] = useCreateTaskMutation();
+  const [deleteTask] = useDeleteTaskMutation();
+  const [createPlannerChat, { isLoading: isCreatingPlanner }] =
+    useCreatePlannerChatMutation();
+  const [createFromTransition, { isLoading: isTransitioning }] =
+    useCreatePlannerChatFromTransitionMutation();
+
+  const isInTaskWorkspace = taskId !== undefined;
+  const hasMessages = messages.length > 0 && Boolean(sourceChatId);
+  const isLoading = isCreatingTask || isCreatingPlanner || isTransitioning;
+
+  const handleApply = useCallback(async () => {
+    setError(null);
+    const now = new Date().toISOString();
+    try {
+      // Resolve / lazily create the target task. We track whether we just
+      // created it here so the success path can register it with the UI exactly
+      // once — including on retries after a previous planner failure.
+      let resolved: PendingTask;
+      let createdHere = false;
+      if (isInTaskWorkspace && taskId) {
+        resolved = { id: taskId, name: "" };
+      } else if (pendingTask) {
+        resolved = pendingTask;
+        createdHere = true;
+      } else {
+        const task = await createTask({ name: "New Task" }).unwrap();
+        resolved = { id: task.id, name: task.name };
+        setPendingTask(resolved);
+        createdHere = true;
+      }
+
+      // Create the planner chat — task-owned, with context if available
+      let newChatId: string;
+      if (hasMessages && sourceChatId) {
+        const result = await createFromTransition({
+          taskId: resolved.id,
+          sourceChatId,
+          targetModeDescription: targetModeDescription ?? "",
+        }).unwrap();
+        newChatId = result.new_chat_id;
+      } else {
+        const result = await createPlannerChat(resolved.id).unwrap();
+        newChatId = result.chat_id;
+      }
+
+      // Wire up Redux thread with full task metadata — same as TaskWorkspace.handleNewPlanner
+      dispatch(
+        createChatWithId({
+          id: newChatId,
+          title: "",
+          isTaskChat: true,
+          mode: "TASK_PLANNER",
+          taskMeta: {
+            task_id: resolved.id,
+            role: "planner",
+            planner_chat_id: newChatId,
+          },
+          worktree: sourceWorktree,
+        }),
+      );
+      dispatch(requestSseRefresh({ chatId: newChatId }));
+
+      // Always openTask before addPlannerChat so the planner registration
+      // hits an existing entry in the slice — necessary on retry too.
+      if (createdHere) {
+        dispatch(openTask({ id: resolved.id, name: resolved.name }));
+      }
+      dispatch(
+        addPlannerChat({
+          taskId: resolved.id,
+          planner: { id: newChatId, title: "", createdAt: now, updatedAt: now },
+        }),
+      );
+      dispatch(
+        setTaskActiveChat({
+          taskId: resolved.id,
+          activeChat: { type: "planner", chatId: newChatId },
+        }),
+      );
+
+      if (!isInTaskWorkspace) {
+        dispatch(push({ name: "task workspace", taskId: resolved.id }));
+      }
+
+      // Successful — clear the pending task so a subsequent open creates fresh
+      setPendingTask(null);
+      onOpenChange(false);
+
+      // Kick off generation if context was transferred
+      if (hasMessages && sourceChatId) {
+        void regenerate(newChatId, config, apiKey ?? undefined);
+      }
+    } catch (err) {
+      setError(extractErrorMessage(err));
+    }
+  }, [
+    isInTaskWorkspace,
+    taskId,
+    pendingTask,
+    hasMessages,
+    sourceChatId,
+    targetModeDescription,
+    createTask,
+    createPlannerChat,
+    createFromTransition,
+    dispatch,
+    onOpenChange,
+    config,
+    apiKey,
+    sourceWorktree,
+  ]);
+
+  const handleOpenChange = useCallback(
+    (newOpen: boolean) => {
+      if (!newOpen) {
+        // If the user is closing after a failed attempt with a half-created
+        // task, roll it back so we don't leak orphan tasks.
+        if (pendingTask) {
+          void deleteTask(pendingTask.id);
+        }
+        setError(null);
+        setPendingTask(null);
+      }
+      onOpenChange(newOpen);
+    },
+    [onOpenChange, pendingTask, deleteTask],
+  );
+
+  const title = isInTaskWorkspace ? "New Planner" : "Switch to Task Planner";
+  const description = isInTaskWorkspace
+    ? hasMessages
+      ? "The assistant will analyze the current chat and create a new planner chat with the relevant context."
+      : "Create a new planner chat in this task."
+    : hasMessages
+      ? "The assistant will analyze your conversation, create a new task, and start a planner chat with the relevant context."
+      : "Create a new task and open the Task Planner.";
+  const buttonLabel = isInTaskWorkspace ? "Create Planner" : "Create Task";
+  const loadingLabel = isCreatingTask
+    ? "Creating task..."
+    : isTransitioning
+      ? "Analyzing conversation..."
+      : "Creating planner...";
+
+  return (
+    <Dialog.Root open={open} onOpenChange={handleOpenChange}>
+      <Dialog.Content
+        maxWidth="500px"
+        className={styles.dialogContent}
+        {...dialogNonInteractiveCloseHandlers(() => handleOpenChange(false))}
+      >
+        <Dialog.Title>
+          <Flex align="center" gap="2">
+            <Text>{title}</Text>
+            <Badge color="blue">task_planner</Badge>
+          </Flex>
+        </Dialog.Title>
+
+        <Dialog.Description size="2" color="gray">
+          {description}
+        </Dialog.Description>
+
+        {error && (
+          <Callout.Root color="red" className={styles.callout}>
+            <Callout.Icon>
+              <ExclamationTriangleIcon />
+            </Callout.Icon>
+            <Callout.Text>{error}</Callout.Text>
+          </Callout.Root>
+        )}
+
+        {isLoading && (
+          <Flex
+            align="center"
+            justify="center"
+            gap="2"
+            className={styles.loadingContainer}
+          >
+            <Spinner />
+            <Text color="gray">{loadingLabel}</Text>
+          </Flex>
+        )}
+
+        <Flex gap="3" mt="4" justify="end">
+          <Dialog.Close>
+            <Button variant="soft" color="gray" disabled={isLoading}>
+              Cancel
+            </Button>
+          </Dialog.Close>
+          <Button onClick={() => void handleApply()} disabled={isLoading}>
+            {isLoading ? (
+              <>
+                <Spinner size="1" />
+                {loadingLabel}
+              </>
+            ) : (
+              buttonLabel
+            )}
+          </Button>
+        </Flex>
+      </Dialog.Content>
+    </Dialog.Root>
+  );
+};
+
+TaskPlannerDialog.displayName = "TaskPlannerDialog";

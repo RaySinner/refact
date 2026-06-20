@@ -6,7 +6,7 @@
 
 import { spawnSync } from "child_process";
 import { existsSync, readdirSync, copyFileSync, mkdirSync } from "fs";
-import { dirname, join } from "path";
+import { dirname, join, relative } from "path";
 import { fileURLToPath } from "url";
 import * as fs from "fs";
 
@@ -18,7 +18,7 @@ const VSCODE_DIR = join(ROOT, "plugins", "vscode");
 const VSCODE_ASSETS = join(VSCODE_DIR, "assets");
 
 const IS_WIN = process.platform === "win32";
-const BINARY_SRC = join(ENGINE_DIR, "target", "release", "refact-lsp" + (IS_WIN ? ".exe" : ""));
+let BINARY_SRC = join(ENGINE_DIR, "target", "release", "refact-lsp" + (IS_WIN ? ".exe" : ""));
 const BINARY_DST = join(VSCODE_ASSETS, IS_WIN ? "refact-lsp.exe" : "refact-lsp");
 
 function cmdExt(base) {
@@ -61,20 +61,35 @@ if (tarballs.length !== 1) {
 const tarballPath = join(GUI_DIR, tarballs[0]);
 
 // 2. Build / use LSP engine
-if (!existsSync(BINARY_SRC)) {
+if (existsSync(BINARY_SRC)) {
+  console.log("\n[6/6 Engine] Using existing compiled binary");
+} else if (existsSync(BINARY_DST)) {
+  console.log("\n[6/6 Engine] Using existing packaged binary");
+  BINARY_SRC = BINARY_DST;
+} else {
   console.log("\n[6/6 Engine] Building Rust LSP engine (cold ~15-30 min)...");
   run("cargo build", ENGINE_DIR, "cargo", ["build", "--release"], {
     REFACT_SKIP_GUI_BUILD: "1",
   });
-} else {
-  console.log("\n[6/6 Engine] Using existing binary");
 }
 
 mkdirSync(VSCODE_ASSETS, { recursive: true });
-copyFileSync(BINARY_SRC, BINARY_DST);
-console.log(`Copied engine binary to ${BINARY_DST}`);
+if (BINARY_SRC !== BINARY_DST) {
+  copyFileSync(BINARY_SRC, BINARY_DST);
+  console.log(`Copied engine binary to ${BINARY_DST}`);
+} else {
+  console.log(`Engine binary already present at ${BINARY_DST}`);
+}
 
 // 3. VSCode: extension
+// Align package.json with the packaged tarball so npm ci can use the existing lock entry.
+const vscodePkgPath = join(VSCODE_DIR, "package.json");
+const vscodePkg = JSON.parse(fs.readFileSync(vscodePkgPath, "utf8"));
+if (vscodePkg.dependencies && vscodePkg.dependencies["refact-chat-js"]) {
+  vscodePkg.dependencies["refact-chat-js"] = "file:" + relative(VSCODE_DIR, tarballPath).replace(/\\/g, "/");
+  fs.writeFileSync(vscodePkgPath, JSON.stringify(vscodePkg, null, "\t") + "\n");
+}
+
 run("7/8 VSCode: npm ci", VSCODE_DIR, cmdExt("npm"), ["ci"], {}, true);
 run("8/8 VSCode: install GUI", VSCODE_DIR, cmdExt("npm"), ["install", tarballPath, "--save-exact"], {}, true);
 run("TypeScript compile", VSCODE_DIR, cmdExt("npm"), ["run", "compile"], {}, true);

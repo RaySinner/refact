@@ -8,6 +8,7 @@ import * as net from 'net';
 import * as os from 'os';
 import { register_commands } from './rconsoleCommands';
 import { QuickActionProvider } from './quickProvider';
+import { backendReadyForStatus, type RefactBackendConnectionStatus } from './backendStatus';
 
 
 const DEBUG_HTTP_PORT = 8001;
@@ -16,6 +17,7 @@ const DEBUG_LSP_PORT = 8002;
 
 export class RustBinaryBlob {
     public asset_path: string;
+    public binary_cache_path: string = "";
     public cmdline: string[] = [];
     public port: number = 0;
     public lsp_disposable: vscode.Disposable | undefined = undefined;
@@ -25,9 +27,12 @@ export class RustBinaryBlob {
     public ping_response: string = "";
     private lifecycleQueue: Promise<void> = Promise.resolve();
     private lifecycleGeneration: number = 0;
+    private attachState: RefactBackendConnectionStatus = "connecting";
 
-    constructor(asset_path: string) {
+    constructor(asset_path: string, binary_cache_path?: string) {
         this.asset_path = asset_path;
+        this.binary_cache_path = binary_cache_path ?? join(asset_path, "refact-bin");
+        this.set_attach_state("connecting");
         this.lsp_client_options = {
             documentSelector: [{ scheme: 'file', language: '*' }],
             diagnosticCollectionName: 'RUST LSP',
@@ -91,6 +96,28 @@ export class RustBinaryBlob {
             }
         }
         return undefined;
+    }
+
+    public backend_status(): RefactBackendConnectionStatus {
+        return this.attachState;
+    }
+
+    public backend_ready(): boolean {
+        return backendReadyForStatus(this.attachState);
+    }
+
+    public set_backend_status_for_test(status: RefactBackendConnectionStatus) {
+        this.set_attach_state(status);
+    }
+
+    private set_attach_state(status: RefactBackendConnectionStatus) {
+        if (this.attachState === status) {
+            return;
+        }
+        this.attachState = status;
+        global.side_panel?.handleSettingsChange();
+        global.open_chat_tabs?.forEach(tab => tab.handleSettingsChange());
+        global.status_bar?.choose_color();
     }
 
     private default_mdns_host(): string {
@@ -263,6 +290,7 @@ export class RustBinaryBlob {
         }
         await fetchH2.disconnectAll();
         global.have_caps = false;
+        this.set_attach_state("connecting");
         global.status_bar.choose_color();
     }
 
@@ -410,6 +438,9 @@ export class RustBinaryBlob {
         // A little doubt remains about the http port, but it's very likely there's no race.
         await this.read_caps();
         await this.fetch_toolbox_config();
+        if (generation === this.lifecycleGeneration) {
+            this.set_attach_state("ready");
+        }
     }
 
     public async start_lsp_socket(generation: number = this.lifecycleGeneration) {
@@ -452,6 +483,7 @@ export class RustBinaryBlob {
                     return;
                 }
                 console.log(`RUST DEBUG /START`);
+                this.set_attach_state("ready");
             } catch (e) {
                 console.log(`RUST DEBUG START PROBLEM e=${e}`);
             }

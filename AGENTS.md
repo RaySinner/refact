@@ -16,6 +16,7 @@ AI coding assistant: Rust engine (LSP/HTTP server) + React chat UI + IDE plugins
 | Codex workspace | `.codex/` | Codex config/data | checked for repo-specific guidance when present |
 | Root `.gitignore` | `.gitignore` | repository ignore rules | includes local editor and build output exclusions; check before adding new generated files |
 | JetBrains local release helper | `build-jb-plugin-local.sh` | shell script | local JetBrains packaging helper; root `.gitignore` excludes copied `/refact-*.zip` archives |
+| Build scripts | `scripts/` | Node.js MJS | `build-vscode.mjs` — full VSCode extension build (GUI + engine + packaging). Run with `node scripts/build-vscode.mjs` from repo root |
 
 Sub-project `AGENTS.md` files contain detailed architecture, patterns, and checklists. Read them before working in those directories.
 

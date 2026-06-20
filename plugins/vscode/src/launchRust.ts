@@ -157,8 +157,9 @@ export class RustBinaryBlob {
                     return;
                 }
                 const httpHost = vscode.workspace.getConfiguration().get<string>("refactai.httpHost")?.trim() || "0.0.0.0";
+                const lspBinary = process.platform === "win32" ? "refact-lsp.exe" : "refact-lsp";
                 let new_cmdline: string[] = [
-                    join(this.asset_path, "refact-lsp"),
+                    join(this.asset_path, lspBinary),
                     "--ping-message", ping_response,
                     "--http-port", port.toString(),
                     "--http-host", httpHost,

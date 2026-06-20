@@ -123,7 +123,7 @@ const ChatCrashReportPanel: React.FC = () => {
   })();
   const threadPath = pathQuery.data?.path ?? null;
   const pathValue = pathStatus ?? (isLoadingPath ? "Loading…" : threadPath);
-  const copyablePathValue = pathStatus || isLoadingPath ? null : threadPath;
+  const copyablePathValue = pathStatus != null || isLoadingPath ? null : threadPath;
   const canCopyWholeThread = Boolean(chatId) && !isCopyingAll;
   const isFetchingTrajectory =
     trajectoryQuery.isLoading || trajectoryQuery.isFetching;

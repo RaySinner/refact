@@ -4,19 +4,35 @@ The VS Code plugin now lives in the Refact monorepo under `plugins/vscode`.
 
 ## Setup
 
+### Quick build (one command)
+
 ```bash
-cd refact-agent/gui
-npm ci
-npm run build
-npm pack
-cd ../../plugins/vscode
-npm ci
-npm install ../../refact-agent/gui/refact-chat-js-*.tgz --no-save
-npm run compile
-npm run lint
+node scripts/build-vscode.mjs
 ```
 
-For local packaging, build or copy the engine binary into `plugins/vscode/assets/`.
+### Manual steps
+
+```bash
+# 1. Build GUI
+cd refact-agent/gui
+npm ci
+# On Windows use cmd so NODE_OPTIONS is parsed correctly:
+cmd /c "set NODE_OPTIONS=--max-old-space-size=16384 && npx tsc --noEmit && npx vite build && npx vite build -c vite.node.config.ts"
+npm pack
+
+# 2. Build engine
+cd ../engine
+set REFACT_SKIP_GUI_BUILD=1 && cargo build --release
+
+# 3. Package extension
+cd ../../plugins/vscode
+npm ci
+npm install ../../refact-agent/gui/refact-chat-js-*.tgz --save-exact
+npm run compile
+vsce package --target win32-x64
+```
+
+For local packaging, the engine binary needs to be at `plugins/vscode/assets/refact-lsp`.
 
 ## Issues
 

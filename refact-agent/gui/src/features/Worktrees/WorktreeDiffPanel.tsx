@@ -1,10 +1,6 @@
 import React from "react";
 import { skipToken } from "@reduxjs/toolkit/query";
-<<<<<<< HEAD
-import { Badge, Button, Dialog, Flex, Spinner, Text } from "@radix-ui/themes";
-=======
 import { Button, Dialog, Badge } from "../../components/ui";
->>>>>>> upstream/main
 import {
   useGetWorktreeDiffQuery,
   type WorktreeMeta,
@@ -43,15 +39,6 @@ function statusLabel(status?: WorktreeStatus | null): string {
   return "clean";
 }
 
-<<<<<<< HEAD
-function statusColor(
-  status?: WorktreeStatus | null,
-): "green" | "amber" | "red" | "gray" {
-  if (!status) return "gray";
-  if ((status.deleted ?? false) || !status.path_exists) return "red";
-  if ((status.conflicted ?? false) || status.dirty) return "amber";
-  return "green";
-=======
 function statusTone(
   status?: WorktreeStatus | null,
 ): React.ComponentProps<typeof Badge>["tone"] {
@@ -59,7 +46,6 @@ function statusTone(
   if ((status.deleted ?? false) || !status.path_exists) return "danger";
   if ((status.conflicted ?? false) || status.dirty) return "warning";
   return "success";
->>>>>>> upstream/main
 }
 
 function statsText(stats: {
@@ -142,129 +128,6 @@ export const WorktreeDiffPanel: React.FC<WorktreeDiffPanelProps> = ({
   const status = data?.status ?? record?.status ?? worktree?.status;
 
   return (
-<<<<<<< HEAD
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Content
-        className={styles.diffDialog}
-        {...(closeOnNonInteractiveContentClick
-          ? dialogNonInteractiveCloseHandlers(() => onOpenChange(false))
-          : {})}
-      >
-        <Dialog.Title>Worktree diff</Dialog.Title>
-        <Dialog.Description size="2" color="gray">
-          Review changes for {label}
-        </Dialog.Description>
-
-        <Flex direction="column" gap="3" mt="3">
-          <Flex gap="2" wrap="wrap" align="center">
-            <Badge color={statusColor(status)} variant="soft">
-              {statusLabel(status)}
-            </Badge>
-            {data?.branch && (
-              <Badge color="gray" variant="soft">
-                {data.branch}
-              </Badge>
-            )}
-            {data?.base_branch && (
-              <Badge color="gray" variant="soft">
-                target {data.base_branch}
-              </Badge>
-            )}
-          </Flex>
-
-          {isFetching && (
-            <Flex align="center" gap="2">
-              <Spinner size="1" />
-              <Text size="2" color="gray">
-                Loading worktree diff...
-              </Text>
-            </Flex>
-          )}
-
-          {error && (
-            <Flex direction="column" gap="2" className={styles.warningBox}>
-              <Text size="2" color="red">
-                Could not load worktree diff.
-              </Text>
-              <Text size="1" color="gray">
-                {worktreeErrorText(error)}
-              </Text>
-              <Button
-                type="button"
-                size="1"
-                variant="soft"
-                onClick={() => void refetch()}
-              >
-                Retry
-              </Button>
-            </Flex>
-          )}
-
-          {data && (
-            <>
-              <Text size="2" color="gray">
-                {statsText(data.stats)}
-              </Text>
-
-              {data.patch_truncated && (
-                <Text size="2" color="amber" className={styles.warningBox}>
-                  Patch preview was truncated by the backend.
-                </Text>
-              )}
-
-              <div className={styles.diffFileList}>
-                {data.files.length === 0 ? (
-                  <Text size="2" color="gray">
-                    No changed files reported.
-                  </Text>
-                ) : (
-                  data.files.map((file) => (
-                    <Flex
-                      key={`${file.source}-${file.path}`}
-                      justify="between"
-                      align="center"
-                      gap="2"
-                      className={styles.diffFileItem}
-                    >
-                      <Flex
-                        direction="column"
-                        gap="1"
-                        className={styles.itemTitle}
-                      >
-                        <Text size="2" weight="medium">
-                          {file.path}
-                        </Text>
-                        <Text size="1" color="gray">
-                          {file.source} · {file.status}
-                        </Text>
-                      </Flex>
-                      {fileDelta(file.additions, file.deletions) && (
-                        <Text size="1" color="gray">
-                          {fileDelta(file.additions, file.deletions)}
-                        </Text>
-                      )}
-                    </Flex>
-                  ))
-                )}
-              </div>
-
-              <div className={styles.patchScroller}>
-                <RichPatchPreview patch={data.patch} />
-              </div>
-            </>
-          )}
-        </Flex>
-
-        <Flex className={styles.modalActions}>
-          <Dialog.Close>
-            <Button type="button" variant="soft" color="gray">
-              Close
-            </Button>
-          </Dialog.Close>
-        </Flex>
-      </Dialog.Content>
-    </Dialog.Root>
-=======
     <Dialog open={open} onOpenChange={onOpenChange}>
       <Dialog.Content className={styles.diffDialog} maxWidth="900px">
         <div
@@ -359,7 +222,6 @@ export const WorktreeDiffPanel: React.FC<WorktreeDiffPanelProps> = ({
         </div>
       </Dialog.Content>
     </Dialog>
->>>>>>> upstream/main
   );
 };
 

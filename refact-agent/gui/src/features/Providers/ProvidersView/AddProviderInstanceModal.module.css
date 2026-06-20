@@ -1,21 +1,3 @@
-<<<<<<< HEAD
-.dialogContent {
-  max-width: 420px;
-}
-
-.fieldLabel {
-  color: var(--gray-11);
-  font-size: var(--font-size-1);
-  font-weight: var(--font-weight-medium);
-}
-
-.errorText {
-  color: var(--red-11);
-}
-
-.helperText {
-  color: var(--gray-11);
-=======
 .formStack {
   display: flex;
   min-width: 0;
@@ -43,5 +25,4 @@
   gap: var(--rf-space-3);
   margin-top: var(--rf-space-4);
   flex-wrap: wrap;
->>>>>>> upstream/main
 }

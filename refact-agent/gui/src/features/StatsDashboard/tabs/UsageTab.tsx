@@ -1,7 +1,4 @@
 import React, { useState } from "react";
-<<<<<<< HEAD
-import { Box, Flex, Text } from "@radix-ui/themes";
-=======
 import { Card, Icon, Surface, useTokens } from "../../../components/ui";
 import {
   BarChart3,
@@ -10,7 +7,6 @@ import {
   PieChart as PieChartIcon,
   Table2,
 } from "lucide-react";
->>>>>>> upstream/main
 import ReactEChartsCore from "echarts-for-react/lib/core";
 import * as echarts from "echarts/core";
 import { BarChart, PieChart } from "echarts/charts";
@@ -24,11 +20,7 @@ import { CanvasRenderer } from "echarts/renderers";
 import { useGetStatsSummaryQuery } from "../../../services/refact/stats";
 import { Spinner } from "../../../components/Spinner";
 import { ErrorCallout } from "../../../components/Callout";
-<<<<<<< HEAD
-import { useAppearance } from "../../../hooks";
-=======
 
->>>>>>> upstream/main
 import {
   formatTokenCount,
   formatCostDisplay,
@@ -84,45 +76,6 @@ export const UsageTab: React.FC<Props> = ({ dateRange }) => {
   const { data, isLoading, isError } = useGetStatsSummaryQuery(
     dateRangeToApiArgs(dateRange),
   );
-<<<<<<< HEAD
-  const { isDarkMode } = useAppearance();
-
-  const theme = isDarkMode
-    ? {
-        text: "#ededef",
-        textMuted: "#a0a0a3",
-        axisLine: "#a0a0a3",
-        splitLine: "#2e2e32",
-        tooltip: { bg: "#1c1c1e", border: "#3a3a3c", text: "#ededef" },
-        palette: [
-          "#3e63dd",
-          "#7c66dc",
-          "#e5c07b",
-          "#e06c75",
-          "#56b6c2",
-          "#d19a66",
-          "#98c379",
-          "#c678dd",
-        ],
-      }
-    : {
-        text: "#1c2024",
-        textMuted: "#60646c",
-        axisLine: "#60646c",
-        splitLine: "#e0e0e2",
-        tooltip: { bg: "#ffffff", border: "#d0d0d2", text: "#1c2024" },
-        palette: [
-          "#3e63dd",
-          "#7c66dc",
-          "#e5c07b",
-          "#e06c75",
-          "#56b6c2",
-          "#d19a66",
-          "#98c379",
-          "#c678dd",
-        ],
-      };
-=======
   const chartTokens = useTokens([
     "--rf-color-fg",
     "--rf-color-muted",
@@ -155,7 +108,6 @@ export const UsageTab: React.FC<Props> = ({ dateRange }) => {
       chartTokens["--rf-color-faint"] || "currentColor",
     ],
   };
->>>>>>> upstream/main
 
   const [modelSort, setModelSort] = useState<{ key: SortKey; asc: boolean }>({
     key: "total_tokens",
@@ -174,15 +126,9 @@ export const UsageTab: React.FC<Props> = ({ dateRange }) => {
 
   if (!data || data.totals.total_calls === 0) {
     return (
-<<<<<<< HEAD
-      <Text className={styles.emptyText}>
-        No usage data yet. Start chatting to see stats!
-      </Text>
-=======
       <p className={styles.emptyText}>
         No usage data yet. Start chatting to see stats!
       </p>
->>>>>>> upstream/main
     );
   }
 
@@ -480,83 +426,6 @@ export const UsageTab: React.FC<Props> = ({ dateRange }) => {
   };
 
   return (
-<<<<<<< HEAD
-    <Flex direction="column" gap="5">
-      <Flex className={styles.chartsRow}>
-        <Box className={styles.chartBox}>
-          <Text size="2" weight="medium" className={styles.sectionTitle}>
-            Tokens Per Day
-          </Text>
-          <ReactEChartsCore
-            echarts={echarts}
-            option={barOption}
-            style={{ width: "100%", height: "220px" }}
-          />
-        </Box>
-        <Box className={styles.chartBox}>
-          <Text size="2" weight="medium" className={styles.sectionTitle}>
-            By Model
-          </Text>
-          <ReactEChartsCore
-            echarts={echarts}
-            option={pieOption}
-            style={{ width: "100%", height: "280px" }}
-          />
-        </Box>
-      </Flex>
-
-      <Flex className={styles.chartsRow}>
-        <Box className={styles.chartBox}>
-          <Text size="2" weight="medium" className={styles.sectionTitle}>
-            Calls Per Day
-          </Text>
-          <ReactEChartsCore
-            echarts={echarts}
-            option={callsBarOption}
-            style={{ width: "100%", height: "220px" }}
-          />
-        </Box>
-        {hasCostData && (
-          <Box className={styles.chartBox}>
-            <Text size="2" weight="medium" className={styles.sectionTitle}>
-              Cost Per Day
-            </Text>
-            <ReactEChartsCore
-              echarts={echarts}
-              option={costBarOption}
-              style={{ width: "100%", height: "220px" }}
-            />
-          </Box>
-        )}
-      </Flex>
-
-      {hasCacheData && (
-        <Flex className={styles.chartsRow}>
-          <Box className={styles.chartBox}>
-            <Text size="2" weight="medium" className={styles.sectionTitle}>
-              Cache Tokens Per Day
-            </Text>
-            <ReactEChartsCore
-              echarts={echarts}
-              option={cacheBarOption}
-              style={{ width: "100%", height: "220px" }}
-            />
-          </Box>
-        </Flex>
-      )}
-
-      <Box>
-        <Text
-          size="3"
-          weight="medium"
-          className={styles.sectionTitle}
-          mb="2"
-          as="p"
-        >
-          By Provider
-        </Text>
-        <Box className={styles.tableWrapper}>
-=======
     <div className={styles.root}>
       <div className={`${styles.chartsRow} rf-stagger`}>
         <Card animated="rise" className={styles.chartBox} interactive>
@@ -636,7 +505,6 @@ export const UsageTab: React.FC<Props> = ({ dateRange }) => {
           className={styles.tableWrapper}
           variant="glass"
         >
->>>>>>> upstream/main
           <table className={styles.table}>
             <thead>
               <tr>
@@ -644,11 +512,7 @@ export const UsageTab: React.FC<Props> = ({ dateRange }) => {
                 <th className={styles.th}>
                   <button
                     type="button"
-<<<<<<< HEAD
-                    className={styles.sortButton}
-=======
                     className={`${styles.sortButton} rf-pressable`}
->>>>>>> upstream/main
                     onClick={() => toggleProviderSort("total_calls")}
                   >
                     Calls{" "}
@@ -662,11 +526,7 @@ export const UsageTab: React.FC<Props> = ({ dateRange }) => {
                 <th className={styles.th}>
                   <button
                     type="button"
-<<<<<<< HEAD
-                    className={styles.sortButton}
-=======
                     className={`${styles.sortButton} rf-pressable`}
->>>>>>> upstream/main
                     onClick={() => toggleProviderSort("total_tokens")}
                   >
                     Tokens{" "}
@@ -682,11 +542,7 @@ export const UsageTab: React.FC<Props> = ({ dateRange }) => {
                 <th className={styles.th}>
                   <button
                     type="button"
-<<<<<<< HEAD
-                    className={styles.sortButton}
-=======
                     className={`${styles.sortButton} rf-pressable`}
->>>>>>> upstream/main
                     onClick={() => toggleProviderSort("total_cost_usd")}
                   >
                     Cost{" "}
@@ -699,15 +555,9 @@ export const UsageTab: React.FC<Props> = ({ dateRange }) => {
                 </th>
               </tr>
             </thead>
-<<<<<<< HEAD
-            <tbody>
-              {sortedProviders.map((p) => (
-                <tr key={p.provider}>
-=======
             <tbody className="rf-stagger">
               {sortedProviders.map((p) => (
                 <tr key={p.provider} className="rf-enter-rise">
->>>>>>> upstream/main
                   <td className={styles.td}>{p.provider}</td>
                   <td className={styles.td}>{p.total_calls}</td>
                   <td className={styles.td}>
@@ -726,22 +576,6 @@ export const UsageTab: React.FC<Props> = ({ dateRange }) => {
               ))}
             </tbody>
           </table>
-<<<<<<< HEAD
-        </Box>
-      </Box>
-
-      <Box>
-        <Text
-          size="3"
-          weight="medium"
-          className={styles.sectionTitle}
-          mb="2"
-          as="p"
-        >
-          By Model
-        </Text>
-        <Box className={styles.tableWrapper}>
-=======
         </Surface>
       </section>
 
@@ -755,7 +589,6 @@ export const UsageTab: React.FC<Props> = ({ dateRange }) => {
           className={styles.tableWrapper}
           variant="glass"
         >
->>>>>>> upstream/main
           <table className={styles.table}>
             <thead>
               <tr>
@@ -763,11 +596,7 @@ export const UsageTab: React.FC<Props> = ({ dateRange }) => {
                 <th className={styles.th}>
                   <button
                     type="button"
-<<<<<<< HEAD
-                    className={styles.sortButton}
-=======
                     className={`${styles.sortButton} rf-pressable`}
->>>>>>> upstream/main
                     onClick={() => toggleModelSort("total_calls")}
                   >
                     Calls{" "}
@@ -785,11 +614,7 @@ export const UsageTab: React.FC<Props> = ({ dateRange }) => {
                 <th className={styles.th}>
                   <button
                     type="button"
-<<<<<<< HEAD
-                    className={styles.sortButton}
-=======
                     className={`${styles.sortButton} rf-pressable`}
->>>>>>> upstream/main
                     onClick={() => toggleModelSort("total_cost_usd")}
                   >
                     Cost{" "}
@@ -803,11 +628,7 @@ export const UsageTab: React.FC<Props> = ({ dateRange }) => {
                 <th className={styles.th}>
                   <button
                     type="button"
-<<<<<<< HEAD
-                    className={styles.sortButton}
-=======
                     className={`${styles.sortButton} rf-pressable`}
->>>>>>> upstream/main
                     onClick={() => toggleModelSort("avg_duration_ms")}
                   >
                     Avg Duration{" "}
@@ -820,15 +641,9 @@ export const UsageTab: React.FC<Props> = ({ dateRange }) => {
                 </th>
               </tr>
             </thead>
-<<<<<<< HEAD
-            <tbody>
-              {sortedModels.map((m) => (
-                <tr key={`${m.provider}/${m.model}`}>
-=======
             <tbody className="rf-stagger">
               {sortedModels.map((m) => (
                 <tr key={`${m.provider}/${m.model}`} className="rf-enter-rise">
->>>>>>> upstream/main
                   <td className={styles.td}>{m.model}</td>
                   <td className={styles.td}>{m.total_calls}</td>
                   <td className={styles.td}>
@@ -853,14 +668,8 @@ export const UsageTab: React.FC<Props> = ({ dateRange }) => {
               ))}
             </tbody>
           </table>
-<<<<<<< HEAD
-        </Box>
-      </Box>
-    </Flex>
-=======
         </Surface>
       </section>
     </div>
->>>>>>> upstream/main
   );
 };

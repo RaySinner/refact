@@ -15,10 +15,7 @@ type VirtuosoMockProps = {
     Header?: React.ComponentType;
     Scroller?: React.ComponentType<React.HTMLAttributes<HTMLDivElement>>;
     List?: React.ComponentType<React.HTMLAttributes<HTMLDivElement>>;
-<<<<<<< HEAD
-=======
     Item?: React.ComponentType<React.HTMLAttributes<HTMLDivElement>>;
->>>>>>> upstream/main
     Footer?: React.ComponentType;
   };
 };
@@ -57,8 +54,6 @@ vi.mock("react-virtuoso", async () => {
         );
       },
     ),
-<<<<<<< HEAD
-=======
     VirtuosoGrid: ReactModule.forwardRef<HTMLDivElement, VirtuosoMockProps>(
       ({ data, itemContent, components, ...props }, _ref) => {
         const calls =
@@ -80,7 +75,6 @@ vi.mock("react-virtuoso", async () => {
         );
       },
     ),
->>>>>>> upstream/main
   };
 });
 

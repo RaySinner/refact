@@ -1,9 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-<<<<<<< HEAD
-import { screen, render } from "../../utils/test-utils";
-=======
 import { screen, render, waitFor } from "../../utils/test-utils";
->>>>>>> upstream/main
 import { CronList } from "./CronList";
 import type { CronTask } from "../../services/refact/schedulerApi";
 
@@ -18,13 +14,6 @@ const task: CronTask = {
   next_fire_at_ms: Date.UTC(2026, 0, 1, 9, 7),
   fire_count: 3,
   created_at_ms: Date.UTC(2026, 0, 1, 8, 0),
-<<<<<<< HEAD
-};
-
-describe("CronList", () => {
-  it("renders cron task fixture", () => {
-    render(<CronList tasks={[task]} onDelete={vi.fn()} />);
-=======
   enabled: true,
   paused: false,
   trigger_kind: "cron",
@@ -58,21 +47,10 @@ const defaultProps = {
 describe("CronList", () => {
   it("renders cron task fixture with status and last-fired fields", () => {
     render(<CronList tasks={[task]} {...defaultProps} />);
->>>>>>> upstream/main
 
     expect(screen.getByText("hourly at :07")).toBeInTheDocument();
     expect(screen.getByText("7 * * * *")).toBeInTheDocument();
     expect(screen.getByText("Hourly frog check")).toBeInTheDocument();
-<<<<<<< HEAD
-    expect(screen.getByText("Durable")).toBeInTheDocument();
-    expect(screen.getByText("Recurring")).toBeInTheDocument();
-    expect(screen.getByText("3")).toBeInTheDocument();
-  });
-
-  it("calls delete with the task id", async () => {
-    const onDelete = vi.fn();
-    const { user } = render(<CronList tasks={[task]} onDelete={onDelete} />);
-=======
     expect(screen.getByText("Enabled")).toBeInTheDocument();
     expect(screen.getByText("fired")).toBeInTheDocument();
     expect(screen.getByText("Cron")).toBeInTheDocument();
@@ -243,14 +221,11 @@ describe("CronList", () => {
     const { user } = render(
       <CronList tasks={[task]} {...defaultProps} onDelete={onDelete} />,
     );
->>>>>>> upstream/main
 
     await user.click(screen.getByRole("button", { name: "Delete" }));
 
     expect(onDelete).toHaveBeenCalledWith("cron_1");
   });
-<<<<<<< HEAD
-=======
 
   it("calls pause and run-now actions", async () => {
     const onToggleEnabled = vi.fn();
@@ -314,5 +289,4 @@ describe("CronList", () => {
       });
     });
   });
->>>>>>> upstream/main
 });

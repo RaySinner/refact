@@ -1,16 +1,10 @@
 import { beforeEach, describe, expect, test } from "vitest";
-<<<<<<< HEAD
-import { http, HttpResponse } from "msw";
-import { screen, waitFor, render } from "../../utils/test-utils";
-import type { Chat } from "../Chat/Thread/types";
-=======
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { http, HttpResponse } from "msw";
 import { screen, waitFor, render } from "../../utils/test-utils";
 import type { Chat } from "../Chat/Thread/types";
 import { ChatThreadProvider } from "../Chat/Thread";
->>>>>>> upstream/main
 import type {
   WorktreeDiffResponse,
   WorktreeListResponse,
@@ -156,8 +150,6 @@ function commandCapture(calls: JsonObject[]) {
   });
 }
 
-<<<<<<< HEAD
-=======
 function commandCaptureWithChatIds(calls: JsonObject[]) {
   return http.post("*/v1/chats/:id/commands", async ({ params, request }) => {
     calls.push({
@@ -168,7 +160,6 @@ function commandCaptureWithChatIds(calls: JsonObject[]) {
   });
 }
 
->>>>>>> upstream/main
 function createWorktreeHandler(
   record: WorktreeRecordView,
   calls: JsonObject[],
@@ -305,8 +296,6 @@ describe("WorktreeControl", () => {
     });
   });
 
-<<<<<<< HEAD
-=======
   test("pane providers scope worktree labels to each pane thread", async () => {
     const global = makeWorktreeRecord("wt-global", "refact/chat/global");
     const left = makeWorktreeRecord("wt-left", "refact/chat/left");
@@ -409,7 +398,6 @@ describe("WorktreeControl", () => {
     expect(commandCalls[0]?.route_chat_id).not.toBe("global-chat");
   });
 
->>>>>>> upstream/main
   test("no-worktree label shows current source branch", async () => {
     renderControl([]);
 
@@ -474,8 +462,6 @@ describe("WorktreeControl", () => {
     expect(screen.getByText("None yet")).toBeInTheDocument();
   });
 
-<<<<<<< HEAD
-=======
   test("create modal fields stay constrained to the dialog content column", async () => {
     const css = await readFile(
       path.resolve(__dirname, "Worktrees.module.css"),
@@ -492,7 +478,6 @@ describe("WorktreeControl", () => {
     expect(branchPicker).toContain("max-width: 100%;");
   });
 
->>>>>>> upstream/main
   test("create modal submits API call and attaches worktree", async () => {
     const created = makeWorktreeRecord("wt-new", "refact/chat/new");
     const createCalls: JsonObject[] = [];

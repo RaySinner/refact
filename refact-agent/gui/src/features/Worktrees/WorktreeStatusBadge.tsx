@@ -1,9 +1,5 @@
 import React from "react";
-<<<<<<< HEAD
-import { Badge } from "@radix-ui/themes";
-=======
 import { Badge, StatusDot, type StatusDotStatus } from "../../components/ui";
->>>>>>> upstream/main
 import type { WorktreeMeta, WorktreeRecordView } from "../../services/refact";
 import styles from "./Worktrees.module.css";
 
@@ -41,8 +37,6 @@ function DiffStats({
   );
 }
 
-<<<<<<< HEAD
-=======
 function statusBadge(
   label: string,
   tone: React.ComponentProps<typeof Badge>["tone"],
@@ -58,7 +52,6 @@ function statusBadge(
   );
 }
 
->>>>>>> upstream/main
 export const WorktreeStatusBadge: React.FC<WorktreeStatusBadgeProps> = ({
   worktree,
   record,
@@ -73,29 +66,6 @@ export const WorktreeStatusBadge: React.FC<WorktreeStatusBadgeProps> = ({
     worktree?.deleted === true ||
     status?.deleted === true
   ) {
-<<<<<<< HEAD
-    return (
-      <Badge size="1" color="red" variant="soft">
-        deleted
-      </Badge>
-    );
-  }
-
-  if (lifecycle === "missing" || status?.path_exists === false) {
-    return (
-      <Badge size="1" color="red" variant="soft">
-        missing
-      </Badge>
-    );
-  }
-
-  if (lifecycle === "conflicted" || status?.conflicted === true) {
-    return (
-      <Badge size="1" color="amber" variant="soft">
-        conflicted
-      </Badge>
-    );
-=======
     return statusBadge("deleted", "danger", "error");
   }
 
@@ -105,7 +75,6 @@ export const WorktreeStatusBadge: React.FC<WorktreeStatusBadgeProps> = ({
 
   if (lifecycle === "conflicted" || status?.conflicted === true) {
     return statusBadge("conflicted", "warning", "warning");
->>>>>>> upstream/main
   }
 
   if (
@@ -113,28 +82,6 @@ export const WorktreeStatusBadge: React.FC<WorktreeStatusBadgeProps> = ({
     worktree?.stale === true ||
     status?.stale === true
   ) {
-<<<<<<< HEAD
-    return (
-      <Badge size="1" color="amber" variant="soft">
-        stale
-      </Badge>
-    );
-  }
-
-  if (status?.dirty === true) {
-    return (
-      <Badge size="1" color="amber" variant="soft">
-        dirty <DiffStats additions={additions} deletions={deletions} />
-      </Badge>
-    );
-  }
-
-  return (
-    <Badge size="1" color="green" variant="soft">
-      worktree <DiffStats additions={additions} deletions={deletions} />
-    </Badge>
-  );
-=======
     return statusBadge("stale", "warning", "warning");
   }
 
@@ -143,7 +90,6 @@ export const WorktreeStatusBadge: React.FC<WorktreeStatusBadgeProps> = ({
   }
 
   return statusBadge("worktree", "success", "success", additions, deletions);
->>>>>>> upstream/main
 };
 
 WorktreeStatusBadge.displayName = "WorktreeStatusBadge";

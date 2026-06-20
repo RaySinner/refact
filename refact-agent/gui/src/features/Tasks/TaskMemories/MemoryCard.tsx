@@ -1,11 +1,4 @@
 import React, { useCallback, useMemo, useState } from "react";
-<<<<<<< HEAD
-import {
-  Badge,
-  Box,
-  Button,
-  Card,
-=======
 import classNames from "classnames";
 import { Pin, Trash2 } from "lucide-react";
 import { Markdown } from "../../../components/Markdown";
@@ -16,25 +9,15 @@ import {
 import {
   Badge,
   Button,
->>>>>>> upstream/main
   Flex,
   IconButton,
   Popover,
   Spinner,
-<<<<<<< HEAD
-  Text,
-  Tooltip,
-} from "@radix-ui/themes";
-import { DrawingPinIcon, TrashIcon } from "@radix-ui/react-icons";
-import classNames from "classnames";
-import { Markdown } from "../../../components/Markdown";
-=======
   Surface,
   Text,
   Tooltip,
 } from "../../../components/ui";
 import type { BadgeTone } from "../../../components/ui";
->>>>>>> upstream/main
 import type { TaskMemoryEntry } from "../../../services/refact/taskMemoriesApi";
 import { memoryKindColor } from "../../../services/refact/taskKinds";
 import styles from "./MemoryInboxPanel.module.css";
@@ -99,8 +82,6 @@ function frontmatterRows(
   ];
 }
 
-<<<<<<< HEAD
-=======
 function badgeTone(color: ReturnType<typeof memoryKindColor>): BadgeTone {
   if (color === "red") return "danger";
   if (color === "amber") return "warning";
@@ -108,7 +89,6 @@ function badgeTone(color: ReturnType<typeof memoryKindColor>): BadgeTone {
   return "accent";
 }
 
->>>>>>> upstream/main
 export const MemoryCard: React.FC<MemoryCardProps> = ({
   memory,
   onPin,
@@ -120,14 +100,11 @@ export const MemoryCard: React.FC<MemoryCardProps> = ({
 }) => {
   const [localExpanded, setLocalExpanded] = useState(false);
   const isExpanded = expanded ?? localExpanded;
-<<<<<<< HEAD
-=======
   const { shouldRender, isAnimatingOpen } = useDelayedUnmount(
     isExpanded,
     COLLAPSE_ANIMATION_MS,
   );
   const shouldRenderExpanded = isExpanded || shouldRender;
->>>>>>> upstream/main
   const title = useMemo(() => buildTitle(memory), [memory]);
   const content = memory.content.trim();
   const preview = useMemo(() => buildPreview(memory.content), [memory.content]);
@@ -158,12 +135,6 @@ export const MemoryCard: React.FC<MemoryCardProps> = ({
   }, [memory.filename, onArchive]);
 
   return (
-<<<<<<< HEAD
-    <Card
-      className={classNames(styles.card, memory.pinned && styles.cardPinned)}
-      data-expanded={isExpanded ? "true" : "false"}
-      data-testid={`memory-card-${memory.filename}`}
-=======
     <Surface
       animated="rise"
       className={classNames(memory.pinned && styles.cardPinned, styles.card)}
@@ -171,7 +142,6 @@ export const MemoryCard: React.FC<MemoryCardProps> = ({
       data-testid={`memory-card-${memory.filename}`}
       radius="card"
       variant="plain"
->>>>>>> upstream/main
     >
       <Flex direction="column" gap="2" className={styles.cardFrame}>
         <Flex align="start" gap="2" className={styles.cardCollapsedRow}>
@@ -187,19 +157,10 @@ export const MemoryCard: React.FC<MemoryCardProps> = ({
             <Flex direction="column" gap="1" className={styles.cardBodyColumn}>
               <Flex align="center" gap="2" className={styles.cardTitleRow}>
                 <Flex gap="1" align="center" className={styles.cardBadges}>
-<<<<<<< HEAD
-                  <Badge color={memoryKindColor(memory.kind)} variant="soft">
-                    {memory.kind}
-                  </Badge>
-                  <Badge color="gray" variant="outline">
-                    {memory.namespace}
-                  </Badge>
-=======
                   <Badge tone={badgeTone(memoryKindColor(memory.kind))}>
                     {memory.kind}
                   </Badge>
                   <Badge tone="muted">{memory.namespace}</Badge>
->>>>>>> upstream/main
                 </Flex>
                 <Text
                   weight="medium"
@@ -220,15 +181,6 @@ export const MemoryCard: React.FC<MemoryCardProps> = ({
                 className={styles.cardPreviewRow}
               >
                 {preview ? (
-<<<<<<< HEAD
-                  <Text size="1" color="gray" className={styles.cardPreview}>
-                    {preview}
-                  </Text>
-                ) : (
-                  <Box className={styles.cardPreviewEmpty} />
-                )}
-                <Text size="1" color="gray" className={styles.cardDate}>
-=======
                   <Text size="1" className={styles.cardPreviewMuted}>
                     {preview}
                   </Text>
@@ -236,7 +188,6 @@ export const MemoryCard: React.FC<MemoryCardProps> = ({
                   <div className={styles.cardPreviewEmpty} />
                 )}
                 <Text size="1" className={styles.cardDate}>
->>>>>>> upstream/main
                   {createdAt}
                 </Text>
               </Flex>
@@ -252,32 +203,6 @@ export const MemoryCard: React.FC<MemoryCardProps> = ({
             <Flex gap="1" align="center">
               <Tooltip content={memory.pinned ? "Unpin" : "Pin memory"}>
                 <IconButton
-<<<<<<< HEAD
-                  size="1"
-                  variant="soft"
-                  aria-label={memory.pinned ? "Unpin" : "Pin"}
-                  color={memory.pinned ? "amber" : "gray"}
-                  onClick={handlePin}
-                  disabled={disabled}
-                  className={styles.cardIconButton}
-                >
-                  <DrawingPinIcon />
-                </IconButton>
-              </Tooltip>
-              <Popover.Root>
-                <Tooltip content="Archive">
-                  <Popover.Trigger>
-                    <IconButton
-                      size="1"
-                      variant="soft"
-                      aria-label="Archive"
-                      color="gray"
-                      disabled={disabled}
-                      className={styles.cardIconButton}
-                    >
-                      <TrashIcon />
-                    </IconButton>
-=======
                   size="sm"
                   variant="plain"
                   aria-label={memory.pinned ? "Unpin" : "Pin"}
@@ -301,59 +226,35 @@ export const MemoryCard: React.FC<MemoryCardProps> = ({
                       disabled={disabled}
                       className={styles.cardIconButton}
                     />
->>>>>>> upstream/main
                   </Popover.Trigger>
                 </Tooltip>
                 <Popover.Content className={styles.archivePopover}>
                   <Flex direction="column" gap="3">
                     <Text size="2">Archive this memory?</Text>
-<<<<<<< HEAD
-                    <Flex gap="2">
-                      <Popover.Close>
-                        <Button
-                          size="1"
-                          variant="solid"
-                          color="amber"
-=======
                     <Flex gap="2" wrap="wrap">
                       <Popover.Close asChild>
                         <Button
                           size="sm"
                           variant="soft"
->>>>>>> upstream/main
                           onClick={handleArchive}
                         >
                           Confirm archive
                         </Button>
                       </Popover.Close>
-<<<<<<< HEAD
-                      <Popover.Close>
-                        <Button size="1" variant="soft" color="gray">
-=======
                       <Popover.Close asChild>
                         <Button size="sm" variant="plain">
->>>>>>> upstream/main
                           Cancel
                         </Button>
                       </Popover.Close>
                     </Flex>
                   </Flex>
                 </Popover.Content>
-<<<<<<< HEAD
-              </Popover.Root>
-            </Flex>
-            {pending && (
-              <Flex align="center" gap="1" className={styles.pendingState}>
-                <Spinner size="1" />
-                <Text size="1" color="gray">
-=======
               </Popover>
             </Flex>
             {pending && (
               <Flex align="center" gap="1" className={styles.pendingState}>
                 <Spinner size="sm" />
                 <Text size="1" className={styles.cardPreviewMuted}>
->>>>>>> upstream/main
                   Updating
                 </Text>
               </Flex>
@@ -361,61 +262,6 @@ export const MemoryCard: React.FC<MemoryCardProps> = ({
           </Flex>
         </Flex>
 
-<<<<<<< HEAD
-        {isExpanded && (
-          <Box
-            className={styles.expandedContent}
-            data-testid={`memory-card-expanded-${memory.filename}`}
-          >
-            {content ? (
-              <Box className={styles.expandedMarkdown}>
-                <Markdown canHaveInteractiveElements={false}>
-                  {content}
-                </Markdown>
-              </Box>
-            ) : (
-              <Text size="2" color="gray" className={styles.emptyContent}>
-                No content
-              </Text>
-            )}
-
-            <Flex
-              gap="1"
-              wrap="wrap"
-              align="center"
-              className={styles.expandedTags}
-            >
-              {memory.tags.length > 0 ? (
-                memory.tags.map((tag) => (
-                  <Badge key={tag} color="gray" variant="outline">
-                    {tag}
-                  </Badge>
-                ))
-              ) : (
-                <Text size="1" color="gray">
-                  No tags
-                </Text>
-              )}
-            </Flex>
-
-            <table
-              className={styles.frontmatterTable}
-              data-testid={`memory-card-frontmatter-${memory.filename}`}
-            >
-              <tbody>
-                {frontmatterRows(memory).map((row) => (
-                  <tr key={row.label}>
-                    <th scope="row">{row.label}</th>
-                    <td>{row.value}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </Box>
-        )}
-      </Flex>
-    </Card>
-=======
         {shouldRenderExpanded && (
           <div
             className={classNames("rf-expand-grid", styles.expandedGrid)}
@@ -474,7 +320,6 @@ export const MemoryCard: React.FC<MemoryCardProps> = ({
         )}
       </Flex>
     </Surface>
->>>>>>> upstream/main
   );
 };
 

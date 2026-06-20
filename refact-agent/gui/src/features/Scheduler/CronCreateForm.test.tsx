@@ -3,8 +3,6 @@ import { screen, render, waitFor } from "../../utils/test-utils";
 import { CronCreateForm } from "./CronCreateForm";
 
 describe("CronCreateForm", () => {
-<<<<<<< HEAD
-=======
   it("presents trigger action and delivery builder sections", () => {
     render(<CronCreateForm onSubmit={vi.fn()} taskCount={0} />);
 
@@ -14,7 +12,6 @@ describe("CronCreateForm", () => {
     expect(screen.getByRole("radio", { name: "Webhook" })).toBeInTheDocument();
   });
 
->>>>>>> upstream/main
   it("validates required description", async () => {
     const onSubmit = vi.fn();
     const { user } = render(
@@ -30,11 +27,7 @@ describe("CronCreateForm", () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-<<<<<<< HEAD
-  it("submits valid form values", async () => {
-=======
   it("submits valid cron preset values with the existing default shape", async () => {
->>>>>>> upstream/main
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     const { user } = render(
       <CronCreateForm onSubmit={onSubmit} taskCount={0} />,
@@ -55,8 +48,6 @@ describe("CronCreateForm", () => {
     });
   });
 
-<<<<<<< HEAD
-=======
   it("submits timezone with cron schedules", async () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     const { user } = render(
@@ -402,7 +393,6 @@ describe("CronCreateForm", () => {
     });
   });
 
->>>>>>> upstream/main
   it("surfaces backend validation errors", () => {
     render(
       <CronCreateForm

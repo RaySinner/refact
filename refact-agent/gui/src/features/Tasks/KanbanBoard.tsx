@@ -1,34 +1,12 @@
 import React, { useCallback } from "react";
-<<<<<<< HEAD
-import {
-  Flex,
-  Box,
-  Text,
-  Card,
-  Badge,
-  Heading,
-  Tooltip,
-} from "@radix-ui/themes";
-=======
 import classNames from "classnames";
 import { FileText, Link2, User } from "lucide-react";
 import { Badge, Card, Icon } from "../../components/ui";
->>>>>>> upstream/main
 import type {
   TaskBoard,
   BoardCard,
   BoardColumn,
 } from "../../services/refact/tasks";
-<<<<<<< HEAD
-import { FileTextIcon, Link2Icon, PersonIcon } from "@radix-ui/react-icons";
-import { BranchIcon } from "../Worktrees/BranchIcon";
-import styles from "./Tasks.module.css";
-
-const getPriorityColor = (priority: string): "red" | "orange" | "gray" => {
-  if (priority === "P0") return "red";
-  if (priority === "P1") return "orange";
-  return "gray";
-=======
 import { BranchIcon } from "../Worktrees/BranchIcon";
 import styles from "./Tasks.module.css";
 
@@ -38,7 +16,6 @@ const priorityTone = (priority: string): BadgeTone => {
   if (priority === "P0") return "danger";
   if (priority === "P1") return "warning";
   return "muted";
->>>>>>> upstream/main
 };
 
 function compactWorktreeLabel(label: string): string {
@@ -54,21 +31,12 @@ function cardWorktreeLabel(card: BoardCard): string | null {
   return label ? compactWorktreeLabel(label) : null;
 }
 
-<<<<<<< HEAD
-const columnColors: Record<string, string> = {
-  planned: "var(--gray-5)",
-  doing: "var(--blue-5)",
-  done: "var(--green-5)",
-  failed: "var(--red-5)",
-};
-=======
 function columnToneClass(columnId: string): string {
   if (columnId === "doing") return styles.kanbanColumnDoing;
   if (columnId === "done") return styles.kanbanColumnDone;
   if (columnId === "failed") return styles.kanbanColumnFailed;
   return styles.kanbanColumnPlanned;
 }
->>>>>>> upstream/main
 
 interface KanbanCardProps {
   card: BoardCard;
@@ -101,76 +69,6 @@ const KanbanCard: React.FC<KanbanCardProps> = ({
 
   return (
     <Card
-<<<<<<< HEAD
-      className={styles.kanbanCard}
-      onClick={handleClick}
-      style={{ cursor: onClick ? "pointer" : "default" }}
-    >
-      <Flex direction="column" gap="2">
-        <Flex
-          justify="between"
-          align="center"
-          className={styles.kanbanCardTopRow}
-        >
-          <Badge size="1" color="gray" variant="soft">
-            {card.id}
-          </Badge>
-          <Badge color={getPriorityColor(card.priority)} size="1">
-            {card.priority}
-          </Badge>
-        </Flex>
-
-        <Text size="2" weight="medium" className={styles.kanbanCardTitle}>
-          {card.title}
-        </Text>
-
-        <Flex gap="1" wrap="wrap" className={styles.kanbanCardBadges}>
-          {hasAgent && (
-            <Tooltip content={`Agent: ${card.assignee}`}>
-              <Badge
-                size="1"
-                color="blue"
-                variant="soft"
-                asChild={Boolean(card.agent_chat_id)}
-              >
-                {card.agent_chat_id ? (
-                  <button
-                    type="button"
-                    className={styles.agentBadgeButton}
-                    onClick={handleAgentClick}
-                  >
-                    <PersonIcon /> Agent
-                  </button>
-                ) : (
-                  <span>
-                    <PersonIcon /> Agent
-                  </span>
-                )}
-              </Badge>
-            </Tooltip>
-          )}
-          {worktree && (
-            <Tooltip content={`Worktree: ${worktree}`}>
-              <Badge size="1" color="green" variant="soft">
-                <BranchIcon /> {worktree}
-              </Badge>
-            </Tooltip>
-          )}
-          {hasDeps && (
-            <Tooltip content={`Depends on: ${card.depends_on.join(", ")}`}>
-              <Badge size="1" color="gray" variant="soft">
-                <Link2Icon /> {card.depends_on.length}
-              </Badge>
-            </Tooltip>
-          )}
-          {card.status_updates.length > 0 && (
-            <Badge size="1" color="gray" variant="soft">
-              <FileTextIcon /> {card.status_updates.length}
-            </Badge>
-          )}
-        </Flex>
-      </Flex>
-=======
       animated="rise"
       className={classNames(
         styles.kanbanCard,
@@ -226,7 +124,6 @@ const KanbanCard: React.FC<KanbanCardProps> = ({
           )}
         </div>
       </div>
->>>>>>> upstream/main
     </Card>
   );
 };
@@ -245,36 +142,6 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
   onAgentClick,
 }) => {
   return (
-<<<<<<< HEAD
-    <Flex
-      direction="column"
-      className={styles.kanbanColumn}
-      style={{ borderTopColor: columnColors[column.id] || "var(--gray-5)" }}
-    >
-      <Flex
-        justify="between"
-        align="center"
-        className={styles.kanbanColumnHeader}
-      >
-        <Heading size="1">{column.title}</Heading>
-        <Badge size="1" color="gray">
-          {cards.length}
-        </Badge>
-      </Flex>
-      <Box className={styles.kanbanColumnContent}>
-        <Flex direction="column" gap="1">
-          {cards.map((card) => (
-            <KanbanCard
-              key={card.id}
-              card={card}
-              onClick={onCardClick}
-              onAgentClick={onAgentClick}
-            />
-          ))}
-        </Flex>
-      </Box>
-    </Flex>
-=======
     <section
       className={classNames(
         styles.kanbanColumn,
@@ -297,7 +164,6 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
         ))}
       </div>
     </section>
->>>>>>> upstream/main
   );
 };
 
@@ -320,11 +186,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   );
 
   return (
-<<<<<<< HEAD
-    <Flex className={styles.kanbanBoard}>
-=======
     <div className={classNames(styles.kanbanBoard, "rf-enter")}>
->>>>>>> upstream/main
       {board.columns.map((column) => (
         <KanbanColumn
           key={column.id}
@@ -334,10 +196,6 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
           onAgentClick={onAgentClick}
         />
       ))}
-<<<<<<< HEAD
-    </Flex>
-=======
     </div>
->>>>>>> upstream/main
   );
 };

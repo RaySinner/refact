@@ -1,24 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-<<<<<<< HEAD
-import {
-  Badge,
-  Box,
-  Button,
-  Callout,
-  Flex,
-  Select,
-  Spinner,
-  Text,
-  TextField,
-} from "@radix-ui/themes";
-import {
-  ChevronDownIcon,
-  ExclamationTriangleIcon,
-  MagnifyingGlassIcon,
-} from "@radix-ui/react-icons";
-import * as Collapsible from "@radix-ui/react-collapsible";
-import classNames from "classnames";
-=======
 import * as Collapsible from "@radix-ui/react-collapsible";
 import classNames from "classnames";
 import { ChevronDown, Search } from "lucide-react";
@@ -32,7 +12,6 @@ import {
   Surface,
   Text,
 } from "../../../components/ui";
->>>>>>> upstream/main
 import {
   taskMemoriesApi,
   type TaskMemoryEntry,
@@ -267,191 +246,6 @@ export const MemoryInboxPanel: React.FC<MemoryInboxPanelProps> = ({
   }, [dispatch, query, taskId, triageDone]);
 
   return (
-<<<<<<< HEAD
-    <Box className={styles.root}>
-      <Flex justify="between" align="start" gap="3" className={styles.header}>
-        <Box>
-          <Text weight="bold" size="3" as="div">
-            {data?.new_count ?? 0} new since {formatSince(data?.since)}
-          </Text>
-          <Text size="1" color="gray" as="div">
-            {visibleMemories.length} memories shown
-            {isFetching ? " · refreshing" : ""}
-          </Text>
-        </Box>
-        <Button
-          size="2"
-          variant="soft"
-          onClick={() => void handleTriageDone()}
-          disabled={triageState.isLoading}
-        >
-          {triageState.isLoading ? <Spinner size="1" /> : "Mark all triaged"}
-        </Button>
-      </Flex>
-
-      <Flex direction="column" gap="2" className={styles.filters}>
-        <Flex gap="2" wrap="wrap" align="center">
-          <Select.Root value={kind} onValueChange={setKind} size="1">
-            <Select.Trigger
-              aria-label="Memory kind filter"
-              className={styles.filterControl}
-            />
-            <Select.Content>
-              <Select.Item value={ALL_VALUE}>All kinds</Select.Item>
-              {MEMORY_KINDS.map((item) => (
-                <Select.Item key={item} value={item}>
-                  {item}
-                </Select.Item>
-              ))}
-            </Select.Content>
-          </Select.Root>
-
-          <Select.Root value={namespace} onValueChange={setNamespace} size="1">
-            <Select.Trigger
-              aria-label="Memory namespace filter"
-              className={styles.filterControl}
-            />
-            <Select.Content>
-              <Select.Item value={ALL_VALUE}>All namespaces</Select.Item>
-              {namespaces.map((item) => (
-                <Select.Item key={item} value={item}>
-                  {item}
-                </Select.Item>
-              ))}
-            </Select.Content>
-          </Select.Root>
-
-          <Box className={styles.searchBox}>
-            <TextField.Root
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search memories"
-              aria-label="Search memories"
-            >
-              <TextField.Slot>
-                <MagnifyingGlassIcon />
-              </TextField.Slot>
-            </TextField.Root>
-          </Box>
-        </Flex>
-
-        {(tags.length > 0 || hasSelectedTags) && (
-          <Collapsible.Root open={tagCloudOpen} onOpenChange={setTagCloudOpen}>
-            <Flex
-              align="center"
-              justify="between"
-              gap="2"
-              className={styles.tagSummary}
-            >
-              <Flex
-                gap="1"
-                wrap="wrap"
-                align="center"
-                className={styles.tagSelectedChips}
-              >
-                {selectedTagList.map((tag) => (
-                  <Badge
-                    key={tag}
-                    asChild
-                    color="blue"
-                    variant="solid"
-                    className={classNames(styles.tagChip, styles.tagChipActive)}
-                  >
-                    <button type="button" onClick={() => handleToggleTag(tag)}>
-                      {tag}
-                    </button>
-                  </Badge>
-                ))}
-                {!hasSelectedTags && (
-                  <Text size="1" color="gray">
-                    No tag filters selected
-                  </Text>
-                )}
-              </Flex>
-              <Flex align="center" gap="1">
-                {hasSelectedTags && (
-                  <Button size="1" variant="ghost" onClick={handleClearFilters}>
-                    Clear filters
-                  </Button>
-                )}
-                <Collapsible.Trigger asChild>
-                  <Button size="1" variant="soft" color="gray">
-                    <ChevronDownIcon />
-                    {tagCloudOpen
-                      ? "Hide tags"
-                      : `Show all ${tags.length} tags`}
-                  </Button>
-                </Collapsible.Trigger>
-              </Flex>
-            </Flex>
-            <Collapsible.Content>
-              <Flex
-                gap="1"
-                wrap="wrap"
-                align="center"
-                className={styles.tagChips}
-              >
-                <Box className={styles.tagSearchBox}>
-                  <TextField.Root
-                    value={tagSearch}
-                    onChange={(event) => setTagSearch(event.target.value)}
-                    placeholder="Filter tags..."
-                    aria-label="Filter tags"
-                    size="1"
-                  >
-                    <TextField.Slot>
-                      <MagnifyingGlassIcon />
-                    </TextField.Slot>
-                  </TextField.Root>
-                </Box>
-                {filteredTags.map((tag) => {
-                  const active = selectedTags.has(tag);
-                  return (
-                    <Badge
-                      key={tag}
-                      asChild
-                      color={active ? "blue" : "gray"}
-                      variant={active ? "solid" : "outline"}
-                      className={classNames(
-                        styles.tagChip,
-                        active && styles.tagChipActive,
-                      )}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => handleToggleTag(tag)}
-                      >
-                        {tag}
-                      </button>
-                    </Badge>
-                  );
-                })}
-                {filteredTags.length === 0 && (
-                  <Text size="1" color="gray">
-                    No tags match.
-                  </Text>
-                )}
-              </Flex>
-            </Collapsible.Content>
-          </Collapsible.Root>
-        )}
-      </Flex>
-
-      {error && (
-        <Callout.Root color="red" size="1">
-          <Callout.Icon>
-            <ExclamationTriangleIcon />
-          </Callout.Icon>
-          <Callout.Text>Failed to load task memories.</Callout.Text>
-        </Callout.Root>
-      )}
-
-      <Flex direction="column" gap="2" className={styles.list}>
-        {isFetching && !data ? (
-          <Flex justify="center" p="4">
-            <Spinner />
-          </Flex>
-=======
     <div className={`${styles.root} rf-enter`}>
       <Flex justify="between" align="start" gap="3" className={styles.header}>
         <div className={styles.headerCopy}>
@@ -644,7 +438,6 @@ export const MemoryInboxPanel: React.FC<MemoryInboxPanelProps> = ({
           <div className={styles.loadingState}>
             <Spinner />
           </div>
->>>>>>> upstream/main
         ) : visibleMemories.length > 0 ? (
           visibleMemories.map((memory) => {
             const pending = pendingMemoryKeys.has(
@@ -664,20 +457,12 @@ export const MemoryInboxPanel: React.FC<MemoryInboxPanelProps> = ({
             );
           })
         ) : (
-<<<<<<< HEAD
-          <Text color="gray" size="2" className={styles.emptyState}>
-=======
           <Text as="div" className={styles.emptyState}>
->>>>>>> upstream/main
             No memories match the current filters.
           </Text>
         )}
       </Flex>
-<<<<<<< HEAD
-    </Box>
-=======
     </div>
->>>>>>> upstream/main
   );
 };
 

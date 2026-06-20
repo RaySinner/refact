@@ -1,15 +1,11 @@
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
 import { RootState } from "../../app/store";
 import { buildApiUrlFromState } from "./apiUrl";
-<<<<<<< HEAD
-import type { KnowledgeGraphResponse, SuccessResponse } from "./types";
-=======
 import type {
   KnowledgeGraphResponse,
   RelinkMemoriesResponse,
   SuccessResponse,
 } from "./types";
->>>>>>> upstream/main
 
 export const knowledgeGraphApi = createApi({
   reducerPath: "knowledgeGraphApi",
@@ -109,8 +105,6 @@ export const knowledgeGraphApi = createApi({
       },
       invalidatesTags: ["KnowledgeGraph"],
     }),
-<<<<<<< HEAD
-=======
 
     relinkMemories: builder.mutation<RelinkMemoriesResponse, undefined>({
       async queryFn(_arg, api, _extraOptions, baseQuery) {
@@ -130,7 +124,6 @@ export const knowledgeGraphApi = createApi({
       },
       invalidatesTags: ["KnowledgeGraph", "Memory"],
     }),
->>>>>>> upstream/main
   }),
 });
 
@@ -138,8 +131,5 @@ export const {
   useGetKnowledgeGraphQuery,
   useUpdateMemoryMutation,
   useDeleteMemoryMutation,
-<<<<<<< HEAD
-=======
   useRelinkMemoriesMutation,
->>>>>>> upstream/main
 } = knowledgeGraphApi;

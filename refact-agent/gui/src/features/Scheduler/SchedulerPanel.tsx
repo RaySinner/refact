@@ -1,11 +1,4 @@
 import React, { useMemo, useState } from "react";
-<<<<<<< HEAD
-import { Button, Card, Flex, Heading, Text } from "@radix-ui/themes";
-import { ArrowLeftIcon, ReloadIcon } from "@radix-ui/react-icons";
-import { useAppSelector } from "../../hooks";
-import {
-  type CreateCronRequest,
-=======
 import { ArrowLeft, RefreshCw } from "lucide-react";
 import {
   Badge,
@@ -18,25 +11,18 @@ import { useAppSelector } from "../../hooks";
 import {
   type CreateCronRequest,
   type UpdateCronRequest,
->>>>>>> upstream/main
   schedulerErrorMessage,
   useCreateCronMutation,
   useDeleteCronMutation,
   useGetCronTasksQuery,
-<<<<<<< HEAD
-=======
   useRunCronMutation,
   useUpdateCronMutation,
->>>>>>> upstream/main
 } from "../../services/refact/schedulerApi";
 import {
   selectCurrentThreadId,
   selectThreadMode,
 } from "../Chat/Thread/selectors";
-<<<<<<< HEAD
-=======
 import { SettingsSection } from "../Settings/SettingsSection";
->>>>>>> upstream/main
 import { CronCreateForm } from "./CronCreateForm";
 import { selectLastCronFireAt } from "./schedulerSlice";
 import { CronList } from "./CronList";
@@ -44,11 +30,6 @@ import styles from "./Scheduler.module.css";
 
 type SchedulerPanelProps = {
   onBack: () => void;
-<<<<<<< HEAD
-};
-
-export const SchedulerPanel: React.FC<SchedulerPanelProps> = ({ onBack }) => {
-=======
   embedded?: boolean;
 };
 
@@ -58,7 +39,6 @@ export const SchedulerPanel: React.FC<SchedulerPanelProps> = ({
   onBack,
   embedded,
 }) => {
->>>>>>> upstream/main
   const {
     data: tasks = [],
     isFetching,
@@ -67,9 +47,6 @@ export const SchedulerPanel: React.FC<SchedulerPanelProps> = ({
   } = useGetCronTasksQuery(undefined);
   const [createCron, createState] = useCreateCronMutation();
   const [deleteCron, deleteState] = useDeleteCronMutation();
-<<<<<<< HEAD
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-=======
   const [updateCron, updateState] = useUpdateCronMutation();
   const [runCron, runState] = useRunCronMutation();
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -78,18 +55,14 @@ export const SchedulerPanel: React.FC<SchedulerPanelProps> = ({
   const [deleteError, setDeleteError] = useState<unknown>(null);
   const [updateError, setUpdateError] = useState<unknown>(null);
   const [runError, setRunError] = useState<unknown>(null);
->>>>>>> upstream/main
   const lastCronFireAt = useAppSelector(selectLastCronFireAt);
   const currentThreadId = useAppSelector(selectCurrentThreadId);
   const currentMode = useAppSelector(selectThreadMode);
 
-<<<<<<< HEAD
-=======
   const recurringCount = tasks.filter((task) => task.recurring).length;
   const durableCount = tasks.filter((task) => task.durable).length;
   const enabledCount = tasks.filter((task) => task.enabled).length;
 
->>>>>>> upstream/main
   const sortedTasks = useMemo(
     () =>
       [...tasks].sort((left, right) =>
@@ -99,8 +72,6 @@ export const SchedulerPanel: React.FC<SchedulerPanelProps> = ({
       ),
     [tasks],
   );
-<<<<<<< HEAD
-=======
   const renderedMutationError =
     deleteState.error ??
     updateState.error ??
@@ -108,7 +79,6 @@ export const SchedulerPanel: React.FC<SchedulerPanelProps> = ({
     deleteError ??
     updateError ??
     runError;
->>>>>>> upstream/main
 
   const handleCreate = async (
     request: Omit<CreateCronRequest, "chat_id" | "mode">,
@@ -122,23 +92,16 @@ export const SchedulerPanel: React.FC<SchedulerPanelProps> = ({
 
   const handleDelete = async (id: string) => {
     setDeletingId(id);
-<<<<<<< HEAD
-    try {
-      await deleteCron({ id }).unwrap();
-=======
     setDeleteError(null);
     try {
       await deleteCron({ id }).unwrap();
     } catch (err) {
       setDeleteError(err);
->>>>>>> upstream/main
     } finally {
       setDeletingId(null);
     }
   };
 
-<<<<<<< HEAD
-=======
   const handleUpdate = async (id: string, request: CronListUpdate) => {
     setUpdatingId(id);
     setUpdateError(null);
@@ -163,55 +126,10 @@ export const SchedulerPanel: React.FC<SchedulerPanelProps> = ({
     }
   };
 
->>>>>>> upstream/main
   const deleteTask = (id: string) => {
     void handleDelete(id);
   };
 
-<<<<<<< HEAD
-  return (
-    <div className={styles.panel}>
-      <div className={styles.header}>
-        <Button variant="outline" onClick={onBack}>
-          <ArrowLeftIcon width="16" height="16" />
-          Back
-        </Button>
-        <Heading size="5">⏰ Scheduler</Heading>
-        <Button variant="soft" onClick={() => void refetch()}>
-          <ReloadIcon width="16" height="16" />
-          Refresh
-        </Button>
-      </div>
-      <div className={styles.content}>
-        <CronCreateForm
-          onSubmit={handleCreate}
-          isLoading={createState.isLoading}
-          error={createState.error}
-          taskCount={tasks.length}
-        />
-        <Card>
-          <Flex direction="column" gap="3">
-            <Flex justify="between" align="center">
-              <Text size="4" weight="bold">
-                Scheduled prompts
-              </Text>
-              {lastCronFireAt && (
-                <Text size="1" color="gray">
-                  Last fired {new Date(lastCronFireAt).toLocaleTimeString()}
-                </Text>
-              )}
-            </Flex>
-            {error && (
-              <Text className={styles.error} role="alert" size="2">
-                {schedulerErrorMessage(error)}
-              </Text>
-            )}
-            {deleteState.error && (
-              <Text className={styles.error} role="alert" size="2">
-                {schedulerErrorMessage(deleteState.error)}
-              </Text>
-            )}
-=======
   const toggleEnabled = (id: string, enabled: boolean) => {
     void handleUpdate(id, { enabled });
   };
@@ -313,19 +231,10 @@ export const SchedulerPanel: React.FC<SchedulerPanelProps> = ({
                 {schedulerErrorMessage(renderedMutationError)}
               </FieldError>
             ) : null}
->>>>>>> upstream/main
             <CronList
               tasks={sortedTasks}
               isLoading={isFetching}
               deletingId={deletingId}
-<<<<<<< HEAD
-              onDelete={deleteTask}
-            />
-          </Flex>
-        </Card>
-      </div>
-    </div>
-=======
               updatingId={updatingId}
               runningId={runningId}
               onDelete={deleteTask}
@@ -337,6 +246,5 @@ export const SchedulerPanel: React.FC<SchedulerPanelProps> = ({
         </div>
       </div>
     </SettingsSection>
->>>>>>> upstream/main
   );
 };

@@ -1,18 +1,4 @@
 import { useMemo, useState, type FC } from "react";
-<<<<<<< HEAD
-import {
-  Badge,
-  Button,
-  Callout,
-  Flex,
-  Heading,
-  Separator,
-  Text,
-  TextField,
-} from "@radix-ui/themes";
-import { PlusIcon, InfoCircledIcon } from "@radix-ui/react-icons";
-
-=======
 import classNames from "classnames";
 import { Info, Plus } from "lucide-react";
 
@@ -24,7 +10,6 @@ import {
   FieldText,
   Icon,
 } from "../../../../components/ui";
->>>>>>> upstream/main
 import type { ProviderListItem } from "../../../../services/refact";
 import {
   useGetAvailableModelsQuery,
@@ -36,10 +21,7 @@ import { toPascalCase } from "../../../../utils/toPascalCase";
 import { Spinner } from "../../../../components/Spinner";
 import { AvailableModelCard } from "./AvailableModelCard";
 import { AddCustomModelModal } from "./AddCustomModelModal";
-<<<<<<< HEAD
-=======
 import styles from "./ModelCard.module.css";
->>>>>>> upstream/main
 
 export type ProviderModelsListProps = {
   provider: ProviderListItem;
@@ -129,40 +111,19 @@ export const ProviderModelsList: FC<ProviderModelsListProps> = ({
       : "Failed to load models";
 
     return (
-<<<<<<< HEAD
-      <Callout.Root color="red">
-        <Callout.Icon>
-          <InfoCircledIcon />
-        </Callout.Icon>
-        <Callout.Text>Failed to load models: {errorMessage}</Callout.Text>
-      </Callout.Root>
-=======
       <ErrorState
         title="Failed to load models"
         description={`Failed to load models: ${errorMessage}`}
       />
->>>>>>> upstream/main
     );
   }
 
   if (!isSuccess) {
     return (
-<<<<<<< HEAD
-      <Callout.Root color="orange">
-        <Callout.Icon>
-          <InfoCircledIcon />
-        </Callout.Icon>
-        <Callout.Text>
-          No model data available. Make sure the provider is properly
-          configured.
-        </Callout.Text>
-      </Callout.Root>
-=======
       <EmptyState
         title="No model data available"
         description="Make sure the provider is properly configured."
       />
->>>>>>> upstream/main
     );
   }
 
@@ -170,76 +131,15 @@ export const ProviderModelsList: FC<ProviderModelsListProps> = ({
   const enabledCount = providerModels.filter((model) => model.enabled).length;
 
   return (
-<<<<<<< HEAD
-    <Flex direction="column" gap="3" mt="4" flexShrink="0">
-      <Separator size="4" />
-
-      <Flex align="center" justify="between" gap="3" wrap="wrap">
-        <Flex align="center" gap="2" wrap="wrap">
-          <Heading as="h3" size="3">
-            Available Models
-          </Heading>
-          <Badge size="1" color="gray">
-=======
     <section className={styles.modelsSection}>
       <div className={styles.modelsHeader}>
         <div className={styles.modelsHeaderCopy}>
           <h3 className={styles.modelsTitle}>Available Models</h3>
           <Badge tone="muted">
->>>>>>> upstream/main
             {isCustomProvider && totalModels === 0
               ? "None"
               : `${enabledCount}/${totalModels} enabled`}
           </Badge>
-<<<<<<< HEAD
-          {totalModels > 0 && (
-            <TextField.Root
-              size="1"
-              placeholder="Search models"
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-              style={{ minWidth: 180 }}
-            />
-          )}
-        </Flex>
-
-        {!provider.readonly && (
-          <Button size="1" variant="soft" onClick={handleOpenCreateModal}>
-            <PlusIcon /> Add Custom Model
-          </Button>
-        )}
-      </Flex>
-
-      {modelsData.error && (
-        <Callout.Root color="orange" size="1">
-          <Callout.Icon>
-            <InfoCircledIcon />
-          </Callout.Icon>
-          <Callout.Text size="1">{modelsData.error}</Callout.Text>
-        </Callout.Root>
-      )}
-
-      {baseProvider === "openrouter" && openRouterAccount?.data && (
-        <Callout.Root color="blue" size="1">
-          <Callout.Icon>
-            <InfoCircledIcon />
-          </Callout.Icon>
-          <Callout.Text size="1">
-            OpenRouter balance:{" "}
-            {openRouterAccount.data.remaining?.toFixed(2) ?? "0.00"}
-            {" / "}
-            {openRouterAccount.data.limit?.toFixed(2) ?? "0.00"} USD
-            {openRouterAccount.data.key_label
-              ? ` · Key: ${openRouterAccount.data.key_label}`
-              : ""}
-          </Callout.Text>
-        </Callout.Root>
-      )}
-
-      {filteredModels.length === 0 ? (
-        <Flex direction="column" align="center" gap="2" py="4">
-          <Text as="span" size="2" color="gray">
-=======
           {totalModels > 0 ? (
             <FieldText
               className={styles.searchInput}
@@ -285,29 +185,11 @@ export const ProviderModelsList: FC<ProviderModelsListProps> = ({
       {filteredModels.length === 0 ? (
         <div className={styles.emptyCopy}>
           <span>
->>>>>>> upstream/main
             {totalModels === 0
               ? isCustomProvider
                 ? "No custom models configured."
                 : "No models available for this provider."
               : "No models match your search."}
-<<<<<<< HEAD
-          </Text>
-          {!provider.readonly && (
-            <Text as="span" size="1" color="gray">
-              Click &quot;Add Custom Model&quot; to define your own.
-            </Text>
-          )}
-        </Flex>
-      ) : (
-        <Flex direction="column" gap="2">
-          {groupedByFamily
-            ? groupedByFamily.map(([family, group]) => (
-                <Flex key={family} direction="column" gap="2">
-                  <Text as="span" size="1" color="gray" weight="medium" mt="2">
-                    {toPascalCase(family)} · {group.length}
-                  </Text>
-=======
           </span>
           {!provider.readonly ? (
             <span>Click &quot;Add Custom Model&quot; to define your own.</span>
@@ -321,7 +203,6 @@ export const ProviderModelsList: FC<ProviderModelsListProps> = ({
                   <span className={styles.familyLabel}>
                     {toPascalCase(family)} · {group.length}
                   </span>
->>>>>>> upstream/main
                   {group.map((model) => (
                     <AvailableModelCard
                       key={model.id}
@@ -332,11 +213,7 @@ export const ProviderModelsList: FC<ProviderModelsListProps> = ({
                       onEditModel={handleOpenEditModal}
                     />
                   ))}
-<<<<<<< HEAD
-                </Flex>
-=======
                 </div>
->>>>>>> upstream/main
               ))
             : filteredModels.map((model) => (
                 <AvailableModelCard
@@ -348,11 +225,7 @@ export const ProviderModelsList: FC<ProviderModelsListProps> = ({
                   onEditModel={handleOpenEditModal}
                 />
               ))}
-<<<<<<< HEAD
-        </Flex>
-=======
         </div>
->>>>>>> upstream/main
       )}
 
       <AddCustomModelModal
@@ -362,10 +235,6 @@ export const ProviderModelsList: FC<ProviderModelsListProps> = ({
         initialModel={editingModel}
         isEditingCustomModel={editingModel?.is_custom ?? false}
       />
-<<<<<<< HEAD
-    </Flex>
-=======
     </section>
->>>>>>> upstream/main
   );
 };

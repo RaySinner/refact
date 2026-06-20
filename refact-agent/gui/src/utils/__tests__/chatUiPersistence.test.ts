@@ -4,15 +4,6 @@ import {
   loadAskQuestionsDraft,
   loadPersistedActiveTab,
   loadPersistedChatTabs,
-<<<<<<< HEAD
-  loadPersistedTasksUIState,
-  loadTaskWorkspaceLayout,
-  saveAskQuestionsDraft,
-  savePersistedActiveTab,
-  savePersistedChatTabs,
-  savePersistedTasksUIState,
-  saveTaskWorkspaceLayout,
-=======
   loadPersistedWorkspace,
   loadPersistedTasksUIState,
   loadTaskWorkspaceTab,
@@ -22,15 +13,12 @@ import {
   savePersistedWorkspace,
   savePersistedTasksUIState,
   saveTaskWorkspaceTab,
->>>>>>> upstream/main
 } from "../chatUiPersistence";
 import {
   getProjectStorageNamespace,
   setProjectStorageNamespace,
   setProjectStorageNamespaceFromProjectInfo,
 } from "../chatUiPersistence";
-<<<<<<< HEAD
-=======
 import { makeSurfaceKey } from "../../features/Workspace/surfaceKey";
 import type { WorkspaceState } from "../../features/Workspace/workspaceSlice";
 
@@ -76,7 +64,6 @@ function splitWorkspace(): WorkspaceState {
     },
   };
 }
->>>>>>> upstream/main
 
 describe("chatUiPersistence", () => {
   beforeEach(() => {
@@ -215,11 +202,7 @@ describe("chatUiPersistence", () => {
     });
   });
 
-<<<<<<< HEAD
-  it("excludes Buddy chats from normal persisted chat tabs", () => {
-=======
   it("persists Buddy chats as workspace chat tabs", () => {
->>>>>>> upstream/main
     savePersistedChatTabs({
       openThreadIds: ["chat-a", "buddy-a"],
       currentThreadId: "buddy-a",
@@ -241,13 +224,8 @@ describe("chatUiPersistence", () => {
     });
 
     expect(loadPersistedChatTabs()).toEqual({
-<<<<<<< HEAD
-      openThreadIds: ["chat-a"],
-      currentThreadId: "chat-a",
-=======
       openThreadIds: ["chat-a", "buddy-a"],
       currentThreadId: "buddy-a",
->>>>>>> upstream/main
       tabs: [
         {
           id: "chat-a",
@@ -256,8 +234,6 @@ describe("chatUiPersistence", () => {
           tool_use: "agent",
           session_state: undefined,
           is_buddy_chat: undefined,
-<<<<<<< HEAD
-=======
           is_task_chat: undefined,
         },
         {
@@ -268,7 +244,6 @@ describe("chatUiPersistence", () => {
           session_state: undefined,
           is_buddy_chat: true,
           is_task_chat: undefined,
->>>>>>> upstream/main
         },
       ],
     });
@@ -284,18 +259,13 @@ describe("chatUiPersistence", () => {
     savePersistedActiveTab({ type: "chat", id: "chat-1" });
     expect(loadPersistedActiveTab()).toEqual({ type: "chat", id: "chat-1" });
 
-<<<<<<< HEAD
-=======
     savePersistedActiveTab({ type: "buddy" });
     expect(loadPersistedActiveTab()).toEqual({ type: "buddy" });
 
->>>>>>> upstream/main
     savePersistedActiveTab({ type: "dashboard" });
     expect(loadPersistedActiveTab()).toEqual({ type: "dashboard" });
   });
 
-<<<<<<< HEAD
-=======
   it("round-trips workspace v2 under the project namespace", () => {
     savePersistedChatTabs({
       openThreadIds: ["chat-a", "chat-b"],
@@ -556,7 +526,6 @@ describe("chatUiPersistence", () => {
     expect(workspace.groups[chatSurface("chat-c")]).toBeDefined();
   });
 
->>>>>>> upstream/main
   it("persists task management tabs and their active child chat", () => {
     savePersistedTasksUIState({
       openTasks: [
@@ -613,27 +582,6 @@ describe("chatUiPersistence", () => {
     expect(loadAskQuestionsDraft("tool-call-1")).toBeNull();
   });
 
-<<<<<<< HEAD
-  it("persists task workspace layout per task", () => {
-    const defaults = {
-      chatExpanded: false,
-      panelsExpanded: false,
-      boardHeightPx: 180,
-    };
-
-    saveTaskWorkspaceLayout("task-1", {
-      chatExpanded: true,
-      panelsExpanded: true,
-      boardHeightPx: 260,
-    });
-
-    expect(loadTaskWorkspaceLayout("task-1", defaults)).toEqual({
-      chatExpanded: true,
-      panelsExpanded: true,
-      boardHeightPx: 260,
-    });
-    expect(loadTaskWorkspaceLayout("task-2", defaults)).toEqual(defaults);
-=======
   it("persists task workspace tab per task", () => {
     saveTaskWorkspaceTab("task-1", "memories");
     saveTaskWorkspaceTab("task-2", "board");
@@ -641,6 +589,5 @@ describe("chatUiPersistence", () => {
     expect(loadTaskWorkspaceTab("task-1")).toBe("memories");
     expect(loadTaskWorkspaceTab("task-2")).toBe("board");
     expect(loadTaskWorkspaceTab("task-3")).toBeNull();
->>>>>>> upstream/main
   });
 });

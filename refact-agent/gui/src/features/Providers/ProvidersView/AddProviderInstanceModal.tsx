@@ -2,18 +2,10 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Button,
   Dialog,
-<<<<<<< HEAD
-  Flex,
-  Select,
-  Text,
-  TextField,
-} from "@radix-ui/themes";
-=======
   FieldSelect,
   FieldStack,
   FieldText,
 } from "../../../components/ui";
->>>>>>> upstream/main
 
 import type { ProviderListItem } from "../../../services/refact";
 import {
@@ -135,12 +127,7 @@ export const AddProviderInstanceModal: React.FC<
   );
 
   const handleInstanceIdChange = useCallback(
-<<<<<<< HEAD
-    (event: React.ChangeEvent<HTMLInputElement>) => {
-      const nextId = event.target.value;
-=======
     (nextId: string) => {
->>>>>>> upstream/main
       setInstanceId(nextId);
       setIdTouched(true);
       if (!displayNameTouched) {
@@ -151,22 +138,11 @@ export const AddProviderInstanceModal: React.FC<
     [baseProvider, displayNameTouched],
   );
 
-<<<<<<< HEAD
-  const handleDisplayNameChange = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>) => {
-      setDisplayName(event.target.value);
-      setDisplayNameTouched(true);
-      setLocalError(null);
-    },
-    [],
-  );
-=======
   const handleDisplayNameChange = useCallback((nextDisplayName: string) => {
     setDisplayName(nextDisplayName);
     setDisplayNameTouched(true);
     setLocalError(null);
   }, []);
->>>>>>> upstream/main
 
   const handleSubmit = useCallback(async () => {
     const trimmedInstanceId = instanceId.trim();
@@ -231,113 +207,6 @@ export const AddProviderInstanceModal: React.FC<
   );
 
   return (
-<<<<<<< HEAD
-    <Dialog.Root open={isOpen} onOpenChange={handleOpenChange}>
-      <Dialog.Content className={styles.dialogContent}>
-        <Dialog.Title>Add provider instance</Dialog.Title>
-        <Dialog.Description size="2" color="gray">
-          Create a blank provider configuration using an existing base provider.
-        </Dialog.Description>
-
-        <Flex direction="column" gap="3" mt="4">
-          {baseOptions.length > 0 ? (
-            <Flex direction="column" gap="1">
-              <Text
-                as="label"
-                htmlFor="provider-instance-base"
-                className={styles.fieldLabel}
-              >
-                Base provider
-              </Text>
-              <Select.Root
-                value={baseProvider}
-                onValueChange={handleBaseProviderChange}
-                disabled={isLoading}
-              >
-                <Select.Trigger
-                  id="provider-instance-base"
-                  aria-label="Base provider"
-                />
-                <Select.Content position="popper">
-                  {baseOptions.map((option) => (
-                    <Select.Item key={option.id} value={option.id}>
-                      {option.label}
-                    </Select.Item>
-                  ))}
-                </Select.Content>
-              </Select.Root>
-            </Flex>
-          ) : (
-            <Text size="2" className={styles.errorText}>
-              No user-creatable base providers are available.
-            </Text>
-          )}
-
-          <Flex direction="column" gap="1">
-            <Text
-              as="label"
-              htmlFor="provider-instance-id"
-              className={styles.fieldLabel}
-            >
-              Instance id
-            </Text>
-            <TextField.Root
-              id="provider-instance-id"
-              value={instanceId}
-              onChange={handleInstanceIdChange}
-              disabled={isLoading || baseOptions.length === 0}
-              placeholder="openai_2"
-            />
-            <Text
-              size="1"
-              className={idValidation ? styles.errorText : styles.helperText}
-            >
-              {idValidation ?? "Use this id as the model prefix."}
-            </Text>
-          </Flex>
-
-          <Flex direction="column" gap="1">
-            <Text
-              as="label"
-              htmlFor="provider-display-name"
-              className={styles.fieldLabel}
-            >
-              Display name
-            </Text>
-            <TextField.Root
-              id="provider-display-name"
-              value={displayName}
-              onChange={handleDisplayNameChange}
-              disabled={isLoading || baseOptions.length === 0}
-              placeholder="OpenAI 2"
-            />
-            {displayNameValidation && (
-              <Text size="1" className={styles.errorText}>
-                {displayNameValidation}
-              </Text>
-            )}
-          </Flex>
-
-          {localError && (
-            <Text size="2" className={styles.errorText}>
-              {localError}
-            </Text>
-          )}
-        </Flex>
-
-        <Flex gap="3" mt="4" justify="end">
-          <Dialog.Close>
-            <Button variant="soft" color="gray" disabled={isLoading}>
-              Cancel
-            </Button>
-          </Dialog.Close>
-          <Button onClick={() => void handleSubmit()} disabled={!canSubmit}>
-            {isLoading ? "Creating..." : "Create instance"}
-          </Button>
-        </Flex>
-      </Dialog.Content>
-    </Dialog.Root>
-=======
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <Dialog.Content maxWidth="min(420px, calc(100vw - 2 * var(--rf-space-3)))">
         <Dialog.Title>Add provider instance</Dialog.Title>
@@ -420,6 +289,5 @@ export const AddProviderInstanceModal: React.FC<
         </div>
       </Dialog.Content>
     </Dialog>
->>>>>>> upstream/main
   );
 };

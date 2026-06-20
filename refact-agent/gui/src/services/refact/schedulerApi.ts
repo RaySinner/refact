@@ -4,8 +4,6 @@ import type { RootState } from "../../app/store";
 import { isDetailMessage } from "./commands";
 import { buildApiUrlFromState } from "./apiUrl";
 
-<<<<<<< HEAD
-=======
 export type CronTriggerKind =
   | "cron"
   | "interval"
@@ -36,7 +34,6 @@ export type CronTaskDelivery =
   | { kind: "notifier"; integration_id?: string; target?: string | null }
   | { kind: "none" };
 
->>>>>>> upstream/main
 export type CronTask = {
   id: string;
   cron: string;
@@ -48,14 +45,6 @@ export type CronTask = {
   next_fire_at_ms: number;
   fire_count: number;
   created_at_ms: number;
-<<<<<<< HEAD
-};
-
-export type CreateCronRequest = {
-  cron: string;
-  prompt: string;
-  recurring: boolean;
-=======
   enabled: boolean;
   paused: boolean;
   trigger?: CreateCronTrigger;
@@ -104,7 +93,6 @@ export type CreateCronRequest = {
   timeout_secs?: number;
   delivery?: CreateCronDelivery;
   recurring?: boolean;
->>>>>>> upstream/main
   durable: boolean;
   description: string;
   chat_id: string;
@@ -116,8 +104,6 @@ export type CreateCronResponse = {
   human_schedule: string;
   recurring: boolean;
   durable: boolean;
-<<<<<<< HEAD
-=======
   action_kind: CronActionKind;
   delivery?: CronTaskDelivery;
   delivery_kind?: CronDeliveryKind;
@@ -148,7 +134,6 @@ export type RunCronRequest = {
 export type RunCronResponse = {
   id: string;
   triggered: boolean;
->>>>>>> upstream/main
 };
 
 export type DeleteCronRequest = {
@@ -189,13 +174,9 @@ export const schedulerApi = createApi({
           url: buildApiUrlFromState(state, "/v1/scheduler/cron"),
         });
         if (result.error) return { error: result.error };
-<<<<<<< HEAD
-        return { data: result.data as CronTask[] };
-=======
         return {
           data: (result.data as CronTaskWire[]).map(normalizeCronTask),
         };
->>>>>>> upstream/main
       },
       providesTags: ["CronTasks"],
     }),
@@ -212,8 +193,6 @@ export const schedulerApi = createApi({
       },
       invalidatesTags: ["CronTasks"],
     }),
-<<<<<<< HEAD
-=======
     updateCron: builder.mutation<UpdateCronResponse, UpdateCronRequest>({
       queryFn: async ({ id, ...body }, api, _opts, baseQuery) => {
         const state = api.getState() as RootState;
@@ -245,7 +224,6 @@ export const schedulerApi = createApi({
       },
       invalidatesTags: ["CronTasks"],
     }),
->>>>>>> upstream/main
     deleteCron: builder.mutation<DeleteCronResponse, DeleteCronRequest>({
       queryFn: async ({ id }, api, _opts, baseQuery) => {
         const state = api.getState() as RootState;
@@ -267,10 +245,7 @@ export const schedulerApi = createApi({
 export const {
   useGetCronTasksQuery,
   useCreateCronMutation,
-<<<<<<< HEAD
-=======
   useUpdateCronMutation,
   useRunCronMutation,
->>>>>>> upstream/main
   useDeleteCronMutation,
 } = schedulerApi;

@@ -229,8 +229,6 @@ describe("taskDocumentsApi URLs", () => {
     );
     expect(relativeUrlSearchParams(url).toString()).toBe("");
   });
-<<<<<<< HEAD
-=======
 
   it("updateTaskDocument sends content and pin state in one request", async () => {
     const fetchMock = vi.fn<FetchLike>();
@@ -266,5 +264,4 @@ describe("taskDocumentsApi URLs", () => {
       pinned: false,
     });
   });
->>>>>>> upstream/main
 });

@@ -1,7 +1,4 @@
 import React, { useMemo } from "react";
-<<<<<<< HEAD
-import { Box, Flex, Text, Badge } from "@radix-ui/themes";
-=======
 import { Badge, Card, Icon, StatusDot, Surface } from "../../../components/ui";
 import {
   Bot,
@@ -18,16 +15,12 @@ import {
   Sparkles,
   Zap,
 } from "lucide-react";
->>>>>>> upstream/main
 import { useGetStatsSummaryQuery } from "../../../services/refact/stats";
 import {
   useGetClaudeCodeUsageQuery,
   useGetOpenAICodexUsageQuery,
-<<<<<<< HEAD
-=======
   useGetOpenCodeUsageQuery,
   type OpenCodeUsageData,
->>>>>>> upstream/main
 } from "../../../services/refact/providers";
 import { useGetConfiguredProvidersQuery } from "../../../hooks";
 import { Spinner } from "../../../components/Spinner";
@@ -39,50 +32,6 @@ import {
   formatDuration,
 } from "../utils/formatters";
 import { dateRangeToApiArgs } from "../utils/dateRange";
-<<<<<<< HEAD
-import type { DateRange } from "../types";
-import styles from "./OverviewTab.module.css";
-
-const formatResetAt = (resetAt: string | null | undefined): string | null => {
-  if (!resetAt) return null;
-  const d = new Date(resetAt);
-  if (isNaN(d.getTime())) return null;
-  return `Resets ${d.toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  })}`;
-};
-
-const UsageBar: React.FC<{ pct: number }> = ({ pct }) => {
-  const clamped = Math.max(0, Math.min(pct, 100));
-  const color =
-    clamped >= 90
-      ? "var(--red-9)"
-      : clamped >= 70
-        ? "var(--orange-9)"
-        : "var(--green-9)";
-  return (
-    <div
-      style={{
-        height: "4px",
-        width: "100%",
-        borderRadius: "2px",
-        background: "var(--gray-a4)",
-        overflow: "hidden",
-        marginTop: "4px",
-      }}
-    >
-      <div
-        style={{
-          height: "100%",
-          width: `${clamped}%`,
-          borderRadius: "2px",
-          background: color,
-          transition: "width 0.3s ease",
-        }}
-=======
 import {
   clampPercent,
   formatClaudeExtraUsage,
@@ -137,13 +86,10 @@ const UsageBar: React.FC<{ pct: number }> = ({ pct }) => {
             "--usage-color": color,
           } as React.CSSProperties
         }
->>>>>>> upstream/main
       />
     </div>
   );
 };
-<<<<<<< HEAD
-=======
 
 const QuotaLine: React.FC<{
   label: string;
@@ -196,7 +142,6 @@ function hasOpenCodeQuotaData(data: OpenCodeUsageData): boolean {
   );
 }
 
->>>>>>> upstream/main
 const ClaudeCodeInstanceCard: React.FC<{
   providerName: string;
   displayName: string;
@@ -210,75 +155,6 @@ const ClaudeCodeInstanceCard: React.FC<{
   if (!data.five_hour && !data.seven_day) return null;
 
   return (
-<<<<<<< HEAD
-    <Box
-      style={{
-        flex: "1 1 200px",
-        minWidth: "180px",
-        background: "var(--gray-a2)",
-        borderRadius: "var(--radius-3)",
-        padding: "var(--space-3)",
-      }}
-    >
-      <Flex align="center" gap="2" mb="2">
-        <Text size="2" weight="medium">
-          {displayName}
-        </Text>
-        <Text size="1" color="gray">
-          ({providerName})
-        </Text>
-      </Flex>
-      {data.five_hour &&
-        (() => {
-          const pct = Math.max(0, Math.min(data.five_hour.percent_used, 100));
-          return (
-            <Box mb="3">
-              <Flex justify="between">
-                <Text size="1" color="gray">
-                  Session (5h)
-                </Text>
-                <Text size="1" color="gray">
-                  {Math.round(pct)}%
-                  {formatResetAt(data.five_hour.resets_at)
-                    ? ` · ${formatResetAt(data.five_hour.resets_at)}`
-                    : ""}
-                </Text>
-              </Flex>
-              <UsageBar pct={pct} />
-            </Box>
-          );
-        })()}
-      {data.seven_day &&
-        (() => {
-          const pct = Math.max(0, Math.min(data.seven_day.percent_used, 100));
-          return (
-            <Box mb="2">
-              <Flex justify="between">
-                <Text size="1" color="gray">
-                  Weekly
-                </Text>
-                <Text size="1" color="gray">
-                  {Math.round(pct)}%
-                  {formatResetAt(data.seven_day.resets_at)
-                    ? ` · ${formatResetAt(data.seven_day.resets_at)}`
-                    : ""}
-                </Text>
-              </Flex>
-              <UsageBar pct={pct} />
-            </Box>
-          );
-        })()}
-      {data.extra_usage && (
-        <Text size="1" color="gray">
-          Extra: {data.extra_usage.is_enabled ? "on" : "off"} · $
-          {data.extra_usage.used_credits.toFixed(2)} spent
-          {typeof data.extra_usage.monthly_limit === "number"
-            ? ` / $${data.extra_usage.monthly_limit.toFixed(0)}`
-            : ""}
-        </Text>
-      )}
-    </Box>
-=======
     <Card animated="rise" className={styles.quotaCard}>
       <div className={styles.quotaHeader}>
         <div className={styles.quotaLabel}>
@@ -313,7 +189,6 @@ const ClaudeCodeInstanceCard: React.FC<{
         </span>
       )}
     </Card>
->>>>>>> upstream/main
   );
 };
 
@@ -328,129 +203,6 @@ const OpenAICodexInstanceCard: React.FC<{
   const data = codexUsage?.data;
   if (!data?.rate_limit) return null;
 
-<<<<<<< HEAD
-  return (
-    <Box
-      style={{
-        flex: "1 1 200px",
-        minWidth: "180px",
-        background: "var(--gray-a2)",
-        borderRadius: "var(--radius-3)",
-        padding: "var(--space-3)",
-      }}
-    >
-      <Flex align="center" gap="2" mb="2">
-        <Text size="2" weight="medium">
-          {displayName}
-        </Text>
-        <Text size="1" color="gray">
-          ({providerName})
-        </Text>
-        {data.plan_type && (
-          <Badge color="blue" size="1">
-            {data.plan_type}
-          </Badge>
-        )}
-      </Flex>
-      {data.rate_limit.primary_window &&
-        (() => {
-          const pct = Math.max(
-            0,
-            Math.min(data.rate_limit.primary_window.used_percent, 100),
-          );
-          return (
-            <Box mb="3">
-              <Flex justify="between" align="center">
-                <Flex align="center" gap="1">
-                  <Text size="1" color="gray">
-                    Session (5h)
-                  </Text>
-                  {data.rate_limit.limit_reached && (
-                    <Badge color="red" size="1">
-                      Limit reached
-                    </Badge>
-                  )}
-                </Flex>
-                <Text size="1" color="gray">
-                  {Math.round(pct)}%
-                  {formatResetAt(data.rate_limit.primary_window.reset_at)
-                    ? ` · ${formatResetAt(
-                        data.rate_limit.primary_window.reset_at,
-                      )}`
-                    : ""}
-                </Text>
-              </Flex>
-              <UsageBar pct={pct} />
-            </Box>
-          );
-        })()}
-      {data.rate_limit.secondary_window &&
-        (() => {
-          const pct = Math.max(
-            0,
-            Math.min(data.rate_limit.secondary_window.used_percent, 100),
-          );
-          return (
-            <Box mb="2">
-              <Flex justify="between">
-                <Text size="1" color="gray">
-                  Weekly
-                </Text>
-                <Text size="1" color="gray">
-                  {Math.round(pct)}%
-                  {formatResetAt(data.rate_limit.secondary_window.reset_at)
-                    ? ` · ${formatResetAt(
-                        data.rate_limit.secondary_window.reset_at,
-                      )}`
-                    : ""}
-                </Text>
-              </Flex>
-              <UsageBar pct={pct} />
-            </Box>
-          );
-        })()}
-      {data.code_review_rate_limit?.primary_window &&
-        (() => {
-          const pct = Math.max(
-            0,
-            Math.min(
-              data.code_review_rate_limit.primary_window.used_percent,
-              100,
-            ),
-          );
-          return (
-            <Box mb="2">
-              <Flex justify="between" align="center">
-                <Flex align="center" gap="1">
-                  <Text size="1" color="gray">
-                    Code review
-                  </Text>
-                  {data.code_review_rate_limit.limit_reached && (
-                    <Badge color="red" size="1">
-                      Limit reached
-                    </Badge>
-                  )}
-                </Flex>
-                <Text size="1" color="gray">
-                  {Math.round(pct)}%
-                </Text>
-              </Flex>
-              <UsageBar pct={pct} />
-            </Box>
-          );
-        })()}
-      {data.credits && (
-        <Text size="1" color="gray">
-          Credits:{" "}
-          {data.credits.unlimited
-            ? "unlimited"
-            : data.credits.has_credits
-              ? `${data.credits.balance} remaining`
-              : "none"}
-        </Text>
-      )}
-    </Box>
-=======
   const creditsDetails = data.credits
     ? formatCodexCreditsDetails(data.credits)
     : null;
@@ -639,7 +391,6 @@ const OpenCodeProviderQuotaSections: React.FC = () => {
         />
       ))}
     </>
->>>>>>> upstream/main
   );
 };
 
@@ -660,23 +411,6 @@ const ProviderQuotaSection: React.FC = () => {
       providers.filter((p) => p.base_provider === "openai_codex" && p.enabled),
     [providers],
   );
-<<<<<<< HEAD
-
-  if (claudeInstances.length === 0 && codexInstances.length === 0) return null;
-
-  return (
-    <Box>
-      <Text
-        size="3"
-        weight="medium"
-        className={styles.sectionTitle}
-        mb="3"
-        as="p"
-      >
-        Provider Quotas
-      </Text>
-      <Flex gap="3" wrap="wrap">
-=======
   if (claudeInstances.length === 0 && codexInstances.length === 0) return null;
 
   return (
@@ -686,7 +420,6 @@ const ProviderQuotaSection: React.FC = () => {
         Provider Quotas
       </h3>
       <div className={`${styles.quotaGrid} rf-stagger`}>
->>>>>>> upstream/main
         {claudeInstances.map((p) => (
           <ClaudeCodeInstanceCard
             key={`claude:${p.name}`}
@@ -701,13 +434,8 @@ const ProviderQuotaSection: React.FC = () => {
             displayName={p.display_name}
           />
         ))}
-<<<<<<< HEAD
-      </Flex>
-    </Box>
-=======
       </div>
     </section>
->>>>>>> upstream/main
   );
 };
 
@@ -748,19 +476,6 @@ export const OverviewTab: React.FC<Props> = ({ dateRange }) => {
   const topConversations = data?.top_conversations ?? [];
 
   return (
-<<<<<<< HEAD
-    <Flex direction="column" gap="4">
-      <ProviderQuotaSection />
-      {!hasStats && (
-        <Text className={styles.emptyText}>
-          No usage data yet. Start chatting to see stats!
-        </Text>
-      )}
-      {hasStats && (
-        <>
-          <Flex className={styles.cardsRow}>
-            <StatCard
-=======
     <div className={styles.root}>
       <ProviderQuotaSection />
       <OpenCodeProviderQuotaSections />
@@ -774,7 +489,6 @@ export const OverviewTab: React.FC<Props> = ({ dateRange }) => {
           <div className={`${styles.cardsRow} rf-stagger`}>
             <StatCard
               icon={Zap}
->>>>>>> upstream/main
               title="Total Usage"
               value={formatTokenCount(t.total_tokens)}
               subtitle={`${formatTokenCount(
@@ -782,10 +496,7 @@ export const OverviewTab: React.FC<Props> = ({ dateRange }) => {
               )} read + ${formatTokenCount(t.total_completion_tokens)} written`}
             />
             <StatCard
-<<<<<<< HEAD
-=======
               icon={MessageSquareText}
->>>>>>> upstream/main
               title="Conversations"
               value={t.total_conversations.toString()}
               subtitle={`Each one used ~${formatTokenCount(
@@ -793,10 +504,7 @@ export const OverviewTab: React.FC<Props> = ({ dateRange }) => {
               )} tokens on average`}
             />
             <StatCard
-<<<<<<< HEAD
-=======
               icon={Hash}
->>>>>>> upstream/main
               title="Messages Sent"
               value={t.total_messages_sent.toString()}
               subtitle={`Each message cost ~${formatTokenCount(
@@ -804,49 +512,34 @@ export const OverviewTab: React.FC<Props> = ({ dateRange }) => {
               )} tokens on average`}
             />
             <StatCard
-<<<<<<< HEAD
-=======
               icon={Sparkles}
->>>>>>> upstream/main
               title="AI Wrote"
               value={formatTokenCount(t.total_completion_tokens)}
               subtitle={`${completionPct}% of total — most usage is from reading context`}
             />
             <StatCard
-<<<<<<< HEAD
-=======
               icon={CheckCircle2}
               tone="success"
->>>>>>> upstream/main
               title="Success Rate"
               value={`${successRate}%`}
               subtitle={`${t.successful_calls} of ${t.total_calls} calls succeeded`}
             />
             <StatCard
-<<<<<<< HEAD
-=======
               icon={Coins}
               tone="warning"
->>>>>>> upstream/main
               title="Total Cost"
               value={formatCostDisplay(t.total_cost_usd)}
               subtitle="across all providers"
             />
             <StatCard
-<<<<<<< HEAD
-=======
               icon={Clock3}
->>>>>>> upstream/main
               title="Avg Duration"
               value={formatDuration(t.avg_duration_ms)}
               subtitle="average per LLM call"
             />
             <StatCard
-<<<<<<< HEAD
-=======
               icon={PiggyBank}
               tone="success"
->>>>>>> upstream/main
               title="Cache Efficiency"
               value={`${cacheEfficiency}%`}
               subtitle={`${formatTokenCount(
@@ -854,30 +547,11 @@ export const OverviewTab: React.FC<Props> = ({ dateRange }) => {
               )} tokens read from cache`}
             />
             <StatCard
-<<<<<<< HEAD
-=======
               icon={RefreshCw}
->>>>>>> upstream/main
               title="Cache Created"
               value={formatTokenCount(t.total_cache_creation_tokens)}
               subtitle="tokens written to cache for future reuse"
             />
-<<<<<<< HEAD
-          </Flex>
-
-          {topConversations.length > 0 && (
-            <Box>
-              <Text
-                size="3"
-                weight="medium"
-                className={styles.sectionTitle}
-                mb="2"
-                as="p"
-              >
-                Top Conversations by Token Usage
-              </Text>
-              <Box className={styles.tableWrapper}>
-=======
           </div>
 
           {topConversations.length > 0 && (
@@ -890,7 +564,6 @@ export const OverviewTab: React.FC<Props> = ({ dateRange }) => {
                 className={`${styles.tableWrapper} rf-enter-rise`}
                 variant="plain"
               >
->>>>>>> upstream/main
                 <table className={styles.table}>
                   <thead>
                     <tr>
@@ -921,20 +594,11 @@ export const OverviewTab: React.FC<Props> = ({ dateRange }) => {
                     ))}
                   </tbody>
                 </table>
-<<<<<<< HEAD
-              </Box>
-            </Box>
-          )}
-        </>
-      )}
-    </Flex>
-=======
               </Surface>
             </section>
           )}
         </>
       )}
     </div>
->>>>>>> upstream/main
   );
 };

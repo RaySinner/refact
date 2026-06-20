@@ -1,15 +1,9 @@
-<<<<<<< HEAD
-import { useCallback } from "react";
-=======
 import { useCallback, useEffect, useState } from "react";
->>>>>>> upstream/main
 import { useAppDispatch } from "./useAppDispatch";
 import { useConfig } from "./useConfig";
 import { setThemeMode } from "../features/Config/configSlice";
 import { useMutationObserver } from "./useMutationObserver";
 
-<<<<<<< HEAD
-=======
 export type ResolvedAppearance = "light" | "dark";
 
 const BODY_OBSERVER_OPTIONS: MutationObserverInit = {
@@ -52,43 +46,10 @@ export function resolveConcreteAppearance(
   return systemDark ? "dark" : "light";
 }
 
->>>>>>> upstream/main
 export const useAppearance = () => {
   const config = useConfig();
   const dispatch = useAppDispatch();
 
-<<<<<<< HEAD
-  const appearance = config.themeProps.appearance;
-
-  const handleChange = useCallback(() => {
-    const maybeDark =
-      document.body.classList.contains("vscode-dark") ||
-      document.body.classList.contains("vscode-high-contrast");
-    const maybeLight =
-      document.body.classList.contains("vscode-light") ||
-      document.body.classList.contains("vscode-high-contrast-light");
-
-    if (maybeLight && appearance !== "light") {
-      dispatch(setThemeMode("light"));
-    } else if (maybeDark && appearance !== "dark") {
-      dispatch(setThemeMode("dark"));
-    } else if (!maybeDark && !maybeLight) {
-      dispatch(setThemeMode(config.themeProps.appearance ?? "dark"));
-    }
-  }, [appearance, dispatch, config.themeProps.appearance]);
-
-  useMutationObserver(document.body, handleChange, {
-    attributes: true,
-    characterData: false,
-    childList: false,
-    subtree: false,
-  });
-
-  const toggle = useCallback(() => {
-    if (appearance === "dark") return dispatch(setThemeMode("light"));
-    if (appearance === "light") return dispatch(setThemeMode("dark"));
-    if (appearance === "inherit") return dispatch(setThemeMode("dark"));
-=======
   const rawAppearance = config.themeProps.appearance;
   const [systemDark, setSystemDark] = useState(detectSystemDark);
   const [, setBodyTick] = useState(0);
@@ -112,7 +73,6 @@ export const useAppearance = () => {
 
   const toggle = useCallback(() => {
     dispatch(setThemeMode(appearance === "dark" ? "light" : "dark"));
->>>>>>> upstream/main
   }, [appearance, dispatch]);
 
   return {

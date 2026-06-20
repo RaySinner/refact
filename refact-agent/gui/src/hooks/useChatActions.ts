@@ -3,16 +3,6 @@ import { useAppSelector } from "./useAppSelector";
 import { useAppDispatch } from "./useAppDispatch";
 import { selectConfig, selectApiKey } from "../features/Config/configSlice";
 import {
-<<<<<<< HEAD
-  selectChatId,
-  selectThread,
-  selectThreadImages,
-  selectSendImmediately,
-  selectMessages,
-  selectManualPreviewItems,
-  selectManualPreviewRan,
-} from "../features/Chat/Thread/selectors";
-=======
   selectThreadById,
   selectThreadImagesById,
   selectSendImmediatelyById,
@@ -21,7 +11,6 @@ import {
   selectManualPreviewRanById,
 } from "../features/Chat/Thread/selectors";
 import { useThreadId } from "../features/Chat/Thread";
->>>>>>> upstream/main
 import {
   resetThreadImages,
   setSendImmediately,
@@ -33,22 +22,16 @@ import {
   retryFromIndex as retryFromIndexApi,
   regenerate as regenerateApi,
   updateChatParams,
-<<<<<<< HEAD
-=======
   setGoal as setGoalApi,
   updateGoal as updateGoalApi,
   goalControl as goalControlApi,
->>>>>>> upstream/main
   abortGeneration,
   respondToToolConfirmation,
   respondToToolConfirmations,
   updateMessage as updateMessageApi,
   removeMessage as removeMessageApi,
   cancelQueuedItem,
-<<<<<<< HEAD
-=======
   type GoalControlAction,
->>>>>>> upstream/main
   type MessageContent,
 } from "../services/refact/chatCommands";
 import type { UserMessage } from "../services/refact/types";
@@ -89,19 +72,6 @@ function convertUserMessageContent(
   return mapped.length > 0 ? mapped : "";
 }
 
-<<<<<<< HEAD
-export function useChatActions() {
-  const dispatch = useAppDispatch();
-  const config = useAppSelector(selectConfig);
-  const apiKey = useAppSelector(selectApiKey);
-  const chatId = useAppSelector(selectChatId);
-  const thread = useAppSelector(selectThread);
-  const attachedImages = useAppSelector(selectThreadImages);
-  const sendImmediately = useAppSelector(selectSendImmediately);
-  const messages = useAppSelector(selectMessages);
-  const manualPreviewItems = useAppSelector(selectManualPreviewItems);
-  const manualPreviewRan = useAppSelector(selectManualPreviewRan);
-=======
 export function useChatActions(explicitChatId?: string) {
   const dispatch = useAppDispatch();
   const config = useAppSelector(selectConfig);
@@ -122,7 +92,6 @@ export function useChatActions(explicitChatId?: string) {
   const manualPreviewRan = useAppSelector((state) =>
     selectManualPreviewRanById(state, chatId),
   );
->>>>>>> upstream/main
 
   /**
    * Build message content with attached images if any.
@@ -198,11 +167,7 @@ export function useChatActions(explicitChatId?: string) {
       dispatch(clearManualPreviewItems({ chatId }));
 
       dispatch(resetThreadImages({ id: chatId }));
-<<<<<<< HEAD
-      dispatch(setSendImmediately(false));
-=======
       dispatch(setSendImmediately({ chatId, value: false }));
->>>>>>> upstream/main
     },
     [
       chatId,
@@ -221,12 +186,6 @@ export function useChatActions(explicitChatId?: string) {
   /**
    * Abort the current generation.
    */
-<<<<<<< HEAD
-  const abort = useCallback(async () => {
-    if (!chatId) return;
-    await abortGeneration(chatId, config, apiKey ?? undefined);
-  }, [chatId, config, apiKey]);
-=======
   const abort = useCallback(
     async (targetChatId?: string) => {
       const id = targetChatId ?? chatId;
@@ -235,7 +194,6 @@ export function useChatActions(explicitChatId?: string) {
     },
     [chatId, config, apiKey],
   );
->>>>>>> upstream/main
 
   /**
    * Update chat parameters (model, mode, etc.).
@@ -252,8 +210,6 @@ export function useChatActions(explicitChatId?: string) {
     [chatId, config, apiKey],
   );
 
-<<<<<<< HEAD
-=======
   const setGoal = useCallback(
     async (content: string) => {
       if (!chatId) return;
@@ -278,7 +234,6 @@ export function useChatActions(explicitChatId?: string) {
     [chatId, config, apiKey],
   );
 
->>>>>>> upstream/main
   /**
    * Respond to tool confirmation (accept or reject).
    */
@@ -388,12 +343,9 @@ export function useChatActions(explicitChatId?: string) {
     submit,
     abort,
     setParams,
-<<<<<<< HEAD
-=======
     setGoal,
     updateGoal,
     controlGoal,
->>>>>>> upstream/main
     respondToTool,
     respondToTools,
     retryFromIndex,

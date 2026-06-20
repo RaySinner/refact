@@ -1,18 +1,3 @@
-<<<<<<< HEAD
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { http, HttpResponse } from "msw";
-import { cleanup, render, screen, waitFor } from "../../utils/test-utils";
-import { PlannerItem, TaskWorkspace } from "./TaskWorkspace";
-import { resolveCardWorktree } from "./TaskWorkspaceWorktree";
-import type { PlannerInfo } from "./tasksSlice";
-import { taskSseEventReceived } from "./tasksSlice";
-import type { ChatThreadRuntime } from "../Chat/Thread/types";
-import type {
-  BoardCard,
-  TaskBoard,
-  TaskMeta,
-  TrajectoryInfo,
-=======
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -45,18 +30,14 @@ import {
   type TaskBoard,
   type TaskMeta,
   type TrajectoryInfo,
->>>>>>> upstream/main
 } from "../../services/refact/tasks";
 import type {
   WorktreeListResponse,
   WorktreeMeta,
   WorktreeRecordView,
 } from "../../services/refact";
-<<<<<<< HEAD
-=======
 import { taskDocumentsApi } from "../../services/refact/taskDocumentsApi";
 import { taskMemoriesApi } from "../../services/refact/taskMemoriesApi";
->>>>>>> upstream/main
 import { server } from "../../utils/mockServer";
 
 const TASK_ID = "task-1";
@@ -66,8 +47,6 @@ const LEGACY_PATH = "/tmp/refact/legacy/wt-path";
 const LEGACY_TOOLTIP =
   "This worktree was created before the registry; recreate it via `restart_agent(mode=fresh)` to enable actions.";
 
-<<<<<<< HEAD
-=======
 function readGuiSource(path: string): Promise<string> {
   return readFile(resolve(process.cwd(), "src", path), "utf8");
 }
@@ -92,7 +71,6 @@ function expectCardWorktreeTarget(
   expect(target).not.toBeNull();
 }
 
->>>>>>> upstream/main
 type MockWorktreePanelProps = {
   open: boolean;
   worktreeId?: string | null;
@@ -257,10 +235,7 @@ function makeMeta(overrides: Partial<WorktreeMeta> = {}): WorktreeMeta {
 function makeRecord(
   metaOverrides: Partial<WorktreeMeta> = {},
   statusOverrides: Partial<WorktreeRecordView["status"]> = {},
-<<<<<<< HEAD
-=======
   references: WorktreeRecordView["references"] = [],
->>>>>>> upstream/main
 ): WorktreeRecordView {
   const meta = makeMeta(metaOverrides);
   const referenceCount = meta.reference_count ?? 1;
@@ -268,11 +243,7 @@ function makeRecord(
     meta,
     created_at: "2026-04-30T00:00:00Z",
     updated_at: "2026-04-30T00:00:00Z",
-<<<<<<< HEAD
-    references: [],
-=======
     references,
->>>>>>> upstream/main
     reference_count: referenceCount,
     referencing_chat_ids: [],
     status: {
@@ -363,12 +334,9 @@ function taskWorkspaceHandlers(
     http.get("*/v1/tasks/task-1/trajectories/planner", () =>
       HttpResponse.json([]),
     ),
-<<<<<<< HEAD
-=======
     http.get("*/v1/tasks/task-1/trajectories/agents", () =>
       HttpResponse.json([]),
     ),
->>>>>>> upstream/main
     http.get("*/v1/worktrees", () =>
       HttpResponse.json(makeWorktreeList(records)),
     ),
@@ -379,8 +347,6 @@ function taskWorkspaceHandlers(
     http.get("*/v1/caps", () =>
       HttpResponse.json({ chat_models: [], completion_models: [] }),
     ),
-<<<<<<< HEAD
-=======
     http.get("*/v1/voice/status", () =>
       HttpResponse.json({ enabled: false, available: false }),
     ),
@@ -412,7 +378,6 @@ function taskWorkspaceHandlers(
     http.get("*/v1/task/:id/documents", () =>
       HttpResponse.json({ task_id: TASK_ID, documents: [] }),
     ),
->>>>>>> upstream/main
     http.post("*/v1/buddy/diagnostics/collect", () => HttpResponse.json({})),
     http.get("*/v1/worktrees/:id/diff", ({ params }) => {
       const id = String(params.id);
@@ -490,9 +455,6 @@ async function openCardDetail(card: BoardCard) {
   await waitFor(() =>
     expect(screen.getAllByText(card.id).length).toBeGreaterThan(0),
   );
-<<<<<<< HEAD
-  return titles[0];
-=======
   const kanbanTitle = titles.find((title) =>
     title.closest("[class*='kanbanCard']"),
   );
@@ -500,7 +462,6 @@ async function openCardDetail(card: BoardCard) {
     throw new Error(`Kanban card title not found for ${card.title}`);
   }
   return kanbanTitle;
->>>>>>> upstream/main
 }
 
 function openedIds(props: MockWorktreePanelProps[]): string[] {
@@ -516,15 +477,12 @@ beforeEach(() => {
   mergeWorktreeModalProps.length = 0;
 });
 
-<<<<<<< HEAD
-=======
 function clearWorkspaceStorage() {
   localStorage.clear();
   sessionStorage.clear();
   setProjectStorageNamespace(undefined);
 }
 
->>>>>>> upstream/main
 describe("PlannerItem waiting chips", () => {
   it("renders waiting card chips when session_state === 'waiting_user_input'", () => {
     const planner = makePlanner(["T-2", "T-3", "T-5"]);
@@ -641,19 +599,13 @@ describe("PlannerItem waiting chips", () => {
     );
 
     const item = screen.getByRole("button", {
-<<<<<<< HEAD
-      name: /Open planner chat/,
-=======
       name: /Open chat/,
->>>>>>> upstream/main
     });
     item.focus();
     await user.keyboard("{Enter}");
 
     expect(onSelect).toHaveBeenCalledOnce();
   });
-<<<<<<< HEAD
-=======
 
   it("renders a mode badge for non-planner chats", () => {
     const planner = { ...makePlanner(), mode: "agent" };
@@ -746,7 +698,6 @@ describe("PlannerItem linked cards", () => {
       screen.queryByTestId(`planner-linked-cards-${planner.id}`),
     ).not.toBeInTheDocument();
   });
->>>>>>> upstream/main
 });
 
 describe("TaskWorkspace worktree resolution", () => {
@@ -789,8 +740,6 @@ describe("TaskWorkspace worktree resolution", () => {
     expect(target?.id).not.toBe(LEGACY_PATH);
   });
 
-<<<<<<< HEAD
-=======
   it("resolves_worktree_by_attached_references_when_meta_is_missing", () => {
     const card = makeCard({
       agent_worktree: LEGACY_PATH,
@@ -844,7 +793,6 @@ describe("TaskWorkspace worktree resolution", () => {
     expect(isActionableWorktree(target)).toBe(false);
   });
 
->>>>>>> upstream/main
   it("resolves_worktree_by_branch_for_legacy_cards", () => {
     const card = makeCard({
       agent_worktree: LEGACY_PATH,
@@ -875,8 +823,6 @@ describe("TaskWorkspace worktree resolution", () => {
 });
 
 describe("TaskWorkspace worktree actions", () => {
-<<<<<<< HEAD
-=======
   it("renders_server_defined_kanban_columns_and_card_detail_fields", async () => {
     const card = makeCard({
       title: "Current server column card",
@@ -945,7 +891,6 @@ describe("TaskWorkspace worktree actions", () => {
     expect(dialog).toHaveTextContent("Planner comment body");
   });
 
->>>>>>> upstream/main
   it("legacy_target_disables_diff_merge_open_delete_buttons", async () => {
     const card = makeCard({ agent_worktree: LEGACY_PATH });
     server.use(...taskWorkspaceHandlers(card, []));
@@ -996,8 +941,6 @@ describe("TaskWorkspace worktree actions", () => {
     ).toBeDisabled();
   });
 
-<<<<<<< HEAD
-=======
   it("unresolved_registry_id_renders_label_only_without_worktree_actions", async () => {
     const card = makeCard({
       agent_worktree: LEGACY_PATH,
@@ -1053,7 +996,6 @@ describe("TaskWorkspace worktree actions", () => {
     expect(mutationInvalidatesSummary("deleteWorktree")).toBe(true);
   });
 
->>>>>>> upstream/main
   it("worktree_id_passed_to_apis_is_never_a_filesystem_path", async () => {
     const scenarios: {
       card: BoardCard;
@@ -1191,8 +1133,6 @@ describe("TaskWorkspace worktree actions", () => {
   });
 });
 
-<<<<<<< HEAD
-=======
 describe("TaskWorkspace layout and chat surfaces", () => {
   beforeEach(() => {
     clearWorkspaceStorage();
@@ -1523,7 +1463,6 @@ describe("TaskWorkspace layout and chat surfaces", () => {
   });
 });
 
->>>>>>> upstream/main
 describe("TaskWorkspace SSE invalidation", () => {
   it("simulated_board_changed_event_updates_board_without_refetch", async () => {
     const card = makeCard();
@@ -1665,8 +1604,6 @@ describe("TaskWorkspace SSE invalidation", () => {
     await screen.findByText("Planning complete! You can now spawn agents.");
   });
 
-<<<<<<< HEAD
-=======
   it("task_updated_event_replaces_stale_planner_session_state", async () => {
     const card = makeCard();
     server.use(...taskWorkspaceHandlers(card, []));
@@ -2024,7 +1961,6 @@ describe("TaskWorkspace SSE invalidation", () => {
     await screen.findByText(/Show all 1 tags/);
   });
 
->>>>>>> upstream/main
   it("visibilitychange_to_visible_invalidates_board", async () => {
     const card = makeCard();
     let boardFetchCount = 0;
@@ -2074,15 +2010,10 @@ describe("TaskWorkspace planner CRUD", () => {
       preloadedState: workspacePreloadedState(),
     });
 
-<<<<<<< HEAD
-    const deleteBtn = await screen.findByRole("button", {
-      name: "Delete planner chat",
-=======
     await user.click(await screen.findByRole("tab", { name: /^Board/ }));
 
     const deleteBtn = await screen.findByRole("button", {
       name: "Delete chat",
->>>>>>> upstream/main
       hidden: true,
     });
     await user.click(deleteBtn);
@@ -2091,11 +2022,7 @@ describe("TaskWorkspace planner CRUD", () => {
       expect(screen.getByText(/Delete failed/)).toBeInTheDocument(),
     );
     expect(
-<<<<<<< HEAD
-      screen.getByRole("button", { name: "Delete planner chat", hidden: true }),
-=======
       screen.getByRole("button", { name: "Delete chat", hidden: true }),
->>>>>>> upstream/main
     ).toBeInTheDocument();
   });
 
@@ -2120,15 +2047,10 @@ describe("TaskWorkspace planner CRUD", () => {
       preloadedState: workspacePreloadedState(),
     });
 
-<<<<<<< HEAD
-    const deleteBtn = await screen.findByRole("button", {
-      name: "Delete planner chat",
-=======
     await user.click(await screen.findByRole("tab", { name: /^Board/ }));
 
     const deleteBtn = await screen.findByRole("button", {
       name: "Delete chat",
->>>>>>> upstream/main
       hidden: true,
     });
     await user.click(deleteBtn);
@@ -2151,19 +2073,11 @@ describe("TaskWorkspace planner CRUD", () => {
     await screen.findAllByText(makeCard().title);
 
     await waitFor(() =>
-<<<<<<< HEAD
-      expect(screen.getByText("No planner chats yet")).toBeInTheDocument(),
-    );
-    expect(
-      screen.queryByRole("button", {
-        name: "Delete planner chat",
-=======
       expect(screen.getByText("No chats yet")).toBeInTheDocument(),
     );
     expect(
       screen.queryByRole("button", {
         name: "Delete chat",
->>>>>>> upstream/main
         hidden: true,
       }),
     ).not.toBeInTheDocument();
@@ -2186,18 +2100,12 @@ describe("TaskWorkspace planner CRUD", () => {
 
     await screen.findAllByText(makeCard().title);
 
-<<<<<<< HEAD
-    await user.click(screen.getByRole("button", { name: "New planner" }));
-=======
     await user.click(screen.getByRole("button", { name: "New task planner" }));
->>>>>>> upstream/main
 
     await screen.findByText(/Create failed/);
   });
 });
 
-<<<<<<< HEAD
-=======
 describe("TaskWorkspace planner restore race", () => {
   it("prunes_stale_persisted_planner_without_switching_to_missing_runtime", async () => {
     const warnSpy = vi
@@ -2410,7 +2318,6 @@ describe("TaskWorkspace planner restore race", () => {
   });
 });
 
->>>>>>> upstream/main
 describe("TaskWorkspace CardDetail dialog", () => {
   it("escape_closes_card_detail_dialog", async () => {
     const card = makeCard();
@@ -2458,8 +2365,6 @@ describe("TaskWorkspace CardDetail dialog", () => {
     expect(dialog.contains(document.activeElement)).toBe(true);
   });
 });
-<<<<<<< HEAD
-=======
 
 describe("TaskWorkspace new-chat mode picker", () => {
   const RICH_MODES = {
@@ -2629,4 +2534,3 @@ describe("TaskWorkspace new-chat mode picker", () => {
     ).toBe(true);
   });
 });
->>>>>>> upstream/main

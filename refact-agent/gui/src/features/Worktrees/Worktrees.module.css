@@ -1,17 +1,4 @@
 .trigger {
-<<<<<<< HEAD
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding: var(--space-1) var(--space-2);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--radius-2);
-  cursor: pointer;
-  color: var(--gray-12);
-  transition: background-color 0.15s ease;
-  max-width: 220px;
-=======
   display: inline-flex;
   align-items: center;
   max-width: var(--rf-nav-w);
@@ -60,56 +47,10 @@
 .checkboxRow {
   display: flex;
   align-items: center;
->>>>>>> upstream/main
   min-width: 0;
 }
 
 .triggerInner {
-<<<<<<< HEAD
-  min-width: 0;
-}
-
-.trigger:hover:not(:disabled) {
-  background-color: var(--gray-a3);
-}
-
-.trigger:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.triggerActive {
-  background-color: var(--green-a2);
-  border-color: var(--green-a6);
-  color: var(--green-12);
-}
-
-.triggerText {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-}
-
-.branchIcon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  flex: 0 0 auto;
-  color: var(--gray-10);
-}
-
-.trigger:hover:not(:disabled) .branchIcon {
-  color: var(--gray-12);
-}
-
-.diffStatsBadge {
-  display: inline-flex;
-  gap: var(--space-1);
-  margin-left: var(--space-1);
-=======
   gap: var(--rf-space-1);
 }
 
@@ -148,40 +89,10 @@
 
 .diffStatsBadge {
   margin-left: var(--rf-space-1);
->>>>>>> upstream/main
   font-variant-numeric: tabular-nums;
 }
 
 .diffStatsAdd {
-<<<<<<< HEAD
-  color: var(--green-11);
-}
-
-.diffStatsRemove {
-  color: var(--red-11);
-}
-
-.content {
-  min-width: 280px;
-  max-width: min(360px, 90vw);
-  padding: var(--space-2);
-}
-
-.menu {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.section {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.sectionHeader {
-  padding: 0 var(--space-1);
-=======
   color: var(--rf-color-success);
 }
 
@@ -278,20 +189,14 @@
 .sectionHeader {
   letter-spacing: 0.04em;
   text-transform: uppercase;
->>>>>>> upstream/main
 }
 
 .list {
   composes: scrollbarThin from "../../components/shared/scrollbar.module.css";
   display: flex;
   flex-direction: column;
-<<<<<<< HEAD
-  gap: var(--space-1);
-  max-height: 200px;
-=======
   gap: var(--rf-space-1);
   max-height: min(200px, calc(100dvh - var(--rf-space-6) * 4));
->>>>>>> upstream/main
   overflow-y: auto;
 }
 
@@ -299,44 +204,6 @@
   display: flex;
   align-items: flex-start;
   width: 100%;
-<<<<<<< HEAD
-  padding: var(--space-1) var(--space-2);
-  background: transparent;
-  border: none;
-  border-radius: var(--radius-2);
-  color: var(--gray-12);
-  cursor: pointer;
-  text-align: left;
-  transition: background-color 0.15s ease;
-}
-
-.item:hover:not(:disabled) {
-  background-color: var(--gray-a3);
-}
-
-.item:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.itemSelected {
-  background-color: var(--accent-a3);
-}
-
-.itemSelected:hover:not(:disabled) {
-  background-color: var(--accent-a4);
-}
-
-.itemTitle {
-  min-width: 0;
-}
-
-.path {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 300px;
-=======
   min-width: 0;
   padding: var(--rf-space-2);
   border: none;
@@ -380,17 +247,12 @@
   color: var(--rf-color-muted);
   font-family: var(--rf-font-mono);
   font-size: var(--rf-text-1);
->>>>>>> upstream/main
 }
 
 .actionGrid,
 .reviewActions {
   display: grid;
-<<<<<<< HEAD
-  gap: var(--space-1);
-=======
   gap: var(--rf-space-1);
->>>>>>> upstream/main
 }
 
 .actionGrid {
@@ -405,122 +267,6 @@
   display: flex;
   align-items: center;
   justify-content: center;
-<<<<<<< HEAD
-  gap: var(--space-1);
-  min-width: 0;
-  padding: var(--space-1) var(--space-2);
-  background: transparent;
-  border: 1px solid var(--gray-a5);
-  border-radius: var(--radius-2);
-  color: var(--gray-11);
-  cursor: pointer;
-  line-height: var(--line-height-1);
-  transition:
-    background-color 0.15s ease,
-    border-color 0.15s ease,
-    color 0.15s ease;
-}
-
-.actionButton:hover:not(:disabled) {
-  background-color: var(--gray-a3);
-  border-color: var(--gray-a7);
-  color: var(--gray-12);
-}
-
-.actionButton:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-  background: transparent;
-  border-color: transparent;
-}
-
-.actionPrimary {
-  background: var(--accent-a2);
-  border-color: var(--accent-a6);
-  color: var(--accent-11);
-}
-
-.actionPrimary:hover:not(:disabled) {
-  background: var(--accent-a3);
-  border-color: var(--accent-a7);
-  color: var(--accent-12);
-}
-
-.actionDanger {
-  background: var(--red-a2);
-  border-color: var(--red-a6);
-  color: var(--red-11);
-}
-
-.actionDanger:hover:not(:disabled) {
-  background: var(--red-a3);
-  border-color: var(--red-a7);
-  color: var(--red-12);
-}
-
-.actionIcon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.actionIcon svg {
-  width: 14px;
-  height: 14px;
-}
-
-.actionLabel {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.menuHint,
-.feedback {
-  padding: 0 var(--space-1);
-}
-
-.menuHint {
-  line-height: var(--line-height-1);
-}
-
-.modalFields {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  margin-top: var(--space-3);
-}
-
-.createDialog {
-  overflow: visible;
-}
-
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.branchPicker {
-  position: relative;
-}
-
-.branchOptions {
-  position: absolute;
-  z-index: 20;
-  left: 0;
-  right: 0;
-  top: calc(100% + var(--space-1));
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  padding: var(--space-1);
-  border: 1px solid var(--gray-a6);
-  border-radius: var(--radius-3);
-  background: var(--color-panel-solid);
-  box-shadow: var(--shadow-4);
-=======
   min-width: 0;
   gap: var(--rf-space-1);
   padding: var(--rf-space-1) var(--rf-space-2);
@@ -535,25 +281,16 @@
     border-color var(--rf-dur-fast) var(--rf-ease-standard),
     color var(--rf-dur-fast) var(--rf-ease-standard),
     transform var(--rf-dur-fast) var(--rf-ease-standard);
->>>>>>> upstream/main
 }
 
 .branchOption {
   width: 100%;
-<<<<<<< HEAD
-  padding: var(--space-2);
-  border: none;
-  border-radius: var(--radius-2);
-  background: transparent;
-  color: var(--gray-12);
-=======
   min-width: 0;
   padding: var(--rf-space-2);
   border: none;
   border-radius: var(--rf-radius-ctl);
   background: transparent;
   color: var(--rf-color-fg);
->>>>>>> upstream/main
   cursor: pointer;
   overflow: hidden;
   text-align: left;
@@ -561,10 +298,6 @@
   white-space: nowrap;
 }
 
-<<<<<<< HEAD
-.branchOption:hover {
-  background: var(--accent-a3);
-=======
 .actionButton:focus-visible,
 .branchOption:focus-visible {
   outline: var(--rf-focus-ring-w) solid var(--rf-focus-ring);
@@ -677,26 +410,17 @@
 
 .checkboxRow input {
   accent-color: var(--rf-color-accent);
->>>>>>> upstream/main
 }
 
 .modalActions {
   display: flex;
   justify-content: flex-end;
-<<<<<<< HEAD
-  gap: var(--space-2);
-  margin-top: var(--space-4);
-=======
   gap: var(--rf-space-2);
   margin-top: var(--rf-space-4);
->>>>>>> upstream/main
 }
 
 .diffDialog,
 .mergeDialog {
-<<<<<<< HEAD
-  max-width: min(900px, 90vw);
-=======
   max-width: min(900px, calc(100vw - 2 * var(--rf-space-3)));
 }
 
@@ -705,18 +429,10 @@
 .loadingRow {
   gap: var(--rf-space-2);
   flex-wrap: wrap;
->>>>>>> upstream/main
 }
 
 .diffFileList,
 .resultBox,
-<<<<<<< HEAD
-.warningBox {
-  border: 1px solid var(--gray-5);
-  border-radius: var(--radius-3);
-  padding: var(--space-2);
-  background: var(--gray-2);
-=======
 .warningBox,
 .errorBox {
   border: var(--rf-hairline) solid var(--rf-border);
@@ -738,29 +454,18 @@
 
 .resultSuccess {
   color: var(--rf-color-success);
->>>>>>> upstream/main
 }
 
 .diffFileList {
   composes: scrollbarThin from "../../components/shared/scrollbar.module.css";
   display: flex;
   flex-direction: column;
-<<<<<<< HEAD
-  gap: var(--space-1);
-  max-height: 220px;
-=======
   gap: var(--rf-space-1);
   max-height: min(220px, calc(100dvh - var(--rf-space-6) * 4));
->>>>>>> upstream/main
   overflow-y: auto;
 }
 
 .diffFileItem {
-<<<<<<< HEAD
-  padding: var(--space-2);
-  border-radius: var(--radius-2);
-  background: var(--color-background);
-=======
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -773,34 +478,10 @@
 
 .diffFileItem:hover {
   background: var(--rf-surface-1);
->>>>>>> upstream/main
 }
 
 .patchScroller {
   composes: scrollbarThin from "../../components/shared/scrollbar.module.css";
-<<<<<<< HEAD
-  max-height: 360px;
-  overflow-y: auto;
-  overflow-x: hidden;
-  border: 1px solid var(--gray-5);
-  border-radius: var(--radius-3);
-  background: var(--gray-2);
-}
-
-.patchScroller pre {
-  overflow-x: hidden;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.patchPreview {
-  margin: 0;
-  padding: var(--space-2) 0;
-  white-space: pre-wrap;
-  font-family: var(--code-font-family);
-  font-size: var(--font-size-1);
-  line-height: var(--line-height-1);
-=======
   max-height: min(360px, calc(100dvh - var(--rf-space-6) * 4));
   overflow-y: auto;
   border: var(--rf-hairline) solid var(--rf-border);
@@ -817,45 +498,10 @@
   font-size: var(--rf-text-1);
   line-height: var(--rf-line);
   white-space: pre;
->>>>>>> upstream/main
 }
 
 .patchLine {
   display: block;
-<<<<<<< HEAD
-  padding: 0 var(--space-3);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.patchLineMeta {
-  color: var(--violet-11);
-  background: var(--violet-a2);
-}
-
-.patchLineFile {
-  color: var(--blue-11);
-  background: var(--blue-a2);
-}
-
-.patchLineHunk {
-  color: var(--cyan-11);
-  background: var(--cyan-a2);
-}
-
-.patchLineAdd {
-  color: var(--green-11);
-  background: var(--green-a2);
-}
-
-.patchLineRemove {
-  color: var(--red-11);
-  background: var(--red-a2);
-}
-
-.patchLineContext {
-  color: var(--gray-11);
-=======
   padding: 0 var(--rf-space-3);
   white-space: pre;
 }
@@ -883,20 +529,10 @@
 
 .patchLineContext {
   color: var(--rf-color-muted);
->>>>>>> upstream/main
 }
 
 .conflictList {
   margin: 0;
-<<<<<<< HEAD
-  padding-left: var(--space-4);
-}
-
-.dialogOverlayText {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-=======
   padding-left: var(--rf-space-4);
   color: var(--rf-color-muted);
   font-family: var(--rf-font-ui);
@@ -957,5 +593,4 @@
   to {
     transform: rotate(360deg);
   }
->>>>>>> upstream/main
 }

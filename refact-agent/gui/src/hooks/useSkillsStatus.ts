@@ -1,12 +1,3 @@
-<<<<<<< HEAD
-import { useGetSkillsStatusQuery } from "../services/refact/skillsStatus";
-
-export function useSkillsStatus(chatId: string) {
-  const { data } = useGetSkillsStatusQuery(chatId, {
-    pollingInterval: 5000,
-    skip: !chatId,
-  });
-=======
 import { useEffect, useState } from "react";
 import { useGetSkillsStatusQuery } from "../services/refact/skillsStatus";
 
@@ -33,7 +24,6 @@ export function useSkillsStatus(chatId: string) {
     }
   }, [error]);
 
->>>>>>> upstream/main
   return {
     skillsEnabled: data?.skills_enabled ?? false,
     skillsAvailable: data?.skills_available ?? 0,

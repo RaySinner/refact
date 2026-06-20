@@ -4,11 +4,7 @@ import { PluginOption, UserConfig, defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import eslint from "vite-plugin-eslint";
 
-<<<<<<< HEAD
-import { coverageConfigDefaults } from "vitest/config";
-=======
 import { configDefaults, coverageConfigDefaults } from "vitest/config";
->>>>>>> upstream/main
 import dts from "vite-plugin-dts";
 
 import { execSync } from "child_process";
@@ -79,18 +75,13 @@ function makeConfig(library: "browser" | "node") {
       test: {
         retry: 2,
         environment: "happy-dom",
-<<<<<<< HEAD
-=======
         exclude: [...configDefaults.exclude, "tests/e2e/**", "**/*.spec.ts"],
->>>>>>> upstream/main
         coverage: {
           exclude: coverageConfigDefaults.exclude.concat(
             "**/*.stories.@(js|jsx|mjs|ts|tsx)",
           ),
         },
         setupFiles: ["./src/utils/test-setup.ts"],
-<<<<<<< HEAD
-=======
         pool: "forks",
         poolOptions: {
           forks: {
@@ -99,7 +90,6 @@ function makeConfig(library: "browser" | "node") {
             minForks: 1,
           },
         },
->>>>>>> upstream/main
       },
       css: {
         modules: {},
@@ -115,9 +105,6 @@ function makeConfig(library: "browser" | "node") {
 
       CONFIG.plugins?.push([
         // eslint-disable-next-line @typescript-eslint/no-unsafe-call
-<<<<<<< HEAD
-        eslint() as PluginOption,
-=======
         eslint({
           exclude: [
             "**/node_modules/**",
@@ -125,7 +112,6 @@ function makeConfig(library: "browser" | "node") {
             "**/src/features/Buddy/**",
           ],
         }) as PluginOption,
->>>>>>> upstream/main
       ]);
 
       CONFIG.plugins?.push([

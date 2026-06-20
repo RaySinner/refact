@@ -1,21 +1,4 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
-<<<<<<< HEAD
-import {
-  Button,
-  Flex,
-  Switch,
-  Text,
-  TextField,
-  TextArea,
-} from "@radix-ui/themes";
-import {
-  ExternalLinkIcon,
-  EyeOpenIcon,
-  EyeClosedIcon,
-  Cross2Icon,
-  CheckIcon,
-} from "@radix-ui/react-icons";
-=======
 import { ExternalLink, Eye, EyeOff, X } from "lucide-react";
 
 import {
@@ -28,7 +11,6 @@ import {
   Switch,
 } from "../../../components/ui";
 
->>>>>>> upstream/main
 import styles from "./ProviderForm.module.css";
 
 export type SchemaFieldDef = {
@@ -107,8 +89,6 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({
   );
 };
 
-<<<<<<< HEAD
-=======
 function FieldActions({ field }: { field: SchemaFieldDef }) {
   if (!field.smartlinks?.length) return null;
 
@@ -141,7 +121,6 @@ function resetStatusLater(
   );
 }
 
->>>>>>> upstream/main
 const NumberField: React.FC<SchemaFieldProps> = ({
   field,
   value,
@@ -168,11 +147,7 @@ const NumberField: React.FC<SchemaFieldProps> = ({
     const parsed = Number(localValue);
     if (!Number.isFinite(parsed)) {
       setSaveState("error");
-<<<<<<< HEAD
-      timerRef.current = setTimeout(() => setSaveState("idle"), 2000);
-=======
       resetStatusLater(timerRef, setSaveState, "error");
->>>>>>> upstream/main
       return;
     }
     const nextValue = field.f_type === "integer" ? Math.trunc(parsed) : parsed;
@@ -180,51 +155,14 @@ const NumberField: React.FC<SchemaFieldProps> = ({
     try {
       await onSave(field.key, nextValue);
       setSaveState("saved");
-<<<<<<< HEAD
-      timerRef.current = setTimeout(() => setSaveState("idle"), 1500);
-    } catch {
-      setSaveState("error");
-      timerRef.current = setTimeout(() => setSaveState("idle"), 2000);
-=======
       resetStatusLater(timerRef, setSaveState, "saved");
     } catch {
       setSaveState("error");
       resetStatusLater(timerRef, setSaveState, "error");
->>>>>>> upstream/main
     }
   }, [field.f_type, field.key, localValue, onSave, valueToString]);
 
   return (
-<<<<<<< HEAD
-    <Flex direction="column" gap="1">
-      <Flex align="center" justify="between">
-        <Flex direction="column" gap="0">
-          <Text size="2" weight="medium">
-            {field.f_label ?? field.key}
-          </Text>
-          {field.f_desc && (
-            <Text size="1" color="gray">
-              {field.f_desc}
-            </Text>
-          )}
-        </Flex>
-        <SaveIndicator state={saveState} />
-      </Flex>
-      <TextField.Root
-        id={field.key}
-        type="number"
-        value={localValue}
-        placeholder={field.f_placeholder ?? ""}
-        disabled={disabled}
-        onChange={(e) => setLocalValue(e.target.value)}
-        onBlur={() => void handleBlur()}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") e.currentTarget.blur();
-        }}
-        className={disabled ? styles.disabledField : undefined}
-      />
-    </Flex>
-=======
     <SettingItem
       title={field.f_label ?? field.key}
       description={field.f_desc}
@@ -245,7 +183,6 @@ const NumberField: React.FC<SchemaFieldProps> = ({
         />
       }
     />
->>>>>>> upstream/main
   );
 };
 
@@ -265,50 +202,16 @@ const BooleanField: React.FC<SchemaFieldProps> = ({
       try {
         await onSave(field.key, checked);
         setSaveState("saved");
-<<<<<<< HEAD
-        timerRef.current = setTimeout(() => setSaveState("idle"), 1500);
-      } catch {
-        setSaveState("error");
-        timerRef.current = setTimeout(() => setSaveState("idle"), 2000);
-=======
         resetStatusLater(timerRef, setSaveState, "saved");
       } catch {
         setSaveState("error");
         resetStatusLater(timerRef, setSaveState, "error");
->>>>>>> upstream/main
       }
     },
     [field.key, onSave],
   );
 
   return (
-<<<<<<< HEAD
-    <Flex direction="column" gap="1">
-      <Flex align="center" justify="between" gap="3">
-        <Flex direction="column" gap="0">
-          <label htmlFor={field.key}>
-            <Text size="2" weight="medium">
-              {field.f_label ?? field.key}
-            </Text>
-          </label>
-          {field.f_desc && (
-            <Text size="1" color="gray">
-              {field.f_desc}
-            </Text>
-          )}
-        </Flex>
-        <Flex align="center" gap="2">
-          <SaveIndicator state={saveState} />
-          <Switch
-            id={field.key}
-            checked={Boolean(value)}
-            disabled={disabled}
-            onCheckedChange={(checked) => void handleChange(checked)}
-          />
-        </Flex>
-      </Flex>
-    </Flex>
-=======
     <SettingItem
       title={field.f_label ?? field.key}
       description={field.f_desc}
@@ -322,7 +225,6 @@ const BooleanField: React.FC<SchemaFieldProps> = ({
         />
       }
     />
->>>>>>> upstream/main
   );
 };
 
@@ -363,17 +265,10 @@ const SecretField: React.FC<SchemaFieldProps> = ({
       await onSave(field.key, localValue);
       setSaveState("saved");
       setEditing(false);
-<<<<<<< HEAD
-      timerRef.current = setTimeout(() => setSaveState("idle"), 1500);
-    } catch {
-      setSaveState("error");
-      timerRef.current = setTimeout(() => setSaveState("idle"), 2000);
-=======
       resetStatusLater(timerRef, setSaveState, "saved");
     } catch {
       setSaveState("error");
       resetStatusLater(timerRef, setSaveState, "error");
->>>>>>> upstream/main
     }
   }, [editing, localValue, isMasked, field.key, onSave]);
 
@@ -384,17 +279,10 @@ const SecretField: React.FC<SchemaFieldProps> = ({
       setLocalValue("");
       setEditing(false);
       setSaveState("saved");
-<<<<<<< HEAD
-      timerRef.current = setTimeout(() => setSaveState("idle"), 1500);
-    } catch {
-      setSaveState("error");
-      timerRef.current = setTimeout(() => setSaveState("idle"), 2000);
-=======
       resetStatusLater(timerRef, setSaveState, "saved");
     } catch {
       setSaveState("error");
       resetStatusLater(timerRef, setSaveState, "error");
->>>>>>> upstream/main
     }
   }, [field.key, onSave]);
 
@@ -407,69 +295,6 @@ const SecretField: React.FC<SchemaFieldProps> = ({
     isMasked && !editing ? "••••••••  (saved)" : field.f_placeholder ?? "";
 
   return (
-<<<<<<< HEAD
-    <Flex direction="column" gap="1">
-      <Flex align="center" justify="between">
-        <Flex direction="column" gap="0">
-          <Text size="2" weight="medium">
-            {field.f_label ?? field.key}
-          </Text>
-          {field.f_desc && (
-            <Text size="1" color="gray">
-              {field.f_desc}
-            </Text>
-          )}
-        </Flex>
-        <Flex align="center" gap="1">
-          <SaveIndicator state={saveState} />
-          {field.smartlinks?.map((link) => (
-            <Button key={link.sl_goto} variant="ghost" size="1" asChild>
-              <a href={link.sl_goto} target="_blank" rel="noopener noreferrer">
-                <ExternalLinkIcon width={12} height={12} />
-                <Text size="1">{link.sl_label}</Text>
-              </a>
-            </Button>
-          ))}
-        </Flex>
-      </Flex>
-      <Flex gap="1" align="center">
-        <TextField.Root
-          style={{ flex: 1 }}
-          id={field.key}
-          type={revealed ? "text" : "password"}
-          value={displayValue}
-          placeholder={placeholder}
-          disabled={disabled}
-          onFocus={() => setEditing(true)}
-          onChange={(e) => setLocalValue(e.target.value)}
-          onBlur={() => void handleBlur()}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") e.currentTarget.blur();
-          }}
-          className={disabled ? styles.disabledField : undefined}
-        />
-        <Button
-          variant="ghost"
-          size="1"
-          onClick={() => setRevealed(!revealed)}
-          title={revealed ? "Hide" : "Reveal"}
-        >
-          {revealed ? <EyeClosedIcon /> : <EyeOpenIcon />}
-        </Button>
-        {isMasked && !editing && (
-          <Button
-            variant="ghost"
-            size="1"
-            color="red"
-            onClick={() => void handleClear()}
-            title="Clear saved value"
-          >
-            <Cross2Icon />
-          </Button>
-        )}
-      </Flex>
-    </Flex>
-=======
     <SettingItem
       title={field.f_label ?? field.key}
       description={field.f_desc}
@@ -513,7 +338,6 @@ const SecretField: React.FC<SchemaFieldProps> = ({
         </div>
       }
     />
->>>>>>> upstream/main
   );
 };
 
@@ -542,104 +366,16 @@ const StringField: React.FC<SchemaFieldProps> = ({
     try {
       await onSave(field.key, localValue);
       setSaveState("saved");
-<<<<<<< HEAD
-      timerRef.current = setTimeout(() => setSaveState("idle"), 1500);
-    } catch {
-      setSaveState("error");
-      timerRef.current = setTimeout(() => setSaveState("idle"), 2000);
-=======
       resetStatusLater(timerRef, setSaveState, "saved");
     } catch {
       setSaveState("error");
       resetStatusLater(timerRef, setSaveState, "error");
->>>>>>> upstream/main
     }
   }, [localValue, field.key, onSave]);
 
   const isLong = field.f_type === "string_long" || localValue.length > 80;
 
   return (
-<<<<<<< HEAD
-    <Flex direction="column" gap="1">
-      <Flex align="center" justify="between">
-        <Flex direction="column" gap="0">
-          <Text size="2" weight="medium">
-            {field.f_label ?? field.key}
-          </Text>
-          {field.f_desc && (
-            <Text size="1" color="gray">
-              {field.f_desc}
-            </Text>
-          )}
-        </Flex>
-        <Flex align="center" gap="1">
-          <SaveIndicator state={saveState} />
-          {field.smartlinks?.map((link) => (
-            <Button key={link.sl_goto} variant="ghost" size="1" asChild>
-              <a href={link.sl_goto} target="_blank" rel="noopener noreferrer">
-                <ExternalLinkIcon width={12} height={12} />
-                <Text size="1">{link.sl_label}</Text>
-              </a>
-            </Button>
-          ))}
-        </Flex>
-      </Flex>
-      {isLong ? (
-        <TextArea
-          id={field.key}
-          value={localValue}
-          placeholder={field.f_placeholder ?? ""}
-          disabled={disabled}
-          onChange={(e) => setLocalValue(e.target.value)}
-          onBlur={() => void handleBlur()}
-          className={disabled ? styles.disabledField : undefined}
-          rows={2}
-        />
-      ) : (
-        <TextField.Root
-          id={field.key}
-          value={localValue}
-          placeholder={field.f_placeholder ?? ""}
-          disabled={disabled}
-          onChange={(e) => setLocalValue(e.target.value)}
-          onBlur={() => void handleBlur()}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") e.currentTarget.blur();
-          }}
-          className={disabled ? styles.disabledField : undefined}
-        />
-      )}
-    </Flex>
-  );
-};
-
-const SaveIndicator: React.FC<{ state: FieldSaveState }> = ({ state }) => {
-  switch (state) {
-    case "idle":
-      return null;
-    case "saving":
-      return (
-        <Text size="1" color="gray">
-          Saving…
-        </Text>
-      );
-    case "saved":
-      return (
-        <Flex align="center" gap="1">
-          <CheckIcon width={12} height={12} color="var(--green-9)" />
-          <Text size="1" color="green">
-            Saved
-          </Text>
-        </Flex>
-      );
-    case "error":
-      return (
-        <Text size="1" color="red">
-          Error
-        </Text>
-      );
-  }
-=======
     <SettingItem
       title={field.f_label ?? field.key}
       description={field.f_desc}
@@ -683,5 +419,4 @@ export const SaveIndicator: React.FC<{ state: FieldSaveState }> = ({
   if (state === "idle") return null;
 
   return <SaveStatus state={state} />;
->>>>>>> upstream/main
 };

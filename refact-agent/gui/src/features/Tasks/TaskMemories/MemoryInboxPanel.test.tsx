@@ -155,17 +155,11 @@ describe("MemoryInboxPanel", () => {
       }),
     );
 
-<<<<<<< HEAD
-    expect(
-      within(firstCard).queryByTestId("memory-card-expanded-decision.md"),
-    ).not.toBeInTheDocument();
-=======
     await waitFor(() =>
       expect(
         within(firstCard).queryByTestId("memory-card-expanded-decision.md"),
       ).not.toBeInTheDocument(),
     );
->>>>>>> upstream/main
     expect(
       within(secondCard).getByTestId("memory-card-expanded-risk.md"),
     ).toBeInTheDocument();
@@ -530,21 +524,6 @@ describe("MemoryInboxPanel", () => {
 
     const { user } = render(<TaskWorkspace taskId="task-1" />, { store });
 
-<<<<<<< HEAD
-    const expandChatBtn = await screen.findByRole("button", {
-      name: "Expand chat",
-    });
-
-    const chatHeaderDiv = expandChatBtn.parentElement ?? document.body;
-    const memoriesTabEl = Array.from(
-      chatHeaderDiv.querySelectorAll('button[role="tab"]'),
-    ).find((el) => el.textContent?.includes("Memories"));
-
-    expect(memoriesTabEl).toBeDefined();
-    await user.click(memoriesTabEl as HTMLElement);
-
-    expect(expandChatBtn.textContent).not.toContain("Memories");
-=======
     const memoriesTab = await screen.findByRole("tab", { name: "Memories" });
     await user.click(memoriesTab);
 
@@ -553,7 +532,6 @@ describe("MemoryInboxPanel", () => {
     );
     const switcher = screen.getByRole("button", { name: "Switch chat" });
     expect(switcher.textContent).not.toContain("Memories");
->>>>>>> upstream/main
   });
 
   it("pin_success_does_not_leave_stale_optimistic_override", async () => {

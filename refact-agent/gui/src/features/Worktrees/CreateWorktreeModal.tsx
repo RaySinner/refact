@@ -1,9 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-<<<<<<< HEAD
-import { Button, Dialog, Flex, Text, TextField } from "@radix-ui/themes";
-=======
 import { Button, Dialog, FieldText } from "../../components/ui";
->>>>>>> upstream/main
 import { dialogNonInteractiveCloseHandlers } from "../../utils/dialogPointerClose";
 import styles from "./Worktrees.module.css";
 
@@ -81,109 +77,6 @@ export const CreateWorktreeModal: React.FC<CreateWorktreeModalProps> = ({
   }, [baseBranch, baseBranchSearchTouched, normalizedBaseOptions]);
 
   return (
-<<<<<<< HEAD
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Content
-        className={styles.createDialog}
-        maxWidth="420px"
-        {...dialogNonInteractiveCloseHandlers(() => onOpenChange(false))}
-      >
-        <Dialog.Title>Create worktree</Dialog.Title>
-        <Dialog.Description size="2" color="gray">
-          Create a new git worktree and attach it to this chat.
-        </Dialog.Description>
-
-        <div className={styles.modalFields}>
-          <label className={styles.field} htmlFor="worktree-branch-name">
-            <Text size="2" weight="medium">
-              Branch name
-            </Text>
-            <TextField.Root
-              id="worktree-branch-name"
-              value={branchName}
-              placeholder={defaultBranch}
-              onChange={(event) => setBranchName(event.target.value)}
-              disabled={isCreating}
-            />
-          </label>
-
-          <div className={styles.field}>
-            <Text size="2" weight="medium">
-              Base branch
-            </Text>
-            <Text size="1" color="gray">
-              Worktree will be created from this branch.
-            </Text>
-            <div className={styles.branchPicker}>
-              <TextField.Root
-                aria-label="Base branch"
-                value={baseBranch}
-                placeholder="Current branch unavailable"
-                onFocus={() => {
-                  setBaseBranchSearchTouched(false);
-                  setBaseBranchPickerOpen(true);
-                }}
-                onBlur={() => {
-                  window.setTimeout(() => setBaseBranchPickerOpen(false), 120);
-                }}
-                onChange={(event) => {
-                  setBaseBranch(event.target.value);
-                  setBaseBranchSearchTouched(true);
-                  setBaseBranchPickerOpen(true);
-                }}
-                disabled={isCreating}
-              />
-              {baseBranchPickerOpen && filteredBaseOptions.length > 0 && (
-                <div className={styles.branchOptions} role="listbox">
-                  {filteredBaseOptions.map((branch) => (
-                    <button
-                      key={branch}
-                      type="button"
-                      className={styles.branchOption}
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => {
-                        setBaseBranch(branch);
-                        setBaseBranchSearchTouched(false);
-                        setBaseBranchPickerOpen(false);
-                      }}
-                    >
-                      {branch}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {error && (
-            <Text size="1" color="red">
-              {error}
-            </Text>
-          )}
-        </div>
-
-        <Flex className={styles.modalActions}>
-          <Dialog.Close>
-            <Button
-              type="button"
-              variant="soft"
-              color="gray"
-              disabled={isCreating}
-            >
-              Cancel
-            </Button>
-          </Dialog.Close>
-          <Button
-            type="button"
-            onClick={() => void handleCreate()}
-            disabled={!canCreate}
-          >
-            {isCreating ? "Creating..." : "Create"}
-          </Button>
-        </Flex>
-      </Dialog.Content>
-    </Dialog.Root>
-=======
     <Dialog open={open} onOpenChange={onOpenChange}>
       <Dialog.Content className={styles.createDialog} maxWidth="420px">
         <div {...dialogNonInteractiveCloseHandlers(() => onOpenChange(false))}>
@@ -274,7 +167,6 @@ export const CreateWorktreeModal: React.FC<CreateWorktreeModalProps> = ({
         </div>
       </Dialog.Content>
     </Dialog>
->>>>>>> upstream/main
   );
 };
 

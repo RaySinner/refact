@@ -1,14 +1,6 @@
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-<<<<<<< HEAD
-import { describe, expect, it, vi } from "vitest";
-import type React from "react";
-import { render, screen } from "../../../utils/test-utils";
-import { MemoryCard } from "./MemoryCard";
-import type { TaskMemoryEntry } from "../../../services/refact/taskMemoriesApi";
-import { memoryKindColor } from "../../../services/refact/taskKinds";
-=======
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type React from "react";
 import { act } from "react-dom/test-utils";
@@ -17,7 +9,6 @@ import { MemoryCard } from "./MemoryCard";
 import type { TaskMemoryEntry } from "../../../services/refact/taskMemoriesApi";
 import { memoryKindColor } from "../../../services/refact/taskKinds";
 import { COLLAPSE_ANIMATION_MS } from "../../../components/shared/useDelayedUnmount";
->>>>>>> upstream/main
 
 HTMLElement.prototype.hasPointerCapture = () => false;
 
@@ -61,13 +52,10 @@ function renderCard(
   );
 }
 
-<<<<<<< HEAD
-=======
 afterEach(() => {
   vi.useRealTimers();
 });
 
->>>>>>> upstream/main
 describe("MemoryCard", () => {
   it("renders title from frontmatter when present", () => {
     renderCard(mockMemory);
@@ -144,8 +132,6 @@ describe("MemoryCard", () => {
     expect(screen.getByText("created_at")).toBeInTheDocument();
   });
 
-<<<<<<< HEAD
-=======
   it("keeps expanded content mounted while uncontrolled collapse animates", () => {
     vi.useFakeTimers();
     renderCard(mockMemory);
@@ -205,7 +191,6 @@ describe("MemoryCard", () => {
     ).toBeInTheDocument();
   });
 
->>>>>>> upstream/main
   it("unknown_memory_kind_renders_gray_badge", () => {
     expect(memoryKindColor("sprint")).toBe("gray");
     expect(memoryKindColor("roadmap")).toBe("gray");

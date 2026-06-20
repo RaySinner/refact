@@ -21,13 +21,17 @@ const IS_WIN = process.platform === "win32";
 const BINARY_SRC = join(ENGINE_DIR, "target", "release", "refact-lsp" + (IS_WIN ? ".exe" : ""));
 const BINARY_DST = join(VSCODE_ASSETS, IS_WIN ? "refact-lsp.exe" : "refact-lsp");
 
-function run(label, cwd, cmd, args = [], env = {}) {
+function cmdExt(base) {
+  return IS_WIN ? `${base}.cmd` : base;
+}
+
+function run(label, cwd, cmd, args = [], env = {}, useShell = false) {
   console.log(`\n[${label}] ${cmd} ${args.join(" ")}`);
   const result = spawnSync(cmd, args, {
     cwd,
     stdio: "inherit",
     env: { ...process.env, ...env },
-    shell: false,
+    shell: useShell,
   });
   if (result.status !== 0) {
     console.error(`\nFAILED: ${label} (exit ${result.status})`);
@@ -37,17 +41,17 @@ function run(label, cwd, cmd, args = [], env = {}) {
 }
 
 // 1. Build GUI
-run("1/6 GUI: npm ci", GUI_DIR, "npm", ["ci"]);
-run("2/6 GUI: tsc", GUI_DIR, "npx", ["tsc", "--noEmit"], {
+run("1/6 GUI: npm ci", GUI_DIR, cmdExt("npm"), ["ci"], {}, true);
+run("2/6 GUI: tsc", GUI_DIR, cmdExt("npx"), ["tsc", "--noEmit"], {
   NODE_OPTIONS: "--max-old-space-size=16384",
-});
-run("3/6 GUI: vite build (browser)", GUI_DIR, "npx", ["vite", "build"], {
+}, true);
+run("3/6 GUI: vite build (browser)", GUI_DIR, cmdExt("npx"), ["vite", "build"], {
   NODE_OPTIONS: "--max-old-space-size=16384",
-});
-run("4/6 GUI: vite build (node)", GUI_DIR, "npx", ["vite", "build", "-c", "vite.node.config.ts"], {
+}, true);
+run("4/6 GUI: vite build (node)", GUI_DIR, cmdExt("npx"), ["vite", "build", "-c", "vite.node.config.ts"], {
   NODE_OPTIONS: "--max-old-space-size=16384",
-});
-run("5/6 GUI: npm pack", GUI_DIR, "npm", ["pack"]);
+}, true);
+run("5/6 GUI: npm pack", GUI_DIR, cmdExt("npm"), ["pack"], {}, true);
 
 const tarballs = readdirSync(GUI_DIR).filter((f) => f.startsWith("refact-chat-js") && f.endsWith(".tgz"));
 if (tarballs.length !== 1) {
@@ -71,10 +75,10 @@ copyFileSync(BINARY_SRC, BINARY_DST);
 console.log(`Copied engine binary to ${BINARY_DST}`);
 
 // 3. VSCode: extension
-run("7/8 VSCode: npm ci", VSCODE_DIR, "npm", ["ci"]);
-run("8/8 VSCode: install GUI", VSCODE_DIR, "npm", ["install", tarballPath, "--save-exact"]);
-run("TypeScript compile", VSCODE_DIR, "npm", ["run", "compile"]);
-run("vsce package", VSCODE_DIR, "vsce", ["package", "--target", "win32-x64"]);
+run("7/8 VSCode: npm ci", VSCODE_DIR, cmdExt("npm"), ["ci"], {}, true);
+run("8/8 VSCode: install GUI", VSCODE_DIR, cmdExt("npm"), ["install", tarballPath, "--save-exact"], {}, true);
+run("TypeScript compile", VSCODE_DIR, cmdExt("npm"), ["run", "compile"], {}, true);
+run("vsce package", VSCODE_DIR, cmdExt("vsce"), ["package", "--target", "win32-x64"], {}, true);
 
 // 4. Restore package.json
 const pkgPath = join(VSCODE_DIR, "package.json");

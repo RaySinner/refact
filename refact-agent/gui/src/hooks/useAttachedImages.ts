@@ -2,14 +2,8 @@ import { useCallback, useEffect } from "react";
 import { useAppSelector } from "./useAppSelector";
 import { useAppDispatch } from "./useAppDispatch";
 import {
-<<<<<<< HEAD
-  selectThreadImages,
-  selectThreadTextFiles,
-  selectChatId,
-=======
   selectThreadImagesById,
   selectThreadTextFilesById,
->>>>>>> upstream/main
   addThreadImage,
   removeThreadImageByIndex,
   resetThreadImages,
@@ -22,13 +16,6 @@ import {
 import { setError } from "../features/Errors/errorsSlice";
 import { setInformation } from "../features/Errors/informationSlice";
 import { useCapsForToolUse } from "./useCapsForToolUse";
-<<<<<<< HEAD
-
-export function useAttachedImages() {
-  const images = useAppSelector(selectThreadImages);
-  const textFiles = useAppSelector(selectThreadTextFiles);
-  const chatId = useAppSelector(selectChatId);
-=======
 import { useThreadId } from "../features/Chat/Thread";
 
 export function useAttachedImages() {
@@ -39,7 +26,6 @@ export function useAttachedImages() {
   const textFiles = useAppSelector((state) =>
     selectThreadTextFilesById(state, chatId),
   );
->>>>>>> upstream/main
   const { isMultimodalitySupportedForCurrentModel } = useCapsForToolUse();
   const dispatch = useAppDispatch();
 

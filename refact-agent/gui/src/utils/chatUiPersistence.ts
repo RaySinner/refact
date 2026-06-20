@@ -1,5 +1,3 @@
-<<<<<<< HEAD
-=======
 import { collectTabIds, type PaneNode } from "../features/ChatPanes/panesTree";
 import {
   MAX_GROUP_LEAVES,
@@ -16,22 +14,14 @@ import {
   type SurfaceKey,
 } from "../features/Workspace/surfaceKey";
 
->>>>>>> upstream/main
 type JsonRecord = Record<string, unknown>;
 
 const CHAT_TABS_STORAGE_KEY = "refact:chat-ui:tabs:v1";
 const ACTIVE_TAB_STORAGE_KEY = "refact:chat-ui:active-tab:v1";
-<<<<<<< HEAD
-const TASKS_UI_STORAGE_KEY = "refact:chat-ui:tasks-ui:v1";
-const ASK_QUESTIONS_STORAGE_KEY = "refact:chat-ui:ask-questions:v1";
-const TASK_WORKSPACE_LAYOUT_STORAGE_KEY =
-  "refact:chat-ui:task-workspace-layouts:v1";
-=======
 const WORKSPACE_STORAGE_KEY = "refact:chat-ui:workspace:v1";
 const TASKS_UI_STORAGE_KEY = "refact:chat-ui:tasks-ui:v1";
 const ASK_QUESTIONS_STORAGE_KEY = "refact:chat-ui:ask-questions:v1";
 const TASK_WORKSPACE_TABS_STORAGE_KEY = "refact:chat-ui:task-workspace-tabs:v1";
->>>>>>> upstream/main
 const PROJECT_STORAGE_NAMESPACE_SESSION_KEY =
   "refact:chat-ui:project-storage-namespace:v1";
 
@@ -39,10 +29,7 @@ let projectStorageNamespace: string | null = null;
 let projectStorageNamespaceTrusted = false;
 
 const MAX_OPEN_CHAT_TABS = 50;
-<<<<<<< HEAD
-=======
 const MAX_WORKSPACE_TREE_NODES = MAX_WORKSPACE_TABS * (MAX_GROUP_LEAVES * 2);
->>>>>>> upstream/main
 const MAX_OPEN_TASKS = 25;
 const MAX_PLANNER_CHATS_PER_TASK = 50;
 const MAX_ASK_QUESTIONS_DRAFTS = 100;
@@ -55,10 +42,7 @@ export type PersistedChatTab = {
   tool_use?: "quick" | "explore" | "agent";
   session_state?: string;
   is_buddy_chat?: boolean;
-<<<<<<< HEAD
-=======
   is_task_chat?: boolean;
->>>>>>> upstream/main
 };
 
 export type PersistedChatTabsState = {
@@ -70,12 +54,8 @@ export type PersistedChatTabsState = {
 export type PersistedActiveTab =
   | { type: "dashboard" }
   | { type: "chat"; id: string }
-<<<<<<< HEAD
-  | { type: "task"; taskId: string };
-=======
   | { type: "task"; taskId: string }
   | { type: "buddy" };
->>>>>>> upstream/main
 
 export type PersistedTaskActiveChat =
   | { type: "planner"; chatId: string }
@@ -110,17 +90,9 @@ export type AskQuestionsDraft = {
   updatedAt: number;
 };
 
-<<<<<<< HEAD
-export type TaskWorkspaceLayout = {
-  chatExpanded: boolean;
-  panelsExpanded: boolean;
-  boardHeightPx: number;
-};
-=======
 export type TaskWorkspaceTab = "board" | "chat" | "memories" | "documents";
 
 const TASK_WORKSPACE_TABS = ["board", "chat", "memories", "documents"] as const;
->>>>>>> upstream/main
 
 function getStorage(): Storage | null {
   try {
@@ -324,10 +296,7 @@ function normalizeChatTab(
     tool_use: normalizeToolUse(value.tool_use),
     session_state: stringOrUndefined(value.session_state),
     is_buddy_chat: booleanOrUndefined(value.is_buddy_chat),
-<<<<<<< HEAD
-=======
     is_task_chat: booleanOrUndefined(value.is_task_chat),
->>>>>>> upstream/main
   };
 }
 
@@ -342,11 +311,7 @@ export function loadPersistedChatTabs(): PersistedChatTabsState {
 
   for (const rawTab of rawTabs) {
     const tab = normalizeChatTab(rawTab);
-<<<<<<< HEAD
-    if (tab && !tab.is_buddy_chat) tabsById.set(tab.id, tab);
-=======
     if (tab) tabsById.set(tab.id, tab);
->>>>>>> upstream/main
   }
 
   const openThreadIds = rawOpenThreadIds.filter((id) => tabsById.has(id));
@@ -369,11 +334,7 @@ export function savePersistedChatTabs(input: PersistedChatTabsState): void {
   const tabsById = new Map<string, PersistedChatTab>();
 
   for (const tab of input.tabs) {
-<<<<<<< HEAD
-    if (!tab.is_buddy_chat) tabsById.set(tab.id, tab);
-=======
     tabsById.set(tab.id, tab);
->>>>>>> upstream/main
   }
 
   const openThreadIds = dedupeStrings(
@@ -396,11 +357,6 @@ export function savePersistedChatTabs(input: PersistedChatTabsState): void {
   });
 }
 
-<<<<<<< HEAD
-function normalizeActiveTab(value: unknown): PersistedActiveTab | null {
-  if (!isRecord(value)) return null;
-  if (value.type === "dashboard") return { type: "dashboard" };
-=======
 function collectPaneLeafIds(node: PaneNode): string[] {
   if (node.kind === "leaf") return [node.id];
   return node.children.flatMap((child) => collectPaneLeafIds(child));
@@ -658,7 +614,6 @@ function normalizeActiveTab(value: unknown): PersistedActiveTab | null {
   if (!isRecord(value)) return null;
   if (value.type === "dashboard") return { type: "dashboard" };
   if (value.type === "buddy") return { type: "buddy" };
->>>>>>> upstream/main
 
   if (value.type === "chat") {
     const id = stringOrUndefined(value.id)?.trim();
@@ -875,25 +830,6 @@ export function clearAskQuestionsDraft(toolCallId: string | undefined): void {
   saveAskQuestionsDrafts(rest);
 }
 
-<<<<<<< HEAD
-function loadTaskWorkspaceLayouts(): Record<string, TaskWorkspaceLayout> {
-  const trustedKey = trustedProjectScopedStorageKey(
-    TASK_WORKSPACE_LAYOUT_STORAGE_KEY,
-  );
-  const record = trustedKey ? readRecord(trustedKey) : null;
-  const layoutsRecord = isRecord(record?.layouts) ? record.layouts : {};
-  const result: Record<string, TaskWorkspaceLayout> = {};
-
-  for (const [taskId, value] of Object.entries(layoutsRecord)) {
-    if (!isRecord(value)) continue;
-    const boardHeightPx = numberOrUndefined(value.boardHeightPx);
-    if (boardHeightPx === undefined) continue;
-    result[taskId] = {
-      chatExpanded: booleanOrUndefined(value.chatExpanded) ?? false,
-      panelsExpanded: booleanOrUndefined(value.panelsExpanded) ?? false,
-      boardHeightPx,
-    };
-=======
 function normalizeTaskWorkspaceTab(value: unknown): TaskWorkspaceTab | null {
   return typeof value === "string" &&
     (TASK_WORKSPACE_TABS as readonly string[]).includes(value)
@@ -912,41 +848,11 @@ function loadTaskWorkspaceTabs(): Record<string, TaskWorkspaceTab> {
   for (const [taskId, value] of Object.entries(tabsRecord)) {
     const tab = normalizeTaskWorkspaceTab(value);
     if (tab) result[taskId] = tab;
->>>>>>> upstream/main
   }
 
   return result;
 }
 
-<<<<<<< HEAD
-export function loadTaskWorkspaceLayout(
-  taskId: string,
-  defaults: TaskWorkspaceLayout,
-): TaskWorkspaceLayout {
-  const layouts = loadTaskWorkspaceLayouts() as Record<
-    string,
-    TaskWorkspaceLayout | undefined
-  >;
-  const layout = layouts[taskId];
-  return layout ? { ...defaults, ...layout } : defaults;
-}
-
-export function saveTaskWorkspaceLayout(
-  taskId: string,
-  layout: TaskWorkspaceLayout,
-): void {
-  if (!taskId.trim()) return;
-  const storageKey = trustedProjectScopedStorageKey(
-    TASK_WORKSPACE_LAYOUT_STORAGE_KEY,
-  );
-  if (!storageKey) return;
-
-  const layouts = loadTaskWorkspaceLayouts();
-  layouts[taskId] = layout;
-  writeRecord(storageKey, {
-    version: 1,
-    layouts,
-=======
 export function loadTaskWorkspaceTab(taskId: string): TaskWorkspaceTab | null {
   const tabs = loadTaskWorkspaceTabs() as Record<
     string,
@@ -970,7 +876,6 @@ export function saveTaskWorkspaceTab(
   writeRecord(storageKey, {
     version: 1,
     tabs,
->>>>>>> upstream/main
     updatedAt: Date.now(),
   });
 }

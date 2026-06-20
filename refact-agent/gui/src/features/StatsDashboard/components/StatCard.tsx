@@ -1,9 +1,4 @@
 import React from "react";
-<<<<<<< HEAD
-import { Card, Flex, Text } from "@radix-ui/themes";
-import styles from "./StatCard.module.css";
-
-=======
 import type { LucideIcon } from "lucide-react";
 import { Activity, ArrowDownRight, ArrowUpRight, Minus } from "lucide-react";
 import { Card, Icon, StatusDot } from "../../../components/ui";
@@ -15,13 +10,10 @@ export type StatCardTrend = {
   label: string;
 };
 
->>>>>>> upstream/main
 export type StatCardProps = {
   title: string;
   value: string;
   subtitle?: string;
-<<<<<<< HEAD
-=======
   icon?: LucideIcon;
   tone?: "accent" | "success" | "warning" | "danger" | "muted";
   trend?: StatCardTrend;
@@ -42,30 +34,12 @@ const trendIcons: Record<StatCardTrend["direction"], LucideIcon> = {
   up: ArrowUpRight,
   down: ArrowDownRight,
   flat: Minus,
->>>>>>> upstream/main
 };
 
 export const StatCard: React.FC<StatCardProps> = ({
   title,
   value,
   subtitle,
-<<<<<<< HEAD
-}) => (
-  <Card className={styles.card}>
-    <Flex direction="column">
-      <Text size="2" className={styles.title}>
-        {title}
-      </Text>
-      <Text size="7" weight="bold" className={styles.value}>
-        {value}
-      </Text>
-      {subtitle && (
-        <Text size="1" className={styles.subtitle}>
-          {subtitle}
-        </Text>
-      )}
-    </Flex>
-=======
   icon = Activity,
   tone = "accent",
   trend,
@@ -91,6 +65,5 @@ export const StatCard: React.FC<StatCardProps> = ({
       )}
     </div>
     {subtitle && <p className={styles.subtitle}>{subtitle}</p>}
->>>>>>> upstream/main
   </Card>
 );

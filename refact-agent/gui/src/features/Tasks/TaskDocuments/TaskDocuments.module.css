@@ -1,42 +1,21 @@
 .root {
   display: flex;
-<<<<<<< HEAD
-  flex-direction: column;
-  gap: var(--space-2);
-  height: 100%;
-  min-height: 0;
-  padding: var(--space-2);
-=======
   min-width: 0;
   height: 100%;
   min-height: 0;
   flex-direction: column;
   gap: var(--rf-space-3);
   padding: var(--rf-panel-pad);
->>>>>>> upstream/main
   overflow: hidden;
 }
 
 .header {
-<<<<<<< HEAD
-=======
   min-width: 0;
->>>>>>> upstream/main
   flex-shrink: 0;
 }
 
 .filters {
   flex-shrink: 0;
-<<<<<<< HEAD
-  padding: var(--space-2);
-  border: 1px solid var(--gray-a5);
-  border-radius: var(--radius-3);
-  background: var(--gray-a2);
-}
-
-.filterControl {
-  min-width: 140px;
-=======
   padding: var(--rf-panel-pad);
 }
 
@@ -51,7 +30,6 @@
 
 .errorState {
   flex-shrink: 0;
->>>>>>> upstream/main
 }
 
 .list {
@@ -59,22 +37,6 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-<<<<<<< HEAD
-  padding-right: var(--space-1);
-}
-
-.row {
-  border: 1px solid var(--gray-a5);
-  background: var(--color-background);
-  padding: var(--space-3);
-  border-radius: var(--radius-3);
-  cursor: pointer;
-}
-
-.rowPinned {
-  border-color: var(--amber-8);
-  box-shadow: 0 0 0 1px var(--amber-a7);
-=======
   padding-right: var(--rf-space-1);
 }
 
@@ -111,7 +73,6 @@
 
 .rowTop {
   min-width: 0;
->>>>>>> upstream/main
 }
 
 .rowHeader {
@@ -119,8 +80,6 @@
   min-width: 0;
 }
 
-<<<<<<< HEAD
-=======
 .rowTitle {
   min-width: 0;
   overflow: hidden;
@@ -128,16 +87,11 @@
   white-space: nowrap;
 }
 
->>>>>>> upstream/main
 .rowControls {
   flex-shrink: 0;
 }
 
 .rowIconButton {
-<<<<<<< HEAD
-  width: 22px;
-  height: 22px;
-=======
   color: var(--rf-color-muted);
 }
 
@@ -155,32 +109,10 @@
 
 .confirmPopover {
   width: min(220px, calc(100vw - 2 * var(--rf-space-3)));
->>>>>>> upstream/main
 }
 
 .content {
   composes: scrollbarThin from "../../../components/shared/scrollbar.module.css";
-<<<<<<< HEAD
-  margin-top: var(--space-2);
-  padding: var(--space-2);
-  border-radius: var(--radius-2);
-  background: var(--gray-a2);
-  max-height: 320px;
-  overflow: auto;
-}
-
-.emptyState {
-  padding: var(--space-6) var(--space-3);
-  text-align: center;
-}
-
-.historyDialog {
-  width: min(760px, calc(100vw - var(--space-8)));
-  max-width: 760px;
-}
-
-.historyBody {
-=======
   max-height: 320px;
   min-width: 0;
   margin-top: var(--rf-space-3);
@@ -215,7 +147,6 @@
 
 .historyBody {
   min-width: 0;
->>>>>>> upstream/main
   min-height: 360px;
 }
 
@@ -223,36 +154,13 @@
   composes: scrollbarThin from "../../../components/shared/scrollbar.module.css";
   flex: 0 0 220px;
   max-height: 420px;
-<<<<<<< HEAD
-  overflow: auto;
-  padding-right: var(--space-1);
-=======
   min-width: 0;
   overflow: auto;
   padding-right: var(--rf-space-1);
->>>>>>> upstream/main
 }
 
 .historyVersionButton {
   display: flex;
-<<<<<<< HEAD
-  flex-direction: column;
-  gap: var(--space-1);
-  width: 100%;
-  padding: var(--space-2);
-  border: 1px solid var(--gray-a5);
-  border-radius: var(--radius-2);
-  background: var(--color-background);
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.historyVersionButton:hover,
-.historyVersionButtonActive {
-  border-color: var(--accent-a7);
-  background: var(--accent-a3);
-=======
   width: 100%;
   min-width: 0;
   flex-direction: column;
@@ -279,7 +187,6 @@
   border-color: var(--rf-color-accent);
   background: var(--rf-color-accent-soft);
   color: var(--rf-color-accent);
->>>>>>> upstream/main
 }
 
 .historyContent {
@@ -288,12 +195,6 @@
   min-width: 0;
   max-height: 420px;
   overflow: auto;
-<<<<<<< HEAD
-  padding: var(--space-3);
-  border: 1px solid var(--gray-a5);
-  border-radius: var(--radius-3);
-  background: var(--gray-a2);
-=======
   padding: var(--rf-space-3);
 }
 
@@ -333,5 +234,4 @@
   .historyVersionButton {
     transition: none;
   }
->>>>>>> upstream/main
 }

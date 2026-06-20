@@ -1,13 +1,3 @@
-<<<<<<< HEAD
-import { providersApi } from "../services/refact";
-import { useAppSelector } from "./useAppSelector";
-import { selectBackendStatus } from "../features/Connection";
-
-export function useGetConfiguredProvidersQuery() {
-  const backendStatus = useAppSelector(selectBackendStatus);
-  return providersApi.useGetConfiguredProvidersQuery(undefined, {
-    skip: backendStatus !== "online",
-=======
 import { useMemo } from "react";
 import type { RootState } from "../app/store";
 import { capsApi, providersApi } from "../services/refact";
@@ -34,15 +24,12 @@ export function useGetConfiguredProvidersQuery() {
   const config = useAppSelector(selectConfig);
   return providersApi.useGetConfiguredProvidersQuery(undefined, {
     skip: backendStatus !== "online" || !hasUsableEngineEndpoint(config),
->>>>>>> upstream/main
     refetchOnMountOrArgChange: true,
     refetchOnFocus: true,
     refetchOnReconnect: true,
   });
 }
 
-<<<<<<< HEAD
-=======
 function selectCapsQueryIsReady(state: RootState) {
   const queryState = capsApi.endpoints.getCaps.select(undefined)(state);
   return queryState.isSuccess || queryState.data !== undefined;
@@ -94,7 +81,6 @@ export function useProviderBootstrapState() {
   };
 }
 
->>>>>>> upstream/main
 export function useGetProviderQuery({
   providerName,
 }: {

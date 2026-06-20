@@ -1,14 +1,4 @@
 import React, { useCallback, useMemo, useState } from "react";
-<<<<<<< HEAD
-import {
-  Badge,
-  Box,
-  Button,
-  Callout,
-  Card,
-  Checkbox,
-  Dialog,
-=======
 import classNames from "classnames";
 import { Clock, Pencil, Pin, Plus, Trash2 } from "lucide-react";
 import { Markdown } from "../../../components/Markdown";
@@ -18,27 +8,11 @@ import {
   Button,
   Dialog,
   ErrorState,
->>>>>>> upstream/main
   Flex,
   IconButton,
   Popover,
   Select,
   Spinner,
-<<<<<<< HEAD
-  Text,
-  Tooltip,
-} from "@radix-ui/themes";
-import {
-  ClockIcon,
-  DrawingPinIcon,
-  ExclamationTriangleIcon,
-  Pencil2Icon,
-  PlusIcon,
-  TrashIcon,
-} from "@radix-ui/react-icons";
-import classNames from "classnames";
-import { Markdown } from "../../../components/Markdown";
-=======
   Surface,
   Text,
   Tooltip,
@@ -48,7 +22,6 @@ import {
   COLLAPSE_ANIMATION_MS,
   useDelayedUnmount,
 } from "../../../components/shared/useDelayedUnmount";
->>>>>>> upstream/main
 import { DocumentEditor } from "./DocumentEditor";
 import {
   type TaskDocumentSummary,
@@ -77,8 +50,6 @@ function formatUpdatedAt(value: string): string {
   });
 }
 
-<<<<<<< HEAD
-=======
 function badgeTone(color: ReturnType<typeof documentKindColor>): BadgeTone {
   if (color === "red") return "danger";
   if (color === "amber") return "warning";
@@ -87,7 +58,6 @@ function badgeTone(color: ReturnType<typeof documentKindColor>): BadgeTone {
   return "accent";
 }
 
->>>>>>> upstream/main
 type DocumentRowProps = {
   document: TaskDocumentSummary;
   isExpanded: boolean;
@@ -112,24 +82,6 @@ const DocumentRow: React.FC<DocumentRowProps> = ({
   onDelete,
 }) => {
   const pinned = document.pinned;
-<<<<<<< HEAD
-
-  return (
-    <Card
-      className={classNames(styles.row, pinned && styles.rowPinned)}
-      data-testid={`document-row-${document.slug}`}
-      onClick={onToggleExpand}
-    >
-      <Flex justify="between" align="start" gap="2">
-        <Flex align="center" gap="2" wrap="wrap" className={styles.rowHeader}>
-          <Tooltip content={pinned ? "Unpin" : "Pin"}>
-            <IconButton
-              size="1"
-              variant="ghost"
-              color={pinned ? "amber" : "gray"}
-              aria-label={pinned ? "Unpin" : "Pin"}
-              className={styles.rowIconButton}
-=======
   const { shouldRender, isAnimatingOpen } = useDelayedUnmount(
     isExpanded,
     COLLAPSE_ANIMATION_MS,
@@ -162,39 +114,18 @@ const DocumentRow: React.FC<DocumentRowProps> = ({
                 styles.rowIconButton,
                 pinned && styles.iconButtonPinned,
               )}
->>>>>>> upstream/main
               onClick={(e) => {
                 e.stopPropagation();
                 void onPin(document.slug, !pinned);
               }}
-<<<<<<< HEAD
-            >
-              <DrawingPinIcon />
-            </IconButton>
-          </Tooltip>
-          <Badge
-            color={documentKindColor(document.kind)}
-            variant="soft"
-            size="1"
-=======
             />
           </Tooltip>
           <Badge
             tone={badgeTone(documentKindColor(document.kind))}
->>>>>>> upstream/main
             data-testid={`kind-badge-${document.slug}`}
           >
             {document.kind}
           </Badge>
-<<<<<<< HEAD
-          <Text weight="bold" size="2">
-            {document.name}
-          </Text>
-          <Text size="1" color="gray">
-            v{document.version}
-          </Text>
-          <Text size="1" color="gray">
-=======
           <Text weight="bold" size="2" className={styles.rowTitle}>
             {document.name}
           </Text>
@@ -202,7 +133,6 @@ const DocumentRow: React.FC<DocumentRowProps> = ({
             v{document.version}
           </Text>
           <Text size="1" className={styles.mutedText}>
->>>>>>> upstream/main
             {formatUpdatedAt(document.updated_at)}
           </Text>
         </Flex>
@@ -210,34 +140,15 @@ const DocumentRow: React.FC<DocumentRowProps> = ({
         <Flex gap="1" align="center" className={styles.rowControls}>
           <Tooltip content="Edit">
             <IconButton
-<<<<<<< HEAD
-              size="1"
-              variant="ghost"
-              color="gray"
-              aria-label="Edit"
-=======
               size="sm"
               variant="plain"
               aria-label="Edit"
               icon={Pencil}
->>>>>>> upstream/main
               className={styles.rowIconButton}
               onClick={(e) => {
                 e.stopPropagation();
                 onEdit(document.slug);
               }}
-<<<<<<< HEAD
-            >
-              <Pencil2Icon />
-            </IconButton>
-          </Tooltip>
-          <Tooltip content="History">
-            <IconButton
-              size="1"
-              variant="ghost"
-              color="gray"
-              aria-label="History"
-=======
             />
           </Tooltip>
           <Tooltip content="History">
@@ -246,42 +157,11 @@ const DocumentRow: React.FC<DocumentRowProps> = ({
               variant="plain"
               aria-label="History"
               icon={Clock}
->>>>>>> upstream/main
               className={styles.rowIconButton}
               onClick={(e) => {
                 e.stopPropagation();
                 onHistory(document.slug);
               }}
-<<<<<<< HEAD
-            >
-              <ClockIcon />
-            </IconButton>
-          </Tooltip>
-          <Popover.Root>
-            <Tooltip content="Delete">
-              <Popover.Trigger>
-                <IconButton
-                  size="1"
-                  variant="ghost"
-                  color="red"
-                  aria-label="Delete"
-                  className={styles.rowIconButton}
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <TrashIcon />
-                </IconButton>
-              </Popover.Trigger>
-            </Tooltip>
-            <Popover.Content width="220px">
-              <Flex direction="column" gap="3">
-                <Text size="2">Delete this document?</Text>
-                <Flex gap="2">
-                  <Popover.Close>
-                    <Button
-                      size="1"
-                      variant="solid"
-                      color="red"
-=======
             />
           </Tooltip>
           <Popover>
@@ -308,7 +188,6 @@ const DocumentRow: React.FC<DocumentRowProps> = ({
                     <Button
                       size="sm"
                       variant="danger"
->>>>>>> upstream/main
                       onClick={() => {
                         void onDelete(document.slug);
                       }}
@@ -316,43 +195,14 @@ const DocumentRow: React.FC<DocumentRowProps> = ({
                       Confirm delete
                     </Button>
                   </Popover.Close>
-<<<<<<< HEAD
-                  <Popover.Close>
-                    <Button size="1" variant="soft" color="gray">
-=======
                   <Popover.Close asChild>
                     <Button size="sm" variant="plain">
->>>>>>> upstream/main
                       Cancel
                     </Button>
                   </Popover.Close>
                 </Flex>
               </Flex>
             </Popover.Content>
-<<<<<<< HEAD
-          </Popover.Root>
-        </Flex>
-      </Flex>
-
-      {isExpanded && (
-        <Box className={styles.content}>
-          {isExpandedLoading ? (
-            <Flex justify="center" p="2">
-              <Spinner size="1" />
-            </Flex>
-          ) : expandedContent !== undefined ? (
-            <Markdown canHaveInteractiveElements={false}>
-              {expandedContent}
-            </Markdown>
-          ) : (
-            <Text size="2" color="gray">
-              Document content is unavailable.
-            </Text>
-          )}
-        </Box>
-      )}
-    </Card>
-=======
           </Popover>
         </Flex>
       </Flex>
@@ -381,7 +231,6 @@ const DocumentRow: React.FC<DocumentRowProps> = ({
         </div>
       )}
     </Surface>
->>>>>>> upstream/main
   );
 };
 
@@ -524,74 +373,21 @@ export const DocumentsPanel: React.FC<DocumentsPanelProps> = ({ taskId }) => {
   }, []);
 
   return (
-<<<<<<< HEAD
-    <Box className={styles.root}>
-=======
     <div className={`${styles.root} rf-enter`}>
->>>>>>> upstream/main
       <Flex justify="between" align="center" gap="2" className={styles.header}>
         <Text weight="bold" size="3">
           {data?.documents.length ?? 0} documents
         </Text>
-<<<<<<< HEAD
-        <Button size="1" variant="soft" onClick={handleNewDocument}>
-          <PlusIcon />
-=======
         <Button
           size="sm"
           variant="soft"
           leftIcon={Plus}
           onClick={handleNewDocument}
         >
->>>>>>> upstream/main
           New
         </Button>
       </Flex>
 
-<<<<<<< HEAD
-      <Flex gap="2" align="center" className={styles.filters} wrap="wrap">
-        <Select.Root value={kindFilter} onValueChange={setKindFilter} size="1">
-          <Select.Trigger
-            aria-label="Kind filter"
-            className={styles.filterControl}
-          />
-          <Select.Content>
-            <Select.Item value={ALL_VALUE}>All kinds</Select.Item>
-            {DOCUMENT_KINDS.map((k) => (
-              <Select.Item key={k} value={k}>
-                {k}
-              </Select.Item>
-            ))}
-          </Select.Content>
-        </Select.Root>
-        <Text as="label" size="2">
-          <Flex align="center" gap="1">
-            <Checkbox
-              size="1"
-              checked={pinnedOnly}
-              onCheckedChange={(v) => setPinnedOnly(v === true)}
-            />
-            Pinned only
-          </Flex>
-        </Text>
-        {isFetching && <Spinner size="1" />}
-      </Flex>
-
-      {error && (
-        <Callout.Root color="red" size="1">
-          <Callout.Icon>
-            <ExclamationTriangleIcon />
-          </Callout.Icon>
-          <Callout.Text>Failed to load documents.</Callout.Text>
-        </Callout.Root>
-      )}
-
-      <Flex direction="column" gap="2" className={styles.list}>
-        {isFetching && !data ? (
-          <Flex justify="center" p="4">
-            <Spinner />
-          </Flex>
-=======
       <Surface
         animated="rise"
         className={styles.filters}
@@ -636,7 +432,6 @@ export const DocumentsPanel: React.FC<DocumentsPanelProps> = ({ taskId }) => {
           <div className={styles.loadingState}>
             <Spinner />
           </div>
->>>>>>> upstream/main
         ) : visible.length > 0 ? (
           visible.map((doc) => (
             <DocumentRow
@@ -661,11 +456,7 @@ export const DocumentsPanel: React.FC<DocumentsPanelProps> = ({ taskId }) => {
             />
           ))
         ) : (
-<<<<<<< HEAD
-          <Text color="gray" size="2" className={styles.emptyState}>
-=======
           <Text as="div" className={styles.emptyState}>
->>>>>>> upstream/main
             No documents yet. Click + New to create a plan or design doc.
           </Text>
         )}
@@ -679,30 +470,19 @@ export const DocumentsPanel: React.FC<DocumentsPanelProps> = ({ taskId }) => {
         onOpenChange={setEditorOpen}
       />
 
-<<<<<<< HEAD
-      <Dialog.Root open={historyOpen} onOpenChange={handleHistoryOpenChange}>
-        <Dialog.Content className={styles.historyDialog}>
-=======
       <Dialog open={historyOpen} onOpenChange={handleHistoryOpenChange}>
         <Dialog.Content
           className={styles.historyDialog}
           maxHeight="calc(100dvh - var(--rf-space-5))"
           maxWidth="760px"
         >
->>>>>>> upstream/main
           <Dialog.Title>History: {historySlug}</Dialog.Title>
           <Flex gap="3" className={styles.historyBody}>
             <Flex direction="column" gap="2" className={styles.historyList}>
               {isHistoryFetching && historyRows === undefined ? (
-<<<<<<< HEAD
-                <Flex justify="center" p="3">
-                  <Spinner size="1" />
-                </Flex>
-=======
                 <div className={styles.inlineLoading}>
                   <Spinner size="sm" />
                 </div>
->>>>>>> upstream/main
               ) : historyRows?.length ? (
                 historyRows.map((entry) => (
                   <button
@@ -710,10 +490,7 @@ export const DocumentsPanel: React.FC<DocumentsPanelProps> = ({ taskId }) => {
                     type="button"
                     className={classNames(
                       styles.historyVersionButton,
-<<<<<<< HEAD
-=======
                       "rf-pressable",
->>>>>>> upstream/main
                       selectedHistoryVersion === entry.version &&
                         styles.historyVersionButtonActive,
                     )}
@@ -722,36 +499,17 @@ export const DocumentsPanel: React.FC<DocumentsPanelProps> = ({ taskId }) => {
                     <Text size="2" weight="medium" as="span">
                       v{entry.version}
                     </Text>
-<<<<<<< HEAD
-                    <Text size="1" color="gray" as="span">
-=======
                     <Text size="1" as="span" className={styles.mutedText}>
->>>>>>> upstream/main
                       {formatUpdatedAt(entry.updated_at)}
                     </Text>
                   </button>
                 ))
               ) : (
-<<<<<<< HEAD
-                <Text size="2" color="gray">
-=======
                 <Text size="2" className={styles.mutedText}>
->>>>>>> upstream/main
                   No history available.
                 </Text>
               )}
             </Flex>
-<<<<<<< HEAD
-            <Box className={styles.historyContent}>
-              {selectedHistoryVersion === null ? (
-                <Text size="2" color="gray">
-                  Select a version to view its content.
-                </Text>
-              ) : isHistoryContentLoading ? (
-                <Flex justify="center" p="3">
-                  <Spinner size="1" />
-                </Flex>
-=======
             <Surface
               className={styles.historyContent}
               radius="card"
@@ -765,23 +523,11 @@ export const DocumentsPanel: React.FC<DocumentsPanelProps> = ({ taskId }) => {
                 <div className={styles.inlineLoading}>
                   <Spinner size="sm" />
                 </div>
->>>>>>> upstream/main
               ) : currentHistoryDoc ? (
                 <Markdown canHaveInteractiveElements={false}>
                   {currentHistoryDoc.content}
                 </Markdown>
               ) : (
-<<<<<<< HEAD
-                <Text size="2" color="gray">
-                  Historical content is unavailable.
-                </Text>
-              )}
-            </Box>
-          </Flex>
-          <Flex justify="end" mt="3">
-            <Dialog.Close>
-              <Button size="1" variant="soft">
-=======
                 <Text size="2" className={styles.mutedText}>
                   Historical content is unavailable.
                 </Text>
@@ -791,19 +537,13 @@ export const DocumentsPanel: React.FC<DocumentsPanelProps> = ({ taskId }) => {
           <Flex justify="end">
             <Dialog.Close asChild>
               <Button size="sm" variant="soft">
->>>>>>> upstream/main
                 Close
               </Button>
             </Dialog.Close>
           </Flex>
         </Dialog.Content>
-<<<<<<< HEAD
-      </Dialog.Root>
-    </Box>
-=======
       </Dialog>
     </div>
->>>>>>> upstream/main
   );
 };
 

@@ -35,8 +35,6 @@ export type ChatCommandBase =
       patch: Record<string, unknown>;
     }
   | {
-<<<<<<< HEAD
-=======
       type: "set_goal";
       content: string;
     }
@@ -49,7 +47,6 @@ export type ChatCommandBase =
       action: GoalControlAction;
     }
   | {
->>>>>>> upstream/main
       type: "abort";
     }
   | {
@@ -105,11 +102,8 @@ export type ChatCommand = ChatCommandBase & {
   priority?: boolean;
 };
 
-<<<<<<< HEAD
-=======
 export type GoalControlAction = "pause" | "resume" | "stop";
 
->>>>>>> upstream/main
 function commandUrl(connection: PortOrConnection, chatId: string): string {
   return buildApiUrl(
     normalizeConnection(connection),
@@ -226,8 +220,6 @@ export async function updateChatParams(
   } as ChatCommandBase);
 }
 
-<<<<<<< HEAD
-=======
 export async function setGoal(
   chatId: string,
   content: string,
@@ -264,7 +256,6 @@ export async function goalControl(
   });
 }
 
->>>>>>> upstream/main
 export async function abortGeneration(
   chatId: string,
   connection: PortOrConnection,

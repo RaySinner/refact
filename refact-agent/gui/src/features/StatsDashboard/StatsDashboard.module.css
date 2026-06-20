@@ -1,5 +1,3 @@
-<<<<<<< HEAD
-=======
 .root {
   display: flex;
   flex: 1 1 auto;
@@ -30,14 +28,10 @@
   justify-self: end;
 }
 
->>>>>>> upstream/main
 .tabsRoot {
   display: flex;
   flex-direction: column;
   flex: 1;
-<<<<<<< HEAD
-  min-height: 0;
-=======
   gap: var(--rf-space-4);
   min-height: 0;
   min-width: 0;
@@ -46,29 +40,11 @@
 .tabsList {
   align-self: flex-start;
   max-width: 100%;
->>>>>>> upstream/main
 }
 
 .tabContent {
   flex: 1;
   min-height: 0;
-<<<<<<< HEAD
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding-top: var(--space-3);
-}
-
-.presetButton {
-  cursor: pointer;
-}
-
-.presetButtonActive {
-  font-weight: bold;
-}
-
-.placeholderText {
-  color: var(--gray-10);
-=======
   min-width: 0;
   overflow-y: auto;
   overflow-x: hidden;
@@ -92,5 +68,4 @@
   .tabsList {
     align-self: stretch;
   }
->>>>>>> upstream/main
 }

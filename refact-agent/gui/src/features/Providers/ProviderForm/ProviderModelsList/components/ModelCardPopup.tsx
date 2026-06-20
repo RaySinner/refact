@@ -7,12 +7,8 @@ import React, {
   useMemo,
 } from "react";
 import isEqual from "lodash.isequal";
-<<<<<<< HEAD
-import { Button, Dialog, Flex, Text } from "@radix-ui/themes";
-=======
 import { Button, Dialog } from "../../../../../components/ui";
 import styles from "../ModelCard.module.css";
->>>>>>> upstream/main
 
 import {
   useGetCompletionModelFamiliesQuery,
@@ -106,10 +102,6 @@ export const ModelCardPopup: FC<ModelCardPopupProps> = ({
       (existingName) =>
         existingName === editedModelData.name && existingName !== modelName,
     );
-<<<<<<< HEAD
-    // TODO: maybe we should move it out somewhere :P
-=======
->>>>>>> upstream/main
     const REQUIRED_FIELD_KEYS = ["tokenizer", "n_ctx"];
 
     const someFieldsNotFilled = Object.entries(editedModelData).some(
@@ -234,27 +226,16 @@ export const ModelCardPopup: FC<ModelCardPopupProps> = ({
   if (!configuredModelData && !newModelCreation) return null;
 
   return (
-<<<<<<< HEAD
-    <Dialog.Root open={isOpen} onOpenChange={handleDialogChange}>
-      <Dialog.Content maxWidth="450px">
-        <Dialog.Title>Model Configuration</Dialog.Title>
-        <Dialog.Description size="2" mb="4">
-=======
     <Dialog open={isOpen} onOpenChange={handleDialogChange}>
       <Dialog.Content maxWidth="450px">
         <Dialog.Title>Model Configuration</Dialog.Title>
         <Dialog.Description>
->>>>>>> upstream/main
           {!newModelCreation
             ? `Make changes to ${modelName} (${modelType} model)`
             : `Setup new model for ${providerName} (${modelType} model)`}
         </Dialog.Description>
 
-<<<<<<< HEAD
-        <Flex direction="column" gap="3">
-=======
         <div className={styles.modalStack}>
->>>>>>> upstream/main
           <FormField
             label="Name"
             value={editedModelData?.name}
@@ -285,16 +266,6 @@ export const ModelCardPopup: FC<ModelCardPopupProps> = ({
               handleFieldValueChange={handleFieldValueChange}
             />
           )}
-<<<<<<< HEAD
-        </Flex>
-
-        <Flex align="center" mt="4" justify="between" width="100%">
-          <Flex gap="3" justify="end">
-            <Button variant="soft" color="gray" onClick={handleCancel}>
-              Cancel
-            </Button>
-            <Button
-=======
         </div>
 
         <div className={styles.modalSplitActions}>
@@ -304,22 +275,14 @@ export const ModelCardPopup: FC<ModelCardPopupProps> = ({
             </Button>
             <Button
               variant="primary"
->>>>>>> upstream/main
               disabled={isSaving || isSavingDisabled}
               onClick={() => void handleSave()}
             >
               {isSaving ? "Saving..." : "Save"}
             </Button>
-<<<<<<< HEAD
-          </Flex>
-          <Button
-            variant="outline"
-            color="gray"
-=======
           </div>
           <Button
             variant="soft"
->>>>>>> upstream/main
             onClick={handleSetDefaultModelData}
             title={
               areDefaultsUnavailable
@@ -330,15 +293,9 @@ export const ModelCardPopup: FC<ModelCardPopupProps> = ({
           >
             Use model defaults
           </Button>
-<<<<<<< HEAD
-        </Flex>
-      </Dialog.Content>
-    </Dialog.Root>
-=======
         </div>
       </Dialog.Content>
     </Dialog>
->>>>>>> upstream/main
   );
 };
 
@@ -466,17 +423,9 @@ const ChatModelFields: FC<ChatModelFieldsProps> = ({
         onChange={handleMaxTokensChange}
       />
 
-<<<<<<< HEAD
-      <Flex direction="column" gap="2">
-        <Text as="div" size="2" weight="bold">
-          Capabilities
-        </Text>
-        <Flex gap="2" wrap="wrap">
-=======
       <div className={styles.modalGroup}>
         <div className={styles.modalGroupTitle}>Capabilities</div>
         <div className={styles.modelMetaRow}>
->>>>>>> upstream/main
           <CapabilityBadge
             name="Tools"
             enabled={editedModelData.supports_tools}
@@ -502,20 +451,11 @@ const ChatModelFields: FC<ChatModelFieldsProps> = ({
             enabled={!!editedModelData.supports_thinking_budget}
             onClick={() => toggleCapability("supports_thinking_budget")}
           />
-<<<<<<< HEAD
-        </Flex>
-      </Flex>
-    </>
-  );
-};
-
-=======
         </div>
       </div>
     </>
   );
 };
->>>>>>> upstream/main
 // Embedding model specific fields
 type EmbeddingModelFieldsProps = {
   editedModelData: EmbeddingModel;

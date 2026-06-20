@@ -1,9 +1,5 @@
 import React from "react";
-<<<<<<< HEAD
-import { Box, Flex, Text } from "@radix-ui/themes";
-=======
 import { Surface } from "../../../components/ui";
->>>>>>> upstream/main
 import { useGetStatsSummaryQuery } from "../../../services/refact/stats";
 import { Spinner } from "../../../components/Spinner";
 import { ErrorCallout } from "../../../components/Callout";
@@ -25,21 +21,12 @@ export const TasksTab: React.FC<Props> = ({ dateRange }) => {
   const allModes = data?.by_mode ?? [];
 
   if (!data || allModes.length === 0) {
-<<<<<<< HEAD
-    return <Text className={styles.emptyText}>No usage data by mode yet.</Text>;
-  }
-
-  return (
-    <Flex direction="column" gap="3">
-      <Box className={styles.tableWrapper}>
-=======
     return <p className={styles.emptyText}>No usage data by mode yet.</p>;
   }
 
   return (
     <div className={styles.root}>
       <Surface animated="rise" className={styles.tableWrapper} variant="glass">
->>>>>>> upstream/main
         <table className={styles.table}>
           <thead>
             <tr>
@@ -49,15 +36,9 @@ export const TasksTab: React.FC<Props> = ({ dateRange }) => {
               <th className={styles.th}>Cost</th>
             </tr>
           </thead>
-<<<<<<< HEAD
-          <tbody>
-            {allModes.map((m) => (
-              <tr key={m.mode}>
-=======
           <tbody className="rf-stagger">
             {allModes.map((m) => (
               <tr key={m.mode} className="rf-enter-rise">
->>>>>>> upstream/main
                 <td className={styles.td}>{m.mode}</td>
                 <td className={styles.td}>{m.total_calls}</td>
                 <td className={styles.td}>
@@ -70,12 +51,7 @@ export const TasksTab: React.FC<Props> = ({ dateRange }) => {
             ))}
           </tbody>
         </table>
-<<<<<<< HEAD
-      </Box>
-    </Flex>
-=======
       </Surface>
     </div>
->>>>>>> upstream/main
   );
 };

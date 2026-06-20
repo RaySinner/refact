@@ -19,17 +19,10 @@ import { Checkpoint, FileChanged } from "../features/Checkpoints/types";
 import {
   backUpMessages,
   newChatAction,
-<<<<<<< HEAD
-  selectChatId,
-  selectMessages,
-  selectThreadMode,
-} from "../features/Chat";
-=======
   selectMessagesById,
   selectThreadModeById,
   useThreadId,
 } from "../features/Chat/Thread";
->>>>>>> upstream/main
 import { isUserMessage } from "../services/refact";
 import { deleteChatById } from "../features/History/historySlice";
 import { usePreviewCheckpoints } from "./usePreviewCheckpoints";
@@ -38,17 +31,11 @@ import { selectConfig } from "../features/Config/configSlice";
 
 export const useCheckpoints = () => {
   const dispatch = useAppDispatch();
-<<<<<<< HEAD
-  const messages = useAppSelector(selectMessages);
-  const chatId = useAppSelector(selectChatId);
-  const chatMode = useAppSelector(selectThreadMode);
-=======
   const chatId = useThreadId();
   const messages = useAppSelector((state) => selectMessagesById(state, chatId));
   const chatMode = useAppSelector((state) =>
     selectThreadModeById(state, chatId),
   );
->>>>>>> upstream/main
   const configIdeHost = useAppSelector(selectConfig).host;
 
   const { setForceReloadFileByPath } = useEventsBusForIDE();
@@ -87,10 +74,6 @@ export const useCheckpoints = () => {
   }, [allChangedFiles]);
 
   const shouldCheckpointsPopupBeShown = useMemo(() => {
-<<<<<<< HEAD
-    return isCheckpointsPopupVisible && !isUndoingCheckpoints;
-  }, [isCheckpointsPopupVisible, isUndoingCheckpoints]);
-=======
     const targetChatId = latestRestoredCheckpointsResult.chat_id;
     return (
       isCheckpointsPopupVisible &&
@@ -103,7 +86,6 @@ export const useCheckpoints = () => {
     isUndoingCheckpoints,
     latestRestoredCheckpointsResult.chat_id,
   ]);
->>>>>>> upstream/main
 
   const handleUndo = useCallback(() => {
     dispatch(setIsUndoingCheckpoints(true));

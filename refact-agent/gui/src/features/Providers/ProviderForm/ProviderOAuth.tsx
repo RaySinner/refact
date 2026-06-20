@@ -1,9 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-<<<<<<< HEAD
-import { Button, Code, Flex, Link, Text, TextField } from "@radix-ui/themes";
-=======
 
->>>>>>> upstream/main
 import {
   useOauthStartMutation,
   useOauthExchangeMutation,
@@ -17,18 +13,11 @@ import type {
 } from "../../../services/refact";
 import { useAppDispatch } from "../../../hooks";
 import { useOpenUrl } from "../../../hooks/useOpenUrl";
-<<<<<<< HEAD
-
-import styles from "./ProviderOAuth.module.css";
-
-const PROVIDERS_WITH_AUTO_CALLBACK = ["openai_codex"];
-=======
 import { Button, FieldText, Surface } from "../../../components/ui";
 
 import styles from "./ProviderOAuth.module.css";
 
 const PROVIDERS_WITH_AUTO_CALLBACK = ["claude_code", "openai_codex"];
->>>>>>> upstream/main
 
 const PROVIDER_LOGIN_LABELS: Partial<Record<string, string>> = {
   claude_code: "Login with Anthropic",
@@ -87,10 +76,7 @@ export const ProviderOAuth: React.FC<ProviderOAuthProps> = ({
   const devicePollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loginLabel = PROVIDER_LOGIN_LABELS[baseProvider] ?? "Login";
-<<<<<<< HEAD
-=======
   const surfaceClassName = `${styles.container} rf-stagger`;
->>>>>>> upstream/main
 
   const clearCallbackPollTimer = useCallback(() => {
     if (callbackPollTimerRef.current) {
@@ -307,22 +293,6 @@ export const ProviderOAuth: React.FC<ProviderOAuthProps> = ({
 
   if (oauthConnected) {
     return (
-<<<<<<< HEAD
-      <Flex direction="column" gap="2" p="3" className={styles.container}>
-        <Flex align="center" justify="between">
-          <Flex align="center" gap="2">
-            <Text size="2" weight="medium" color="green">
-              ● Connected
-            </Text>
-            <Text size="1" color="gray">
-              {authStatus}
-            </Text>
-          </Flex>
-          <Button
-            variant="ghost"
-            color="red"
-            size="1"
-=======
       <Surface className={surfaceClassName} variant="glass" animated="rise">
         <div className={`${styles.headerRow} rf-enter-rise`}>
           <div className={styles.inlineRow}>
@@ -334,60 +304,26 @@ export const ProviderOAuth: React.FC<ProviderOAuthProps> = ({
           <Button
             variant="danger"
             size="sm"
->>>>>>> upstream/main
             disabled={isLoading}
             onClick={() => void handleLogout()}
           >
             Disconnect
           </Button>
-<<<<<<< HEAD
-        </Flex>
-      </Flex>
-=======
         </div>
       </Surface>
->>>>>>> upstream/main
     );
   }
 
   if (sessionId && authorizeUrl) {
     if (oauthMode === "device" || userCode) {
       return (
-<<<<<<< HEAD
-        <Flex direction="column" gap="2" p="3" className={styles.container}>
-          <Text size="2" weight="medium">
-=======
         <Surface className={surfaceClassName} variant="glass" animated="rise">
           <div className={`${styles.title} rf-enter-rise`}>
->>>>>>> upstream/main
             Authorize{" "}
             {(PROVIDER_LOGIN_LABELS[baseProvider] ?? "provider").replace(
               "Login with ",
               "",
             )}
-<<<<<<< HEAD
-          </Text>
-          <Text size="1" color="gray">
-            {instructions ??
-              "Open the verification page and enter the code shown below."}
-          </Text>
-          {userCode && (
-            <Flex direction="column" gap="1">
-              <Text size="1" color="gray">
-                User code
-              </Text>
-              <Code size="5">{userCode}</Code>
-            </Flex>
-          )}
-          <Flex direction="column" gap="1">
-            <Text size="1" color="gray">
-              Verification URL
-            </Text>
-            <Link
-              href={authorizeUrl}
-              onClick={(e) => {
-                e.preventDefault();
-=======
           </div>
           <div className={`${styles.copy} rf-enter-rise`}>
             {instructions ??
@@ -406,33 +342,20 @@ export const ProviderOAuth: React.FC<ProviderOAuthProps> = ({
               className={styles.urlLink}
               onClick={(event) => {
                 event.preventDefault();
->>>>>>> upstream/main
                 handleOpenAuthorizeUrl();
               }}
             >
               {authorizeUrl}
-<<<<<<< HEAD
-            </Link>
-          </Flex>
-          <Text size="1" color="gray">
-=======
             </a>
           </div>
           <div className={`${styles.copy} rf-enter-rise`}>
->>>>>>> upstream/main
             {deviceStatus ?? "Waiting for device authorization"}
             {pollIntervalSeconds
               ? ` Checking every ${pollIntervalSeconds} seconds.`
               : ""}
-<<<<<<< HEAD
-          </Text>
-          <Flex gap="2" align="center" wrap="wrap">
-            <Button variant="solid" onClick={handleOpenAuthorizeUrl}>
-=======
           </div>
           <div className={`${styles.actionRow} rf-enter-rise`}>
             <Button variant="primary" onClick={handleOpenAuthorizeUrl}>
->>>>>>> upstream/main
               Open verification page
             </Button>
             <Button
@@ -442,23 +365,6 @@ export const ProviderOAuth: React.FC<ProviderOAuthProps> = ({
             >
               {isLoading ? "Checking..." : "Retry"}
             </Button>
-<<<<<<< HEAD
-            <Button
-              variant="ghost"
-              size="1"
-              color="gray"
-              onClick={handleCancel}
-            >
-              Cancel
-            </Button>
-          </Flex>
-          {error && (
-            <Text size="1" color="red">
-              {error}
-            </Text>
-          )}
-        </Flex>
-=======
             <Button variant="ghost" size="sm" onClick={handleCancel}>
               Cancel
             </Button>
@@ -467,29 +373,11 @@ export const ProviderOAuth: React.FC<ProviderOAuthProps> = ({
             <div className={`${styles.errorText} rf-enter-rise`}>{error}</div>
           ) : null}
         </Surface>
->>>>>>> upstream/main
       );
     }
 
     if (oauthMode === "callback" && waitingForCallback) {
       return (
-<<<<<<< HEAD
-        <Flex direction="column" gap="2" p="3" className={styles.container}>
-          <Text size="2" weight="medium">
-            Waiting for authentication...
-          </Text>
-          <Text size="1" color="gray">
-            Complete the login in the browser window that opened. This page will
-            update automatically.
-          </Text>
-          <Flex gap="2" align="center">
-            <Text size="1" color="gray">
-              Browser didn&apos;t open?{" "}
-              <Link
-                href={authorizeUrl}
-                onClick={(e) => {
-                  e.preventDefault();
-=======
         <Surface className={surfaceClassName} variant="glass" animated="rise">
           <div className={`${styles.title} rf-enter-rise`}>
             Waiting for authentication...
@@ -506,30 +394,10 @@ export const ProviderOAuth: React.FC<ProviderOAuthProps> = ({
                 className={styles.urlLink}
                 onClick={(event) => {
                   event.preventDefault();
->>>>>>> upstream/main
                   handleOpenAuthorizeUrl();
                 }}
               >
                 Click here
-<<<<<<< HEAD
-              </Link>
-            </Text>
-            <Button
-              variant="ghost"
-              size="1"
-              color="gray"
-              onClick={handleCancel}
-            >
-              Cancel
-            </Button>
-          </Flex>
-          {error && (
-            <Text size="1" color="red">
-              {error}
-            </Text>
-          )}
-        </Flex>
-=======
               </a>
             </span>
             <Button variant="ghost" size="sm" onClick={handleCancel}>
@@ -540,33 +408,10 @@ export const ProviderOAuth: React.FC<ProviderOAuthProps> = ({
             <div className={`${styles.errorText} rf-enter-rise`}>{error}</div>
           ) : null}
         </Surface>
->>>>>>> upstream/main
       );
     }
 
     return (
-<<<<<<< HEAD
-      <Flex direction="column" gap="2" p="3" className={styles.container}>
-        <Text size="2" weight="medium">
-          Paste the authorization code
-        </Text>
-        <Text size="1" color="gray">
-          A browser window should have opened. Log in and copy the code shown on
-          the page.
-        </Text>
-        <Flex gap="2">
-          <TextField.Root
-            className={styles.fullWidthInput}
-            placeholder="Paste code here..."
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") void handleExchangeCode();
-            }}
-          />
-          <Button
-            variant="solid"
-=======
       <Surface className={surfaceClassName} variant="glass" animated="rise">
         <div className={`${styles.title} rf-enter-rise`}>
           Paste the authorization code
@@ -587,22 +432,11 @@ export const ProviderOAuth: React.FC<ProviderOAuthProps> = ({
           />
           <Button
             variant="primary"
->>>>>>> upstream/main
             disabled={isLoading || !code.trim()}
             onClick={() => void handleExchangeCode()}
           >
             {isLoading ? "Connecting..." : "Connect"}
           </Button>
-<<<<<<< HEAD
-        </Flex>
-        <Flex gap="2" align="center">
-          <Text size="1" color="gray">
-            Browser didn&apos;t open?{" "}
-            <Link
-              href={authorizeUrl}
-              onClick={(e) => {
-                e.preventDefault();
-=======
         </div>
         <div className={`${styles.actionRow} rf-enter-rise`}>
           <span className={styles.copy}>
@@ -612,25 +446,10 @@ export const ProviderOAuth: React.FC<ProviderOAuthProps> = ({
               className={styles.urlLink}
               onClick={(event) => {
                 event.preventDefault();
->>>>>>> upstream/main
                 handleOpenAuthorizeUrl();
               }}
             >
               Click here
-<<<<<<< HEAD
-            </Link>
-          </Text>
-          <Button variant="ghost" size="1" color="gray" onClick={handleCancel}>
-            Cancel
-          </Button>
-        </Flex>
-        {error && (
-          <Text size="1" color="red">
-            {error}
-          </Text>
-        )}
-      </Flex>
-=======
             </a>
           </span>
           <Button variant="ghost" size="sm" onClick={handleCancel}>
@@ -641,45 +460,24 @@ export const ProviderOAuth: React.FC<ProviderOAuthProps> = ({
           <div className={`${styles.errorText} rf-enter-rise`}>{error}</div>
         ) : null}
       </Surface>
->>>>>>> upstream/main
     );
   }
 
   return (
-<<<<<<< HEAD
-    <Flex direction="column" gap="2" p="3" className={styles.container}>
-      <Flex align="center" justify="between">
-        <Text size="2" weight="medium">
-          {loginLabel}
-        </Text>
-        <Button
-          variant="solid"
-=======
     <Surface className={surfaceClassName} variant="glass" animated="rise">
       <div className={`${styles.headerRow} rf-enter-rise`}>
         <div className={styles.title}>{loginLabel}</div>
         <Button
           variant="primary"
->>>>>>> upstream/main
           disabled={isLoading}
           onClick={() => void handleStartOAuth()}
         >
           {isLoading ? "Starting..." : "Login"}
         </Button>
-<<<<<<< HEAD
-      </Flex>
-      {error && (
-        <Text size="1" color="red">
-          {error}
-        </Text>
-      )}
-    </Flex>
-=======
       </div>
       {error ? (
         <div className={`${styles.errorText} rf-enter-rise`}>{error}</div>
       ) : null}
     </Surface>
->>>>>>> upstream/main
   );
 };

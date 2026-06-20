@@ -3,16 +3,12 @@ import { http, HttpResponse } from "msw";
 import { render, screen, waitFor } from "../../../utils/test-utils";
 import { server } from "../../../utils/mockServer";
 import { CardCommentsSection } from "./CardCommentsSection";
-<<<<<<< HEAD
-import type { CardComment } from "../../../services/refact/tasks";
-=======
 import {
   useGetBoardQuery,
   type BoardCard,
   type CardComment,
   type TaskBoard,
 } from "../../../services/refact/tasks";
->>>>>>> upstream/main
 
 HTMLElement.prototype.hasPointerCapture = () => false;
 
@@ -27,8 +23,6 @@ const CONFIG_STATE = {
 
 const TASK_ID = "task-1";
 const CARD_ID = "T-1";
-<<<<<<< HEAD
-=======
 const BOARD_ENDPOINT = `*/v1/tasks/${TASK_ID}/board`;
 const COMMENT_ENDPOINT = `*/v1/tasks/${TASK_ID}/cards/${CARD_ID}/comments`;
 
@@ -37,7 +31,6 @@ interface CapturedRequest {
   pathname: string;
   body: unknown;
 }
->>>>>>> upstream/main
 
 const makeComment = (overrides: Partial<CardComment> = {}): CardComment => ({
   id: "abcd1234xyz",
@@ -49,8 +42,6 @@ const makeComment = (overrides: Partial<CardComment> = {}): CardComment => ({
   ...overrides,
 });
 
-<<<<<<< HEAD
-=======
 const makeCard = (overrides: Partial<BoardCard> = {}): BoardCard => ({
   id: CARD_ID,
   title: "Card title",
@@ -85,7 +76,6 @@ async function captureRequest(request: Request): Promise<CapturedRequest> {
   };
 }
 
->>>>>>> upstream/main
 function renderSection(comments: CardComment[] = []) {
   return render(
     <CardCommentsSection
@@ -97,14 +87,6 @@ function renderSection(comments: CardComment[] = []) {
   );
 }
 
-<<<<<<< HEAD
-const emptyBoardResponse = {
-  schema_version: 1,
-  rev: 2,
-  columns: [],
-  cards: [],
-};
-=======
 function BoardBackedComments() {
   const { data } = useGetBoardQuery(TASK_ID);
   const card = data?.cards.find((candidate) => candidate.id === CARD_ID);
@@ -116,7 +98,6 @@ function BoardBackedComments() {
     />
   );
 }
->>>>>>> upstream/main
 
 describe("CardCommentsSection", () => {
   it("renders_empty_state_when_no_comments", () => {
@@ -146,31 +127,18 @@ describe("CardCommentsSection", () => {
     expect(screen.getByRole("button", { name: "Comment" })).toBeDisabled();
   });
 
-<<<<<<< HEAD
-  it("submit_calls_add_comment_mutation_and_clears_composer", async () => {
-    const requests: unknown[] = [];
-    server.use(
-      http.post(`*/v1/tasks/${TASK_ID}/board`, async ({ request }) => {
-        requests.push(await request.json());
-        return HttpResponse.json(emptyBoardResponse);
-=======
   it("submit_posts_top_level_comment_to_canonical_endpoint_and_clears_composer", async () => {
     const requests: CapturedRequest[] = [];
     server.use(
       http.post(COMMENT_ENDPOINT, async ({ request }) => {
         requests.push(await captureRequest(request));
         return HttpResponse.json(makeBoard([makeComment()]));
->>>>>>> upstream/main
       }),
     );
 
     const { user } = renderSection([]);
     const textarea = screen.getByPlaceholderText("Add a comment...");
-<<<<<<< HEAD
-    await user.type(textarea, "My new comment");
-=======
     await user.type(textarea, " My new comment ");
->>>>>>> upstream/main
 
     const button = screen.getByRole("button", { name: "Comment" });
     expect(button).not.toBeDisabled();
@@ -179,11 +147,6 @@ describe("CardCommentsSection", () => {
     await waitFor(() => {
       expect(requests).toHaveLength(1);
     });
-<<<<<<< HEAD
-    expect(textarea).toHaveValue("");
-  });
-
-=======
     expect(requests[0]).toStrictEqual({
       method: "POST",
       pathname: `/v1/tasks/${TASK_ID}/cards/${CARD_ID}/comments`,
@@ -227,7 +190,6 @@ describe("CardCommentsSection", () => {
     });
   });
 
->>>>>>> upstream/main
   it("reply_button_sets_replyTo_and_shows_badge", async () => {
     const comment = makeComment({ id: "abcd1234xyz" });
     const { user } = renderSection([comment]);
@@ -237,11 +199,7 @@ describe("CardCommentsSection", () => {
     expect(screen.getByText(/Replying to abcd1234/)).toBeInTheDocument();
   });
 
-<<<<<<< HEAD
-  it("replies_render_indented_below_parent", () => {
-=======
   it("replies_render_indented_below_parent_without_nested_reply_action", () => {
->>>>>>> upstream/main
     const parent = makeComment({ id: "parent-1", reply_to: null });
     const reply = makeComment({
       id: "reply-1",
@@ -251,10 +209,6 @@ describe("CardCommentsSection", () => {
     renderSection([parent, reply]);
 
     const replyText = screen.getByText("This is a reply.");
-<<<<<<< HEAD
-    const indented = replyText.closest("[style*='margin-left']");
-    expect(indented).toBeTruthy();
-=======
     const indented = replyText.closest("[class*='commentReply']");
     expect(indented).toBeTruthy();
     expect(screen.getAllByRole("button", { name: "Reply" })).toHaveLength(1);
@@ -301,16 +255,11 @@ describe("CardCommentsSection", () => {
     await waitFor(() => {
       expect(boardFetches).toBeGreaterThanOrEqual(2);
     });
->>>>>>> upstream/main
   });
 
   it("submit_failure_shows_notification", async () => {
     server.use(
-<<<<<<< HEAD
-      http.post(`*/v1/tasks/${TASK_ID}/board`, () =>
-=======
       http.post(COMMENT_ENDPOINT, () =>
->>>>>>> upstream/main
         HttpResponse.json({ error: "Server error" }, { status: 500 }),
       ),
     );

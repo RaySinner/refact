@@ -12,30 +12,17 @@ import { useGetCapsQuery } from "./useGetCapsQuery";
 import { useChatActions } from "./useChatActions";
 import {
   selectAreFollowUpsEnabled,
-<<<<<<< HEAD
-  selectChatId,
-  selectIntegration,
-  selectIsStreaming,
-  selectIsWaiting,
-  selectMessages,
-  selectModel,
-  selectThreadMode,
-=======
   selectIntegrationById,
   selectIsStreamingById,
   selectIsWaitingById,
   selectMessagesById,
   selectModelById,
   selectThreadModeById,
->>>>>>> upstream/main
   setIncreaseMaxTokens,
   setIntegrationData,
   setIsNewChatSuggested,
 } from "../features/Chat";
-<<<<<<< HEAD
-=======
 import { useThreadId } from "../features/Chat/Thread";
->>>>>>> upstream/main
 import { DEFAULT_MODE } from "../features/Chat/Thread/types";
 import { useGoToLink } from "./useGoToLink";
 import { setError } from "../features/Errors/errorsSlice";
@@ -45,15 +32,6 @@ import { isAbsolutePath } from "../utils";
 
 export function useGetLinksFromLsp() {
   const dispatch = useAppDispatch();
-<<<<<<< HEAD
-
-  const isStreaming = useAppSelector(selectIsStreaming);
-  const isWaiting = useAppSelector(selectIsWaiting);
-  const messages = useAppSelector(selectMessages);
-  const chatId = useAppSelector(selectChatId);
-  const maybeIntegration = useAppSelector(selectIntegration);
-  const threadMode = useAppSelector(selectThreadMode);
-=======
   const contextId = useThreadId();
 
   const isStreaming = useAppSelector((state) =>
@@ -71,19 +49,14 @@ export function useGetLinksFromLsp() {
   const threadMode = useAppSelector((state) =>
     selectThreadModeById(state, contextId),
   );
->>>>>>> upstream/main
   const areFollowUpsEnabled = useAppSelector(selectAreFollowUpsEnabled);
 
   // TODO: add the model
   const caps = useGetCapsQuery();
 
-<<<<<<< HEAD
-  const model = useAppSelector(selectModel) || caps.data?.chat_default_model;
-=======
   const model =
     useAppSelector((state) => selectModelById(state, contextId)) ||
     caps.data?.chat_default_model;
->>>>>>> upstream/main
 
   const unCalledTools = React.useMemo(() => {
     if (messages.length === 0) return false;
@@ -119,11 +92,7 @@ export function useGetLinksFromLsp() {
 
   const linksResult = linksApi.useGetLinksForChatQuery(
     {
-<<<<<<< HEAD
-      chat_id: chatId,
-=======
       chat_id: contextId,
->>>>>>> upstream/main
       messages,
       model: model ?? "",
       mode: threadMode ?? DEFAULT_MODE,
@@ -136,37 +105,18 @@ export function useGetLinksFromLsp() {
     if (linksResult.data?.new_chat_suggestion) {
       dispatch(
         setIsNewChatSuggested({
-<<<<<<< HEAD
-          chatId,
-=======
           chatId: contextId,
->>>>>>> upstream/main
           value: linksResult.data.new_chat_suggestion,
         }),
       );
     }
-<<<<<<< HEAD
-  }, [dispatch, linksResult.data, chatId]);
-=======
   }, [dispatch, linksResult.data, contextId]);
->>>>>>> upstream/main
 
   return linksResult;
 }
 
 export function useLinksFromLsp() {
   const dispatch = useAppDispatch();
-<<<<<<< HEAD
-  const { handleGoTo } = useGoToLink();
-  const { submit, setParams } = useChatActions();
-
-  const [applyCommit, _applyCommitResult] = linksApi.useSendCommitMutation();
-
-  const isStreaming = useAppSelector(selectIsStreaming);
-  const isWaiting = useAppSelector(selectIsWaiting);
-  const messages = useAppSelector(selectMessages);
-  const maybeIntegration = useAppSelector(selectIntegration);
-=======
   const contextId = useThreadId();
   const { handleGoTo } = useGoToLink();
   const { submit, setParams } = useChatActions(contextId);
@@ -185,7 +135,6 @@ export function useLinksFromLsp() {
   const maybeIntegration = useAppSelector((state) =>
     selectIntegrationById(state, contextId),
   );
->>>>>>> upstream/main
 
   const unCalledTools = React.useMemo(() => {
     if (messages.length === 0) return false;
@@ -229,33 +178,22 @@ export function useLinksFromLsp() {
           if (!isAbsolutePath(payload)) {
             dispatch(
               setIntegrationData({
-<<<<<<< HEAD
-                name: payload,
-                path: undefined,
-                shouldIntermediatePageShowUp: payload !== "DEFAULT",
-=======
                 chatId: contextId,
                 value: {
                   name: payload,
                   path: undefined,
                   shouldIntermediatePageShowUp: payload !== "DEFAULT",
                 },
->>>>>>> upstream/main
               }),
             );
           } else {
             dispatch(
               setIntegrationData({
-<<<<<<< HEAD
-                path: payload,
-                shouldIntermediatePageShowUp: false,
-=======
                 chatId: contextId,
                 value: {
                   path: payload,
                   shouldIntermediatePageShowUp: false,
                 },
->>>>>>> upstream/main
               }),
             );
           }
@@ -287,11 +225,7 @@ export function useLinksFromLsp() {
 
       // TBD: It should be safe to remove this now?
       if (link.link_action === "regenerate-with-increased-context-size") {
-<<<<<<< HEAD
-        dispatch(setIncreaseMaxTokens(true));
-=======
         dispatch(setIncreaseMaxTokens({ chatId: contextId, value: true }));
->>>>>>> upstream/main
         return;
       }
 
@@ -327,12 +261,8 @@ export function useLinksFromLsp() {
       if (isPostChatLink(link)) {
         dispatch(
           setIntegrationData({
-<<<<<<< HEAD
-            path: link.link_payload.chat_meta.current_config_file,
-=======
             chatId: contextId,
             value: { path: link.link_payload.chat_meta.current_config_file },
->>>>>>> upstream/main
           }),
         );
         debugRefact(`[DEBUG]: link messages: `, link.link_payload.messages);
@@ -353,11 +283,7 @@ export function useLinksFromLsp() {
       // eslint-disable-next-line no-console
       console.warn(`unknown action: ${JSON.stringify(link)}`);
     },
-<<<<<<< HEAD
-    [applyCommit, dispatch, handleGoTo, submit, setParams],
-=======
     [applyCommit, contextId, dispatch, handleGoTo, submit, setParams],
->>>>>>> upstream/main
   );
 
   const linksResult = useGetLinksFromLsp();

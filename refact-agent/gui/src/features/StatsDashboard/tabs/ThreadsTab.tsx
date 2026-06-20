@@ -1,8 +1,3 @@
-<<<<<<< HEAD
-import React, { useState, useMemo } from "react";
-import { Box, Flex, Text } from "@radix-ui/themes";
-import { useListTrajectoriesPaginatedQuery } from "../../../services/refact/trajectories";
-=======
 import React, { useEffect, useMemo, useState } from "react";
 import { Surface } from "../../../components/ui";
 import { useAppDispatch } from "../../../hooks";
@@ -11,7 +6,6 @@ import {
   useListTrajectoriesPaginatedQuery,
 } from "../../../services/refact/trajectories";
 import type { TrajectoryMeta } from "../../../services/refact/trajectories";
->>>>>>> upstream/main
 import { Spinner } from "../../../components/Spinner";
 import { ErrorCallout } from "../../../components/Callout";
 import {
@@ -31,9 +25,6 @@ type SortKey =
   | "total_cost_usd"
   | "updated_at";
 
-<<<<<<< HEAD
-export const ThreadsTab: React.FC<Props> = ({ dateRange }) => {
-=======
 type PagingState = {
   items: TrajectoryMeta[];
   isLoading: boolean;
@@ -53,7 +44,6 @@ function rangeCovered(
 export const ThreadsTab: React.FC<Props> = ({ dateRange }) => {
   const dispatch = useAppDispatch();
   const dateArgs = useMemo(() => dateRangeToApiArgs(dateRange), [dateRange]);
->>>>>>> upstream/main
   const {
     data: trajData,
     isLoading,
@@ -64,14 +54,6 @@ export const ThreadsTab: React.FC<Props> = ({ dateRange }) => {
     key: "total_tokens",
     asc: false,
   });
-<<<<<<< HEAD
-
-  const dateArgs = dateRangeToApiArgs(dateRange);
-
-  const items = useMemo(() => {
-    if (!trajData) return [];
-    let rows = trajData.items.filter((item) => {
-=======
   const [paging, setPaging] = useState<PagingState>({
     items: [],
     isLoading: false,
@@ -155,7 +137,6 @@ export const ThreadsTab: React.FC<Props> = ({ dateRange }) => {
 
   const items = useMemo(() => {
     let rows = rawItems.filter((item) => {
->>>>>>> upstream/main
       if (dateArgs.from) {
         if (item.updated_at < dateArgs.from) return false;
       }
@@ -164,13 +145,8 @@ export const ThreadsTab: React.FC<Props> = ({ dateRange }) => {
       }
       return true;
     });
-<<<<<<< HEAD
-    if (search.trim()) {
-      const q = search.toLowerCase();
-=======
     const q = search.trim().toLowerCase();
     if (q) {
->>>>>>> upstream/main
       rows = rows.filter(
         (r) =>
           r.title.toLowerCase().includes(q) ||
@@ -196,18 +172,6 @@ export const ThreadsTab: React.FC<Props> = ({ dateRange }) => {
       return 0;
     });
     return rows;
-<<<<<<< HEAD
-  }, [trajData, search, sort, dateArgs]);
-
-  if (isLoading) return <Spinner spinning />;
-  if (isError) return <ErrorCallout>Failed to load threads</ErrorCallout>;
-
-  if (!trajData || items.length === 0) {
-    return (
-      <Text className={styles.emptyText}>
-        No threads yet. Start chatting to see stats!
-      </Text>
-=======
   }, [rawItems, search, sort, dateArgs.from, dateArgs.to]);
 
   if (isLoading) return <Spinner spinning />;
@@ -220,7 +184,6 @@ export const ThreadsTab: React.FC<Props> = ({ dateRange }) => {
       <p className={styles.emptyText}>
         No threads yet. Start chatting to see stats!
       </p>
->>>>>>> upstream/main
     );
   }
 
@@ -236,11 +199,7 @@ export const ThreadsTab: React.FC<Props> = ({ dateRange }) => {
   }
 
   return (
-<<<<<<< HEAD
-    <Flex direction="column" gap="3">
-=======
     <div className={styles.root}>
->>>>>>> upstream/main
       <input
         className={styles.searchInput}
         placeholder="Search by title, model, mode…"
@@ -249,11 +208,6 @@ export const ThreadsTab: React.FC<Props> = ({ dateRange }) => {
       />
 
       {items.length === 0 ? (
-<<<<<<< HEAD
-        <Text className={styles.emptyText}>No matching threads.</Text>
-      ) : (
-        <Box className={styles.tableWrapper}>
-=======
         <p className={styles.emptyText}>
           {paging.isLoading ? "Loading more threads…" : "No matching threads."}
         </p>
@@ -263,18 +217,13 @@ export const ThreadsTab: React.FC<Props> = ({ dateRange }) => {
           className={styles.tableWrapper}
           variant="glass"
         >
->>>>>>> upstream/main
           <table className={styles.table}>
             <thead>
               <tr>
                 <th className={styles.th}>
                   <button
                     type="button"
-<<<<<<< HEAD
-                    className={styles.sortButton}
-=======
                     className={`${styles.sortButton} rf-pressable`}
->>>>>>> upstream/main
                     onClick={() => toggleSort("updated_at")}
                   >
                     Date{indicator("updated_at")}
@@ -286,11 +235,7 @@ export const ThreadsTab: React.FC<Props> = ({ dateRange }) => {
                 <th className={styles.th}>
                   <button
                     type="button"
-<<<<<<< HEAD
-                    className={styles.sortButton}
-=======
                     className={`${styles.sortButton} rf-pressable`}
->>>>>>> upstream/main
                     onClick={() => toggleSort("message_count")}
                   >
                     Messages{indicator("message_count")}
@@ -299,11 +244,7 @@ export const ThreadsTab: React.FC<Props> = ({ dateRange }) => {
                 <th className={styles.th}>
                   <button
                     type="button"
-<<<<<<< HEAD
-                    className={styles.sortButton}
-=======
                     className={`${styles.sortButton} rf-pressable`}
->>>>>>> upstream/main
                     onClick={() => toggleSort("total_tokens")}
                   >
                     Total Tokens{indicator("total_tokens")}
@@ -314,11 +255,7 @@ export const ThreadsTab: React.FC<Props> = ({ dateRange }) => {
                 <th className={styles.th}>
                   <button
                     type="button"
-<<<<<<< HEAD
-                    className={styles.sortButton}
-=======
                     className={`${styles.sortButton} rf-pressable`}
->>>>>>> upstream/main
                     onClick={() => toggleSort("total_cost_usd")}
                   >
                     Cost{indicator("total_cost_usd")}
@@ -326,15 +263,9 @@ export const ThreadsTab: React.FC<Props> = ({ dateRange }) => {
                 </th>
               </tr>
             </thead>
-<<<<<<< HEAD
-            <tbody>
-              {items.map((c) => (
-                <tr key={c.id}>
-=======
             <tbody className="rf-stagger">
               {items.map((c) => (
                 <tr key={c.id} className="rf-enter-rise">
->>>>>>> upstream/main
                   <td className={styles.td}>{formatDate(c.updated_at)}</td>
                   <td className={`${styles.td} ${styles.titleCell}`}>
                     {c.title || c.id}
@@ -358,14 +289,8 @@ export const ThreadsTab: React.FC<Props> = ({ dateRange }) => {
               ))}
             </tbody>
           </table>
-<<<<<<< HEAD
-        </Box>
-      )}
-    </Flex>
-=======
         </Surface>
       )}
     </div>
->>>>>>> upstream/main
   );
 };

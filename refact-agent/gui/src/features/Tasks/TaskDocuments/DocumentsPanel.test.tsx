@@ -257,8 +257,6 @@ describe("DocumentsPanel", () => {
     });
   });
 
-<<<<<<< HEAD
-=======
   it("editor save sends content and pin changes in one update request", async () => {
     const updateRequests: unknown[] = [];
     const pinRequests: unknown[] = [];
@@ -316,7 +314,6 @@ describe("DocumentsPanel", () => {
     expect(pinRequests).toEqual([]);
   });
 
->>>>>>> upstream/main
   it("delete shows confirm popover then calls delete mutation", async () => {
     const deleteRequests: string[] = [];
     mockDocuments();

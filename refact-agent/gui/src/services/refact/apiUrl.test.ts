@@ -137,8 +137,6 @@ describe("hasUsableEngineEndpoint", () => {
     ).toBe(true);
   });
 
-<<<<<<< HEAD
-=======
   test("blocks non-ready IDE plugin endpoints even when URL and port are present", () => {
     expect(
       hasUsableEngineEndpoint({
@@ -182,7 +180,6 @@ describe("hasUsableEngineEndpoint", () => {
     ).toBe(true);
   });
 
->>>>>>> upstream/main
   test("requires a positive finite port for local IDE fallback", () => {
     expect(hasUsableEngineEndpoint({ host: "vscode", lspPort: 8001 })).toBe(
       true,

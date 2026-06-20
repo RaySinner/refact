@@ -1,17 +1,12 @@
-<<<<<<< HEAD
-=======
 .page {
   padding: 0;
   margin-top: 0;
 }
 
->>>>>>> upstream/main
 .scrollArea :global(.rt-ScrollAreaViewport > *) {
   min-height: 100%;
   height: auto;
 }
-<<<<<<< HEAD
-=======
 
 .content {
   display: flex;
@@ -22,4 +17,3 @@
   flex-direction: column;
   justify-content: space-between;
 }
->>>>>>> upstream/main

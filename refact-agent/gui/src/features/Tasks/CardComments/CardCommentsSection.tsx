@@ -1,20 +1,4 @@
 import React, { useState } from "react";
-<<<<<<< HEAD
-import {
-  Box,
-  Flex,
-  Text,
-  Badge,
-  Button,
-  TextArea,
-  Tooltip,
-  Spinner,
-} from "@radix-ui/themes";
-import { FileTextIcon, PersonIcon } from "@radix-ui/react-icons";
-import { AgentStatusDot } from "../AgentStatusDot";
-import { Markdown } from "../../../components/Markdown";
-import {
-=======
 import classNames from "classnames";
 import { Box, Flex, Text } from "@radix-ui/themes";
 import { FileText, MessageCircle, User } from "lucide-react";
@@ -29,7 +13,6 @@ import {
   Tooltip,
 } from "../../../components/ui";
 import {
->>>>>>> upstream/main
   useAddCardCommentMutation,
   type CardComment,
 } from "../../../services/refact/tasks";
@@ -63,11 +46,7 @@ function threadComments(comments: CardComment[]): CardComment[] {
 
 interface CommentItemProps {
   comment: CardComment;
-<<<<<<< HEAD
-  onReply: () => void;
-=======
   onReply?: () => void;
->>>>>>> upstream/main
   isReply: boolean;
 }
 
@@ -84,46 +63,21 @@ const CommentItem: React.FC<CommentItemProps> = ({
 
   const roleIcon =
     comment.author_role === "planner" ? (
-<<<<<<< HEAD
-      <Badge size="1" color="violet">
-        <FileTextIcon />
-=======
       <Badge tone="accent">
         <Icon icon={FileText} size="sm" tone="accent" />
->>>>>>> upstream/main
       </Badge>
     ) : comment.author_role === "agents" ? (
       <AgentStatusDot status="doing" size="small" />
     ) : comment.author_role === "user" ? (
-<<<<<<< HEAD
-      <Badge size="1" color="green">
-        <PersonIcon />
-      </Badge>
-    ) : (
-      <Badge size="1" color="gray">
-        sys
-      </Badge>
-=======
       <Badge tone="success">
         <Icon icon={User} size="sm" tone="success" />
       </Badge>
     ) : (
       <Badge tone="muted">sys</Badge>
->>>>>>> upstream/main
     );
 
   return (
     <Box
-<<<<<<< HEAD
-      style={isReply ? { marginLeft: "var(--space-4)" } : undefined}
-      className={styles.commentItem}
-    >
-      <Flex align="center" gap="1" mb="1" wrap="wrap">
-        {roleIcon}
-        <Badge size="1" variant="soft">
-          {comment.author_role}
-        </Badge>
-=======
       className={classNames(
         styles.commentItem,
         isReply && styles.commentReply,
@@ -133,7 +87,6 @@ const CommentItem: React.FC<CommentItemProps> = ({
       <Flex align="center" gap="1" mb="1" wrap="wrap">
         {roleIcon}
         <Badge tone="muted">{comment.author_role}</Badge>
->>>>>>> upstream/main
         <Text size="1" color="gray">
           {authorDisplay}
         </Text>
@@ -146,13 +99,6 @@ const CommentItem: React.FC<CommentItemProps> = ({
       <Box className={styles.commentBody}>
         <Markdown canHaveInteractiveElements={false}>{comment.body}</Markdown>
       </Box>
-<<<<<<< HEAD
-      <Flex justify="end">
-        <Button size="1" variant="ghost" onClick={onReply}>
-          Reply
-        </Button>
-      </Flex>
-=======
       {onReply && (
         <Flex justify="end">
           <Button size="sm" variant="ghost" onClick={onReply}>
@@ -160,7 +106,6 @@ const CommentItem: React.FC<CommentItemProps> = ({
           </Button>
         </Flex>
       )}
->>>>>>> upstream/main
     </Box>
   );
 };
@@ -212,16 +157,6 @@ export const CardCommentsSection: React.FC<CardCommentsSectionProps> = ({
   const threaded = threadComments(comments);
 
   return (
-<<<<<<< HEAD
-    <Box>
-      <Flex justify="between" align="center">
-        <Text size="2" weight="medium" color="gray">
-          Comments ({comments.length})
-        </Text>
-      </Flex>
-
-      <Flex direction="column" gap="2" mt="2">
-=======
     <section className={classNames(styles.commentsRoot, "rf-enter-rise")}>
       <div className={styles.commentsHeader}>
         <Icon icon={MessageCircle} size="sm" tone="muted" />
@@ -236,7 +171,6 @@ export const CardCommentsSection: React.FC<CardCommentsSectionProps> = ({
         mt="2"
         className={classNames(styles.commentList, "rf-stagger")}
       >
->>>>>>> upstream/main
         {threaded.length === 0 ? (
           <Text size="1" color="gray">
             No comments yet.
@@ -246,64 +180,26 @@ export const CardCommentsSection: React.FC<CardCommentsSectionProps> = ({
             <CommentItem
               key={comment.id}
               comment={comment}
-<<<<<<< HEAD
-              onReply={() => setReplyTo(comment.id)}
-=======
               onReply={
                 comment.reply_to === null
                   ? () => setReplyTo(comment.id)
                   : undefined
               }
->>>>>>> upstream/main
               isReply={comment.reply_to !== null}
             />
           ))
         )}
       </Flex>
 
-<<<<<<< HEAD
-      <Box mt="3" className={styles.composer}>
-        {replyTo && (
-          <Flex align="center" gap="2" mb="1">
-            <Badge size="1" variant="soft">
-              Replying to {replyTo.slice(0, 8)}
-            </Badge>
-            <Button size="1" variant="ghost" onClick={() => setReplyTo(null)}>
-=======
       <Box className={classNames(styles.composer, "rf-enter-rise")}>
         {replyTo && (
           <Flex align="center" gap="2" mb="1">
             <Badge tone="muted">Replying to {replyTo.slice(0, 8)}</Badge>
             <Button size="sm" variant="ghost" onClick={() => setReplyTo(null)}>
->>>>>>> upstream/main
               Cancel reply
             </Button>
           </Flex>
         )}
-<<<<<<< HEAD
-        <TextArea
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          placeholder="Add a comment..."
-          disabled={isSubmitting}
-        />
-        <Flex justify="end" mt="1">
-          <Button
-            size="1"
-            disabled={body.trim().length === 0 || isSubmitting}
-            onClick={() => void handleSubmit()}
-          >
-            {isSubmitting ? <Spinner size="1" /> : "Comment"}
-          </Button>
-        </Flex>
-        {error && (
-          <Text size="1" color="red" mt="1">
-            {error}
-          </Text>
-        )}
-      </Box>
-    </Box>
-=======
         <Field
           error={error}
           label="Add a comment"
@@ -328,6 +224,5 @@ export const CardCommentsSection: React.FC<CardCommentsSectionProps> = ({
         </Flex>
       </Box>
     </section>
->>>>>>> upstream/main
   );
 };

@@ -18,10 +18,7 @@ export interface PlannerInfo {
   createdAt: string;
   updatedAt: string;
   sessionState?: string;
-<<<<<<< HEAD
-=======
   mode?: string;
->>>>>>> upstream/main
   waitingForCardIds?: string[];
 }
 
@@ -78,8 +75,6 @@ export const tasksSlice = createSlice({
       state.openTasks = state.openTasks.filter((t) => t.id !== action.payload);
       persistTasksUIState(state);
     },
-<<<<<<< HEAD
-=======
     reorderOpenTasks: (
       state,
       action: PayloadAction<{ sourceId: string; targetId: string }>,
@@ -97,7 +92,6 @@ export const tasksSlice = createSlice({
       state.openTasks.splice(targetIndex, 0, source);
       persistTasksUIState(state);
     },
->>>>>>> upstream/main
     updateTaskName: (
       state,
       action: PayloadAction<{ id: string; name: string }>,
@@ -206,10 +200,7 @@ export const taskSseEventReceived = createAction<TaskEvent>(
 export const {
   openTask,
   closeTask,
-<<<<<<< HEAD
-=======
   reorderOpenTasks,
->>>>>>> upstream/main
   updateTaskName,
   addPlannerChat,
   updatePlannerChat,

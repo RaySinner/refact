@@ -1,5 +1,3 @@
-<<<<<<< HEAD
-=======
 export type RefactBackendConnectionStatus =
   | "connecting"
   | "starting"
@@ -7,7 +5,6 @@ export type RefactBackendConnectionStatus =
   | "ready"
   | "failed";
 
->>>>>>> upstream/main
 export type EngineApiConfig = {
   host?: "web" | "ide" | "vscode" | "jetbrains";
   lspPort?: number;
@@ -15,11 +12,8 @@ export type EngineApiConfig = {
   browserUrl?: string;
   dev?: boolean;
   engineServed?: boolean;
-<<<<<<< HEAD
-=======
   backendReady?: boolean;
   connectionStatus?: RefactBackendConnectionStatus;
->>>>>>> upstream/main
 };
 
 export type QueryValue = string | number | boolean | null | undefined;
@@ -71,8 +65,6 @@ function isValidLspPort(port: number | undefined): boolean {
   return Number.isFinite(port) && port !== undefined && port > 0;
 }
 
-<<<<<<< HEAD
-=======
 function isIdeHost(host: EngineApiConfig["host"]): boolean {
   return host === "ide" || host === "vscode" || host === "jetbrains";
 }
@@ -90,7 +82,6 @@ export function hasReadyPluginBackend(config: EngineApiConfig): boolean {
   return true;
 }
 
->>>>>>> upstream/main
 function dropV1Path(pathname: string): string {
   const segments = pathname.split("/");
 
@@ -155,11 +146,8 @@ export function resolveEngineBaseUrl(config: EngineApiConfig): string {
 
 export function hasUsableEngineEndpoint(config: EngineApiConfig): boolean {
   const host = config.host ?? "web";
-<<<<<<< HEAD
-=======
   if (!hasReadyPluginBackend(config)) return false;
 
->>>>>>> upstream/main
   const baseUrl = resolveEngineBaseUrl(config);
 
   if (baseUrl === "") {

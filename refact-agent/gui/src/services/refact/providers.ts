@@ -139,25 +139,16 @@ export type ClaudeCodeUsageWindow = {
 
 export type ClaudeCodeExtraUsage = {
   is_enabled: boolean;
-<<<<<<< HEAD
-  used_credits: number;
-  monthly_limit?: number | null;
-  utilization?: number | null;
-=======
   used_credits?: number | null;
   monthly_limit?: number | null;
   utilization?: number | null;
   currency?: string | null;
   disabled_reason?: string | null;
->>>>>>> upstream/main
 };
 
 export type ClaudeCodeUsageData = {
   five_hour?: ClaudeCodeUsageWindow | null;
   seven_day?: ClaudeCodeUsageWindow | null;
-<<<<<<< HEAD
-  extra_usage?: ClaudeCodeExtraUsage | null;
-=======
   seven_day_sonnet?: ClaudeCodeUsageWindow | null;
   seven_day_oauth_apps?: ClaudeCodeUsageWindow | null;
   seven_day_opus?: ClaudeCodeUsageWindow | null;
@@ -169,7 +160,6 @@ export type ClaudeCodeUsageData = {
   omelette_promotional?: unknown;
   tangelo?: unknown;
   raw_extra?: Record<string, unknown>;
->>>>>>> upstream/main
 };
 
 export type ClaudeCodeUsageResponse = {
@@ -180,25 +170,17 @@ export type ClaudeCodeUsageResponse = {
 export type OpenAICodexUsageWindow = {
   used_percent: number;
   reset_at?: string | null;
-<<<<<<< HEAD
-};
-
-export type OpenAICodexRateLimit = {
-=======
   reset_after_seconds?: number | null;
   limit_window_seconds?: number | null;
 };
 
 export type OpenAICodexRateLimit = {
   allowed?: boolean | null;
->>>>>>> upstream/main
   limit_reached: boolean;
   primary_window?: OpenAICodexUsageWindow | null;
   secondary_window?: OpenAICodexUsageWindow | null;
 };
 
-<<<<<<< HEAD
-=======
 export type OpenAICodexAdditionalRateLimit = {
   limit_name?: string | null;
   metered_feature?: string | null;
@@ -209,20 +191,10 @@ export type OpenAICodexResetCredits = {
   available_count?: number | null;
 };
 
->>>>>>> upstream/main
 export type OpenAICodexCredits = {
   balance: number;
   unlimited: boolean;
   has_credits: boolean;
-<<<<<<< HEAD
-};
-
-export type OpenAICodexUsageData = {
-  plan_type?: string | null;
-  rate_limit?: OpenAICodexRateLimit | null;
-  code_review_rate_limit?: OpenAICodexRateLimit | null;
-  credits?: OpenAICodexCredits | null;
-=======
   granted?: number | null;
   used?: number | null;
   reset_at?: string | null;
@@ -251,7 +223,6 @@ export type OpenAICodexUsageData = {
   promo?: unknown;
   referral_beacon?: unknown;
   raw_extra?: Record<string, unknown>;
->>>>>>> upstream/main
 };
 
 export type OpenAICodexUsageResponse = {
@@ -259,8 +230,6 @@ export type OpenAICodexUsageResponse = {
   error?: string | null;
 };
 
-<<<<<<< HEAD
-=======
 export type OpenCodeUsageWindow = {
   used_percent: number;
   reset_at?: string | null;
@@ -294,7 +263,6 @@ export type OpenAICodexResetRedeemResponse = {
   error?: string | null;
 };
 
->>>>>>> upstream/main
 export type OpenRouterAccountInfoResponse = {
   data: {
     key_name?: string | null;
@@ -875,8 +843,6 @@ export const providersApi = createApi({
       },
     }),
 
-<<<<<<< HEAD
-=======
     getOpenCodeUsage: builder.query<
       OpenCodeUsageResponse,
       ProviderScopedQueryRequiredArg
@@ -972,7 +938,6 @@ export const providersApi = createApi({
       },
     }),
 
->>>>>>> upstream/main
     // Toggle model enabled/disabled
     toggleModel: builder.mutation<
       { success: boolean; model_id: string; enabled: boolean },
@@ -1730,11 +1695,8 @@ export const {
   useGetOpenRouterHealthQuery,
   useGetClaudeCodeUsageQuery,
   useGetOpenAICodexUsageQuery,
-<<<<<<< HEAD
-=======
   useGetOpenCodeUsageQuery,
   useRedeemOpenAICodexResetCreditMutation,
->>>>>>> upstream/main
   useToggleModelMutation,
   useSetModelProviderMutation,
   useAddCustomModelMutation,

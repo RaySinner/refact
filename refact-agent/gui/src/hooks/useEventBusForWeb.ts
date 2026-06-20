@@ -65,13 +65,6 @@ export function useEventBusForWeb() {
       return;
     }
 
-<<<<<<< HEAD
-    dispatch(
-      updateConfig({
-        lspUrl: resolveWebLspUrl(config, lspUrl),
-        lspPort: config.engineServed ? currentWindowPort() : config.lspPort,
-        apiKey,
-=======
     const nextLspUrl = resolveWebLspUrl(config, lspUrl);
     const nextLspPort = config.engineServed
       ? currentWindowPort()
@@ -91,7 +84,6 @@ export function useEventBusForWeb() {
         lspUrl: nextLspUrl,
         lspPort: nextLspPort,
         apiKey: nextApiKey,
->>>>>>> upstream/main
       }),
     );
   }, [apiKey, lspUrl, dispatch, config]);

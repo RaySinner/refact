@@ -1,20 +1,3 @@
-<<<<<<< HEAD
-.cardsRow {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: var(--space-3);
-}
-
-.emptyText {
-  color: var(--gray-10);
-}
-
-.sectionTitle {
-  color: var(--gray-12);
-}
-
-.tableWrapper {
-=======
 .root {
   display: flex;
   flex-direction: column;
@@ -129,49 +112,25 @@
   background: var(--rf-surface-glass);
   box-shadow: var(--rf-elev-panel);
   backdrop-filter: blur(var(--rf-blur-overlay));
->>>>>>> upstream/main
   overflow-x: auto;
 }
 
 .table {
   width: 100%;
-<<<<<<< HEAD
-=======
   min-width: 520px;
->>>>>>> upstream/main
   border-collapse: collapse;
 }
 
 .th {
   text-align: left;
-<<<<<<< HEAD
-  padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--gray-5);
-  color: var(--gray-11);
-=======
   padding: var(--rf-space-2) var(--rf-space-3);
   border-bottom: var(--rf-hairline) solid var(--rf-border-strong);
   color: var(--rf-color-muted);
   font: 650 var(--rf-text-2) / var(--rf-line) var(--rf-font-ui);
->>>>>>> upstream/main
   white-space: nowrap;
 }
 
 .td {
-<<<<<<< HEAD
-  padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--gray-4);
-  white-space: nowrap;
-  color: var(--gray-12);
-}
-
-.chatId {
-  font-family: monospace;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 80px;
-  display: inline-block;
-=======
   padding: var(--rf-space-2) var(--rf-space-3);
   border-bottom: var(--rf-hairline) solid var(--rf-border);
   color: var(--rf-color-fg);
@@ -199,5 +158,4 @@
   .tableWrapper {
     backdrop-filter: none;
   }
->>>>>>> upstream/main
 }

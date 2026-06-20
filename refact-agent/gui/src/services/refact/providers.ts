@@ -139,15 +139,37 @@ export type ClaudeCodeUsageWindow = {
 
 export type ClaudeCodeExtraUsage = {
   is_enabled: boolean;
+<<<<<<< HEAD
   used_credits: number;
   monthly_limit?: number | null;
   utilization?: number | null;
+=======
+  used_credits?: number | null;
+  monthly_limit?: number | null;
+  utilization?: number | null;
+  currency?: string | null;
+  disabled_reason?: string | null;
+>>>>>>> upstream/main
 };
 
 export type ClaudeCodeUsageData = {
   five_hour?: ClaudeCodeUsageWindow | null;
   seven_day?: ClaudeCodeUsageWindow | null;
+<<<<<<< HEAD
   extra_usage?: ClaudeCodeExtraUsage | null;
+=======
+  seven_day_sonnet?: ClaudeCodeUsageWindow | null;
+  seven_day_oauth_apps?: ClaudeCodeUsageWindow | null;
+  seven_day_opus?: ClaudeCodeUsageWindow | null;
+  seven_day_cowork?: ClaudeCodeUsageWindow | null;
+  seven_day_omelette?: ClaudeCodeUsageWindow | null;
+  extra_usage?: ClaudeCodeExtraUsage | null;
+  cinder_cove?: unknown;
+  iguana_necktie?: unknown;
+  omelette_promotional?: unknown;
+  tangelo?: unknown;
+  raw_extra?: Record<string, unknown>;
+>>>>>>> upstream/main
 };
 
 export type ClaudeCodeUsageResponse = {
@@ -158,18 +180,41 @@ export type ClaudeCodeUsageResponse = {
 export type OpenAICodexUsageWindow = {
   used_percent: number;
   reset_at?: string | null;
+<<<<<<< HEAD
 };
 
 export type OpenAICodexRateLimit = {
+=======
+  reset_after_seconds?: number | null;
+  limit_window_seconds?: number | null;
+};
+
+export type OpenAICodexRateLimit = {
+  allowed?: boolean | null;
+>>>>>>> upstream/main
   limit_reached: boolean;
   primary_window?: OpenAICodexUsageWindow | null;
   secondary_window?: OpenAICodexUsageWindow | null;
 };
 
+<<<<<<< HEAD
+=======
+export type OpenAICodexAdditionalRateLimit = {
+  limit_name?: string | null;
+  metered_feature?: string | null;
+  rate_limit?: OpenAICodexRateLimit | null;
+};
+
+export type OpenAICodexResetCredits = {
+  available_count?: number | null;
+};
+
+>>>>>>> upstream/main
 export type OpenAICodexCredits = {
   balance: number;
   unlimited: boolean;
   has_credits: boolean;
+<<<<<<< HEAD
 };
 
 export type OpenAICodexUsageData = {
@@ -177,6 +222,36 @@ export type OpenAICodexUsageData = {
   rate_limit?: OpenAICodexRateLimit | null;
   code_review_rate_limit?: OpenAICodexRateLimit | null;
   credits?: OpenAICodexCredits | null;
+=======
+  granted?: number | null;
+  used?: number | null;
+  reset_at?: string | null;
+  overage_limit_reached?: boolean | null;
+  approx_cloud_messages?: number[] | null;
+  approx_local_messages?: number[] | null;
+};
+
+export type OpenAICodexSpendControl = {
+  individual_limit?: number | null;
+  reached?: boolean | null;
+};
+
+export type OpenAICodexUsageData = {
+  account_id?: string | null;
+  user_id?: string | null;
+  email?: string | null;
+  plan_type?: string | null;
+  rate_limit?: OpenAICodexRateLimit | null;
+  additional_rate_limits?: OpenAICodexAdditionalRateLimit[] | null;
+  code_review_rate_limit?: OpenAICodexRateLimit | null;
+  rate_limit_reached_type?: string | null;
+  rate_limit_reset_credits?: OpenAICodexResetCredits | null;
+  credits?: OpenAICodexCredits | null;
+  spend_control?: OpenAICodexSpendControl | null;
+  promo?: unknown;
+  referral_beacon?: unknown;
+  raw_extra?: Record<string, unknown>;
+>>>>>>> upstream/main
 };
 
 export type OpenAICodexUsageResponse = {
@@ -184,6 +259,42 @@ export type OpenAICodexUsageResponse = {
   error?: string | null;
 };
 
+<<<<<<< HEAD
+=======
+export type OpenCodeUsageWindow = {
+  used_percent: number;
+  reset_at?: string | null;
+  reset_after_seconds?: number | null;
+  limit_window_seconds?: number | null;
+  status?: string | null;
+};
+
+export type OpenCodeUsageData = {
+  plan_type?: string | null;
+  workspace_id?: string | null;
+  balance?: number | null;
+  rolling?: OpenCodeUsageWindow | null;
+  weekly?: OpenCodeUsageWindow | null;
+  monthly?: OpenCodeUsageWindow | null;
+  raw_extra?: Record<string, unknown>;
+};
+
+export type OpenCodeUsageResponse = {
+  data?: OpenCodeUsageData | null;
+  error?: string | null;
+};
+
+export type OpenAICodexResetRedeemData = {
+  code: string;
+  windows_reset?: number | null;
+};
+
+export type OpenAICodexResetRedeemResponse = {
+  data?: OpenAICodexResetRedeemData | null;
+  error?: string | null;
+};
+
+>>>>>>> upstream/main
 export type OpenRouterAccountInfoResponse = {
   data: {
     key_name?: string | null;
@@ -764,6 +875,104 @@ export const providersApi = createApi({
       },
     }),
 
+<<<<<<< HEAD
+=======
+    getOpenCodeUsage: builder.query<
+      OpenCodeUsageResponse,
+      ProviderScopedQueryRequiredArg
+    >({
+      queryFn: async (args, api, extraOptions, baseQuery) => {
+        const state = api.getState() as RootState;
+        const url = buildApiUrlFromState(
+          state,
+          `${PROVIDERS_URL}/${encodeURIComponent(args.providerName)}/usage`,
+        );
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10_000);
+        let result: Awaited<ReturnType<typeof baseQuery>>;
+        try {
+          result = await baseQuery({
+            ...extraOptions,
+            method: "GET",
+            url,
+            credentials: "same-origin",
+            redirect: "follow",
+            signal: controller.signal,
+          });
+        } finally {
+          clearTimeout(timeoutId);
+        }
+
+        if (result.error) {
+          return { error: result.error };
+        }
+
+        if (!isUsageResponse(result.data)) {
+          return {
+            meta: result.meta,
+            error: {
+              error: `Invalid response from /v1/providers/${args.providerName}/usage`,
+              data: result.data,
+              status: "CUSTOM_ERROR",
+            },
+          };
+        }
+
+        return { data: result.data as OpenCodeUsageResponse };
+      },
+    }),
+
+    redeemOpenAICodexResetCredit: builder.mutation<
+      OpenAICodexResetRedeemResponse,
+      ProviderScopedQueryRequiredArg & { redeemRequestId: string }
+    >({
+      queryFn: async (args, api, extraOptions, baseQuery) => {
+        const state = api.getState() as RootState;
+        const url = buildApiUrlFromState(
+          state,
+          `${PROVIDERS_URL}/${encodeURIComponent(
+            args.providerName,
+          )}/usage/redeem`,
+        );
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15_000);
+        let result: Awaited<ReturnType<typeof baseQuery>>;
+        try {
+          result = await baseQuery({
+            ...extraOptions,
+            method: "POST",
+            url,
+            body: { redeem_request_id: args.redeemRequestId },
+            credentials: "same-origin",
+            redirect: "follow",
+            signal: controller.signal,
+          });
+        } finally {
+          clearTimeout(timeoutId);
+        }
+
+        if (result.error) {
+          return { error: result.error };
+        }
+
+        if (!isUsageResponse(result.data)) {
+          return {
+            meta: result.meta,
+            error: {
+              error: `Invalid response from /v1/providers/${args.providerName}/usage/redeem`,
+              data: result.data,
+              status: "CUSTOM_ERROR",
+            },
+          };
+        }
+
+        return { data: result.data as OpenAICodexResetRedeemResponse };
+      },
+    }),
+
+>>>>>>> upstream/main
     // Toggle model enabled/disabled
     toggleModel: builder.mutation<
       { success: boolean; model_id: string; enabled: boolean },
@@ -1521,6 +1730,11 @@ export const {
   useGetOpenRouterHealthQuery,
   useGetClaudeCodeUsageQuery,
   useGetOpenAICodexUsageQuery,
+<<<<<<< HEAD
+=======
+  useGetOpenCodeUsageQuery,
+  useRedeemOpenAICodexResetCreditMutation,
+>>>>>>> upstream/main
   useToggleModelMutation,
   useSetModelProviderMutation,
   useAddCustomModelMutation,

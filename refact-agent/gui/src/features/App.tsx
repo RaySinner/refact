@@ -7,7 +7,6 @@ import React, {
 } from "react";
 import { Flex } from "@radix-ui/themes";
 import {
-  Chat,
   createChatWithId,
   selectAllThreads,
   selectBackgroundAgentsByThread,
@@ -16,6 +15,7 @@ import {
   selectThread,
   switchToThread,
 } from "./Chat";
+import { WorkspaceView } from "./Workspace/WorkspaceView";
 
 import {
   useAppSelector,
@@ -25,10 +25,9 @@ import {
   useEventsBusForIDE,
   useSidebarSubscription,
   useAllChatsSubscription,
-  useGetConfiguredProvidersQuery,
+  useProviderBootstrapState,
   useResizeObserverOnRef,
 } from "../hooks";
-import { useGetPing } from "../hooks/useGetPing";
 import { useBrowserOnlineStatus } from "../hooks/useBrowserOnlineStatus";
 import { store } from "../app/store";
 import { Provider } from "react-redux";
@@ -46,25 +45,17 @@ import { Toolbar } from "../components/Toolbar";
 import { Tab } from "../components/Toolbar/Toolbar";
 import { PageWrapper } from "../components/PageWrapper";
 import { ThreadHistory } from "./ThreadHistory";
-import { Integrations } from "./Integrations";
-import { Providers } from "./Providers";
-import { integrationsApi } from "../services/refact";
+
 import { LoginPage } from "./Login";
 import { selectOpenTasksFromRoot, TaskList, TaskWorkspace } from "./Tasks";
 import { KnowledgeWorkspace } from "./Knowledge";
-import { Customization } from "./Customization";
-import { Extensions } from "./Extensions";
-import { DefaultModels } from "./DefaultModels";
-import { MCPMarketplace } from "./MCPMarketplace";
-import { SkillsMarketplace } from "./SkillsMarketplace";
-import { CommandsMarketplace } from "./CommandsMarketplace";
-import { SubagentsMarketplace } from "./SubagentsMarketplace";
-import { MarketplaceHub } from "./MarketplaceHub";
+
 import { StatsDashboard } from "./StatsDashboard";
 import { Dashboard } from "./Dashboard";
+import { SettingsHub, isSettingsPage } from "./Settings";
 import { BuddyHome } from "./Buddy/BuddyHome";
 import { BuddyErrorBoundary } from "./Buddy/BuddyErrorBoundary";
-import { SchedulerPanel } from "./Scheduler";
+
 import { ChatLoading } from "../components/ChatContent/ChatLoading";
 import { SplashScreen } from "./Splash";
 import { selectBackendLastOkAt, selectBackendStatus } from "./Connection";
@@ -77,14 +68,14 @@ import {
 } from "./Buddy/reportBuddyFrontendError";
 
 import styles from "./App.module.css";
-import classNames from "classnames";
 import { usePatchesAndDiffsEventsForIDE } from "../hooks/usePatchesAndDiffEventsForIDE";
-import { hasAnyUsableActiveProvider } from "./Login/providerAccess";
 import {
+  getProjectStorageNamespace,
   isProjectStorageNamespaceTrusted,
   loadPersistedActiveTab,
   savePersistedActiveTab,
 } from "../utils/chatUiPersistence";
+import { selectFocusedWorkspaceChatId } from "./Workspace";
 import { InternalLinkProvider } from "../contexts/InternalLinkContext";
 import { parseRefactLink } from "../contexts/internalLinkUtils";
 import { ProcessCompletedToasts } from "./Notifications";
@@ -105,11 +96,14 @@ export const InnerApp: React.FC<AppProps> = ({ style }: AppProps) => {
   const persistedActiveTabRef = useRef<ReturnType<
     typeof loadPersistedActiveTab
   > | null>(null);
+  const lastProjectStorageRestoreIdentityRef = useRef<string | null>(null);
+  const lastTrustedProjectStorageNamespaceRef = useRef<string | null>(null);
 
   const pages = useAppSelector(selectPages);
   const isStreaming = useAppSelector(selectIsStreaming);
   const allThreads = useAppSelector(selectAllThreads);
   const openTasks = useAppSelector(selectOpenTasksFromRoot);
+  const focusedWorkspaceChatId = useAppSelector(selectFocusedWorkspaceChatId);
 
   const isPageInHistory = useCallback(
     (pageName: string) => {
@@ -127,22 +121,23 @@ export const InnerApp: React.FC<AppProps> = ({ style }: AppProps) => {
   );
   const backendStatus = useAppSelector(selectBackendStatus);
   const backendLastOkAt = useAppSelector(selectBackendLastOkAt);
-  const providersQuery = useGetConfiguredProvidersQuery();
+  const providerBootstrap = useProviderBootstrapState();
   useEventBusForWeb();
   useEventBusForApp();
   usePatchesAndDiffsEventsForIDE();
   useSidebarSubscription();
   useAllChatsSubscription();
-  useGetPing();
   useBrowserOnlineStatus();
 
-  const [isPaddingApplied, setIsPaddingApplied] = useState<boolean>(false);
-
-  const handlePaddingShift = useCallback((state: boolean) => {
-    setIsPaddingApplied(state);
-  }, []);
-
   const config = useConfig();
+  const projectStorageNamespaceTrusted = isProjectStorageNamespaceTrusted();
+  const projectStorageNamespace = getProjectStorageNamespace();
+  const trustedProjectStorageNamespace = projectStorageNamespaceTrusted
+    ? projectStorageNamespace
+    : null;
+  const projectStorageRestoreIdentity = projectStorageNamespaceTrusted
+    ? `trusted:${projectStorageNamespace ?? ""}`
+    : "untrusted";
 
   useEffectOnce(() => {
     if (crashSessionStartedRef.current) return;
@@ -277,15 +272,15 @@ export const InnerApp: React.FC<AppProps> = ({ style }: AppProps) => {
 
   const pageSwitching = desiredPage !== renderedPage;
 
-  const isLoggedIn = isPageInHistory("history") || isPageInHistory("chat");
+  const isLoggedIn =
+    isPageInHistory("history") ||
+    isPageInHistory("chat") ||
+    isPageInHistory("tasks list") ||
+    isPageInHistory("task workspace") ||
+    isPageInHistory("task agent");
 
-  const hasAnyActiveProvider = useMemo(() => {
-    return hasAnyUsableActiveProvider({
-      providers: providersQuery.data?.providers ?? [],
-    });
-  }, [providersQuery.data?.providers]);
-  const canAccessApp = hasAnyActiveProvider;
-  const canResolveProviderAccess = providersQuery.isSuccess;
+  const canAccessApp = providerBootstrap.canAccessApp;
+  const canShowProviderSetup = providerBootstrap.canShowProviderSetup;
   const [startupResolved, setStartupResolved] = useState(false);
   const [startupDeadlineReached, setStartupDeadlineReached] = useState(false);
   const hasEndpoint = hasUsableEngineEndpoint(config);
@@ -310,20 +305,19 @@ export const InnerApp: React.FC<AppProps> = ({ style }: AppProps) => {
       return;
     }
 
-    if (providersQuery.isSuccess || providersQuery.isError) {
+    if (providerBootstrap.status !== "provider_loading") {
       setStartupResolved(true);
     }
-  }, [backendStatus, providersQuery.isError, providersQuery.isSuccess]);
+  }, [backendStatus, providerBootstrap.status]);
 
   const showStartupSplash =
     !startupDeadlineReached &&
     hasEndpoint &&
     !startupResolved &&
     backendLastOkAt === null &&
-    (backendStatus !== "online" ||
-      providersQuery.isUninitialized ||
-      providersQuery.isLoading ||
-      providersQuery.isFetching);
+    providerBootstrap.status !== "ready" &&
+    providerBootstrap.status !== "setup_required" &&
+    providerBootstrap.status !== "provider_error";
 
   useEffect(() => {
     if (canAccessApp && !isLoggedIn) {
@@ -332,14 +326,14 @@ export const InnerApp: React.FC<AppProps> = ({ style }: AppProps) => {
 
     if (
       !canAccessApp &&
-      canResolveProviderAccess &&
+      canShowProviderSetup &&
       desiredPage.name !== "login page"
     ) {
       dispatch(popBackTo({ name: "login page" }));
     }
   }, [
     canAccessApp,
-    canResolveProviderAccess,
+    canShowProviderSetup,
     desiredPage.name,
     isLoggedIn,
     dispatch,
@@ -362,11 +356,6 @@ export const InnerApp: React.FC<AppProps> = ({ style }: AppProps) => {
 
   const goBack = useCallback(() => {
     dispatch(pop());
-  }, [dispatch]);
-
-  const goBackFromIntegrations = useCallback(() => {
-    dispatch(pop());
-    dispatch(integrationsApi.util.resetApiState());
   }, [dispatch]);
 
   const handleInternalLink = useCallback(
@@ -402,10 +391,6 @@ export const InnerApp: React.FC<AppProps> = ({ style }: AppProps) => {
       };
     }
 
-    if (renderedPage.name === "integrations page") {
-      return { paddingRight: 0 };
-    }
-
     return undefined;
   }, [renderedPage.name]);
 
@@ -413,7 +398,7 @@ export const InnerApp: React.FC<AppProps> = ({ style }: AppProps) => {
     if (desiredPage.name === "chat") {
       return {
         type: "chat",
-        id: chatId,
+        id: focusedWorkspaceChatId ?? chatId,
       };
     }
     if (desiredPage.name === "history") {
@@ -428,12 +413,50 @@ export const InnerApp: React.FC<AppProps> = ({ style }: AppProps) => {
         taskName: "",
       };
     }
+    if (desiredPage.name === "buddy") {
+      return {
+        type: "buddy",
+      };
+    }
     if (desiredPage.name === "knowledge graph") {
       return {
         type: "dashboard",
       };
     }
-  }, [desiredPage, chatId]);
+  }, [desiredPage, chatId, focusedWorkspaceChatId]);
+
+  useEffect(() => {
+    const previousIdentity = lastProjectStorageRestoreIdentityRef.current;
+    if (previousIdentity === null) {
+      lastProjectStorageRestoreIdentityRef.current =
+        projectStorageRestoreIdentity;
+      if (trustedProjectStorageNamespace !== null) {
+        lastTrustedProjectStorageNamespaceRef.current =
+          trustedProjectStorageNamespace;
+      }
+      return;
+    }
+
+    if (projectStorageRestoreIdentity !== previousIdentity) {
+      const previousTrustedNamespace =
+        lastTrustedProjectStorageNamespaceRef.current;
+      if (
+        trustedProjectStorageNamespace !== null &&
+        previousTrustedNamespace !== null &&
+        trustedProjectStorageNamespace !== previousTrustedNamespace
+      ) {
+        restoredActiveTabRef.current = false;
+        persistedActiveTabRef.current = null;
+      }
+    }
+
+    if (trustedProjectStorageNamespace !== null) {
+      lastTrustedProjectStorageNamespaceRef.current =
+        trustedProjectStorageNamespace;
+    }
+    lastProjectStorageRestoreIdentityRef.current =
+      projectStorageRestoreIdentity;
+  }, [projectStorageRestoreIdentity, trustedProjectStorageNamespace]);
 
   useEffect(() => {
     if (!restoredActiveTabRef.current) return;
@@ -442,6 +465,11 @@ export const InnerApp: React.FC<AppProps> = ({ style }: AppProps) => {
 
     if (activeTab.type === "task") {
       savePersistedActiveTab({ type: "task", taskId: activeTab.taskId });
+      return;
+    }
+
+    if (activeTab.type === "buddy") {
+      savePersistedActiveTab({ type: "buddy" });
       return;
     }
 
@@ -467,23 +495,44 @@ export const InnerApp: React.FC<AppProps> = ({ style }: AppProps) => {
       return;
     }
 
-    if (persistedActiveTab.type === "chat") {
-      if (!allThreads[persistedActiveTab.id]) return;
+    if (persistedActiveTab.type === "buddy") {
       restoredActiveTabRef.current = true;
-      dispatch(switchToThread({ id: persistedActiveTab.id }));
       dispatch(popBackTo({ name: "history" }));
-      dispatch(push({ name: "chat" }));
+      dispatch(push({ name: "buddy" }));
       return;
     }
 
-    if (openTasks.some((task) => task.id === persistedActiveTab.taskId)) {
+    if (persistedActiveTab.type === "chat") {
+      const restoredChatId =
+        focusedWorkspaceChatId && allThreads[focusedWorkspaceChatId]
+          ? focusedWorkspaceChatId
+          : persistedActiveTab.id;
       restoredActiveTabRef.current = true;
-      dispatch(popBackTo({ name: "history" }));
+      if (allThreads[restoredChatId]) {
+        dispatch(switchToThread({ id: restoredChatId, openTab: false }));
+        dispatch(popBackTo({ name: "history" }));
+        dispatch(push({ name: "chat" }));
+      } else {
+        dispatch(popBackTo({ name: "history" }));
+      }
+      return;
+    }
+
+    restoredActiveTabRef.current = true;
+    dispatch(popBackTo({ name: "history" }));
+    if (openTasks.some((task) => task.id === persistedActiveTab.taskId)) {
       dispatch(
         push({ name: "task workspace", taskId: persistedActiveTab.taskId }),
       );
     }
-  }, [allThreads, canAccessApp, dispatch, isLoggedIn, openTasks]);
+  }, [
+    allThreads,
+    canAccessApp,
+    dispatch,
+    focusedWorkspaceChatId,
+    isLoggedIn,
+    openTasks,
+  ]);
 
   return (
     <Flex
@@ -491,10 +540,7 @@ export const InnerApp: React.FC<AppProps> = ({ style }: AppProps) => {
       align="stretch"
       direction="column"
       style={style}
-      className={classNames(styles.rootFlex, {
-        [styles.integrationsPagePadding]:
-          renderedPage.name === "integrations page" && isPaddingApplied,
-      })}
+      className={styles.rootFlex}
       data-element="app-root"
     >
       {showStartupSplash ? (
@@ -514,27 +560,15 @@ export const InnerApp: React.FC<AppProps> = ({ style }: AppProps) => {
             {!pageSwitching && renderedPage.name === "history" && <Dashboard />}
             {!pageSwitching && renderedPage.name === "chat" && (
               <InternalLinkProvider onInternalLink={handleInternalLink}>
-                <Chat
-                  host={config.host}
-                  tabbed={config.tabbed}
-                  backFromChat={goBack}
-                />
+                <WorkspaceView />
               </InternalLinkProvider>
             )}
-            {!pageSwitching && renderedPage.name === "integrations page" && (
-              <Integrations
-                backFromIntegrations={goBackFromIntegrations}
-                tabbed={config.tabbed}
+            {!pageSwitching && isSettingsPage(renderedPage) && (
+              <SettingsHub
+                page={renderedPage}
+                onBack={goBack}
                 host={config.host}
-                onCloseIntegrations={goBackFromIntegrations}
-                handlePaddingShift={handlePaddingShift}
-              />
-            )}
-            {!pageSwitching && renderedPage.name === "providers page" && (
-              <Providers
-                backFromProviders={goBack}
                 tabbed={config.tabbed}
-                host={config.host}
               />
             )}
             {!pageSwitching && renderedPage.name === "thread history page" && (
@@ -558,24 +592,7 @@ export const InnerApp: React.FC<AppProps> = ({ style }: AppProps) => {
             {!pageSwitching && renderedPage.name === "knowledge graph" && (
               <KnowledgeWorkspace />
             )}
-            {!pageSwitching && renderedPage.name === "customization" && (
-              <Customization
-                backFromCustomization={goBack}
-                tabbed={config.tabbed}
-                host={config.host}
-                initialKind={renderedPage.kind}
-                initialConfigId={renderedPage.configId}
-                draftId={renderedPage.draftId}
-              />
-            )}
-            {!pageSwitching && renderedPage.name === "default models" && (
-              <DefaultModels
-                backFromDefaultModels={goBack}
-                tabbed={config.tabbed}
-                host={config.host}
-                draftId={renderedPage.draftId}
-              />
-            )}
+
             {!pageSwitching && renderedPage.name === "stats dashboard" && (
               <StatsDashboard
                 backFromDashboard={goBack}
@@ -583,56 +600,8 @@ export const InnerApp: React.FC<AppProps> = ({ style }: AppProps) => {
                 host={config.host}
               />
             )}
-            {!pageSwitching && renderedPage.name === "extensions" && (
-              <Extensions
-                backFromExtensions={goBack}
-                tabbed={config.tabbed}
-                host={config.host}
-                initialTab={renderedPage.tab}
-                initialItemId={renderedPage.itemId}
-                draftId={renderedPage.draftId}
-              />
-            )}
-            {!pageSwitching && renderedPage.name === "mcp marketplace" && (
-              <MCPMarketplace
-                backFromMarketplace={goBack}
-                tabbed={config.tabbed}
-                host={config.host}
-              />
-            )}
-            {!pageSwitching && renderedPage.name === "skills marketplace" && (
-              <SkillsMarketplace
-                backFromMarketplace={goBack}
-                tabbed={config.tabbed}
-                host={config.host}
-              />
-            )}
-            {!pageSwitching && renderedPage.name === "commands marketplace" && (
-              <CommandsMarketplace
-                backFromMarketplace={goBack}
-                tabbed={config.tabbed}
-                host={config.host}
-              />
-            )}
-            {!pageSwitching &&
-              renderedPage.name === "subagents marketplace" && (
-                <SubagentsMarketplace
-                  backFromMarketplace={goBack}
-                  tabbed={config.tabbed}
-                  host={config.host}
-                />
-              )}
-            {!pageSwitching && renderedPage.name === "marketplace hub" && (
-              <MarketplaceHub
-                back={goBack}
-                tabbed={config.tabbed}
-                host={config.host}
-              />
-            )}
+
             {!pageSwitching && renderedPage.name === "buddy" && <BuddyHome />}
-            {!pageSwitching && renderedPage.name === "scheduler" && (
-              <SchedulerPanel onBack={goBack} />
-            )}
           </PageWrapper>
           <ProcessCompletedToasts />
         </>

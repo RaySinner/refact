@@ -7,6 +7,10 @@ export {
   tasksSlice,
   openTask,
   closeTask,
+<<<<<<< HEAD
+=======
+  reorderOpenTasks,
+>>>>>>> upstream/main
   updateTaskName,
   addPlannerChat,
   removePlannerChat,

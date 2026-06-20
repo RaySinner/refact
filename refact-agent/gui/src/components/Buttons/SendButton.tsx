@@ -1,18 +1,7 @@
 import React from "react";
-import {
-  DropdownMenu,
-  IconButton,
-  Flex,
-  Badge,
-  HoverCard,
-  Text,
-} from "@radix-ui/themes";
-import {
-  PaperPlaneIcon,
-  CaretDownIcon,
-  ClockIcon,
-  LightningBoltIcon,
-} from "@radix-ui/react-icons";
+import { Badge, DropdownMenu, Flex } from "@radix-ui/themes";
+import { Clock, ChevronsUp, Send, Zap } from "lucide-react";
+import { Icon, IconButton, Tooltip } from "../ui";
 
 type SendButtonProps = {
   disabled?: boolean;
@@ -41,32 +30,28 @@ export const SendButtonWithDropdown: React.FC<SendButtonProps> = ({
             variant="soft"
             title={`${queuedCount} message(s) queued`}
           >
-            <ClockIcon width={12} height={12} />
+            <Icon icon={Clock} size="sm" />
             {queuedCount}
           </Badge>
         )}
-        <HoverCard.Root>
-          <HoverCard.Trigger>
+        <Tooltip>
+          <Tooltip.Trigger asChild>
             <IconButton
-              variant="ghost"
+              aria-label="Send message"
               disabled={disabled}
+              icon={Send}
               title={undefined}
-              size="1"
+              size="sm"
               type="submit"
+              variant="ghost"
               onClick={(e) => {
                 e.preventDefault();
                 onSend();
               }}
-            >
-              <PaperPlaneIcon />
-            </IconButton>
-          </HoverCard.Trigger>
-          <HoverCard.Content size="1" side="top">
-            <Text as="p" size="2">
-              Send message
-            </Text>
-          </HoverCard.Content>
-        </HoverCard.Root>
+            />
+          </Tooltip.Trigger>
+          <Tooltip.Content side="top">Send message</Tooltip.Content>
+        </Tooltip>
       </Flex>
     );
   }
@@ -80,43 +65,39 @@ export const SendButtonWithDropdown: React.FC<SendButtonProps> = ({
           variant="soft"
           title={`${queuedCount} message(s) queued`}
         >
-          <ClockIcon width={12} height={12} />
+          <Icon icon={Clock} size="sm" />
           {queuedCount}
         </Badge>
       )}
-      <HoverCard.Root>
-        <HoverCard.Trigger>
-          <DropdownMenu.Root>
+      <DropdownMenu.Root>
+        <Tooltip>
+          <Tooltip.Trigger asChild>
             <DropdownMenu.Trigger>
               <IconButton
-                variant="ghost"
+                aria-label="Send options"
                 disabled={disabled}
+                icon={Send}
                 title={undefined}
-                size="1"
-              >
-                <PaperPlaneIcon />
-                <CaretDownIcon width={12} height={12} />
-              </IconButton>
+                size="sm"
+                variant="ghost"
+              />
             </DropdownMenu.Trigger>
+          </Tooltip.Trigger>
+          <Tooltip.Content side="top">Send options</Tooltip.Content>
+        </Tooltip>
 
-            <DropdownMenu.Content size="1" align="end">
-              <DropdownMenu.Item onSelect={() => onSend()}>
-                <ClockIcon width={14} height={14} />
-                Queue message
-              </DropdownMenu.Item>
-              <DropdownMenu.Item onSelect={() => onSendImmediately()}>
-                <LightningBoltIcon width={14} height={14} />
-                Send next
-              </DropdownMenu.Item>
-            </DropdownMenu.Content>
-          </DropdownMenu.Root>
-        </HoverCard.Trigger>
-        <HoverCard.Content size="1" side="top">
-          <Text as="p" size="2">
-            Send options
-          </Text>
-        </HoverCard.Content>
-      </HoverCard.Root>
+        <DropdownMenu.Content size="1" align="end">
+          <DropdownMenu.Item onSelect={() => onSend()}>
+            <Icon icon={Clock} size="sm" />
+            Queue message
+          </DropdownMenu.Item>
+          <DropdownMenu.Item onSelect={() => onSendImmediately()}>
+            <Icon icon={Zap} size="sm" />
+            Send next
+          </DropdownMenu.Item>
+        </DropdownMenu.Content>
+      </DropdownMenu.Root>
+      <Icon icon={ChevronsUp} size="sm" />
     </Flex>
   );
 };

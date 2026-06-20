@@ -658,6 +658,10 @@ describe("Worktree lifecycle GUI", () => {
     const { user } = render(
       <Popover.Root open>
         <WorktreeMenu
+<<<<<<< HEAD
+=======
+          chatId="chat-1"
+>>>>>>> upstream/main
           currentWorktree={record.meta}
           currentRecord={record}
           records={[record]}
@@ -721,6 +725,10 @@ describe("Worktree lifecycle GUI", () => {
     const { user } = render(
       <Popover.Root open>
         <WorktreeMenu
+<<<<<<< HEAD
+=======
+          chatId="chat-1"
+>>>>>>> upstream/main
           currentWorktree={record.meta}
           currentRecord={record}
           records={[record]}
@@ -769,7 +777,17 @@ describe("Worktree lifecycle GUI", () => {
     expect(worktreeTitles.length).toBeGreaterThan(0);
     expect(screen.getByText("agent-wt")).toBeInTheDocument();
 
+<<<<<<< HEAD
     await user.click(worktreeTitles[0]);
+=======
+    const kanbanTitle = worktreeTitles.find((title) =>
+      title.closest("[class*='kanbanCard']"),
+    );
+    if (!kanbanTitle) {
+      throw new Error("Kanban card title not found");
+    }
+    await user.click(kanbanTitle);
+>>>>>>> upstream/main
 
     expect(await screen.findByText("Worktree")).toBeInTheDocument();
     expect(

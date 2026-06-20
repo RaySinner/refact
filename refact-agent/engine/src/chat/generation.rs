@@ -24,6 +24,7 @@ use crate::scratchpad_abstract::HasTokenizerAndEot;
 use crate::constants::CHAT_TOP_N;
 use crate::knowledge::enrichment::enrich_messages_with_knowledge;
 
+use super::goal_monitor::handle_goal_turn_end;
 use super::types::*;
 use super::trajectories::{
     check_external_reload_pending, ensure_frozen_prefix, first_system_prompt,
@@ -53,6 +54,10 @@ const MCP_LAZY_INDEX_MARKER: &str = "mcp_lazy_index";
 const LENGTH_STOP_NEAR_EMPTY_VISIBLE_CHARS: usize = 32;
 const PARTIAL_OUTPUT_STREAM_ERROR: &str =
     "Stream interrupted after partial output and all retry attempts failed.";
+const RESPONSES_INCOMPLETE_STREAM_ERROR: &str =
+    "LLM stream ended unexpectedly without completion signal";
+const RESPONSES_CONTEXT_CUTOFF_ERROR: &str =
+    "context_length_exceeded: Responses stream ended before a terminal event at critical context pressure";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ContextLimitCompactionDecision {
@@ -120,13 +125,65 @@ fn context_limit_compaction_decision(
     }
 }
 
+fn is_responses_incomplete_stream_error(error: &LlmStreamError) -> bool {
+    error.message.contains(RESPONSES_INCOMPLETE_STREAM_ERROR)
+        || error
+            .message
+            .contains("OpenAI Codex WebSocket ended before completion")
+        || error
+            .message
+            .contains("OpenAI Codex WebSocket closed before completion")
+}
+
+fn responses_incomplete_stream_at_critical_pressure(
+    error: &LlmStreamError,
+    model_rec: &BaseModelRecord,
+    messages: &[ChatMessage],
+    effective_n_ctx: usize,
+    usage_stale: bool,
+) -> bool {
+    model_rec.wire_format == crate::llm::WireFormat::OpenaiResponses
+        && effective_n_ctx > 0
+        && is_responses_incomplete_stream_error(error)
+        && matches!(
+            crate::chat::summarization::estimated_provider_context_pressure_with_usage(
+                messages,
+                effective_n_ctx,
+                usage_stale,
+            ),
+            ContextPressure::Critical
+        )
+}
+
+fn synthesize_responses_context_cutoff_error_if_needed(
+    mut error: LlmStreamError,
+    model_rec: &BaseModelRecord,
+    messages: &[ChatMessage],
+    effective_n_ctx: usize,
+    usage_stale: bool,
+) -> LlmStreamError {
+    if responses_incomplete_stream_at_critical_pressure(
+        &error,
+        model_rec,
+        messages,
+        effective_n_ctx,
+        usage_stale,
+    ) {
+        error.message = format!(
+            "{RESPONSES_CONTEXT_CUTOFF_ERROR}. Original error: {}",
+            error.message
+        );
+    }
+    error
+}
+
 fn safe_context_limit_error_for_log(error: &str) -> String {
     safe_provider_error_diagnostic(error)
 }
 
 fn context_limit_final_error_message(error: &str) -> String {
     format!(
-        "Context too large and no eligible segment summary could be applied. Original error: {}",
+        "Context too large and automatic compaction could not free enough space. Run ctx_probe()/ctx_apply() to trim the chat manually, or start a new chat. Original error: {}",
         safe_provider_error_diagnostic(error)
     )
 }
@@ -237,6 +294,14 @@ fn maybe_inject_token_budget_instruction(
         })
         .unwrap_or(false);
     if last_has_tool_calls {
+        return false;
+    }
+
+    if session
+        .messages
+        .last()
+        .is_some_and(|message| length_stop_kind(message).is_some())
+    {
         return false;
     }
 
@@ -791,6 +856,7 @@ pub(crate) fn is_high_pressure_length_stop(
     message: &ChatMessage,
     messages: &[ChatMessage],
     effective_n_ctx: usize,
+    usage_stale: bool,
 ) -> bool {
     if message.role != "assistant"
         || message
@@ -804,7 +870,11 @@ pub(crate) fn is_high_pressure_length_stop(
     }
 
     matches!(
-        crate::chat::summarization::estimated_context_pressure(messages, effective_n_ctx),
+        crate::chat::summarization::estimated_provider_context_pressure_with_usage(
+            messages,
+            effective_n_ctx,
+            usage_stale,
+        ),
         ContextPressure::High | ContextPressure::Critical
     )
 }
@@ -853,7 +923,12 @@ async fn maybe_compact_after_high_pressure_length_stop(
         let Some(message) = session.messages.last() else {
             return false;
         };
-        if !is_high_pressure_length_stop(message, &session.messages, effective_n_ctx) {
+        if !is_high_pressure_length_stop(
+            message,
+            &session.messages,
+            effective_n_ctx,
+            session.provider_usage_stale,
+        ) {
             return false;
         }
         let reason = length_like_finish_reason(message.finish_reason.as_deref())
@@ -893,13 +968,197 @@ async fn maybe_compact_after_high_pressure_length_stop(
         let mut session = session_arc.lock().await;
         session.thread.previous_response_id = None;
         session.cache_guard_force_next = true;
+        return true;
     }
-    compacted
+
+    if crate::chat::summarization::apply_deterministic_compaction_for_recovery(session_arc).await {
+        warn!("High-pressure length stop recovered via deterministic compaction fallback");
+        return true;
+    }
+
+    false
+}
+
+const LENGTH_STOP_CONTINUE_MARKER: &str = "length_stop_continue";
+const MAX_LENGTH_STOP_RECOVERY_ATTEMPTS: usize = 2;
+const LENGTH_STOP_BOOSTED_MAX_NEW_TOKENS: usize = 16_000;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LengthStopKind {
+    EmptyOutput,
+    PartialOutput,
+}
+
+fn length_stop_kind(message: &ChatMessage) -> Option<LengthStopKind> {
+    if message.role != "assistant"
+        || message
+            .tool_calls
+            .as_ref()
+            .is_some_and(|calls| !calls.is_empty())
+        || length_like_finish_reason(message.finish_reason.as_deref())
+            != Some(NormalizedStopReason::ProviderLengthStop)
+    {
+        return None;
+    }
+    if has_empty_or_near_empty_visible_output(message) {
+        Some(LengthStopKind::EmptyOutput)
+    } else {
+        Some(LengthStopKind::PartialOutput)
+    }
+}
+
+fn length_stop_recovery_attempts(messages: &[ChatMessage]) -> usize {
+    let start = messages
+        .iter()
+        .rposition(|message| message.role == "user")
+        .map_or(0, |idx| idx + 1);
+    messages[start..]
+        .iter()
+        .filter(|message| {
+            message.role == "cd_instruction" && message.tool_call_id == LENGTH_STOP_CONTINUE_MARKER
+        })
+        .count()
+}
+
+fn trailing_token_budget_marker_index(messages: &[ChatMessage]) -> Option<usize> {
+    messages
+        .last()
+        .is_some_and(|message| {
+            message.role == "cd_instruction" && message.tool_call_id == TOKEN_BUDGET_MARKER
+        })
+        .then_some(messages.len().saturating_sub(1))
+}
+
+fn length_stop_continue_instruction(kind: LengthStopKind) -> ChatMessage {
+    let text = match kind {
+        LengthStopKind::EmptyOutput => {
+            " The previous response was cut off by the output token limit before any visible output was produced. Respond again, keep internal reasoning brief, and produce the answer directly."
+        }
+        LengthStopKind::PartialOutput => {
+            " The previous message was cut off by the output token limit. Continue exactly where it stopped; do not repeat content that was already produced."
+        }
+    };
+    ChatMessage {
+        role: "cd_instruction".to_string(),
+        tool_call_id: LENGTH_STOP_CONTINUE_MARKER.to_string(),
+        content: ChatContent::SimpleText(text.to_string()),
+        ..Default::default()
+    }
+}
+
+async fn maybe_recover_after_length_stop(
+    gcx: Arc<crate::global_context::GlobalContext>,
+    session_arc: &Arc<AMutex<ChatSession>>,
+    thread: &ThreadParams,
+    effective_n_ctx: Option<usize>,
+) -> bool {
+    let (kind, dead_end_message_id, attempts, trailing_budget_marker_id) = {
+        let session = session_arc.lock().await;
+        if !matches!(
+            session.runtime.state,
+            SessionState::Idle | SessionState::Completed
+        ) {
+            return false;
+        }
+        let last_idx = trailing_token_budget_marker_index(&session.messages)
+            .unwrap_or(session.messages.len())
+            .saturating_sub(1);
+        let Some(last) = session.messages.get(last_idx) else {
+            return false;
+        };
+        let Some(kind) = length_stop_kind(last) else {
+            return false;
+        };
+        (
+            kind,
+            last.message_id.clone(),
+            length_stop_recovery_attempts(&session.messages),
+            trailing_token_budget_marker_index(&session.messages)
+                .and_then(|idx| session.messages.get(idx))
+                .map(|message| message.message_id.clone()),
+        )
+    };
+
+    if attempts >= MAX_LENGTH_STOP_RECOVERY_ATTEMPTS {
+        let mut session = session_arc.lock().await;
+        session.add_message(make_ui_only_error_message(
+            "Generation stopped by the output token limit repeatedly; automatic retries exhausted. Send a message to continue.",
+        ));
+        return false;
+    }
+
+    let compacted = maybe_compact_after_high_pressure_length_stop(
+        gcx.clone(),
+        session_arc,
+        thread,
+        effective_n_ctx,
+    )
+    .await;
+
+    if thread.max_tokens.is_some() && kind == LengthStopKind::PartialOutput {
+        if !compacted {
+            return false;
+        }
+        let mut session = session_arc.lock().await;
+        session.add_message(length_stop_continue_instruction(kind));
+        warn!(
+            "Recovering from {:?} length stop after compaction (attempt {}/{})",
+            kind,
+            attempts + 1,
+            MAX_LENGTH_STOP_RECOVERY_ATTEMPTS,
+        );
+        return true;
+    }
+
+    let mut session = session_arc.lock().await;
+    if let Some(marker_id) = trailing_budget_marker_id.as_deref() {
+        session.remove_message(marker_id);
+    }
+    if kind == LengthStopKind::EmptyOutput {
+        if !dead_end_message_id.is_empty() {
+            session.remove_message(&dead_end_message_id);
+        } else if session
+            .messages
+            .last()
+            .is_some_and(|message| length_stop_kind(message) == Some(LengthStopKind::EmptyOutput))
+        {
+            session.messages.pop();
+            session.increment_version();
+            session.touch();
+        }
+    }
+    if thread.max_tokens.is_none() {
+        session.pending_max_new_tokens_boost = Some(LENGTH_STOP_BOOSTED_MAX_NEW_TOKENS);
+    }
+    session.add_message(length_stop_continue_instruction(kind));
+    warn!(
+        "Recovering from {:?} length stop (attempt {}/{}, compacted={})",
+        kind,
+        attempts + 1,
+        MAX_LENGTH_STOP_RECOVERY_ATTEMPTS,
+        compacted,
+    );
+    true
+}
+
+fn should_notify_task_agent_reasoning_token_stop(
+    message: &ChatMessage,
+    messages: &[ChatMessage],
+    effective_n_ctx: Option<usize>,
+    usage_stale: bool,
+) -> bool {
+    if !is_reasoning_token_limit_stop(message) {
+        return false;
+    }
+
+    !effective_n_ctx
+        .is_some_and(|n_ctx| is_high_pressure_length_stop(message, messages, n_ctx, usage_stale))
 }
 
 async fn handle_task_agent_reasoning_token_stop(
     app: AppState,
     session_arc: Arc<AMutex<ChatSession>>,
+    effective_n_ctx: Option<usize>,
 ) -> bool {
     let (task_meta, finish_reason, usage, message_id, agent_chat_id) = {
         let mut session = session_arc.lock().await;
@@ -912,7 +1171,12 @@ async fn handle_task_agent_reasoning_token_stop(
         let Some(message) = session.messages.last() else {
             return false;
         };
-        if !is_reasoning_token_limit_stop(message) {
+        if !should_notify_task_agent_reasoning_token_stop(
+            message,
+            &session.messages,
+            effective_n_ctx,
+            session.provider_usage_stale,
+        ) {
             return false;
         }
 
@@ -1249,13 +1513,35 @@ pub fn start_generation(
                             session.cache_guard_force_next = true;
                             continue;
                         }
+                        if crate::chat::summarization::apply_deterministic_compaction_for_recovery(
+                            &session_arc,
+                        )
+                        .await
+                        {
+                            warn!("Context limit error recovered via deterministic compaction");
+                            continue;
+                        }
                     }
                     ContextLimitCompactionDecision::MaxAttemptsReached => {
-                        let mut session = session_arc.lock().await;
-                        crate::chat::summarization::emit_compression_skipped_status(
-                            &mut session,
-                            CompressionReason::MaxAttemptsReached,
-                        );
+                        {
+                            let mut session = session_arc.lock().await;
+                            crate::chat::summarization::emit_compression_skipped_status(
+                                &mut session,
+                                CompressionReason::MaxAttemptsReached,
+                            );
+                            session.clear_stream_for_retry();
+                            session.add_message(make_ui_only_error_message(&error.message));
+                        }
+                        if crate::chat::summarization::apply_deterministic_compaction_for_recovery(
+                            &session_arc,
+                        )
+                        .await
+                        {
+                            warn!(
+                                "Context limit error recovered via deterministic compaction after attempt limit"
+                            );
+                            continue;
+                        }
                     }
                     ContextLimitCompactionDecision::Skip => {}
                 }
@@ -1332,6 +1618,15 @@ pub fn start_generation(
 
             network_retry_attempt = 0;
 
+            {
+                let mut session = session_arc.lock().await;
+                session.provider_usage_stale = false;
+                if session.thread.reactive_compact_attempts.take().is_some() {
+                    session.increment_version();
+                    session.touch();
+                }
+            }
+
             if abort_flag.load(Ordering::SeqCst) {
                 break;
             }
@@ -1387,12 +1682,16 @@ pub fn start_generation(
                 .await
             {
                 ToolStepOutcome::NoToolCalls => {
-                    if handle_task_agent_reasoning_token_stop(app.clone(), session_arc.clone())
-                        .await
+                    if handle_task_agent_reasoning_token_stop(
+                        app.clone(),
+                        session_arc.clone(),
+                        effective_n_ctx,
+                    )
+                    .await
                     {
                         break;
                     }
-                    if maybe_compact_after_high_pressure_length_stop(
+                    if maybe_recover_after_length_stop(
                         gcx.clone(),
                         &session_arc,
                         &thread,
@@ -1414,6 +1713,12 @@ pub fn start_generation(
                     };
                     if should_continue {
                         continue;
+                    }
+                    if maybe_record_goal_pursuit_progress(session_arc.clone()).await {
+                        maybe_save_trajectory(app.clone(), session_arc.clone()).await;
+                    }
+                    if handle_goal_turn_end(app.clone(), session_arc.clone()).await {
+                        break;
                     }
                     let app_stop = AppState::from_gcx(gcx.clone()).await;
                     let session_id_stop = chat_id.clone();
@@ -1465,20 +1770,29 @@ pub fn start_generation(
                     break;
                 }
                 ToolStepOutcome::Stop => {
-                    let mut ev = make_runtime_event(
-                        "chat_completed",
-                        &format!("Completed: {}", chat_label),
-                        "chat",
-                        &format!("chat_{}", chat_id),
-                        "completed",
-                        None,
-                    );
-                    ev.chat_id = Some(chat_id.to_string());
-                    app.buddy_event_sink
-                        .apply_chat_completion(ev, 4, "happy".to_string())
+                    let completed = {
+                        let session = session_arc.lock().await;
+                        session.runtime.state == SessionState::Completed
+                    };
+                    if completed {
+                        let mut ev = make_runtime_event(
+                            "chat_completed",
+                            &format!("Completed: {}", chat_label),
+                            "chat",
+                            &format!("chat_{}", chat_id),
+                            "completed",
+                            None,
+                        );
+                        ev.chat_id = Some(chat_id.to_string());
+                        app.buddy_event_sink
+                            .apply_chat_completion(ev, 4, "happy".to_string())
+                            .await;
+                        maybe_enqueue_completion_activity_reaction(
+                            app.clone(),
+                            session_arc.clone(),
+                        )
                         .await;
-                    maybe_enqueue_completion_activity_reaction(app.clone(), session_arc.clone())
-                        .await;
+                    }
                     break;
                 }
                 ToolStepOutcome::Continue => {
@@ -1637,6 +1951,15 @@ pub async fn run_llm_generation(
         ..Default::default()
     };
 
+    {
+        let mut session = session_arc.lock().await;
+        if let Some(boost) = session.pending_max_new_tokens_boost.take() {
+            if parameters.max_new_tokens > 0 && parameters.max_new_tokens < boost {
+                parameters.max_new_tokens = boost;
+            }
+        }
+    }
+
     let ccx = AtCommandsContext::new_from_app(
         app.clone(),
         effective_n_ctx,
@@ -1775,6 +2098,32 @@ async fn run_streaming_generation(
             reasoning_type: model_rec.reasoning_type_string(),
             supports_temperature: model_rec.supports_temperature,
         };
+
+        let cloud_input_usage = crate::chat::cloud_token_count::try_count_input_tokens(
+            &app.runtime.http_client,
+            &llm_request,
+            &model_rec.base,
+        )
+        .await;
+        if let Some(count) = cloud_input_usage.as_ref() {
+            let usage = &count.usage;
+            let context_limit = llm_request.params.n_ctx.unwrap_or(model_rec.base.n_ctx);
+            let output_token_reserve = count.output_token_reserve;
+            if crate::chat::cloud_token_count::cloud_input_exceeds_context(
+                usage,
+                context_limit,
+                output_token_reserve,
+            ) {
+                return Err(LlmStreamError::from(
+                    crate::chat::cloud_token_count::cloud_context_limit_message(
+                        usage,
+                        &model_rec.base,
+                        context_limit,
+                        output_token_reserve,
+                    ),
+                ));
+            }
+        }
 
         enum CollectorEventPayload {
             DeltaOps(Vec<DeltaOp>),
@@ -2015,10 +2364,20 @@ async fn run_streaming_generation(
             return Ok(GenerationResult::PausedForUserDecision);
         }
 
-        let results = stream_outcome.map(|o| match o {
-            LlmStreamOutcome::Choices(c) => c,
-            LlmStreamOutcome::PausedForCacheGuard => unreachable!(),
-        });
+        let results = stream_outcome
+            .map(|o| match o {
+                LlmStreamOutcome::Choices(c) => c,
+                LlmStreamOutcome::PausedForCacheGuard => unreachable!(),
+            })
+            .map_err(|error| {
+                synthesize_responses_context_cutoff_error_if_needed(
+                    error,
+                    &model_rec.base,
+                    &llm_request.messages,
+                    llm_request.params.n_ctx.unwrap_or(model_rec.base.n_ctx),
+                    true,
+                )
+            });
 
         let duration_ms = call_start.elapsed().as_millis() as u64;
         let call_ts_end = chrono::Utc::now().to_rfc3339();
@@ -2039,6 +2398,11 @@ async fn run_streaming_generation(
 
         match &results {
             Err(e) => {
+                let usage_for_error = {
+                    let session = session_arc.lock().await;
+                    session.draft_usage.clone()
+                }
+                .or_else(|| cloud_input_usage.as_ref().map(|count| count.usage.clone()));
                 let (provider, model) = split_model_provider(&model_id_for_stats);
                 let event = LlmCallEvent {
                     id: uuid::Uuid::new_v4().to_string(),
@@ -2064,11 +2428,22 @@ async fn run_streaming_generation(
                     finish_reason: None,
                     attempt_n: attempt,
                     retry_reason: None,
-                    prompt_tokens: 0,
-                    completion_tokens: 0,
-                    cache_read_tokens: None,
-                    cache_creation_tokens: None,
-                    total_tokens: 0,
+                    prompt_tokens: usage_for_error
+                        .as_ref()
+                        .map(|u| u.prompt_tokens)
+                        .unwrap_or(0),
+                    completion_tokens: usage_for_error
+                        .as_ref()
+                        .map(|u| u.completion_tokens)
+                        .unwrap_or(0),
+                    cache_read_tokens: usage_for_error.as_ref().and_then(|u| u.cache_read_tokens),
+                    cache_creation_tokens: usage_for_error
+                        .as_ref()
+                        .and_then(|u| u.cache_creation_tokens),
+                    total_tokens: usage_for_error
+                        .as_ref()
+                        .map(|u| u.total_tokens)
+                        .unwrap_or(0),
                     cost_usd: None,
                 };
                 if let Some(sender) = &app.model.llm_stats_sender {
@@ -2083,6 +2458,16 @@ async fn run_streaming_generation(
         let results = results?;
 
         let mut result = results.into_iter().next().unwrap_or_default();
+
+        if result.usage.is_none() {
+            if let Some(count) = cloud_input_usage.clone() {
+                result.usage = Some(count.usage);
+            }
+        }
+        if let Some(usage) = result.usage.clone() {
+            let mut session = session_arc.lock().await;
+            session.draft_usage = Some(usage);
+        }
 
         if is_result_empty(&result) {
             let draft_usage = {
@@ -2422,6 +2807,63 @@ fn is_result_empty(result: &ChoiceFinal) -> bool {
         && result.server_content_blocks.is_empty()
 }
 
+fn event_payload_bool(message: &ChatMessage, subkind: &str, key: &str) -> bool {
+    message.role == crate::chat::internal_roles::EVENT_ROLE
+        && message
+            .extra
+            .get("event")
+            .and_then(|event| event.get("subkind"))
+            .and_then(|value| value.as_str())
+            == Some(subkind)
+        && message
+            .extra
+            .get("event")
+            .and_then(|event| event.get("payload"))
+            .and_then(|payload| payload.get(key))
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false)
+}
+
+fn assistant_goal_pursuit_accounting_enabled(message: &ChatMessage) -> bool {
+    message
+        .extra
+        .get("goal_pursuit")
+        .and_then(|value| value.get("account_progress"))
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false)
+}
+
+fn latest_goal_pursuit_usage(session: &ChatSession) -> Option<ChatUsage> {
+    let goal = session.goal.as_ref()?;
+    if !goal.active || goal.status != GoalStatus::Active {
+        return None;
+    }
+    let assistant_index = session
+        .messages
+        .iter()
+        .rposition(|message| message.role == "assistant")?;
+    let assistant = &session.messages[assistant_index];
+    let marked_on_assistant = assistant_goal_pursuit_accounting_enabled(assistant);
+    let marked_before_assistant = session.messages[..assistant_index]
+        .iter()
+        .rev()
+        .take_while(|message| message.role != "assistant")
+        .any(|message| event_payload_bool(message, "goal_pursuit", "account_progress"));
+    if marked_on_assistant || marked_before_assistant {
+        assistant.usage.clone()
+    } else {
+        None
+    }
+}
+
+async fn maybe_record_goal_pursuit_progress(session_arc: Arc<AMutex<ChatSession>>) -> bool {
+    let mut session = session_arc.lock().await;
+    let Some(usage) = latest_goal_pursuit_usage(&session) else {
+        return false;
+    };
+    session.goal_record_progress_from_usage(&usage)
+}
+
 fn maybe_downgrade_bogus_tool_calls_finish_reason(result: &mut ChoiceFinal, stage: &str) {
     if result.finish_reason.as_deref() != Some("tool_calls") || !result.tool_calls_raw.is_empty() {
         return;
@@ -2520,6 +2962,72 @@ mod tests {
             }),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn goal_budget_pursuit_usage_requires_marker() {
+        let mut session = ChatSession::new("goal-generation".to_string());
+        session.install_goal("agent", "ship it", true, GoalBudget::default());
+        session.add_message(make_assistant_msg("not a pursuit"));
+        session.messages.last_mut().unwrap().usage = Some(ChatUsage {
+            prompt_tokens: 10,
+            completion_tokens: 5,
+            total_tokens: 15,
+            cache_read_tokens: None,
+            cache_creation_tokens: None,
+            metering_usd: None,
+        });
+        assert!(latest_goal_pursuit_usage(&session).is_none());
+
+        session.messages.last_mut().unwrap().extra.insert(
+            "goal_pursuit".to_string(),
+            json!({"account_progress": true}),
+        );
+        let usage = latest_goal_pursuit_usage(&session).unwrap();
+        assert_eq!(usage.total_tokens, 15);
+        assert!(session.goal_record_progress_from_usage(&usage));
+        assert_eq!(session.goal.as_ref().unwrap().progress.turns_used, 1);
+        assert_eq!(session.goal.as_ref().unwrap().progress.tokens_used, 15);
+        assert_eq!(session.goal.as_ref().unwrap().progress.no_progress_turns, 1);
+    }
+
+    #[test]
+    fn goal_budget_pursuit_usage_records_expiring_turn() {
+        let mut session = ChatSession::new("goal-generation-expiring".to_string());
+        session.install_goal(
+            "agent",
+            "ship it",
+            true,
+            GoalBudget {
+                max_turns: 10,
+                max_minutes: 1,
+                max_tokens: 1_000,
+                cooldown_ms: 1_500,
+                no_progress_token_threshold: 10,
+                no_progress_turns: 2,
+            },
+        );
+        session.goal.as_mut().unwrap().progress.started_at_ms = 1;
+        let mut assistant = make_assistant_msg("late pursuit");
+        assistant.usage = Some(ChatUsage {
+            prompt_tokens: 10,
+            completion_tokens: 15,
+            total_tokens: 25,
+            cache_read_tokens: None,
+            cache_creation_tokens: None,
+            metering_usd: None,
+        });
+        assistant.extra.insert(
+            "goal_pursuit".to_string(),
+            json!({"account_progress": true}),
+        );
+        session.add_message(assistant);
+
+        let usage = latest_goal_pursuit_usage(&session).unwrap();
+        assert!(session.goal_record_progress_from_usage(&usage));
+        assert_eq!(session.goal.as_ref().unwrap().progress.turns_used, 1);
+        assert_eq!(session.goal.as_ref().unwrap().progress.tokens_used, 25);
+        assert_eq!(session.goal_status, Some(GoalStatus::BudgetExhausted));
     }
 
     fn make_assistant_with_tool_call(tool_call_id: &str, tool_name: &str) -> ChatMessage {
@@ -2680,8 +3188,10 @@ mod tests {
         );
 
         assert!(text.starts_with(
-            "Context too large and no eligible segment summary could be applied. Original error:"
+            "Context too large and automatic compaction could not free enough space."
         ));
+        assert!(text.contains("ctx_probe()/ctx_apply()"));
+        assert!(text.contains("Original error:"));
         assert_context_limit_secret_redacted(&text);
         assert!(
             text.len() <= final_context_limit_error_bound(),
@@ -2966,7 +3476,9 @@ mod tests {
         let message = make_high_pressure_length_stop();
         let messages = vec![make_user_msg("continue"), message.clone()];
 
-        assert!(is_high_pressure_length_stop(&message, &messages, 100_000));
+        assert!(is_high_pressure_length_stop(
+            &message, &messages, 100_000, false
+        ));
     }
 
     #[test]
@@ -2974,7 +3486,22 @@ mod tests {
         let message = make_low_pressure_length_stop();
         let messages = vec![make_user_msg("continue"), message.clone()];
 
-        assert!(!is_high_pressure_length_stop(&message, &messages, 100_000));
+        assert!(!is_high_pressure_length_stop(
+            &message, &messages, 100_000, false
+        ));
+    }
+
+    #[test]
+    fn token_budget_marker_not_injected_after_length_stop() {
+        let mut session = ChatSession::new("length-stop-budget-marker".to_string());
+        session.messages = vec![make_user_msg("continue"), make_low_pressure_length_stop()];
+
+        assert!(!maybe_inject_token_budget_instruction(
+            &mut session,
+            100_000,
+            1
+        ));
+        assert_eq!(session.messages.len(), 2);
     }
 
     #[tokio::test]
@@ -3034,7 +3561,9 @@ mod tests {
         });
         let messages = vec![make_user_msg("continue"), message.clone()];
 
-        assert!(!is_high_pressure_length_stop(&message, &messages, 100_000));
+        assert!(!is_high_pressure_length_stop(
+            &message, &messages, 100_000, false
+        ));
     }
 
     #[test]
@@ -3043,7 +3572,9 @@ mod tests {
         message.tool_calls = make_assistant_with_tool_call("call_123", "cat").tool_calls;
         let messages = vec![make_user_msg("continue"), message.clone()];
 
-        assert!(!is_high_pressure_length_stop(&message, &messages, 100_000));
+        assert!(!is_high_pressure_length_stop(
+            &message, &messages, 100_000, false
+        ));
     }
 
     #[test]
@@ -3052,7 +3583,9 @@ mod tests {
         message.finish_reason = Some("max_output_tokens".to_string());
         let messages = vec![make_user_msg("continue"), message.clone()];
 
-        assert!(is_high_pressure_length_stop(&message, &messages, 100_000));
+        assert!(is_high_pressure_length_stop(
+            &message, &messages, 100_000, false
+        ));
     }
 
     #[tokio::test]
@@ -3641,5 +4174,187 @@ mod tests {
             matches!(stream_err, Err(_)),
             "Error outcome must propagate as Err in the generation chain"
         );
+    }
+    fn length_stop_marker_msg() -> ChatMessage {
+        length_stop_continue_instruction(LengthStopKind::PartialOutput)
+    }
+
+    #[test]
+    fn length_stop_kind_classifies_empty_and_partial() {
+        assert_eq!(
+            length_stop_kind(&make_reasoning_token_limit_msg()),
+            Some(LengthStopKind::EmptyOutput)
+        );
+
+        let mut partial = make_reasoning_token_limit_msg();
+        partial.content = ChatContent::SimpleText("a long partial answer that was cut".repeat(4));
+        assert_eq!(
+            length_stop_kind(&partial),
+            Some(LengthStopKind::PartialOutput)
+        );
+
+        let mut with_tools = make_reasoning_token_limit_msg();
+        with_tools.tool_calls = make_assistant_with_tool_call("call_1", "cat").tool_calls;
+        assert_eq!(length_stop_kind(&with_tools), None);
+
+        let mut normal_finish = make_reasoning_token_limit_msg();
+        normal_finish.finish_reason = Some("stop".to_string());
+        assert_eq!(length_stop_kind(&normal_finish), None);
+
+        let mut context_stop = make_reasoning_token_limit_msg();
+        context_stop.finish_reason = Some("context_length_exceeded".to_string());
+        assert_eq!(length_stop_kind(&context_stop), None);
+
+        assert_eq!(length_stop_kind(&make_user_msg("hi")), None);
+    }
+
+    #[test]
+    fn length_stop_recovery_attempts_counts_markers_since_last_user() {
+        let messages = vec![
+            make_user_msg("first"),
+            length_stop_marker_msg(),
+            make_user_msg("second"),
+            length_stop_marker_msg(),
+            length_stop_marker_msg(),
+            make_reasoning_token_limit_msg(),
+        ];
+        assert_eq!(length_stop_recovery_attempts(&messages), 2);
+
+        let fresh_turn = vec![
+            make_user_msg("first"),
+            length_stop_marker_msg(),
+            make_user_msg("second"),
+        ];
+        assert_eq!(length_stop_recovery_attempts(&fresh_turn), 0);
+    }
+
+    #[tokio::test]
+    async fn empty_length_stop_low_pressure_retries_with_boost_and_marker() {
+        let gcx = crate::global_context::tests::make_test_gcx().await;
+        let mut session = ChatSession::new("length-stop-retry".to_string());
+        session.messages = vec![make_user_msg("continue"), make_low_pressure_length_stop()];
+        let thread = session.thread.clone();
+        let session_arc = Arc::new(AMutex::new(session));
+
+        assert!(maybe_recover_after_length_stop(gcx, &session_arc, &thread, Some(100_000)).await);
+
+        let session = session_arc.lock().await;
+        assert_eq!(
+            session.pending_max_new_tokens_boost,
+            Some(LENGTH_STOP_BOOSTED_MAX_NEW_TOKENS)
+        );
+        assert!(!session
+            .messages
+            .iter()
+            .any(|message| length_stop_kind(message) == Some(LengthStopKind::EmptyOutput)));
+        let markers = session
+            .messages
+            .iter()
+            .filter(|message| {
+                message.role == "cd_instruction"
+                    && message.tool_call_id == LENGTH_STOP_CONTINUE_MARKER
+            })
+            .count();
+        assert_eq!(markers, 1);
+    }
+
+    #[tokio::test]
+    async fn length_stop_recovery_ignores_trailing_token_budget_marker() {
+        let gcx = crate::global_context::tests::make_test_gcx().await;
+        let mut session = ChatSession::new("length-stop-trailing-budget".to_string());
+        session.messages = vec![make_user_msg("continue"), make_low_pressure_length_stop()];
+        session.add_message(ChatMessage {
+            role: "cd_instruction".to_string(),
+            tool_call_id: TOKEN_BUDGET_MARKER.to_string(),
+            content: ChatContent::SimpleText("budget".to_string()),
+            ..Default::default()
+        });
+        let thread = session.thread.clone();
+        let session_arc = Arc::new(AMutex::new(session));
+
+        assert!(maybe_recover_after_length_stop(gcx, &session_arc, &thread, Some(100_000)).await);
+
+        let session = session_arc.lock().await;
+        assert!(!session
+            .messages
+            .iter()
+            .any(|message| message.tool_call_id == TOKEN_BUDGET_MARKER));
+        assert_eq!(
+            session
+                .messages
+                .last()
+                .map(|message| message.tool_call_id.clone()),
+            Some(LENGTH_STOP_CONTINUE_MARKER.to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn partial_length_stop_keeps_message_and_appends_continue_marker() {
+        let gcx = crate::global_context::tests::make_test_gcx().await;
+        let mut session = ChatSession::new("length-stop-partial".to_string());
+        let mut partial = make_low_pressure_length_stop();
+        partial.content = ChatContent::SimpleText("partial answer cut mid-".repeat(8));
+        let partial_text = partial.content.content_text_only();
+        session.messages = vec![make_user_msg("continue"), partial];
+        let thread = session.thread.clone();
+        let session_arc = Arc::new(AMutex::new(session));
+
+        assert!(maybe_recover_after_length_stop(gcx, &session_arc, &thread, Some(100_000)).await);
+
+        let session = session_arc.lock().await;
+        assert!(session
+            .messages
+            .iter()
+            .any(|message| message.content.content_text_only() == partial_text));
+        assert_eq!(
+            session
+                .messages
+                .last()
+                .map(|message| message.tool_call_id.clone()),
+            Some(LENGTH_STOP_CONTINUE_MARKER.to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn length_stop_recovery_exhausts_after_max_attempts_with_visible_notice() {
+        let gcx = crate::global_context::tests::make_test_gcx().await;
+        let mut session = ChatSession::new("length-stop-exhausted".to_string());
+        session.messages = vec![make_user_msg("continue")];
+        for _ in 0..MAX_LENGTH_STOP_RECOVERY_ATTEMPTS {
+            session.messages.push(length_stop_marker_msg());
+        }
+        session.messages.push(make_low_pressure_length_stop());
+        let thread = session.thread.clone();
+        let session_arc = Arc::new(AMutex::new(session));
+
+        assert!(!maybe_recover_after_length_stop(gcx, &session_arc, &thread, Some(100_000)).await);
+
+        let session = session_arc.lock().await;
+        let last = session.messages.last().unwrap();
+        assert_eq!(last.role, "error");
+        assert!(crate::chat::diagnostics::is_ui_only_message(last));
+        assert!(last
+            .content
+            .content_text_only()
+            .contains("output token limit"));
+    }
+
+    #[tokio::test]
+    async fn partial_length_stop_with_user_max_tokens_is_not_retried() {
+        let gcx = crate::global_context::tests::make_test_gcx().await;
+        let mut session = ChatSession::new("length-stop-user-cap".to_string());
+        let mut partial = make_low_pressure_length_stop();
+        partial.content = ChatContent::SimpleText("partial answer".repeat(8));
+        session.messages = vec![make_user_msg("continue"), partial];
+        session.thread.max_tokens = Some(512);
+        let thread = session.thread.clone();
+        let before_len = session.messages.len();
+        let session_arc = Arc::new(AMutex::new(session));
+
+        assert!(!maybe_recover_after_length_stop(gcx, &session_arc, &thread, Some(100_000)).await);
+
+        let session = session_arc.lock().await;
+        assert_eq!(session.messages.len(), before_len);
+        assert!(session.pending_max_new_tokens_boost.is_none());
     }
 }

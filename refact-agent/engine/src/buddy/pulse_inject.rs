@@ -2,20 +2,19 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
-use chrono::{DateTime, Duration, NaiveDate, Utc};
+use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::buddy::conversation_ledger::list_all_buddy_conversations;
-use crate::buddy::jobs::autonomous_chats::redact_and_cap_text;
+use crate::buddy::conversation_ledger::list_recent_buddy_conversations;
+use crate::buddy::actor::redact_sensitive;
 use crate::buddy::types::BuddyConversationEntry;
 use crate::buddy::user_activity::time_of_day_pattern;
 use refact_buddy_core::user_action::UserAction;
 use crate::call_validation::{ChatContent, ChatMessage, ContextFile};
 use crate::app_state::AppState;
-use crate::knowledge_graph::kg_structs::KnowledgeFrontmatter;
 
 pub const BUDDY_PULSE_MARKER: &str = "buddy_project_memory_pulse";
-const MAX_MARKDOWN_CHARS: usize = 2000;
+const MAX_PULSE_MARKDOWN_CHARS: usize = 2000;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct BuddyPulsePayload {
@@ -76,11 +75,6 @@ struct UserPreferenceRecord {
     last_updated: String,
 }
 
-struct LessonCandidate {
-    lesson: PulseLesson,
-    score: f64,
-}
-
 pub async fn build_buddy_pulse_payload(gcx: AppState) -> Option<BuddyPulsePayload> {
     let buddy_arc = gcx.buddy.buddy.clone();
     let project_root = {
@@ -90,7 +84,7 @@ pub async fn build_buddy_pulse_payload(gcx: AppState) -> Option<BuddyPulsePayloa
     };
 
     let preferences = read_preferences(&project_root).await;
-    let lessons = read_lessons(&project_root).await;
+    let lessons = read_lessons(&gcx).await;
     let friction = build_friction(gcx.clone()).await;
     let recent_reports = build_recent_reports(&project_root).await;
     let user_activity = build_activity_section(gcx).await;
@@ -101,7 +95,7 @@ pub async fn build_buddy_pulse_payload(gcx: AppState) -> Option<BuddyPulsePayloa
         friction,
         recent_reports,
         user_activity,
-        generated_at: redact(Utc::now().to_rfc3339(), 80),
+        generated_at: redact(Utc::now().to_rfc3339()),
     };
 
     if payload_is_empty(&payload) {
@@ -139,12 +133,12 @@ pub fn render_pulse_as_markdown(payload: &BuddyPulsePayload) -> String {
 
     if !payload.preferences.is_empty() {
         let mut lines = vec!["## USER PREFERENCES".to_string()];
-        for pref in payload.preferences.iter().take(5) {
+        for pref in payload.preferences.iter().take(3) {
             lines.push(format!(
                 "- {:.2}: {} (updated {})",
                 pref.confidence,
-                redact(&pref.statement, 180),
-                redact(&pref.last_updated, 80)
+                truncate_inline(&redact(&pref.statement), 72),
+                redact(&pref.last_updated)
             ));
         }
         sections.push(lines.join("\n"));
@@ -152,18 +146,18 @@ pub fn render_pulse_as_markdown(payload: &BuddyPulsePayload) -> String {
 
     if !payload.lessons.is_empty() {
         let mut lines = vec!["## PROJECT LESSONS".to_string()];
-        for lesson in payload.lessons.iter().take(5) {
+        for lesson in payload.lessons.iter().take(3) {
             let tags = lesson
                 .tags
                 .iter()
                 .take(4)
-                .map(|tag| redact(tag, 40))
+                .map(redact)
                 .collect::<Vec<_>>()
                 .join(", ");
             lines.push(format!(
                 "- {}: {} [{}]",
-                redact(&lesson.title, 120),
-                redact(&lesson.preview, 180),
+                truncate_inline(&redact(&lesson.title), 56),
+                truncate_inline(&redact(&lesson.preview), 88),
                 tags
             ));
         }
@@ -180,13 +174,16 @@ pub fn render_pulse_as_markdown(payload: &BuddyPulsePayload) -> String {
                     .top_error_types
                     .iter()
                     .take(3)
-                    .map(|(kind, count)| format!("{} ({})", redact(kind, 60), count))
+                    .map(|(kind, count)| format!("{} ({})", redact(kind), count))
                     .collect::<Vec<_>>()
                     .join(", ")
             ));
         }
         if payload.friction.stuck_tasks > 0 {
-            lines.push(format!("- stuck tasks: {}", payload.friction.stuck_tasks));
+            lines.push(format!(
+                "- recent stuck task alerts (1h): {}",
+                payload.friction.stuck_tasks
+            ));
         }
         sections.push(lines.join("\n"));
     }
@@ -196,9 +193,9 @@ pub fn render_pulse_as_markdown(payload: &BuddyPulsePayload) -> String {
         for report in payload.recent_reports.iter().take(2) {
             lines.push(format!(
                 "- {}: {} ({})",
-                redact(&report.title, 120),
-                redact(&report.preview, 140),
-                redact(&report.chat_id, 80)
+                redact(&report.title),
+                truncate_inline(&redact(&report.preview), 96),
+                redact(&report.chat_id)
             ));
         }
         sections.push(lines.join("\n"));
@@ -208,55 +205,57 @@ pub fn render_pulse_as_markdown(payload: &BuddyPulsePayload) -> String {
         let mut lines = vec!["## USER ACTIVITY (last 24h)".to_string()];
         lines.push(format!(
             "- pattern: {}",
-            redact(&payload.user_activity.time_of_day_pattern, 100)
+            redact(&payload.user_activity.time_of_day_pattern)
         ));
         for group in payload.user_activity.grouped.iter().take(5) {
             let details = group
                 .details
                 .iter()
                 .take(3)
-                .map(|detail| redact(detail, 80))
+                .map(redact)
                 .collect::<Vec<_>>()
                 .join("; ");
             if details.is_empty() {
-                lines.push(format!(
-                    "- {}: {}",
-                    redact(&group.action_type, 60),
-                    group.count
-                ));
+                lines.push(format!("- {}: {}", redact(&group.action_type), group.count));
             } else {
                 lines.push(format!(
                     "- {}: {} ({})",
-                    redact(&group.action_type, 60),
+                    redact(&group.action_type),
                     group.count,
-                    details
+                    truncate_inline(&details, 120)
                 ));
             }
         }
         sections.push(lines.join("\n"));
     }
-    let footer = format!("_Generated {}_", redact(&payload.generated_at, 80));
-    let mut section_budgets = vec![420, 470, 260, 310, 460];
-    loop {
-        let mut out = Vec::new();
-        for (section, budget) in sections.iter().zip(section_budgets.iter()) {
-            out.push(cap_chars(section, *budget));
-        }
-        out.push(footer.clone());
-        let markdown = out.join("\n\n");
-        if markdown.chars().count() <= MAX_MARKDOWN_CHARS {
-            return markdown;
-        }
-        if let Some((idx, _)) = section_budgets.iter().enumerate().max_by_key(|(_, v)| **v) {
-            if section_budgets[idx] <= 64 {
-                return cap_chars(&markdown, MAX_MARKDOWN_CHARS);
-            }
-            section_budgets[idx] = section_budgets[idx].saturating_sub(32);
-        } else {
-            return cap_chars(&markdown, MAX_MARKDOWN_CHARS);
-        }
-    }
+    let footer = format!("_Generated {}_", redact(&payload.generated_at));
+    let mut out = sections;
+    out.push(footer);
+    cap_markdown_chars(out.join("\n\n"), MAX_PULSE_MARKDOWN_CHARS)
 }
+
+fn cap_markdown_chars(markdown: String, max_chars: usize) -> String {
+    if markdown.chars().count() <= max_chars {
+        return markdown;
+    }
+    let marker = "\n...[truncated]";
+    let keep_chars = max_chars.saturating_sub(marker.chars().count());
+    let mut truncated = markdown.chars().take(keep_chars).collect::<String>();
+    truncated.push_str(marker);
+    truncated
+}
+
+fn truncate_inline(text: &str, max_chars: usize) -> String {
+    if text.chars().count() <= max_chars {
+        return text.to_string();
+    }
+    let marker = "...";
+    let keep_chars = max_chars.saturating_sub(marker.chars().count());
+    let mut truncated = text.chars().take(keep_chars).collect::<String>();
+    truncated.push_str(marker);
+    truncated
+}
+
 async fn read_preferences(project_root: &Path) -> Vec<PulsePreference> {
     let path = project_root.join(".refact/buddy/user_profile.md");
     let Ok(text) = tokio::fs::read_to_string(path).await else {
@@ -266,9 +265,9 @@ async fn read_preferences(project_root: &Path) -> Vec<PulsePreference> {
         .into_iter()
         .filter(|pref| pref.confidence >= 0.5)
         .map(|pref| PulsePreference {
-            statement: redact(pref.statement, 240),
+            statement: redact(pref.statement),
             confidence: pref.confidence,
-            last_updated: redact(pref.last_updated, 80),
+            last_updated: redact(pref.last_updated),
         })
         .collect::<Vec<_>>();
     prefs.sort_by(|a, b| {
@@ -328,82 +327,33 @@ fn parse_profile_value(value: &str) -> String {
     }
 }
 
-async fn read_lessons(project_root: &Path) -> Vec<PulseLesson> {
-    let dir = project_root.join(crate::file_filter::KNOWLEDGE_FOLDER_NAME);
-    if !dir.exists() {
-        return Vec::new();
-    }
-    let mut lessons = Vec::new();
-    for entry in walkdir::WalkDir::new(&dir)
+async fn read_lessons(app: &AppState) -> Vec<PulseLesson> {
+    let idx_arc = app.gcx.knowledge_index.clone();
+    let cards = {
+        let idx = idx_arc.lock().await;
+        idx.lessons_for_pulse(5)
+    };
+    cards
         .into_iter()
-        .filter_map(|entry| entry.ok())
-    {
-        let path = entry.path().to_path_buf();
-        if !path.is_file() || path_has_component(&path, "archive") {
-            continue;
-        }
-        let ext = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
-        if ext != "md" && ext != "mdx" {
-            continue;
-        }
-        let Ok(text) = tokio::fs::read_to_string(&path).await else {
-            continue;
-        };
-        let (frontmatter, content_start) = KnowledgeFrontmatter::parse(&text);
-        if frontmatter.is_archived() || frontmatter.is_deprecated() {
-            continue;
-        }
-        if !frontmatter
-            .tags
-            .iter()
-            .any(|tag| matches!(tag.trim().to_lowercase().as_str(), "lesson" | "convention"))
-        {
-            continue;
-        }
-        let updated = frontmatter
-            .updated
-            .clone()
-            .or_else(|| frontmatter.created_at.clone())
-            .or_else(|| frontmatter.created.clone())
-            .unwrap_or_default();
-        let content = text.get(content_start..).unwrap_or("");
-        let preview = frontmatter
-            .description
-            .clone()
-            .or_else(|| frontmatter.summary.clone())
-            .or_else(|| first_nonempty_line(content))
-            .unwrap_or_default();
-        let title = frontmatter.title.clone().unwrap_or_else(|| {
-            path.file_stem()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string()
-        });
-        lessons.push(LessonCandidate {
-            score: lesson_score(&updated, frontmatter.source_confidence),
-            lesson: PulseLesson {
-                title: redact(title, 160),
-                preview: redact(preview, 260),
-                tags: frontmatter
-                    .tags
-                    .iter()
-                    .map(|tag| redact(tag, 40))
-                    .collect::<Vec<_>>(),
-                updated: redact(updated, 80),
-            },
-        });
-    }
-    lessons.sort_by(|a, b| {
-        b.score
-            .partial_cmp(&a.score)
-            .unwrap_or(Ordering::Equal)
-            .then_with(|| b.lesson.updated.cmp(&a.lesson.updated))
-            .then_with(|| a.lesson.title.cmp(&b.lesson.title))
-    });
-    lessons
-        .into_iter()
-        .take(5)
-        .map(|candidate| candidate.lesson)
+        .map(|card| {
+            let updated = card
+                .updated
+                .clone()
+                .or_else(|| card.created_at.clone())
+                .or_else(|| card.created.clone())
+                .unwrap_or_default();
+            let preview = card
+                .description
+                .clone()
+                .or_else(|| card.summary.clone())
+                .unwrap_or_default();
+            PulseLesson {
+                title: redact(card.title),
+                preview: redact(preview),
+                tags: card.tags.iter().map(redact).collect::<Vec<_>>(),
+                updated: redact(updated),
+            }
+        })
         .collect()
 }
 
@@ -417,7 +367,7 @@ async fn build_friction(gcx: AppState) -> PulseFriction {
         (
             service.recent_diagnostics.clone(),
             service.pulse.diagnostics.top_error_types.clone(),
-            service.pulse.tasks.stuck,
+            service.pulse.tasks.recent_stuck_alert_count_1h(),
         )
     };
     let cutoff = Utc::now() - Duration::hours(1);
@@ -427,11 +377,11 @@ async fn build_friction(gcx: AppState) -> PulseFriction {
             .map(|dt| dt.with_timezone(&Utc) >= cutoff)
             .unwrap_or(true);
         if recent {
-            *counts.entry(redact(&diag.error_type, 80)).or_insert(0) += 1;
+            *counts.entry(redact(&diag.error_type)).or_insert(0) += 1;
         }
     }
     for error_type in pulse_diagnostic_types {
-        counts.entry(redact(error_type, 80)).or_insert(1);
+        counts.entry(redact(error_type)).or_insert(1);
     }
     let mut top_error_types = counts.into_iter().collect::<Vec<_>>();
     top_error_types.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
@@ -443,26 +393,22 @@ async fn build_friction(gcx: AppState) -> PulseFriction {
 }
 
 async fn build_recent_reports(project_root: &Path) -> Vec<PulseReport> {
-    list_all_buddy_conversations(project_root, None)
+    list_recent_buddy_conversations(project_root, 2)
         .await
         .into_iter()
-        .take(2)
         .map(report_from_entry)
         .collect()
 }
 
 fn report_from_entry(entry: BuddyConversationEntry) -> PulseReport {
     PulseReport {
-        workflow_id: redact(entry.kind, 80),
-        title: redact(entry.title, 160),
-        preview: redact(
-            format!(
-                "{}; {} messages; updated {}",
-                entry.status, entry.message_count, entry.updated_at
-            ),
-            180,
-        ),
-        chat_id: redact(entry.id, 120),
+        workflow_id: redact(entry.kind),
+        title: redact(entry.title),
+        preview: redact(format!(
+            "{}; {} messages; updated {}",
+            entry.status, entry.message_count, entry.updated_at
+        )),
+        chat_id: redact(entry.id),
     }
 }
 
@@ -472,12 +418,12 @@ async fn build_activity_section(gcx: AppState) -> PulseActivitySection {
     if actions.is_empty() {
         return PulseActivitySection {
             grouped: Vec::new(),
-            time_of_day_pattern: redact(time_of_day_pattern(&actions), 100),
+            time_of_day_pattern: redact(time_of_day_pattern(&actions)),
         };
     }
     PulseActivitySection {
         grouped: group_activity(&actions),
-        time_of_day_pattern: redact(time_of_day_pattern(&actions), 100),
+        time_of_day_pattern: redact(time_of_day_pattern(&actions)),
     }
 }
 
@@ -510,37 +456,31 @@ fn group_activity(actions: &[UserAction]) -> Vec<PulseActivityGroup> {
 
 fn action_summary(action: &UserAction) -> (String, Option<String>) {
     match action {
-        UserAction::FileOpened { path, .. } => ("file_opened".to_string(), Some(redact(path, 120))),
+        UserAction::FileOpened { path, .. } => ("file_opened".to_string(), Some(redact(path))),
         UserAction::SnippetSelected { path, lines, .. } => (
             "snippet_selected".to_string(),
-            Some(redact(format!("{}:{}-{}", path, lines.0, lines.1), 140)),
+            Some(redact(format!("{}:{}-{}", path, lines.0, lines.1))),
         ),
         UserAction::ToolApproved { tool_name, .. } => {
-            ("tool_approved".to_string(), Some(redact(tool_name, 80)))
+            ("tool_approved".to_string(), Some(redact(tool_name)))
         }
         UserAction::ToolRejected { tool_name, .. } => {
-            ("tool_rejected".to_string(), Some(redact(tool_name, 80)))
+            ("tool_rejected".to_string(), Some(redact(tool_name)))
         }
         UserAction::CommandRun {
             command_preview, ..
-        } => (
-            "command_run".to_string(),
-            Some(redact(command_preview, 120)),
-        ),
+        } => ("command_run".to_string(), Some(redact(command_preview))),
         UserAction::WorkspaceChanged {
             folders_added,
             folders_removed,
             ..
         } => (
             "workspace_changed".to_string(),
-            Some(redact(
-                format!(
-                    "+{} -{}",
-                    folders_added.join(","),
-                    folders_removed.join(",")
-                ),
-                140,
-            )),
+            Some(redact(format!(
+                "+{} -{}",
+                folders_added.join(","),
+                folders_removed.join(",")
+            ))),
         ),
         UserAction::CommitMade {
             sha,
@@ -549,10 +489,10 @@ fn action_summary(action: &UserAction) -> (String, Option<String>) {
             ..
         } => (
             "commit_made".to_string(),
-            Some(redact(
-                format!("{} {} files {}", sha, files, message_first_line),
-                140,
-            )),
+            Some(redact(format!(
+                "{} {} files {}",
+                sha, files, message_first_line
+            ))),
         ),
         UserAction::TaskFailed {
             task_id,
@@ -560,14 +500,14 @@ fn action_summary(action: &UserAction) -> (String, Option<String>) {
             ..
         } => (
             "task_failed".to_string(),
-            Some(redact(format!("{}: {}", task_id, reason_short), 140)),
+            Some(redact(format!("{}: {}", task_id, reason_short))),
         ),
         UserAction::ChatStarted {
             first_user_text_preview,
             ..
         } => (
             "chat_started".to_string(),
-            Some(redact(first_user_text_preview, 120)),
+            Some(redact(first_user_text_preview)),
         ),
     }
 }
@@ -581,51 +521,8 @@ fn payload_is_empty(payload: &BuddyPulsePayload) -> bool {
         && payload.friction.stuck_tasks == 0
 }
 
-fn path_has_component(path: &Path, component: &str) -> bool {
-    path.components().any(|part| part.as_os_str() == component)
-}
-
-fn first_nonempty_line(content: &str) -> Option<String> {
-    content
-        .lines()
-        .map(str::trim)
-        .find(|line| !line.is_empty())
-        .map(|line| line.trim_start_matches('#').trim().to_string())
-}
-
-fn lesson_score(updated: &str, source_confidence: Option<f32>) -> f64 {
-    let confidence = source_confidence.unwrap_or(1.0).clamp(0.0, 1.0) as f64;
-    let recency = parse_timestamp(updated)
-        .map(|dt| {
-            let days = Utc::now().signed_duration_since(dt).num_days().max(0) as f64;
-            1.0 / (1.0 + days)
-        })
-        .unwrap_or(0.1);
-    recency * confidence
-}
-
-fn parse_timestamp(value: &str) -> Option<DateTime<Utc>> {
-    DateTime::parse_from_rfc3339(value)
-        .map(|dt| dt.with_timezone(&Utc))
-        .ok()
-        .or_else(|| {
-            NaiveDate::parse_from_str(value, "%Y-%m-%d")
-                .ok()
-                .and_then(|date| date.and_hms_opt(0, 0, 0))
-                .map(|dt| DateTime::<Utc>::from_naive_utc_and_offset(dt, Utc))
-        })
-}
-
-fn redact(text: impl AsRef<str>, max_chars: usize) -> String {
-    redact_and_cap_text(text.as_ref(), max_chars)
-}
-
-fn cap_chars(text: &str, max_chars: usize) -> String {
-    let mut out = text.chars().take(max_chars).collect::<String>();
-    if out.chars().count() < text.chars().count() {
-        out.push('…');
-    }
-    out
+fn redact(text: impl AsRef<str>) -> String {
+    redact_sensitive(text.as_ref())
 }
 
 #[cfg(test)]

@@ -72,6 +72,9 @@ pub enum ToolStepOutcome {
 
 use super::types::*;
 use super::trajectories::maybe_save_trajectory;
+use super::goal_verifier::{
+    should_verify_goal_on_done, verify_goal_before_completion, GoalCompletionGateOutcome,
+};
 
 use super::config::{limits, tokens};
 
@@ -383,7 +386,10 @@ fn spawn_subchat_bridge(
 
             match recv_result {
                 Ok(Some(value)) => {
-                    info!("spawn_subchat_bridge: received message: {:?}", value);
+                    info!(
+                        "spawn_subchat_bridge: received message: {}b",
+                        value.to_string().len()
+                    );
                     let tool_call_id = value.get("tool_call_id").and_then(|v| v.as_str());
                     let subchat_id = value.get("subchat_id").and_then(|v| v.as_str());
 
@@ -1324,6 +1330,7 @@ pub async fn process_tool_calls_once(
     // Only apply stop state if the tool actually succeeded (tool_failed != Some(true)), otherwise
     // let the loop continue so the LLM can see the error and retry with correct arguments.
     let mut final_state = SessionState::Idle;
+    let mut completion_trigger: Option<String> = None;
     for tool_call in &tools_to_execute {
         let failed = tool_results
             .iter()
@@ -1335,8 +1342,14 @@ pub async fn process_tool_calls_once(
                 );
             match tool_name.as_str() {
                 "ask_questions" | "wait_agents" => final_state = SessionState::WaitingUserInput,
-                "task_done" => final_state = SessionState::Completed,
-                "agent_finish" => final_state = SessionState::Completed,
+                "task_done" | "finish" => {
+                    final_state = SessionState::Completed;
+                    completion_trigger = Some(tool_name.to_string());
+                }
+                "agent_finish" => {
+                    final_state = SessionState::Completed;
+                    completion_trigger = Some(tool_name.to_string());
+                }
                 "handoff_to_mode" => final_state = SessionState::Completed,
                 _ => {}
             }
@@ -1358,6 +1371,7 @@ pub async fn process_tool_calls_once(
         session.abort_flag.load(Ordering::Relaxed)
     };
 
+    let mut verify_completion = false;
     {
         let mut session = session_arc.lock().await;
         if !was_interrupted || tool_initiated_stop {
@@ -1369,13 +1383,37 @@ pub async fn process_tool_calls_once(
             session.clear_post_tool_side_effects();
         }
         if tool_initiated_stop {
-            // Tools that intentionally stop the current turn always apply their intended state.
-            session.set_runtime_state(final_state, None);
+            if final_state == SessionState::Completed
+                && completion_trigger.is_some()
+                && should_verify_goal_on_done(&session)
+            {
+                session.set_runtime_state(SessionState::ExecutingTools, None);
+                verify_completion = true;
+            } else {
+                session.set_runtime_state(final_state, None);
+            }
         } else if was_aborted {
             // User abort during regular tools: transition to Idle so UI stops animating
             session.set_runtime_state(SessionState::Idle, None);
         } else {
             session.set_runtime_state(SessionState::Generating, None);
+        }
+    }
+
+    if verify_completion {
+        let trigger = completion_trigger.as_deref().unwrap_or("task_done");
+        match verify_goal_before_completion(app.clone(), session_arc.clone(), trigger).await {
+            GoalCompletionGateOutcome::Passthrough => {
+                let mut session = session_arc.lock().await;
+                session.set_runtime_state(SessionState::Completed, None);
+            }
+            GoalCompletionGateOutcome::Finalized => {}
+            GoalCompletionGateOutcome::Rearmed => {
+                maybe_save_trajectory(app.clone(), session_arc.clone()).await;
+                return ToolStepOutcome::Stop;
+            }
+            GoalCompletionGateOutcome::BudgetExhausted(_) => {}
+            GoalCompletionGateOutcome::Aborted => return ToolStepOutcome::Stop,
         }
     }
 

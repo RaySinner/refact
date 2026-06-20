@@ -383,10 +383,12 @@ async fn run_summary_subchat(
         max_new_tokens: SUMMARY_MAX_NEW_TOKENS,
         temperature: Some(0.0),
         reasoning_effort: None,
+        cache_control: crate::llm::params::CacheControl::Ephemeral,
         parent_tool_call_id: Some(tool_call_id),
         parent_subchat_tx: Some(parent_subchat_tx),
         abort_flag: Some(abort_flag),
         subchat_depth: parent_depth + 1,
+        final_step_force_answer: false,
         buddy_meta: None,
     };
 
@@ -725,6 +727,7 @@ mod tests {
                 thread: ThreadParams::default(),
                 session_state: SessionState::Idle,
                 pause_reasons: vec![],
+                goal: None,
             }),
         );
         facade

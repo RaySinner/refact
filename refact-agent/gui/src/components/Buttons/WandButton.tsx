@@ -1,14 +1,13 @@
 import { useCallback } from "react";
-import { HoverCard, Text } from "@radix-ui/themes";
-import { MagicWandIcon } from "@radix-ui/react-icons";
-import iconStyles from "./iconButton.module.css";
+import { WandSparkles } from "lucide-react";
+import { IconButton, Tooltip } from "../ui";
 import { useAppDispatch, useAppSelector } from "../../hooks";
 import {
-  selectCurrentThreadId,
-  selectManualPreviewItems,
+  selectManualPreviewItemsById,
   setManualPreviewItems,
   clearManualPreviewItems,
-} from "../../features/Chat";
+  useThreadId,
+} from "../../features/Chat/Thread";
 import { usePreviewMemoryEnrichmentMutation } from "../../services/refact/memoryEnrichment";
 import { selectLspPort } from "../../features/Config/configSlice";
 
@@ -24,9 +23,11 @@ export const WandButton = ({
   onUpdateText,
 }: WandButtonProps) => {
   const dispatch = useAppDispatch();
-  const chatId = useAppSelector(selectCurrentThreadId);
+  const chatId = useThreadId();
   const port = useAppSelector(selectLspPort);
-  const previewItems = useAppSelector(selectManualPreviewItems);
+  const previewItems = useAppSelector((state) =>
+    selectManualPreviewItemsById(state, chatId),
+  );
   const [previewEnrichment, { isLoading }] =
     usePreviewMemoryEnrichmentMutation();
 
@@ -65,25 +66,20 @@ export const WandButton = ({
     : "Preview related memories & context";
 
   return (
-    <HoverCard.Root>
-      <HoverCard.Trigger>
-        <button
-          type="button"
-          className={iconStyles.iconButton}
-          onClick={handleClick}
-          disabled={disabled || isLoading || !currentText.trim()}
+    <Tooltip>
+      <Tooltip.Trigger asChild>
+        <IconButton
           aria-label={label}
           data-testid="wand-button"
-        >
-          <MagicWandIcon style={{ opacity: hasItems ? 1 : 0.45 }} />
-        </button>
-      </HoverCard.Trigger>
-      <HoverCard.Content size="1" side="top">
-        <Text as="p" size="2">
-          {label}
-        </Text>
-      </HoverCard.Content>
-    </HoverCard.Root>
+          disabled={disabled || isLoading || !currentText.trim()}
+          icon={WandSparkles}
+          onClick={handleClick}
+          size="sm"
+          variant={hasItems ? "primary" : "ghost"}
+        />
+      </Tooltip.Trigger>
+      <Tooltip.Content side="top">{label}</Tooltip.Content>
+    </Tooltip>
   );
 };
 

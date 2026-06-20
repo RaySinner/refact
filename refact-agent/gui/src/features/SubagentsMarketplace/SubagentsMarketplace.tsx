@@ -12,12 +12,20 @@ type SubagentsMarketplaceProps = {
   host: Config["host"];
   tabbed: Config["tabbed"];
   backFromMarketplace: () => void;
+<<<<<<< HEAD
+=======
+  embedded?: boolean;
+>>>>>>> upstream/main
 };
 
 export const SubagentsMarketplace: React.FC<SubagentsMarketplaceProps> = ({
   host,
   tabbed,
   backFromMarketplace,
+<<<<<<< HEAD
+=======
+  embedded = false,
+>>>>>>> upstream/main
 }) => {
   const { data: registry } = useGetRegistryQuery(undefined);
   const { data, isLoading, error } = useGetSubagentsMarketplaceQuery(undefined);
@@ -33,6 +41,10 @@ export const SubagentsMarketplace: React.FC<SubagentsMarketplaceProps> = ({
       title="Subagents Marketplace"
       kind="subagent"
       back={backFromMarketplace}
+<<<<<<< HEAD
+=======
+      embedded={embedded}
+>>>>>>> upstream/main
       items={data?.items ?? []}
       sources={data?.sources ?? []}
       isLoading={isLoading}

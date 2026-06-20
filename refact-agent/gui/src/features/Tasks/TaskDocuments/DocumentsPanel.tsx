@@ -1,4 +1,5 @@
 import React, { useCallback, useMemo, useState } from "react";
+<<<<<<< HEAD
 import {
   Badge,
   Box,
@@ -7,11 +8,23 @@ import {
   Card,
   Checkbox,
   Dialog,
+=======
+import classNames from "classnames";
+import { Clock, Pencil, Pin, Plus, Trash2 } from "lucide-react";
+import { Markdown } from "../../../components/Markdown";
+import { Checkbox } from "../../../components/Checkbox";
+import {
+  Badge,
+  Button,
+  Dialog,
+  ErrorState,
+>>>>>>> upstream/main
   Flex,
   IconButton,
   Popover,
   Select,
   Spinner,
+<<<<<<< HEAD
   Text,
   Tooltip,
 } from "@radix-ui/themes";
@@ -25,6 +38,17 @@ import {
 } from "@radix-ui/react-icons";
 import classNames from "classnames";
 import { Markdown } from "../../../components/Markdown";
+=======
+  Surface,
+  Text,
+  Tooltip,
+} from "../../../components/ui";
+import type { BadgeTone } from "../../../components/ui";
+import {
+  COLLAPSE_ANIMATION_MS,
+  useDelayedUnmount,
+} from "../../../components/shared/useDelayedUnmount";
+>>>>>>> upstream/main
 import { DocumentEditor } from "./DocumentEditor";
 import {
   type TaskDocumentSummary,
@@ -53,6 +77,17 @@ function formatUpdatedAt(value: string): string {
   });
 }
 
+<<<<<<< HEAD
+=======
+function badgeTone(color: ReturnType<typeof documentKindColor>): BadgeTone {
+  if (color === "red") return "danger";
+  if (color === "amber") return "warning";
+  if (color === "gray") return "muted";
+  if (color === "green" || color === "teal") return "success";
+  return "accent";
+}
+
+>>>>>>> upstream/main
 type DocumentRowProps = {
   document: TaskDocumentSummary;
   isExpanded: boolean;
@@ -77,6 +112,7 @@ const DocumentRow: React.FC<DocumentRowProps> = ({
   onDelete,
 }) => {
   const pinned = document.pinned;
+<<<<<<< HEAD
 
   return (
     <Card
@@ -93,10 +129,45 @@ const DocumentRow: React.FC<DocumentRowProps> = ({
               color={pinned ? "amber" : "gray"}
               aria-label={pinned ? "Unpin" : "Pin"}
               className={styles.rowIconButton}
+=======
+  const { shouldRender, isAnimatingOpen } = useDelayedUnmount(
+    isExpanded,
+    COLLAPSE_ANIMATION_MS,
+  );
+  const lastExpandedContent = React.useRef<string | undefined>(expandedContent);
+  if (expandedContent !== undefined) {
+    lastExpandedContent.current = expandedContent;
+  }
+  const renderedExpandedContent =
+    expandedContent ?? (!isExpanded ? lastExpandedContent.current : undefined);
+
+  return (
+    <Surface
+      animated="rise"
+      className={classNames(styles.row, pinned && styles.rowPinned)}
+      data-testid={`document-row-${document.slug}`}
+      onClick={onToggleExpand}
+      radius="card"
+      variant="plain"
+    >
+      <Flex justify="between" align="start" gap="2" className={styles.rowTop}>
+        <Flex align="center" gap="2" wrap="wrap" className={styles.rowHeader}>
+          <Tooltip content={pinned ? "Unpin" : "Pin"}>
+            <IconButton
+              size="sm"
+              variant="plain"
+              aria-label={pinned ? "Unpin" : "Pin"}
+              icon={Pin}
+              className={classNames(
+                styles.rowIconButton,
+                pinned && styles.iconButtonPinned,
+              )}
+>>>>>>> upstream/main
               onClick={(e) => {
                 e.stopPropagation();
                 void onPin(document.slug, !pinned);
               }}
+<<<<<<< HEAD
             >
               <DrawingPinIcon />
             </IconButton>
@@ -105,10 +176,17 @@ const DocumentRow: React.FC<DocumentRowProps> = ({
             color={documentKindColor(document.kind)}
             variant="soft"
             size="1"
+=======
+            />
+          </Tooltip>
+          <Badge
+            tone={badgeTone(documentKindColor(document.kind))}
+>>>>>>> upstream/main
             data-testid={`kind-badge-${document.slug}`}
           >
             {document.kind}
           </Badge>
+<<<<<<< HEAD
           <Text weight="bold" size="2">
             {document.name}
           </Text>
@@ -116,6 +194,15 @@ const DocumentRow: React.FC<DocumentRowProps> = ({
             v{document.version}
           </Text>
           <Text size="1" color="gray">
+=======
+          <Text weight="bold" size="2" className={styles.rowTitle}>
+            {document.name}
+          </Text>
+          <Text size="1" className={styles.mutedText}>
+            v{document.version}
+          </Text>
+          <Text size="1" className={styles.mutedText}>
+>>>>>>> upstream/main
             {formatUpdatedAt(document.updated_at)}
           </Text>
         </Flex>
@@ -123,15 +210,23 @@ const DocumentRow: React.FC<DocumentRowProps> = ({
         <Flex gap="1" align="center" className={styles.rowControls}>
           <Tooltip content="Edit">
             <IconButton
+<<<<<<< HEAD
               size="1"
               variant="ghost"
               color="gray"
               aria-label="Edit"
+=======
+              size="sm"
+              variant="plain"
+              aria-label="Edit"
+              icon={Pencil}
+>>>>>>> upstream/main
               className={styles.rowIconButton}
               onClick={(e) => {
                 e.stopPropagation();
                 onEdit(document.slug);
               }}
+<<<<<<< HEAD
             >
               <Pencil2Icon />
             </IconButton>
@@ -142,11 +237,22 @@ const DocumentRow: React.FC<DocumentRowProps> = ({
               variant="ghost"
               color="gray"
               aria-label="History"
+=======
+            />
+          </Tooltip>
+          <Tooltip content="History">
+            <IconButton
+              size="sm"
+              variant="plain"
+              aria-label="History"
+              icon={Clock}
+>>>>>>> upstream/main
               className={styles.rowIconButton}
               onClick={(e) => {
                 e.stopPropagation();
                 onHistory(document.slug);
               }}
+<<<<<<< HEAD
             >
               <ClockIcon />
             </IconButton>
@@ -175,6 +281,34 @@ const DocumentRow: React.FC<DocumentRowProps> = ({
                       size="1"
                       variant="solid"
                       color="red"
+=======
+            />
+          </Tooltip>
+          <Popover>
+            <Tooltip content="Delete">
+              <Popover.Trigger asChild>
+                <IconButton
+                  size="sm"
+                  variant="plain"
+                  aria-label="Delete"
+                  icon={Trash2}
+                  className={classNames(
+                    styles.rowIconButton,
+                    styles.dangerIcon,
+                  )}
+                  onClick={(e) => e.stopPropagation()}
+                />
+              </Popover.Trigger>
+            </Tooltip>
+            <Popover.Content className={styles.confirmPopover}>
+              <Flex direction="column" gap="3">
+                <Text size="2">Delete this document?</Text>
+                <Flex gap="2" wrap="wrap">
+                  <Popover.Close asChild>
+                    <Button
+                      size="sm"
+                      variant="danger"
+>>>>>>> upstream/main
                       onClick={() => {
                         void onDelete(document.slug);
                       }}
@@ -182,14 +316,20 @@ const DocumentRow: React.FC<DocumentRowProps> = ({
                       Confirm delete
                     </Button>
                   </Popover.Close>
+<<<<<<< HEAD
                   <Popover.Close>
                     <Button size="1" variant="soft" color="gray">
+=======
+                  <Popover.Close asChild>
+                    <Button size="sm" variant="plain">
+>>>>>>> upstream/main
                       Cancel
                     </Button>
                   </Popover.Close>
                 </Flex>
               </Flex>
             </Popover.Content>
+<<<<<<< HEAD
           </Popover.Root>
         </Flex>
       </Flex>
@@ -212,6 +352,36 @@ const DocumentRow: React.FC<DocumentRowProps> = ({
         </Box>
       )}
     </Card>
+=======
+          </Popover>
+        </Flex>
+      </Flex>
+
+      {shouldRender && (
+        <div
+          className="rf-expand-grid"
+          data-open={isAnimatingOpen}
+          data-state={isAnimatingOpen ? "open" : "closed"}
+        >
+          <div className={styles.content}>
+            {isExpandedLoading ? (
+              <div className={styles.inlineLoading}>
+                <Spinner size="sm" />
+              </div>
+            ) : renderedExpandedContent !== undefined ? (
+              <Markdown canHaveInteractiveElements={false}>
+                {renderedExpandedContent}
+              </Markdown>
+            ) : (
+              <Text size="2" className={styles.mutedText}>
+                Document content is unavailable.
+              </Text>
+            )}
+          </div>
+        </div>
+      )}
+    </Surface>
+>>>>>>> upstream/main
   );
 };
 
@@ -354,17 +524,31 @@ export const DocumentsPanel: React.FC<DocumentsPanelProps> = ({ taskId }) => {
   }, []);
 
   return (
+<<<<<<< HEAD
     <Box className={styles.root}>
+=======
+    <div className={`${styles.root} rf-enter`}>
+>>>>>>> upstream/main
       <Flex justify="between" align="center" gap="2" className={styles.header}>
         <Text weight="bold" size="3">
           {data?.documents.length ?? 0} documents
         </Text>
+<<<<<<< HEAD
         <Button size="1" variant="soft" onClick={handleNewDocument}>
           <PlusIcon />
+=======
+        <Button
+          size="sm"
+          variant="soft"
+          leftIcon={Plus}
+          onClick={handleNewDocument}
+        >
+>>>>>>> upstream/main
           New
         </Button>
       </Flex>
 
+<<<<<<< HEAD
       <Flex gap="2" align="center" className={styles.filters} wrap="wrap">
         <Select.Root value={kindFilter} onValueChange={setKindFilter} size="1">
           <Select.Trigger
@@ -407,6 +591,52 @@ export const DocumentsPanel: React.FC<DocumentsPanelProps> = ({ taskId }) => {
           <Flex justify="center" p="4">
             <Spinner />
           </Flex>
+=======
+      <Surface
+        animated="rise"
+        className={styles.filters}
+        radius="card"
+        variant="glass"
+      >
+        <Flex gap="2" align="center" className={styles.filterRow} wrap="wrap">
+          <Select value={kindFilter} onValueChange={setKindFilter}>
+            <Select.Trigger
+              aria-label="Kind filter"
+              className={styles.filterControl}
+            />
+            <Select.Content>
+              <Select.Item value={ALL_VALUE}>All kinds</Select.Item>
+              {DOCUMENT_KINDS.map((k) => (
+                <Select.Item key={k} value={k}>
+                  {k}
+                </Select.Item>
+              ))}
+            </Select.Content>
+          </Select>
+          <Checkbox
+            checked={pinnedOnly}
+            onCheckedChange={(v) => setPinnedOnly(v === true)}
+          >
+            Pinned only
+          </Checkbox>
+          {isFetching && <Spinner size="sm" />}
+        </Flex>
+      </Surface>
+
+      {error && (
+        <ErrorState
+          title="Failed to load documents."
+          variant="compact"
+          className={styles.errorState}
+        />
+      )}
+
+      <Flex direction="column" gap="2" className={`${styles.list} rf-stagger`}>
+        {isFetching && !data ? (
+          <div className={styles.loadingState}>
+            <Spinner />
+          </div>
+>>>>>>> upstream/main
         ) : visible.length > 0 ? (
           visible.map((doc) => (
             <DocumentRow
@@ -431,7 +661,11 @@ export const DocumentsPanel: React.FC<DocumentsPanelProps> = ({ taskId }) => {
             />
           ))
         ) : (
+<<<<<<< HEAD
           <Text color="gray" size="2" className={styles.emptyState}>
+=======
+          <Text as="div" className={styles.emptyState}>
+>>>>>>> upstream/main
             No documents yet. Click + New to create a plan or design doc.
           </Text>
         )}
@@ -445,15 +679,30 @@ export const DocumentsPanel: React.FC<DocumentsPanelProps> = ({ taskId }) => {
         onOpenChange={setEditorOpen}
       />
 
+<<<<<<< HEAD
       <Dialog.Root open={historyOpen} onOpenChange={handleHistoryOpenChange}>
         <Dialog.Content className={styles.historyDialog}>
+=======
+      <Dialog open={historyOpen} onOpenChange={handleHistoryOpenChange}>
+        <Dialog.Content
+          className={styles.historyDialog}
+          maxHeight="calc(100dvh - var(--rf-space-5))"
+          maxWidth="760px"
+        >
+>>>>>>> upstream/main
           <Dialog.Title>History: {historySlug}</Dialog.Title>
           <Flex gap="3" className={styles.historyBody}>
             <Flex direction="column" gap="2" className={styles.historyList}>
               {isHistoryFetching && historyRows === undefined ? (
+<<<<<<< HEAD
                 <Flex justify="center" p="3">
                   <Spinner size="1" />
                 </Flex>
+=======
+                <div className={styles.inlineLoading}>
+                  <Spinner size="sm" />
+                </div>
+>>>>>>> upstream/main
               ) : historyRows?.length ? (
                 historyRows.map((entry) => (
                   <button
@@ -461,6 +710,10 @@ export const DocumentsPanel: React.FC<DocumentsPanelProps> = ({ taskId }) => {
                     type="button"
                     className={classNames(
                       styles.historyVersionButton,
+<<<<<<< HEAD
+=======
+                      "rf-pressable",
+>>>>>>> upstream/main
                       selectedHistoryVersion === entry.version &&
                         styles.historyVersionButtonActive,
                     )}
@@ -469,17 +722,26 @@ export const DocumentsPanel: React.FC<DocumentsPanelProps> = ({ taskId }) => {
                     <Text size="2" weight="medium" as="span">
                       v{entry.version}
                     </Text>
+<<<<<<< HEAD
                     <Text size="1" color="gray" as="span">
+=======
+                    <Text size="1" as="span" className={styles.mutedText}>
+>>>>>>> upstream/main
                       {formatUpdatedAt(entry.updated_at)}
                     </Text>
                   </button>
                 ))
               ) : (
+<<<<<<< HEAD
                 <Text size="2" color="gray">
+=======
+                <Text size="2" className={styles.mutedText}>
+>>>>>>> upstream/main
                   No history available.
                 </Text>
               )}
             </Flex>
+<<<<<<< HEAD
             <Box className={styles.historyContent}>
               {selectedHistoryVersion === null ? (
                 <Text size="2" color="gray">
@@ -489,11 +751,27 @@ export const DocumentsPanel: React.FC<DocumentsPanelProps> = ({ taskId }) => {
                 <Flex justify="center" p="3">
                   <Spinner size="1" />
                 </Flex>
+=======
+            <Surface
+              className={styles.historyContent}
+              radius="card"
+              variant="glass"
+            >
+              {selectedHistoryVersion === null ? (
+                <Text size="2" className={styles.mutedText}>
+                  Select a version to view its content.
+                </Text>
+              ) : isHistoryContentLoading ? (
+                <div className={styles.inlineLoading}>
+                  <Spinner size="sm" />
+                </div>
+>>>>>>> upstream/main
               ) : currentHistoryDoc ? (
                 <Markdown canHaveInteractiveElements={false}>
                   {currentHistoryDoc.content}
                 </Markdown>
               ) : (
+<<<<<<< HEAD
                 <Text size="2" color="gray">
                   Historical content is unavailable.
                 </Text>
@@ -503,13 +781,29 @@ export const DocumentsPanel: React.FC<DocumentsPanelProps> = ({ taskId }) => {
           <Flex justify="end" mt="3">
             <Dialog.Close>
               <Button size="1" variant="soft">
+=======
+                <Text size="2" className={styles.mutedText}>
+                  Historical content is unavailable.
+                </Text>
+              )}
+            </Surface>
+          </Flex>
+          <Flex justify="end">
+            <Dialog.Close asChild>
+              <Button size="sm" variant="soft">
+>>>>>>> upstream/main
                 Close
               </Button>
             </Dialog.Close>
           </Flex>
         </Dialog.Content>
+<<<<<<< HEAD
       </Dialog.Root>
     </Box>
+=======
+      </Dialog>
+    </div>
+>>>>>>> upstream/main
   );
 };
 

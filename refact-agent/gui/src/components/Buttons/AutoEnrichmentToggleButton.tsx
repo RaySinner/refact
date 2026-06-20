@@ -1,15 +1,14 @@
 import { useCallback } from "react";
-import { HoverCard, Text } from "@radix-ui/themes";
-import { LayersIcon } from "@radix-ui/react-icons";
-import iconStyles from "./iconButton.module.css";
+import { Layers } from "lucide-react";
+import { IconButton, Tooltip } from "../ui";
 import { useAppDispatch, useAppSelector } from "../../hooks";
 import {
-  selectCurrentThreadId,
-  selectAutoEnrichmentEnabled,
-  selectMemoryEnrichmentUserTouched,
+  selectAutoEnrichmentEnabledById,
+  selectMemoryEnrichmentUserTouchedById,
   setAutoEnrichmentEnabled,
   markMemoryEnrichmentUserTouched,
-} from "../../features/Chat";
+  useThreadId,
+} from "../../features/Chat/Thread";
 import { updateChatParams } from "../../services/refact/chatCommands";
 import { selectConfig, selectApiKey } from "../../features/Config/configSlice";
 
@@ -21,9 +20,13 @@ export const AutoEnrichmentToggleButton = ({
   disabled,
 }: AutoEnrichmentToggleButtonProps) => {
   const dispatch = useAppDispatch();
-  const chatId = useAppSelector(selectCurrentThreadId);
-  const isEnabled = useAppSelector(selectAutoEnrichmentEnabled);
-  const userTouched = useAppSelector(selectMemoryEnrichmentUserTouched);
+  const chatId = useThreadId();
+  const isEnabled = useAppSelector((state) =>
+    selectAutoEnrichmentEnabledById(state, chatId),
+  );
+  const userTouched = useAppSelector((state) =>
+    selectMemoryEnrichmentUserTouchedById(state, chatId),
+  );
   const config = useAppSelector(selectConfig);
   const apiKey = useAppSelector(selectApiKey);
 
@@ -47,30 +50,21 @@ export const AutoEnrichmentToggleButton = ({
     : "Auto-enrichment OFF — click to enable";
 
   return (
-    <HoverCard.Root>
-      <HoverCard.Trigger>
-        <button
-          type="button"
-          className={iconStyles.iconButton}
-          onClick={handleClick}
-          disabled={disabled}
+    <Tooltip>
+      <Tooltip.Trigger asChild>
+        <IconButton
           aria-label={label}
           aria-pressed={isEnabled}
           data-testid="auto-enrichment-toggle"
-        >
-          <LayersIcon
-            style={
-              isEnabled ? { color: "var(--accent-11)" } : { opacity: 0.45 }
-            }
-          />
-        </button>
-      </HoverCard.Trigger>
-      <HoverCard.Content size="1" side="top">
-        <Text as="p" size="2">
-          {label}
-        </Text>
-      </HoverCard.Content>
-    </HoverCard.Root>
+          disabled={disabled}
+          icon={Layers}
+          onClick={handleClick}
+          size="sm"
+          variant={isEnabled ? "primary" : "ghost"}
+        />
+      </Tooltip.Trigger>
+      <Tooltip.Content side="top">{label}</Tooltip.Content>
+    </Tooltip>
   );
 };
 

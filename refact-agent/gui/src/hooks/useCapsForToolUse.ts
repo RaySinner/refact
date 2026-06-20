@@ -1,9 +1,21 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+<<<<<<< HEAD
 import { selectThreadMode } from "../features/Chat/Thread/selectors";
 import { useAppSelector, useGetCapsQuery, useAppDispatch } from ".";
 import { useGetChatModesQuery } from "../services/refact/chatModes";
 
 import { getSelectedChatModel, setChatModel } from "../features/Chat";
+=======
+import {
+  selectModelById,
+  selectThreadModeById,
+} from "../features/Chat/Thread/selectors";
+import { useAppSelector, useGetCapsQuery, useAppDispatch } from ".";
+import { useThreadId } from "../features/Chat/Thread";
+import { useGetChatModesQuery } from "../services/refact/chatModes";
+
+import { setChatModel } from "../features/Chat";
+>>>>>>> upstream/main
 import { isLegacyRefactModel } from "../utils/modelProviders";
 
 export const PAID_AGENT_LIST = [
@@ -21,11 +33,24 @@ export function useCapsForToolUse() {
   const [wasAdjusted, setWasAdjusted] = useState(false);
   const caps = useGetCapsQuery();
   const modesQuery = useGetChatModesQuery(undefined);
+<<<<<<< HEAD
   const currentMode = useAppSelector(selectThreadMode);
   const dispatch = useAppDispatch();
 
   const defaultCap = caps.data?.chat_default_model ?? "";
   const selectedModel = useAppSelector(getSelectedChatModel);
+=======
+  const chatId = useThreadId();
+  const currentMode = useAppSelector((state) =>
+    selectThreadModeById(state, chatId),
+  );
+  const dispatch = useAppDispatch();
+
+  const defaultCap = caps.data?.chat_default_model ?? "";
+  const selectedModel = useAppSelector((state) =>
+    selectModelById(state, chatId),
+  );
+>>>>>>> upstream/main
   const currentModel = selectedModel || defaultCap;
 
   const modeInfo = useMemo(() => {
@@ -53,6 +78,10 @@ export function useCapsForToolUse() {
       const previousTokens = caps.data?.chat_models[currentModel]?.n_ctx;
       dispatch(
         setChatModel({
+<<<<<<< HEAD
+=======
+          chatId,
+>>>>>>> upstream/main
           model,
           modelMaxContextTokens: tokens,
           previousModelMaxContextTokens: previousTokens,
@@ -62,6 +91,10 @@ export function useCapsForToolUse() {
     [
       caps.data?.chat_default_model,
       caps.data?.chat_models,
+<<<<<<< HEAD
+=======
+      chatId,
+>>>>>>> upstream/main
       currentModel,
       dispatch,
     ],

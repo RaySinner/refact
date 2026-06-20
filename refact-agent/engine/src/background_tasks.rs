@@ -61,6 +61,7 @@ pub async fn start_background_tasks(
     let gcx_for_knowledge_index = gcx.clone();
     let gcx_for_stats = gcx.clone();
     let app_state = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let goal_monitor_app = app_state.clone();
     let background_agent_monitor_app = app_state.clone();
     let background_agent_monitor_shutdown = gcx.shutdown_flag.clone();
     let mut bg = BackgroundTasksHolder::new(vec![
@@ -79,14 +80,13 @@ pub async fn start_background_tasks(
         tokio::spawn(crate::knowledge_graph::knowledge_cleanup_background_task(
             gcx.clone(),
         )),
-        tokio::spawn(
-            crate::knowledge_graph::cleanup_inactive_memories_on_startup(gcx.clone()),
-        ),
+        tokio::spawn(crate::knowledge_graph::cleanup_inactive_memories_on_startup(gcx.clone())),
         tokio::spawn(crate::trajectory_memos::trajectory_memos_background_task(
             gcx.clone(),
         )),
         crate::chat::notifications::spawn_notification_subscriber(gcx.clone()),
         tokio::spawn(crate::chat::start_agent_monitor(app_state)),
+        tokio::spawn(crate::chat::start_goal_monitor(goal_monitor_app)),
         tokio::spawn(crate::agents::monitor::run_background_agent_monitor(
             background_agent_monitor_app,
             background_agent_monitor_shutdown,
@@ -118,6 +118,11 @@ pub async fn start_background_tasks(
         }),
     ]);
     bg.extend(crate::scheduler::runner::spawn_from_active_project(gcx.clone()).await);
+    if !gcx.cmdline.daemon_endpoint.is_empty() {
+        bg.push_back(tokio::spawn(crate::daemon_link::daemon_link_task(
+            gcx.clone(),
+        )));
+    }
     let ast = gcx.clone().ast_service.lock().unwrap().clone();
     if let Some(ast_service) = ast {
         bg.extend(

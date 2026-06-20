@@ -59,6 +59,12 @@ export type HandoffApplyResponse = {
 export type ModeTransitionApplyResponse = {
   new_chat_id: string;
   messages_count: number;
+<<<<<<< HEAD
+=======
+  root_chat_id?: string | null;
+  initial_plan_document?: string | null;
+  initial_plan_error?: string | null;
+>>>>>>> upstream/main
 };
 
 function buildPath(template: string, chatId: string): string {

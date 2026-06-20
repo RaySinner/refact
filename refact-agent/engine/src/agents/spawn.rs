@@ -160,10 +160,12 @@ pub async fn spawn_background_agent(
             max_new_tokens: 512,
             temperature: None,
             reasoning_effort: None,
+            cache_control: crate::llm::params::CacheControl::Ephemeral,
             parent_tool_call_id: parent_tool_call_id.clone(),
             parent_subchat_tx: parent_subchat_tx.clone(),
             abort_flag: None,
             subchat_depth: subchat_depth + 1,
+            final_step_force_answer: false,
             buddy_meta: None,
         }
     } else {
@@ -285,6 +287,7 @@ async fn run_spawned_agent(
     abort_flag: Arc<AtomicBool>,
 ) -> BackgroundAgent {
     config.abort_flag = Some(abort_flag);
+    config.final_step_force_answer = true;
     let running = app
         .agents
         .mark_running(&agent_id, child_chat_id.clone())

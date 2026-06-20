@@ -1,13 +1,18 @@
 import React, { useState, useCallback, useEffect, useMemo } from "react";
-import { Flex, Button, Text, Card, Heading, Callout } from "@radix-ui/themes";
 import {
-  ArrowLeftIcon,
-  ExclamationTriangleIcon,
-  InfoCircledIcon,
-} from "@radix-ui/react-icons";
+  AlertTriangle,
+  ArrowLeft,
+  Bot,
+  Brain,
+  Info,
+  MessageCircle,
+  MessagesSquare,
+  Rabbit,
+  Zap,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { skipToken } from "@reduxjs/toolkit/query";
 
-import { ScrollArea } from "../../components/ScrollArea";
 import { PageWrapper } from "../../components/PageWrapper";
 import { Spinner } from "../../components/Spinner";
 import { ModelSelector } from "../../components/Chat/ModelSelector";
@@ -15,6 +20,7 @@ import {
   ModelSamplingParams,
   type SamplingValues,
 } from "../../components/ModelSamplingParams";
+import { Button, Icon, SettingItem, Tabs } from "../../components/ui";
 
 import {
   useGetDefaultsQuery,
@@ -27,6 +33,7 @@ import { useGetDraftQuery } from "../../services/refact/buddy";
 
 import type { Config } from "../Config/configSlice";
 import { BuddyDraftPreview } from "../Buddy/BuddyDraftPreview";
+import { SettingsGroup, SettingsSection } from "../Settings/SettingsSection";
 
 import styles from "./DefaultModels.module.css";
 
@@ -35,6 +42,7 @@ type DefaultModelsProps = {
   host: Config["host"];
   tabbed: Config["tabbed"];
   draftId?: string;
+  embedded?: boolean;
 };
 
 type ModelTypeKey =
@@ -47,34 +55,48 @@ type ModelTypeKey =
 
 const MODEL_TYPE_LABELS: Record<
   ModelTypeKey,
-  { title: string; description: string }
+  { title: string; shortLabel: string; description: string; icon: LucideIcon }
 > = {
   chat: {
     title: "Default Chat Model",
-    description: "The primary model used for chat conversations",
+    shortLabel: "Chat",
+    description: "The primary model used for chat conversations.",
+    icon: MessageCircle,
   },
   chat_model_2: {
     title: "Chat Model 2",
-    description: "Secondary chat model slot for future chat workflows",
+    shortLabel: "Chat 2",
+    description: "Secondary chat model slot for future chat workflows.",
+    icon: MessagesSquare,
   },
   task_planner_agent_model: {
     title: "Task Planner Agent Model",
-    description: "Model used by task management when spawning task agents",
+    shortLabel: "Planner",
+    description: "Model used by task management when spawning task agents.",
+    icon: Bot,
   },
   chat_light: {
     title: "Light Chat Model",
-    description: "Fast, lightweight model for quick responses and subagents",
+    shortLabel: "Light",
+    description: "Fast, lightweight model for quick responses and subagents.",
+    icon: Zap,
   },
   chat_thinking: {
     title: "Thinking Model",
-    description: "Reasoning-focused model for complex analysis tasks",
+    shortLabel: "Thinking",
+    description: "Reasoning-focused model for complex analysis tasks.",
+    icon: Brain,
   },
   chat_buddy: {
     title: "Companion Model",
+    shortLabel: "Companion",
     description:
-      "Model used by your companion for background tasks and suggestions",
+      "Model used by your companion for background tasks and suggestions.",
+    icon: Rabbit,
   },
 };
+
+const MODEL_TYPE_KEYS = Object.keys(MODEL_TYPE_LABELS) as ModelTypeKey[];
 
 const ModelTypeSection: React.FC<{
   typeKey: ModelTypeKey;
@@ -101,50 +123,61 @@ const ModelTypeSection: React.FC<{
   const effectiveModel = config.model ?? capsDefault;
 
   return (
-    <Card className={styles.modelTypeCard}>
-      <Flex direction="column" gap="4">
-        <Flex direction="column" gap="1">
-          <Heading size="3">{title}</Heading>
-          <Text size="2" color="gray">
-            {description}
-          </Text>
-        </Flex>
+    <div className={`${styles.content} rf-enter`}>
+      <div className={styles.roleHeader}>
+        <Icon icon={MODEL_TYPE_LABELS[typeKey].icon} size="lg" tone="accent" />
+        <h2 className={styles.roleTitle}>{title}</h2>
+        <p className={styles.description}>{description}</p>
+      </div>
 
-        <Flex direction="column" gap="2">
-          <Text size="2" weight="medium">
-            Model
-          </Text>
-          <ModelSelector
-            value={config.model}
-            onValueChange={handleModelChange}
-            defaultValue={capsDefault}
-            showLabel={false}
-            compact={false}
-            allowUnset
-            unsetLabel="None"
-          />
-        </Flex>
+      <SettingsGroup title="Model Slot">
+        <SettingItem
+          className="rf-enter"
+          title="Model"
+          description="Choose the model override for this slot, or leave it empty to use the server default."
+          control={
+            <div className={styles.selectorWrap}>
+              <ModelSelector
+                value={config.model}
+                onValueChange={handleModelChange}
+                defaultValue={capsDefault}
+                showLabel={false}
+                compact={false}
+                allowUnset
+                unsetLabel="None"
+              />
+            </div>
+          }
+        />
+      </SettingsGroup>
 
-        {effectiveModel ? (
-          <ModelSamplingParams
-            model={effectiveModel}
-            values={config}
-            onChange={handleSamplingChange}
-            size="2"
-          />
-        ) : (
-          <Callout.Root color="gray">
-            <Callout.Icon>
-              <InfoCircledIcon />
-            </Callout.Icon>
-            <Callout.Text>
-              No model selected. Features that require this model type will ask
-              you to configure it.
-            </Callout.Text>
-          </Callout.Root>
-        )}
-      </Flex>
-    </Card>
+      {effectiveModel ? (
+        <SettingsGroup title="Sampling">
+          <SettingItem
+            className="rf-enter"
+            title="Sampling"
+            description="Tune output length and reasoning behavior for this model slot."
+            layout="stack"
+          >
+            <div className={styles.samplingWrap}>
+              <ModelSamplingParams
+                model={effectiveModel}
+                values={config}
+                onChange={handleSamplingChange}
+              />
+            </div>
+          </SettingItem>
+        </SettingsGroup>
+      ) : (
+        <div className={`${styles.notice} rf-enter`}>
+          <Icon icon={Info} size="sm" tone="muted" />
+          <span>
+            No model selected. Features that require this model type will ask
+            you to configure it.
+          </span>
+        </div>
+      )}
+    </div>
   );
 };
 
@@ -153,6 +186,7 @@ export const DefaultModels: React.FC<DefaultModelsProps> = ({
   host,
   tabbed,
   draftId,
+  embedded,
 }) => {
   const {
     data: defaults,
@@ -181,6 +215,7 @@ export const DefaultModels: React.FC<DefaultModelsProps> = ({
     [capsData],
   );
 
+  const [activeSection, setActiveSection] = useState<ModelTypeKey>("chat");
   const [localDefaults, setLocalDefaults] = useState<ProviderDefaults>({
     chat: {},
     chat_model_2: {},
@@ -272,98 +307,145 @@ export const DefaultModels: React.FC<DefaultModelsProps> = ({
   }
 
   if (isError || !isSuccess) {
-    return (
-      <PageWrapper host={host}>
-        <Flex direction="column" gap="4" p="4" align="center" justify="center">
-          <Callout.Root color="red">
-            <Callout.Icon>
-              <ExclamationTriangleIcon />
-            </Callout.Icon>
-            <Callout.Text>
-              Failed to load default models configuration.
-            </Callout.Text>
-          </Callout.Root>
-          <Button onClick={() => void refetch()}>Retry</Button>
-          <Button variant="outline" onClick={backFromDefaultModels}>
-            Back
+    const errorContent = (
+      <div className={styles.page}>
+        <div className={`${styles.notice} ${styles.noticeDanger}`}>
+          <Icon icon={AlertTriangle} size="sm" tone="danger" />
+          <span>Failed to load default models configuration.</span>
+        </div>
+        <div className={styles.actions}>
+          <Button variant="soft" onClick={() => void refetch()}>
+            Retry
           </Button>
-        </Flex>
-      </PageWrapper>
+          {!embedded && (
+            <Button variant="ghost" onClick={backFromDefaultModels}>
+              Back
+            </Button>
+          )}
+        </div>
+      </div>
+    );
+    if (embedded) return errorContent;
+    return <PageWrapper host={host}>{errorContent}</PageWrapper>;
+  }
+
+  const activeKey = MODEL_TYPE_KEYS.includes(activeSection)
+    ? activeSection
+    : "chat";
+
+  const saveAction = (
+    <Button
+      onClick={() => void handleSave()}
+      disabled={!hasChanges || isSaving}
+      loading={isSaving}
+      variant="primary"
+    >
+      Save Changes
+    </Button>
+  );
+
+  const headerActions = (
+    <div className={styles.headerActions}>
+      {!embedded && (
+        <Button
+          variant={host === "vscode" && !tabbed ? "soft" : "ghost"}
+          leftIcon={ArrowLeft}
+          onClick={backFromDefaultModels}
+        >
+          Back
+        </Button>
+      )}
+      {saveAction}
+    </div>
+  );
+
+  const roleTabsList = (
+    <Tabs.List
+      activeIndex={MODEL_TYPE_KEYS.indexOf(activeKey)}
+      className={styles.roleTabsList}
+      itemCount={MODEL_TYPE_KEYS.length}
+    >
+      {MODEL_TYPE_KEYS.map((key) => (
+        <Tabs.Trigger key={key} value={key}>
+          <span className={styles.roleTabLabel}>
+            <Icon icon={MODEL_TYPE_LABELS[key].icon} size="sm" />
+            <span>{MODEL_TYPE_LABELS[key].shortLabel}</span>
+          </span>
+        </Tabs.Trigger>
+      ))}
+    </Tabs.List>
+  );
+
+  const roleTabContents = MODEL_TYPE_KEYS.map((key) => (
+    <Tabs.Content key={key} value={key} className={styles.roleTabContent}>
+      <ModelTypeSection
+        typeKey={key}
+        config={localDefaults[key] ?? {}}
+        capsDefault={capsDefaults[key]}
+        onChange={handleModelTypeChange}
+      />
+    </Tabs.Content>
+  ));
+
+  const notices = (
+    <>
+      {draftExpired ? (
+        <div className={`${styles.notice} ${styles.noticeAccent} rf-enter`}>
+          <Icon icon={Info} size="sm" tone="accent" />
+          <span>Draft expired</span>
+        </div>
+      ) : null}
+      {draft ? <BuddyDraftPreview draft={draft} /> : null}
+      {saveError ? (
+        <div className={`${styles.notice} ${styles.noticeDanger} rf-enter`}>
+          <Icon icon={AlertTriangle} size="sm" tone="danger" />
+          <span>{saveError}</span>
+        </div>
+      ) : null}
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <div className={styles.page}>
+        <Tabs
+          value={activeKey}
+          onValueChange={(v) => setActiveSection(v as ModelTypeKey)}
+          className={styles.roleTabs}
+        >
+          <SettingsSection
+            title="Models"
+            description="Configure the default model slots used across chat, planning, quick responses, reasoning, and companion workflows."
+            actions={saveAction}
+            subNav={roleTabsList}
+          >
+            {notices}
+            {roleTabContents}
+          </SettingsSection>
+        </Tabs>
+      </div>
     );
   }
 
   return (
-    <PageWrapper
-      host={host}
-      style={{
-        padding: 0,
-        marginTop: 0,
-      }}
-    >
-      <Flex direction="column" gap="4" p="4" style={{ height: "100%" }}>
-        <Flex justify="between" align="center">
-          {host === "vscode" && !tabbed ? (
-            <Button variant="surface" onClick={backFromDefaultModels}>
-              <ArrowLeftIcon width="16" height="16" />
-              Back
-            </Button>
-          ) : (
-            <Button variant="outline" onClick={backFromDefaultModels}>
-              Back
-            </Button>
-          )}
-
-          <Button
-            onClick={() => void handleSave()}
-            disabled={!hasChanges || isSaving}
-            variant="solid"
+    <PageWrapper host={host}>
+      <div className={styles.page}>
+        <Tabs
+          value={activeKey}
+          onValueChange={(v) => setActiveSection(v as ModelTypeKey)}
+          className={styles.roleTabs}
+        >
+          <SettingsSection
+            title="Models"
+            description="Configure the default model slots used across chat, planning, quick responses, reasoning, and companion workflows."
+            actions={headerActions}
+            subNav={roleTabsList}
           >
-            {isSaving ? "Saving..." : "Save Changes"}
-          </Button>
-        </Flex>
-
-        {draftExpired && (
-          <Callout.Root color="orange">
-            <Callout.Icon>
-              <InfoCircledIcon />
-            </Callout.Icon>
-            <Callout.Text>Draft expired</Callout.Text>
-          </Callout.Root>
-        )}
-
-        {draft && <BuddyDraftPreview draft={draft} />}
-
-        {saveError && (
-          <Callout.Root color="red">
-            <Callout.Icon>
-              <ExclamationTriangleIcon />
-            </Callout.Icon>
-            <Callout.Text>{saveError}</Callout.Text>
-          </Callout.Root>
-        )}
-
-        <Flex direction="column" gap="2">
-          <Heading size="5">Default Models</Heading>
-          <Text size="2" color="gray">
-            Configure which models to use by default for different purposes.
-            These settings apply globally across all modes.
-          </Text>
-        </Flex>
-
-        <ScrollArea scrollbars="vertical" fullHeight>
-          <Flex direction="column" gap="4" pb="4">
-            {(Object.keys(MODEL_TYPE_LABELS) as ModelTypeKey[]).map((key) => (
-              <ModelTypeSection
-                key={key}
-                typeKey={key}
-                config={localDefaults[key] ?? {}}
-                capsDefault={capsDefaults[key]}
-                onChange={handleModelTypeChange}
-              />
-            ))}
-          </Flex>
-        </ScrollArea>
-      </Flex>
+            {notices}
+            {roleTabContents}
+          </SettingsSection>
+        </Tabs>
+      </div>
     </PageWrapper>
   );
 };

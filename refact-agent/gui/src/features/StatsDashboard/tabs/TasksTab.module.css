@@ -1,21 +1,43 @@
+<<<<<<< HEAD
+=======
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--rf-space-3);
+  min-width: 0;
+}
+
+>>>>>>> upstream/main
 .tableWrapper {
   overflow-x: auto;
 }
 
 .table {
   width: 100%;
+<<<<<<< HEAD
+=======
+  min-width: 480px;
+>>>>>>> upstream/main
   border-collapse: collapse;
 }
 
 .th {
   text-align: left;
+<<<<<<< HEAD
   padding: var(--space-2) var(--space-3);
   border-bottom: 1px solid var(--gray-5);
   color: var(--gray-11);
+=======
+  padding: var(--rf-space-2) var(--rf-space-3);
+  border-bottom: var(--rf-hairline) solid var(--rf-border-strong);
+  color: var(--rf-color-muted);
+  font: 650 var(--rf-text-2) / var(--rf-line) var(--rf-font-ui);
+>>>>>>> upstream/main
   white-space: nowrap;
 }
 
 .td {
+<<<<<<< HEAD
   padding: var(--space-2) var(--space-3);
   border-bottom: 1px solid var(--gray-4);
   white-space: nowrap;
@@ -24,4 +46,17 @@
 
 .emptyText {
   color: var(--gray-10);
+=======
+  padding: var(--rf-space-2) var(--rf-space-3);
+  border-bottom: var(--rf-hairline) solid var(--rf-border);
+  color: var(--rf-color-fg);
+  font: var(--rf-text-2) / var(--rf-line) var(--rf-font-ui);
+  white-space: nowrap;
+}
+
+.emptyText {
+  margin: 0;
+  color: var(--rf-color-muted);
+  font: var(--rf-text-3) / var(--rf-line) var(--rf-font-ui);
+>>>>>>> upstream/main
 }

@@ -55,6 +55,7 @@ use super::openrouter::OpenRouterProvider;
 use super::google_gemini::GoogleGeminiProvider;
 use super::claude_code::ClaudeCodeProvider;
 use super::openai_codex::{OpenAICodexProvider, UsageRequestError};
+use super::opencode::OpenCodeProvider;
 
 const PROVIDER_AVAILABLE_MODELS_TIMEOUT: Duration = Duration::from_secs(8);
 
@@ -144,7 +145,7 @@ fn health_base_provider_supported(base_provider: &str) -> bool {
 }
 
 fn usage_base_provider_supported(base_provider: &str) -> bool {
-    matches!(base_provider, "claude_code" | "openai_codex")
+    matches!(base_provider, "claude_code" | "openai_codex" | "opencode")
 }
 
 fn provider_identity_from_existing_config(
@@ -2255,14 +2256,57 @@ pub async fn handle_v1_provider_oauth_start(
     match base_provider.as_str() {
         "claude_code" => {
             let mode = crate::providers::claude_code_oauth::OAuthMode::Max;
+            let (callback_listener, callback_port) =
+                crate::providers::claude_code_oauth::bind_callback_listener()
+                    .await
+                    .map_err(|e| ScratchError::new(StatusCode::INTERNAL_SERVER_ERROR, e))?;
             let (session_id, authorize_url) =
-                crate::providers::claude_code_oauth::start_oauth_session(mode, params.name.clone())
-                    .await;
+                crate::providers::claude_code_oauth::start_oauth_session(
+                    mode,
+                    callback_port,
+                    params.name.clone(),
+                )
+                .await;
+
+            let http_client = gcx.http_client.clone();
+            let gcx_for_save = gcx.clone();
+            let listener_handle = crate::providers::claude_code_oauth::start_callback_listener(
+                callback_listener,
+                http_client,
+                move |tokens, provider_instance_id| {
+                    let gcx_for_save = gcx_for_save.clone();
+                    async move {
+                        let config_dir = gcx_for_save.config_dir.clone();
+                        let tokens_value = serde_yaml::to_value(&tokens)
+                            .map_err(|e| format!("Failed to serialize tokens: {}", e))?;
+                        save_provider_oauth_tokens(
+                            &gcx_for_save,
+                            &config_dir,
+                            &provider_instance_id,
+                            "claude_code",
+                            &tokens_value,
+                        )
+                        .await
+                        .map_err(|e| format!("{:?}", e))?;
+                        tracing::info!(
+                            "Claude Code: OAuth tokens saved successfully from callback listener"
+                        );
+                        Ok(())
+                    }
+                },
+            )
+            .await
+            .map_err(|e| ScratchError::new(StatusCode::INTERNAL_SERVER_ERROR, e))?;
+            tokio::spawn(async move {
+                let _ = listener_handle.await;
+            });
+
             json_response(
                 StatusCode::OK,
                 &json!({
                     "session_id": session_id,
                     "authorize_url": authorize_url,
+                    "mode": "callback",
                 }),
             )
         }
@@ -2813,6 +2857,38 @@ async fn openai_codex_usage_response(
     }
 }
 
+async fn opencode_usage_response(
+    gcx: Arc<GlobalContext>,
+    provider_name: &str,
+) -> Result<Response<Body>, ScratchError> {
+    let (provider, http_client) =
+        resolve_provider_for_base(&gcx, provider_name, "opencode").await?;
+    let opencode = downcast_provider::<OpenCodeProvider>(provider.as_ref(), "OpenCode")?;
+
+    if opencode.usage_endpoint.trim().is_empty() {
+        return json_response(StatusCode::OK, &json!({"data": null}));
+    }
+
+    match opencode.fetch_usage(&http_client).await {
+        Ok(usage) => json_response(StatusCode::OK, &json!({"data": usage})),
+        Err(e) => json_response(StatusCode::OK, &json!({"error": e})),
+    }
+}
+
+async fn openai_codex_redeem_response(
+    gcx: Arc<GlobalContext>,
+    provider_name: &str,
+    redeem_request_id: &str,
+) -> Result<Response<Body>, ScratchError> {
+    let result =
+        redeem_openai_codex_reset_credit_with_refresh(gcx, provider_name, redeem_request_id).await;
+
+    match result {
+        Ok(redeem) => json_response(StatusCode::OK, &json!({"data": redeem})),
+        Err(e) => json_response(StatusCode::OK, &json!({"error": e})),
+    }
+}
+
 pub async fn handle_v1_provider_usage(
     State(app): State<AppState>,
     Path(params): Path<ProviderPathParams>,
@@ -2829,11 +2905,53 @@ pub async fn handle_v1_provider_usage(
     match identity.base_provider.as_str() {
         "claude_code" => claude_code_usage_response(gcx, &params.name).await,
         "openai_codex" => openai_codex_usage_response(gcx, &params.name).await,
+        "opencode" => opencode_usage_response(gcx, &params.name).await,
         _ => Err(ScratchError::new(
             StatusCode::BAD_REQUEST,
             format!("Provider '{}' does not support usage", params.name),
         )),
     }
+}
+
+#[derive(serde::Deserialize, Default)]
+struct ResetRedeemRequest {
+    #[serde(default)]
+    redeem_request_id: Option<String>,
+}
+
+pub async fn handle_v1_provider_usage_redeem(
+    State(app): State<AppState>,
+    Path(params): Path<ProviderPathParams>,
+    body_bytes: hyper::body::Bytes,
+) -> Result<Response<Body>, ScratchError> {
+    let gcx = app.gcx.clone();
+    validate_instance_id_for_http(&params.name)?;
+    let request: ResetRedeemRequest = if body_bytes.is_empty() {
+        ResetRedeemRequest::default()
+    } else {
+        serde_json::from_slice(&body_bytes).map_err(|e| {
+            ScratchError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                format!("Invalid JSON: {}", e),
+            )
+        })?
+    };
+    let identity = resolve_provider_identity(&gcx, &params.name).await?;
+    if identity.base_provider != "openai_codex" {
+        return Err(ScratchError::new(
+            StatusCode::BAD_REQUEST,
+            format!(
+                "Provider '{}' does not support rate-limit reset redemption",
+                params.name
+            ),
+        ));
+    }
+    let redeem_request_id = request
+        .redeem_request_id
+        .map(|id| id.trim().to_string())
+        .filter(|id| !id.is_empty())
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    openai_codex_redeem_response(gcx, &params.name, &redeem_request_id).await
 }
 
 async fn current_openai_codex_provider(
@@ -3001,6 +3119,93 @@ async fn fetch_openai_codex_usage_with_refresh(
                     &http_client,
                     &retry_context.access_token,
                     &retry_context.chatgpt_account_id,
+                )
+                .await
+                .map_err(|error| {
+                    OpenAICodexProvider::usage_request_error_to_string(error, retry_context.source)
+                })
+        }
+        Err(error) => Err(OpenAICodexProvider::usage_request_error_to_string(
+            error,
+            context.source,
+        )),
+    }
+}
+
+async fn redeem_openai_codex_reset_credit_with_refresh(
+    gcx: Arc<GlobalContext>,
+    provider_name: &str,
+    redeem_request_id: &str,
+) -> Result<crate::providers::openai_codex::OpenAICodexResetRedeem, String> {
+    let (mut request_provider, http_client, _) =
+        current_openai_codex_provider(&gcx, provider_name).await?;
+    if !request_provider.oauth_tokens.has_refresh_token() {
+        return request_provider
+            .redeem_reset_credit(&http_client, redeem_request_id)
+            .await;
+    }
+
+    let mut refresh_attempted = false;
+    let context = match request_provider.resolve_wham_context() {
+        Ok(context) => context,
+        Err(_) if request_provider.oauth_tokens.has_refresh_token() => {
+            refresh_attempted = true;
+            let rejected_access_token = request_provider.oauth_tokens.access_token.clone();
+            request_provider = force_refresh_openai_codex_usage_for_retry(
+                gcx.clone(),
+                &http_client,
+                provider_name,
+                &rejected_access_token,
+                None,
+            )
+            .await?
+            .ok_or_else(|| {
+                "OpenAI Codex reset access token is expired and refresh returned no access token. Log in again in OpenAI Codex provider settings."
+                    .to_string()
+            })?;
+            request_provider.resolve_wham_context()?
+        }
+        Err(error) => return Err(error),
+    };
+
+    match request_provider
+        .redeem_reset_credit_once(
+            &http_client,
+            &context.access_token,
+            &context.chatgpt_account_id,
+            redeem_request_id,
+        )
+        .await
+    {
+        Ok(redeem) => Ok(redeem),
+        Err(UsageRequestError::Status(status, _body))
+            if OpenAICodexProvider::should_force_refresh_for_status(
+                status,
+                &request_provider.oauth_tokens.refresh_token,
+                refresh_attempted,
+            ) =>
+        {
+            let Some(retry_provider) = force_refresh_openai_codex_usage_for_retry(
+                gcx,
+                &http_client,
+                provider_name,
+                &context.access_token,
+                Some(status),
+            )
+            .await?
+            else {
+                return Err(
+                    "OpenAI Codex reset API rejected the access token and refresh returned no access token. Log in again in OpenAI Codex provider settings."
+                        .to_string(),
+                );
+            };
+            let retry_context = retry_provider.resolve_wham_context()?;
+            retry_provider
+                .redeem_reset_credit_once(
+                    &http_client,
+                    &retry_context.access_token,
+                    &retry_context.chatgpt_account_id,
+                    redeem_request_id,
                 )
                 .await
                 .map_err(|error| {

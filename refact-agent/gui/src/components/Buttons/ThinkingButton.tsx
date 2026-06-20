@@ -1,19 +1,20 @@
 import React from "react";
+import { Flex, Text } from "@radix-ui/themes";
+import { WandSparkles } from "lucide-react";
 import { useThinking } from "../../hooks/useThinking";
 import { useAppSelector } from "../../hooks";
-import { selectThreadBoostReasoning } from "../../features/Chat";
-import { Button, Flex, HoverCard, Skeleton, Text } from "@radix-ui/themes";
-import { MagicWandIcon } from "@radix-ui/react-icons";
-
-const ThinkButtonContent: React.FC = () => (
-  <Flex as="span" align="center" gap="1">
-    <MagicWandIcon />
-    Think
-  </Flex>
-);
+import {
+  selectThreadBoostReasoningById,
+  useThreadId,
+} from "../../features/Chat/Thread";
+import { Button, Skeleton } from "../ui";
+import { HoverCard } from "../LongTailPrimitives";
 
 export const ThinkingButton: React.FC = () => {
-  const isBoostReasoningEnabled = useAppSelector(selectThreadBoostReasoning);
+  const chatId = useThreadId();
+  const isBoostReasoningEnabled = useAppSelector((state) =>
+    selectThreadBoostReasoningById(state, chatId),
+  );
   const {
     handleReasoningChange,
     shouldBeDisabled,
@@ -23,11 +24,7 @@ export const ThinkingButton: React.FC = () => {
   } = useThinking();
   if (!areCapsInitialized) {
     return (
-      <Skeleton>
-        <Button size="1">
-          <ThinkButtonContent />
-        </Button>
-      </Skeleton>
+      <Skeleton height="var(--rf-control-h-sm)" radius="control" width="76px" />
     );
   }
 
@@ -37,25 +34,21 @@ export const ThinkingButton: React.FC = () => {
 
   return (
     <Flex gap="2" align="center">
-      <HoverCard.Root>
-        <HoverCard.Trigger>
+      <HoverCard>
+        <HoverCard.Trigger asChild>
           <Button
-            size="1"
+            leftIcon={WandSparkles}
+            size="sm"
             onClick={(event) =>
               handleReasoningChange(event, !isBoostReasoningEnabled)
             }
-            variant={isBoostReasoningEnabled ? "solid" : "outline"}
+            variant={isBoostReasoningEnabled ? "primary" : "soft"}
             disabled={shouldBeDisabled}
           >
-            <ThinkButtonContent />
+            Think
           </Button>
         </HoverCard.Trigger>
-        <HoverCard.Content
-          size="2"
-          maxWidth="500px"
-          width="calc(100vw - (var(--space-9) * 2.5))"
-          side="top"
-        >
+        <HoverCard.Content maxWidth="500px" side="top">
           <Text as="p" size="2">
             When enabled, the model will use enhanced reasoning capabilities
             which may improve problem-solving for complex tasks.
@@ -67,7 +60,7 @@ export const ThinkingButton: React.FC = () => {
             </Text>
           )}
         </HoverCard.Content>
-      </HoverCard.Root>
+      </HoverCard>
     </Flex>
   );
 };

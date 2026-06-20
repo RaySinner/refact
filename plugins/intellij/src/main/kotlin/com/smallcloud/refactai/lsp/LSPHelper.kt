@@ -10,6 +10,7 @@ import com.intellij.openapi.roots.ProjectRootManager
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.util.application
 import com.smallcloud.refactai.io.ConnectionStatus
+import com.smallcloud.refactai.io.HttpStatusException
 import java.io.File
 import java.net.URI
 import java.nio.file.Paths
@@ -55,8 +56,8 @@ fun lspProjectInitialize(lsp: LSPProcessHolder, project: Project) {
         findRoots(listOfFiles)
     }.ifEmpty { listOfNotNull(project.basePath) }
         .map { path -> runCatching { File(path).canonicalPath }.getOrElse { path } }
-    val baseUrl = lsp.baseUrlOrNull() ?: return
-    val url = baseUrl.resolve("/v1/lsp-initialize")
+    val baseUrl = lsp.baseUrlOrNull() ?: throw IllegalStateException("LSP project initialize requires an attached worker")
+    val url = baseUrl.resolve("v1/lsp-initialize")
     val data = Gson().toJson(
         mapOf(
             "project_roots" to projectRoots.map { File(it).toURI().toString() },
@@ -71,7 +72,42 @@ fun lspProjectInitialize(lsp: LSPProcessHolder, project: Project) {
         if (it != null) {
             InferenceGlobalContext.lastErrorMsg = it.message
         }
-    })
+    }).join().get()
+}
+
+internal fun isRecoverableHttpStatus(error: Throwable?): Boolean {
+    val statusCode = when (error) {
+        is HttpStatusException -> error.statusCode
+        is DaemonHttpStatusException -> error.statusCode
+        else -> null
+    }
+    if (statusCode != null) return statusCode in 500..599
+    return error?.cause?.let { isRecoverableHttpStatus(it) } ?: false
+}
+
+private fun shouldWakeAndRetry(error: Throwable?): Boolean {
+    return isRecoverableHttpStatus(error)
+}
+
+private fun sleepBeforeWakeRetry(attempt: Int) {
+    Thread.sleep((attempt * 100L).coerceAtMost(300L))
+}
+
+private fun <T> withWakeRetry(project: Project, startReason: String, block: () -> T?): T? {
+    val lsp = getLSPProcessHolder(project)
+    repeat(3) { attempt ->
+        try {
+            return block()
+        } catch (error: Exception) {
+            if (attempt < 2 && shouldWakeAndRetry(error)) {
+                if (!lsp.wakeWorkerForRetry("$startReason-retry-${attempt + 1}")) return null
+                sleepBeforeWakeRetry(attempt + 1)
+            } else {
+                throw error
+            }
+        }
+    }
+    return null
 }
 
 private fun getLspBaseUrl(project: Project, startReason: String): URI? {
@@ -86,7 +122,7 @@ private fun getLspBaseUrl(project: Project, startReason: String): URI? {
 
 fun lspDocumentDidChanged(project: Project, docUrl: String, text: String) {
     val baseUrl = getLspBaseUrl(project, "document-changed") ?: return
-    val url = baseUrl.resolve("/v1/lsp-did-changed")
+    val url = baseUrl.resolve("v1/lsp-did-changed")
     val data = Gson().toJson(
         mapOf(
             "uri" to docUrl,
@@ -115,7 +151,7 @@ fun lspSetActiveDocument(editor: Editor) {
     if (!vFile.exists()) return
 
     val baseUrl = getLspBaseUrl(project, "active-document-changed") ?: return
-    val url = baseUrl.resolve("/v1/lsp-set-active-document")
+    val url = baseUrl.resolve("v1/lsp-set-active-document")
     val data = Gson().toJson(
         mapOf(
             "uri" to vFile.url,
@@ -137,23 +173,25 @@ fun lspSetActiveDocument(editor: Editor) {
 fun lspGetCodeLens(editor: Editor): String {
     val project = editor.project ?: return ""
     val virtualFile = editor.virtualFile ?: return ""
-    val baseUrl = getLspBaseUrl(project, "code-lens-request") ?: return ""
-    val url = baseUrl.resolve("/v1/code-lens")
-    val data = Gson().toJson(
-        mapOf(
-            "uri" to virtualFile.url,
-        )
-    )
     return try {
-        InferenceGlobalContext.connection.post(url, data, dataReceiveEnded = {
-            InferenceGlobalContext.status = ConnectionStatus.CONNECTED
-            InferenceGlobalContext.lastErrorMsg = null
-        }, failedDataReceiveEnded = {
-            InferenceGlobalContext.status = ConnectionStatus.ERROR
-            if (it != null) {
-                InferenceGlobalContext.lastErrorMsg = it.message
-            }
-        }).get()?.get() as? String ?: ""
+        withWakeRetry(project, "code-lens-request") {
+            val baseUrl = getLspBaseUrl(project, "code-lens-request") ?: return@withWakeRetry ""
+            val url = baseUrl.resolve("v1/code-lens")
+            val data = Gson().toJson(
+                mapOf(
+                    "uri" to virtualFile.url,
+                )
+            )
+            InferenceGlobalContext.connection.post(url, data, dataReceiveEnded = {
+                InferenceGlobalContext.status = ConnectionStatus.CONNECTED
+                InferenceGlobalContext.lastErrorMsg = null
+            }, failedDataReceiveEnded = {
+                InferenceGlobalContext.status = ConnectionStatus.ERROR
+                if (it != null) {
+                    InferenceGlobalContext.lastErrorMsg = it.message
+                }
+            }).get()?.get() as? String ?: ""
+        } ?: ""
     } catch (_: Exception) {
         ""
     }
@@ -168,7 +206,7 @@ fun lspGetCommitMessage(project: Project, diff: String, currentMessage: String):
 
     val baseUrl = lsp.baseUrlOrNull() ?: return ""
 
-    val url = baseUrl.resolve("/v1/commit-message-from-diff")
+    val url = baseUrl.resolve("v1/commit-message-from-diff")
     val requestBody = mutableMapOf<String, String>("diff" to diff)
     if (currentMessage.isNotBlank()) {
         requestBody["text"] = currentMessage

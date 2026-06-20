@@ -13,10 +13,11 @@ use crate::at_commands::at_commands::AtCommandsContext;
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
 use crate::global_context::GlobalContext;
 use crate::tasks::storage;
-use crate::tasks::types::BoardCard;
+use crate::tasks::types::{AbVariantInfo, BoardCard};
 use crate::tools::task_tool_helpers::{required_string, require_bound_planner_task};
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
 use crate::worktrees::service::WorktreeService;
+use crate::worktrees::types::{WorktreeRecordView, WorktreeReference};
 
 const DEFAULT_MAX_LINES: usize = 300;
 const GIT_DIFF_TIMEOUT: Duration = Duration::from_secs(10);
@@ -49,6 +50,58 @@ impl ToolAgentDiff {
     pub fn new() -> Self {
         Self
     }
+}
+
+fn parse_card_variant_id(input: &str) -> (&str, Option<&str>) {
+    if let Some((card_id, variant)) = input.split_once('/') {
+        return (card_id, Some(variant));
+    }
+    if let Some((card_id, variant)) = input.split_once(':') {
+        return (card_id, Some(variant));
+    }
+    (input, None)
+}
+
+fn variant_key_from_request(value: Option<&str>) -> Result<Option<&'static str>, String> {
+    match value {
+        Some("a") | Some("A") => Ok(Some("a")),
+        Some("b") | Some("B") => Ok(Some("b")),
+        Some(other) => Err(format!(
+            "Invalid A/B variant '{}', expected 'a' or 'b'",
+            other
+        )),
+        None => Ok(None),
+    }
+}
+
+fn card_for_diff_target(card: &BoardCard, requested_id: &str) -> Result<BoardCard, String> {
+    let (_, requested_variant) = parse_card_variant_id(requested_id);
+    let Some(variant_key) = variant_key_from_request(requested_variant)? else {
+        return Ok(card.clone());
+    };
+    let variants = card
+        .ab_variants
+        .as_ref()
+        .ok_or_else(|| format!("Card {} has no A/B variants", card.id))?;
+    let variant = variants
+        .variant(variant_key)
+        .ok_or_else(|| format!("A/B variant {} not found", variant_key))?;
+    Ok(card_with_variant_agent(card, variant_key, variant))
+}
+
+fn card_with_variant_agent(
+    card: &BoardCard,
+    variant_key: &str,
+    variant: &AbVariantInfo,
+) -> BoardCard {
+    let mut card = card.clone();
+    card.agent_chat_id = Some(variant.chat_id.clone());
+    card.assignee = Some(variant.agent_id.clone());
+    card.agent_worktree = Some(variant.worktree.clone());
+    card.agent_worktree_name = variant.worktree_name.clone();
+    card.agent_branch = variant.branch.clone();
+    card.title = format!("{} [A/B {}]", card.title, variant_key.to_ascii_uppercase());
+    card
 }
 
 fn parse_max_lines(args: &HashMap<String, Value>) -> Result<usize, String> {
@@ -97,13 +150,50 @@ fn resolve_base(
     Err("Task has no base commit or base branch set".to_string())
 }
 
+fn reference_matches_card(task_id: &str, card: &BoardCard, reference: &WorktreeReference) -> bool {
+    if reference.task_id.as_deref() == Some(task_id)
+        && reference.card_id.as_deref() == Some(card.id.as_str())
+    {
+        return true;
+    }
+    if let Some(agent_chat_id) = card.agent_chat_id.as_deref() {
+        if reference.chat_id.as_deref() == Some(agent_chat_id) {
+            return true;
+        }
+    }
+    card.assignee
+        .as_deref()
+        .map(|assignee| {
+            reference.task_id.as_deref() == Some(task_id)
+                && reference.agent_id.as_deref() == Some(assignee)
+        })
+        .unwrap_or(false)
+}
+
+fn registered_record_matches_card(
+    view: &WorktreeRecordView,
+    task_id: &str,
+    card: &BoardCard,
+) -> bool {
+    if view.meta.task_id.as_deref() == Some(task_id)
+        && view.meta.card_id.as_deref() == Some(card.id.as_str())
+    {
+        return true;
+    }
+    view.references
+        .iter()
+        .any(|reference| reference_matches_card(task_id, card, reference))
+}
+
+fn registered_error_allows_legacy_fallback(err: &str) -> bool {
+    !err.contains("does not match task")
+}
+
 async fn base_from_worktree_meta(
     gcx: Arc<GlobalContext>,
+    task_id: &str,
     card: &BoardCard,
 ) -> (Option<String>, Option<String>) {
-    let Some(worktree_name) = card.agent_worktree_name.as_ref() else {
-        return (None, None);
-    };
     let project_dirs = crate::files_correction::get_project_dirs(gcx.clone()).await;
     for source_root in project_dirs {
         let Ok(service) = WorktreeService::new(gcx.cache_dir.clone(), source_root) else {
@@ -112,11 +202,15 @@ async fn base_from_worktree_meta(
         let Ok(registry) = service.load_registry().await else {
             continue;
         };
-        if let Some(record) = registry
-            .records
-            .iter()
-            .find(|record| record.meta.id == *worktree_name)
-        {
+        if let Some(record) = registry.records.iter().find(|record| {
+            card.agent_worktree_name.as_deref() == Some(record.meta.id.as_str())
+                || (record.meta.task_id.as_deref() == Some(task_id)
+                    && record.meta.card_id.as_deref() == Some(card.id.as_str()))
+                || record
+                    .references
+                    .iter()
+                    .any(|reference| reference_matches_card(task_id, card, reference))
+        }) {
             if record.meta.root.exists() {
                 return (
                     record.meta.base_commit.clone(),
@@ -158,8 +252,10 @@ fn validated_cache_root(gcx: &GlobalContext) -> Result<PathBuf, String> {
 
 fn validate_fallback_worktree_path(
     gcx: &GlobalContext,
+    workspace_root: &Path,
     card_id: &str,
     worktree: &Path,
+    branch: &str,
 ) -> Result<PathBuf, String> {
     if !worktree.exists() {
         return Err(format!(
@@ -186,7 +282,65 @@ fn validate_fallback_worktree_path(
             cache_root.display()
         ));
     }
+    let status = crate::worktrees::git::status_for_path(&worktree);
+    if !status.is_git_worktree {
+        return Err(format!(
+            "Agent worktree '{}' for card {} is not a git worktree.",
+            worktree.display(),
+            card_id
+        ));
+    }
+    let top_level = crate::worktrees::git::run_git(&worktree, &["rev-parse", "--show-toplevel"])?;
+    let top_level = canonical_existing_path(Path::new(top_level.trim()))?;
+    if top_level != worktree {
+        return Err(format!(
+            "Agent worktree '{}' for card {} is not the git worktree root.",
+            worktree.display(),
+            card_id
+        ));
+    }
+    let workspace_root = canonical_existing_path(workspace_root)?;
+    let common_dir = |root: &Path| -> Result<PathBuf, String> {
+        let output = crate::worktrees::git::run_git(root, &["rev-parse", "--git-common-dir"])?;
+        let path = Path::new(output.trim());
+        let path = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            root.join(path)
+        };
+        canonical_existing_path(&path)
+    };
+    if common_dir(&workspace_root)? != common_dir(&worktree)? {
+        return Err(format!(
+            "Agent worktree '{}' for card {} belongs to a different repository.",
+            worktree.display(),
+            card_id
+        ));
+    }
+    crate::worktrees::git::ensure_checkout_on_branch(&worktree, "Agent worktree", branch)?;
     Ok(worktree)
+}
+
+async fn primary_workspace_root(gcx: Arc<GlobalContext>) -> Result<PathBuf, String> {
+    let project_dirs = crate::files_correction::get_project_dirs(gcx).await;
+    let workspace_root = project_dirs.first().ok_or("No workspace folder found")?;
+    canonical_existing_path(workspace_root)
+}
+
+fn legacy_worktree_path(
+    gcx: &GlobalContext,
+    workspace_root: &Path,
+    card: &BoardCard,
+) -> Result<PathBuf, String> {
+    let worktree = card
+        .agent_worktree
+        .as_ref()
+        .ok_or_else(|| format!("Card {} has no agent worktree", card.id))?;
+    let branch = card
+        .agent_branch
+        .as_ref()
+        .ok_or_else(|| format!("Card {} has no agent branch", card.id))?;
+    validate_fallback_worktree_path(gcx, workspace_root, &card.id, Path::new(worktree), branch)
 }
 
 async fn registered_worktree_path(
@@ -203,9 +357,7 @@ async fn registered_worktree_path(
         let Ok(view) = service.get_worktree(worktree_name).await else {
             continue;
         };
-        if view.meta.task_id.as_deref() != Some(task_id)
-            || view.meta.card_id.as_deref() != Some(card.id.as_str())
-        {
+        if !registered_record_matches_card(&view, task_id, card) {
             return Err(format!(
                 "Registered worktree '{}' does not match task {} card {}.",
                 worktree_name, task_id, card.id
@@ -219,12 +371,69 @@ async fn registered_worktree_path(
                 card.id
             ));
         }
+        service
+            .validate_registered_worktree_checkout(worktree_name)
+            .await?;
         return canonical_existing_path(&view.meta.root);
     }
     Err(format!(
         "Registered worktree '{}' for card {} was not found",
         worktree_name, card.id
     ))
+}
+
+async fn registered_worktree_path_for_card(
+    gcx: Arc<GlobalContext>,
+    task_id: &str,
+    card: &BoardCard,
+    excluded_id: Option<&str>,
+) -> Result<Option<PathBuf>, String> {
+    let project_dirs = crate::files_correction::get_project_dirs(gcx.clone()).await;
+    for source_root in project_dirs {
+        let Ok(service) = WorktreeService::new(gcx.cache_dir.clone(), source_root) else {
+            continue;
+        };
+        let Ok(registry) = service.load_registry().await else {
+            continue;
+        };
+        for record in &registry.records {
+            if excluded_id == Some(record.meta.id.as_str()) {
+                continue;
+            }
+            let Ok(view) = service.get_worktree(&record.meta.id).await else {
+                continue;
+            };
+            let branch_matches = card
+                .agent_branch
+                .as_deref()
+                .map(|branch| {
+                    view.meta.branch.as_deref() == Some(branch)
+                        && view
+                            .meta
+                            .task_id
+                            .as_deref()
+                            .map(|record_task_id| record_task_id == task_id)
+                            .unwrap_or(true)
+                })
+                .unwrap_or(false);
+            if !registered_record_matches_card(&view, task_id, card) && !branch_matches {
+                continue;
+            }
+            if !view.meta.root.exists() {
+                return Err(format!(
+                    "Registered worktree '{}' path '{}' for card {} does not exist",
+                    view.meta.id,
+                    view.meta.root.display(),
+                    card.id
+                ));
+            }
+            service
+                .validate_registered_worktree_checkout(&view.meta.id)
+                .await?;
+            return canonical_existing_path(&view.meta.root).map(Some);
+        }
+    }
+    Ok(None)
 }
 
 async fn canonical_worktree(
@@ -238,13 +447,53 @@ async fn canonical_worktree(
         .map(str::trim)
         .filter(|value| !value.is_empty())
     {
-        return registered_worktree_path(gcx, task_id, card, worktree_name).await;
+        return match registered_worktree_path(gcx.clone(), task_id, card, worktree_name).await {
+            Ok(path) => Ok(path),
+            Err(registered_err) => {
+                if !registered_error_allows_legacy_fallback(&registered_err) {
+                    return Err(registered_err);
+                }
+                let card_registered_err = match registered_worktree_path_for_card(
+                    gcx.clone(),
+                    task_id,
+                    card,
+                    Some(worktree_name),
+                )
+                .await
+                {
+                    Ok(Some(path)) => return Ok(path),
+                    Ok(None) => None,
+                    Err(err) => Some(err),
+                };
+                let workspace_root = primary_workspace_root(gcx.clone()).await?;
+                legacy_worktree_path(&gcx, &workspace_root, card).map_err(|legacy_err| {
+                    if let Some(card_registered_err) = card_registered_err.as_deref() {
+                        format!(
+                            "{}; related registered lookup failed: {}; legacy fallback failed: {}",
+                            registered_err, card_registered_err, legacy_err
+                        )
+                    } else {
+                        format!("{}; legacy fallback failed: {}", registered_err, legacy_err)
+                    }
+                })
+            }
+        };
     }
-    let worktree = card
-        .agent_worktree
-        .as_ref()
-        .ok_or_else(|| format!("Card {} has no agent worktree", card.id))?;
-    validate_fallback_worktree_path(&gcx, &card.id, Path::new(worktree))
+    match registered_worktree_path_for_card(gcx.clone(), task_id, card, None).await {
+        Ok(Some(path)) => return Ok(path),
+        Ok(None) => {}
+        Err(registered_err) => {
+            if !registered_error_allows_legacy_fallback(&registered_err) {
+                return Err(registered_err);
+            }
+            let workspace_root = primary_workspace_root(gcx.clone()).await?;
+            return legacy_worktree_path(&gcx, &workspace_root, card).map_err(|legacy_err| {
+                format!("{}; legacy fallback failed: {}", registered_err, legacy_err)
+            });
+        }
+    }
+    let workspace_root = primary_workspace_root(gcx.clone()).await?;
+    legacy_worktree_path(&gcx, &workspace_root, card)
 }
 
 async fn run_with_timeout<F, T>(fut: F, timeout: Duration) -> Result<T, ()>
@@ -681,7 +930,8 @@ impl Tool for ToolAgentDiff {
             );
         }
 
-        let card_id = required_string(args, "card_id")?;
+        let requested_card_id = required_string(args, "card_id")?;
+        let (card_id, _) = parse_card_variant_id(&requested_card_id);
         let mode = AgentDiffMode::parse(args.get("mode"))?;
         let max_lines = parse_max_lines(args)?;
         let task_id = require_bound_planner_task(&ccx, args).await?;
@@ -689,11 +939,13 @@ impl Tool for ToolAgentDiff {
 
         let board = storage::load_board(gcx.clone(), &task_id).await?;
         let card = board
-            .get_card(&card_id)
+            .get_card(card_id)
             .ok_or_else(|| format!("Card {} not found", card_id))?;
-        let worktree = canonical_worktree(gcx.clone(), &task_id, card).await?;
+        let card = card_for_diff_target(card, &requested_card_id)?;
+        let worktree = canonical_worktree(gcx.clone(), &task_id, &card).await?;
         let task_meta = storage::load_task_meta(gcx.clone(), &task_id).await?;
-        let (worktree_commit, worktree_branch) = base_from_worktree_meta(gcx.clone(), card).await;
+        let (worktree_commit, worktree_branch) =
+            base_from_worktree_meta(gcx.clone(), &task_id, &card).await;
         let base = resolve_base(
             worktree_commit,
             worktree_branch,
@@ -705,7 +957,7 @@ impl Tool for ToolAgentDiff {
             .as_ref()
             .ok_or_else(|| format!("Card {} has no agent branch", card.id))?;
         let output = run_git_diff(&worktree, mode, &base).await?;
-        let result = render_agent_diff(card, branch, &base, mode, &output, max_lines);
+        let result = render_agent_diff(&card, branch, &base, mode, &output, max_lines);
 
         Ok((
             false,
@@ -1465,6 +1717,53 @@ mod tests {
         assert!(unified.contains("trusted.txt"));
         assert!(unified.contains("+trusted"));
         assert!(!unified.contains("stale.txt"));
+    }
+
+    #[tokio::test]
+    async fn agent_diff_falls_back_to_valid_legacy_path_when_registry_id_is_stale() {
+        let temp = tempfile::tempdir().unwrap();
+        let repo = legacy_repo_path(temp.path());
+        std::fs::create_dir_all(&repo).unwrap();
+        init_repo(&repo);
+        run_git(&repo, &["checkout", "-b", "agent-branch"]);
+        commit_file(&repo, "legacy.txt", "legacy\n", "legacy change");
+        let card = test_card_with_worktree_name(
+            Some("agent-branch".to_string()),
+            Some(repo.to_string_lossy().to_string()),
+            Some("missing-registry-id".to_string()),
+        );
+        let gcx = write_task(&repo, card).await;
+
+        let name_only = execute_diff(gcx, "name-only").await.unwrap();
+
+        assert!(name_only.contains("legacy.txt"), "{name_only}");
+    }
+
+    #[tokio::test]
+    async fn agent_diff_resolves_registered_worktree_by_reference_when_meta_is_missing() {
+        let temp = tempfile::tempdir().unwrap();
+        let (gcx, source, registered) = create_registered_worktree(&temp, "task-1", "T-1").await;
+        let service =
+            WorktreeService::new(gcx.cache_dir.clone(), source.canonicalize().unwrap()).unwrap();
+        let mut registry = service.load_registry().await.unwrap();
+        registry.records[0].meta.task_id = None;
+        registry.records[0].meta.card_id = None;
+        registry.records[0].references = vec![crate::worktrees::types::WorktreeReference {
+            kind: "task_agent".to_string(),
+            task_id: Some("task-1".to_string()),
+            card_id: Some("T-1".to_string()),
+            chat_id: Some("agent-chat-1".to_string()),
+            agent_id: Some("agent-1".to_string()),
+        }];
+        service.save_registry(&registry).await.unwrap();
+        write_file(&registered.meta.root, "referenced.txt", "referenced\n");
+        let card = test_card_with_worktree_name(registered.meta.branch.clone(), None, None);
+        let gcx = write_task_with_gcx(gcx, &source, card, task_meta()).await;
+
+        let unified = execute_diff(gcx, "unified").await.unwrap();
+
+        assert!(unified.contains("referenced.txt"), "{unified}");
+        assert!(unified.contains("+referenced"), "{unified}");
     }
 
     #[tokio::test]

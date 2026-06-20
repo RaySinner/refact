@@ -1,7 +1,6 @@
 import { forwardRef, useCallback, useRef, useState } from "react";
-import { HoverCard, Text } from "@radix-ui/themes";
-import { GlobeIcon } from "@radix-ui/react-icons";
-import iconStyles from "./iconButton.module.css";
+import { Globe } from "lucide-react";
+import { IconButton, Tooltip } from "../ui";
 import { useAppDispatch, useAppSelector } from "../../hooks";
 import {
   selectBrowserUiOpen,
@@ -33,8 +32,6 @@ export const BrowserToggleButton = forwardRef<
   const [browserStop] = browserApi.useBrowserStopMutation();
   const [browserScreenshot] = browserApi.useBrowserScreenshotMutation();
   const requestIdRef = useRef(0);
-  // Stable ref to the current runtime_id so the async start callback can check without
-  // adding `runtime` to handleClick's deps (which would recreate it on every SSE frame).
   const runtimeIdRef = useRef<string | undefined>(runtime?.runtime_id);
   runtimeIdRef.current = runtime?.runtime_id;
 
@@ -42,14 +39,13 @@ export const BrowserToggleButton = forwardRef<
     if (busy) return;
 
     if (isOpen) {
-      // Invalidate any in-flight start so its dispatches are ignored
       const requestId = ++requestIdRef.current;
       setBusy(true);
       void (async () => {
         try {
           await browserStop({ chat_id: chatId }).unwrap();
         } catch {
-          // stop failed — close UI anyway since user explicitly requested it
+          dispatch(closeBrowserUi({ chatId }));
         } finally {
           if (requestIdRef.current === requestId) {
             dispatch(closeBrowserUi({ chatId }));
@@ -67,8 +63,6 @@ export const BrowserToggleButton = forwardRef<
       try {
         const result = await browserStart({ chat_id: chatId }).unwrap();
         if (requestIdRef.current !== requestId) return;
-        // Only reset runtime if this is a new session or runtime_id changed; preserve
-        // existing timeline/flags set by SSE if we're reconnecting to the same session.
         if (
           result.status !== "already_running" ||
           runtimeIdRef.current !== result.runtime_id
@@ -125,27 +119,20 @@ export const BrowserToggleButton = forwardRef<
       : "Open browser";
 
   return (
-    <HoverCard.Root>
-      <HoverCard.Trigger>
-        <button
-          type="button"
-          className={iconStyles.iconButton}
+    <Tooltip>
+      <Tooltip.Trigger asChild>
+        <IconButton
           aria-label={label}
           disabled={busy || disabled}
+          icon={Globe}
           onClick={handleClick}
           ref={ref}
-        >
-          <GlobeIcon
-            style={isActive ? { color: "var(--green-11)" } : undefined}
-          />
-        </button>
-      </HoverCard.Trigger>
-      <HoverCard.Content size="1" side="top">
-        <Text as="p" size="2">
-          {label}
-        </Text>
-      </HoverCard.Content>
-    </HoverCard.Root>
+          size="sm"
+          variant={isActive ? "primary" : "ghost"}
+        />
+      </Tooltip.Trigger>
+      <Tooltip.Content side="top">{label}</Tooltip.Content>
+    </Tooltip>
   );
 });
 

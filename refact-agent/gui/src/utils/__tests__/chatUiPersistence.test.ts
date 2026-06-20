@@ -4,6 +4,7 @@ import {
   loadAskQuestionsDraft,
   loadPersistedActiveTab,
   loadPersistedChatTabs,
+<<<<<<< HEAD
   loadPersistedTasksUIState,
   loadTaskWorkspaceLayout,
   saveAskQuestionsDraft,
@@ -11,12 +12,71 @@ import {
   savePersistedChatTabs,
   savePersistedTasksUIState,
   saveTaskWorkspaceLayout,
+=======
+  loadPersistedWorkspace,
+  loadPersistedTasksUIState,
+  loadTaskWorkspaceTab,
+  saveAskQuestionsDraft,
+  savePersistedActiveTab,
+  savePersistedChatTabs,
+  savePersistedWorkspace,
+  savePersistedTasksUIState,
+  saveTaskWorkspaceTab,
+>>>>>>> upstream/main
 } from "../chatUiPersistence";
 import {
   getProjectStorageNamespace,
   setProjectStorageNamespace,
   setProjectStorageNamespaceFromProjectInfo,
 } from "../chatUiPersistence";
+<<<<<<< HEAD
+=======
+import { makeSurfaceKey } from "../../features/Workspace/surfaceKey";
+import type { WorkspaceState } from "../../features/Workspace/workspaceSlice";
+
+const LEGACY_PANE_LAYOUT_STORAGE_KEY = "refact:chat-ui:panes:v1";
+const WORKSPACE_STORAGE_KEY = "refact:chat-ui:workspace:v1";
+
+function workspaceStorageKey(): string {
+  return `refact:project:${getProjectStorageNamespace()}:${WORKSPACE_STORAGE_KEY}`;
+}
+
+const chatSurface = (id: string) => makeSurfaceKey("chat", id);
+
+function splitWorkspace(): WorkspaceState {
+  const chatA = chatSurface("chat-a");
+  const chatB = chatSurface("chat-b");
+  return {
+    tabs: [chatA],
+    activeTabId: chatA,
+    groups: {
+      [chatA]: {
+        root: {
+          kind: "split",
+          id: "root:split:row",
+          dir: "row",
+          sizes: [0.7, 0.3],
+          children: [
+            {
+              kind: "leaf",
+              id: "left",
+              tabIds: [chatA],
+              activeTabId: chatA,
+            },
+            {
+              kind: "leaf",
+              id: "right",
+              tabIds: [chatB],
+              activeTabId: chatB,
+            },
+          ],
+        },
+        focusedLeafId: "right",
+      },
+    },
+  };
+}
+>>>>>>> upstream/main
 
 describe("chatUiPersistence", () => {
   beforeEach(() => {
@@ -155,7 +215,11 @@ describe("chatUiPersistence", () => {
     });
   });
 
+<<<<<<< HEAD
   it("excludes Buddy chats from normal persisted chat tabs", () => {
+=======
+  it("persists Buddy chats as workspace chat tabs", () => {
+>>>>>>> upstream/main
     savePersistedChatTabs({
       openThreadIds: ["chat-a", "buddy-a"],
       currentThreadId: "buddy-a",
@@ -177,8 +241,13 @@ describe("chatUiPersistence", () => {
     });
 
     expect(loadPersistedChatTabs()).toEqual({
+<<<<<<< HEAD
       openThreadIds: ["chat-a"],
       currentThreadId: "chat-a",
+=======
+      openThreadIds: ["chat-a", "buddy-a"],
+      currentThreadId: "buddy-a",
+>>>>>>> upstream/main
       tabs: [
         {
           id: "chat-a",
@@ -187,6 +256,19 @@ describe("chatUiPersistence", () => {
           tool_use: "agent",
           session_state: undefined,
           is_buddy_chat: undefined,
+<<<<<<< HEAD
+=======
+          is_task_chat: undefined,
+        },
+        {
+          id: "buddy-a",
+          title: "Buddy report",
+          mode: "buddy",
+          tool_use: "agent",
+          session_state: undefined,
+          is_buddy_chat: true,
+          is_task_chat: undefined,
+>>>>>>> upstream/main
         },
       ],
     });
@@ -202,10 +284,279 @@ describe("chatUiPersistence", () => {
     savePersistedActiveTab({ type: "chat", id: "chat-1" });
     expect(loadPersistedActiveTab()).toEqual({ type: "chat", id: "chat-1" });
 
+<<<<<<< HEAD
+=======
+    savePersistedActiveTab({ type: "buddy" });
+    expect(loadPersistedActiveTab()).toEqual({ type: "buddy" });
+
+>>>>>>> upstream/main
     savePersistedActiveTab({ type: "dashboard" });
     expect(loadPersistedActiveTab()).toEqual({ type: "dashboard" });
   });
 
+<<<<<<< HEAD
+=======
+  it("round-trips workspace v2 under the project namespace", () => {
+    savePersistedChatTabs({
+      openThreadIds: ["chat-a", "chat-b"],
+      currentThreadId: "chat-b",
+      tabs: [{ id: "chat-a" }, { id: "chat-b" }],
+    });
+    const workspace = splitWorkspace();
+
+    savePersistedWorkspace(workspace);
+
+    expect(loadPersistedWorkspace()).toEqual(workspace);
+  });
+
+  it("derives task and buddy navigation tabs outside persisted workspace panes", () => {
+    savePersistedChatTabs({
+      openThreadIds: ["chat-a", "chat-b"],
+      currentThreadId: "chat-b",
+      tabs: [{ id: "chat-a" }, { id: "chat-b" }],
+    });
+    localStorage.setItem(
+      workspaceStorageKey(),
+      JSON.stringify({
+        version: 2,
+        tabs: [
+          chatSurface("chat-a"),
+          makeSurfaceKey("task", "task-a"),
+          makeSurfaceKey("buddy", "home"),
+        ],
+        activeTabId: makeSurfaceKey("task", "task-a"),
+        groups: {},
+      }),
+    );
+
+    expect(loadPersistedWorkspace()).toEqual({
+      tabs: [chatSurface("chat-a")],
+      activeTabId: chatSurface("chat-a"),
+      groups: {},
+    });
+  });
+
+  it("ignores legacy pane-only persistence when loading workspace v2", () => {
+    savePersistedChatTabs({
+      openThreadIds: ["chat-a", "chat-b"],
+      currentThreadId: "chat-b",
+      tabs: [{ id: "chat-a" }, { id: "chat-b" }],
+    });
+    localStorage.setItem(
+      `refact:project:${getProjectStorageNamespace()}:${LEGACY_PANE_LAYOUT_STORAGE_KEY}`,
+      JSON.stringify({
+        version: 1,
+        focusedLeafId: "right",
+        root: {
+          kind: "split",
+          id: "root:split:row",
+          dir: "row",
+          sizes: [0.7, 0.3],
+          children: [
+            {
+              kind: "leaf",
+              id: "left",
+              tabIds: ["chat-a"],
+              activeTabId: "chat-a",
+            },
+            {
+              kind: "leaf",
+              id: "right",
+              tabIds: ["chat-b"],
+              activeTabId: "chat-b",
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(loadPersistedWorkspace()).toEqual({
+      tabs: [chatSurface("chat-b")],
+      activeTabId: chatSurface("chat-b"),
+      groups: {},
+    });
+  });
+
+  it("falls back to one active workspace tab for corrupt or oversized workspace v2", () => {
+    savePersistedChatTabs({
+      openThreadIds: ["chat-a", "chat-b"],
+      currentThreadId: "chat-b",
+      tabs: [{ id: "chat-a" }, { id: "chat-b" }],
+    });
+    localStorage.setItem(
+      workspaceStorageKey(),
+      JSON.stringify({
+        version: 2,
+        tabs: Array.from({ length: 31 }, (_, index) =>
+          chatSurface(`chat-${index}`),
+        ),
+        activeTabId: chatSurface("chat-a"),
+        groups: {},
+      }),
+    );
+
+    expect(loadPersistedWorkspace()).toEqual({
+      tabs: [chatSurface("chat-b")],
+      activeTabId: chatSurface("chat-b"),
+      groups: {},
+    });
+
+    localStorage.setItem(workspaceStorageKey(), "not json");
+    expect(loadPersistedWorkspace()).toEqual({
+      tabs: [chatSurface("chat-b")],
+      activeTabId: chatSurface("chat-b"),
+      groups: {},
+    });
+  });
+
+  it("falls back deterministically when the persisted active tab no longer resolves", () => {
+    savePersistedChatTabs({
+      openThreadIds: ["chat-a", "chat-b"],
+      currentThreadId: "chat-b",
+      tabs: [{ id: "chat-a" }, { id: "chat-b" }],
+    });
+    localStorage.setItem(
+      workspaceStorageKey(),
+      JSON.stringify({
+        version: 2,
+        tabs: [chatSurface("chat-a"), chatSurface("chat-b")],
+        activeTabId: chatSurface("missing"),
+        groups: {},
+      }),
+    );
+
+    expect(loadPersistedWorkspace()).toEqual({
+      tabs: [chatSurface("chat-a"), chatSurface("chat-b")],
+      activeTabId: chatSurface("chat-a"),
+      groups: {},
+    });
+  });
+
+  it("prunes dangling workspace chat surfaces", () => {
+    savePersistedChatTabs({
+      openThreadIds: ["chat-a"],
+      currentThreadId: "chat-a",
+      tabs: [{ id: "chat-a" }],
+    });
+    localStorage.setItem(
+      workspaceStorageKey(),
+      JSON.stringify({
+        version: 2,
+        tabs: [chatSurface("chat-a"), chatSurface("missing")],
+        activeTabId: chatSurface("missing"),
+        groups: {
+          [chatSurface("chat-a")]: {
+            root: {
+              kind: "split",
+              id: "root:split:row",
+              dir: "row",
+              sizes: [0.7, 0.3],
+              children: [
+                {
+                  kind: "leaf",
+                  id: "left",
+                  tabIds: [chatSurface("chat-a")],
+                  activeTabId: chatSurface("chat-a"),
+                },
+                {
+                  kind: "leaf",
+                  id: "right",
+                  tabIds: [chatSurface("missing")],
+                  activeTabId: chatSurface("missing"),
+                },
+              ],
+            },
+            focusedLeafId: "right",
+          },
+        },
+      }),
+    );
+
+    expect(loadPersistedWorkspace()).toEqual({
+      tabs: [chatSurface("chat-a")],
+      activeTabId: chatSurface("chat-a"),
+      groups: {},
+    });
+  });
+
+  it("loads corrupt duplicate workspace groups as safe unsplit tabs", () => {
+    savePersistedChatTabs({
+      openThreadIds: ["chat-a", "chat-b", "chat-c", "chat-d"],
+      currentThreadId: "chat-a",
+      tabs: [
+        { id: "chat-a" },
+        { id: "chat-b" },
+        { id: "chat-c" },
+        { id: "chat-d" },
+      ],
+    });
+    localStorage.setItem(
+      workspaceStorageKey(),
+      JSON.stringify({
+        version: 2,
+        tabs: [chatSurface("chat-a"), chatSurface("chat-c")],
+        activeTabId: chatSurface("chat-a"),
+        groups: {
+          [chatSurface("chat-a")]: {
+            root: {
+              kind: "split",
+              id: "duplicate:split",
+              dir: "row",
+              sizes: [0.5, 0.5],
+              children: [
+                {
+                  kind: "leaf",
+                  id: "left",
+                  tabIds: [chatSurface("chat-a")],
+                  activeTabId: chatSurface("chat-a"),
+                },
+                {
+                  kind: "leaf",
+                  id: "right",
+                  tabIds: [chatSurface("chat-a")],
+                  activeTabId: chatSurface("chat-a"),
+                },
+              ],
+            },
+            focusedLeafId: "right",
+          },
+          [chatSurface("chat-c")]: {
+            root: {
+              kind: "split",
+              id: "valid:split",
+              dir: "row",
+              sizes: [0.5, 0.5],
+              children: [
+                {
+                  kind: "leaf",
+                  id: "valid-left",
+                  tabIds: [chatSurface("chat-c")],
+                  activeTabId: chatSurface("chat-c"),
+                },
+                {
+                  kind: "leaf",
+                  id: "valid-right",
+                  tabIds: [chatSurface("chat-d")],
+                  activeTabId: chatSurface("chat-d"),
+                },
+              ],
+            },
+            focusedLeafId: "valid-right",
+          },
+        },
+      }),
+    );
+
+    const workspace = loadPersistedWorkspace();
+    expect(workspace.tabs).toEqual([
+      chatSurface("chat-a"),
+      chatSurface("chat-c"),
+    ]);
+    expect(workspace.groups[chatSurface("chat-a")]).toBeUndefined();
+    expect(workspace.groups[chatSurface("chat-c")]).toBeDefined();
+  });
+
+>>>>>>> upstream/main
   it("persists task management tabs and their active child chat", () => {
     savePersistedTasksUIState({
       openTasks: [
@@ -262,6 +613,7 @@ describe("chatUiPersistence", () => {
     expect(loadAskQuestionsDraft("tool-call-1")).toBeNull();
   });
 
+<<<<<<< HEAD
   it("persists task workspace layout per task", () => {
     const defaults = {
       chatExpanded: false,
@@ -281,5 +633,14 @@ describe("chatUiPersistence", () => {
       boardHeightPx: 260,
     });
     expect(loadTaskWorkspaceLayout("task-2", defaults)).toEqual(defaults);
+=======
+  it("persists task workspace tab per task", () => {
+    saveTaskWorkspaceTab("task-1", "memories");
+    saveTaskWorkspaceTab("task-2", "board");
+
+    expect(loadTaskWorkspaceTab("task-1")).toBe("memories");
+    expect(loadTaskWorkspaceTab("task-2")).toBe("board");
+    expect(loadTaskWorkspaceTab("task-3")).toBeNull();
+>>>>>>> upstream/main
   });
 });

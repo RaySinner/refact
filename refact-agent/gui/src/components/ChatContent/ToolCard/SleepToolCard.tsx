@@ -1,10 +1,7 @@
+import { CircleCheck, TriangleAlert, Timer } from "lucide-react";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Button, Flex, Text } from "@radix-ui/themes";
-import {
-  CheckCircledIcon,
-  ExclamationTriangleIcon,
-  LapTimerIcon,
-} from "@radix-ui/react-icons";
+import { Flex, Text } from "@radix-ui/themes";
+import { Button } from "../../ui";
 
 import { ToolCard } from "./ToolCard";
 import type { ToolStatus } from "./ToolCard";
@@ -12,9 +9,10 @@ import { useStoredOpen } from "../useStoredOpen";
 import { useAppSelector } from "../../../hooks";
 import { useChatActions } from "../../../hooks/useChatActions";
 import {
-  selectMessages,
-  selectToolResultById,
+  selectMessagesById,
+  selectToolResultByThreadAndId,
 } from "../../../features/Chat/Thread/selectors";
+import { useThreadId } from "../../../features/Chat/Thread";
 import type {
   EventMessage,
   ToolCall,
@@ -41,7 +39,10 @@ type SleepTick = {
 
 type SleepToolCardProps = {
   toolCall: ToolCall;
+  threadId?: string;
 };
+
+const SLEEP_STARTED_AT_STORAGE_PREFIX = "refact.sleep.startedAt";
 
 function parseSleepArgs(toolCall: ToolCall): SleepArgs {
   try {
@@ -123,6 +124,60 @@ function statusFromResult(result: SleepResult | null): ToolStatus {
   return result.interrupted ? "error" : "success";
 }
 
+function sleepStorageKey(
+  threadId: string | undefined,
+  toolCallId?: string,
+): string | null {
+  if (!toolCallId) return null;
+  const threadPart = threadId ?? "current";
+  return `${SLEEP_STARTED_AT_STORAGE_PREFIX}:${threadPart}:${toolCallId}`;
+}
+
+function readStoredSleepStartedAt(key: string): number | null {
+  try {
+    const value = window.localStorage.getItem(key);
+    if (!value) return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredSleepStartedAt(key: string, startedAtMs: number): void {
+  try {
+    window.localStorage.setItem(key, String(startedAtMs));
+  } catch {
+    return;
+  }
+}
+
+function removeStoredSleepStartedAt(
+  threadId: string | undefined,
+  toolCallId?: string,
+): void {
+  const key = sleepStorageKey(threadId, toolCallId);
+  if (!key) return;
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    return;
+  }
+}
+
+function resolveSleepStartedAtMs(
+  threadId: string | undefined,
+  toolCallId?: string,
+): number {
+  const key = sleepStorageKey(threadId, toolCallId);
+  if (!key) return Date.now();
+  const stored = readStoredSleepStartedAt(key);
+  if (stored !== null) return stored;
+  const startedAtMs = Date.now();
+  writeStoredSleepStartedAt(key, startedAtMs);
+  return startedAtMs;
+}
+
 const TickDots = React.memo(function TickDots({
   ticks,
 }: {
@@ -149,15 +204,23 @@ const TickDots = React.memo(function TickDots({
   );
 });
 
-export const SleepToolCard: React.FC<SleepToolCardProps> = ({ toolCall }) => {
+export const SleepToolCard: React.FC<SleepToolCardProps> = ({
+  toolCall,
+  threadId,
+}) => {
   const storeKey = toolCall.id ? `tc:${toolCall.id}` : undefined;
   const [isOpen, handleToggle] = useStoredOpen(storeKey, true);
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const { abort } = useChatActions();
+  const contextThreadId = useThreadId();
+  const resolvedThreadId = threadId ?? contextThreadId;
+  const { abort } = useChatActions(resolvedThreadId);
 
   const sleepArgs = useMemo(() => parseSleepArgs(toolCall), [toolCall]);
+  const messages = useAppSelector((state) =>
+    selectMessagesById(state, resolvedThreadId),
+  );
   const resultMessage = useAppSelector((state) =>
-    selectToolResultById(state, toolCall.id),
+    selectToolResultByThreadAndId(state, resolvedThreadId, toolCall.id),
   );
   const sleepResult = useMemo(
     () => parseSleepResult(resultMessage),
@@ -165,7 +228,6 @@ export const SleepToolCard: React.FC<SleepToolCardProps> = ({ toolCall }) => {
   );
   const status = statusFromResult(sleepResult);
   const isRunning = status === "running";
-  const messages = useAppSelector(selectMessages);
   const ticks = useMemo(
     () =>
       messages.flatMap((message, index) => {
@@ -178,13 +240,21 @@ export const SleepToolCard: React.FC<SleepToolCardProps> = ({ toolCall }) => {
       }),
     [messages],
   );
-  const startedAtMs = useMemo(() => Date.now(), []);
+  const startedAtMs = useMemo(
+    () => resolveSleepStartedAtMs(resolvedThreadId, toolCall.id),
+    [resolvedThreadId, toolCall.id],
+  );
 
   useEffect(() => {
     if (!isRunning) return;
     const interval = window.setInterval(() => setNowMs(Date.now()), 1000);
     return () => window.clearInterval(interval);
   }, [isRunning]);
+
+  useEffect(() => {
+    if (isRunning) return;
+    removeStoredSleepStartedAt(resolvedThreadId, toolCall.id);
+  }, [isRunning, resolvedThreadId, toolCall.id]);
 
   const fallbackRemainingMs = Math.max(
     0,
@@ -215,18 +285,18 @@ export const SleepToolCard: React.FC<SleepToolCardProps> = ({ toolCall }) => {
   const handleWakeUp = useCallback(
     (event: React.MouseEvent<HTMLButtonElement>) => {
       event.stopPropagation();
-      void abort();
+      void abort(resolvedThreadId);
     },
-    [abort],
+    [abort, resolvedThreadId],
   );
 
   const icon = sleepResult?.interrupted ? (
     <span className={styles.summaryInterrupted}>
-      <ExclamationTriangleIcon />
+      <TriangleAlert />
     </span>
   ) : (
     <span className={styles.summarySuccess}>
-      <CheckCircledIcon />
+      <CircleCheck />
     </span>
   );
 
@@ -243,8 +313,8 @@ export const SleepToolCard: React.FC<SleepToolCardProps> = ({ toolCall }) => {
         className={styles.sleepCard}
       >
         {isRunning && (
-          <Flex direction="column" gap="3" className={styles.countdown}>
-            <Flex align="center" justify="between" gap="3" wrap="wrap">
+          <Flex direction="column" gap="2" className={styles.countdown}>
+            <Flex align="center" justify="between" gap="2" wrap="wrap">
               <Flex direction="column" gap="1">
                 <Text weight="bold" className={styles.countdownText}>
                   Sleeping… {formatSeconds(remainingMs)} remaining
@@ -255,13 +325,8 @@ export const SleepToolCard: React.FC<SleepToolCardProps> = ({ toolCall }) => {
                   </Text>
                 )}
               </Flex>
-              <Button
-                type="button"
-                size="2"
-                color="amber"
-                onClick={handleWakeUp}
-              >
-                <LapTimerIcon />
+              <Button type="button" variant="soft" onClick={handleWakeUp}>
+                <Timer />
                 Wake up
               </Button>
             </Flex>

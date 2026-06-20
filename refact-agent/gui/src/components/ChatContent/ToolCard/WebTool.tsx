@@ -1,12 +1,13 @@
+import { Globe, Search } from "lucide-react";
 import React, { useMemo } from "react";
-import { GlobeIcon, MagnifyingGlassIcon } from "@radix-ui/react-icons";
 import { Box, Flex, Text } from "@radix-ui/themes";
 
 import { ToolCard, ToolStatus } from "./ToolCard";
 import { useStoredOpen } from "../useStoredOpen";
 import { ContextFileList } from "./ContextFileList";
 import { useAppSelector } from "../../../hooks";
-import { selectToolResultById } from "../../../features/Chat/Thread/selectors";
+import { selectToolResultByThreadAndId } from "../../../features/Chat/Thread/selectors";
+import { useThreadId } from "../../../features/Chat/Thread";
 import { ChatContextFile, ToolCall } from "../../../services/refact/types";
 import { Link } from "../../Link";
 import { Markdown, ShikiCodeBlock } from "../../Markdown";
@@ -142,8 +143,9 @@ export const WebTool: React.FC<WebToolProps> = ({
   const storeKey = toolCall.id ? `tc:${toolCall.id}` : undefined;
   const [isOpen, handleToggle] = useStoredOpen(storeKey);
 
+  const threadId = useThreadId();
   const maybeResult = useAppSelector((state) =>
-    selectToolResultById(state, toolCall.id),
+    selectToolResultByThreadAndId(state, threadId, toolCall.id),
   );
 
   const args = useMemo((): WebArgs | WebSearchArgs => {
@@ -223,7 +225,7 @@ export const WebTool: React.FC<WebToolProps> = ({
 
   return (
     <ToolCard
-      icon={toolType === "web_search" ? <MagnifyingGlassIcon /> : <GlobeIcon />}
+      icon={toolType === "web_search" ? <Search /> : <Globe />}
       summary={summary}
       meta={meta}
       status={status}
@@ -236,11 +238,14 @@ export const WebTool: React.FC<WebToolProps> = ({
           <Text size="1" color="gray">
             Results ({searchResults.length})
           </Text>
-          <Box className={styles.resultList}>
+          <Box className={`${styles.resultList} rf-stagger`}>
             {searchResults.map((result, idx) => {
               const safeUrl = isSafeHttpUrl(result.url) ? result.url : "";
               return (
-                <Box key={`${result.url}-${idx}`} className={styles.resultItem}>
+                <Box
+                  key={`${result.url}-${idx}`}
+                  className={`${styles.resultItem} rf-enter-rise rf-pressable`}
+                >
                   <Flex direction="column" gap="1">
                     {safeUrl ? (
                       <Link

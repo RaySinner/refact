@@ -5,6 +5,11 @@ import * as statisticTab from './statisticTab';
 import * as usabilityHints from "./usabilityHints";
 import * as path from 'path';
 import { basename } from "path";
+import {
+    createCurrentProjectInfo,
+    type CurrentProjectInfoPayload,
+    resolveFilePathWithinWorkspace,
+} from "./sidebarPaths";
 import { v4 as uuidv4 } from "uuid";
 import { getKeyBindingForChat } from "./getKeybindings";
 import {
@@ -47,61 +52,17 @@ import { diff_paste_back } from "./chatTab";
 import { execFile } from "child_process";
 import * as estate from './estate';
 import { animation_start } from "./interactiveDiff";
+import { backendConfigForStatus, effectiveLspPortForStatus, type RefactBackendConfig } from "./backendStatus";
 
 const OPEN_CHAT_IN_BROWSER_EVENT = "ide/openChatInBrowser";
 
-export type CurrentProjectInfoPayload = {
-    name: string;
-    workspaceRoots?: string[];
-};
+type ConfigUpdatePayload = Parameters<typeof updateConfig>[0] & RefactBackendConfig;
 
 type QueuedWebviewMessage = {
     generation: number;
     message: unknown;
     durable: boolean;
 };
-
-export function normalizeWindowsExtendedPath(fileName: string): string {
-    const uncPrefix = "\\\\?\\UNC\\";
-    const localPrefix = "\\\\?\\";
-
-    if (fileName.startsWith(uncPrefix)) {
-        return "\\\\" + fileName.slice(uncPrefix.length);
-    }
-
-    if (fileName.startsWith(localPrefix)) {
-        return fileName.slice(localPrefix.length);
-    }
-
-    return fileName;
-}
-
-function isPathInsideRoot(candidate: string, root: string): boolean {
-    const relativePath = path.relative(root, candidate);
-    return relativePath === "" || (!relativePath.startsWith("..") && !path.isAbsolute(relativePath));
-}
-
-export function resolveFilePathWithinWorkspace(fileName: string, workspaceRoots: string[], activeFilePath?: string): string | undefined {
-    const roots = workspaceRoots
-        .filter(root => root.trim().length > 0)
-        .map(root => path.resolve(root));
-
-    if (roots.length === 0) {
-        return undefined;
-    }
-
-    const formattedFileName = normalizeWindowsExtendedPath(fileName);
-    const activePath = activeFilePath ? path.resolve(activeFilePath) : undefined;
-    const activeRoot = activePath ? roots.find(root => isPathInsideRoot(activePath, root)) : undefined;
-    const baseRoot = activeRoot ?? roots[0];
-    const candidate = path.resolve(path.isAbsolute(formattedFileName) ? formattedFileName : path.join(baseRoot, formattedFileName));
-
-    return roots.some(root => isPathInsideRoot(candidate, root)) ? candidate : undefined;
-}
-
-export function createCurrentProjectInfo(name: string, workspaceRoots: string[]): CurrentProjectInfoPayload {
-    return workspaceRoots.length > 0 ? { name, workspaceRoots } : { name };
-}
 
 export async function open_chat_tab(
     question: string,
@@ -179,7 +140,7 @@ export class PanelWebview implements vscode.WebviewViewProvider {
                 event.affectsConfiguration("refactai.ast") ||
                 event.affectsConfiguration("refactai.submitChatWithShiftEnter") ||
                 event.affectsConfiguration("refactai.xperimental") ||
-                event.affectsConfiguration("refactai.httpHost") ||
+                event.affectsConfiguration("refactai.daemonPort") ||
                 event.affectsConfiguration("refactai.browserHost")
             ) {
                 this.handleSettingsChange();
@@ -396,6 +357,14 @@ export class PanelWebview implements vscode.WebviewViewProvider {
         return createCurrentProjectInfo(vscode.workspace.name ?? "", this.getWorkspaceRoots());
     }
 
+    private backendConfig(): RefactBackendConfig {
+        return backendConfigForStatus(global.rust_binary_blob?.backend_status?.() ?? "connecting");
+    }
+
+    private backendLspPort(rawPort: number | undefined): number {
+        return effectiveLspPortForStatus(rawPort ?? 0, global.rust_binary_blob?.backend_status?.() ?? "connecting");
+    }
+
     handleSettingsChange() {
         const vecdb =
             vscode.workspace
@@ -409,20 +378,20 @@ export class PanelWebview implements vscode.WebviewViewProvider {
 
 
         const rawPort = global.rust_binary_blob?.get_port();
-        const port = typeof rawPort === "number" && Number.isFinite(rawPort) && rawPort > 0
-            ? rawPort
-            : 0;
+        const port = this.backendLspPort(rawPort);
         const submitChatWithShiftEnter = vscode.workspace.getConfiguration()?.get<boolean>("refactai.submitChatWithShiftEnter")?? false;
 
         const currentActiveWorkspaceName = this.getActiveWorkspace();
 
-        const message = updateConfig({
+        const config: ConfigUpdatePayload = {
             lspPort: port,
             shiftEnterToSubmit: submitChatWithShiftEnter,
             features: {vecdb, ast},
             currentWorkspaceName: currentActiveWorkspaceName,
             browserUrl: global.rust_binary_blob?.browser_url?.() || undefined,
-        });
+            ...this.backendConfig(),
+        };
+        const message = updateConfig(config);
 
         this.postMessageToChat(message);
     }
@@ -1082,16 +1051,14 @@ export class PanelWebview implements vscode.WebviewViewProvider {
         const vecdb = vscode.workspace.getConfiguration()?.get<boolean>("refactai.vecdb") ?? false;
         const ast = vscode.workspace.getConfiguration()?.get<boolean>("refactai.ast") ?? false;
         const rawPort = global.rust_binary_blob?.get_port();
-        const port = typeof rawPort === "number" && Number.isFinite(rawPort) && rawPort > 0
-            ? rawPort
-            : 0;
+        const port = this.backendLspPort(rawPort);
         const completeManual = await getKeyBindingForChat("refactaicmd.completionManual");
         const shiftEnterToSubmit = vscode.workspace.getConfiguration()?.get<boolean>("refactai.submitChatWithShiftEnter")?? false;
 
         const currentActiveWorkspaceName = this.getActiveWorkspace();
         const currentProject = this.getCurrentProjectInfo();
 
-        const config: InitialState["config"] = {
+        const config: InitialState["config"] & RefactBackendConfig = {
             host: "vscode",
             tabbed,
             shiftEnterToSubmit,
@@ -1113,6 +1080,7 @@ export class PanelWebview implements vscode.WebviewViewProvider {
             lspPort: port,
             browserUrl: global.rust_binary_blob?.browser_url?.() || undefined,
             currentWorkspaceName: currentActiveWorkspaceName,
+            ...this.backendConfig(),
         };
 
         const state: Partial<InitialState> = {

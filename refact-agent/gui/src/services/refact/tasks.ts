@@ -106,6 +106,11 @@ export interface TrajectoryInfo {
   created_at: string;
   updated_at: string;
   session_state?: string;
+<<<<<<< HEAD
+=======
+  mode?: string;
+  parent_id?: string;
+>>>>>>> upstream/main
   waiting_for_card_ids?: string[];
 }
 
@@ -173,7 +178,17 @@ export const tasksApi = createApi({
         if (result.error) return { error: result.error };
         return { data: { deleted: true } };
       },
+<<<<<<< HEAD
       invalidatesTags: ["Tasks"],
+=======
+      invalidatesTags: (_result, _error, taskId) => [
+        "Tasks",
+        { type: "Tasks", id: taskId },
+        { type: "Board", id: taskId },
+        { type: "TaskTrajectories", id: `${taskId}/planner` },
+        { type: "TaskTrajectories", id: `${taskId}/agents` },
+      ],
+>>>>>>> upstream/main
     }),
 
     updateTaskStatus: builder.mutation<
@@ -312,17 +327,34 @@ export const tasksApi = createApi({
       ],
     }),
 
+<<<<<<< HEAD
     createPlannerChat: builder.mutation<{ chat_id: string }, string>({
       queryFn: async (taskId, api, _opts, baseQuery) => {
+=======
+    createPlannerChat: builder.mutation<
+      { chat_id: string; mode?: string },
+      { taskId: string; mode?: string }
+    >({
+      queryFn: async ({ taskId, mode }, api, _opts, baseQuery) => {
+>>>>>>> upstream/main
         const state = api.getState() as RootState;
         const result = await baseQuery({
           url: buildApiUrlFromState(state, `/v1/tasks/${taskId}/planner-chats`),
           method: "POST",
+<<<<<<< HEAD
         });
         if (result.error) return { error: result.error };
         return { data: result.data as { chat_id: string } };
       },
       invalidatesTags: (_result, _error, taskId) => [
+=======
+          body: mode ? { mode } : {},
+        });
+        if (result.error) return { error: result.error };
+        return { data: result.data as { chat_id: string; mode?: string } };
+      },
+      invalidatesTags: (_result, _error, { taskId }) => [
+>>>>>>> upstream/main
         { type: "TaskTrajectories", id: `${taskId}/planner` },
       ],
     }),
@@ -337,6 +369,10 @@ export const tasksApi = createApi({
           url: buildApiUrlFromState(
             state,
             `/v1/tasks/${taskId}/planner-chats/${chatId}`,
+<<<<<<< HEAD
+=======
+            { force: "true" },
+>>>>>>> upstream/main
           ),
           method: "DELETE",
         });
@@ -345,21 +381,43 @@ export const tasksApi = createApi({
       },
       invalidatesTags: (_result, _error, { taskId }) => [
         { type: "TaskTrajectories", id: `${taskId}/planner` },
+<<<<<<< HEAD
+=======
+        { type: "Board", id: taskId },
+>>>>>>> upstream/main
         { type: "Tasks", id: taskId },
         "Tasks",
       ],
     }),
 
     createPlannerChatFromTransition: builder.mutation<
+<<<<<<< HEAD
       { new_chat_id: string; messages_count: number },
+=======
+      {
+        new_chat_id: string;
+        messages_count: number;
+        root_chat_id?: string | null;
+        initial_plan_document?: string | null;
+        initial_plan_error?: string | null;
+      },
+>>>>>>> upstream/main
       {
         taskId: string;
         sourceChatId: string;
         targetModeDescription?: string;
+<<<<<<< HEAD
       }
     >({
       queryFn: async (
         { taskId, sourceChatId, targetModeDescription },
+=======
+        targetMode?: string;
+      }
+    >({
+      queryFn: async (
+        { taskId, sourceChatId, targetModeDescription, targetMode },
+>>>>>>> upstream/main
         api,
         _opts,
         baseQuery,
@@ -374,11 +432,25 @@ export const tasksApi = createApi({
           body: {
             source_chat_id: sourceChatId,
             target_mode_description: targetModeDescription ?? "",
+<<<<<<< HEAD
+=======
+            target_mode: targetMode ?? "task_planner",
+>>>>>>> upstream/main
           },
         });
         if (result.error) return { error: result.error };
         return {
+<<<<<<< HEAD
           data: result.data as { new_chat_id: string; messages_count: number },
+=======
+          data: result.data as {
+            new_chat_id: string;
+            messages_count: number;
+            root_chat_id?: string | null;
+            initial_plan_document?: string | null;
+            initial_plan_error?: string | null;
+          },
+>>>>>>> upstream/main
         };
       },
       invalidatesTags: (_result, _error, { taskId }) => [
@@ -403,6 +475,7 @@ export const tasksApi = createApi({
         baseQuery,
       ) => {
         const state = api.getState() as RootState;
+<<<<<<< HEAD
         const result = await baseQuery({
           url: buildApiUrlFromState(state, `/v1/tasks/${taskId}/board`),
           method: "POST",
@@ -419,6 +492,26 @@ export const tasksApi = createApi({
               },
             ],
           },
+=======
+        const requestBody: {
+          body: string;
+          author_role: "user";
+          reply_to?: string;
+        } = {
+          body,
+          author_role: authorRole,
+        };
+        if (replyTo !== undefined) {
+          requestBody.reply_to = replyTo;
+        }
+        const result = await baseQuery({
+          url: buildApiUrlFromState(
+            state,
+            `/v1/tasks/${taskId}/cards/${cardId}/comments`,
+          ),
+          method: "POST",
+          body: requestBody,
+>>>>>>> upstream/main
         });
         if (result.error) return { error: result.error };
         return { data: result.data as TaskBoard };
@@ -458,6 +551,10 @@ export const tasksApi = createApi({
       },
       invalidatesTags: (_result, _error, { taskId }) => [
         { type: "Tasks", id: taskId },
+<<<<<<< HEAD
+=======
+        "Tasks",
+>>>>>>> upstream/main
       ],
     }),
   }),

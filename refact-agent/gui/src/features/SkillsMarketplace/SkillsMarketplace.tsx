@@ -12,12 +12,20 @@ type SkillsMarketplaceProps = {
   host: Config["host"];
   tabbed: Config["tabbed"];
   backFromMarketplace: () => void;
+<<<<<<< HEAD
+=======
+  embedded?: boolean;
+>>>>>>> upstream/main
 };
 
 export const SkillsMarketplace: React.FC<SkillsMarketplaceProps> = ({
   host,
   tabbed,
   backFromMarketplace,
+<<<<<<< HEAD
+=======
+  embedded = false,
+>>>>>>> upstream/main
 }) => {
   const { data: registry } = useGetExtRegistryQuery(undefined);
   const { data, isLoading, error } = useGetSkillsMarketplaceQuery(undefined);
@@ -33,6 +41,10 @@ export const SkillsMarketplace: React.FC<SkillsMarketplaceProps> = ({
       title="Skills Marketplace"
       kind="skill"
       back={backFromMarketplace}
+<<<<<<< HEAD
+=======
+      embedded={embedded}
+>>>>>>> upstream/main
       items={data?.items ?? []}
       sources={data?.sources ?? []}
       isLoading={isLoading}

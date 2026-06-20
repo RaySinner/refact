@@ -2,51 +2,32 @@ package com.smallcloud.refactai.lsp
 
 import com.google.gson.Gson
 import com.google.gson.JsonObject
-import com.intellij.execution.configurations.GeneralCommandLine
 import com.intellij.openapi.Disposable
-import com.intellij.openapi.application.ApplicationInfo
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.PathManager
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.util.SystemInfo
-import com.intellij.openapi.util.io.FileUtil.getTempDirectory
-import com.intellij.openapi.util.io.FileUtil.setExecutable
 import com.intellij.util.concurrency.AppExecutorUtil
 import com.intellij.util.messages.MessageBus
 import com.intellij.util.messages.Topic
 import com.smallcloud.refactai.Resources
-import com.smallcloud.refactai.Resources.binPrefix
 import com.smallcloud.refactai.io.ConnectionStatus
 import com.smallcloud.refactai.io.InferenceGlobalContextChangedNotifier
 import com.smallcloud.refactai.notifications.emitError
-import org.apache.hc.core5.concurrent.ComplexFuture
 import java.io.File
-import java.io.FileOutputStream
-import java.io.InputStream
-import java.net.ServerSocket
 import java.net.URI
-import java.net.NetworkInterface
-import java.nio.file.Paths
-import java.security.MessageDigest
-import java.util.*
-import java.util.concurrent.Future
+import java.nio.file.Path
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
-import kotlin.io.path.Path
 import com.smallcloud.refactai.io.InferenceGlobalContext.Companion.instance as InferenceGlobalContext
-
-
-private fun getExeSuffix(): String {
-    if (SystemInfo.isWindows) return ".exe"
-    return ""
-}
 
 interface LSPProcessHolderChangedNotifier {
     fun capabilitiesChanged(newCaps: LSPCapabilities) {}
     fun lspIsActive(isActive: Boolean) {}
+    fun backendConnectionStatusChanged(newStatus: LSPBackendConnectionStatus) {}
     fun ragStatusChanged(ragStatus: RagStatus) {}
 
     companion object {
@@ -56,15 +37,17 @@ interface LSPProcessHolderChangedNotifier {
     }
 }
 
+enum class LSPBackendConnectionStatus(val wireName: String) {
+    CONNECTING("connecting"),
+    STARTING("starting"),
+    READY("ready"),
+    FAILED("failed")
+}
+
 open class LSPProcessHolder(val project: Project) : Disposable {
     @Volatile
     private var isDisposed = false
-    private var process: Process? = null
     private var lastConfig: LSPConfig? = null
-    private val loggerScheduler = AppExecutorUtil.createBoundedScheduledExecutorService(
-        "SMCLSPLoggerScheduler", 1
-    )
-    private var loggerTask: Future<*>? = null
     private val messageBus: MessageBus = ApplicationManager.getApplication().messageBus
     private var isWorking_ = false
     private val healthCheckerScheduler = AppExecutorUtil.createBoundedScheduledExecutorService(
@@ -86,8 +69,18 @@ open class LSPProcessHolder(val project: Project) : Disposable {
     private var customizationCache: JsonObject? = null
     @Volatile
     private var startupInProgress = false
+    @Volatile
+    private var nextHealthCheckAtMs = 0L
+    @Volatile
+    private var healthBackoffMs = 1_000L
+    @Volatile
+    private var backendConnectionStatus: LSPBackendConnectionStatus = LSPBackendConnectionStatus.CONNECTING
+    @Volatile
+    private var attachedProject: DaemonProject? = null
+    protected open val daemonClient: RefactDaemonClient = HttpRefactDaemonClient()
 
     private val exitThread: Thread = Thread {
+        closeAttachedProject()
         terminate()
     }
 
@@ -100,6 +93,22 @@ open class LSPProcessHolder(val project: Project) : Disposable {
                 project.messageBus.syncPublisher(LSPProcessHolderChangedNotifier.TOPIC).lspIsActive(newValue)
             }
         }
+
+    open fun backendConnectionStatus(): LSPBackendConnectionStatus {
+        return backendConnectionStatus
+    }
+
+    fun backendReady(): Boolean {
+        return backendConnectionStatus() == LSPBackendConnectionStatus.READY
+    }
+
+    private fun setBackendConnectionStatus(newStatus: LSPBackendConnectionStatus) {
+        if (backendConnectionStatus == newStatus) return
+        backendConnectionStatus = newStatus
+        if (!project.isDisposed) {
+            project.messageBus.syncPublisher(LSPProcessHolderChangedNotifier.TOPIC).backendConnectionStatusChanged(newStatus)
+        }
+    }
 
     private fun logIfBlockingOperationOnEdt(operation: String) {
         if (ApplicationManager.getApplication().isDispatchThread) {
@@ -118,18 +127,6 @@ open class LSPProcessHolder(val project: Project) : Disposable {
         return "$label.local"
     }
 
-    private fun defaultLanIpv4Host(): String? {
-        return runCatching {
-            NetworkInterface.getNetworkInterfaces().toList()
-                .asSequence()
-                .filter { it.isUp && !it.isLoopback && !it.isVirtual }
-                .flatMap { it.inetAddresses.toList().asSequence() }
-                .filterIsInstance<java.net.Inet4Address>()
-                .map { it.hostAddress }
-                .firstOrNull { it != "0.0.0.0" && !it.startsWith("169.254.") }
-        }.getOrNull()
-    }
-
     private fun defaultBrowserHost(): String {
         return defaultMdnsHost()
     }
@@ -142,11 +139,7 @@ open class LSPProcessHolder(val project: Project) : Disposable {
         } else {
             defaultBrowserHost()
         }
-        return URI("http://$host:${base.port}/")
-    }
-
-    private fun isCustomPortConfigured(): Boolean {
-        return InferenceGlobalContext.xDebugLSPPort != null
+        return URI("http://$host:${base.port}${base.rawPath}")
     }
 
     private fun shouldAbortLifecycleWork(): Boolean {
@@ -160,6 +153,9 @@ open class LSPProcessHolder(val project: Project) : Disposable {
                 return
             }
 
+            if (restart) {
+                setBackendConnectionStatus(LSPBackendConnectionStatus.CONNECTING)
+            }
             lifecycleStartRequested.set(true)
             if (restart) {
                 lifecycleRestartRequested.set(true)
@@ -229,14 +225,6 @@ open class LSPProcessHolder(val project: Project) : Disposable {
         logger.info("Applying LSP settings change: $reason")
         customizationCache = null
 
-        if (isCustomPortConfigured()) {
-            terminate()
-            capabilities = getCaps()
-            isWorking = true
-            lspProjectInitialize(this, project)
-            return
-        }
-
         synchronized(processStartLock) {
             startProcess()
         }
@@ -249,19 +237,10 @@ open class LSPProcessHolder(val project: Project) : Disposable {
         }
 
         initialize()
-        logger.debug("Ensuring LSP is started: $reason")
-
-        if (isCustomPortConfigured()) {
-            if (!isWorking) {
-                capabilities = getCaps()
-                isWorking = true
-                lspProjectInitialize(this, project)
-            }
-            return
-        }
+        logger.debug("Ensuring LSP is attached through daemon: $reason")
 
         synchronized(processStartLock) {
-            if (!isWorking || process?.isAlive != true || lastConfig == null) {
+            if (!isWorking || attachedProject == null || lastConfig == null) {
                 startProcess()
             }
         }
@@ -291,6 +270,11 @@ open class LSPProcessHolder(val project: Project) : Disposable {
                     settingsChanged("inference-uri-changed")
                 }
 
+                override fun refactBinaryPathChanged(newPath: String?) {
+                    resetBinaryResolution()
+                    settingsChanged("refact-binary-path-changed")
+                }
+
                 override fun astFlagChanged(newValue: Boolean) {
                     settingsChanged("ast-flag-changed")
                 }
@@ -308,7 +292,7 @@ open class LSPProcessHolder(val project: Project) : Disposable {
                 }
 
                 override fun xDebugLSPPortChanged(newPort: Int?) {
-                    settingsChanged("debug-port-changed")
+                    settingsChanged("daemon-port-changed")
                 }
 
                 override fun insecureSSLChanged(newValue: Boolean) {
@@ -328,31 +312,42 @@ open class LSPProcessHolder(val project: Project) : Disposable {
 
         healthCheckerScheduler.scheduleWithFixedDelay({
             try {
-                // Check if we're already disposed before proceeding
-                if (isDisposed || project.isDisposed) {
-                    logger.info("Skipping health check for disposed LSPProcessHolder or project")
-                    return@scheduleWithFixedDelay
-                }
-
-                if (lastConfig == null || startupInProgress) return@scheduleWithFixedDelay
-                if (isCustomPortConfigured()) return@scheduleWithFixedDelay
-                if (process?.isAlive == false || !isWorking) {
-                    ensureStartedAsync("health-check-process-dead-or-unready")
-                }
+                runHealthCheckOnce()
             } catch (e: RejectedExecutionException) {
-                // This exception can occur during shutdown when schedulers are already closed
                 if (e.message?.contains("Already shutdown") == true) {
                     logger.info("Ignoring RejectedExecutionException during health check: ${e.message}")
                 } else {
-                    // Log but don't rethrow other types of RejectedExecutionException
                     logger.warn("Unexpected RejectedExecutionException during health check: ${e.message}")
                 }
             } catch (e: Exception) {
-                // Log any other exceptions but don't let them crash the scheduler
                 logger.warn("Exception during health check: ${e.message}")
             }
         }, 1, 1, TimeUnit.SECONDS)
         ragStatusCheckerScheduler.schedule({ lspRagStatusSync() }, 1000, TimeUnit.MILLISECONDS)
+    }
+
+    protected open fun runHealthCheckOnce() {
+        if (isDisposed || project.isDisposed) {
+            logger.info("Skipping health check for disposed LSPProcessHolder or project")
+            return
+        }
+
+        if (lastConfig == null || startupInProgress) return
+        if (healthNowMs() < nextHealthCheckAtMs) return
+        if (attachedProject == null || !isWorking) {
+            ensureStartedAsync("health-check-daemon-detached-or-unready")
+            deferHealthRetry()
+            return
+        }
+        if (!probeAttachedWorker()) {
+            logger.warn("LSP health probe failed; restarting attached worker")
+            clearAttachedProjectState(preserveConfig = true, detach = true)
+            setBackendConnectionStatus(LSPBackendConnectionStatus.FAILED)
+            ensureStartedAsync("health-check-worker-unreachable")
+            deferHealthRetry()
+            return
+        }
+        resetHealthBackoff()
     }
 
     open fun settingsChanged(reason: String = "settings-changed") {
@@ -363,17 +358,13 @@ open class LSPProcessHolder(val project: Project) : Disposable {
         set(newValue) {
             if (newValue == field) return
             field = newValue
-            if(!project.isDisposed) {
+            if (!project.isDisposed) {
                 project.messageBus.syncPublisher(LSPProcessHolderChangedNotifier.TOPIC).capabilitiesChanged(field)
             }
         }
 
-    open fun startProcess() {
-        logIfBlockingOperationOnEdt("startProcess")
-        val startedAt = System.currentTimeMillis()
-        if (shouldAbortLifecycleWork()) return
-        val newConfig = LSPConfig(
-            port = 0,
+    private fun currentConfig(): LSPConfig {
+        return LSPConfig(
             ast = InferenceGlobalContext.astIsEnabled,
             astFileLimit = InferenceGlobalContext.astFileLimit,
             vecdb = InferenceGlobalContext.vecdbIsEnabled,
@@ -382,176 +373,187 @@ open class LSPProcessHolder(val project: Project) : Disposable {
             experimental = InferenceGlobalContext.experimentalLspFlagEnabled,
             httpHost = InferenceGlobalContext.httpHost.trim().ifEmpty { "0.0.0.0" },
         )
+    }
 
-        val processIsAlive = process?.isAlive == true
+    private fun projectRootPath(): String? {
+        return project.basePath?.let { path -> runCatching { File(path).canonicalPath }.getOrElse { path } }
+    }
 
-        if (newConfig.sameRuntimeSettings(lastConfig) && processIsAlive && isWorking) return
+    open fun startProcess() {
+        logIfBlockingOperationOnEdt("startProcess")
+        val startedAt = System.currentTimeMillis()
+        if (shouldAbortLifecycleWork()) return
+        val newConfig = currentConfig()
+
+        if (newConfig.sameRuntimeSettings(lastConfig) && attachedProject != null && isWorking) {
+            setBackendConnectionStatus(LSPBackendConnectionStatus.READY)
+            return
+        }
 
         startupInProgress = true
         try {
             capabilities = LSPCapabilities()
-            terminate()
-            if (!newConfig.isValid) return
-            var attempt = 0
-            while (attempt < 5) {
-                if (shouldAbortLifecycleWork()) {
-                    logger.info("Aborting LSP startup during spawn loop: disposed")
-                    return
-                }
-                val bin = BIN_PATH
-                if (bin == null) {
-                    logger.warn("LSP start_process BIN_PATH is null")
-                    return
-                }
-                val port = allocateFreePort()
-                if (port == null) {
-                    logger.warn("LSP start_process could not allocate a free port")
-                    attempt++
-                    continue
-                }
-                newConfig.port = port
-                logger.debug("LSP start_process $bin ${newConfig.toSafeLogString()}")
-                val spawnedProcess = try {
-                    GeneralCommandLine(listOf(bin) + newConfig.toArgs()).withRedirectErrorStream(true).createProcess()
-                } catch (e: Exception) {
-                    attempt++
-                    logger.warn("LSP start_process spawn failed attempt=$attempt: ${e.message}")
-                    if (attempt == 5) {
-                        logger.error("LSP process failed to start after 5 attempts", e)
-                        isWorking = false
-                        return
-                    }
-                    continue
-                }
-
-                val outputLines = ArrayDeque<String>(200)
-                val gobbler = loggerScheduler.submit {
-                    try {
-                        spawnedProcess.inputStream.bufferedReader().forEachLine { line ->
-                            logger.debug(line)
-                            synchronized(outputLines) {
-                                if (outputLines.size >= 200) outputLines.removeFirst()
-                                outputLines.addLast(line)
-                            }
-                        }
-                    } catch (_: Exception) {}
-                }
-
-                Thread.sleep(500)
-                if (spawnedProcess.isAlive) {
-                    process = spawnedProcess
-                    spawnedProcess.onExit().thenAcceptAsync { p ->
-                        val exitCode = p.exitValue()
-                        if (exitCode == 0 || exitCode == 143) {
-                            logger.info("LSP process exited with code $exitCode")
-                        } else {
-                            logger.warn("LSP process exited with code $exitCode")
-                        }
-                    }
-                    loggerTask = gobbler
-                    break
-                }
-
-                gobbler.cancel(false)
-                val exitCode = runCatching { spawnedProcess.exitValue() }.getOrDefault(-1)
-                val captured = synchronized(outputLines) { outputLines.joinToString("\n") }
-                attempt++
-                logger.warn(
-                    "LSP start_process didn't start attempt=$attempt " +
-                        "(exit=$exitCode binary=$bin port=$port)\n$captured"
-                )
-                if (attempt == 5) {
-                    logger.error("LSP process failed to start after 5 attempts")
-                    isWorking = false
-                    return
-                }
-            }
-
-            if (process?.isAlive != true) {
-                logger.error("LSP process failed to start after spawn attempts")
-                isWorking = false
+            closeAttachedProject()
+            if (!newConfig.isValid) {
+                terminate(LSPBackendConnectionStatus.FAILED)
+                setBackendConnectionStatus(LSPBackendConnectionStatus.FAILED)
                 return
             }
-
-            val startupUrl = URI("http://127.0.0.1:${newConfig.port}/")
-            attempt = 0
-            val readinessAttempts = 30
-            while (attempt < readinessAttempts) {
-                if (shouldAbortLifecycleWork()) {
-                    logger.info("Aborting LSP startup during readiness loop: disposed")
-                    terminate()
-                    return
-                }
-                if (process?.isAlive != true) {
-                    logger.warn("LSP process exited before readiness probe succeeded")
-                    isWorking = false
-                    return
-                }
-                try {
-                    InferenceGlobalContext.connection.ping(startupUrl)
-                    lastConfig = newConfig
-                    isWorking = true
-                    buildInfo = getBuildInfo()
-                    logger.warn("LSP binary build info $buildInfo")
-                    capabilities = getCaps()
-                    fetchCustomizationFromServer()?.also { customizationCache = it }
-                    break
-                } catch (e: Exception) {
-                    if (attempt == readinessAttempts - 1) {
-                        logger.warn("LSP readiness probe failed attempt=${attempt + 1}/$readinessAttempts: ${e.message}")
-                    } else {
-                        logger.debug("LSP readiness probe failed attempt=${attempt + 1}/$readinessAttempts: ${e.message}")
-                    }
-                }
-                attempt++
-                if (attempt < readinessAttempts) {
-                    Thread.sleep(1000)
-                }
-            }
-            if (!isWorking) {
-                logger.warn("LSP readiness probe failed after $readinessAttempts attempts, terminating process")
-                terminate()
+            lastConfig = newConfig
+            terminate(LSPBackendConnectionStatus.STARTING, preserveConfig = true)
+            val root = projectRootPath()
+            if (root == null) {
+                logger.warn("LSP daemon attach project root is null")
+                setBackendConnectionStatus(LSPBackendConnectionStatus.FAILED)
                 return
             }
+            val daemonStatus = compatibleDaemonStatusOrNull()
+            if (daemonStatus == null) {
+                val bin = binaryPathForDaemon() ?: run {
+                    setBackendConnectionStatus(LSPBackendConnectionStatus.FAILED)
+                    return
+                }
+                logger.debug("LSP daemon spawn/upgrade $bin ${newConfig.toSafeLogString()}")
+                daemonClient.ensureDaemon(bin)
+            } else {
+                logger.debug("LSP daemon attach existing pid=${daemonStatus.pid} version=${daemonStatus.version} ${newConfig.toSafeLogString()}")
+            }
+            val openedProject = daemonClient.openProject(root, newConfig)
+            attachedProject = openedProject
+            isWorking = true
+            refreshAttachedWorkerState()
             if (shouldAbortLifecycleWork()) {
+                closeAttachedProject()
                 terminate()
                 return
             }
-            lspProjectInitialize(this, project)
-            logger.info("LSP startProcess finished in ${System.currentTimeMillis() - startedAt}ms (working=$isWorking)")
+            initializeAttachedProject()
+            setBackendConnectionStatus(LSPBackendConnectionStatus.READY)
+            resetHealthBackoff()
+            logger.info("LSP daemon attach finished in ${System.currentTimeMillis() - startedAt}ms (working=$isWorking)")
+        } catch (e: Exception) {
+            logger.warn("LSP daemon attach failed: ${e.message}", e)
+            clearAttachedProjectState(preserveConfig = true, detach = true)
+            setBackendConnectionStatus(LSPBackendConnectionStatus.FAILED)
+            deferHealthRetry()
         } finally {
             startupInProgress = false
         }
     }
 
+    private fun compatibleDaemonStatusOrNull(): DaemonStatus? {
+        val status = runCatching { daemonClient.status() }
+            .onFailure { logger.debug("LSP daemon status probe failed: ${it.message}") }
+            .getOrNull()
+            ?: return null
+        val requiredVersion = requiredDaemonVersion()
+        return if (versionIsOlder(status.version, requiredVersion)) {
+            logger.info("LSP daemon version ${status.version} is older than plugin $requiredVersion")
+            null
+        } else {
+            status
+        }
+    }
+
+    protected open fun requiredDaemonVersion(): String {
+        return Resources.version
+    }
+
+    protected open fun refreshAttachedWorkerState() {
+        buildInfo = getBuildInfo()
+        logger.warn("LSP binary build info $buildInfo")
+        capabilities = getCaps()
+        fetchCustomizationFromServer()?.also { customizationCache = it }
+    }
+
+    protected open fun initializeAttachedProject() {
+        lspProjectInitialize(this, project)
+    }
+
     open fun fetchCustomization(): JsonObject? {
         logIfBlockingOperationOnEdt("fetchCustomization")
         customizationCache?.let { return it }
-        if (!isWorking) {
-            val direct = getCustomizationDirectly()
-            customizationCache = direct
-            return direct
+        if (baseUrlOrNull() == null) {
+            ensureStartedIfNeeded("fetch-customization")
         }
         val server = fetchCustomizationFromServer()
         customizationCache = server
         return server
     }
 
-    fun fetchCustomizationDirectly(): JsonObject? {
-        logIfBlockingOperationOnEdt("fetchCustomizationDirectly")
-        val direct = getCustomizationDirectly()
-        customizationCache = direct
-        return direct
-    }
-
     fun getCachedCustomization(): JsonObject? {
         return customizationCache
     }
 
+    private fun shouldWakeAndRetry(error: Throwable?): Boolean {
+        return isRecoverableHttpStatus(error)
+    }
+
+    protected open fun sleepBeforeWakeRetry(attempt: Int) {
+        Thread.sleep((attempt * 100L).coerceAtMost(300L))
+    }
+
+    fun wakeWorkerForRetry(reason: String): Boolean {
+        val root = projectRootPath() ?: run {
+            clearAttachedProjectState(preserveConfig = true, detach = false)
+            setBackendConnectionStatus(LSPBackendConnectionStatus.FAILED)
+            return false
+        }
+        val config = lastConfig ?: currentConfig()
+        if (!config.isValid) {
+            clearAttachedProjectState(preserveConfig = false, detach = false)
+            setBackendConnectionStatus(LSPBackendConnectionStatus.FAILED)
+            return false
+        }
+        return try {
+            logger.debug("LSP daemon wake retry: $reason")
+            setBackendConnectionStatus(LSPBackendConnectionStatus.STARTING)
+            if (compatibleDaemonStatusOrNull() == null) {
+                val bin = binaryPathForDaemon() ?: run {
+                    clearAttachedProjectState(preserveConfig = true, detach = false)
+                    setBackendConnectionStatus(LSPBackendConnectionStatus.FAILED)
+                    return false
+                }
+                daemonClient.ensureDaemon(bin)
+            }
+            attachedProject = daemonClient.openProject(root, config)
+            lastConfig = config
+            isWorking = true
+            refreshAttachedWorkerState()
+            initializeAttachedProject()
+            setBackendConnectionStatus(LSPBackendConnectionStatus.READY)
+            resetHealthBackoff()
+            true
+        } catch (e: Exception) {
+            logger.warn("LSP wake retry failed: ${e.message}")
+            clearAttachedProjectState(preserveConfig = true, detach = true)
+            setBackendConnectionStatus(LSPBackendConnectionStatus.FAILED)
+            deferHealthRetry()
+            false
+        }
+    }
+
+    private fun <T> withWakeRetry(reason: String, block: () -> T?): T? {
+        repeat(3) { attempt ->
+            try {
+                return block()
+            } catch (e: Exception) {
+                logger.warn("LSP $reason error ${e.message}")
+                if (attempt < 2 && shouldWakeAndRetry(e)) {
+                    if (!wakeWorkerForRetry("$reason-${attempt + 1}")) return null
+                    sleepBeforeWakeRetry(attempt + 1)
+                } else {
+                    return null
+                }
+            }
+        }
+        return null
+    }
+
     private fun fetchCustomizationFromServer(): JsonObject? {
-        val baseUrl = baseUrlOrNull() ?: return null
-        try {
-            val config = InferenceGlobalContext.connection.get(baseUrl.resolve("/v1/customization"), dataReceiveEnded = {
+        return withWakeRetry("customization-http") {
+            val baseUrl = baseUrlOrNull() ?: return@withWakeRetry null
+            val config = InferenceGlobalContext.connection.get(baseUrl.resolve("v1/customization"), dataReceiveEnded = {
                 InferenceGlobalContext.status = ConnectionStatus.CONNECTED
                 InferenceGlobalContext.lastErrorMsg = null
             }, errorDataReceived = {}, failedDataReceiveEnded = {
@@ -560,10 +562,7 @@ open class LSPProcessHolder(val project: Project) : Disposable {
                     InferenceGlobalContext.lastErrorMsg = it.message
                 }
             }).join().get()
-            return Gson().fromJson(config as String, JsonObject::class.java)
-        } catch (e: Exception) {
-            logger.warn("LSP fetchCustomization error " + e.message)
-            return null
+            Gson().fromJson(config as String, JsonObject::class.java)
         }
     }
 
@@ -608,80 +607,90 @@ open class LSPProcessHolder(val project: Project) : Disposable {
                     ragStatusCheckerScheduler.schedule({ lspRagStatusSync() }, 5000, TimeUnit.MILLISECONDS)
                 }
             } catch (_: Exception) {
-                // scheduler shut down between check and schedule, ignore
             }
         }
     }
 
-
-    private fun safeTerminate() {
-        val port = lastConfig?.port ?: return
-        runCatching {
-            InferenceGlobalContext.connection.get(URI("http://127.0.0.1:$port/v1/graceful-shutdown")).get()?.get()
+    private fun closeAttachedProject() {
+        val projectToClose = attachedProject ?: return
+        try {
+            daemonClient.detachProject(projectToClose)
+        } catch (e: Exception) {
+            logger.warn("LSP daemon project close failed: ${e.message}")
         }
     }
 
-    private fun terminate() {
-        if (!isDisposed) {
-            logIfBlockingOperationOnEdt("terminate")
+    private fun clearAttachedProjectState(preserveConfig: Boolean, detach: Boolean) {
+        if (detach) {
+            closeAttachedProject()
         }
         isWorking = false
-        val p = process ?: return
-        process = null
-        try {
-            safeTerminate()
-            if (!p.waitFor(3, TimeUnit.SECONDS)) {
-                p.destroy()
-                if (!p.waitFor(2, TimeUnit.SECONDS)) {
-                    p.destroyForcibly()
-                }
-            }
-        } catch (e: Exception) {
-            logger.debug("Exception during LSP terminate", e)
-            runCatching { p.destroyForcibly() }
-        } finally {
+        attachedProject = null
+        if (!preserveConfig) {
             lastConfig = null
         }
     }
 
+    protected open fun probeAttachedWorker(): Boolean {
+        val base = baseUrlOrNull() ?: return false
+        return runCatching {
+            InferenceGlobalContext.connection.get(base.resolve("v1/build_info")).join().get()
+        }.isSuccess
+    }
+
+    protected open fun healthNowMs(): Long {
+        return System.currentTimeMillis()
+    }
+
+    private fun resetHealthBackoff() {
+        healthBackoffMs = 1_000L
+        nextHealthCheckAtMs = 0L
+    }
+
+    private fun deferHealthRetry() {
+        nextHealthCheckAtMs = healthNowMs() + healthBackoffMs
+        healthBackoffMs = (healthBackoffMs * 2).coerceAtMost(30_000L)
+    }
+
+    private fun terminate(
+        newStatus: LSPBackendConnectionStatus = LSPBackendConnectionStatus.CONNECTING,
+        preserveConfig: Boolean = false,
+    ) {
+        if (!isDisposed) {
+            logIfBlockingOperationOnEdt("terminate")
+        }
+        setBackendConnectionStatus(newStatus)
+        clearAttachedProjectState(preserveConfig = preserveConfig, detach = false)
+    }
+
     override fun dispose() {
-        // Set the disposed flag to prevent race conditions
         isDisposed = true
 
-        // Shutdown all schedulers and terminate the process
         try {
             ragStatusCheckerScheduler.shutdown()
+            closeAttachedProject()
             terminate()
             healthCheckerScheduler.shutdown()
             lifecycleScheduler.shutdown()
-            loggerScheduler.shutdown()
             Runtime.getRuntime().removeShutdownHook(exitThread)
         } catch (e: Exception) {
-            // Log any exceptions during disposal but don't let them propagate
             logger.warn("Exception during LSPProcessHolder disposal: ${e.message}")
         }
     }
 
     private fun getBuildInfo(): String {
         logIfBlockingOperationOnEdt("getBuildInfo")
-        var res = ""
-        InferenceGlobalContext.connection.get(url.resolve("/build_info"), dataReceiveEnded = {
-            InferenceGlobalContext.status = ConnectionStatus.CONNECTED
-            InferenceGlobalContext.lastErrorMsg = null
-        }, errorDataReceived = {}, failedDataReceiveEnded = {
-            InferenceGlobalContext.status = ConnectionStatus.ERROR
-            if (it != null) {
-                InferenceGlobalContext.lastErrorMsg = it.message
-            }
-        }).also {
-            try {
-                res = it.get().get() as String
-                logger.warn("build_info request finished")
-            } catch (e: Exception) {
-                logger.warn("build_info ${e.message}")
-            }
-        }
-        return res
+        return withWakeRetry("build-info") {
+            InferenceGlobalContext.connection.get(url.resolve("v1/build_info"), dataReceiveEnded = {
+                InferenceGlobalContext.status = ConnectionStatus.CONNECTED
+                InferenceGlobalContext.lastErrorMsg = null
+            }, errorDataReceived = {}, failedDataReceiveEnded = {
+                InferenceGlobalContext.status = ConnectionStatus.ERROR
+                if (it != null) {
+                    InferenceGlobalContext.lastErrorMsg = it.message
+                }
+            }).get().get() as String
+        } ?: ""
     }
 
     open val url: URI
@@ -691,97 +700,54 @@ open class LSPProcessHolder(val project: Project) : Disposable {
         }
 
     open fun baseUrlOrNull(): URI? {
-        val debugPort = InferenceGlobalContext.xDebugLSPPort
-        if (debugPort != null && debugPort > 0) {
-            return URI("http://127.0.0.1:${debugPort}/")
-        }
-
-        if (!isWorking || process?.isAlive != true) return null
-
-        val port = lastConfig?.port ?: return null
-        if (port <= 0) return null
-        return URI("http://127.0.0.1:${port}/")
+        if (!isWorking) return null
+        return attachedProject?.baseUrl
     }
 
     open fun getCaps(): LSPCapabilities {
         logIfBlockingOperationOnEdt("getCaps")
-        var res = LSPCapabilities()
-        InferenceGlobalContext.connection.get(url.resolve("/v1/caps"), dataReceiveEnded = {
-            InferenceGlobalContext.status = ConnectionStatus.CONNECTED
-            InferenceGlobalContext.lastErrorMsg = null
-        }, errorDataReceived = {}, failedDataReceiveEnded = {
-            if (it != null) {
-                InferenceGlobalContext.lastErrorMsg = it.message
-            }
-        }).also {
-            val requestFuture: ComplexFuture<*>?
-            try {
-                requestFuture = it.get() as ComplexFuture
-                val out = requestFuture.get()
-                logger.debug("LSP caps_received $out")
-                val gson = Gson()
-                res = gson.fromJson(out as String, LSPCapabilities::class.java)
-                logger.debug("caps_received request finished")
-            } catch (e: Exception) {
-                logger.debug("caps_received ${e.message}")
-            }
-            return res
-        }
+        return withWakeRetry("caps") {
+            val out = InferenceGlobalContext.connection.get(url.resolve("v1/caps"), dataReceiveEnded = {
+                InferenceGlobalContext.status = ConnectionStatus.CONNECTED
+                InferenceGlobalContext.lastErrorMsg = null
+            }, errorDataReceived = {}, failedDataReceiveEnded = {
+                if (it != null) {
+                    InferenceGlobalContext.lastErrorMsg = it.message
+                }
+            }).get().get() as String
+            Gson().fromJson(out, LSPCapabilities::class.java)
+        } ?: LSPCapabilities()
     }
 
     fun getRagStatus(): RagStatus? {
         logIfBlockingOperationOnEdt("getRagStatus")
-        InferenceGlobalContext.connection.get(url.resolve("/v1/rag-status"),
-            requestProperties = mapOf("redirect" to "follow", "cache" to "no-cache", "referrer" to "no-referrer"),
-            dataReceiveEnded = {
-                InferenceGlobalContext.status = ConnectionStatus.CONNECTED
-                InferenceGlobalContext.lastErrorMsg = null
-            },
-            errorDataReceived = {},
-            failedDataReceiveEnded = {
-                InferenceGlobalContext.status = ConnectionStatus.ERROR
-                if (it != null) {
-                    InferenceGlobalContext.lastErrorMsg = it.message
-                }
-            }).also {
-            val requestFuture: ComplexFuture<*>?
-            try {
-                requestFuture = it.get() as ComplexFuture
-                val out = requestFuture.get()
-                val gson = Gson()
-                return gson.fromJson(out as String, RagStatus::class.java)
-            } catch (e: Exception) {
-                InferenceGlobalContext.status = ConnectionStatus.ERROR
-                InferenceGlobalContext.lastErrorMsg = e.message
-                return null
-            }
+        return withWakeRetry("rag-status") {
+            val out = InferenceGlobalContext.connection.get(url.resolve("v1/rag-status"),
+                requestProperties = mapOf("redirect" to "follow", "cache" to "no-cache", "referrer" to "no-referrer"),
+                dataReceiveEnded = {
+                    InferenceGlobalContext.status = ConnectionStatus.CONNECTED
+                    InferenceGlobalContext.lastErrorMsg = null
+                },
+                errorDataReceived = {},
+                failedDataReceiveEnded = {
+                    InferenceGlobalContext.status = ConnectionStatus.ERROR
+                    if (it != null) {
+                        InferenceGlobalContext.lastErrorMsg = it.message
+                    }
+                }).get().get() as String
+            Gson().fromJson(out, RagStatus::class.java)
         }
     }
 
     fun attempingToReach(): String {
-        val xDebug = InferenceGlobalContext.xDebugLSPPort
-        if (xDebug != null) {
-            return "debug rust binary on ports $xDebug"
-        } else {
-            if (InferenceGlobalContext.inferenceUri != null) {
-                return InferenceGlobalContext.inferenceUri.toString()
-            }
-            return "<no-address-configured>"
-        }
+        val port = InferenceGlobalContext.xDebugLSPPort ?: DEFAULT_REFACT_DAEMON_PORT
+        return "Refact daemon on port $port"
     }
 
     companion object {
         @Volatile
         var BIN_PATH: String? = null
-        private var TMP_BIN_PATH: String? = null
-
-        private fun allocateFreePort(): Int? {
-            return try {
-                ServerSocket(0).use { it.localPort }
-            } catch (_: Exception) {
-                null
-            }
-        }
+        private var BIN_CACHE_DIR: Path = Path.of(PathManager.getSystemPath(), "refactai", "bin")
 
         @JvmStatic
         fun getInstance(project: Project): LSPProcessHolder = project.service()
@@ -790,138 +756,52 @@ open class LSPProcessHolder(val project: Project) : Disposable {
         private val initialized = AtomicBoolean(false)
         private val logger = Logger.getInstance("LSPProcessHolder")
 
-        private fun generateMD5HexAndWriteInTmpFile(input: InputStream, tmpFileName: File): String {
-            val digest = MessageDigest.getInstance("MD5")
-            val buffer = ByteArray(1024)
-            var bytesRead: Int
-            val fileOut = FileOutputStream(tmpFileName)
-            while (input.read(buffer).also { bytesRead = it } != -1) {
-                digest.update(buffer, 0, bytesRead)
-                fileOut.write(buffer, 0, bytesRead)
+        fun setBinaryCacheDirForTest(path: Path) {
+            BIN_CACHE_DIR = path
+            initialized.set(false)
+            BIN_PATH = null
+        }
+
+        fun resetBinaryResolution() {
+            initialized.set(false)
+            BIN_PATH = null
+        }
+
+        @Synchronized
+        fun binaryPathForDaemon(): String? {
+            if (ApplicationManager.getApplication().isUnitTestMode && BIN_PATH != null) {
+                return BIN_PATH
             }
-            fileOut.flush()
-            fileOut.close()
-            input.close()
-            return digest.digest().joinToString("") { String.format("%02x", it) }
+            BIN_PATH?.let { return it }
+            val resolvedPath = try {
+                RefactBinaryResolver.resolve(
+                    RefactBinaryResolverOptions(
+                        explicitPath = InferenceGlobalContext.refactBinaryPath,
+                        minVersion = Resources.version,
+                        pinnedVersion = Resources.version,
+                        cacheDir = BIN_CACHE_DIR,
+                    )
+                )
+            } catch (e: Exception) {
+                emitError("Refact binary is not available for host operating system: ${e.message}")
+                logger.warn("LSP binary resolution failed: ${e.message}", e)
+                return null
+            }
+            BIN_PATH = resolvedPath
+            logger.warn("LSP initialize BIN_PATH=$BIN_PATH")
+            return resolvedPath
         }
 
         @Synchronized
         fun initialize() {
             logger.warn("LSP initialize start")
             if (initialized.get()) return
-
-            val input: InputStream? = Companion::class.java.getResourceAsStream(
-                "/bin/${binPrefix}/refact-lsp${getExeSuffix()}"
-            )
-            if (input == null) {
-                emitError("LSP server is not found for host operating system, please contact support")
-                logger.warn("LSP initialize finished")
-                return
-            }
-            input.use {
-                val tmpFile = Path(getTempDirectory(), "${UUID.randomUUID()}${getExeSuffix()}").toFile()
-                val hash = try {
-                    generateMD5HexAndWriteInTmpFile(input, tmpFile)
-                } catch (e: Exception) {
-                    logger.warn("LSP initialize: failed to write temp binary: ${e.message}")
-                    tmpFile.delete()
-                    return
-                }
-
-                val targetName = ApplicationInfo.getInstance().build.toString()
-                    .replace(Regex("[^A-Za-z0-9 ]"), "_") + "_refact_lsp_${hash}${getExeSuffix()}"
-                val targetPath = Paths.get(getTempDirectory(), targetName)
-                val targetFile = targetPath.toFile()
-
-                var resolvedPath: String? = null
-
-                for (attempt in 1..5) {
-                    try {
-                        targetPath.parent.toFile().mkdirs()
-                        if (targetFile.exists()) {
-                            if (targetFile.canExecute()) {
-                                resolvedPath = targetFile.canonicalPath
-                                break
-                            }
-                            setExecutable(targetFile)
-                            if (targetFile.canExecute()) {
-                                resolvedPath = targetFile.canonicalPath
-                                break
-                            }
-                        }
-                        java.nio.file.Files.move(
-                            tmpFile.toPath(), targetPath,
-                            java.nio.file.StandardCopyOption.REPLACE_EXISTING
-                        )
-                        setExecutable(targetFile)
-                        if (targetFile.exists() && targetFile.canExecute()) {
-                            resolvedPath = targetFile.canonicalPath
-                            break
-                        }
-                        logger.warn("LSP initialize: move succeeded but binary not ready (attempt $attempt)")
-                    } catch (e: Exception) {
-                        logger.warn("LSP initialize: attempt $attempt failed to install binary: ${e.message}")
-                    }
-                }
-
-                if (resolvedPath == null) {
-                    setExecutable(tmpFile)
-                    if (tmpFile.exists() && tmpFile.canExecute()) {
-                        logger.warn("LSP initialize: using temp path as fallback")
-                        resolvedPath = tmpFile.canonicalPath
-                        TMP_BIN_PATH = resolvedPath
-                    } else {
-                        logger.warn("LSP initialize: binary could not be installed or made executable — giving up")
-                        tmpFile.delete()
-                        return
-                    }
-                } else {
-                    if (tmpFile.exists()) tmpFile.deleteOnExit()
-                }
-
-                BIN_PATH = resolvedPath
-                initialized.set(true)
-            }
+            initialized.set(true)
             logger.warn("LSP initialize finished")
-            logger.warn("LSP initialize BIN_PATH=$BIN_PATH")
         }
 
-        // run after close application
         fun cleanup() {
-
         }
 
-        fun getCustomizationDirectly(): JsonObject? {
-            if (BIN_PATH == null) {
-                return null
-            }
-            val process = GeneralCommandLine(listOf(BIN_PATH, "--print-customization")).withRedirectErrorStream(true)
-                .createProcess()
-            val isExit = process.waitFor(3, TimeUnit.SECONDS)
-            val out = process.inputStream.bufferedReader().use { it.readText() }
-            if (isExit) {
-                if (process.exitValue() != 0) {
-                    logger.warn("LSP bad_things_happened $out")
-                    return null
-                }
-            } else {
-                process.destroy()
-                return null
-            }
-            val trimmed = out.trim()
-            val jsonStart = trimmed.indexOf('{')
-            val jsonEnd = trimmed.lastIndexOf('}')
-            if (jsonStart < 0 || jsonEnd < 0 || jsonEnd <= jsonStart) {
-                logger.warn("LSP customization output does not contain valid JSON: $trimmed")
-                return null
-            }
-            val customizationStr = trimmed.substring(jsonStart, jsonEnd + 1)
-            return try {
-                Gson().fromJson(customizationStr, JsonObject::class.java)
-            } catch (e: Exception) {
-                logger.warn("LSP can not parse json string: ${e.message}")
-                null
-            }
-        }
     }
 }

@@ -137,6 +137,52 @@ describe("hasUsableEngineEndpoint", () => {
     ).toBe(true);
   });
 
+<<<<<<< HEAD
+=======
+  test("blocks non-ready IDE plugin endpoints even when URL and port are present", () => {
+    expect(
+      hasUsableEngineEndpoint({
+        host: "vscode",
+        lspPort: 8001,
+        browserUrl: "http://127.0.0.1:8001",
+        lspUrl: "http://127.0.0.1:8001",
+        backendReady: false,
+        connectionStatus: "starting",
+      }),
+    ).toBe(false);
+    expect(
+      hasUsableEngineEndpoint({
+        host: "jetbrains",
+        lspPort: 8001,
+        lspUrl: "http://127.0.0.1:8001",
+        backendReady: true,
+        connectionStatus: "installing",
+      }),
+    ).toBe(false);
+    expect(
+      hasUsableEngineEndpoint({
+        host: "vscode",
+        lspPort: 8001,
+        browserUrl: "http://127.0.0.1:8001",
+        lspUrl: "http://127.0.0.1:8001",
+        backendReady: false,
+        connectionStatus: "failed",
+      }),
+    ).toBe(false);
+  });
+
+  test("keeps ready IDE plugin config usable", () => {
+    expect(
+      hasUsableEngineEndpoint({
+        host: "vscode",
+        lspPort: 8001,
+        backendReady: true,
+        connectionStatus: "ready",
+      }),
+    ).toBe(true);
+  });
+
+>>>>>>> upstream/main
   test("requires a positive finite port for local IDE fallback", () => {
     expect(hasUsableEngineEndpoint({ host: "vscode", lspPort: 8001 })).toBe(
       true,

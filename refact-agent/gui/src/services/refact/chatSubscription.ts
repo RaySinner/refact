@@ -1,5 +1,14 @@
 import { buildApiUrl, type EngineApiConfig } from "./apiUrl";
+<<<<<<< HEAD
 import type { BackgroundAgentSummary, ChatMessage } from "./types";
+=======
+import type {
+  BackgroundAgentSummary,
+  ChatMessage,
+  GoalSnapshot,
+  GoalStatus,
+} from "./types";
+>>>>>>> upstream/main
 import type { WorktreeMeta } from "./worktrees";
 
 export type SessionState =
@@ -93,6 +102,14 @@ export type RuntimeState = {
   paused: boolean;
   error: string | null;
   queue_size: number;
+<<<<<<< HEAD
+=======
+  goal_active?: boolean;
+  goal_status?: GoalStatus | null;
+  goal_turns_used?: number;
+  goal_tokens_used?: number;
+  goal_no_progress_turns?: number;
+>>>>>>> upstream/main
   pause_reasons: PauseReason[];
   queued_items: QueuedItem[];
   is_compressing?: boolean;
@@ -154,6 +171,18 @@ export type EventEnvelope =
       runtime: RuntimeState;
       messages: ChatMessage[];
       background_agents: BackgroundAgentSummary[];
+<<<<<<< HEAD
+=======
+      goal?: GoalSnapshot | null;
+      browser?: {
+        runtime_id: string;
+        connected: boolean;
+        active_tab?: string | null;
+        url?: string | null;
+        title?: string | null;
+        tabs?: { tab_id: string; url: string; title: string }[];
+      } | null;
+>>>>>>> upstream/main
     }
   | {
       chat_id: string;
@@ -272,6 +301,14 @@ export type EventEnvelope =
       type: "runtime_updated";
       state: string;
       error?: string;
+<<<<<<< HEAD
+=======
+      goal_active?: boolean;
+      goal_status?: GoalStatus | null;
+      goal_turns_used?: number;
+      goal_tokens_used?: number;
+      goal_no_progress_turns?: number;
+>>>>>>> upstream/main
       is_compressing?: boolean;
       compression_phase?: CompressionPhase | null;
       compression_reason?: CompressionReason | null;
@@ -352,12 +389,22 @@ export type ChatSubscriptionCallbacks = {
 export type SubscriptionOptions = {
   connectTimeoutMs?: number;
   idleTimeoutMs?: number;
+<<<<<<< HEAD
+=======
+  maxBufferChars?: number;
+  maxEventChars?: number;
+>>>>>>> upstream/main
 };
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 15_000;
 const DEFAULT_IDLE_TIMEOUT_MS = 45_000;
+<<<<<<< HEAD
 const MAX_SSE_BUFFER_CHARS = 8_000_000;
 const MAX_SSE_EVENT_CHARS = 4_000_000;
+=======
+const DEFAULT_MAX_SSE_BUFFER_CHARS = 8_000_000;
+const DEFAULT_MAX_SSE_EVENT_CHARS = DEFAULT_MAX_SSE_BUFFER_CHARS;
+>>>>>>> upstream/main
 
 export function subscribeToChatEvents(
   chatId: string,
@@ -371,6 +418,11 @@ export function subscribeToChatEvents(
   const connectTimeoutMs =
     options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
   const idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
+<<<<<<< HEAD
+=======
+  const maxBufferChars = options.maxBufferChars ?? DEFAULT_MAX_SSE_BUFFER_CHARS;
+  const maxEventChars = options.maxEventChars ?? DEFAULT_MAX_SSE_EVENT_CHARS;
+>>>>>>> upstream/main
 
   const abortController = new AbortController();
   const state = { connected: false };
@@ -418,6 +470,15 @@ export function subscribeToChatEvents(
     callbacks.onError(new Error(message));
   };
 
+<<<<<<< HEAD
+=======
+  const abortWithTerminalError = (message: string): never => {
+    abortReason = message;
+    abortController.abort();
+    throw new Error(message);
+  };
+
+>>>>>>> upstream/main
   connectTimer = setTimeout(() => {
     if (!state.connected) {
       abortReason = abortReason ?? "SSE connect timeout";
@@ -461,10 +522,17 @@ export function subscribeToChatEvents(
           .replace(/\r/g, "\n");
         buffer += chunk;
 
+<<<<<<< HEAD
         if (buffer.length > MAX_SSE_BUFFER_CHARS) {
           abortReason = `SSE buffer exceeded ${MAX_SSE_BUFFER_CHARS} chars`;
           abortController.abort();
           break;
+=======
+        if (buffer.length > maxBufferChars) {
+          abortWithTerminalError(
+            `SSE buffer exceeded ${maxBufferChars} chars; reconnecting`,
+          );
+>>>>>>> upstream/main
         }
 
         const blocks = buffer.split("\n\n");
@@ -485,6 +553,7 @@ export function subscribeToChatEvents(
 
           const dataStr = dataLines.join("\n");
           if (dataStr === "[DONE]") continue;
+<<<<<<< HEAD
           if (dataStr.length > MAX_SSE_EVENT_CHARS) {
             if (process.env.NODE_ENV === "development") {
               // eslint-disable-next-line no-console
@@ -493,6 +562,12 @@ export function subscribeToChatEvents(
               );
             }
             continue;
+=======
+          if (dataStr.length > maxEventChars) {
+            abortWithTerminalError(
+              `SSE event exceeded ${maxEventChars} chars; reconnecting`,
+            );
+>>>>>>> upstream/main
           }
 
           try {
@@ -541,12 +616,28 @@ export function subscribeToChatEvents(
       if (error.name === "AbortError") {
         if (abortReason) {
           emitTerminalError(abortReason);
+<<<<<<< HEAD
+=======
+          abortReason = null;
+          disconnect(false);
+          return;
+>>>>>>> upstream/main
         }
         abortReason = null;
         disconnect(true);
         return;
       }
 
+<<<<<<< HEAD
+=======
+      if (abortReason) {
+        emitTerminalError(abortReason);
+        abortReason = null;
+        disconnect(false);
+        return;
+      }
+
+>>>>>>> upstream/main
       callbacks.onError(error);
       disconnect(false);
     });

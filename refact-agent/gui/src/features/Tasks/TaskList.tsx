@@ -1,5 +1,6 @@
 import React, { useCallback, useState } from "react";
 import {
+<<<<<<< HEAD
   Flex,
   Box,
   Text,
@@ -23,6 +24,28 @@ import {
 import { ChatLoading } from "../../components/ChatContent/ChatLoading";
 import { ScrollArea } from "../../components/ScrollArea";
 import { CloseButton } from "../../components/Buttons/Buttons";
+=======
+  ArrowLeft,
+  CheckCircle,
+  Circle,
+  CircleX,
+  Layers,
+  LoaderCircle,
+  Pause,
+  Plus,
+  Trash2,
+} from "lucide-react";
+import { ChatLoading } from "../../components/ChatContent/ChatLoading";
+import {
+  Button,
+  Card,
+  FieldTextarea,
+  FieldText,
+  Icon,
+  IconButton,
+  Badge,
+} from "../../components/ui";
+>>>>>>> upstream/main
 import { useAppDispatch } from "../../hooks";
 import { pop, push } from "../Pages/pagesSlice";
 import {
@@ -32,6 +55,7 @@ import {
   TaskMeta,
 } from "../../services/refact/tasks";
 import { openTask } from "./tasksSlice";
+<<<<<<< HEAD
 
 const statusColors: Record<
   TaskMeta["status"],
@@ -43,6 +67,9 @@ const statusColors: Record<
   completed: "green",
   abandoned: "red",
 };
+=======
+import styles from "./Tasks.module.css";
+>>>>>>> upstream/main
 
 const statusLabels: Record<TaskMeta["status"], string> = {
   planning: "Planning",
@@ -52,20 +79,42 @@ const statusLabels: Record<TaskMeta["status"], string> = {
   abandoned: "Abandoned",
 };
 
+<<<<<<< HEAD
+=======
+const statusTones: Record<
+  TaskMeta["status"],
+  React.ComponentProps<typeof Badge>["tone"]
+> = {
+  planning: "muted",
+  active: "accent",
+  paused: "warning",
+  completed: "success",
+  abandoned: "danger",
+};
+
+>>>>>>> upstream/main
 interface TaskItemProps {
   task: TaskMeta;
   onClick: () => void;
   onDelete: () => void;
 }
 
+<<<<<<< HEAD
 const TaskItem: React.FC<TaskItemProps> = ({ task, onClick, onDelete }) => {
   const dateUpdated = new Date(task.updated_at);
   const dateTimeString = dateUpdated.toLocaleString();
   const plannerState = task.planner_session_state;
+=======
+function taskStatusIcon(
+  task: TaskMeta,
+  plannerState: TaskMeta["planner_session_state"],
+) {
+>>>>>>> upstream/main
   const isPlannerWorking =
     plannerState === "generating" || plannerState === "executing_tools";
   const isPlannerPaused =
     plannerState === "paused" || plannerState === "waiting_ide";
+<<<<<<< HEAD
   const isPlannerError = plannerState === "error";
   const isCompleted = task.status === "completed";
   const isFailed = task.status === "abandoned";
@@ -205,6 +254,84 @@ const TaskItem: React.FC<TaskItemProps> = ({ task, onClick, onDelete }) => {
         />
       </Flex>
     </Box>
+=======
+
+  if (isPlannerWorking)
+    return { icon: LoaderCircle, tone: "accent" as const, spin: true };
+  if (isPlannerPaused) return { icon: Pause, tone: "warning" as const };
+  if (plannerState === "error")
+    return { icon: CircleX, tone: "danger" as const };
+  if (task.status === "completed")
+    return { icon: CheckCircle, tone: "success" as const };
+  if (task.status === "abandoned")
+    return { icon: CircleX, tone: "danger" as const };
+  return { icon: Circle, tone: "muted" as const };
+}
+
+const TaskItem: React.FC<TaskItemProps> = ({ task, onClick, onDelete }) => {
+  const dateUpdated = new Date(task.updated_at);
+  const dateTimeString = dateUpdated.toLocaleString();
+  const statusIcon = taskStatusIcon(task, task.planner_session_state);
+
+  return (
+    <Card animated="rise" className={styles.taskItem} interactive>
+      <button
+        className={`${styles.taskItemButton} rf-pressable`}
+        type="button"
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onClick();
+        }}
+      >
+        <span className={styles.taskItemHeader}>
+          <span className={styles.taskItemTitleGroup}>
+            <span className={statusIcon.spin ? styles.taskSpinner : undefined}>
+              <Icon icon={statusIcon.icon} size="md" tone={statusIcon.tone} />
+            </span>
+            <span className={styles.taskItemTitle}>{task.name}</span>
+            <Badge tone={statusTones[task.status]}>
+              {statusLabels[task.status]}
+            </Badge>
+          </span>
+          <IconButton
+            aria-label="delete task"
+            icon={Trash2}
+            size="sm"
+            variant="ghost"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onDelete();
+            }}
+          />
+        </span>
+
+        <span className={styles.taskItemMetaRow}>
+          <span className={styles.taskItemMetaGroup}>
+            <span className={styles.taskItemMeta}>
+              <Icon icon={Layers} size="sm" tone="muted" />
+              {task.cards_done}/{task.cards_total}
+              {task.cards_failed > 0 && (
+                <span className={styles.taskItemDanger}>
+                  ({task.cards_failed} failed)
+                </span>
+              )}
+            </span>
+            {task.agents_active > 0 && (
+              <span className={styles.taskItemMetaAccent}>
+                <span className={styles.taskSpinner}>
+                  <Icon icon={LoaderCircle} size="sm" tone="accent" />
+                </span>
+                {task.agents_active} agent{task.agents_active > 1 ? "s" : ""}
+              </span>
+            )}
+          </span>
+          <span className={styles.taskItemDate}>{dateTimeString}</span>
+        </span>
+      </button>
+    </Card>
+>>>>>>> upstream/main
   );
 };
 
@@ -246,9 +373,13 @@ export const TaskList: React.FC<TaskListProps> = ({ backFromTasks }) => {
         dispatch(openTask({ id: task.id, name: task.name }));
         dispatch(push({ name: "task workspace", taskId: task.id }));
       })
+<<<<<<< HEAD
       .catch(() => {
         // Error handling via RTK Query
       });
+=======
+      .catch(() => undefined);
+>>>>>>> upstream/main
   }, [createTask, dispatch, newTaskName, newTaskTargetFiles]);
 
   const handleTaskClick = useCallback(
@@ -267,10 +398,17 @@ export const TaskList: React.FC<TaskListProps> = ({ backFromTasks }) => {
   );
 
   const handleKeyDown = useCallback(
+<<<<<<< HEAD
     (e: React.KeyboardEvent) => {
       if (e.key === "Enter") {
         handleCreateTask();
       } else if (e.key === "Escape") {
+=======
+    (event: React.KeyboardEvent) => {
+      if (event.key === "Enter") {
+        handleCreateTask();
+      } else if (event.key === "Escape") {
+>>>>>>> upstream/main
         setIsCreating(false);
         setNewTaskName("");
         setNewTaskTargetFiles("");
@@ -284,6 +422,7 @@ export const TaskList: React.FC<TaskListProps> = ({ backFromTasks }) => {
   }
 
   return (
+<<<<<<< HEAD
     <Flex direction="column" style={{ height: "100%" }} p="4" gap="4">
       <Flex justify="between" align="center">
         <Flex align="center" gap="3">
@@ -363,5 +502,89 @@ export const TaskList: React.FC<TaskListProps> = ({ backFromTasks }) => {
         </ScrollArea>
       </Box>
     </Flex>
+=======
+    <section className={styles.taskListRoot}>
+      <header className={styles.taskListHeader}>
+        <div className={styles.taskListTitleGroup}>
+          <IconButton
+            aria-label="Back to previous page"
+            icon={ArrowLeft}
+            size="sm"
+            variant="ghost"
+            title="Back"
+            onClick={handleBack}
+          />
+          <h2 className={styles.taskListTitle}>Tasks</h2>
+        </div>
+        {!isCreating && (
+          <Button
+            leftIcon={Plus}
+            size="sm"
+            variant="soft"
+            onClick={() => setIsCreating(true)}
+          >
+            New Task
+          </Button>
+        )}
+      </header>
+
+      {isCreating && (
+        <Card animated="rise" className={styles.taskCreateCard}>
+          <div className={styles.taskCreateRow}>
+            <FieldText
+              className={styles.taskCreateName}
+              placeholder="Task name..."
+              value={newTaskName}
+              onChange={setNewTaskName}
+              onKeyDown={handleKeyDown}
+              autoFocus
+            />
+            <Button
+              onClick={handleCreateTask}
+              disabled={!newTaskName.trim()}
+              variant="primary"
+            >
+              Create
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setIsCreating(false);
+                setNewTaskName("");
+                setNewTaskTargetFiles("");
+              }}
+            >
+              Cancel
+            </Button>
+          </div>
+          <FieldTextarea
+            aria-label="Target files"
+            placeholder="Target files (comma or newline separated)"
+            value={newTaskTargetFiles}
+            onChange={setNewTaskTargetFiles}
+          />
+        </Card>
+      )}
+
+      <div className={styles.taskListScroller}>
+        <div className={`${styles.taskListItems} rf-stagger`}>
+          {tasks.length === 0 ? (
+            <p className={styles.taskListEmpty}>
+              No tasks yet. Create one to start planning.
+            </p>
+          ) : (
+            tasks.map((task) => (
+              <TaskItem
+                key={task.id}
+                task={task}
+                onClick={() => handleTaskClick(task)}
+                onDelete={() => handleDeleteTask(task.id)}
+              />
+            ))
+          )}
+        </div>
+      </div>
+    </section>
+>>>>>>> upstream/main
   );
 };

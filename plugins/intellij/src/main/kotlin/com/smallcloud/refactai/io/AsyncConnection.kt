@@ -6,7 +6,6 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonSyntaxException
 import com.intellij.openapi.Disposable
 import com.intellij.util.text.findTextRange
-import com.smallcloud.refactai.struct.SMCExceptions
 import org.apache.hc.client5.http.async.methods.AbstractBinResponseConsumer
 import org.apache.hc.client5.http.async.methods.SimpleHttpRequest
 import org.apache.hc.client5.http.config.RequestConfig
@@ -21,6 +20,7 @@ import org.apache.hc.core5.http.message.BasicHeader
 import org.apache.hc.core5.http.nio.AsyncRequestProducer
 import org.apache.hc.core5.http.nio.entity.AsyncEntityProducers
 import org.apache.hc.core5.http.nio.support.BasicRequestProducer
+import org.apache.hc.core5.http.protocol.HttpContext
 import org.apache.hc.core5.http.ssl.TLS
 import org.apache.hc.core5.http.support.BasicRequestBuilder
 import org.apache.hc.core5.reactor.IOReactorConfig
@@ -37,13 +37,26 @@ import com.smallcloud.refactai.io.InferenceGlobalContext.Companion.instance as I
 
 private const val STREAMING_PREFIX = "data: "
 
+class HttpStatusException(
+    val statusCode: Int,
+    val responseBody: String,
+    val uri: URI,
+) : Exception("HTTP $statusCode from $uri: $responseBody")
+
+
 class AsyncConnection : Disposable {
     private val client: CloseableHttpAsyncClient = HttpAsyncClients.customHttp2()
         .setTlsStrategy(ClientTlsStrategyBuilder.create()
             .setSslContext(SSLContexts.custom().loadTrustMaterial(TrustSelfSignedStrategy()).build())
             .setTlsVersions(TLS.V_1_3, TLS.V_1_2)
             .build())
-        .setRetryStrategy(DefaultHttpRequestRetryStrategy(5, TimeValue.ofMilliseconds(50)))
+        .setRetryStrategy(
+            object : DefaultHttpRequestRetryStrategy(5, TimeValue.ofMilliseconds(50)) {
+                override fun retryRequest(response: HttpResponse, execCount: Int, context: HttpContext): Boolean {
+                    return false
+                }
+            }
+        )
         .evictIdleConnections(TimeValue.ofSeconds(10))
         .setIOReactorConfig(
             IOReactorConfig.custom()
@@ -152,6 +165,7 @@ class AsyncConnection : Disposable {
                 object : AbstractBinResponseConsumer<String>() {
                     private var bufferStr = ""
                     private var isStreaming = false
+                    private var statusCode = 0
                     override fun releaseResources() {
                     }
 
@@ -171,6 +185,9 @@ class AsyncConnection : Disposable {
 
                         val part = Charset.forName("UTF-8").decode(src)
                         bufferStr += part
+                        if (statusCode !in 200..299) {
+                            return
+                        }
                         if (part.startsWith(STREAMING_PREFIX)) {
                             isStreaming = true
                             try {
@@ -196,9 +213,16 @@ class AsyncConnection : Disposable {
                     }
 
                     override fun start(response: HttpResponse?, contentType: ContentType?) {
+                        statusCode = response?.code ?: 0
                     }
 
                     override fun buildResult(): String {
+                        if (statusCode !in 200..299) {
+                            val error = HttpStatusException(statusCode, bufferStr, uri)
+                            InferenceGlobalContext.status = ConnectionStatus.ERROR
+                            InferenceGlobalContext.lastErrorMsg = error.message
+                            throw error
+                        }
                         return bufferStr
                     }
 
@@ -213,6 +237,9 @@ class AsyncConnection : Disposable {
                         if (ex is java.net.SocketException ||
                             ex is java.net.UnknownHostException) {
                             InferenceGlobalContext.status = ConnectionStatus.DISCONNECTED
+                        } else {
+                            InferenceGlobalContext.status = ConnectionStatus.ERROR
+                            InferenceGlobalContext.lastErrorMsg = requestFailureMessage(ex)
                         }
                         failedDataReceiveEnded(ex)
                     }
@@ -225,6 +252,15 @@ class AsyncConnection : Disposable {
                 }
             )
         }
+    }
+
+
+    private fun requestFailureMessage(ex: Throwable?): String {
+        val chain = generateSequence(ex) { it.cause }
+        return chain.firstNotNullOfOrNull { it.message?.takeIf { message -> message.isNotBlank() } }
+            ?: generateSequence(ex) { it.cause }
+                .firstNotNullOfOrNull { it.javaClass.simpleName.takeIf { name -> name.isNotBlank() } }
+            ?: "Inference request failed"
     }
 
 

@@ -44,4 +44,8 @@ export * from "./useProvidersQuery";
 export * from "./useBrowserOnlineStatus";
 export * from "./useLoadMoreHistory";
 export * from "./useThinking";
+<<<<<<< HEAD
+=======
+export * from "./useReducedMotion";
+>>>>>>> upstream/main
 export * from "./useShiki";

@@ -2,11 +2,18 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Button,
   Dialog,
+<<<<<<< HEAD
   Flex,
   Select,
   Text,
   TextField,
 } from "@radix-ui/themes";
+=======
+  FieldSelect,
+  FieldStack,
+  FieldText,
+} from "../../../components/ui";
+>>>>>>> upstream/main
 
 import type { ProviderListItem } from "../../../services/refact";
 import {
@@ -128,8 +135,12 @@ export const AddProviderInstanceModal: React.FC<
   );
 
   const handleInstanceIdChange = useCallback(
+<<<<<<< HEAD
     (event: React.ChangeEvent<HTMLInputElement>) => {
       const nextId = event.target.value;
+=======
+    (nextId: string) => {
+>>>>>>> upstream/main
       setInstanceId(nextId);
       setIdTouched(true);
       if (!displayNameTouched) {
@@ -140,6 +151,7 @@ export const AddProviderInstanceModal: React.FC<
     [baseProvider, displayNameTouched],
   );
 
+<<<<<<< HEAD
   const handleDisplayNameChange = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => {
       setDisplayName(event.target.value);
@@ -148,6 +160,13 @@ export const AddProviderInstanceModal: React.FC<
     },
     [],
   );
+=======
+  const handleDisplayNameChange = useCallback((nextDisplayName: string) => {
+    setDisplayName(nextDisplayName);
+    setDisplayNameTouched(true);
+    setLocalError(null);
+  }, []);
+>>>>>>> upstream/main
 
   const handleSubmit = useCallback(async () => {
     const trimmedInstanceId = instanceId.trim();
@@ -212,6 +231,7 @@ export const AddProviderInstanceModal: React.FC<
   );
 
   return (
+<<<<<<< HEAD
     <Dialog.Root open={isOpen} onOpenChange={handleOpenChange}>
       <Dialog.Content className={styles.dialogContent}>
         <Dialog.Title>Add provider instance</Dialog.Title>
@@ -317,5 +337,89 @@ export const AddProviderInstanceModal: React.FC<
         </Flex>
       </Dialog.Content>
     </Dialog.Root>
+=======
+    <Dialog open={isOpen} onOpenChange={handleOpenChange}>
+      <Dialog.Content maxWidth="min(420px, calc(100vw - 2 * var(--rf-space-3)))">
+        <Dialog.Title>Add provider instance</Dialog.Title>
+        <Dialog.Description>
+          Create a blank provider configuration using an existing base provider.
+        </Dialog.Description>
+
+        <div className={styles.formStack}>
+          {baseOptions.length > 0 ? (
+            <FieldStack
+              label="Base provider"
+              htmlFor="provider-instance-base"
+              control={
+                <FieldSelect
+                  value={baseProvider}
+                  options={baseOptions.map((option) => ({
+                    value: option.id,
+                    label: option.label,
+                  }))}
+                  onChange={handleBaseProviderChange}
+                  disabled={isLoading}
+                />
+              }
+            />
+          ) : (
+            <div className={styles.errorText}>
+              No user-creatable base providers are available.
+            </div>
+          )}
+
+          <FieldStack
+            label="Instance id"
+            htmlFor="provider-instance-id"
+            helper={idValidation ?? "Use this id as the model prefix."}
+            error={idValidation}
+            control={
+              <FieldText
+                id="provider-instance-id"
+                value={instanceId}
+                onChange={handleInstanceIdChange}
+                disabled={isLoading || baseOptions.length === 0}
+                placeholder="openai_2"
+              />
+            }
+          />
+
+          <FieldStack
+            label="Display name"
+            htmlFor="provider-display-name"
+            error={displayNameValidation}
+            control={
+              <FieldText
+                id="provider-display-name"
+                value={displayName}
+                onChange={handleDisplayNameChange}
+                disabled={isLoading || baseOptions.length === 0}
+                placeholder="OpenAI 2"
+              />
+            }
+          />
+
+          {localError ? (
+            <div className={styles.errorText}>{localError}</div>
+          ) : null}
+        </div>
+
+        <div className={styles.dialogActions}>
+          <Dialog.Close asChild>
+            <Button variant="soft" disabled={isLoading}>
+              Cancel
+            </Button>
+          </Dialog.Close>
+          <Button
+            variant="primary"
+            onClick={() => void handleSubmit()}
+            disabled={!canSubmit}
+          >
+            {isLoading ? "Creating..." : "Create instance"}
+          </Button>
+        </div>
+      </Dialog.Content>
+    </Dialog>
+>>>>>>> upstream/main
   );
 };

@@ -118,7 +118,43 @@ pub struct ModelCapabilities {
 const MAX_REASONABLE_N_CTX: usize = 10_000_000;
 const MAX_REASONABLE_OUTPUT_TOKENS: usize = 1_000_000;
 
+pub const ANTHROPIC_CLOUD_TOKENIZER: &str = "anthropic";
+pub const CLAUDE_CLOUD_TOKENIZER_ALIAS: &str = "claude";
+pub const OPENAI_CLOUD_TOKENIZER: &str = "openai";
+
+pub fn is_predefined_cloud_tokenizer(tokenizer: &str) -> bool {
+    matches!(
+        tokenizer.trim().to_ascii_lowercase().as_str(),
+        ANTHROPIC_CLOUD_TOKENIZER | CLAUDE_CLOUD_TOKENIZER_ALIAS | OPENAI_CLOUD_TOKENIZER
+    )
+}
+
+pub fn predefined_cloud_tokenizer_for_model(
+    provider: &str,
+    model_id: &str,
+) -> Option<&'static str> {
+    let provider = provider.to_ascii_lowercase().replace('-', "_");
+    let model_id = model_id
+        .rsplit('/')
+        .next()
+        .unwrap_or(model_id)
+        .to_ascii_lowercase();
+
+    if model_id.starts_with("claude-") {
+        return Some(ANTHROPIC_CLOUD_TOKENIZER);
+    }
+
+    if matches!(provider.as_str(), "anthropic" | "claude_code") {
+        return Some(ANTHROPIC_CLOUD_TOKENIZER);
+    }
+
+    None
+}
+
 fn normalize_tokenizer(tokenizer: &str) -> String {
+    if is_predefined_cloud_tokenizer(tokenizer) {
+        return tokenizer.trim().to_ascii_lowercase();
+    }
     if tokenizer.is_empty()
         || tokenizer.starts_with("hf://")
         || tokenizer.starts_with("http://")
@@ -132,6 +168,28 @@ fn normalize_tokenizer(tokenizer: &str) -> String {
         return format!("hf://{}", tokenizer);
     }
     tokenizer.to_string()
+}
+
+pub fn default_tokenizer_for_model(provider: &str, model_id: &str) -> String {
+    predefined_cloud_tokenizer_for_model(provider, model_id)
+        .unwrap_or("fake")
+        .to_string()
+}
+
+pub fn normalize_tokenizer_or_default(provider: &str, model_id: &str, tokenizer: &str) -> String {
+    let normalized = normalize_tokenizer(tokenizer.trim());
+    if normalized.is_empty() {
+        default_tokenizer_for_model(provider, model_id)
+    } else {
+        normalized
+    }
+}
+
+fn provider_from_model_key(model_key: &str) -> &str {
+    model_key
+        .split_once('/')
+        .map(|(provider, _)| provider)
+        .unwrap_or("")
 }
 
 pub fn validate_model_caps(caps: &mut HashMap<String, ModelCapabilities>) {
@@ -153,7 +211,8 @@ pub fn validate_model_caps(caps: &mut HashMap<String, ModelCapabilities>) {
         if matches!(cap.caching, CachingType::Explicit) {
             cap.supports_cache_control = true;
         }
-        cap.tokenizer = normalize_tokenizer(&cap.tokenizer);
+        cap.tokenizer =
+            normalize_tokenizer_or_default(provider_from_model_key(name), name, &cap.tokenizer);
     }
 }
 
@@ -532,6 +591,78 @@ mod tests {
         assert_eq!(huge.n_ctx, MAX_REASONABLE_N_CTX);
         assert_eq!(huge.max_output_tokens, MAX_REASONABLE_OUTPUT_TOKENS);
         assert_eq!(huge.tokenizer, "hf://Qwen/Qwen3");
+    }
+
+    #[test]
+    fn validate_model_caps_preserves_predefined_cloud_tokenizer_names() {
+        let mut caps = HashMap::from([(
+            "claude".to_string(),
+            ModelCapabilities {
+                tokenizer: "Anthropic".to_string(),
+                ..Default::default()
+            },
+        )]);
+
+        validate_model_caps(&mut caps);
+
+        assert_eq!(
+            caps.get("claude").unwrap().tokenizer,
+            ANTHROPIC_CLOUD_TOKENIZER
+        );
+    }
+
+    #[test]
+    fn predefined_cloud_tokenizer_matches_explicit_openai_name() {
+        assert!(is_predefined_cloud_tokenizer("openai"));
+        assert!(is_predefined_cloud_tokenizer(" OpenAI "));
+    }
+
+    #[test]
+    fn validate_model_caps_migrates_missing_tokenizers_to_cloud_or_fake_defaults() {
+        let mut caps = HashMap::from([
+            (
+                "openai/gpt-4.1".to_string(),
+                ModelCapabilities {
+                    tokenizer: String::new(),
+                    ..Default::default()
+                },
+            ),
+            (
+                "anthropic/claude-sonnet-4-5".to_string(),
+                ModelCapabilities {
+                    tokenizer: String::new(),
+                    ..Default::default()
+                },
+            ),
+            (
+                "custom/unknown-model".to_string(),
+                ModelCapabilities {
+                    tokenizer: String::new(),
+                    ..Default::default()
+                },
+            ),
+        ]);
+
+        validate_model_caps(&mut caps);
+
+        assert_eq!(caps.get("openai/gpt-4.1").unwrap().tokenizer, "fake");
+        assert_eq!(
+            caps.get("anthropic/claude-sonnet-4-5").unwrap().tokenizer,
+            ANTHROPIC_CLOUD_TOKENIZER
+        );
+        assert_eq!(caps.get("custom/unknown-model").unwrap().tokenizer, "fake");
+    }
+
+    #[test]
+    fn predefined_cloud_tokenizer_matches_anthropic_model_families() {
+        assert_eq!(
+            predefined_cloud_tokenizer_for_model("anthropic", "claude-3-5-sonnet-latest"),
+            Some(ANTHROPIC_CLOUD_TOKENIZER)
+        );
+        assert_eq!(
+            predefined_cloud_tokenizer_for_model("ollama", "llama3"),
+            None
+        );
     }
 
     #[test]

@@ -1,6 +1,11 @@
 import React, { useCallback, useEffect, useState } from "react";
+<<<<<<< HEAD
 import { Button, Flex, Text } from "@radix-ui/themes";
 import { Cross1Icon } from "@radix-ui/react-icons";
+=======
+import { X } from "lucide-react";
+import { Button, IconButton } from "../../components/ui";
+>>>>>>> upstream/main
 import { CalloutFromTop } from "../../components/Callout/Callout";
 import { useGetSetupStatusQuery } from "../../services/refact/setupStatus";
 import { useAppDispatch } from "../../hooks/useAppDispatch";
@@ -60,6 +65,7 @@ export const SetupBanner: React.FC = () => {
 
   return (
     <CalloutFromTop>
+<<<<<<< HEAD
       <Flex direction={{ initial: "column", sm: "row" }} gap="3" align="center">
         <Text size="2" className={styles.text}>
           This project hasn&apos;t been set up for Refact yet. Run setup to
@@ -80,6 +86,26 @@ export const SetupBanner: React.FC = () => {
           </Button>
         </Flex>
       </Flex>
+=======
+      <div className={styles.content}>
+        <p className={styles.text}>
+          This project hasn&apos;t been set up for Refact yet. Run setup to
+          generate guidelines, integrations, and toolbox commands.
+        </p>
+        <div className={styles.actions}>
+          <Button size="sm" variant="primary" onClick={openSetupChat}>
+            Run Setup
+          </Button>
+          <IconButton
+            size="sm"
+            variant="ghost"
+            onClick={handleDismiss}
+            aria-label="Dismiss"
+            icon={X}
+          />
+        </div>
+      </div>
+>>>>>>> upstream/main
     </CalloutFromTop>
   );
 };

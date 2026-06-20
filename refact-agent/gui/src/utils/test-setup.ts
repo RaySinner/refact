@@ -15,6 +15,10 @@ type VirtuosoMockProps = {
     Header?: React.ComponentType;
     Scroller?: React.ComponentType<React.HTMLAttributes<HTMLDivElement>>;
     List?: React.ComponentType<React.HTMLAttributes<HTMLDivElement>>;
+<<<<<<< HEAD
+=======
+    Item?: React.ComponentType<React.HTMLAttributes<HTMLDivElement>>;
+>>>>>>> upstream/main
     Footer?: React.ComponentType;
   };
 };
@@ -53,6 +57,30 @@ vi.mock("react-virtuoso", async () => {
         );
       },
     ),
+<<<<<<< HEAD
+=======
+    VirtuosoGrid: ReactModule.forwardRef<HTMLDivElement, VirtuosoMockProps>(
+      ({ data, itemContent, components, ...props }, _ref) => {
+        const calls =
+          ((globalThis as Record<string, unknown>).__VIRTUOSO_CALLS__ as
+            | unknown[]
+            | undefined) ?? [];
+        calls.push(props);
+        (globalThis as Record<string, unknown>).__VIRTUOSO_CALLS__ = calls;
+        return ReactModule.createElement(
+          components?.List ?? "div",
+          null,
+          ...(data ?? []).map((item, i) =>
+            ReactModule.createElement(
+              components?.Item ?? "div",
+              { key: i },
+              itemContent(i, item),
+            ),
+          ),
+        );
+      },
+    ),
+>>>>>>> upstream/main
   };
 });
 

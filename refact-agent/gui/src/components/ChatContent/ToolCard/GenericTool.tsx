@@ -1,14 +1,15 @@
+import { Settings } from "lucide-react";
 import React, { useMemo } from "react";
-import { GearIcon } from "@radix-ui/react-icons";
 import { Box } from "@radix-ui/themes";
 import { ToolCard, ToolStatus } from "./ToolCard";
 import { useStoredOpen } from "../useStoredOpen";
 import { useAppSelector } from "../../../hooks";
 import {
-  selectToolResultById,
-  selectIsStreaming,
-  selectIsWaiting,
+  selectToolResultByThreadAndId,
+  selectIsStreamingById,
+  selectIsWaitingById,
 } from "../../../features/Chat/Thread/selectors";
+import { useThreadId } from "../../../features/Chat/Thread";
 import type { ToolCall } from "../../../services/refact/types";
 import { ShikiCodeBlock } from "../../Markdown";
 import { Markdown } from "../../Markdown";
@@ -25,14 +26,29 @@ function formatArgs(argsStr: string): string {
     const entries = Object.entries(args);
     if (entries.length === 0) return "";
     return entries
-      .map(([k, v]) => {
-        const valueStr = typeof v === "string" ? v : JSON.stringify(v);
-        return `${k}=${valueStr}`;
+      .map(([key, value]) => {
+        const valueStr =
+          typeof value === "string" ? value : JSON.stringify(value);
+        return [key, valueStr].join("=");
       })
       .join(", ");
   } catch {
     return argsStr;
   }
+}
+
+function formatRawArgs(argsStr: string): string {
+  try {
+    return JSON.stringify(JSON.parse(argsStr) as unknown, null, 2);
+  } catch {
+    return argsStr;
+  }
+}
+
+function truncatePreview(text: string, maxLength = 120): string {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLength) return normalized;
+  return normalized.slice(0, maxLength - 1).concat("…");
 }
 
 function looksLikeMarkdown(text: string): boolean {
@@ -50,11 +66,16 @@ function looksLikeMarkdown(text: string): boolean {
 export const GenericTool: React.FC<GenericToolProps> = ({ toolCall }) => {
   const storeKey = toolCall.id ? `tc:${toolCall.id}` : undefined;
   const [isOpen, handleToggle] = useStoredOpen(storeKey);
-  const isStreaming = useAppSelector(selectIsStreaming);
-  const isWaiting = useAppSelector(selectIsWaiting);
+  const threadId = useThreadId();
+  const isStreaming = useAppSelector((state) =>
+    selectIsStreamingById(state, threadId),
+  );
+  const isWaiting = useAppSelector((state) =>
+    selectIsWaitingById(state, threadId),
+  );
 
   const maybeResult = useAppSelector((state) =>
-    selectToolResultById(state, toolCall.id),
+    selectToolResultByThreadAndId(state, threadId, toolCall.id),
   );
 
   const status: ToolStatus = useMemo(() => {
@@ -76,7 +97,11 @@ export const GenericTool: React.FC<GenericToolProps> = ({ toolCall }) => {
       : null;
 
   const toolName = toolCall.function.name ?? "tool";
-  const argsPreview = formatArgs(toolCall.function.arguments);
+  const argsPreview = truncatePreview(formatArgs(toolCall.function.arguments));
+  const rawArgs = useMemo(
+    () => formatRawArgs(toolCall.function.arguments),
+    [toolCall.function.arguments],
+  );
 
   const summary = useMemo(() => {
     const displayName = formatToolDisplayName(toolName);
@@ -97,22 +122,34 @@ export const GenericTool: React.FC<GenericToolProps> = ({ toolCall }) => {
     <>
       <span data-testid="generic-tool" hidden />
       <ToolCard
-        icon={<GearIcon />}
+        icon={<Settings />}
         summary={summary}
         status={status}
         isOpen={isOpen}
         onToggle={handleToggle}
         toolCall={toolCall}
       >
-        {content && (
+        <Box className={styles.section}>
+          <Box className={styles.sectionLabel}>Arguments</Box>
           <Box className={styles.resultContent}>
-            {shouldRenderMarkdown ? (
-              <Box className={styles.markdownContent}>
-                <Markdown>{content}</Markdown>
-              </Box>
-            ) : (
-              <ShikiCodeBlock showLineNumbers={false}>{content}</ShikiCodeBlock>
-            )}
+            <ShikiCodeBlock showLineNumbers={false}>{rawArgs}</ShikiCodeBlock>
+          </Box>
+        </Box>
+
+        {content && (
+          <Box className={styles.section}>
+            <Box className={styles.sectionLabel}>Result</Box>
+            <Box className={styles.resultContent}>
+              {shouldRenderMarkdown ? (
+                <Box className={styles.markdownContent}>
+                  <Markdown>{content}</Markdown>
+                </Box>
+              ) : (
+                <ShikiCodeBlock showLineNumbers={false}>
+                  {content}
+                </ShikiCodeBlock>
+              )}
+            </Box>
           </Box>
         )}
       </ToolCard>

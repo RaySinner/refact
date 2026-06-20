@@ -13,7 +13,7 @@ use refact_buddy_core::user_action::UserAction;
 use crate::files_correction::get_project_dirs;
 use crate::ext::hooks::HookEvent;
 use crate::ext::hooks_runner::{HookPayload, first_block_reason, get_project_dir_string, run_hooks};
-use crate::chat::internal_roles::mode_switch_event;
+use crate::chat::internal_roles::{self, mode_switch_event, EventSubkind};
 use crate::chat::plan_role;
 use crate::yaml_configs::customization_registry::get_mode_config;
 
@@ -21,6 +21,9 @@ use super::types::*;
 use super::browser_context;
 use super::content::parse_content_with_attachments;
 use super::generation::{start_generation, prepare_session_preamble_and_knowledge};
+use super::goal_verifier::{
+    should_verify_goal_on_done, verify_goal_before_completion, GoalCompletionGateOutcome,
+};
 use super::tools::{execute_tools_with_session, resolve_tool_call_aliases};
 use super::trajectories::{maybe_save_trajectory, maybe_save_trajectory_background};
 use crate::ext::slash_expand::expand_slash_command;
@@ -611,6 +614,130 @@ pub(crate) async fn add_mode_switch_event_and_plan_if_changed(
     true
 }
 
+fn epoch_ms_now() -> u64 {
+    Utc::now().timestamp_millis().max(0) as u64
+}
+
+fn goal_exists_including_pending(session: &ChatSession) -> bool {
+    session.goal.is_some()
+        || crate::chat::goal_role::current_base_goal(session).is_some()
+        || session
+            .post_tool_side_effects
+            .iter()
+            .any(|message| message.role == internal_roles::GOAL_ROLE)
+}
+
+fn goal_base_exists_including_pending(session: &ChatSession) -> bool {
+    crate::chat::goal_role::current_base_goal(session).is_some()
+        || session
+            .post_tool_side_effects
+            .iter()
+            .any(|message| message.role == internal_roles::GOAL_ROLE)
+}
+
+fn goal_delta_count_including_pending(session: &ChatSession) -> usize {
+    crate::chat::goal_role::goal_delta_events(session).len()
+        + session
+            .post_tool_side_effects
+            .iter()
+            .filter(|message| is_goal_delta_event(message))
+            .count()
+}
+
+fn update_goal_result(
+    seq: usize,
+    truncation: Option<internal_roles::PlanDeltaTruncation>,
+) -> serde_json::Value {
+    let Some(truncation) = truncation else {
+        return serde_json::json!({"seq": seq, "truncated": false});
+    };
+    serde_json::json!({
+        "seq": seq,
+        "truncated": true,
+        "original_chars": truncation.original_chars,
+        "kept_chars": truncation.kept_chars,
+    })
+}
+
+fn handle_set_goal_command(
+    session: &mut ChatSession,
+    content: String,
+) -> Result<serde_json::Value, String> {
+    if content.trim().is_empty() {
+        return Err("argument `content` must be non-empty".to_string());
+    }
+    if goal_exists_including_pending(session) {
+        return Err("goal already exists; use update_goal".to_string());
+    }
+    let current_mode =
+        crate::yaml_configs::customization_registry::map_legacy_mode_to_id(&session.thread.mode)
+            .to_string();
+    let report = session.install_goal(&current_mode, &content, true, GoalBudget::default());
+    session.add_message(internal_roles::event(
+        EventSubkind::SystemNotice,
+        "chat.command.set_goal",
+        serde_json::json!({"version": report.version}),
+        format!("Goal updated to v{}", report.version),
+    ));
+    Ok(serde_json::json!({
+        "version": report.version,
+        "supersedes": report.supersedes,
+    }))
+}
+
+fn handle_update_goal_command(
+    session: &mut ChatSession,
+    note: String,
+) -> Result<serde_json::Value, String> {
+    if note.trim().is_empty() {
+        return Err("argument `note` must be non-empty".to_string());
+    }
+    if !goal_base_exists_including_pending(session) {
+        return Err("no goal to update; call set_goal first".to_string());
+    }
+    let seq = goal_delta_count_including_pending(session) + 1;
+    let (delta, truncation) = internal_roles::goal_delta_with_truncation(
+        "chat.command.update_goal",
+        serde_json::json!({"seq": seq, "at_ms": epoch_ms_now()}),
+        note,
+    );
+    session.add_message(delta);
+    session.emit_goal_status();
+    Ok(update_goal_result(seq, truncation))
+}
+
+fn handle_goal_control_command(
+    session: &mut ChatSession,
+    action: String,
+) -> Result<serde_json::Value, String> {
+    if session.goal.is_none() {
+        return Err("no goal to control; call set_goal first".to_string());
+    }
+    let normalized = action.trim().to_ascii_lowercase();
+    let status = match normalized.as_str() {
+        "pause" => GoalStatus::Paused,
+        "resume" => GoalStatus::Active,
+        "stop" => GoalStatus::Stopped,
+        _ => return Err("goal_control action must be pause, resume, or stop".to_string()),
+    };
+    session.goal_set_status(status);
+    Ok(serde_json::json!({
+        "action": normalized,
+        "status": status,
+    }))
+}
+
+fn emit_goal_command_error(session: &mut ChatSession, error: String) {
+    let event = session.runtime_update_event(
+        SessionState::Error,
+        Some(error),
+        session.is_compressing,
+        session.compression_phase,
+        session.compression_reason,
+    );
+    session.emit(event);
+}
+
 #[derive(Clone)]
 pub struct WorktreeSetParamsUpdate {
     pub worktree: Option<WorktreeMeta>,
@@ -866,6 +993,48 @@ pub async fn process_command_queue(
         };
 
         match request.command {
+            ChatCommand::SetGoal { content } => {
+                let result = {
+                    let mut session = session_arc.lock().await;
+                    handle_set_goal_command(&mut session, content)
+                };
+                match result {
+                    Ok(_) => maybe_save_trajectory(app.clone(), session_arc.clone()).await,
+                    Err(error) => {
+                        warn!("SetGoal command rejected: {}", error);
+                        let mut session = session_arc.lock().await;
+                        emit_goal_command_error(&mut session, error);
+                    }
+                }
+            }
+            ChatCommand::UpdateGoal { note } => {
+                let result = {
+                    let mut session = session_arc.lock().await;
+                    handle_update_goal_command(&mut session, note)
+                };
+                match result {
+                    Ok(_) => maybe_save_trajectory(app.clone(), session_arc.clone()).await,
+                    Err(error) => {
+                        warn!("UpdateGoal command rejected: {}", error);
+                        let mut session = session_arc.lock().await;
+                        emit_goal_command_error(&mut session, error);
+                    }
+                }
+            }
+            ChatCommand::GoalControl { action } => {
+                let result = {
+                    let mut session = session_arc.lock().await;
+                    handle_goal_control_command(&mut session, action)
+                };
+                match result {
+                    Ok(_) => maybe_save_trajectory(app.clone(), session_arc.clone()).await,
+                    Err(error) => {
+                        warn!("GoalControl command rejected: {}", error);
+                        let mut session = session_arc.lock().await;
+                        emit_goal_command_error(&mut session, error);
+                    }
+                }
+            }
             ChatCommand::UserMessage {
                 mut content,
                 attachments,
@@ -1012,13 +1181,14 @@ pub async fn process_command_queue(
                     let mut session = session_arc.lock().await;
                     let compression_phase = session.compression_phase;
                     let compression_reason = session.compression_reason;
-                    session.emit(super::types::ChatEvent::RuntimeUpdated {
-                        state: super::types::SessionState::Error,
-                        error: Some(format!("Message blocked by hook: {}", reason)),
-                        is_compressing: false,
+                    let event = session.runtime_update_event(
+                        super::types::SessionState::Error,
+                        Some(format!("Message blocked by hook: {}", reason)),
+                        false,
                         compression_phase,
                         compression_reason,
-                    });
+                    );
+                    session.emit(event);
                     session.set_runtime_state(super::types::SessionState::Idle, None);
                     continue;
                 }
@@ -1273,13 +1443,14 @@ pub async fn process_command_queue(
                         let mut session = session_arc.lock().await;
                         let compression_phase = session.compression_phase;
                         let compression_reason = session.compression_reason;
-                        session.emit(ChatEvent::RuntimeUpdated {
-                            state: SessionState::Error,
-                            error: Some(e),
-                            is_compressing: false,
+                        let event = session.runtime_update_event(
+                            SessionState::Error,
+                            Some(e),
+                            false,
                             compression_phase,
                             compression_reason,
-                        });
+                        );
+                        session.emit(event);
                         session.set_runtime_state(SessionState::Idle, None);
                         continue;
                     }
@@ -1373,13 +1544,14 @@ pub async fn process_command_queue(
                         let mut session = session_arc.lock().await;
                         let compression_phase = session.compression_phase;
                         let compression_reason = session.compression_reason;
-                        session.emit(ChatEvent::RuntimeUpdated {
-                            state: SessionState::Error,
-                            error: Some(error),
-                            is_compressing: false,
+                        let event = session.runtime_update_event(
+                            SessionState::Error,
+                            Some(error),
+                            false,
                             compression_phase,
                             compression_reason,
-                        });
+                        );
+                        session.emit(event);
                         session.set_runtime_state(SessionState::Idle, None);
                     }
                 }
@@ -1678,8 +1850,35 @@ fn is_plan_delta_event(msg: &ChatMessage) -> bool {
             == Some("plan_delta")
 }
 
+fn is_goal_delta_event(msg: &ChatMessage) -> bool {
+    msg.role == "event"
+        && msg
+            .extra
+            .get("event")
+            .and_then(|event| event.get("subkind"))
+            .and_then(|subkind| subkind.as_str())
+            == Some("goal_delta")
+}
+
+fn is_goal_pursuit_event(msg: &ChatMessage) -> bool {
+    msg.role == "event"
+        && msg
+            .extra
+            .get("event")
+            .and_then(|event| event.get("subkind"))
+            .and_then(|subkind| subkind.as_str())
+            == Some("goal_pursuit")
+}
+
+fn is_goal_hidden_event(msg: &ChatMessage) -> bool {
+    is_goal_delta_event(msg) || is_goal_pursuit_event(msg)
+}
+
 fn hidden_role_extra(msg: &ChatMessage) -> serde_json::Map<String, serde_json::Value> {
-    if matches!(msg.role.as_str(), "plan" | "event" | "compression_report") {
+    if matches!(
+        msg.role.as_str(),
+        "plan" | "goal" | "event" | "compression_report"
+    ) {
         msg.extra.clone()
     } else {
         serde_json::Map::new()
@@ -1689,8 +1888,9 @@ fn hidden_role_extra(msg: &ChatMessage) -> serde_json::Map<String, serde_json::V
 fn is_allowed_for_restore(msg: &ChatMessage) -> bool {
     matches!(
         msg.role.as_str(),
-        "user" | "assistant" | "system" | "tool" | "plan" | "compression_report"
+        "user" | "assistant" | "system" | "tool" | "plan" | "goal" | "compression_report"
     ) || is_plan_delta_event(msg)
+        || is_goal_hidden_event(msg)
 }
 
 /// Sanitize message for restoring from external trajectory — strips tool_calls for security
@@ -1742,8 +1942,16 @@ fn sanitize_message_for_branch(msg: &ChatMessage) -> ChatMessage {
 fn is_allowed_for_branch(msg: &ChatMessage) -> bool {
     matches!(
         msg.role.as_str(),
-        "user" | "assistant" | "system" | "tool" | "context_file" | "plan" | "compression_report"
+        "user"
+            | "assistant"
+            | "system"
+            | "tool"
+            | "context_file"
+            | "plan"
+            | "goal"
+            | "compression_report"
     ) || is_plan_delta_event(msg)
+        || is_goal_hidden_event(msg)
 }
 
 async fn handle_tool_decisions(
@@ -1933,6 +2141,7 @@ async fn handle_tool_decisions(
         // Some tools (ask_questions/task_done/agent_finish) set abort_flag=true as part of
         // normal operation to stop further LLM generation.
         let mut final_state = SessionState::Idle;
+        let mut completion_trigger: Option<String> = None;
         for tool_call in &tool_calls_to_execute {
             let tool_name =
                 crate::llm::adapters::claude_code_compat::cc_normalize_internal_tool_name(
@@ -1940,8 +2149,14 @@ async fn handle_tool_decisions(
                 );
             match tool_name.as_str() {
                 "ask_questions" | "wait_agents" => final_state = SessionState::WaitingUserInput,
-                "task_done" => final_state = SessionState::Completed,
-                "agent_finish" => final_state = SessionState::Completed,
+                "task_done" | "finish" => {
+                    final_state = SessionState::Completed;
+                    completion_trigger = Some(tool_name.to_string());
+                }
+                "agent_finish" => {
+                    final_state = SessionState::Completed;
+                    completion_trigger = Some(tool_name.to_string());
+                }
                 _ => {}
             }
         }
@@ -1958,6 +2173,7 @@ async fn handle_tool_decisions(
                 .load(std::sync::atomic::Ordering::Relaxed)
         };
 
+        let mut verify_completion = false;
         {
             let mut session = session_arc.lock().await;
             for result_msg in tool_results {
@@ -1965,11 +2181,39 @@ async fn handle_tool_decisions(
             }
             session.drain_post_tool_side_effects();
             if tool_initiated_stop {
-                session.set_runtime_state(final_state, None);
+                if final_state == SessionState::Completed
+                    && completion_trigger.is_some()
+                    && should_verify_goal_on_done(&session)
+                {
+                    session.set_runtime_state(SessionState::ExecutingTools, None);
+                    verify_completion = true;
+                } else {
+                    session.set_runtime_state(final_state, None);
+                }
             } else if was_aborted {
                 session.set_runtime_state(SessionState::Idle, None);
             } else {
                 session.set_runtime_state(SessionState::Generating, None);
+            }
+        }
+
+        if verify_completion {
+            let trigger = completion_trigger.as_deref().unwrap_or("task_done");
+            match verify_goal_before_completion(app.clone(), session_arc.clone(), trigger).await {
+                GoalCompletionGateOutcome::Passthrough => {
+                    let mut session = session_arc.lock().await;
+                    session.set_runtime_state(SessionState::Completed, None);
+                }
+                GoalCompletionGateOutcome::Finalized => {}
+                GoalCompletionGateOutcome::Rearmed => {
+                    maybe_save_trajectory(app.clone(), session_arc.clone()).await;
+                    return;
+                }
+                GoalCompletionGateOutcome::BudgetExhausted(_) => {}
+                GoalCompletionGateOutcome::Aborted => {
+                    maybe_save_trajectory(app.clone(), session_arc.clone()).await;
+                    return;
+                }
             }
         }
 
@@ -3097,6 +3341,118 @@ mod tests {
         }
     }
 
+    fn make_goal_message(content: &str) -> ChatMessage {
+        crate::chat::internal_roles::goal("agent", 1, content, None, true, GoalBudget::default())
+    }
+
+    fn make_goal_event(content: &str, subkind: &str) -> ChatMessage {
+        let mut extra = serde_json::Map::new();
+        extra.insert(
+            "event".to_string(),
+            json!({
+                "subkind": subkind,
+                "source": "goal.test",
+                "payload": {"seq": 1},
+            }),
+        );
+        ChatMessage {
+            message_id: Uuid::new_v4().to_string(),
+            role: "event".to_string(),
+            content: ChatContent::SimpleText(content.to_string()),
+            extra,
+            ..Default::default()
+        }
+    }
+
+    fn drain_events(rx: &mut tokio::sync::broadcast::Receiver<Arc<String>>) -> Vec<ChatEvent> {
+        let mut events = Vec::new();
+        while let Ok(json) = rx.try_recv() {
+            let envelope: EventEnvelope = serde_json::from_str(&json).unwrap();
+            events.push(envelope.event);
+        }
+        events
+    }
+
+    #[test]
+    fn goal_budget_set_goal_command_installs_snapshot_and_runtime() {
+        let mut session = ChatSession::new("goal-command".to_string());
+        let mut rx = session.subscribe();
+
+        let result = handle_set_goal_command(&mut session, "Ship the pond".to_string()).unwrap();
+
+        assert_eq!(result, json!({"version": 1, "supersedes": null}));
+        let goal = session.goal.as_ref().unwrap();
+        assert_eq!(goal.content, "Ship the pond");
+        assert!(goal.active);
+        assert_eq!(goal.status, GoalStatus::Active);
+        assert_eq!(goal.progress.turns_used, 0);
+        assert_eq!(session.goal_status, Some(GoalStatus::Active));
+        assert!(drain_events(&mut rx).into_iter().any(|event| matches!(
+            event,
+            ChatEvent::RuntimeUpdated {
+                goal_active: true,
+                goal_status: Some(GoalStatus::Active),
+                ..
+            }
+        )));
+    }
+
+    #[test]
+    fn goal_budget_set_goal_command_rejects_when_exists() {
+        let mut session = ChatSession::new("goal-command".to_string());
+        handle_set_goal_command(&mut session, "First".to_string()).unwrap();
+
+        let error = handle_set_goal_command(&mut session, "Second".to_string()).unwrap_err();
+
+        assert_eq!(error, "goal already exists; use update_goal");
+        assert_eq!(session.goal.as_ref().unwrap().content, "First");
+    }
+
+    #[test]
+    fn goal_budget_update_goal_command_appends_delta_and_emits_runtime() {
+        let mut session = ChatSession::new("goal-command".to_string());
+        handle_set_goal_command(&mut session, "Base".to_string()).unwrap();
+        let mut rx = session.subscribe();
+
+        let result = handle_update_goal_command(&mut session, "Add tests".to_string()).unwrap();
+
+        assert_eq!(result, json!({"seq": 1, "truncated": false}));
+        assert_eq!(crate::chat::goal_role::goal_delta_events(&session).len(), 1);
+        assert_eq!(
+            session.goal.as_ref().unwrap().content,
+            "Base\n\n---\n\n## Goal updates\n\nAdd tests"
+        );
+        assert!(drain_events(&mut rx).into_iter().any(|event| matches!(
+            event,
+            ChatEvent::RuntimeUpdated {
+                goal_active: true,
+                goal_status: Some(GoalStatus::Active),
+                ..
+            }
+        )));
+    }
+
+    #[test]
+    fn goal_budget_goal_control_command_transitions_status() {
+        let mut session = ChatSession::new("goal-command".to_string());
+        handle_set_goal_command(&mut session, "Base".to_string()).unwrap();
+
+        let paused = handle_goal_control_command(&mut session, "pause".to_string()).unwrap();
+        assert_eq!(paused, json!({"action": "pause", "status": "paused"}));
+        assert_eq!(session.goal_status, Some(GoalStatus::Paused));
+        assert!(!session.goal_can_pursue());
+
+        let resumed = handle_goal_control_command(&mut session, "resume".to_string()).unwrap();
+        assert_eq!(resumed, json!({"action": "resume", "status": "active"}));
+        assert_eq!(session.goal_status, Some(GoalStatus::Active));
+        assert!(session.goal_can_pursue());
+
+        let stopped = handle_goal_control_command(&mut session, "stop".to_string()).unwrap();
+        assert_eq!(stopped, json!({"action": "stop", "status": "stopped"}));
+        assert_eq!(session.goal_status, Some(GoalStatus::Stopped));
+        assert!(!session.goal_can_pursue());
+    }
+
     #[test]
     fn restore_keeps_plan_role() {
         let plan = make_plan_message("base plan");
@@ -3107,6 +3463,31 @@ mod tests {
         assert_eq!(sanitized.content.content_text_only(), "base plan");
         assert_eq!(sanitized.preserve, Some(true));
         assert_eq!(sanitized.extra["plan"]["version"], json!(1));
+    }
+
+    #[test]
+    fn restore_keeps_goal_and_goal_events() {
+        let goal = make_goal_message("ship the frog");
+        let delta = make_goal_event("tighten acceptance", "goal_delta");
+        let pursuit = make_goal_event("verifying", "goal_pursuit");
+
+        for message in [&goal, &delta, &pursuit] {
+            assert!(is_allowed_for_restore(message));
+        }
+        let restored_goal = sanitize_message_for_restore(&goal);
+        let restored_delta = sanitize_message_for_restore(&delta);
+        let restored_pursuit = sanitize_message_for_restore(&pursuit);
+
+        assert_eq!(restored_goal.role, "goal");
+        assert_eq!(restored_goal.extra["goal"]["version"], json!(1));
+        assert_eq!(
+            restored_delta.extra["event"]["subkind"],
+            json!("goal_delta")
+        );
+        assert_eq!(
+            restored_pursuit.extra["event"]["subkind"],
+            json!("goal_pursuit")
+        );
     }
 
     #[test]
@@ -3134,5 +3515,37 @@ mod tests {
             json!("plan_delta")
         );
         assert_eq!(branched_delta.extra["event"]["payload"]["seq"], json!(2));
+    }
+
+    #[test]
+    fn branch_keeps_goal_and_goal_events() {
+        let goal = make_goal_message("base goal");
+        let delta = make_goal_event("update", "goal_delta");
+        let pursuit = make_goal_event("verifying", "goal_pursuit");
+        let other_event = crate::chat::internal_roles::event(
+            crate::chat::internal_roles::EventSubkind::SystemNotice,
+            "test",
+            json!({}),
+            "skip",
+        );
+
+        assert!(is_allowed_for_branch(&goal));
+        assert!(is_allowed_for_branch(&delta));
+        assert!(is_allowed_for_branch(&pursuit));
+        assert!(!is_allowed_for_branch(&other_event));
+        let branched_goal = sanitize_message_for_branch(&goal);
+        let branched_delta = sanitize_message_for_branch(&delta);
+        let branched_pursuit = sanitize_message_for_branch(&pursuit);
+
+        assert_eq!(branched_goal.role, "goal");
+        assert_eq!(branched_goal.extra["goal"]["version"], json!(1));
+        assert_eq!(
+            branched_delta.extra["event"]["subkind"],
+            json!("goal_delta")
+        );
+        assert_eq!(
+            branched_pursuit.extra["event"]["subkind"],
+            json!("goal_pursuit")
+        );
     }
 }

@@ -1,10 +1,11 @@
+import { Monitor, Image } from "lucide-react";
 import React, { useMemo } from "react";
-import { DesktopIcon, ImageIcon } from "@radix-ui/react-icons";
 import { Box, Flex } from "@radix-ui/themes";
 import { ToolCard, ToolStatus } from "./ToolCard";
 import { useStoredOpen } from "../useStoredOpen";
 import { useAppSelector } from "../../../hooks";
-import { selectToolResultById } from "../../../features/Chat/Thread/selectors";
+import { selectToolResultByThreadAndId } from "../../../features/Chat/Thread/selectors";
+import { useThreadId } from "../../../features/Chat/Thread";
 import { ToolCall } from "../../../services/refact/types";
 import type {
   BrowserActionResponse,
@@ -176,8 +177,9 @@ export const ChromeTool: React.FC<ChromeToolProps> = ({ toolCall }) => {
   const storeKey = toolCall.id ? `tc:${toolCall.id}` : undefined;
   const [isOpen, handleToggle] = useStoredOpen(storeKey);
 
+  const threadId = useThreadId();
   const maybeResult = useAppSelector((state) =>
-    selectToolResultById(state, toolCall.id),
+    selectToolResultByThreadAndId(state, threadId, toolCall.id),
   );
 
   const args = useMemo(
@@ -320,7 +322,7 @@ export const ChromeTool: React.FC<ChromeToolProps> = ({ toolCall }) => {
     );
   }, [typedArgs, stats, maybeResult, images]);
 
-  const icon = images.length > 0 ? <ImageIcon /> : <DesktopIcon />;
+  const icon = images.length > 0 ? <Image /> : <Monitor />;
 
   const typedStepsBlock = useMemo(() => {
     if (!typedArgs) return null;
@@ -349,9 +351,11 @@ export const ChromeTool: React.FC<ChromeToolProps> = ({ toolCall }) => {
       {typedStepsBlock && (
         <Box className={styles.section}>
           <Box className={styles.sectionLabel}>Request</Box>
-          <ShikiCodeBlock showLineNumbers={false}>
-            {typedStepsBlock}
-          </ShikiCodeBlock>
+          <Box className={styles.logContent}>
+            <ShikiCodeBlock showLineNumbers={false}>
+              {typedStepsBlock}
+            </ShikiCodeBlock>
+          </Box>
         </Box>
       )}
 

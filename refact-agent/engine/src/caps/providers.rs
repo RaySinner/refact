@@ -64,6 +64,10 @@ const PROVIDER_TEMPLATES: &[(&str, &str)] = &[
         include_str!("../yaml_configs/default_providers/ollama.yaml"),
     ),
     (
+        "opencode",
+        include_str!("../yaml_configs/default_providers/opencode.yaml"),
+    ),
+    (
         "openai",
         include_str!("../yaml_configs/default_providers/openai.yaml"),
     ),
@@ -896,6 +900,7 @@ mod tests {
                 embedding_size: 0,
                 rejection_threshold: 0.0,
                 embedding_batch: 0,
+                ..Default::default()
             },
             ..Default::default()
         };

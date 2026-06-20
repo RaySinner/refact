@@ -1,5 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+<<<<<<< HEAD
 import { Button, Dialog, Flex, Text, TextField } from "@radix-ui/themes";
+=======
+import { Button, Dialog, FieldText } from "../../components/ui";
+>>>>>>> upstream/main
 import { dialogNonInteractiveCloseHandlers } from "../../utils/dialogPointerClose";
 import styles from "./Worktrees.module.css";
 
@@ -77,6 +81,7 @@ export const CreateWorktreeModal: React.FC<CreateWorktreeModalProps> = ({
   }, [baseBranch, baseBranchSearchTouched, normalizedBaseOptions]);
 
   return (
+<<<<<<< HEAD
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Content
         className={styles.createDialog}
@@ -178,6 +183,98 @@ export const CreateWorktreeModal: React.FC<CreateWorktreeModalProps> = ({
         </Flex>
       </Dialog.Content>
     </Dialog.Root>
+=======
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <Dialog.Content className={styles.createDialog} maxWidth="420px">
+        <div {...dialogNonInteractiveCloseHandlers(() => onOpenChange(false))}>
+          <Dialog.Title>Create worktree</Dialog.Title>
+          <Dialog.Description>
+            Create a new git worktree and attach it to this chat.
+          </Dialog.Description>
+
+          <div className={styles.modalFields}>
+            <label className={styles.field} htmlFor="worktree-branch-name">
+              <span className={styles.labelText}>Branch name</span>
+              <FieldText
+                id="worktree-branch-name"
+                value={branchName}
+                placeholder={defaultBranch}
+                onChange={setBranchName}
+                disabled={isCreating}
+              />
+            </label>
+
+            <div className={styles.field}>
+              <span className={styles.labelText}>Base branch</span>
+              <span className={styles.helpText}>
+                Worktree will be created from this branch.
+              </span>
+              <div className={styles.branchPicker}>
+                <FieldText
+                  aria-label="Base branch"
+                  value={baseBranch}
+                  placeholder="Current branch unavailable"
+                  onFocus={() => {
+                    setBaseBranchSearchTouched(false);
+                    setBaseBranchPickerOpen(true);
+                  }}
+                  onBlur={() => {
+                    window.setTimeout(
+                      () => setBaseBranchPickerOpen(false),
+                      120,
+                    );
+                  }}
+                  onChange={(value) => {
+                    setBaseBranch(value);
+                    setBaseBranchSearchTouched(true);
+                    setBaseBranchPickerOpen(true);
+                  }}
+                  disabled={isCreating}
+                />
+                {baseBranchPickerOpen && filteredBaseOptions.length > 0 && (
+                  <div className={styles.branchOptions} role="listbox">
+                    {filteredBaseOptions.map((branch) => (
+                      <button
+                        key={branch}
+                        type="button"
+                        className={styles.branchOption}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => {
+                          setBaseBranch(branch);
+                          setBaseBranchSearchTouched(false);
+                          setBaseBranchPickerOpen(false);
+                        }}
+                      >
+                        {branch}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {error && <p className={styles.errorText}>{error}</p>}
+          </div>
+
+          <div className={styles.modalActions}>
+            <Dialog.Close asChild>
+              <Button variant="soft" disabled={isCreating}>
+                Cancel
+              </Button>
+            </Dialog.Close>
+            <Button
+              variant="primary"
+              onClick={() => void handleCreate()}
+              disabled={!canCreate}
+              loading={isCreating}
+            >
+              {isCreating ? "Creating..." : "Create"}
+            </Button>
+          </div>
+        </div>
+      </Dialog.Content>
+    </Dialog>
+>>>>>>> upstream/main
   );
 };
 

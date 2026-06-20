@@ -1,4 +1,5 @@
 .trigger {
+<<<<<<< HEAD
   display: flex;
   align-items: center;
   gap: var(--space-1);
@@ -10,10 +11,61 @@
   color: var(--gray-12);
   transition: background-color 0.15s ease;
   max-width: 220px;
+=======
+  display: inline-flex;
+  align-items: center;
+  max-width: var(--rf-nav-w);
+  min-width: 0;
+  padding: var(--rf-space-1) var(--rf-space-2);
+  border: var(--rf-hairline) solid transparent;
+  border-radius: var(--rf-radius-ctl);
+  background: transparent;
+  color: var(--rf-color-fg);
+  cursor: pointer;
+  transition:
+    background-color var(--rf-dur-fast) var(--rf-ease-standard),
+    border-color var(--rf-dur-fast) var(--rf-ease-standard),
+    color var(--rf-dur-fast) var(--rf-ease-standard),
+    transform var(--rf-dur-fast) var(--rf-ease-standard);
+}
+
+.trigger:focus-visible {
+  outline: var(--rf-focus-ring-w) solid var(--rf-focus-ring);
+  outline-offset: var(--rf-hairline);
+}
+
+.trigger:disabled {
+  cursor: default;
+  opacity: 0.5;
+  transform: none;
+}
+
+.trigger:hover:not(:disabled) {
+  background: var(--rf-surface-1);
+  transform: translateY(-1px);
+}
+
+.triggerActive {
+  border-color: color-mix(in oklab, var(--rf-color-success) 42%, transparent);
+  background: color-mix(in oklab, var(--rf-color-success) 10%, transparent);
+  color: var(--rf-color-success);
+}
+
+.triggerInner,
+.menuHeader,
+.badgeRow,
+.itemHeader,
+.loadingRow,
+.inlineActions,
+.checkboxRow {
+  display: flex;
+  align-items: center;
+>>>>>>> upstream/main
   min-width: 0;
 }
 
 .triggerInner {
+<<<<<<< HEAD
   min-width: 0;
 }
 
@@ -57,10 +109,51 @@
   display: inline-flex;
   gap: var(--space-1);
   margin-left: var(--space-1);
+=======
+  gap: var(--rf-space-1);
+}
+
+.triggerText,
+.actionLabel,
+.itemName,
+.path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.triggerText,
+.actionLabel,
+.titleText,
+.labelText,
+.itemName,
+.errorTitle {
+  font-family: var(--rf-font-ui);
+  font-size: var(--rf-text-2);
+  font-weight: 650;
+  line-height: var(--rf-line);
+}
+
+.branchIcon {
+  flex: 0 0 auto;
+}
+
+.diffStatsBadge,
+.statusBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--rf-space-1);
+}
+
+.diffStatsBadge {
+  margin-left: var(--rf-space-1);
+>>>>>>> upstream/main
   font-variant-numeric: tabular-nums;
 }
 
 .diffStatsAdd {
+<<<<<<< HEAD
   color: var(--green-11);
 }
 
@@ -88,14 +181,117 @@
 
 .sectionHeader {
   padding: 0 var(--space-1);
+=======
+  color: var(--rf-color-success);
+}
+
+.diffStatsRemove {
+  color: var(--rf-color-danger);
+}
+
+.content {
+  min-width: var(--rf-overlay-popover-min);
+  max-width: min(
+    var(--rf-overlay-popover-max),
+    calc(100vw - 2 * var(--rf-space-3))
+  );
+}
+
+.menu,
+.section,
+.feedbackStack,
+.modalFields,
+.field,
+.resultBox,
+.conflictBlock,
+.warningStack,
+.dialogOverlayText,
+.itemTitle {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.menu {
+  gap: var(--rf-space-2);
+}
+
+.section,
+.feedbackStack,
+.warningStack {
+  gap: var(--rf-space-1);
+}
+
+.modalFields,
+.resultBox,
+.conflictBlock {
+  gap: var(--rf-space-3);
+}
+
+.modalFields {
+  margin-top: var(--rf-space-3);
+}
+
+.field,
+.itemTitle,
+.dialogOverlayText {
+  gap: var(--rf-space-1);
+}
+
+.menuHeader {
+  justify-content: space-between;
+  gap: var(--rf-space-2);
+  padding: 0 var(--rf-space-1);
+}
+
+.menuHint,
+.feedbackText,
+.helpText,
+.metaText,
+.emptyText,
+.sectionHeader,
+.errorText,
+.warningText,
+.resultSummary {
+  margin: 0;
+  font-family: var(--rf-font-ui);
+  font-size: var(--rf-text-1);
+  line-height: var(--rf-line);
+}
+
+.menuHint,
+.feedbackText,
+.helpText,
+.metaText,
+.emptyText,
+.sectionHeader {
+  color: var(--rf-color-muted);
+}
+
+.menuHint,
+.feedback,
+.feedbackStack,
+.sectionHeader {
+  padding: 0 var(--rf-space-1);
+}
+
+.sectionHeader {
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+>>>>>>> upstream/main
 }
 
 .list {
   composes: scrollbarThin from "../../components/shared/scrollbar.module.css";
   display: flex;
   flex-direction: column;
+<<<<<<< HEAD
   gap: var(--space-1);
   max-height: 200px;
+=======
+  gap: var(--rf-space-1);
+  max-height: min(200px, calc(100dvh - var(--rf-space-6) * 4));
+>>>>>>> upstream/main
   overflow-y: auto;
 }
 
@@ -103,6 +299,7 @@
   display: flex;
   align-items: flex-start;
   width: 100%;
+<<<<<<< HEAD
   padding: var(--space-1) var(--space-2);
   background: transparent;
   border: none;
@@ -139,12 +336,61 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 300px;
+=======
+  min-width: 0;
+  padding: var(--rf-space-2);
+  border: none;
+  border-radius: var(--rf-radius-ctl);
+  background: transparent;
+  color: var(--rf-color-fg);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    background-color var(--rf-dur-fast) var(--rf-ease-standard),
+    color var(--rf-dur-fast) var(--rf-ease-standard),
+    transform var(--rf-dur-fast) var(--rf-ease-standard);
+}
+
+.item:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.item:hover:not(:disabled) {
+  background: var(--rf-surface-1);
+  transform: translateX(1px);
+}
+
+.itemSelected {
+  background: var(--rf-color-accent-soft);
+  color: var(--rf-color-accent);
+}
+
+.itemSelected:hover:not(:disabled) {
+  background: var(--rf-color-accent-soft);
+}
+
+.itemHeader {
+  gap: var(--rf-space-2);
+  flex-wrap: wrap;
+}
+
+.path {
+  max-width: min(300px, calc(100vw - 2 * var(--rf-space-3)));
+  color: var(--rf-color-muted);
+  font-family: var(--rf-font-mono);
+  font-size: var(--rf-text-1);
+>>>>>>> upstream/main
 }
 
 .actionGrid,
 .reviewActions {
   display: grid;
+<<<<<<< HEAD
   gap: var(--space-1);
+=======
+  gap: var(--rf-space-1);
+>>>>>>> upstream/main
 }
 
 .actionGrid {
@@ -159,6 +405,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
+<<<<<<< HEAD
   gap: var(--space-1);
   min-width: 0;
   padding: var(--space-1) var(--space-2);
@@ -273,15 +520,40 @@
   border-radius: var(--radius-3);
   background: var(--color-panel-solid);
   box-shadow: var(--shadow-4);
+=======
+  min-width: 0;
+  gap: var(--rf-space-1);
+  padding: var(--rf-space-1) var(--rf-space-2);
+  border: var(--rf-hairline) solid var(--rf-border);
+  border-radius: var(--rf-radius-ctl);
+  background: transparent;
+  color: var(--rf-color-muted);
+  cursor: pointer;
+  line-height: var(--rf-line);
+  transition:
+    background-color var(--rf-dur-fast) var(--rf-ease-standard),
+    border-color var(--rf-dur-fast) var(--rf-ease-standard),
+    color var(--rf-dur-fast) var(--rf-ease-standard),
+    transform var(--rf-dur-fast) var(--rf-ease-standard);
+>>>>>>> upstream/main
 }
 
 .branchOption {
   width: 100%;
+<<<<<<< HEAD
   padding: var(--space-2);
   border: none;
   border-radius: var(--radius-2);
   background: transparent;
   color: var(--gray-12);
+=======
+  min-width: 0;
+  padding: var(--rf-space-2);
+  border: none;
+  border-radius: var(--rf-radius-ctl);
+  background: transparent;
+  color: var(--rf-color-fg);
+>>>>>>> upstream/main
   cursor: pointer;
   overflow: hidden;
   text-align: left;
@@ -289,48 +561,224 @@
   white-space: nowrap;
 }
 
+<<<<<<< HEAD
 .branchOption:hover {
   background: var(--accent-a3);
+=======
+.actionButton:focus-visible,
+.branchOption:focus-visible {
+  outline: var(--rf-focus-ring-w) solid var(--rf-focus-ring);
+  outline-offset: var(--rf-hairline);
+}
+
+.actionButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+  transform: none;
+}
+
+.actionButton:hover:not(:disabled) {
+  border-color: var(--rf-border-strong);
+  background: var(--rf-surface-1);
+  color: var(--rf-color-fg);
+  transform: translateY(-1px);
+}
+
+.actionPrimary {
+  border-color: color-mix(in oklab, var(--rf-color-accent) 38%, transparent);
+  background: var(--rf-color-accent-soft);
+  color: var(--rf-color-accent);
+}
+
+.actionDanger {
+  border-color: color-mix(in oklab, var(--rf-color-danger) 38%, transparent);
+  background: color-mix(in oklab, var(--rf-color-danger) 10%, transparent);
+  color: var(--rf-color-danger);
+}
+
+.actionIcon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+}
+
+.actionIcon svg {
+  width: var(--rf-icon);
+  height: var(--rf-icon);
+  stroke-width: 1.5;
+}
+
+.separator {
+  height: var(--rf-hairline);
+  background: var(--rf-border);
+}
+
+.createDialog {
+  overflow: visible;
+}
+
+.createDialog > div {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+  flex-direction: column;
+}
+
+.field {
+  width: 100%;
+}
+
+.branchPicker {
+  position: relative;
+}
+
+.branchPicker,
+.branchPicker input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.branchOptions {
+  position: absolute;
+  z-index: var(--rf-z-popover);
+  top: calc(100% + var(--rf-space-1));
+  right: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: var(--rf-space-1);
+  border: var(--rf-hairline) solid var(--rf-border-strong);
+  border-radius: var(--rf-radius-card);
+  background: var(--rf-surface-overlay);
+  box-shadow: var(--rf-elev-overlay);
+}
+
+.branchOption:hover {
+  background: var(--rf-surface-1);
+}
+
+.checkboxStack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--rf-space-2);
+}
+
+.checkboxRow {
+  gap: var(--rf-space-2);
+  color: var(--rf-color-fg);
+  font-family: var(--rf-font-ui);
+  font-size: var(--rf-text-2);
+  line-height: var(--rf-line);
+}
+
+.checkboxRow input {
+  accent-color: var(--rf-color-accent);
+>>>>>>> upstream/main
 }
 
 .modalActions {
   display: flex;
   justify-content: flex-end;
+<<<<<<< HEAD
   gap: var(--space-2);
   margin-top: var(--space-4);
+=======
+  gap: var(--rf-space-2);
+  margin-top: var(--rf-space-4);
+>>>>>>> upstream/main
 }
 
 .diffDialog,
 .mergeDialog {
+<<<<<<< HEAD
   max-width: min(900px, 90vw);
+=======
+  max-width: min(900px, calc(100vw - 2 * var(--rf-space-3)));
+}
+
+.badgeRow,
+.inlineActions,
+.loadingRow {
+  gap: var(--rf-space-2);
+  flex-wrap: wrap;
+>>>>>>> upstream/main
 }
 
 .diffFileList,
 .resultBox,
+<<<<<<< HEAD
 .warningBox {
   border: 1px solid var(--gray-5);
   border-radius: var(--radius-3);
   padding: var(--space-2);
   background: var(--gray-2);
+=======
+.warningBox,
+.errorBox {
+  border: var(--rf-hairline) solid var(--rf-border);
+  border-radius: var(--rf-radius-card);
+  padding: var(--rf-space-2);
+  background: transparent;
+}
+
+.errorBox,
+.errorText {
+  color: var(--rf-color-danger);
+}
+
+.warningBox,
+.warningText,
+.resultWarning {
+  color: var(--rf-color-warning);
+}
+
+.resultSuccess {
+  color: var(--rf-color-success);
+>>>>>>> upstream/main
 }
 
 .diffFileList {
   composes: scrollbarThin from "../../components/shared/scrollbar.module.css";
   display: flex;
   flex-direction: column;
+<<<<<<< HEAD
   gap: var(--space-1);
   max-height: 220px;
+=======
+  gap: var(--rf-space-1);
+  max-height: min(220px, calc(100dvh - var(--rf-space-6) * 4));
+>>>>>>> upstream/main
   overflow-y: auto;
 }
 
 .diffFileItem {
+<<<<<<< HEAD
   padding: var(--space-2);
   border-radius: var(--radius-2);
   background: var(--color-background);
+=======
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  gap: var(--rf-space-2);
+  padding: var(--rf-space-2);
+  border-radius: var(--rf-radius-ctl);
+  background: transparent;
+}
+
+.diffFileItem:hover {
+  background: var(--rf-surface-1);
+>>>>>>> upstream/main
 }
 
 .patchScroller {
   composes: scrollbarThin from "../../components/shared/scrollbar.module.css";
+<<<<<<< HEAD
   max-height: 360px;
   overflow-y: auto;
   overflow-x: hidden;
@@ -352,10 +800,29 @@
   font-family: var(--code-font-family);
   font-size: var(--font-size-1);
   line-height: var(--line-height-1);
+=======
+  max-height: min(360px, calc(100dvh - var(--rf-space-6) * 4));
+  overflow-y: auto;
+  border: var(--rf-hairline) solid var(--rf-border);
+  border-radius: var(--rf-radius-card);
+  background: transparent;
+}
+
+.patchPreview {
+  width: max-content;
+  min-width: 100%;
+  margin: 0;
+  padding: var(--rf-space-2) 0;
+  font-family: var(--rf-font-mono);
+  font-size: var(--rf-text-1);
+  line-height: var(--rf-line);
+  white-space: pre;
+>>>>>>> upstream/main
 }
 
 .patchLine {
   display: block;
+<<<<<<< HEAD
   padding: 0 var(--space-3);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -388,10 +855,40 @@
 
 .patchLineContext {
   color: var(--gray-11);
+=======
+  padding: 0 var(--rf-space-3);
+  white-space: pre;
+}
+
+.patchLineMeta,
+.patchLineFile {
+  color: var(--rf-color-accent);
+  background: var(--rf-color-accent-soft);
+}
+
+.patchLineHunk {
+  color: var(--rf-color-info);
+  background: var(--rf-color-accent-soft);
+}
+
+.patchLineAdd {
+  color: var(--rf-color-success);
+  background: color-mix(in oklab, var(--rf-color-success) 10%, transparent);
+}
+
+.patchLineRemove {
+  color: var(--rf-color-danger);
+  background: color-mix(in oklab, var(--rf-color-danger) 10%, transparent);
+}
+
+.patchLineContext {
+  color: var(--rf-color-muted);
+>>>>>>> upstream/main
 }
 
 .conflictList {
   margin: 0;
+<<<<<<< HEAD
   padding-left: var(--space-4);
 }
 
@@ -399,4 +896,66 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+=======
+  padding-left: var(--rf-space-4);
+  color: var(--rf-color-muted);
+  font-family: var(--rf-font-ui);
+  font-size: var(--rf-text-1);
+  line-height: var(--rf-line);
+}
+
+.spinner {
+  width: var(--rf-icon);
+  height: var(--rf-icon);
+  border: var(--rf-hairline) solid var(--rf-border-strong);
+  border-top-color: var(--rf-color-accent);
+  border-radius: var(--rf-radius-pill);
+  animation: spin var(--rf-dur-slow) linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .trigger,
+  .item,
+  .actionButton,
+  .spinner {
+    transition: none;
+    animation: none;
+  }
+
+  .trigger:hover:not(:disabled),
+  .item:hover:not(:disabled),
+  .actionButton:hover:not(:disabled) {
+    transform: none;
+  }
+}
+
+@media (width <= 680px) {
+  .actionGrid,
+  .reviewActions {
+    grid-template-columns: 1fr;
+  }
+
+  .content {
+    width: min(
+      var(--rf-overlay-popover-max),
+      calc(100vw - 2 * var(--rf-space-3))
+    );
+  }
+
+  .diffFileItem {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .modalActions,
+  .inlineActions {
+    justify-content: stretch;
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+>>>>>>> upstream/main
 }

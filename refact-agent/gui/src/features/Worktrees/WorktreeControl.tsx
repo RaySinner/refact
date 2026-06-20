@@ -6,12 +6,22 @@ import React, {
   useState,
 } from "react";
 import { skipToken } from "@reduxjs/toolkit/query";
+<<<<<<< HEAD
 import { Flex, Popover, Text } from "@radix-ui/themes";
 import {
   DEFAULT_MODE,
   selectChatId,
   selectThreadWorktree,
   setThreadWorktree,
+=======
+import { GitBranch } from "lucide-react";
+import { Icon, Popover } from "../../components/ui";
+import {
+  DEFAULT_MODE,
+  selectThreadWorktreeById,
+  setThreadWorktree,
+  useThreadId,
+>>>>>>> upstream/main
 } from "../Chat/Thread";
 import { selectApiKey, selectConfig, selectHost } from "../Config/configSlice";
 import { useAppDispatch, useAppSelector } from "../../hooks";
@@ -31,7 +41,10 @@ import {
   CreateWorktreeModal,
   type CreateWorktreeValues,
 } from "./CreateWorktreeModal";
+<<<<<<< HEAD
 import { BranchIcon } from "./BranchIcon";
+=======
+>>>>>>> upstream/main
 import { WorktreeMenu } from "./WorktreeMenu";
 import { WorktreeStatusBadge } from "./WorktreeStatusBadge";
 import { worktreeErrorText } from "./worktreeError";
@@ -93,8 +106,15 @@ export const WorktreeControl: React.FC<WorktreeControlProps> = ({
   onOpenChange,
 }) => {
   const dispatch = useAppDispatch();
+<<<<<<< HEAD
   const chatId = useAppSelector(selectChatId);
   const currentWorktree = useAppSelector(selectThreadWorktree);
+=======
+  const chatId = useThreadId();
+  const currentWorktree = useAppSelector((state) =>
+    selectThreadWorktreeById(state, chatId),
+  );
+>>>>>>> upstream/main
   const host = useAppSelector(selectHost);
   const config = useAppSelector(selectConfig);
   const apiKey = useAppSelector(selectApiKey) ?? undefined;
@@ -342,8 +362,13 @@ export const WorktreeControl: React.FC<WorktreeControlProps> = ({
 
   return (
     <>
+<<<<<<< HEAD
       <Popover.Root open={menuOpen} onOpenChange={handleMenuOpenChange}>
         <Popover.Trigger>
+=======
+      <Popover open={menuOpen} onOpenChange={handleMenuOpenChange}>
+        <Popover.Trigger asChild>
+>>>>>>> upstream/main
           <button
             type="button"
             data-testid="worktree-control-trigger"
@@ -354,6 +379,7 @@ export const WorktreeControl: React.FC<WorktreeControlProps> = ({
             aria-label={`Worktree scope: ${triggerLabel}`}
             disabled={disabled}
           >
+<<<<<<< HEAD
             <Flex align="center" gap="1" className={styles.triggerInner}>
               {!currentWorktree && sourceBranch && (
                 <span className={styles.branchIcon} aria-hidden="true">
@@ -363,6 +389,18 @@ export const WorktreeControl: React.FC<WorktreeControlProps> = ({
               <Text size="1" className={styles.triggerText}>
                 {label}
               </Text>
+=======
+            <span className={styles.triggerInner}>
+              {!currentWorktree && sourceBranch && (
+                <Icon
+                  icon={GitBranch}
+                  size="sm"
+                  tone="muted"
+                  className={styles.branchIcon}
+                />
+              )}
+              <span className={styles.triggerText}>{label}</span>
+>>>>>>> upstream/main
               {currentWorktree && (
                 <WorktreeStatusBadge
                   worktree={currentWorktree}
@@ -371,10 +409,18 @@ export const WorktreeControl: React.FC<WorktreeControlProps> = ({
                   deletions={currentDiff?.stats.deletions}
                 />
               )}
+<<<<<<< HEAD
             </Flex>
           </button>
         </Popover.Trigger>
         <WorktreeMenu
+=======
+            </span>
+          </button>
+        </Popover.Trigger>
+        <WorktreeMenu
+          chatId={chatId}
+>>>>>>> upstream/main
           currentWorktree={currentWorktree}
           currentRecord={currentRecord}
           records={records}
@@ -390,7 +436,11 @@ export const WorktreeControl: React.FC<WorktreeControlProps> = ({
           onOpenInNewWindow={() => void handleOpenInNewWindow()}
           onCopyPath={handleCopyPath}
         />
+<<<<<<< HEAD
       </Popover.Root>
+=======
+      </Popover>
+>>>>>>> upstream/main
 
       <CreateWorktreeModal
         open={createOpen}

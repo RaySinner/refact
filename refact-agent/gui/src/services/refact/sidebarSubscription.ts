@@ -11,7 +11,14 @@ export type TaskEvent =
   | { type: "task_created"; task_id: string; meta: TaskMeta }
   | { type: "task_updated"; task_id: string; meta: TaskMeta }
   | { type: "task_deleted"; task_id: string }
+<<<<<<< HEAD
   | { type: "board_changed"; task_id: string; rev: number; board: TaskBoard };
+=======
+  | { type: "board_changed"; task_id: string; rev: number; board: TaskBoard }
+  | { type: "task_comments_changed"; task_id: string; card_id: string }
+  | { type: "task_document_changed"; task_id: string; slug?: string }
+  | { type: "task_memories_changed"; task_id: string };
+>>>>>>> upstream/main
 
 export type NotificationEvent =
   | {
@@ -136,6 +143,18 @@ function isValidTaskEvent(obj: Record<string, unknown>): boolean {
         typeof obj.rev === "number" &&
         obj.board !== undefined
       );
+<<<<<<< HEAD
+=======
+    case "task_comments_changed":
+      return typeof obj.task_id === "string" && typeof obj.card_id === "string";
+    case "task_document_changed":
+      return (
+        typeof obj.task_id === "string" &&
+        (obj.slug === undefined || typeof obj.slug === "string")
+      );
+    case "task_memories_changed":
+      return typeof obj.task_id === "string";
+>>>>>>> upstream/main
     default:
       return false;
   }

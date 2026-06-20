@@ -1,4 +1,5 @@
 import React, { useCallback, useState, useEffect, useMemo } from "react";
+<<<<<<< HEAD
 import {
   Flex,
   Box,
@@ -16,6 +17,23 @@ import {
   ChevronDownIcon,
   FileTextIcon,
 } from "@radix-ui/react-icons";
+=======
+import { Flex, Box, Text } from "@radix-ui/themes";
+import {
+  Badge,
+  Button,
+  Dialog,
+  Icon,
+  IconButton,
+  Popover,
+  StatusDot,
+  Tabs,
+  Tooltip,
+} from "../../components/ui";
+import { Checkbox } from "../../components/Checkbox";
+import { PlusIcon, ChevronDownIcon } from "@radix-ui/react-icons";
+import { FileText, GitBranch, ListChecks, Target, X } from "lucide-react";
+>>>>>>> upstream/main
 import { AgentStatusDot } from "./AgentStatusDot";
 import { ScrollArea } from "../../components/ScrollArea";
 import { ChatLoading } from "../../components/ChatContent/ChatLoading";
@@ -32,8 +50,13 @@ import {
   tasksApi,
 } from "../../services/refact/tasks";
 import { Markdown } from "../../components/Markdown";
+<<<<<<< HEAD
 import { CollapsePanel } from "../../components/shared/CollapsePanel";
 import { ResizeDivider } from "../Dashboard/components/ResizeDivider/ResizeDivider";
+=======
+import { ModeMenuItem } from "../../components/ChatForm/ModeSelect";
+import modeSelectStyles from "../../components/ChatForm/ModeSelect.module.css";
+>>>>>>> upstream/main
 import styles from "./Tasks.module.css";
 import { Chat } from "../Chat";
 import { selectConfig } from "../Config/configSlice";
@@ -55,9 +78,18 @@ import {
 } from "./tasksSlice";
 import {
   selectBackgroundAgentsByThread,
+<<<<<<< HEAD
   selectRuntimeById,
   selectThreadById,
 } from "../Chat/Thread";
+=======
+  selectCurrentThreadId,
+  selectRuntimeById,
+  selectThreadById,
+} from "../Chat/Thread";
+import { getStatusFromSessionState } from "../../utils/sessionStatus";
+import { useGetChatModesQuery } from "../../services/refact/chatModes";
+>>>>>>> upstream/main
 import { InternalLinkProvider } from "../../contexts/InternalLinkContext";
 import { parseRefactLink } from "../../contexts/internalLinkUtils";
 import { resolveChatLink } from "./internalLinkResolver";
@@ -83,8 +115,14 @@ import {
   worktreeErrorText,
 } from "../Worktrees";
 import {
+<<<<<<< HEAD
   loadTaskWorkspaceLayout,
   saveTaskWorkspaceLayout,
+=======
+  loadTaskWorkspaceTab,
+  saveTaskWorkspaceTab,
+  type TaskWorkspaceTab,
+>>>>>>> upstream/main
 } from "../../utils/chatUiPersistence";
 import { MemoryInboxPanel } from "./TaskMemories/MemoryInboxPanel";
 import { DocumentsPanel } from "./TaskDocuments/DocumentsPanel";
@@ -105,10 +143,18 @@ const LEGACY_WORKTREE_TOOLTIP =
   "This worktree was created before the registry; recreate it via `restart_agent(mode=fresh)` to enable actions.";
 const EMPTY_BACKGROUND_AGENTS: Record<string, BackgroundAgentSummary> =
   Object.freeze({});
+<<<<<<< HEAD
+=======
+const EMPTY_LINKED_CARDS: string[] = [];
+>>>>>>> upstream/main
 
 interface PlannerPanelProps {
   plannerChats: PlannerInfo[];
   activeChat: ActiveChat;
+<<<<<<< HEAD
+=======
+  linkedCardsByPlanner: Map<string, string[]>;
+>>>>>>> upstream/main
   onSelectPlanner: (chatId: string) => void;
   onRemovePlanner: (chatId: string) => void;
 }
@@ -116,6 +162,10 @@ interface PlannerPanelProps {
 interface PlannerItemProps {
   planner: PlannerInfo;
   isSelected: boolean;
+<<<<<<< HEAD
+=======
+  linkedCardIds?: string[];
+>>>>>>> upstream/main
   onSelect: () => void;
   onRemove: () => void;
 }
@@ -166,6 +216,7 @@ function parsePlannerDeleteError(err: unknown): string {
   return "Unknown error";
 }
 
+<<<<<<< HEAD
 const DEFAULT_BOARD_HEIGHT_PX = 180;
 const MIN_BOARD_HEIGHT_PX = 80;
 const MAX_BOARD_HEIGHT_RATIO = 0.6;
@@ -186,6 +237,8 @@ function defaultTaskWorkspaceLayout() {
   };
 }
 
+=======
+>>>>>>> upstream/main
 function sameWaitingCards(a?: string[], b?: string[]): boolean {
   if (a === b) return true;
   const left = a ?? [];
@@ -197,9 +250,38 @@ function sameWaitingCards(a?: string[], b?: string[]): boolean {
   return true;
 }
 
+<<<<<<< HEAD
 export const PlannerItem: React.FC<PlannerItemProps> = ({
   planner,
   isSelected,
+=======
+const cardStatusTone = (
+  column: string,
+): React.ComponentProps<typeof Badge>["tone"] => {
+  if (column === "done") return "success";
+  if (column === "failed") return "danger";
+  if (column === "doing") return "accent";
+  return "muted";
+};
+
+const workspaceTabIndex = (tab: TaskWorkspaceTab): number => {
+  if (tab === "chat") return 1;
+  if (tab === "memories") return 2;
+  if (tab === "documents") return 3;
+  return 0;
+};
+
+const isTaskWorkspaceTab = (value: string): value is TaskWorkspaceTab =>
+  value === "board" ||
+  value === "chat" ||
+  value === "memories" ||
+  value === "documents";
+
+export const PlannerItem: React.FC<PlannerItemProps> = ({
+  planner,
+  isSelected,
+  linkedCardIds = EMPTY_LINKED_CARDS,
+>>>>>>> upstream/main
   onSelect,
   onRemove,
 }) => {
@@ -215,20 +297,39 @@ export const PlannerItem: React.FC<PlannerItemProps> = ({
     : formatPlannerDate(planner.createdAt);
 
   const sessionState = runtime?.session_state ?? planner.sessionState;
+<<<<<<< HEAD
+=======
+  const statusDot = getStatusFromSessionState(sessionState);
+  const mode = planner.mode ?? thread?.mode;
+  const showModeBadge = Boolean(mode) && mode !== "task_planner";
+>>>>>>> upstream/main
   const isWaiting = sessionState === "waiting_user_input";
   const waitingCards = planner.waitingForCardIds ?? [];
   const showWaitingChips = isWaiting && waitingCards.length > 0;
   const visibleCards = waitingCards.slice(0, 5);
   const hiddenCount = Math.max(0, waitingCards.length - 5);
+<<<<<<< HEAD
 
   return (
     <Box
       className={`${styles.panelItem} ${
+=======
+  const visibleLinkedCards = linkedCardIds.slice(0, 4);
+  const hiddenLinkedCount = Math.max(0, linkedCardIds.length - 4);
+
+  return (
+    <Box
+      className={`${styles.panelItem} rf-pressable ${
+>>>>>>> upstream/main
         isSelected ? styles.panelItemSelected : ""
       }`}
       role="button"
       tabIndex={0}
+<<<<<<< HEAD
       aria-label={`Open planner chat ${displayTitle}`}
+=======
+      aria-label={`Open chat ${displayTitle}`}
+>>>>>>> upstream/main
       onClick={onSelect}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
@@ -237,6 +338,7 @@ export const PlannerItem: React.FC<PlannerItemProps> = ({
         }
       }}
     >
+<<<<<<< HEAD
       <Flex align="center" gap="1" className={styles.panelItemLead}>
         <Badge size="1" color="violet">
           <FileTextIcon />
@@ -286,6 +388,89 @@ export const PlannerItem: React.FC<PlannerItemProps> = ({
         >
           <Cross2Icon />
         </Button>
+=======
+      <div className={styles.panelItemLead}>
+        <StatusDot
+          status={statusDot}
+          size="medium"
+          pulse={statusDot === "in_progress"}
+        />
+      </div>
+      <Box className={styles.panelItemContent}>
+        <div className={styles.panelItemTitleRow}>
+          {showModeBadge && (
+            <Badge tone="muted" className={styles.agentItemBadge}>
+              {mode}
+            </Badge>
+          )}
+          <Text size="1" className={styles.panelItemTitle}>
+            {displayTitle}
+          </Text>
+        </div>
+        {linkedCardIds.length > 0 && (
+          <Flex
+            gap="1"
+            wrap="wrap"
+            align="center"
+            className={styles.plannerLinkedCards}
+            data-testid={`planner-linked-cards-${planner.id}`}
+          >
+            {visibleLinkedCards.map((cardId) => (
+              <Badge
+                key={cardId}
+                tone="muted"
+                className={styles.agentItemBadge}
+                title={`Spawned agent for ${cardId}`}
+              >
+                {cardId}
+              </Badge>
+            ))}
+            {hiddenLinkedCount > 0 && (
+              <Text size="1" color="gray" className={styles.plannerWaitingMore}>
+                +{hiddenLinkedCount}
+              </Text>
+            )}
+          </Flex>
+        )}
+        {showWaitingChips && (
+          <Flex
+            gap="1"
+            wrap="nowrap"
+            align="center"
+            className={styles.plannerWaitingChips}
+            data-testid={`planner-waiting-chips-${planner.id}`}
+          >
+            {visibleCards.map((cardId) => (
+              <Badge
+                key={cardId}
+                tone="warning"
+                title={`Waiting for ${cardId}`}
+              >
+                {cardId}
+              </Badge>
+            ))}
+            {hiddenCount > 0 && (
+              <Text size="1" color="gray" className={styles.plannerWaitingMore}>
+                … and {hiddenCount} more
+              </Text>
+            )}
+          </Flex>
+        )}
+      </Box>
+      <Tooltip content="Delete chat">
+        <span>
+          <IconButton
+            size="sm"
+            variant="ghost"
+            aria-label="Delete chat"
+            icon={X}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemove();
+            }}
+          />
+        </span>
+>>>>>>> upstream/main
       </Tooltip>
     </Box>
   );
@@ -294,6 +479,10 @@ export const PlannerItem: React.FC<PlannerItemProps> = ({
 const PlannerPanel: React.FC<PlannerPanelProps> = ({
   plannerChats,
   activeChat,
+<<<<<<< HEAD
+=======
+  linkedCardsByPlanner,
+>>>>>>> upstream/main
   onSelectPlanner,
   onRemovePlanner,
 }) => {
@@ -301,6 +490,7 @@ const PlannerPanel: React.FC<PlannerPanelProps> = ({
     <Box className={styles.panelList}>
       <Box className={styles.panelContent}>
         {plannerChats.length === 0 ? (
+<<<<<<< HEAD
           <Flex align="center" justify="center" style={{ flex: 1 }}>
             <Text size="1" color="gray">
               No planner chats yet
@@ -309,6 +499,20 @@ const PlannerPanel: React.FC<PlannerPanelProps> = ({
         ) : (
           <ScrollArea scrollbars="vertical">
             <Flex direction="column" gap="1">
+=======
+          <Flex align="center" justify="center" className={styles.emptyState}>
+            <Text size="1" color="gray">
+              No chats yet
+            </Text>
+          </Flex>
+        ) : (
+          <ScrollArea
+            className={styles.panelScrollArea}
+            data-testid="planner-panel-scroll-owner"
+            scrollbars="vertical"
+          >
+            <Flex direction="column" gap="1" className="rf-stagger">
+>>>>>>> upstream/main
               {plannerChats.map((planner) => (
                 <PlannerItem
                   key={planner.id}
@@ -317,6 +521,12 @@ const PlannerPanel: React.FC<PlannerPanelProps> = ({
                     activeChat?.type === "planner" &&
                     activeChat.chatId === planner.id
                   }
+<<<<<<< HEAD
+=======
+                  linkedCardIds={
+                    linkedCardsByPlanner.get(planner.id) ?? EMPTY_LINKED_CARDS
+                  }
+>>>>>>> upstream/main
                   onSelect={() => onSelectPlanner(planner.id)}
                   onRemove={() => onRemovePlanner(planner.id)}
                 />
@@ -329,6 +539,68 @@ const PlannerPanel: React.FC<PlannerPanelProps> = ({
   );
 };
 
+<<<<<<< HEAD
+=======
+type AgentChatStatus = "doing" | "done" | "failed";
+
+interface AgentChatEntry {
+  card: BoardCard;
+  status: AgentChatStatus;
+}
+
+function agentChatEntries(cards: BoardCard[]): AgentChatEntry[] {
+  const byColumn = (column: AgentChatStatus): AgentChatEntry[] =>
+    cards
+      .filter((card) => card.column === column && card.agent_chat_id)
+      .map((card) => ({ card, status: column }));
+  return [...byColumn("doing"), ...byColumn("done"), ...byColumn("failed")];
+}
+
+interface AgentItemProps {
+  card: BoardCard;
+  status: AgentChatStatus;
+  isSelected: boolean;
+  onSelect: () => void;
+}
+
+const AgentItem: React.FC<AgentItemProps> = ({
+  card,
+  status,
+  isSelected,
+  onSelect,
+}) => {
+  return (
+    <Box
+      className={`${styles.panelItem} rf-pressable ${
+        isSelected ? styles.panelItemSelected : ""
+      }`}
+      role="button"
+      tabIndex={0}
+      aria-label={`Open agent chat ${card.id} ${card.title}`}
+      onClick={onSelect}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect();
+        }
+      }}
+    >
+      <div className={styles.panelItemLead}>
+        <AgentStatusDot status={status} size="medium" />
+      </div>
+      <Flex align="center" gap="1" className={styles.panelItemContent}>
+        <Badge tone="muted" className={styles.agentItemBadge}>
+          {card.id}
+        </Badge>
+        <Text size="1" className={styles.panelItemTitle}>
+          {card.title}
+        </Text>
+      </Flex>
+    </Box>
+  );
+};
+
+>>>>>>> upstream/main
 interface AgentsPanelProps {
   cards: BoardCard[];
   activeChat: ActiveChat;
@@ -340,6 +612,7 @@ const AgentsPanel: React.FC<AgentsPanelProps> = ({
   activeChat,
   onSelectAgent,
 }) => {
+<<<<<<< HEAD
   const activeAgents = cards.filter(
     (c) => c.column === "doing" && c.agent_chat_id,
   );
@@ -380,10 +653,14 @@ const AgentsPanel: React.FC<AgentsPanelProps> = ({
       </Box>
     );
   };
+=======
+  const agents = agentChatEntries(cards);
+>>>>>>> upstream/main
 
   return (
     <Box className={styles.panelList}>
       <Box className={styles.panelContent}>
+<<<<<<< HEAD
         {activeAgents.length === 0 &&
         completedAgents.length === 0 &&
         failedAgents.length === 0 ? (
@@ -398,6 +675,36 @@ const AgentsPanel: React.FC<AgentsPanelProps> = ({
               {activeAgents.map((card) => renderAgentItem(card, "doing"))}
               {completedAgents.map((card) => renderAgentItem(card, "done"))}
               {failedAgents.map((card) => renderAgentItem(card, "failed"))}
+=======
+        {agents.length === 0 ? (
+          <Flex align="center" justify="center" className={styles.emptyState}>
+            <Text size="1" color="gray">
+              No task agents yet
+            </Text>
+          </Flex>
+        ) : (
+          <ScrollArea
+            className={styles.panelScrollArea}
+            data-testid="agents-panel-scroll-owner"
+            scrollbars="vertical"
+          >
+            <Flex direction="column" gap="1" className="rf-stagger">
+              {agents.map(({ card, status }) => (
+                <AgentItem
+                  key={card.id}
+                  card={card}
+                  status={status}
+                  isSelected={
+                    activeChat?.type === "agent" &&
+                    activeChat.cardId === card.id
+                  }
+                  onSelect={() =>
+                    card.agent_chat_id &&
+                    onSelectAgent(card.id, card.agent_chat_id)
+                  }
+                />
+              ))}
+>>>>>>> upstream/main
             </Flex>
           </ScrollArea>
         )}
@@ -406,6 +713,274 @@ const AgentsPanel: React.FC<AgentsPanelProps> = ({
   );
 };
 
+<<<<<<< HEAD
+=======
+interface BoardRailProps {
+  plannerChats: PlannerInfo[];
+  cards: BoardCard[];
+  activeChat: ActiveChat;
+  linkedCardsByPlanner: Map<string, string[]>;
+  onSelectPlanner: (chatId: string) => void;
+  onRemovePlanner: (chatId: string) => void;
+  onSelectAgent: (cardId: string, chatId: string) => void;
+}
+
+const BoardRail: React.FC<BoardRailProps> = ({
+  plannerChats,
+  cards,
+  activeChat,
+  linkedCardsByPlanner,
+  onSelectPlanner,
+  onRemovePlanner,
+  onSelectAgent,
+}) => {
+  const agentChats = cards.filter((card) => card.agent_chat_id);
+  const doneAgentChats = agentChats.filter((card) => card.column === "done");
+
+  return (
+    <aside className={styles.boardRail} aria-label="Chats and task agents">
+      <div className={styles.railGroupHeader}>
+        <Text
+          size="1"
+          weight="bold"
+          color="gray"
+          className={styles.sectionHeaderLabel}
+        >
+          Chats
+        </Text>
+        <Flex align="center" gap="2" className={styles.sectionHeaderMeta}>
+          <Badge tone="muted">{plannerChats.length}</Badge>
+        </Flex>
+      </div>
+      <PlannerPanel
+        plannerChats={plannerChats}
+        activeChat={activeChat}
+        linkedCardsByPlanner={linkedCardsByPlanner}
+        onSelectPlanner={onSelectPlanner}
+        onRemovePlanner={onRemovePlanner}
+      />
+      <div className={styles.railGroupHeader}>
+        <Text
+          size="1"
+          weight="bold"
+          color="gray"
+          className={styles.sectionHeaderLabel}
+        >
+          Task Agents
+        </Text>
+        <Flex align="center" gap="2" className={styles.sectionHeaderMeta}>
+          <Badge tone="muted">
+            {doneAgentChats.length}/{agentChats.length}
+          </Badge>
+        </Flex>
+      </div>
+      <AgentsPanel
+        cards={cards}
+        activeChat={activeChat}
+        onSelectAgent={onSelectAgent}
+      />
+    </aside>
+  );
+};
+
+interface ChatSwitcherProps {
+  label: string;
+  plannerChats: PlannerInfo[];
+  cards: BoardCard[];
+  activeChat: ActiveChat;
+  linkedCardsByPlanner: Map<string, string[]>;
+  onSelectPlanner: (chatId: string) => void;
+  onRemovePlanner: (chatId: string) => void;
+  onSelectAgent: (cardId: string, chatId: string) => void;
+}
+
+const ChatSwitcher: React.FC<ChatSwitcherProps> = ({
+  label,
+  plannerChats,
+  cards,
+  activeChat,
+  linkedCardsByPlanner,
+  onSelectPlanner,
+  onRemovePlanner,
+  onSelectAgent,
+}) => {
+  const [open, setOpen] = useState(false);
+  const agents = agentChatEntries(cards);
+  const activeAgent =
+    activeChat?.type === "agent"
+      ? agents.find(({ card }) => card.id === activeChat.cardId)
+      : undefined;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <Popover.Trigger asChild>
+        <button
+          type="button"
+          className={styles.chatSwitcherTrigger}
+          aria-label="Switch chat"
+          title="Switch chat"
+        >
+          {activeAgent && (
+            <AgentStatusDot status={activeAgent.status} size="small" />
+          )}
+          <Text size="1" className={styles.chatSwitcherLabel}>
+            {label}
+          </Text>
+          <ChevronDownIcon className={styles.chatSwitcherChevron} />
+        </button>
+      </Popover.Trigger>
+      <Popover.Content
+        align="end"
+        sideOffset={6}
+        maxWidth="340px"
+        className={styles.chatSwitcherContent}
+      >
+        <Text
+          size="1"
+          weight="bold"
+          color="gray"
+          className={styles.sectionHeaderLabel}
+        >
+          Chats
+        </Text>
+        {plannerChats.length === 0 ? (
+          <Text size="1" color="gray">
+            No chats yet
+          </Text>
+        ) : (
+          <Flex direction="column" gap="1">
+            {plannerChats.map((planner) => (
+              <PlannerItem
+                key={planner.id}
+                planner={planner}
+                isSelected={
+                  activeChat?.type === "planner" &&
+                  activeChat.chatId === planner.id
+                }
+                linkedCardIds={
+                  linkedCardsByPlanner.get(planner.id) ?? EMPTY_LINKED_CARDS
+                }
+                onSelect={() => {
+                  setOpen(false);
+                  onSelectPlanner(planner.id);
+                }}
+                onRemove={() => onRemovePlanner(planner.id)}
+              />
+            ))}
+          </Flex>
+        )}
+        {agents.length > 0 && (
+          <>
+            <Text
+              size="1"
+              weight="bold"
+              color="gray"
+              className={styles.sectionHeaderLabel}
+            >
+              Task Agents
+            </Text>
+            <Flex direction="column" gap="1">
+              {agents.map(({ card, status }) => (
+                <AgentItem
+                  key={card.id}
+                  card={card}
+                  status={status}
+                  isSelected={
+                    activeChat?.type === "agent" &&
+                    activeChat.cardId === card.id
+                  }
+                  onSelect={() => {
+                    if (!card.agent_chat_id) return;
+                    setOpen(false);
+                    onSelectAgent(card.id, card.agent_chat_id);
+                  }}
+                />
+              ))}
+            </Flex>
+          </>
+        )}
+      </Popover.Content>
+    </Popover>
+  );
+};
+
+interface NewChatModeButtonProps {
+  disabled?: boolean;
+  onCreate: (mode: string) => void;
+}
+
+const EXCLUDED_NEW_CHAT_MODES = new Set(["task_planner", "task_agent"]);
+
+const NewChatModeButton: React.FC<NewChatModeButtonProps> = ({
+  disabled,
+  onCreate,
+}) => {
+  const [open, setOpen] = useState(false);
+  const { data } = useGetChatModesQuery(undefined);
+  const modes = useMemo(
+    () =>
+      (data?.modes ?? []).filter(
+        (mode) => !EXCLUDED_NEW_CHAT_MODES.has(mode.id),
+      ),
+    [data],
+  );
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <Popover.Trigger asChild>
+        <button
+          type="button"
+          className={styles.headerActionButton}
+          disabled={disabled}
+          aria-label="New chat"
+          title="New chat"
+        >
+          <PlusIcon />
+          <Text size="1">Chat</Text>
+          <ChevronDownIcon className={styles.chatSwitcherChevron} />
+        </button>
+      </Popover.Trigger>
+      <Popover.Content
+        align="end"
+        sideOffset={6}
+        maxWidth="320px"
+        className={styles.chatSwitcherContent}
+      >
+        <Text
+          size="1"
+          weight="bold"
+          color="gray"
+          className={styles.sectionHeaderLabel}
+        >
+          New chat
+        </Text>
+        {modes.length === 0 ? (
+          <Text size="1" color="gray">
+            No modes available
+          </Text>
+        ) : (
+          <div className={modeSelectStyles.modeList}>
+            {modes.map((mode, index) => (
+              <React.Fragment key={mode.id}>
+                {index > 0 && <div className={modeSelectStyles.separator} />}
+                <ModeMenuItem
+                  mode={mode}
+                  isSelected={false}
+                  onSelect={() => {
+                    setOpen(false);
+                    onCreate(mode.id);
+                  }}
+                />
+              </React.Fragment>
+            ))}
+          </div>
+        )}
+      </Popover.Content>
+    </Popover>
+  );
+};
+
+>>>>>>> upstream/main
 interface CardDetailProps {
   taskId: string;
   card: BoardCard;
@@ -455,6 +1030,7 @@ const CardDetail: React.FC<CardDetailProps> = ({
     );
 
   return (
+<<<<<<< HEAD
     <Dialog.Content maxWidth="600px">
       <Flex direction="column" gap="3">
         <Flex justify="between" align="center">
@@ -500,6 +1076,63 @@ const CardDetail: React.FC<CardDetailProps> = ({
             <Flex direction="column" gap="2" mt="1">
               <Flex gap="2" align="center" wrap="wrap">
                 <Badge size="1" color="green" variant="soft">
+=======
+    <Dialog.Content
+      className={styles.cardDetailDialog}
+      maxHeight="min(760px, calc(100dvh - var(--rf-space-5)))"
+      maxWidth="720px"
+    >
+      <div className={styles.cardDetailRoot}>
+        <div className={styles.cardDetailHeader}>
+          <div className={styles.cardDetailTitleGroup}>
+            <Badge tone="muted">{card.id}</Badge>
+            <Dialog.Title className={styles.cardDetailTitle}>
+              {card.title}
+            </Dialog.Title>
+          </div>
+          <Badge tone={cardStatusTone(card.column)}>
+            {card.column === "doing" ||
+            card.column === "done" ||
+            card.column === "failed" ? (
+              <AgentStatusDot status={card.column} size="small" />
+            ) : null}
+            {card.column}
+          </Badge>
+        </div>
+
+        <section className={styles.cardDetailMetaGrid}>
+          <div className={styles.cardDetailMetaItem}>
+            <span className={styles.cardDetailMetaLabel}>Priority</span>
+            <Badge
+              tone={
+                card.priority === "P0"
+                  ? "danger"
+                  : card.priority === "P1"
+                    ? "warning"
+                    : "muted"
+              }
+            >
+              {card.priority}
+            </Badge>
+          </div>
+          {card.depends_on.length > 0 && (
+            <div className={styles.cardDetailMetaItem}>
+              <span className={styles.cardDetailMetaLabel}>Dependencies</span>
+              <div className={styles.cardDetailChipRow}>
+                {card.depends_on.map((dep) => (
+                  <Badge key={dep} tone="muted">
+                    {dep}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
+          {worktreeLabel && (
+            <div className={styles.cardDetailMetaItem}>
+              <span className={styles.cardDetailMetaLabel}>Worktree</span>
+              <div className={styles.cardDetailChipRow}>
+                <Badge tone="success" title={`Worktree: ${worktreeLabel}`}>
+>>>>>>> upstream/main
                   <BranchIcon /> {worktreeLabel}
                 </Badge>
                 {worktree?.record ?? worktree?.meta ? (
@@ -509,11 +1142,32 @@ const CardDetail: React.FC<CardDetailProps> = ({
                   />
                 ) : null}
                 {worktree?.referenceCount && worktree.referenceCount > 1 ? (
+<<<<<<< HEAD
                   <Badge size="1" color="amber" variant="soft">
                     shared by {worktree.referenceCount}
                   </Badge>
                 ) : null}
               </Flex>
+=======
+                  <Badge tone="warning">
+                    shared by {worktree.referenceCount}
+                  </Badge>
+                ) : null}
+              </div>
+            </div>
+          )}
+        </section>
+
+        {worktreeLabel && (
+          <section className={styles.cardDetailSectionBlock}>
+            <div className={styles.cardDetailSectionHeader}>
+              <Icon icon={GitBranch} size="sm" tone="muted" />
+              <Text size="2" weight="medium">
+                Worktree actions
+              </Text>
+            </div>
+            <div className={styles.cardDetailWorktreeBody}>
+>>>>>>> upstream/main
               {isWorktreeLoading && (
                 <Text size="1" color="gray">
                   Loading worktree metadata...
@@ -534,11 +1188,19 @@ const CardDetail: React.FC<CardDetailProps> = ({
                   Legacy / unregistered worktree
                 </Text>
               )}
+<<<<<<< HEAD
               <Flex gap="2" wrap="wrap">
                 {wrapWorktreeAction(
                   <Button
                     type="button"
                     size="1"
+=======
+              <div className={styles.cardDetailActions}>
+                {wrapWorktreeAction(
+                  <Button
+                    type="button"
+                    size="sm"
+>>>>>>> upstream/main
                     variant="soft"
                     disabled={worktreeActionsDisabled}
                     title={worktreeActionsTooltip}
@@ -550,7 +1212,11 @@ const CardDetail: React.FC<CardDetailProps> = ({
                 {wrapWorktreeAction(
                   <Button
                     type="button"
+<<<<<<< HEAD
                     size="1"
+=======
+                    size="sm"
+>>>>>>> upstream/main
                     variant="soft"
                     disabled={worktreeActionsDisabled}
                     title={worktreeActionsTooltip}
@@ -562,9 +1228,14 @@ const CardDetail: React.FC<CardDetailProps> = ({
                 {wrapWorktreeAction(
                   <Button
                     type="button"
+<<<<<<< HEAD
                     size="1"
                     variant="soft"
                     color="gray"
+=======
+                    size="sm"
+                    variant="soft"
+>>>>>>> upstream/main
                     disabled={worktreeActionsDisabled}
                     title={worktreeActionsTooltip}
                     onClick={() => invokeWorktreeAction(onOpenWorktree)}
@@ -575,9 +1246,14 @@ const CardDetail: React.FC<CardDetailProps> = ({
                 {wrapWorktreeAction(
                   <Button
                     type="button"
+<<<<<<< HEAD
                     size="1"
                     variant="soft"
                     color="red"
+=======
+                    size="sm"
+                    variant="danger"
+>>>>>>> upstream/main
                     disabled={worktreeActionsDisabled}
                     title={worktreeActionsTooltip}
                     onClick={() => invokeWorktreeAction(onDeleteWorktree)}
@@ -585,6 +1261,7 @@ const CardDetail: React.FC<CardDetailProps> = ({
                     Discard/Delete
                   </Button>,
                 )}
+<<<<<<< HEAD
               </Flex>
             </Flex>
           </Box>
@@ -595,6 +1272,51 @@ const CardDetail: React.FC<CardDetailProps> = ({
             <Text size="2" weight="medium" color="gray">
               Instructions
             </Text>
+=======
+              </div>
+            </div>
+          </section>
+        )}
+
+        <section className={styles.cardDetailSectionBlock}>
+          <div className={styles.cardDetailSectionHeader}>
+            <Icon icon={Target} size="sm" tone="muted" />
+            <Text size="2" weight="medium">
+              Goal
+            </Text>
+          </div>
+          <Box className={styles.cardDetailSection}>{card.title}</Box>
+        </section>
+
+        {card.target_files.length > 0 && (
+          <section className={styles.cardDetailSectionBlock}>
+            <div className={styles.cardDetailSectionHeader}>
+              <Icon icon={FileText} size="sm" tone="muted" />
+              <Text size="2" weight="medium">
+                Files
+              </Text>
+            </div>
+            <Box className={styles.cardDetailSection}>
+              <div className={styles.cardDetailFileList}>
+                {card.target_files.map((file) => (
+                  <Badge key={file} tone="muted">
+                    {file}
+                  </Badge>
+                ))}
+              </div>
+            </Box>
+          </section>
+        )}
+
+        {card.instructions && (
+          <section className={styles.cardDetailSectionBlock}>
+            <div className={styles.cardDetailSectionHeader}>
+              <Icon icon={ListChecks} size="sm" tone="muted" />
+              <Text size="2" weight="medium">
+                Instructions
+              </Text>
+            </div>
+>>>>>>> upstream/main
             <Box className={styles.cardDetailSection}>
               {onInternalLink ? (
                 <InternalLinkProvider
@@ -613,6 +1335,7 @@ const CardDetail: React.FC<CardDetailProps> = ({
                 </Markdown>
               )}
             </Box>
+<<<<<<< HEAD
           </Box>
         )}
 
@@ -624,11 +1347,27 @@ const CardDetail: React.FC<CardDetailProps> = ({
             <Box
               className={styles.cardDetailSection}
               style={{ background: "var(--green-2)" }}
+=======
+          </section>
+        )}
+
+        {card.final_report && (
+          <section className={styles.cardDetailSectionBlock}>
+            <div className={styles.cardDetailSectionHeader}>
+              <Icon icon={FileText} size="sm" tone="success" />
+              <Text size="2" weight="medium">
+                Final Report
+              </Text>
+            </div>
+            <Box
+              className={`${styles.cardDetailSection} ${styles.finalReportSection}`}
+>>>>>>> upstream/main
             >
               <Markdown canHaveInteractiveElements={false}>
                 {card.final_report}
               </Markdown>
             </Box>
+<<<<<<< HEAD
           </Box>
         )}
 
@@ -646,6 +1385,33 @@ const CardDetail: React.FC<CardDetailProps> = ({
               ))}
             </Flex>
           </Box>
+=======
+          </section>
+        )}
+
+        {card.status_updates.length > 0 && (
+          <section className={styles.cardDetailSectionBlock}>
+            <div className={styles.cardDetailSectionHeader}>
+              <Icon icon={ListChecks} size="sm" tone="muted" />
+              <Text size="2" weight="medium">
+                Updates
+              </Text>
+            </div>
+            <div className={`${styles.cardDetailUpdates} rf-stagger`}>
+              {card.status_updates.map((update, i) => (
+                <div
+                  key={i}
+                  className={`${styles.cardDetailUpdate} rf-enter-rise`}
+                >
+                  <Text size="1" color="gray">
+                    {new Date(update.timestamp).toLocaleString()}
+                  </Text>
+                  <Text size="2">{update.message}</Text>
+                </div>
+              ))}
+            </div>
+          </section>
+>>>>>>> upstream/main
         )}
 
         <CardCommentsSection
@@ -654,12 +1420,21 @@ const CardDetail: React.FC<CardDetailProps> = ({
           comments={card.comments ?? []}
         />
 
+<<<<<<< HEAD
         <Flex justify="end">
           <Dialog.Close>
             <Button variant="soft">Close</Button>
           </Dialog.Close>
         </Flex>
       </Flex>
+=======
+        <div className={styles.cardDetailFooter}>
+          <Dialog.Close asChild>
+            <Button variant="soft">Close</Button>
+          </Dialog.Close>
+        </div>
+      </div>
+>>>>>>> upstream/main
     </Dialog.Content>
   );
 };
@@ -670,12 +1445,28 @@ interface TaskWorkspaceProps {
 
 export const TaskWorkspace: React.FC<TaskWorkspaceProps> = ({ taskId }) => {
   const dispatch = useAppDispatch();
+<<<<<<< HEAD
   const taskWorkspaceRef = React.useRef<HTMLDivElement>(null);
   const config = useAppSelector(selectConfig);
   const { data: task, isLoading: taskLoading } = useGetTaskQuery(taskId, {
     pollingInterval: 0,
   });
   const { data: board, isLoading: boardLoading } = useGetBoardQuery(taskId, {
+=======
+  const config = useAppSelector(selectConfig);
+  const {
+    data: task,
+    isLoading: taskLoading,
+    isError: taskError,
+  } = useGetTaskQuery(taskId, {
+    pollingInterval: 0,
+  });
+  const {
+    data: board,
+    isLoading: boardLoading,
+    isError: boardError,
+  } = useGetBoardQuery(taskId, {
+>>>>>>> upstream/main
     pollingInterval: 0,
   });
   const { data: worktreesData, isLoading: worktreesLoading } =
@@ -684,9 +1475,20 @@ export const TaskWorkspace: React.FC<TaskWorkspaceProps> = ({ taskId }) => {
   const [deleteWorktree, deleteWorktreeState] = useDeleteWorktreeMutation();
   const copyToClipboard = useCopyToClipboard();
   const { openFolderInNewWindow } = useEventsBusForIDE();
+<<<<<<< HEAD
   const { data: savedPlanners } = useListTaskTrajectoriesQuery({
     taskId,
     role: "planner",
+=======
+  const { data: savedPlanners, isLoading: savedPlannersLoading } =
+    useListTaskTrajectoriesQuery({
+      taskId,
+      role: "planner",
+    });
+  const { data: savedAgents } = useListTaskTrajectoriesQuery({
+    taskId,
+    role: "agents",
+>>>>>>> upstream/main
   });
   const [createPlannerChat, { isLoading: isCreatingPlanner }] =
     useCreatePlannerChatMutation();
@@ -700,9 +1502,38 @@ export const TaskWorkspace: React.FC<TaskWorkspaceProps> = ({ taskId }) => {
       ),
     [currentTaskUI?.plannerChats],
   );
+<<<<<<< HEAD
   const activeChat = useAppSelector((state) =>
     selectTaskActiveChat(state, taskId),
   );
+=======
+  const linkedCardsByPlanner = useMemo(() => {
+    const agentToPlanner = new Map<string, string>();
+    for (const traj of savedAgents ?? []) {
+      if (traj.parent_id) agentToPlanner.set(traj.id, traj.parent_id);
+    }
+    const result = new Map<string, string[]>();
+    for (const card of board?.cards ?? []) {
+      if (!card.agent_chat_id) continue;
+      const plannerId = agentToPlanner.get(card.agent_chat_id);
+      if (!plannerId) continue;
+      const existing = result.get(plannerId);
+      if (existing) {
+        existing.push(card.id);
+      } else {
+        result.set(plannerId, [card.id]);
+      }
+    }
+    return result;
+  }, [savedAgents, board?.cards]);
+  const activeChat = useAppSelector((state) =>
+    selectTaskActiveChat(state, taskId),
+  );
+  const hasActiveChatRuntime = useAppSelector((state) =>
+    activeChat ? Boolean(selectRuntimeById(state, activeChat.chatId)) : false,
+  );
+  const currentThreadId = useAppSelector(selectCurrentThreadId);
+>>>>>>> upstream/main
   const activeChatBackgroundAgents = useAppSelector((state) =>
     activeChat
       ? selectBackgroundAgentsByThread(state, activeChat.chatId)
@@ -746,6 +1577,7 @@ export const TaskWorkspace: React.FC<TaskWorkspaceProps> = ({ taskId }) => {
         clearTimeout(notificationTimerRef.current);
     };
   }, []);
+<<<<<<< HEAD
   const [layout, setLayout] = useState(() =>
     loadTaskWorkspaceLayout(taskId, defaultTaskWorkspaceLayout()),
   );
@@ -754,6 +1586,18 @@ export const TaskWorkspace: React.FC<TaskWorkspaceProps> = ({ taskId }) => {
   const chatExpanded = layout.chatExpanded;
   const panelsExpanded = layout.panelsExpanded;
   const boardHeightPx = layout.boardHeightPx;
+=======
+  const [explicitTab, setExplicitTab] = useState<TaskWorkspaceTab | null>(() =>
+    loadTaskWorkspaceTab(taskId),
+  );
+  const smartDefaultTab: TaskWorkspaceTab =
+    (savedPlanners?.length ?? 0) > 0 ? "chat" : "board";
+  const workspaceTab: TaskWorkspaceTab = explicitTab ?? smartDefaultTab;
+  const prevTaskStatusRef = React.useRef<string | undefined>(undefined);
+  // Just-created chats are protected from reconciliation until the saved
+  // trajectory list refetch includes them (prevents bouncing to old planner).
+  const pendingCreatedPlannerIdsRef = React.useRef<Set<string>>(new Set());
+>>>>>>> upstream/main
   const worktreeRecords = useMemo(
     () => worktreesData?.worktrees ?? [],
     [worktreesData?.worktrees],
@@ -797,13 +1641,37 @@ export const TaskWorkspace: React.FC<TaskWorkspaceProps> = ({ taskId }) => {
   useEffect(() => {
     if (!savedPlanners || !currentTaskUI) return;
 
+<<<<<<< HEAD
+=======
+    const savedPlannerIds = new Set(savedPlanners.map((planner) => planner.id));
+
+    const pendingCreatedIds = pendingCreatedPlannerIdsRef.current;
+    for (const id of Array.from(pendingCreatedIds)) {
+      if (savedPlannerIds.has(id)) pendingCreatedIds.delete(id);
+    }
+
+    for (const planner of currentTaskUI.plannerChats) {
+      if (
+        !savedPlannerIds.has(planner.id) &&
+        !pendingCreatedIds.has(planner.id)
+      ) {
+        dispatch(removePlannerChat({ taskId, chatId: planner.id }));
+      }
+    }
+
+>>>>>>> upstream/main
     for (const traj of savedPlanners) {
       dispatch(
         createChatWithId({
           id: traj.id,
           title: traj.title,
           isTaskChat: true,
+<<<<<<< HEAD
           mode: "TASK_PLANNER",
+=======
+          openTab: false,
+          mode: traj.mode ?? "TASK_PLANNER",
+>>>>>>> upstream/main
           taskMeta: {
             task_id: taskId,
             role: "planner",
@@ -818,6 +1686,10 @@ export const TaskWorkspace: React.FC<TaskWorkspaceProps> = ({ taskId }) => {
           existing.title !== traj.title ||
           existing.updatedAt !== traj.updated_at ||
           existing.sessionState !== traj.session_state ||
+<<<<<<< HEAD
+=======
+          existing.mode !== traj.mode ||
+>>>>>>> upstream/main
           !sameWaitingCards(
             existing.waitingForCardIds,
             traj.waiting_for_card_ids,
@@ -831,6 +1703,10 @@ export const TaskWorkspace: React.FC<TaskWorkspaceProps> = ({ taskId }) => {
                 title: traj.title,
                 updatedAt: traj.updated_at,
                 sessionState: traj.session_state,
+<<<<<<< HEAD
+=======
+                mode: traj.mode,
+>>>>>>> upstream/main
                 waitingForCardIds: traj.waiting_for_card_ids,
               },
             }),
@@ -848,12 +1724,17 @@ export const TaskWorkspace: React.FC<TaskWorkspaceProps> = ({ taskId }) => {
             createdAt: traj.created_at,
             updatedAt: traj.updated_at,
             sessionState: traj.session_state,
+<<<<<<< HEAD
+=======
+            mode: traj.mode,
+>>>>>>> upstream/main
             waitingForCardIds: traj.waiting_for_card_ids,
           },
         }),
       );
     }
 
+<<<<<<< HEAD
     if (savedPlanners.length > 0 && !activeChat) {
       const mostRecent = savedPlanners.reduce((latest, p) =>
         p.updated_at > latest.updated_at ? p : latest,
@@ -864,6 +1745,31 @@ export const TaskWorkspace: React.FC<TaskWorkspaceProps> = ({ taskId }) => {
           activeChat: { type: "planner", chatId: mostRecent.id },
         }),
       );
+=======
+    const mostRecentPlanner =
+      savedPlanners.length > 0
+        ? savedPlanners.reduce((latest, planner) =>
+            planner.updated_at > latest.updated_at ? planner : latest,
+          )
+        : null;
+    const fallbackActiveChat = mostRecentPlanner
+      ? { type: "planner" as const, chatId: mostRecentPlanner.id }
+      : null;
+
+    if (!activeChat) {
+      if (fallbackActiveChat) {
+        dispatch(setTaskActiveChat({ taskId, activeChat: fallbackActiveChat }));
+      }
+      return;
+    }
+
+    if (
+      activeChat.type === "planner" &&
+      !savedPlannerIds.has(activeChat.chatId) &&
+      !pendingCreatedIds.has(activeChat.chatId)
+    ) {
+      dispatch(setTaskActiveChat({ taskId, activeChat: fallbackActiveChat }));
+>>>>>>> upstream/main
     }
   }, [dispatch, taskId, savedPlanners, currentTaskUI, activeChat]);
 
@@ -912,6 +1818,34 @@ export const TaskWorkspace: React.FC<TaskWorkspaceProps> = ({ taskId }) => {
   }, [activeChat, board, dispatch, taskId, plannerChats]);
 
   useEffect(() => {
+<<<<<<< HEAD
+=======
+    if (activeChat?.type !== "agent" || !board || hasActiveChatRuntime) return;
+    const card = board.cards.find(
+      (candidate) =>
+        candidate.id === activeChat.cardId &&
+        candidate.agent_chat_id === activeChat.chatId,
+    );
+    if (!card) return;
+
+    dispatch(
+      createChatWithId({
+        id: activeChat.chatId,
+        title: formatAgentChatTitle(card.id, card.title),
+        isTaskChat: true,
+        openTab: false,
+        mode: "TASK_AGENT",
+        taskMeta: {
+          task_id: taskId,
+          role: "agents",
+          card_id: card.id,
+        },
+      }),
+    );
+  }, [activeChat, board, dispatch, hasActiveChatRuntime, taskId]);
+
+  useEffect(() => {
+>>>>>>> upstream/main
     if (!task) return;
 
     const prevStatus = prevTaskStatusRef.current;
@@ -930,12 +1864,20 @@ export const TaskWorkspace: React.FC<TaskWorkspaceProps> = ({ taskId }) => {
     }
   }, [task]);
 
+<<<<<<< HEAD
   // Switch chat when activeChat changes
   useEffect(() => {
     if (!activeChat) return;
     const chatId = activeChat.chatId;
     dispatch(switchToThread({ id: chatId, openTab: false }));
   }, [dispatch, activeChat]);
+=======
+  useEffect(() => {
+    if (!activeChat || !hasActiveChatRuntime) return;
+    if (currentThreadId === activeChat.chatId) return;
+    dispatch(switchToThread({ id: activeChat.chatId, openTab: false }));
+  }, [dispatch, activeChat, hasActiveChatRuntime, currentThreadId]);
+>>>>>>> upstream/main
 
   const handleBack = useCallback(() => {
     dispatch(pop());
@@ -955,6 +1897,7 @@ export const TaskWorkspace: React.FC<TaskWorkspaceProps> = ({ taskId }) => {
     );
   }, []);
 
+<<<<<<< HEAD
   const handleNewPlanner = useCallback(() => {
     if (isCreatingPlanner) return;
     createPlannerChat(taskId)
@@ -1003,10 +1946,90 @@ export const TaskWorkspace: React.FC<TaskWorkspaceProps> = ({ taskId }) => {
     isCreatingPlanner,
     showNotification,
   ]);
+=======
+  const handleWorkspaceTabChange = useCallback(
+    (value: string) => {
+      if (!isTaskWorkspaceTab(value)) return;
+      setExplicitTab(value);
+      saveTaskWorkspaceTab(taskId, value);
+    },
+    [taskId],
+  );
+
+  const openChatTab = useCallback(() => {
+    handleWorkspaceTabChange("chat");
+  }, [handleWorkspaceTabChange]);
+
+  const createTaskChat = useCallback(
+    (mode: string) => {
+      if (isCreatingPlanner) return;
+      createPlannerChat({ taskId, mode })
+        .unwrap()
+        .then((result) => {
+          const newChatId = result.chat_id;
+          const resolvedMode = result.mode ?? mode;
+          const now = new Date().toISOString();
+          pendingCreatedPlannerIdsRef.current.add(newChatId);
+          dispatch(
+            createChatWithId({
+              id: newChatId,
+              title: "",
+              isTaskChat: true,
+              openTab: false,
+              mode: resolvedMode,
+              taskMeta: {
+                task_id: taskId,
+                role: "planner",
+                planner_chat_id: newChatId,
+              },
+            }),
+          );
+          dispatch(
+            addPlannerChat({
+              taskId,
+              planner: {
+                id: newChatId,
+                title: "",
+                createdAt: now,
+                updatedAt: now,
+                mode: resolvedMode,
+              },
+            }),
+          );
+          dispatch(
+            setTaskActiveChat({
+              taskId,
+              activeChat: { type: "planner", chatId: newChatId },
+            }),
+          );
+          openChatTab();
+        })
+        .catch((err: unknown) => {
+          showNotification(`Create failed: ${parsePlannerDeleteError(err)}`);
+        });
+    },
+    [
+      dispatch,
+      taskId,
+      createPlannerChat,
+      isCreatingPlanner,
+      openChatTab,
+      showNotification,
+    ],
+  );
+
+  const handleNewPlanner = useCallback(() => {
+    createTaskChat("task_planner");
+  }, [createTaskChat]);
+>>>>>>> upstream/main
 
   const handleRemovePlanner = useCallback(
     (chatId: string) => {
       const previous = plannerChats.find((p) => p.id === chatId);
+<<<<<<< HEAD
+=======
+      pendingCreatedPlannerIdsRef.current.delete(chatId);
+>>>>>>> upstream/main
       dispatch(removePlannerChat({ taskId, chatId }));
       if (activeChat?.type === "planner" && activeChat.chatId === chatId) {
         const remaining = plannerChats.filter((p) => p.id !== chatId);
@@ -1045,8 +2068,14 @@ export const TaskWorkspace: React.FC<TaskWorkspaceProps> = ({ taskId }) => {
       dispatch(
         setTaskActiveChat({ taskId, activeChat: { type: "planner", chatId } }),
       );
+<<<<<<< HEAD
     },
     [dispatch, taskId],
+=======
+      openChatTab();
+    },
+    [dispatch, taskId, openChatTab],
+>>>>>>> upstream/main
   );
 
   const handleSelectAgent = useCallback(
@@ -1059,6 +2088,10 @@ export const TaskWorkspace: React.FC<TaskWorkspaceProps> = ({ taskId }) => {
           id: chatId,
           title: formatAgentChatTitle(cardId, cardTitle),
           isTaskChat: true,
+<<<<<<< HEAD
+=======
+          openTab: false,
+>>>>>>> upstream/main
           mode: "TASK_AGENT",
           taskMeta: {
             task_id: taskId,
@@ -1074,8 +2107,14 @@ export const TaskWorkspace: React.FC<TaskWorkspaceProps> = ({ taskId }) => {
           activeChat: { type: "agent", cardId, chatId },
         }),
       );
+<<<<<<< HEAD
     },
     [board, taskId, dispatch],
+=======
+      openChatTab();
+    },
+    [board, taskId, dispatch, openChatTab],
+>>>>>>> upstream/main
   );
 
   const handleCardAgentClick = useCallback(
@@ -1097,12 +2136,16 @@ export const TaskWorkspace: React.FC<TaskWorkspaceProps> = ({ taskId }) => {
       const action = resolveChatLink(parsed.id, plannerChats, board);
       switch (action.kind) {
         case "planner":
+<<<<<<< HEAD
           dispatch(
             setTaskActiveChat({
               taskId,
               activeChat: { type: "planner", chatId: action.chatId },
             }),
           );
+=======
+          handleSelectPlanner(action.chatId);
+>>>>>>> upstream/main
           return true;
         case "agent":
           handleSelectAgent(action.cardId, action.chatId);
@@ -1132,14 +2175,21 @@ export const TaskWorkspace: React.FC<TaskWorkspaceProps> = ({ taskId }) => {
       activeChat,
       activeChatBackgroundAgents,
       board,
+<<<<<<< HEAD
       taskId,
       dispatch,
       plannerChats,
+=======
+      dispatch,
+      plannerChats,
+      handleSelectPlanner,
+>>>>>>> upstream/main
       handleSelectAgent,
       showNotification,
     ],
   );
 
+<<<<<<< HEAD
   const handleToggleChatExpanded = useCallback(() => {
     setLayout((prev) => {
       const next = { ...prev, chatExpanded: !prev.chatExpanded };
@@ -1181,6 +2231,8 @@ export const TaskWorkspace: React.FC<TaskWorkspaceProps> = ({ taskId }) => {
     });
   }, [taskId]);
 
+=======
+>>>>>>> upstream/main
   useEffect(() => {
     if (!board || !selectedCardId) return;
     if (!board.cards.some((c) => c.id === selectedCardId)) {
@@ -1192,7 +2244,16 @@ export const TaskWorkspace: React.FC<TaskWorkspaceProps> = ({ taskId }) => {
   useEffect(() => {
     const onVisible = () => {
       if (document.visibilityState === "visible") {
+<<<<<<< HEAD
         dispatch(tasksApi.util.invalidateTags([{ type: "Board", id: taskId }]));
+=======
+        dispatch(
+          tasksApi.util.invalidateTags([
+            { type: "Board", id: taskId },
+            { type: "TaskTrajectories", id: `${taskId}/agents` },
+          ]),
+        );
+>>>>>>> upstream/main
       }
     };
     document.addEventListener("visibilitychange", onVisible);
@@ -1348,6 +2409,10 @@ export const TaskWorkspace: React.FC<TaskWorkspaceProps> = ({ taskId }) => {
               mergeTarget.card.title,
             ),
             isTaskChat: true,
+<<<<<<< HEAD
+=======
+            openTab: false,
+>>>>>>> upstream/main
             mode: "TASK_AGENT",
             taskMeta: {
               task_id: taskId,
@@ -1375,6 +2440,10 @@ export const TaskWorkspace: React.FC<TaskWorkspaceProps> = ({ taskId }) => {
           }),
         );
       }
+<<<<<<< HEAD
+=======
+      openChatTab();
+>>>>>>> upstream/main
       dispatch(switchToThread({ id: chatId, openTab: false }));
       if (mergeTarget.worktree.meta) {
         dispatch(
@@ -1396,23 +2465,48 @@ export const TaskWorkspace: React.FC<TaskWorkspaceProps> = ({ taskId }) => {
       config,
       dispatch,
       mergeTarget,
+<<<<<<< HEAD
+=======
+      openChatTab,
+>>>>>>> upstream/main
       showNotification,
       taskId,
     ],
   );
 
+<<<<<<< HEAD
   if (taskLoading || boardLoading || !task || !board) {
+=======
+  if (taskError || boardError) {
+    return (
+      <Flex
+        align="center"
+        justify="center"
+        className={styles.fullHeightEmptyState}
+      >
+        <Text color="gray">Task is no longer available.</Text>
+      </Flex>
+    );
+  }
+
+  if (taskLoading || boardLoading || savedPlannersLoading || !task || !board) {
+>>>>>>> upstream/main
     return <ChatLoading />;
   }
 
   const chatLabel = !activeChat
     ? "No chat selected"
     : activeChat.type === "planner"
+<<<<<<< HEAD
       ? `Planner`
+=======
+      ? "Planner"
+>>>>>>> upstream/main
       : formatAgentChatTitle(
           activeChat.cardId,
           board.cards.find((c) => c.id === activeChat.cardId)?.title ?? "",
         );
+<<<<<<< HEAD
   const agentChats = board.cards.filter((card) => card.agent_chat_id);
   const doneAgentChats = agentChats.filter((card) => card.column === "done");
   const chatToggleLabel = chatExpanded ? "Collapse chat" : "Expand chat";
@@ -1553,17 +2647,127 @@ export const TaskWorkspace: React.FC<TaskWorkspaceProps> = ({ taskId }) => {
             {workspaceTab === "chat" ? (
               <Box className={styles.workspaceTabContent}>
                 {activeChat ? (
+=======
+  const runningAgentCount = board.cards.filter(
+    (card) => card.column === "doing" && card.agent_chat_id,
+  ).length;
+  const waitingPlannerCount = plannerChats.filter(
+    (planner) => planner.sessionState === "waiting_user_input",
+  ).length;
+
+  return (
+    <Box className={styles.taskWorkspace}>
+      <Tabs
+        value={workspaceTab}
+        onValueChange={handleWorkspaceTabChange}
+        className={styles.workspaceTabs}
+      >
+        <div className={styles.workspaceHeader}>
+          <Tabs.List
+            activeIndex={workspaceTabIndex(workspaceTab)}
+            className={styles.workspaceTabList}
+            itemCount={4}
+          >
+            <Tabs.Trigger value="board">
+              <span className={styles.tabTriggerContent}>
+                Board
+                {runningAgentCount > 0 && (
+                  <Badge
+                    tone="accent"
+                    title={`${runningAgentCount} running agent${
+                      runningAgentCount === 1 ? "" : "s"
+                    }`}
+                  >
+                    {runningAgentCount}
+                  </Badge>
+                )}
+                {waitingPlannerCount > 0 && (
+                  <Badge
+                    tone="warning"
+                    title={`${waitingPlannerCount} planner${
+                      waitingPlannerCount === 1 ? "" : "s"
+                    } waiting for input`}
+                  >
+                    {waitingPlannerCount}
+                  </Badge>
+                )}
+              </span>
+            </Tabs.Trigger>
+            <Tabs.Trigger value="chat">Chat</Tabs.Trigger>
+            <Tabs.Trigger value="memories">Memories</Tabs.Trigger>
+            <Tabs.Trigger value="documents">Documents</Tabs.Trigger>
+          </Tabs.List>
+          <div className={styles.headerActionsPanel}>
+            <button
+              type="button"
+              className={styles.headerActionButton}
+              onClick={handleNewPlanner}
+              disabled={isCreatingPlanner}
+              aria-label="New task planner"
+              title="New task planner"
+            >
+              <PlusIcon />
+              <Text size="1">Planner</Text>
+            </button>
+            <NewChatModeButton
+              disabled={isCreatingPlanner}
+              onCreate={createTaskChat}
+            />
+            <ChatSwitcher
+              label={chatLabel}
+              plannerChats={plannerChats}
+              cards={board.cards}
+              activeChat={activeChat}
+              linkedCardsByPlanner={linkedCardsByPlanner}
+              onSelectPlanner={handleSelectPlanner}
+              onRemovePlanner={handleRemovePlanner}
+              onSelectAgent={handleSelectAgent}
+            />
+          </div>
+        </div>
+        <Box className={styles.chatContent}>
+          {workspaceTab === "board" ? (
+            <Box className={styles.workspaceTabContent}>
+              <div className={styles.boardTabLayout}>
+                <BoardRail
+                  plannerChats={plannerChats}
+                  cards={board.cards}
+                  activeChat={activeChat}
+                  linkedCardsByPlanner={linkedCardsByPlanner}
+                  onSelectPlanner={handleSelectPlanner}
+                  onRemovePlanner={handleRemovePlanner}
+                  onSelectAgent={handleSelectAgent}
+                />
+                <Box className={styles.boardArea}>
+                  <KanbanBoard
+                    board={board}
+                    onCardClick={handleCardClick}
+                    onAgentClick={handleCardAgentClick}
+                  />
+                </Box>
+              </div>
+            </Box>
+          ) : workspaceTab === "chat" ? (
+            <Box className={styles.workspaceTabContent}>
+              {activeChat ? (
+                hasActiveChatRuntime ? (
+>>>>>>> upstream/main
                   <InternalLinkProvider onInternalLink={handleInternalLink}>
                     <Chat
                       host={config.host}
                       tabbed={false}
                       backFromChat={handleBack}
+<<<<<<< HEAD
+=======
+                      chatId={activeChat.chatId}
+>>>>>>> upstream/main
                     />
                   </InternalLinkProvider>
                 ) : (
                   <Flex
                     align="center"
                     justify="center"
+<<<<<<< HEAD
                     style={{ height: "100%" }}
                   >
                     <Text color="gray">
@@ -1586,6 +2790,36 @@ export const TaskWorkspace: React.FC<TaskWorkspaceProps> = ({ taskId }) => {
       </Box>
 
       <Dialog.Root
+=======
+                    className={styles.fullHeightEmptyState}
+                  >
+                    <Text color="gray">Loading chat…</Text>
+                  </Flex>
+                )
+              ) : (
+                <Flex
+                  align="center"
+                  justify="center"
+                  className={styles.fullHeightEmptyState}
+                >
+                  <Text color="gray">Create a planner chat to get started</Text>
+                </Flex>
+              )}
+            </Box>
+          ) : workspaceTab === "memories" ? (
+            <Box className={styles.workspaceTabContent}>
+              <MemoryInboxPanel taskId={taskId} />
+            </Box>
+          ) : (
+            <Box className={styles.workspaceTabContent}>
+              <DocumentsPanel taskId={taskId} />
+            </Box>
+          )}
+        </Box>
+      </Tabs>
+
+      <Dialog
+>>>>>>> upstream/main
         open={Boolean(selectedCard)}
         onOpenChange={(open) => {
           if (!open) setSelectedCardId(null);
@@ -1606,7 +2840,11 @@ export const TaskWorkspace: React.FC<TaskWorkspaceProps> = ({ taskId }) => {
             onDeleteWorktree={handleDeleteCardWorktree}
           />
         )}
+<<<<<<< HEAD
       </Dialog.Root>
+=======
+      </Dialog>
+>>>>>>> upstream/main
 
       <WorktreeDiffPanel
         open={Boolean(diffTarget)}
@@ -1638,7 +2876,11 @@ export const TaskWorkspace: React.FC<TaskWorkspaceProps> = ({ taskId }) => {
         }
       />
 
+<<<<<<< HEAD
       <Dialog.Root
+=======
+      <Dialog
+>>>>>>> upstream/main
         open={Boolean(deleteTarget)}
         onOpenChange={(open) => {
           if (!open) {
@@ -1647,6 +2889,7 @@ export const TaskWorkspace: React.FC<TaskWorkspaceProps> = ({ taskId }) => {
           }
         }}
       >
+<<<<<<< HEAD
         <Dialog.Content maxWidth="420px">
           <Dialog.Title>Delete worktree</Dialog.Title>
           <Dialog.Description size="2" color="gray">
@@ -1700,11 +2943,67 @@ export const TaskWorkspace: React.FC<TaskWorkspaceProps> = ({ taskId }) => {
           </Flex>
         </Dialog.Content>
       </Dialog.Root>
+=======
+        <Dialog.Content
+          className={styles.deleteWorktreeDialog}
+          maxWidth="420px"
+        >
+          <div className={styles.deleteWorktreeRoot}>
+            <Dialog.Title>Delete worktree</Dialog.Title>
+            <Dialog.Description>
+              Delete or discard this task agent worktree from disk.
+            </Dialog.Description>
+            <div className={styles.deleteWorktreeBody}>
+              <Text size="2" weight="medium">
+                {deleteTarget?.worktree.label ?? "Worktree"}
+              </Text>
+              {deleteTarget?.worktree.referenceCount !== undefined &&
+                deleteTarget.worktree.referenceCount > 1 && (
+                  <Text size="2" color="amber">
+                    This worktree is shared by{" "}
+                    {deleteTarget.worktree.referenceCount} references.
+                  </Text>
+                )}
+              <Checkbox
+                checked={deleteBranch}
+                onCheckedChange={(checked) => setDeleteBranch(checked === true)}
+                disabled={deleteWorktreeState.isLoading}
+              >
+                Delete git branch too
+              </Checkbox>
+            </div>
+            <div className={styles.deleteWorktreeActions}>
+              <Dialog.Close asChild>
+                <Button
+                  type="button"
+                  variant="soft"
+                  disabled={deleteWorktreeState.isLoading}
+                >
+                  Cancel
+                </Button>
+              </Dialog.Close>
+              <Button
+                type="button"
+                variant="danger"
+                disabled={!deleteTarget || deleteWorktreeState.isLoading}
+                loading={deleteWorktreeState.isLoading}
+                onClick={() => void handleConfirmDeleteCardWorktree()}
+              >
+                {deleteWorktreeState.isLoading
+                  ? "Deleting..."
+                  : "Delete worktree"}
+              </Button>
+            </div>
+          </div>
+        </Dialog.Content>
+      </Dialog>
+>>>>>>> upstream/main
 
       {notification && (
         <Box
           role="status"
           aria-live="polite"
+<<<<<<< HEAD
           style={{
             position: "fixed",
             bottom: "var(--space-4)",
@@ -1717,6 +3016,9 @@ export const TaskWorkspace: React.FC<TaskWorkspaceProps> = ({ taskId }) => {
             zIndex: 50,
             boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
           }}
+=======
+          className={styles.notificationToast}
+>>>>>>> upstream/main
         >
           <Text size="2">{notification}</Text>
         </Box>

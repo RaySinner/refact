@@ -1,15 +1,16 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { ChatForm, ChatFormProps } from "../ChatForm";
 import { ChatContent } from "../ChatContent";
 import { Flex, Button, Card, Container } from "@radix-ui/themes";
+import styles from "./Chat.module.css";
 import { useAppSelector, useAppDispatch, useChatActions } from "../../hooks";
 import { type Config } from "../../features/Config/configSlice";
 import {
   enableSend,
-  selectIsStreaming,
-  selectPreventSend,
-  selectChatId,
+  selectIsStreamingById,
+  selectPreventSendById,
   selectIsBuddyChat,
+  useThreadId,
 } from "../../features/Chat/Thread";
 import { BuddyChatCompanion } from "../../features/Buddy";
 import { DropzoneProvider } from "../Dropzone";
@@ -23,6 +24,10 @@ import {
   selectBrowserUiOpen,
 } from "../../features/Browser/browserSlice";
 import { SkillsIndicator } from "../ChatContent/SkillsIndicator";
+import {
+  registerVisibleChatMount,
+  unregisterVisibleChatMount,
+} from "../../features/Connection";
 
 export type ChatProps = {
   host: Config["host"];
@@ -41,9 +46,10 @@ export const Chat: React.FC<ChatProps> = ({
   const dispatch = useAppDispatch();
 
   const [isViewingRawJSON, setIsViewingRawJSON] = useState(false);
-  const isStreaming = useAppSelector(selectIsStreaming);
-
-  const chatId = useAppSelector(selectChatId);
+  const chatId = useThreadId();
+  const isStreaming = useAppSelector((state) =>
+    selectIsStreamingById(state, chatId),
+  );
   const isBuddyChat = useAppSelector((state) =>
     selectIsBuddyChat(state, chatId),
   );
@@ -54,12 +60,44 @@ export const Chat: React.FC<ChatProps> = ({
     selectBrowserContextOversize(state, chatId),
   );
 
-  const { submit, abort, retryFromIndex } = useChatActions();
+  const { submit, abort, retryFromIndex } = useChatActions(chatId);
 
   const { shouldCheckpointsPopupBeShown } = useCheckpoints();
 
-  const preventSend = useAppSelector(selectPreventSend);
+  useEffect(() => {
+    dispatch(registerVisibleChatMount({ chatId }));
+    return () => {
+      dispatch(unregisterVisibleChatMount({ chatId }));
+    };
+  }, [dispatch, chatId]);
+
+  const preventSend = useAppSelector((state) =>
+    selectPreventSendById(state, chatId),
+  );
   const onEnableSend = () => dispatch(enableSend({ id: chatId }));
+
+  const bottomDockRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const dock = bottomDockRef.current;
+    // The chat root renders through DropzoneProvider's asChild cloneElement,
+    // which overwrites any ref passed to it (react-dropzone's rootProps
+    // carry their own ref) — so resolve the root as the dock's parent.
+    const root = dock?.parentElement;
+    if (!dock || !root) return;
+
+    const updateClearance = () => {
+      root.style.setProperty(
+        "--rf-composer-clearance",
+        `${dock.offsetHeight}px`,
+      );
+    };
+
+    updateClearance();
+    const observer = new ResizeObserver(updateClearance);
+    observer.observe(dock);
+    return () => observer.disconnect();
+  }, []);
 
   const handleSubmit = useCallback(
     (value: string, sendPolicy?: "immediate" | "after_flow") => {
@@ -86,7 +124,15 @@ export const Chat: React.FC<ChatProps> = ({
   return (
     <DropzoneProvider asChild>
       <Flex
-        style={{ ...style, minHeight: 0, height: "100%" }}
+        className={styles.chatRoot}
+        style={{
+          ...style,
+          minHeight: 0,
+          minWidth: 0,
+          maxWidth: "100%",
+          height: "100%",
+          overflow: "hidden",
+        }}
         direction="column"
         flexGrow="1"
         width="100%"
@@ -95,18 +141,25 @@ export const Chat: React.FC<ChatProps> = ({
         {isBrowserOpen && <BrowserPanel chatId={chatId} />}
         <Flex
           direction="column"
-          style={{ flex: "1 1 auto", minHeight: 0, overflow: "hidden" }}
+          className={styles.transcriptArea}
+          style={{
+            flex: "1 1 auto",
+            minHeight: 0,
+            minWidth: 0,
+            maxWidth: "100%",
+            overflow: "hidden",
+          }}
         >
           <ChatContent onRetry={handleRetry} onStopStreaming={handleAbort} />
         </Flex>
 
-        <Flex direction="column" style={{ flex: "0 0 auto" }}>
+        <Flex
+          ref={bottomDockRef}
+          direction="column"
+          className={styles.bottomDock}
+        >
           <Container>
             <SkillsIndicator chatId={chatId} />
-          </Container>
-
-          <Container>
-            <TaskProgressWidget />
           </Container>
 
           {!isBuddyChat && shouldCheckpointsPopupBeShown && <Checkpoints />}
@@ -119,7 +172,7 @@ export const Chat: React.FC<ChatProps> = ({
 
           {!isStreaming && preventSend && unCalledTools && (
             <Flex py="4">
-              <Card style={{ width: "100%" }}>
+              <Card className={styles.dockPanel} style={{ width: "100%" }}>
                 <Flex direction="column" align="center" gap="2" width="100%">
                   Chat was interrupted with uncalled tools calls.
                   <Button onClick={onEnableSend}>Resume</Button>
@@ -128,13 +181,19 @@ export const Chat: React.FC<ChatProps> = ({
             </Flex>
           )}
 
-          <Container style={{ position: "relative" }}>
-            {!isBuddyChat && <BuddyChatCompanion chatId={chatId} />}
-            <ChatForm
-              key={chatId}
-              onSubmit={handleSubmit}
-              onClose={maybeSendToSidebar}
-            />
+          <Container>
+            <div className={styles.dockColumn}>
+              {!isBuddyChat && <BuddyChatCompanion chatId={chatId} />}
+              <div className={styles.dockGroup}>
+                <TaskProgressWidget />
+                <ChatForm
+                  key={chatId}
+                  embedded
+                  onSubmit={handleSubmit}
+                  onClose={maybeSendToSidebar}
+                />
+              </div>
+            </div>
           </Container>
         </Flex>
       </Flex>

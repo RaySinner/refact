@@ -1,18 +1,16 @@
+import { CircleCheck, LoaderCircle, RotateCcw } from "lucide-react";
 import React, { useMemo, useCallback } from "react";
-import { CheckCircledIcon, ResetIcon } from "@radix-ui/react-icons";
-import { Flex, Box, Spinner } from "@radix-ui/themes";
+import { Flex, Box } from "@radix-ui/themes";
+import { Icon } from "../../ui";
 import { useAppSelector, useEventsBusForIDE } from "../../../hooks";
 import {
-  selectManyDiffMessageByIds,
-  selectIsStreaming,
-  selectIsWaiting,
-  selectToolResultById,
+  selectManyDiffMessageByThreadAndIds,
+  selectIsStreamingById,
+  selectIsWaitingById,
+  selectToolResultByThreadAndId,
 } from "../../../features/Chat/Thread/selectors";
-import {
-  selectChatId,
-  selectCanPaste,
-  selectSelectedSnippet,
-} from "../../../features/Chat";
+import { useThreadId } from "../../../features/Chat/Thread";
+import { selectCanPaste, selectSelectedSnippet } from "../../../features/Chat";
 import { ToolCall, DiffChunk } from "../../../services/refact/types";
 import { toolsApi } from "../../../services/refact";
 import {
@@ -59,7 +57,7 @@ const FileEditItem: React.FC<FileEditItemProps> = ({
 }) => {
   return (
     <div className={styles.fileItem}>
-      <Box className={styles.diffContent}>
+      <Box className="scrollX">
         {diffs.map((diff, i) => (
           <DiffBlock
             key={i}
@@ -82,14 +80,19 @@ export const EditTool: React.FC<EditToolProps> = ({
   const { queryPathThenOpenFile, diffPasteBack, sendToolCallToIde } =
     useEventsBusForIDE();
   const [requestDryRun, dryRunResult] = toolsApi.useDryRunForEditToolMutation();
-  const isStreaming = useAppSelector(selectIsStreaming);
-  const isWaiting = useAppSelector(selectIsWaiting);
+  const chatId = useThreadId();
+  const isStreaming = useAppSelector((state) =>
+    selectIsStreamingById(state, chatId),
+  );
+  const isWaiting = useAppSelector((state) =>
+    selectIsWaitingById(state, chatId),
+  );
   const canPaste = useAppSelector(selectCanPaste);
   const selectedSnippet = useAppSelector(selectSelectedSnippet);
-  const chatId = useAppSelector(selectChatId);
 
   const hasResult = useAppSelector(
-    (state) => selectToolResultById(state, toolCall.id) !== undefined,
+    (state) =>
+      selectToolResultByThreadAndId(state, chatId, toolCall.id) !== undefined,
   );
 
   const diffIds = useMemo(
@@ -97,8 +100,8 @@ export const EditTool: React.FC<EditToolProps> = ({
     [toolCall.id],
   );
   const selectDiffs = useMemo(
-    () => selectManyDiffMessageByIds(diffIds),
-    [diffIds],
+    () => selectManyDiffMessageByThreadAndIds(chatId, diffIds),
+    [chatId, diffIds],
   );
   const toolDiffs = useAppSelector(selectDiffs);
 
@@ -182,9 +185,9 @@ export const EditTool: React.FC<EditToolProps> = ({
       {
         label: "Apply diff",
         icon: dryRunResult.isLoading ? (
-          <Spinner size="1" />
+          <Icon icon={LoaderCircle} size="sm" tone="accent" />
         ) : (
-          <CheckCircledIcon />
+          <Icon icon={CircleCheck} size="sm" tone="success" />
         ),
         onClick: handleApplyDiff,
         disabled: dryRunResult.isLoading || !parsedToolCall,
@@ -194,7 +197,7 @@ export const EditTool: React.FC<EditToolProps> = ({
     if (replaceContent !== null && hasSelection) {
       actions.push({
         label: "Replace selection",
-        icon: <ResetIcon />,
+        icon: <Icon icon={RotateCcw} size="sm" />,
         onClick: handleReplace,
         disabled: !canPaste,
       });
@@ -214,7 +217,7 @@ export const EditTool: React.FC<EditToolProps> = ({
   if (!shouldRenderDiffs) return null;
 
   return isSingleFile ? (
-    <Box className={styles.diffContent}>
+    <Box className="scrollX">
       {allDiffs.map((diff, i) => (
         <DiffBlock
           key={i}

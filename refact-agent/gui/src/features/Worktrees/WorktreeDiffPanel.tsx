@@ -1,6 +1,10 @@
 import React from "react";
 import { skipToken } from "@reduxjs/toolkit/query";
+<<<<<<< HEAD
 import { Badge, Button, Dialog, Flex, Spinner, Text } from "@radix-ui/themes";
+=======
+import { Button, Dialog, Badge } from "../../components/ui";
+>>>>>>> upstream/main
 import {
   useGetWorktreeDiffQuery,
   type WorktreeMeta,
@@ -39,6 +43,7 @@ function statusLabel(status?: WorktreeStatus | null): string {
   return "clean";
 }
 
+<<<<<<< HEAD
 function statusColor(
   status?: WorktreeStatus | null,
 ): "green" | "amber" | "red" | "gray" {
@@ -46,6 +51,15 @@ function statusColor(
   if ((status.deleted ?? false) || !status.path_exists) return "red";
   if ((status.conflicted ?? false) || status.dirty) return "amber";
   return "green";
+=======
+function statusTone(
+  status?: WorktreeStatus | null,
+): React.ComponentProps<typeof Badge>["tone"] {
+  if (!status) return "muted";
+  if ((status.deleted ?? false) || !status.path_exists) return "danger";
+  if ((status.conflicted ?? false) || status.dirty) return "warning";
+  return "success";
+>>>>>>> upstream/main
 }
 
 function statsText(stats: {
@@ -128,6 +142,7 @@ export const WorktreeDiffPanel: React.FC<WorktreeDiffPanelProps> = ({
   const status = data?.status ?? record?.status ?? worktree?.status;
 
   return (
+<<<<<<< HEAD
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Content
         className={styles.diffDialog}
@@ -249,6 +264,102 @@ export const WorktreeDiffPanel: React.FC<WorktreeDiffPanelProps> = ({
         </Flex>
       </Dialog.Content>
     </Dialog.Root>
+=======
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <Dialog.Content className={styles.diffDialog} maxWidth="900px">
+        <div
+          {...(closeOnNonInteractiveContentClick
+            ? dialogNonInteractiveCloseHandlers(() => onOpenChange(false))
+            : {})}
+        >
+          <Dialog.Title>Worktree diff</Dialog.Title>
+          <Dialog.Description>Review changes for {label}</Dialog.Description>
+
+          <div className={styles.modalFields}>
+            <div className={styles.badgeRow}>
+              <Badge tone={statusTone(status)}>{statusLabel(status)}</Badge>
+              {data?.branch && <Badge tone="muted">{data.branch}</Badge>}
+              {data?.base_branch && (
+                <Badge tone="muted">target {data.base_branch}</Badge>
+              )}
+            </div>
+
+            {isFetching && (
+              <div className={styles.loadingRow}>
+                <span className={styles.spinner} aria-hidden="true" />
+                <span className={styles.helpText}>
+                  Loading worktree diff...
+                </span>
+              </div>
+            )}
+
+            {error && (
+              <div className={styles.errorBox}>
+                <span className={styles.errorTitle}>
+                  Could not load worktree diff.
+                </span>
+                <span className={styles.metaText}>
+                  {worktreeErrorText(error)}
+                </span>
+                <Button size="sm" variant="soft" onClick={() => void refetch()}>
+                  Retry
+                </Button>
+              </div>
+            )}
+
+            {data && (
+              <>
+                <p className={styles.metaText}>{statsText(data.stats)}</p>
+
+                {data.patch_truncated && (
+                  <p className={styles.warningBox}>
+                    Patch preview was truncated by the backend.
+                  </p>
+                )}
+
+                <div className={styles.diffFileList}>
+                  {data.files.length === 0 ? (
+                    <span className={styles.emptyText}>
+                      No changed files reported.
+                    </span>
+                  ) : (
+                    data.files.map((file) => (
+                      <div
+                        key={`${file.source}-${file.path}`}
+                        className={styles.diffFileItem}
+                      >
+                        <span className={styles.itemTitle}>
+                          <span className={styles.itemName}>{file.path}</span>
+                          <span className={styles.metaText}>
+                            {file.source} · {file.status}
+                          </span>
+                        </span>
+                        {fileDelta(file.additions, file.deletions) && (
+                          <span className={styles.metaText}>
+                            {fileDelta(file.additions, file.deletions)}
+                          </span>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <div className={`${styles.patchScroller} scrollX`}>
+                  <RichPatchPreview patch={data.patch} />
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className={styles.modalActions}>
+            <Dialog.Close asChild>
+              <Button variant="soft">Close</Button>
+            </Dialog.Close>
+          </div>
+        </div>
+      </Dialog.Content>
+    </Dialog>
+>>>>>>> upstream/main
   );
 };
 

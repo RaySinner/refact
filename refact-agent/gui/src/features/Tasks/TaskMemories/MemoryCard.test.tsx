@@ -1,12 +1,23 @@
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+<<<<<<< HEAD
 import { describe, expect, it, vi } from "vitest";
 import type React from "react";
 import { render, screen } from "../../../utils/test-utils";
 import { MemoryCard } from "./MemoryCard";
 import type { TaskMemoryEntry } from "../../../services/refact/taskMemoriesApi";
 import { memoryKindColor } from "../../../services/refact/taskKinds";
+=======
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type React from "react";
+import { act } from "react-dom/test-utils";
+import { fireEvent, render, screen } from "../../../utils/test-utils";
+import { MemoryCard } from "./MemoryCard";
+import type { TaskMemoryEntry } from "../../../services/refact/taskMemoriesApi";
+import { memoryKindColor } from "../../../services/refact/taskKinds";
+import { COLLAPSE_ANIMATION_MS } from "../../../components/shared/useDelayedUnmount";
+>>>>>>> upstream/main
 
 HTMLElement.prototype.hasPointerCapture = () => false;
 
@@ -50,6 +61,13 @@ function renderCard(
   );
 }
 
+<<<<<<< HEAD
+=======
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+>>>>>>> upstream/main
 describe("MemoryCard", () => {
   it("renders title from frontmatter when present", () => {
     renderCard(mockMemory);
@@ -126,6 +144,68 @@ describe("MemoryCard", () => {
     expect(screen.getByText("created_at")).toBeInTheDocument();
   });
 
+<<<<<<< HEAD
+=======
+  it("keeps expanded content mounted while uncontrolled collapse animates", () => {
+    vi.useFakeTimers();
+    renderCard(mockMemory);
+    const trigger = screen.getByRole("button", {
+      name: /Expand memory Use scoped memory index/i,
+    });
+
+    fireEvent.click(trigger);
+    expect(
+      screen.getByTestId("memory-card-expanded-decision.md"),
+    ).toBeInTheDocument();
+
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(
+      screen.getByTestId("memory-card-expanded-decision.md"),
+    ).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(COLLAPSE_ANIMATION_MS);
+    });
+
+    expect(
+      screen.queryByTestId("memory-card-expanded-decision.md"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("preserves controlled expansion contract", async () => {
+    const onExpandedChange = vi.fn();
+    const { rerender, user } = renderCard(mockMemory, {
+      expanded: false,
+      onExpandedChange,
+    });
+    const trigger = screen.getByRole("button", {
+      name: /Expand memory Use scoped memory index/i,
+    });
+
+    await user.click(trigger);
+
+    expect(onExpandedChange).toHaveBeenCalledWith(mockMemory.filename, true);
+    expect(
+      screen.queryByTestId("memory-card-expanded-decision.md"),
+    ).not.toBeInTheDocument();
+
+    rerender(
+      <MemoryCard
+        memory={mockMemory}
+        onPin={vi.fn()}
+        onArchive={vi.fn()}
+        expanded
+        onExpandedChange={onExpandedChange}
+      />,
+    );
+
+    expect(
+      screen.getByTestId("memory-card-expanded-decision.md"),
+    ).toBeInTheDocument();
+  });
+
+>>>>>>> upstream/main
   it("unknown_memory_kind_renders_gray_badge", () => {
     expect(memoryKindColor("sprint")).toBe("gray");
     expect(memoryKindColor("roadmap")).toBe("gray");

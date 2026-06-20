@@ -3,10 +3,14 @@ pub mod cache_diagnostics;
 pub mod cache_guard;
 #[cfg(test)]
 mod cache_stability_tests;
+pub mod cloud_token_count;
 pub mod config;
 mod content;
 pub mod diagnostics;
 mod generation;
+pub mod goal_monitor;
+pub mod goal_role;
+pub mod goal_verifier;
 mod handlers;
 pub mod history_limit;
 pub mod internal_roles;
@@ -32,6 +36,7 @@ mod tool_call_recovery;
 mod tool_call_recovery_oss;
 pub mod tools;
 pub mod trajectories;
+pub mod trajectory_index;
 pub mod trajectory_ops;
 pub mod types;
 pub mod verifier;
@@ -52,4 +57,5 @@ pub use trajectories::{
     find_trajectory_path_for_active_chat, list_all_trajectories_meta, list_trajectories_page,
 };
 pub use handlers::{handle_v1_chat_subscribe, handle_v1_chat_command, handle_v1_chat_cancel_queued};
+pub use goal_monitor::start_goal_monitor;
 pub use task_agent_monitor::start_agent_monitor;

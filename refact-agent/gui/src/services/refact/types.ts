@@ -16,7 +16,12 @@ export type ChatRole =
   | "compression_report"
   | "summarization"
   | "event"
+<<<<<<< HEAD
   | "plan";
+=======
+  | "plan"
+  | "goal";
+>>>>>>> upstream/main
 
 export type ChatContextFile = {
   file_name: string;
@@ -514,6 +519,10 @@ export function getAssistantCompressionMetadata(message: {
 export interface SummarizationMessage extends BaseMessage {
   role: "summarization";
   content: string;
+<<<<<<< HEAD
+=======
+  paired_summary_content?: string;
+>>>>>>> upstream/main
   summarized_range?: [number, number];
   summarization_tier?: SummarizationTier;
   summarized_token_estimate?: number;
@@ -637,6 +646,130 @@ export interface CompressionReportMessage extends BaseMessage {
   extra?: CompressionReportExtra;
 }
 
+<<<<<<< HEAD
+=======
+export type GoalStatus =
+  | "active"
+  | "verifying"
+  | "paused"
+  | "completed"
+  | "stopped"
+  | "budget_exhausted"
+  | "no_progress"
+  | "transferred";
+
+export type GoalBudget = {
+  max_turns: number;
+  max_minutes: number;
+  max_tokens: number;
+  cooldown_ms: number;
+  no_progress_token_threshold: number;
+  no_progress_turns: number;
+};
+
+export type GoalProgress = {
+  turns_used: number;
+  tokens_used: number;
+  started_at_ms: number;
+  no_progress_turns: number;
+  last_nudge_at_ms: number;
+};
+
+export type GoalAttempt = {
+  at_ms: number;
+  trigger: string;
+  verdict: string;
+  gaps: string[];
+  verifier_reply: string;
+};
+
+export type GoalEvent = {
+  at_ms: number;
+  kind: string;
+  text: string;
+};
+
+export type GoalSnapshot = {
+  content: string;
+  version: number;
+  active: boolean;
+  status: GoalStatus;
+  budget: GoalBudget;
+  progress: GoalProgress;
+  attempts: GoalAttempt[];
+  events: GoalEvent[];
+  transferred_from?: string | null;
+  transferred_to?: string | null;
+};
+
+export type GoalMetadata = {
+  mode?: string;
+  version?: number;
+  created_at_ms?: number;
+  supersedes?: string | null;
+  active?: boolean;
+  budget?: GoalBudget;
+  truncated?: boolean;
+  original_chars?: number;
+};
+
+export type GoalMessage = Omit<MessageEnvelope, "extra"> & {
+  role: "goal";
+  content: string;
+  extra?: Record<string, unknown> & { goal?: unknown };
+};
+
+function isGoalBudget(value: unknown): value is GoalBudget {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.max_turns === "number" &&
+    typeof value.max_minutes === "number" &&
+    typeof value.max_tokens === "number" &&
+    typeof value.cooldown_ms === "number" &&
+    typeof value.no_progress_token_threshold === "number" &&
+    typeof value.no_progress_turns === "number"
+  );
+}
+
+export function getGoalMetadata(message: GoalMessage): GoalMetadata {
+  const rawGoal = message.extra?.goal;
+  if (!isRecord(rawGoal)) return {};
+
+  const metadata: GoalMetadata = {};
+  if (typeof rawGoal.mode === "string" && rawGoal.mode.length > 0) {
+    metadata.mode = rawGoal.mode;
+  }
+  if (typeof rawGoal.version === "number" && Number.isFinite(rawGoal.version)) {
+    metadata.version = rawGoal.version;
+  }
+  if (
+    typeof rawGoal.created_at_ms === "number" &&
+    Number.isFinite(rawGoal.created_at_ms)
+  ) {
+    metadata.created_at_ms = rawGoal.created_at_ms;
+  }
+  if (typeof rawGoal.supersedes === "string" || rawGoal.supersedes === null) {
+    metadata.supersedes = rawGoal.supersedes;
+  }
+  if (typeof rawGoal.active === "boolean") {
+    metadata.active = rawGoal.active;
+  }
+  if (isGoalBudget(rawGoal.budget)) {
+    metadata.budget = rawGoal.budget;
+  }
+  if (typeof rawGoal.truncated === "boolean") {
+    metadata.truncated = rawGoal.truncated;
+  }
+  if (
+    typeof rawGoal.original_chars === "number" &&
+    Number.isFinite(rawGoal.original_chars)
+  ) {
+    metadata.original_chars = rawGoal.original_chars;
+  }
+  return metadata;
+}
+
+>>>>>>> upstream/main
 export type EventSubkind =
   | "mode_switch"
   | "tool_decision"
@@ -648,6 +781,11 @@ export type EventSubkind =
   | "verifier_report"
   | "cancellation_note"
   | "plan_delta"
+<<<<<<< HEAD
+=======
+  | "goal_delta"
+  | "goal_pursuit"
+>>>>>>> upstream/main
   | "system_notice";
 
 export type EventMetadata = {
@@ -676,6 +814,11 @@ export function isEventSubkind(value: unknown): value is EventSubkind {
     value === "verifier_report" ||
     value === "cancellation_note" ||
     value === "plan_delta" ||
+<<<<<<< HEAD
+=======
+    value === "goal_delta" ||
+    value === "goal_pursuit" ||
+>>>>>>> upstream/main
     value === "system_notice"
   );
 }
@@ -848,6 +991,13 @@ export function isPlanMessage(message: ChatMessage): message is PlanMessage {
   return message.role === "plan";
 }
 
+<<<<<<< HEAD
+=======
+export function isGoalMessage(message: ChatMessage): message is GoalMessage {
+  return message.role === "goal";
+}
+
+>>>>>>> upstream/main
 export type ChatMessage =
   | UserMessage
   | AssistantMessage
@@ -861,7 +1011,12 @@ export type ChatMessage =
   | CompressionReportMessage
   | SummarizationMessage
   | EventMessage
+<<<<<<< HEAD
   | PlanMessage;
+=======
+  | PlanMessage
+  | GoalMessage;
+>>>>>>> upstream/main
 
 export type ChatMessages = ChatMessage[];
 
@@ -1300,6 +1455,15 @@ export type KnowledgeGraphResponse = {
   stats: KnowledgeGraphStats;
 };
 
+<<<<<<< HEAD
+=======
+export type RelinkMemoriesResponse = {
+  docs_scanned: number;
+  docs_updated: number;
+  links_added: number;
+};
+
+>>>>>>> upstream/main
 export type VecDbStatus = {
   files_unprocessed: number;
   files_total: number;

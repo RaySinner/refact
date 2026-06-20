@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 .calloutContainer {
   position: absolute;
   left: 50%;
@@ -11,4 +12,25 @@
   @media screen and (max-width: 380px) {
     width: fit-content;
   }
+=======
+.root {
+  min-width: 0;
+}
+
+.header {
+  display: flex;
+  padding-bottom: var(--rf-space-3);
+}
+
+.errorText {
+  margin: 0;
+  color: var(--rf-color-danger);
+  font-size: var(--rf-text-3);
+}
+
+.calloutContainer {
+  position: fixed;
+  right: var(--rf-space-3);
+  bottom: var(--rf-space-3);
+>>>>>>> upstream/main
 }

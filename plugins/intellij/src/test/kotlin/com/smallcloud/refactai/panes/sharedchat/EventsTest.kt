@@ -1,5 +1,6 @@
 package com.smallcloud.refactai.panes.sharedchat
 
+import com.smallcloud.refactai.lsp.LSPBackendConnectionStatus
 import com.smallcloud.refactai.panes.sharedchat.Events.ActiveFile.ActiveFileToChat
 import com.smallcloud.refactai.panes.sharedchat.Events.Editor
 import kotlin.test.Test
@@ -36,7 +37,7 @@ class EventsTest {
             Events.Config.KeyBindings("foo"))
         val message = Events.Config.Update(payload)
         val result = Events.stringify(message)
-        val expected = """{"type":"config/update","payload":{"features":{"ast":true,"vecdb":false,"images":true,"statistics":true,"knowledge":false},"themeProps":{"appearance":"light","hasBackground":false,"scale":"90%","accentColor":"gray"},"lspPort":8001,"keyBindings":{"completeManual":"foo"},"tabbed":false,"host":"jetbrains"}}"""
+        val expected = """{"type":"config/update","payload":{"features":{"ast":true,"vecdb":false,"images":true,"statistics":true,"knowledge":false},"themeProps":{"appearance":"light","hasBackground":false,"scale":"90%","accentColor":"gray"},"lspPort":8001,"keyBindings":{"completeManual":"foo"},"backendReady":true,"connectionStatus":"ready","tabbed":false,"host":"jetbrains"}}"""
         assertEquals(expected, result)
     }
 
@@ -51,8 +52,44 @@ class EventsTest {
         )
         val message = Events.Config.Update(payload)
         val result = Events.stringify(message)
-        val expected = """{"type":"config/update","payload":{"features":{"ast":true,"vecdb":false,"images":true,"statistics":true,"knowledge":false},"themeProps":{"appearance":"light","hasBackground":false,"scale":"90%","accentColor":"gray"},"lspPort":8001,"keyBindings":{"completeManual":"foo"},"lspUrl":"http://host.local:8001/","tabbed":false,"host":"jetbrains"}}"""
+        val expected = """{"type":"config/update","payload":{"features":{"ast":true,"vecdb":false,"images":true,"statistics":true,"knowledge":false},"themeProps":{"appearance":"light","hasBackground":false,"scale":"90%","accentColor":"gray"},"lspPort":8001,"keyBindings":{"completeManual":"foo"},"lspUrl":"http://host.local:8001/","backendReady":true,"connectionStatus":"ready","tabbed":false,"host":"jetbrains"}}"""
         assertEquals(expected, result)
+    }
+
+    @Test
+    fun configMessageBackendNotReady() {
+        val payload = Events.Config.UpdatePayload(
+            Events.Config.Features(true, false),
+            Events.Config.ThemeProps("light"),
+            0,
+            Events.Config.KeyBindings("foo"),
+            backendReady = false,
+            connectionStatus = "starting"
+        )
+        val message = Events.Config.Update(payload)
+        val result = Events.stringify(message)
+        val expected = """{"type":"config/update","payload":{"features":{"ast":true,"vecdb":false,"images":true,"statistics":true,"knowledge":false},"themeProps":{"appearance":"light","hasBackground":false,"scale":"90%","accentColor":"gray"},"lspPort":0,"keyBindings":{"completeManual":"foo"},"backendReady":false,"connectionStatus":"starting","tabbed":false,"host":"jetbrains"}}"""
+        assertEquals(expected, result)
+    }
+
+    @Test
+    fun configRequestStartsBackendWhenFailedOrConnecting() {
+        var starts = 0
+
+        ensureBackendStartedForConfig(false, LSPBackendConnectionStatus.CONNECTING) { starts++ }
+        ensureBackendStartedForConfig(false, LSPBackendConnectionStatus.FAILED) { starts++ }
+
+        assertEquals(2, starts)
+    }
+
+    @Test
+    fun configRequestDoesNotStartReadyOrStartingBackend() {
+        var starts = 0
+
+        ensureBackendStartedForConfig(true, LSPBackendConnectionStatus.READY) { starts++ }
+        ensureBackendStartedForConfig(false, LSPBackendConnectionStatus.STARTING) { starts++ }
+
+        assertEquals(0, starts)
     }
 
     @Test

@@ -3,6 +3,7 @@ import { useAppSelector } from "./useAppSelector";
 import { useAppDispatch } from "./useAppDispatch";
 import { selectConfig, selectApiKey } from "../features/Config/configSlice";
 import {
+<<<<<<< HEAD
   selectChatId,
   selectThread,
   selectThreadImages,
@@ -11,6 +12,16 @@ import {
   selectManualPreviewItems,
   selectManualPreviewRan,
 } from "../features/Chat/Thread/selectors";
+=======
+  selectThreadById,
+  selectThreadImagesById,
+  selectSendImmediatelyById,
+  selectMessagesById,
+  selectManualPreviewItemsById,
+  selectManualPreviewRanById,
+} from "../features/Chat/Thread/selectors";
+import { useThreadId } from "../features/Chat/Thread";
+>>>>>>> upstream/main
 import {
   resetThreadImages,
   setSendImmediately,
@@ -22,12 +33,22 @@ import {
   retryFromIndex as retryFromIndexApi,
   regenerate as regenerateApi,
   updateChatParams,
+<<<<<<< HEAD
+=======
+  setGoal as setGoalApi,
+  updateGoal as updateGoalApi,
+  goalControl as goalControlApi,
+>>>>>>> upstream/main
   abortGeneration,
   respondToToolConfirmation,
   respondToToolConfirmations,
   updateMessage as updateMessageApi,
   removeMessage as removeMessageApi,
   cancelQueuedItem,
+<<<<<<< HEAD
+=======
+  type GoalControlAction,
+>>>>>>> upstream/main
   type MessageContent,
 } from "../services/refact/chatCommands";
 import type { UserMessage } from "../services/refact/types";
@@ -68,6 +89,7 @@ function convertUserMessageContent(
   return mapped.length > 0 ? mapped : "";
 }
 
+<<<<<<< HEAD
 export function useChatActions() {
   const dispatch = useAppDispatch();
   const config = useAppSelector(selectConfig);
@@ -79,6 +101,28 @@ export function useChatActions() {
   const messages = useAppSelector(selectMessages);
   const manualPreviewItems = useAppSelector(selectManualPreviewItems);
   const manualPreviewRan = useAppSelector(selectManualPreviewRan);
+=======
+export function useChatActions(explicitChatId?: string) {
+  const dispatch = useAppDispatch();
+  const config = useAppSelector(selectConfig);
+  const apiKey = useAppSelector(selectApiKey);
+  const contextId = useThreadId();
+  const chatId = explicitChatId ?? contextId;
+  const thread = useAppSelector((state) => selectThreadById(state, chatId));
+  const attachedImages = useAppSelector((state) =>
+    selectThreadImagesById(state, chatId),
+  );
+  const sendImmediately = useAppSelector((state) =>
+    selectSendImmediatelyById(state, chatId),
+  );
+  const messages = useAppSelector((state) => selectMessagesById(state, chatId));
+  const manualPreviewItems = useAppSelector((state) =>
+    selectManualPreviewItemsById(state, chatId),
+  );
+  const manualPreviewRan = useAppSelector((state) =>
+    selectManualPreviewRanById(state, chatId),
+  );
+>>>>>>> upstream/main
 
   /**
    * Build message content with attached images if any.
@@ -154,7 +198,11 @@ export function useChatActions() {
       dispatch(clearManualPreviewItems({ chatId }));
 
       dispatch(resetThreadImages({ id: chatId }));
+<<<<<<< HEAD
       dispatch(setSendImmediately(false));
+=======
+      dispatch(setSendImmediately({ chatId, value: false }));
+>>>>>>> upstream/main
     },
     [
       chatId,
@@ -173,10 +221,21 @@ export function useChatActions() {
   /**
    * Abort the current generation.
    */
+<<<<<<< HEAD
   const abort = useCallback(async () => {
     if (!chatId) return;
     await abortGeneration(chatId, config, apiKey ?? undefined);
   }, [chatId, config, apiKey]);
+=======
+  const abort = useCallback(
+    async (targetChatId?: string) => {
+      const id = targetChatId ?? chatId;
+      if (!id) return;
+      await abortGeneration(id, config, apiKey ?? undefined);
+    },
+    [chatId, config, apiKey],
+  );
+>>>>>>> upstream/main
 
   /**
    * Update chat parameters (model, mode, etc.).
@@ -193,6 +252,33 @@ export function useChatActions() {
     [chatId, config, apiKey],
   );
 
+<<<<<<< HEAD
+=======
+  const setGoal = useCallback(
+    async (content: string) => {
+      if (!chatId) return;
+      await setGoalApi(chatId, content, config, apiKey ?? undefined);
+    },
+    [chatId, config, apiKey],
+  );
+
+  const updateGoal = useCallback(
+    async (note: string) => {
+      if (!chatId) return;
+      await updateGoalApi(chatId, note, config, apiKey ?? undefined);
+    },
+    [chatId, config, apiKey],
+  );
+
+  const controlGoal = useCallback(
+    async (action: GoalControlAction) => {
+      if (!chatId) return;
+      await goalControlApi(chatId, action, config, apiKey ?? undefined);
+    },
+    [chatId, config, apiKey],
+  );
+
+>>>>>>> upstream/main
   /**
    * Respond to tool confirmation (accept or reject).
    */
@@ -302,6 +388,12 @@ export function useChatActions() {
     submit,
     abort,
     setParams,
+<<<<<<< HEAD
+=======
+    setGoal,
+    updateGoal,
+    controlGoal,
+>>>>>>> upstream/main
     respondToTool,
     respondToTools,
     retryFromIndex,

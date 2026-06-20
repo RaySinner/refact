@@ -1,11 +1,12 @@
+import { BookOpen, MessageCircle, Pencil } from "lucide-react";
 import React, { useMemo } from "react";
-import { ReaderIcon, ChatBubbleIcon, Pencil2Icon } from "@radix-ui/react-icons";
 import { Box } from "@radix-ui/themes";
 import { ToolCard, ToolStatus } from "./ToolCard";
 import { useStoredOpen } from "../useStoredOpen";
 import { ContextFileList } from "./ContextFileList";
 import { useAppSelector } from "../../../hooks";
-import { selectToolResultById } from "../../../features/Chat/Thread/selectors";
+import { selectToolResultByThreadAndId } from "../../../features/Chat/Thread/selectors";
+import { useThreadId } from "../../../features/Chat/Thread";
 import { ChatContextFile, ToolCall } from "../../../services/refact/types";
 import { ShikiCodeBlock } from "../../Markdown";
 import styles from "./KnowledgeTool.module.css";
@@ -34,6 +35,14 @@ interface KnowledgeToolProps {
   contextFiles?: ChatContextFile[];
 }
 
+const MAX_TITLE_PREVIEW_CHARS = 80;
+
+function titlePreview(text: string): string {
+  const firstLine = text.split("\n", 1)[0].trim();
+  if (firstLine.length <= MAX_TITLE_PREVIEW_CHARS) return firstLine;
+  return `${firstLine.slice(0, MAX_TITLE_PREVIEW_CHARS)}…`;
+}
+
 export const KnowledgeTool: React.FC<KnowledgeToolProps> = ({
   toolCall,
   toolType,
@@ -42,8 +51,9 @@ export const KnowledgeTool: React.FC<KnowledgeToolProps> = ({
   const storeKey = toolCall.id ? `tc:${toolCall.id}` : undefined;
   const [isOpen, handleToggle] = useStoredOpen(storeKey);
 
+  const threadId = useThreadId();
   const maybeResult = useAppSelector((state) =>
-    selectToolResultById(state, toolCall.id),
+    selectToolResultByThreadAndId(state, threadId, toolCall.id),
   );
 
   const args = useMemo(():
@@ -90,7 +100,7 @@ export const KnowledgeTool: React.FC<KnowledgeToolProps> = ({
 
     if (toolType === "create_knowledge") {
       const createArgs = args as CreateKnowledgeArgs;
-      const preview = createArgs.content ?? "memory";
+      const preview = titlePreview(createArgs.content ?? "memory");
       return (
         <>
           Remember <span className={styles.query}>&quot;{preview}&quot;</span>
@@ -110,11 +120,11 @@ export const KnowledgeTool: React.FC<KnowledgeToolProps> = ({
 
   const icon =
     toolType === "create_knowledge" ? (
-      <Pencil2Icon />
+      <Pencil />
     ) : toolType === "knowledge" ? (
-      <ReaderIcon />
+      <BookOpen />
     ) : (
-      <ChatBubbleIcon />
+      <MessageCircle />
     );
 
   return (

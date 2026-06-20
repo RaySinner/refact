@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Badge,
   Button,
+<<<<<<< HEAD
   Checkbox,
   Dialog,
   Flex,
@@ -10,6 +11,12 @@ import {
   Text,
   TextField,
 } from "@radix-ui/themes";
+=======
+  Dialog,
+  FieldSelect,
+  FieldText,
+} from "../../components/ui";
+>>>>>>> upstream/main
 import { useAppDispatch } from "../../hooks";
 import {
   useMergeWorktreeMutation,
@@ -98,6 +105,18 @@ function responseWarnings(response: MergeWorktreeResponse): string[] {
   return [...(response.warnings ?? []), ...(response.cleanup?.warnings ?? [])];
 }
 
+<<<<<<< HEAD
+=======
+function resultTone(
+  merged: boolean,
+  conflicted: boolean,
+): React.ComponentProps<typeof Badge>["tone"] {
+  if (merged) return "success";
+  if (conflicted) return "warning";
+  return "muted";
+}
+
+>>>>>>> upstream/main
 export const MergeWorktreeModal: React.FC<MergeWorktreeModalProps> = ({
   open,
   worktreeId,
@@ -225,6 +244,7 @@ export const MergeWorktreeModal: React.FC<MergeWorktreeModalProps> = ({
   const merged = result ? isMerged(result) : false;
 
   return (
+<<<<<<< HEAD
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Content
         className={styles.mergeDialog}
@@ -276,10 +296,59 @@ export const MergeWorktreeModal: React.FC<MergeWorktreeModalProps> = ({
                   checked={deleteAfterMerge}
                   onCheckedChange={(checked) =>
                     setDeleteAfterMerge(checked === true)
+=======
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <Dialog.Content className={styles.mergeDialog} maxWidth="900px">
+        <div
+          {...(closeOnNonInteractiveContentClick
+            ? dialogNonInteractiveCloseHandlers(() => onOpenChange(false))
+            : {})}
+        >
+          <Dialog.Title>Merge worktree</Dialog.Title>
+          <Dialog.Description>
+            Merge {label} into a target branch.
+          </Dialog.Description>
+
+          <div className={styles.modalFields}>
+            <div className={styles.field}>
+              <span className={styles.labelText}>Strategy</span>
+              <FieldSelect
+                value={strategy}
+                options={[
+                  { value: "squash", label: "Squash merge" },
+                  { value: "merge", label: "Regular merge" },
+                ]}
+                onChange={(value) =>
+                  setStrategy(value as WorktreeMergeStrategy)
+                }
+                disabled={mergeState.isLoading}
+                aria-label="Merge strategy"
+              />
+            </div>
+
+            <label className={styles.field} htmlFor="worktree-target-branch">
+              <span className={styles.labelText}>Target branch</span>
+              <FieldText
+                id="worktree-target-branch"
+                value={targetBranch}
+                onChange={setTargetBranch}
+                disabled={mergeState.isLoading}
+              />
+            </label>
+
+            <div className={styles.checkboxStack}>
+              <label className={styles.checkboxRow}>
+                <input
+                  type="checkbox"
+                  checked={deleteAfterMerge}
+                  onChange={(event) =>
+                    setDeleteAfterMerge(event.currentTarget.checked)
+>>>>>>> upstream/main
                   }
                   disabled={mergeState.isLoading}
                 />
                 Delete worktree after merge or if there is nothing to merge
+<<<<<<< HEAD
               </Flex>
             </Text>
             <Text as="label" size="2">
@@ -288,10 +357,20 @@ export const MergeWorktreeModal: React.FC<MergeWorktreeModalProps> = ({
                   checked={includeUncommitted}
                   onCheckedChange={(checked) =>
                     setIncludeUncommitted(checked === true)
+=======
+              </label>
+              <label className={styles.checkboxRow}>
+                <input
+                  type="checkbox"
+                  checked={includeUncommitted}
+                  onChange={(event) =>
+                    setIncludeUncommitted(event.currentTarget.checked)
+>>>>>>> upstream/main
                   }
                   disabled={mergeState.isLoading}
                 />
                 Include uncommitted changes by auto-committing first
+<<<<<<< HEAD
               </Flex>
             </Text>
           </Flex>
@@ -411,6 +490,118 @@ export const MergeWorktreeModal: React.FC<MergeWorktreeModalProps> = ({
         </Flex>
       </Dialog.Content>
     </Dialog.Root>
+=======
+              </label>
+            </div>
+
+            {error && <p className={styles.errorBox}>{error}</p>}
+
+            {result && (
+              <div className={styles.resultBox}>
+                <div className={styles.badgeRow}>
+                  <Badge tone={resultTone(merged, conflicted)}>
+                    {result.status ?? (merged ? "merged" : "finished")}
+                  </Badge>
+                  {result.strategy && (
+                    <Badge tone="muted">{result.strategy}</Badge>
+                  )}
+                </div>
+                <p
+                  className={`${styles.resultSummary} ${
+                    conflicted
+                      ? styles.resultWarning
+                      : merged
+                        ? styles.resultSuccess
+                        : ""
+                  }`}
+                >
+                  {responseSummary(result)}
+                </p>
+                {result.source_branch && result.target_branch && (
+                  <p className={styles.metaText}>
+                    {result.source_branch} → {result.target_branch}
+                  </p>
+                )}
+                {result.merge_commit && (
+                  <p className={styles.metaText}>
+                    Merge commit: {result.merge_commit}
+                  </p>
+                )}
+                {result.cleanup && (
+                  <p className={styles.metaText}>
+                    Cleanup: worktree{" "}
+                    {result.cleanup.worktree_deleted ? "deleted" : "kept"},
+                    branch {result.cleanup.branch_deleted ? "deleted" : "kept"}
+                  </p>
+                )}
+                {conflicted && (
+                  <div className={styles.conflictBlock}>
+                    <span className={styles.labelText}>Conflicted files</span>
+                    <ul className={styles.conflictList}>
+                      {conflictFiles.length === 0 ? (
+                        <li>No conflicted files were reported.</li>
+                      ) : (
+                        conflictFiles.map((file) => <li key={file}>{file}</li>)
+                      )}
+                    </ul>
+                    <div className={styles.inlineActions}>
+                      <Button
+                        size="sm"
+                        variant="soft"
+                        onClick={() => void handleAskRefact()}
+                        disabled={!onAskRefact}
+                      >
+                        Ask Refact to resolve conflicts
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="soft"
+                        onClick={() => void handleOpenWorktree()}
+                        disabled={!onOpenWorktree}
+                      >
+                        Open worktree
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                {actionFeedback && (
+                  <p className={styles.metaText}>{actionFeedback}</p>
+                )}
+                {warnings.length > 0 && (
+                  <div className={styles.warningStack}>
+                    {warnings.map((warning, index) => (
+                      <p
+                        key={`${index}-${warning}`}
+                        className={styles.warningText}
+                      >
+                        {warning}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className={styles.modalActions}>
+            <Dialog.Close asChild>
+              <Button variant="soft" disabled={mergeState.isLoading}>
+                Close
+              </Button>
+            </Dialog.Close>
+            <Button
+              variant="primary"
+              onClick={() => void handleMerge()}
+              disabled={mergeState.isLoading || queryId.length === 0}
+              loading={mergeState.isLoading}
+            >
+              Merge
+            </Button>
+          </div>
+        </div>
+      </Dialog.Content>
+    </Dialog>
+>>>>>>> upstream/main
   );
 };
 

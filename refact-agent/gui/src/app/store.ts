@@ -73,6 +73,7 @@ import { buddyApi } from "../services/refact/buddy";
 import { notificationsSlice } from "../features/Notifications";
 import { schedulerSlice } from "../features/Scheduler";
 import { schedulerApi } from "../services/refact/schedulerApi";
+import { reconcileWorkspaceState, workspaceSlice } from "../features/Workspace";
 
 const tipOfTheDayPersistConfig = {
   key: "totd",
@@ -145,6 +146,7 @@ const rootReducer = combineSlices(
   browserSlice,
   notificationsSlice,
   schedulerSlice,
+  workspaceSlice,
 );
 
 const rootPersistConfig = {
@@ -156,9 +158,25 @@ const rootPersistConfig = {
 
 const APPLY_CHAT_EVENT_ACTION = "chatThread/applyChatEvent";
 
+const workspaceInvariantReducer = (state: ReturnType<typeof rootReducer>) => {
+  const nextWorkspace = reconcileWorkspaceState(
+    state.workspace,
+    state.chat.open_thread_ids,
+  );
+
+  if (nextWorkspace === state.workspace) {
+    return state;
+  }
+
+  return {
+    ...state,
+    workspace: nextWorkspace,
+  };
+};
+
 const persistedReducer = persistReducer<ReturnType<typeof rootReducer>>(
   rootPersistConfig,
-  rootReducer,
+  (state, action) => workspaceInvariantReducer(rootReducer(state, action)),
 );
 
 export type RootState = ReturnType<typeof persistedReducer>;

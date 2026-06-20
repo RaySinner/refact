@@ -1,5 +1,6 @@
 import { useCallback, useMemo, type FC } from "react";
 import classNames from "classnames";
+<<<<<<< HEAD
 import {
   Badge,
   Card,
@@ -11,6 +12,17 @@ import {
 } from "@radix-ui/themes";
 import { DotsVerticalIcon } from "@radix-ui/react-icons";
 
+=======
+import { MoreVertical } from "lucide-react";
+
+import {
+  Badge,
+  IconButton,
+  Menu,
+  Surface,
+  Tooltip,
+} from "../../../../components/ui";
+>>>>>>> upstream/main
 import { ModelCardPopup } from "./components/ModelCardPopup";
 import {
   CapabilityIcons,
@@ -34,9 +46,12 @@ export type ModelCardProps = {
   currentModelNames: string[];
 };
 
+<<<<<<< HEAD
 /**
  * Card component that displays model information and provides access to model settings
  */
+=======
+>>>>>>> upstream/main
 export const ModelCard: FC<ModelCardProps> = ({
   model,
   modelType,
@@ -114,6 +129,7 @@ export const ModelCard: FC<ModelCardProps> = ({
     handleSetCompletionModelForIDE,
   ]);
 
+<<<<<<< HEAD
   const dropdownOptionsCount = useMemo(() => {
     return dropdownOptions.filter((option) => option.visible).length;
   }, [dropdownOptions]);
@@ -121,6 +137,21 @@ export const ModelCard: FC<ModelCardProps> = ({
   return (
     <Card className={classNames({ [styles.disabledCard]: isSavingModel })}>
       {dialogOpen && (
+=======
+  const visibleDropdownOptions = useMemo(() => {
+    return dropdownOptions.filter((option) => option.visible);
+  }, [dropdownOptions]);
+
+  return (
+    <Surface
+      variant="glass"
+      animated="rise"
+      className={classNames(styles.modelCard, {
+        [styles.disabledCard]: isSavingModel,
+      })}
+    >
+      {dialogOpen ? (
+>>>>>>> upstream/main
         <ModelCardPopup
           minifiedModel={model}
           isOpen={dialogOpen}
@@ -134,6 +165,7 @@ export const ModelCard: FC<ModelCardProps> = ({
           isRemovable={removable}
           currentModelNames={currentModelNames}
         />
+<<<<<<< HEAD
       )}
 
       <Flex align="center" justify="between">
@@ -195,5 +227,74 @@ export const ModelCard: FC<ModelCardProps> = ({
         )}
       </Flex>
     </Card>
+=======
+      ) : null}
+
+      <div className={styles.modelHeader}>
+        <div className={styles.modelCopy}>
+          <div className={styles.modelTitleRow}>
+            <span className={styles.modelName}>{name}</span>
+            <Badge tone={enabled ? "success" : "muted"}>
+              {enabled ? "Active" : "Inactive"}
+            </Badge>
+          </div>
+
+          <div className={styles.modelMetaRow}>
+            {model.pricingLabel ? (
+              <Tooltip>
+                <Tooltip.Trigger asChild>
+                  <span>
+                    <ModelDetailIcon icon={<PricingIcon />}>
+                      {model.pricingLabel}
+                    </ModelDetailIcon>
+                  </span>
+                </Tooltip.Trigger>
+                <Tooltip.Content>
+                  Price per 1M tokens (prompt/output)
+                </Tooltip.Content>
+              </Tooltip>
+            ) : null}
+            {model.nCtxLabel ? (
+              <Tooltip>
+                <Tooltip.Trigger asChild>
+                  <span>
+                    <ModelDetailIcon icon={<ContextWindowIcon />}>
+                      {model.nCtxLabel}
+                    </ModelDetailIcon>
+                  </span>
+                </Tooltip.Trigger>
+                <Tooltip.Content>
+                  Context window: {model.nCtx?.toLocaleString()} tokens
+                </Tooltip.Content>
+              </Tooltip>
+            ) : null}
+            {model.capabilities ? (
+              <CapabilityIcons capabilities={model.capabilities} size="1" />
+            ) : null}
+          </div>
+        </div>
+
+        {visibleDropdownOptions.length > 0 ? (
+          <Menu open={dropdownOpen} onOpenChange={setDropdownOpen}>
+            <Menu.Trigger asChild>
+              <IconButton
+                size="sm"
+                variant="ghost"
+                aria-label="Model actions"
+                icon={MoreVertical}
+              />
+            </Menu.Trigger>
+            <Menu.Content side="bottom" align="end" maxWidth="260px">
+              {visibleDropdownOptions.map(({ label, onClick }) => (
+                <Menu.Item key={label} onClick={onClick} title={label}>
+                  {label}
+                </Menu.Item>
+              ))}
+            </Menu.Content>
+          </Menu>
+        ) : null}
+      </div>
+    </Surface>
+>>>>>>> upstream/main
   );
 };

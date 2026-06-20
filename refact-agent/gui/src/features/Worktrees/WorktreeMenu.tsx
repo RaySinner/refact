@@ -1,5 +1,6 @@
 import React, { useCallback, useState, type ReactNode } from "react";
 import {
+<<<<<<< HEAD
   Button,
   Checkbox,
   Dialog,
@@ -17,6 +18,17 @@ import {
   PlusIcon,
   TrashIcon,
 } from "@radix-ui/react-icons";
+=======
+  Copy,
+  ExternalLink,
+  FileText,
+  GitMerge,
+  LogOut,
+  Plus,
+  Trash2,
+} from "lucide-react";
+import { Button, Dialog, Popover } from "../../components/ui";
+>>>>>>> upstream/main
 import {
   useDeleteWorktreeMutation,
   type MergeWorktreeResponse,
@@ -27,7 +39,11 @@ import { sendUserMessage } from "../../services/refact/chatCommands";
 import { useAppDispatch, useAppSelector } from "../../hooks";
 import { dialogNonInteractiveCloseHandlers } from "../../utils/dialogPointerClose";
 import { selectApiKey, selectConfig } from "../Config/configSlice";
+<<<<<<< HEAD
 import { selectChatId, setThreadWorktree } from "../Chat/Thread";
+=======
+import { setThreadWorktree } from "../Chat/Thread";
+>>>>>>> upstream/main
 import { WorktreeStatusBadge } from "./WorktreeStatusBadge";
 import { WorktreeDiffPanel } from "./WorktreeDiffPanel";
 import { MergeWorktreeModal } from "./MergeWorktreeModal";
@@ -36,6 +52,10 @@ import { worktreeErrorText } from "./worktreeError";
 import styles from "./Worktrees.module.css";
 
 type WorktreeMenuProps = {
+<<<<<<< HEAD
+=======
+  chatId: string;
+>>>>>>> upstream/main
   currentWorktree: WorktreeMeta | null;
   currentRecord?: WorktreeRecordView | null;
   records: WorktreeRecordView[];
@@ -88,6 +108,7 @@ function ActionButton({
       <span className={styles.actionIcon} aria-hidden="true">
         {icon}
       </span>
+<<<<<<< HEAD
       <Text
         size="1"
         weight={primary ? "medium" : "regular"}
@@ -95,6 +116,9 @@ function ActionButton({
       >
         {label}
       </Text>
+=======
+      <span className={styles.actionLabel}>{label}</span>
+>>>>>>> upstream/main
     </button>
   );
 }
@@ -127,6 +151,10 @@ function referenceCount(
 }
 
 export const WorktreeMenu: React.FC<WorktreeMenuProps> = ({
+<<<<<<< HEAD
+=======
+  chatId,
+>>>>>>> upstream/main
   currentWorktree,
   currentRecord,
   records,
@@ -140,7 +168,10 @@ export const WorktreeMenu: React.FC<WorktreeMenuProps> = ({
   onCopyPath,
 }) => {
   const dispatch = useAppDispatch();
+<<<<<<< HEAD
   const chatId = useAppSelector(selectChatId);
+=======
+>>>>>>> upstream/main
   const config = useAppSelector(selectConfig);
   const apiKey = useAppSelector(selectApiKey) ?? undefined;
   const [diffOpen, setDiffOpen] = useState(false);
@@ -230,6 +261,7 @@ export const WorktreeMenu: React.FC<WorktreeMenuProps> = ({
         side="top"
         align="start"
         sideOffset={8}
+<<<<<<< HEAD
       >
         <div className={styles.menu}>
           <Flex
@@ -240,12 +272,20 @@ export const WorktreeMenu: React.FC<WorktreeMenuProps> = ({
             <Text size="2" weight="bold">
               Worktrees
             </Text>
+=======
+        scrollable={false}
+      >
+        <div className={styles.menu}>
+          <div className={styles.menuHeader}>
+            <span className={styles.titleText}>Worktrees</span>
+>>>>>>> upstream/main
             {currentWorktree && currentRecord && (
               <WorktreeStatusBadge
                 worktree={currentWorktree}
                 record={currentRecord}
               />
             )}
+<<<<<<< HEAD
           </Flex>
           <Text size="1" color="gray" className={styles.menuHint}>
             Paths warn/remap; shell uses scoped cwd; shared refs affect all
@@ -265,39 +305,71 @@ export const WorktreeMenu: React.FC<WorktreeMenuProps> = ({
                 </Text>
               )}
             </Flex>
+=======
+          </div>
+          <p className={styles.menuHint}>
+            Paths warn/remap; shell uses scoped cwd; shared refs affect all
+            chats.
+          </p>
+
+          {hasFeedback && (
+            <div className={styles.feedbackStack}>
+              {feedback && <p className={styles.feedbackText}>{feedback}</p>}
+              {localFeedback && (
+                <p className={styles.feedbackText}>{localFeedback}</p>
+              )}
+            </div>
+>>>>>>> upstream/main
           )}
 
           <div className={styles.actionGrid}>
             <ActionButton
               label="Create"
               title="Create worktree"
+<<<<<<< HEAD
               icon={<PlusIcon />}
+=======
+              icon={<Plus />}
+>>>>>>> upstream/main
               onClick={onCreate}
               primary
             />
             <ActionButton
               label={detachLabel}
               title={detachTitle}
+<<<<<<< HEAD
               icon={<ExitIcon />}
+=======
+              icon={<LogOut />}
+>>>>>>> upstream/main
               onClick={onDetach}
               disabled={!currentWorktree}
             />
             <ActionButton
               label="Open"
               title="Open worktree in new window"
+<<<<<<< HEAD
               icon={<OpenInNewWindowIcon />}
+=======
+              icon={<ExternalLink />}
+>>>>>>> upstream/main
               onClick={onOpenInNewWindow}
               disabled={!currentWorktree}
             />
             <ActionButton
               label="Copy"
               title="Copy workspace path"
+<<<<<<< HEAD
               icon={<CopyIcon />}
+=======
+              icon={<Copy />}
+>>>>>>> upstream/main
               onClick={onCopyPath}
               disabled={!canCopyPath}
             />
           </div>
 
+<<<<<<< HEAD
           <Separator size="4" />
 
           <div className={styles.section}>
@@ -314,6 +386,18 @@ export const WorktreeMenu: React.FC<WorktreeMenuProps> = ({
                 <Text size="1" color="gray" className={styles.sectionHeader}>
                   None yet
                 </Text>
+=======
+          <div className={styles.separator} />
+
+          <div className={styles.section}>
+            <span className={styles.sectionHeader}>Existing</span>
+            <div className={styles.list}>
+              {isLoading && (
+                <span className={styles.emptyText}>Loading...</span>
+              )}
+              {!isLoading && records.length === 0 && (
+                <span className={styles.emptyText}>None yet</span>
+>>>>>>> upstream/main
               )}
               {records.map((record) => {
                 const selected = currentWorktree?.id === record.meta.id;
@@ -336,6 +420,7 @@ export const WorktreeMenu: React.FC<WorktreeMenuProps> = ({
                     aria-current={selected ? "true" : undefined}
                     title={`Use ${title}`}
                   >
+<<<<<<< HEAD
                     <Flex
                       direction="column"
                       gap="1"
@@ -345,10 +430,16 @@ export const WorktreeMenu: React.FC<WorktreeMenuProps> = ({
                         <Text size="1" weight="medium">
                           {title}
                         </Text>
+=======
+                    <span className={styles.itemTitle}>
+                      <span className={styles.itemHeader}>
+                        <span className={styles.itemName}>{title}</span>
+>>>>>>> upstream/main
                         <WorktreeStatusBadge
                           worktree={record.meta}
                           record={record}
                         />
+<<<<<<< HEAD
                       </Flex>
                       <Text size="1" color="gray" className={styles.path}>
                         {record.meta.root}
@@ -358,33 +449,58 @@ export const WorktreeMenu: React.FC<WorktreeMenuProps> = ({
                         {usedBy ? ` · used by ${usedBy}` : ""}
                       </Text>
                     </Flex>
+=======
+                      </span>
+                      <span className={styles.path}>{record.meta.root}</span>
+                      <span className={styles.metaText}>
+                        {referencesLabel(record)}
+                        {usedBy ? ` · used by ${usedBy}` : ""}
+                      </span>
+                    </span>
+>>>>>>> upstream/main
                   </button>
                 );
               })}
             </div>
           </div>
 
+<<<<<<< HEAD
           <Separator size="4" />
+=======
+          <div className={styles.separator} />
+>>>>>>> upstream/main
 
           <div className={styles.reviewActions}>
             <ActionButton
               label="Diff"
               title="View worktree diff"
+<<<<<<< HEAD
               icon={<FileTextIcon />}
+=======
+              icon={<FileText />}
+>>>>>>> upstream/main
               onClick={() => setDiffOpen(true)}
               disabled={!worktreeAvailable}
             />
             <ActionButton
               label="Merge"
               title="Merge worktree"
+<<<<<<< HEAD
               icon={<DoubleArrowRightIcon />}
+=======
+              icon={<GitMerge />}
+>>>>>>> upstream/main
               onClick={() => setMergeOpen(true)}
               disabled={!worktreeAvailable}
             />
             <ActionButton
               label="Delete"
               title="Delete or discard worktree"
+<<<<<<< HEAD
               icon={<TrashIcon />}
+=======
+              icon={<Trash2 />}
+>>>>>>> upstream/main
               onClick={() => setDeleteOpen(true)}
               disabled={!worktreeAvailable}
               danger={worktreeAvailable}
@@ -392,10 +508,17 @@ export const WorktreeMenu: React.FC<WorktreeMenuProps> = ({
           </div>
 
           {sharedCount > 1 ? (
+<<<<<<< HEAD
             <Text size="1" color="gray" className={styles.feedback}>
               Shared by {sharedCount} references. Delete and discard actions can
               affect other chats.
             </Text>
+=======
+            <p className={styles.feedbackText}>
+              Shared by {sharedCount} references. Delete and discard actions can
+              affect other chats.
+            </p>
+>>>>>>> upstream/main
           ) : null}
         </div>
       </Popover.Content>
@@ -421,6 +544,7 @@ export const WorktreeMenu: React.FC<WorktreeMenuProps> = ({
         closeOnNonInteractiveContentClick
       />
 
+<<<<<<< HEAD
       <Dialog.Root open={deleteOpen} onOpenChange={setDeleteOpen}>
         <Dialog.Content
           maxWidth="420px"
@@ -456,10 +580,48 @@ export const WorktreeMenu: React.FC<WorktreeMenuProps> = ({
                   checked={deleteBranch}
                   onCheckedChange={(checked) =>
                     setDeleteBranch(checked === true)
+=======
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <Dialog.Content maxWidth="420px">
+          <div
+            {...dialogNonInteractiveCloseHandlers(() => setDeleteOpen(false))}
+          >
+            <Dialog.Title>Delete worktree</Dialog.Title>
+            <Dialog.Description>
+              Delete or discard the selected worktree from disk.
+            </Dialog.Description>
+
+            <div className={styles.modalFields}>
+              <div className={styles.dialogOverlayText}>
+                <span className={styles.labelText}>
+                  {currentWorktree
+                    ? displayName(currentWorktree)
+                    : "No worktree"}
+                </span>
+                {currentWorktree && (
+                  <span className={styles.path}>{currentWorktree.root}</span>
+                )}
+              </div>
+
+              {sharedCount > 1 && (
+                <p className={styles.warningBox}>
+                  This worktree is shared by {sharedCount} references. Deleting
+                  it may affect other chats that use the same worktree.
+                </p>
+              )}
+
+              <label className={styles.checkboxRow}>
+                <input
+                  type="checkbox"
+                  checked={deleteBranch}
+                  onChange={(event) =>
+                    setDeleteBranch(event.currentTarget.checked)
+>>>>>>> upstream/main
                   }
                   disabled={deleteState.isLoading}
                 />
                 Delete git branch too
+<<<<<<< HEAD
               </Flex>
             </Text>
 
@@ -492,6 +654,33 @@ export const WorktreeMenu: React.FC<WorktreeMenuProps> = ({
           </Flex>
         </Dialog.Content>
       </Dialog.Root>
+=======
+              </label>
+
+              {localFeedback && localFeedback.startsWith("Delete failed") && (
+                <p className={styles.errorBox}>{localFeedback}</p>
+              )}
+            </div>
+
+            <div className={styles.modalActions}>
+              <Dialog.Close asChild>
+                <Button variant="soft" disabled={deleteState.isLoading}>
+                  Cancel
+                </Button>
+              </Dialog.Close>
+              <Button
+                variant="danger"
+                onClick={() => void handleDelete()}
+                disabled={!currentWorktree || deleteState.isLoading}
+                loading={deleteState.isLoading}
+              >
+                {deleteState.isLoading ? "Deleting..." : "Delete worktree"}
+              </Button>
+            </div>
+          </div>
+        </Dialog.Content>
+      </Dialog>
+>>>>>>> upstream/main
     </>
   );
 };

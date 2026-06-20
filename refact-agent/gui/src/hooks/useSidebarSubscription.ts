@@ -475,6 +475,7 @@ export function useSidebarSubscription() {
     }, 0);
   }, [flushTaskList]);
 
+<<<<<<< HEAD
   const replaceTaskList = useCallback(
     (tasks: TaskMeta[]) => {
       taskListRef.current = tasks;
@@ -482,6 +483,11 @@ export function useSidebarSubscription() {
     },
     [scheduleTaskListFlush],
   );
+=======
+  const replaceTaskList = useCallback((tasks: TaskMeta[]) => {
+    taskListRef.current = tasks;
+  }, []);
+>>>>>>> upstream/main
 
   const upsertTaskInList = useCallback(
     (task: TaskMeta) => {

@@ -1,15 +1,16 @@
+import { MoveRight, Trash2, CirclePlus } from "lucide-react";
 import React, { useMemo, useCallback } from "react";
-import { MoveIcon, TrashIcon, PlusCircledIcon } from "@radix-ui/react-icons";
 import { Box } from "@radix-ui/themes";
 import { ToolCard, ToolStatus } from "./ToolCard";
 import { useStoredOpen } from "../useStoredOpen";
 import { useAppSelector, useEventsBusForIDE } from "../../../hooks";
 import {
-  selectToolResultById,
-  selectManyDiffMessageByIds,
-  selectIsStreaming,
-  selectIsWaiting,
+  selectToolResultByThreadAndId,
+  selectManyDiffMessageByThreadAndIds,
+  selectIsStreamingById,
+  selectIsWaitingById,
 } from "../../../features/Chat/Thread/selectors";
+import { useThreadId } from "../../../features/Chat/Thread";
 import { ToolCall, DiffChunk } from "../../../services/refact/types";
 import { ShikiCodeBlock } from "../../Markdown";
 import { basename } from "./utils";
@@ -63,11 +64,16 @@ export const FileOpTool: React.FC<FileOpToolProps> = ({
   const storeKey = toolCall.id ? `tc:${toolCall.id}` : undefined;
   const [isOpen, handleToggle] = useStoredOpen(storeKey);
   const { queryPathThenOpenFile } = useEventsBusForIDE();
-  const isStreaming = useAppSelector(selectIsStreaming);
-  const isWaiting = useAppSelector(selectIsWaiting);
+  const threadId = useThreadId();
+  const isStreaming = useAppSelector((state) =>
+    selectIsStreamingById(state, threadId),
+  );
+  const isWaiting = useAppSelector((state) =>
+    selectIsWaitingById(state, threadId),
+  );
 
   const maybeResult = useAppSelector((state) =>
-    selectToolResultById(state, toolCall.id),
+    selectToolResultByThreadAndId(state, threadId, toolCall.id),
   );
 
   const diffIds = useMemo(
@@ -75,8 +81,8 @@ export const FileOpTool: React.FC<FileOpToolProps> = ({
     [toolCall.id],
   );
   const selectDiffs = useMemo(
-    () => selectManyDiffMessageByIds(diffIds),
-    [diffIds],
+    () => selectManyDiffMessageByThreadAndIds(threadId, diffIds),
+    [threadId, diffIds],
   );
   const toolDiffs = useAppSelector(selectDiffs);
 
@@ -141,7 +147,7 @@ export const FileOpTool: React.FC<FileOpToolProps> = ({
       const src = mvArgs.source ?? "";
       const dest = mvArgs.destination ?? "";
       return {
-        icon: <MoveIcon />,
+        icon: <MoveRight />,
         summary: (
           <>
             Move{" "}
@@ -167,7 +173,7 @@ export const FileOpTool: React.FC<FileOpToolProps> = ({
       const addArgs = args as AddWorkspaceArgs;
       const path = addArgs.path ?? "";
       return {
-        icon: <PlusCircledIcon />,
+        icon: <CirclePlus />,
         summary: (
           <>
             Add workspace{" "}
@@ -186,7 +192,7 @@ export const FileOpTool: React.FC<FileOpToolProps> = ({
       0,
     );
     return {
-      icon: <TrashIcon />,
+      icon: <Trash2 />,
       summary: (
         <>
           Delete <span className={styles.filename}>{basename(path)}</span>

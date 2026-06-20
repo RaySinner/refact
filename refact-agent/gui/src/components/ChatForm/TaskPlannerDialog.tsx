@@ -1,14 +1,8 @@
 import React, { useCallback, useState } from "react";
-import {
-  Dialog,
-  Flex,
-  Text,
-  Button,
-  Callout,
-  Badge,
-  Spinner,
-} from "@radix-ui/themes";
-import { ExclamationTriangleIcon } from "@radix-ui/react-icons";
+import { Flex, Text, Button, Badge } from "@radix-ui/themes";
+import { LoaderCircle } from "lucide-react";
+import { Dialog, Icon } from "../ui";
+import { Callout } from "../Callout";
 import {
   createChatWithId,
   requestSseRefresh,
@@ -22,9 +16,8 @@ import { push } from "../../features/Pages/pagesSlice";
 import { useAppDispatch, useAppSelector } from "../../hooks";
 import { selectConfig, selectApiKey } from "../../features/Config/configSlice";
 import {
-  selectMessages,
-  selectCurrentThreadId,
-  selectThreadWorktree,
+  selectMessagesById,
+  selectThreadWorktreeById,
 } from "../../features/Chat/Thread";
 import { regenerate } from "../../services/refact/chatCommands";
 import { dialogNonInteractiveCloseHandlers } from "../../utils/dialogPointerClose";
@@ -51,6 +44,7 @@ function extractErrorMessage(err: unknown): string {
 }
 
 type TaskPlannerDialogProps = {
+  sourceChatId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Present when opened from inside a task workspace; otherwise a new task is created */
@@ -62,6 +56,7 @@ type TaskPlannerDialogProps = {
 type PendingTask = { id: string; name: string };
 
 export const TaskPlannerDialog: React.FC<TaskPlannerDialogProps> = ({
+  sourceChatId,
   open,
   onOpenChange,
   taskId,
@@ -70,9 +65,12 @@ export const TaskPlannerDialog: React.FC<TaskPlannerDialogProps> = ({
   const dispatch = useAppDispatch();
   const config = useAppSelector(selectConfig);
   const apiKey = useAppSelector(selectApiKey);
-  const messages = useAppSelector(selectMessages);
-  const sourceChatId = useAppSelector(selectCurrentThreadId);
-  const sourceWorktree = useAppSelector(selectThreadWorktree);
+  const messages = useAppSelector((state) =>
+    selectMessagesById(state, sourceChatId),
+  );
+  const sourceWorktree = useAppSelector((state) =>
+    selectThreadWorktreeById(state, sourceChatId),
+  );
 
   const [error, setError] = useState<string | null>(null);
   // Cache the created task so retries after a planner-creation failure don't
@@ -92,6 +90,7 @@ export const TaskPlannerDialog: React.FC<TaskPlannerDialogProps> = ({
   const isLoading = isCreatingTask || isCreatingPlanner || isTransitioning;
 
   const handleApply = useCallback(async () => {
+    if (isLoading) return;
     setError(null);
     const now = new Date().toISOString();
     try {
@@ -114,6 +113,7 @@ export const TaskPlannerDialog: React.FC<TaskPlannerDialogProps> = ({
 
       // Create the planner chat — task-owned, with context if available
       let newChatId: string;
+      let rootChatId: string | undefined;
       if (hasMessages && sourceChatId) {
         const result = await createFromTransition({
           taskId: resolved.id,
@@ -121,8 +121,11 @@ export const TaskPlannerDialog: React.FC<TaskPlannerDialogProps> = ({
           targetModeDescription: targetModeDescription ?? "",
         }).unwrap();
         newChatId = result.new_chat_id;
+        rootChatId = result.root_chat_id ?? undefined;
       } else {
-        const result = await createPlannerChat(resolved.id).unwrap();
+        const result = await createPlannerChat({
+          taskId: resolved.id,
+        }).unwrap();
         newChatId = result.chat_id;
       }
 
@@ -138,6 +141,7 @@ export const TaskPlannerDialog: React.FC<TaskPlannerDialogProps> = ({
             role: "planner",
             planner_chat_id: newChatId,
           },
+          rootChatId,
           worktree: sourceWorktree,
         }),
       );
@@ -177,6 +181,7 @@ export const TaskPlannerDialog: React.FC<TaskPlannerDialogProps> = ({
       setError(extractErrorMessage(err));
     }
   }, [
+    isLoading,
     isInTaskWorkspace,
     taskId,
     pendingTask,
@@ -195,6 +200,9 @@ export const TaskPlannerDialog: React.FC<TaskPlannerDialogProps> = ({
 
   const handleOpenChange = useCallback(
     (newOpen: boolean) => {
+      if (!newOpen && isLoading) {
+        return;
+      }
       if (!newOpen) {
         // If the user is closing after a failed attempt with a half-created
         // task, roll it back so we don't leak orphan tasks.
@@ -206,7 +214,7 @@ export const TaskPlannerDialog: React.FC<TaskPlannerDialogProps> = ({
       }
       onOpenChange(newOpen);
     },
-    [onOpenChange, pendingTask, deleteTask],
+    [onOpenChange, pendingTask, deleteTask, isLoading],
   );
 
   const title = isInTaskWorkspace ? "New Planner" : "Switch to Task Planner";
@@ -225,63 +233,60 @@ export const TaskPlannerDialog: React.FC<TaskPlannerDialogProps> = ({
       : "Creating planner...";
 
   return (
-    <Dialog.Root open={open} onOpenChange={handleOpenChange}>
-      <Dialog.Content
-        maxWidth="500px"
-        className={styles.dialogContent}
-        {...dialogNonInteractiveCloseHandlers(() => handleOpenChange(false))}
-      >
-        <Dialog.Title>
-          <Flex align="center" gap="2">
-            <Text>{title}</Text>
-            <Badge color="blue">task_planner</Badge>
-          </Flex>
-        </Dialog.Title>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <Dialog.Content maxWidth="500px" className={styles.dialogContent}>
+        <Flex
+          direction="column"
+          gap="3"
+          {...dialogNonInteractiveCloseHandlers(() => handleOpenChange(false))}
+        >
+          <Dialog.Title>
+            <Flex align="center" gap="2">
+              <Text>{title}</Text>
+              <Badge color="blue">task_planner</Badge>
+            </Flex>
+          </Dialog.Title>
 
-        <Dialog.Description size="2" color="gray">
-          {description}
-        </Dialog.Description>
+          <Dialog.Description>{description}</Dialog.Description>
 
-        {error && (
-          <Callout.Root color="red" className={styles.callout}>
-            <Callout.Icon>
-              <ExclamationTriangleIcon />
-            </Callout.Icon>
-            <Callout.Text>{error}</Callout.Text>
-          </Callout.Root>
-        )}
+          {error && (
+            <Callout type="error" preventClose className={styles.callout}>
+              {error}
+            </Callout>
+          )}
 
-        {isLoading && (
-          <Flex
-            align="center"
-            justify="center"
-            gap="2"
-            className={styles.loadingContainer}
-          >
-            <Spinner />
-            <Text color="gray">{loadingLabel}</Text>
-          </Flex>
-        )}
-
-        <Flex gap="3" mt="4" justify="end">
-          <Dialog.Close>
-            <Button variant="soft" color="gray" disabled={isLoading}>
-              Cancel
-            </Button>
-          </Dialog.Close>
-          <Button onClick={() => void handleApply()} disabled={isLoading}>
-            {isLoading ? (
-              <>
-                <Spinner size="1" />
+          {isLoading && (
+            <Flex
+              align="center"
+              justify="center"
+              gap="2"
+              className={styles.loadingContainer}
+            >
+              <Icon
+                icon={LoaderCircle}
+                size="md"
+                tone="accent"
+                className={styles.spinnerIcon}
+              />
+              <Text color="gray" role="status" aria-live="polite">
                 {loadingLabel}
-              </>
-            ) : (
-              buttonLabel
-            )}
-          </Button>
+              </Text>
+            </Flex>
+          )}
+
+          <Flex gap="3" mt="4" justify="end">
+            <Dialog.Close asChild>
+              <Button variant="soft" color="gray" disabled={isLoading}>
+                Cancel
+              </Button>
+            </Dialog.Close>
+            <Button onClick={() => void handleApply()} disabled={isLoading}>
+              {isLoading ? loadingLabel : buttonLabel}
+            </Button>
+          </Flex>
         </Flex>
       </Dialog.Content>
-    </Dialog.Root>
+    </Dialog>
   );
 };
 

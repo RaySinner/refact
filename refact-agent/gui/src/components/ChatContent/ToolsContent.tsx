@@ -1,6 +1,16 @@
+import {
+  CircleCheck,
+  CircleX,
+  File,
+  LoaderCircle,
+  Settings,
+  Rows3,
+} from "lucide-react";
 import React, { forwardRef, useCallback, useEffect, useMemo } from "react";
 import * as Collapsible from "@radix-ui/react-collapsible";
-import { Container, Flex, Text, Box, Spinner } from "@radix-ui/themes";
+import classNames from "classnames";
+import { Container, Flex, Text, Box } from "@radix-ui/themes";
+import { Icon } from "../ui";
 import {
   ChatContextFile,
   DiffChunk,
@@ -16,14 +26,14 @@ import { CommandMarkdown } from "../Command";
 import { Chevron } from "../Collapsible";
 import { useAppDispatch, useAppSelector } from "../../hooks";
 import {
-  selectChatId,
-  selectIsStreaming,
-  selectIsWaiting,
+  selectIsStreamingById,
+  selectIsWaitingById,
   selectBackgroundAgentsByThread,
-  selectManyDiffMessageByIds,
-  selectManyToolResultsByIds,
-  selectToolResultById,
+  selectManyDiffMessageByThreadAndIds,
+  selectManyToolResultsByThreadAndIds,
+  selectToolResultByThreadAndId,
 } from "../../features/Chat/Thread/selectors";
+import { ChatThreadProvider, useThreadId } from "../../features/Chat/Thread";
 import { ScrollArea } from "../ScrollArea";
 import { takeWhile } from "../../utils";
 import { DialogImage } from "../DialogImage";
@@ -38,13 +48,6 @@ import {
   formatToolDisplayName,
 } from "../../utils/toolNameAliases";
 import { useCollapsibleStore, useStoredOpen } from "./useStoredOpen";
-import {
-  CheckCircledIcon,
-  CrossCircledIcon,
-  FileIcon,
-  GearIcon,
-  RowsIcon,
-} from "@radix-ui/react-icons";
 import { AnimatedText } from "../Text";
 import { toolCallArgsToString } from "./toolCallArgs";
 import {
@@ -88,6 +91,7 @@ import { AgentDiffView } from "./AgentDiffView";
 import { TaskDocumentsView } from "./TaskDocumentsView";
 import { FinalReportView } from "./FinalReportView";
 import { BackgroundAgentCard } from "../BackgroundAgentCard";
+import styles from "./ToolsContent.module.css";
 
 function finalReportSuccess(content: string): boolean | null {
   try {
@@ -118,9 +122,9 @@ const FinalReportToolCard: React.FC<FinalReportToolCardProps> = ({
   const status = isError ? "error" : "success";
   const statusIcon =
     status === "error" ? (
-      <CrossCircledIcon data-testid="final-report-tool-error-icon" />
+      <CircleX data-testid="final-report-tool-error-icon" />
     ) : (
-      <CheckCircledIcon data-testid="final-report-tool-success-icon" />
+      <CircleCheck data-testid="final-report-tool-success-icon" />
     );
 
   return (
@@ -359,10 +363,11 @@ function decorateBackgroundAgentTool(
 // TODO: Sort of duplicated
 const ToolMessage: React.FC<{
   toolCall: ToolCall;
-}> = ({ toolCall }) => {
+  threadId: string;
+}> = ({ toolCall, threadId }) => {
   const name = normalizeToolName(toolCall.function.name) ?? "";
   const maybeResult = useAppSelector((state) =>
-    selectToolResultById(state, toolCall.id),
+    selectToolResultByThreadAndId(state, threadId, toolCall.id),
   );
 
   const argsString = React.useMemo(() => {
@@ -399,12 +404,36 @@ const ToolUsageDisplay: React.FC<{
   );
 };
 
+const AnimatedCollapsibleContent: React.FC<{
+  open: boolean;
+  children: React.ReactNode;
+}> = ({ open, children }) => {
+  return (
+    <Collapsible.Content forceMount asChild>
+      <div
+        className={classNames("rf-expand-grid", styles.toolGroupGrid)}
+        data-open={open}
+        hidden={false}
+      >
+        <div className={styles.toolGroupBody}>{children}</div>
+      </div>
+    </Collapsible.Content>
+  );
+};
+
 // Use this for a single tool results
 export const SingleModelToolContent: React.FC<{
   toolCalls: ToolCall[];
-}> = ({ toolCalls }) => {
-  const isStreaming = useAppSelector(selectIsStreaming);
-  const isWaiting = useAppSelector(selectIsWaiting);
+  threadId?: string;
+}> = ({ toolCalls, threadId }) => {
+  const contextThreadId = useThreadId();
+  const resolvedThreadId = threadId ?? contextThreadId;
+  const isStreaming = useAppSelector((state) =>
+    selectIsStreamingById(state, resolvedThreadId),
+  );
+  const isWaiting = useAppSelector((state) =>
+    selectIsWaitingById(state, resolvedThreadId),
+  );
   const store = useCollapsibleStore();
 
   const toolCallsId = useMemo(() => {
@@ -431,14 +460,14 @@ export const SingleModelToolContent: React.FC<{
     if (storeKey && store) store.set(storeKey, open);
   }, [storeKey, store, open]);
   const selectResults = useMemo(
-    () => selectManyToolResultsByIds(toolCallsId),
+    () => selectManyToolResultsByThreadAndIds(resolvedThreadId, toolCallsId),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [toolCallsIdKey],
+    [resolvedThreadId, toolCallsIdKey],
   );
   const selectDiffs = useMemo(
-    () => selectManyDiffMessageByIds(toolCallsId),
+    () => selectManyDiffMessageByThreadAndIds(resolvedThreadId, toolCallsId),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [toolCallsIdKey],
+    [resolvedThreadId, toolCallsIdKey],
   );
   const results = useAppSelector(selectResults);
   const diffs = useAppSelector(selectDiffs);
@@ -508,7 +537,7 @@ export const SingleModelToolContent: React.FC<{
             waiting={busy}
           />
         </Collapsible.Trigger>
-        <Collapsible.Content>
+        <AnimatedCollapsibleContent open={open}>
           {toolCalls.map((toolCall) => {
             // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
             if (toolCall === null) {
@@ -520,11 +549,11 @@ export const SingleModelToolContent: React.FC<{
             const key = `${toolCall.id}-${toolCall.index}`;
             return (
               <Box key={key} py="2">
-                <ToolMessage toolCall={toolCall} />
+                <ToolMessage toolCall={toolCall} threadId={resolvedThreadId} />
               </Box>
             );
           })}
-        </Collapsible.Content>
+        </AnimatedCollapsibleContent>
       </Collapsible.Root>
     </Container>
   );
@@ -535,6 +564,7 @@ export type ToolContentProps = {
   contextFilesByToolId?: Record<string, ChatContextFile[]>;
   diffsByToolId?: Record<string, DiffChunk[]>;
   isActiveAssistant?: boolean;
+  threadId?: string;
 };
 
 export const ToolContent: React.FC<ToolContentProps> = ({
@@ -542,12 +572,14 @@ export const ToolContent: React.FC<ToolContentProps> = ({
   contextFilesByToolId,
   diffsByToolId,
   isActiveAssistant = false,
+  threadId,
 }) => {
   const dispatch = useAppDispatch();
-  const chatId = useAppSelector(selectChatId);
+  const contextThreadId = useThreadId();
+  const toolThreadId = threadId ?? contextThreadId;
   const features = useAppSelector(selectFeatures);
   const backgroundAgents = useAppSelector((state) =>
-    selectBackgroundAgentsByThread(state, chatId),
+    selectBackgroundAgentsByThread(state, toolThreadId),
   );
   const handleOpenTrajectory = useCallback(
     (agent: BackgroundAgentSummary, childChatId: string) => {
@@ -555,14 +587,14 @@ export const ToolContent: React.FC<ToolContentProps> = ({
         createChatWithId({
           id: childChatId,
           title: agent.title,
-          parentId: agent.parent_chat_id || chatId,
+          parentId: agent.parent_chat_id || toolThreadId,
           linkType: agent.kind,
         }),
       );
       dispatch(switchToThread({ id: childChatId }));
       dispatch(push({ name: "chat" }));
     },
-    [chatId, dispatch],
+    [toolThreadId, dispatch],
   );
   const ids = useMemo(() => {
     const out: string[] = [];
@@ -575,23 +607,28 @@ export const ToolContent: React.FC<ToolContentProps> = ({
   }, [toolCalls]);
   const idsKey = ids.join("|");
   const selectResults = useMemo(
-    () => selectManyToolResultsByIds(ids),
+    () => selectManyToolResultsByThreadAndIds(toolThreadId, ids),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [idsKey],
+    [toolThreadId, idsKey],
   );
   const allToolResults = useAppSelector(selectResults);
   const activeToolCallId = isActiveAssistant ? ids[ids.length - 1] : undefined;
 
-  return processToolCalls(
-    toolCalls,
-    allToolResults,
-    features,
-    [],
-    contextFilesByToolId,
-    diffsByToolId,
-    activeToolCallId,
-    backgroundAgents,
-    handleOpenTrajectory,
+  return (
+    <ChatThreadProvider chatId={toolThreadId}>
+      {processToolCalls(
+        toolCalls,
+        allToolResults,
+        features,
+        [],
+        contextFilesByToolId,
+        diffsByToolId,
+        activeToolCallId,
+        backgroundAgents,
+        handleOpenTrajectory,
+        toolThreadId,
+      )}
+    </ChatThreadProvider>
   );
 };
 
@@ -608,6 +645,7 @@ function processToolCalls(
     agent: BackgroundAgentSummary,
     childChatId: string,
   ) => void = () => undefined,
+  threadId?: string,
 ) {
   if (toolCalls.length === 0) return processed;
   const [head, ...tail] = toolCalls;
@@ -636,6 +674,7 @@ function processToolCalls(
       activeToolCallId,
       backgroundAgents,
       onOpenTrajectory,
+      threadId,
     );
   }
 
@@ -657,6 +696,7 @@ function processToolCalls(
       activeToolCallId,
       backgroundAgents,
       onOpenTrajectory,
+      threadId,
     );
   }
 
@@ -679,6 +719,7 @@ function processToolCalls(
       activeToolCallId,
       backgroundAgents,
       onOpenTrajectory,
+      threadId,
     );
   }
 
@@ -701,6 +742,7 @@ function processToolCalls(
       activeToolCallId,
       backgroundAgents,
       onOpenTrajectory,
+      threadId,
     );
   }
 
@@ -723,6 +765,7 @@ function processToolCalls(
       activeToolCallId,
       backgroundAgents,
       onOpenTrajectory,
+      threadId,
     );
   }
 
@@ -744,6 +787,7 @@ function processToolCalls(
       activeToolCallId,
       backgroundAgents,
       onOpenTrajectory,
+      threadId,
     );
   }
 
@@ -764,6 +808,7 @@ function processToolCalls(
       activeToolCallId,
       backgroundAgents,
       onOpenTrajectory,
+      threadId,
     );
   }
 
@@ -784,6 +829,7 @@ function processToolCalls(
       activeToolCallId,
       backgroundAgents,
       onOpenTrajectory,
+      threadId,
     );
   }
 
@@ -811,6 +857,7 @@ function processToolCalls(
       activeToolCallId,
       backgroundAgents,
       onOpenTrajectory,
+      threadId,
     );
   }
 
@@ -838,6 +885,7 @@ function processToolCalls(
       activeToolCallId,
       backgroundAgents,
       onOpenTrajectory,
+      threadId,
     );
   }
 
@@ -858,6 +906,7 @@ function processToolCalls(
       activeToolCallId,
       backgroundAgents,
       onOpenTrajectory,
+      threadId,
     );
   }
 
@@ -878,6 +927,7 @@ function processToolCalls(
       activeToolCallId,
       backgroundAgents,
       onOpenTrajectory,
+      threadId,
     );
   }
 
@@ -898,6 +948,7 @@ function processToolCalls(
       activeToolCallId,
       backgroundAgents,
       onOpenTrajectory,
+      threadId,
     );
   }
 
@@ -920,6 +971,7 @@ function processToolCalls(
       activeToolCallId,
       backgroundAgents,
       onOpenTrajectory,
+      threadId,
     );
   }
 
@@ -942,6 +994,7 @@ function processToolCalls(
       activeToolCallId,
       backgroundAgents,
       onOpenTrajectory,
+      threadId,
     );
   }
 
@@ -964,6 +1017,7 @@ function processToolCalls(
       activeToolCallId,
       backgroundAgents,
       onOpenTrajectory,
+      threadId,
     );
   }
 
@@ -986,6 +1040,7 @@ function processToolCalls(
       activeToolCallId,
       backgroundAgents,
       onOpenTrajectory,
+      threadId,
     );
   }
 
@@ -1000,6 +1055,7 @@ function processToolCalls(
       activeToolCallId,
       backgroundAgents,
       onOpenTrajectory,
+      threadId,
     );
   }
 
@@ -1022,6 +1078,7 @@ function processToolCalls(
       activeToolCallId,
       backgroundAgents,
       onOpenTrajectory,
+      threadId,
     );
   }
 
@@ -1044,6 +1101,7 @@ function processToolCalls(
       activeToolCallId,
       backgroundAgents,
       onOpenTrajectory,
+      threadId,
     );
   }
 
@@ -1066,6 +1124,7 @@ function processToolCalls(
       activeToolCallId,
       backgroundAgents,
       onOpenTrajectory,
+      threadId,
     );
   }
 
@@ -1088,6 +1147,7 @@ function processToolCalls(
       activeToolCallId,
       backgroundAgents,
       onOpenTrajectory,
+      threadId,
     );
   }
 
@@ -1111,6 +1171,7 @@ function processToolCalls(
       activeToolCallId,
       backgroundAgents,
       onOpenTrajectory,
+      threadId,
     );
   }
 
@@ -1133,6 +1194,7 @@ function processToolCalls(
       activeToolCallId,
       backgroundAgents,
       onOpenTrajectory,
+      threadId,
     );
   }
 
@@ -1153,6 +1215,7 @@ function processToolCalls(
       activeToolCallId,
       backgroundAgents,
       onOpenTrajectory,
+      threadId,
     );
   }
 
@@ -1173,6 +1236,7 @@ function processToolCalls(
       activeToolCallId,
       backgroundAgents,
       onOpenTrajectory,
+      threadId,
     );
   }
 
@@ -1193,6 +1257,7 @@ function processToolCalls(
       activeToolCallId,
       backgroundAgents,
       onOpenTrajectory,
+      threadId,
     );
   }
 
@@ -1213,6 +1278,7 @@ function processToolCalls(
       activeToolCallId,
       backgroundAgents,
       onOpenTrajectory,
+      threadId,
     );
   }
 
@@ -1234,6 +1300,7 @@ function processToolCalls(
       activeToolCallId,
       backgroundAgents,
       onOpenTrajectory,
+      threadId,
     );
   }
 
@@ -1262,6 +1329,7 @@ function processToolCalls(
       activeToolCallId,
       backgroundAgents,
       onOpenTrajectory,
+      threadId,
     );
   }
 
@@ -1282,6 +1350,7 @@ function processToolCalls(
       activeToolCallId,
       backgroundAgents,
       onOpenTrajectory,
+      threadId,
     );
   }
 
@@ -1302,6 +1371,7 @@ function processToolCalls(
       activeToolCallId,
       backgroundAgents,
       onOpenTrajectory,
+      threadId,
     );
   }
 
@@ -1408,6 +1478,7 @@ function processToolCalls(
       activeToolCallId,
       backgroundAgents,
       onOpenTrajectory,
+      threadId,
     );
   }
 
@@ -1419,7 +1490,9 @@ function processToolCalls(
       <CompressReportTool
         key={`compress-tool-${head.id ?? processed.length}`}
         toolCall={normalizedHead}
-        toolType={headName}
+        toolType={
+          headName === "compress_chat_probe" ? "ctx_probe" : "ctx_apply"
+        }
       />
     );
     return processToolCalls(
@@ -1432,6 +1505,7 @@ function processToolCalls(
       activeToolCallId,
       backgroundAgents,
       onOpenTrajectory,
+      threadId,
     );
   }
 
@@ -1440,6 +1514,7 @@ function processToolCalls(
       <SleepToolCard
         key={`sleep-tool-${processed.length}`}
         toolCall={normalizedHead}
+        threadId={threadId}
       />
     );
     return processToolCalls(
@@ -1452,6 +1527,7 @@ function processToolCalls(
       activeToolCallId,
       backgroundAgents,
       onOpenTrajectory,
+      threadId,
     );
   }
 
@@ -1472,6 +1548,7 @@ function processToolCalls(
       activeToolCallId,
       backgroundAgents,
       onOpenTrajectory,
+      threadId,
     );
   }
 
@@ -1493,6 +1570,7 @@ function processToolCalls(
       activeToolCallId,
       backgroundAgents,
       onOpenTrajectory,
+      threadId,
     );
   }
 
@@ -1519,6 +1597,7 @@ function processToolCalls(
         key={`multi-model-tool-content-${processed.length}`}
         toolCalls={multiModalToolCalls}
         toolResults={multiModalToolResults}
+        threadId={threadId ?? ""}
       />
     );
     return processToolCalls(
@@ -1531,6 +1610,7 @@ function processToolCalls(
       activeToolCallId,
       backgroundAgents,
       onOpenTrajectory,
+      threadId,
     );
   }
 
@@ -1551,15 +1631,21 @@ function processToolCalls(
     activeToolCallId,
     backgroundAgents,
     onOpenTrajectory,
+    threadId,
   );
 }
 
 const MultiModalToolContent: React.FC<{
   toolCalls: ToolCall[];
   toolResults: MultiModalToolResult[];
-}> = ({ toolCalls, toolResults }) => {
-  const isStreaming = useAppSelector(selectIsStreaming);
-  const isWaiting = useAppSelector(selectIsWaiting);
+  threadId: string;
+}> = ({ toolCalls, toolResults, threadId }) => {
+  const isStreaming = useAppSelector((state) =>
+    selectIsStreamingById(state, threadId),
+  );
+  const isWaiting = useAppSelector((state) =>
+    selectIsWaitingById(state, threadId),
+  );
   const store = useCollapsibleStore();
 
   const ids = useMemo(() => {
@@ -1583,9 +1669,9 @@ const MultiModalToolContent: React.FC<{
   }, [mmStoreKey, store, open]);
 
   const selectDiffs = useMemo(
-    () => selectManyDiffMessageByIds(ids),
+    () => selectManyDiffMessageByThreadAndIds(threadId, ids),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [idsKey],
+    [threadId, idsKey],
   );
   const diffs = useAppSelector(selectDiffs);
 
@@ -1634,7 +1720,7 @@ const MultiModalToolContent: React.FC<{
             waiting={busy}
           />
         </Collapsible.Trigger>
-        <Collapsible.Content>
+        <AnimatedCollapsibleContent open={open}>
           <Box py="2">
             {toolCalls.map((toolCall, i) => {
               const result = toolResults.find(
@@ -1666,7 +1752,7 @@ const MultiModalToolContent: React.FC<{
               );
             })}
           </Box>
-        </Collapsible.Content>
+        </AnimatedCollapsibleContent>
       </Collapsible.Root>
       {hasImages && (
         <Flex py="2" gap="2" wrap="wrap">
@@ -1705,9 +1791,9 @@ type ToolUsageSummaryProps = {
   waiting: boolean;
 };
 
-function getFileIcon(path: string): React.ReactNode {
-  if (path.endsWith("/") || !path.includes(".")) return <RowsIcon />;
-  return <FileIcon />;
+function getFile(path: string): React.ReactNode {
+  if (path.endsWith("/") || !path.includes(".")) return <Rows3 />;
+  return <File />;
 }
 
 function truncatePath(path: string, maxLen = 50): string {
@@ -1737,16 +1823,26 @@ const ToolUsageSummary = forwardRef<HTMLDivElement, ToolUsageSummaryProps>(
     const currentStep = (subchatLog ?? []).slice(-1)[0];
 
     return (
-      <AnimatedText as="div" weight="light" size="1" animating={waiting}>
+      <AnimatedText
+        as="div"
+        weight="light"
+        size="1"
+        animating={waiting}
+        className={styles.toolUsageSummary}
+      >
         <Flex gap="2" align="end" onClick={onClick} ref={ref} my="2">
           <Flex
             gap="1"
             align="start"
             direction="column"
-            style={{ cursor: "pointer" }}
+            className={styles.toolUsageSummaryBody}
           >
             <Flex gap="2" align="center" justify="center">
-              {waiting ? <Spinner /> : <GearIcon />}
+              {waiting ? (
+                <Icon icon={LoaderCircle} size="sm" tone="accent" />
+              ) : (
+                <Settings />
+              )}
               {toolUsageAmount.map(({ functionName, amountOfCalls }, index) => (
                 <span key={functionName}>
                   <ToolUsageDisplay
@@ -1765,7 +1861,7 @@ const ToolUsageSummary = forwardRef<HTMLDivElement, ToolUsageSummaryProps>(
             )}
             {shownAttachedFiles?.map((file, index) => (
               <Text weight="light" size="1" key={index} ml="4" as="div">
-                {getFileIcon(file)} {truncatePath(file)}
+                {getFile(file)} {truncatePath(file)}
               </Text>
             ))}
             {currentStep &&
@@ -1775,7 +1871,9 @@ const ToolUsageSummary = forwardRef<HTMLDivElement, ToolUsageSummaryProps>(
                   <Flex direction="column" gap="1" ml="4" mt="1">
                     {parsed.step && (
                       <Flex align="center" gap="1">
-                        {waiting && <Spinner size="1" />}
+                        {waiting && (
+                          <Icon icon={LoaderCircle} size="sm" tone="accent" />
+                        )}
                         <Text weight="light" size="1">
                           {parsed.step}:
                         </Text>

@@ -1,14 +1,24 @@
 .root {
   display: flex;
+<<<<<<< HEAD
   flex-direction: column;
   gap: var(--space-2);
   height: 100%;
   min-height: 0;
   padding: var(--space-2);
+=======
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  gap: var(--rf-space-3);
+  padding: var(--rf-panel-pad);
+>>>>>>> upstream/main
   overflow: hidden;
 }
 
 .header {
+<<<<<<< HEAD
   flex-shrink: 0;
 }
 
@@ -27,6 +37,68 @@
 .searchBox {
   flex: 1;
   min-width: 180px;
+=======
+  min-width: 0;
+  flex-shrink: 0;
+}
+
+.headerCopy {
+  min-width: 0;
+}
+
+.mutedText,
+.cardPreviewMuted,
+.cardDate,
+.emptyContent,
+.pendingState {
+  color: var(--rf-color-muted);
+}
+
+.filters {
+  flex-shrink: 0;
+  padding: var(--rf-panel-pad);
+}
+
+.filterRow,
+.tagActions {
+  min-width: 0;
+}
+
+.filterControl {
+  width: min(180px, 100%);
+  min-width: min(140px, 100%);
+}
+
+.searchBox,
+.tagSearchBox {
+  position: relative;
+  display: flex;
+  min-width: min(180px, 100%);
+  align-items: center;
+}
+
+.searchBox {
+  flex: 1 1 220px;
+}
+
+.tagSearchBox {
+  flex: 1 1 100%;
+  margin-bottom: var(--rf-space-1);
+}
+
+.searchIcon {
+  position: absolute;
+  left: var(--rf-space-2);
+  width: var(--rf-icon-sm);
+  height: var(--rf-icon-sm);
+  color: var(--rf-color-muted);
+  pointer-events: none;
+}
+
+.searchInput {
+  width: 100%;
+  padding-left: var(--rf-space-5);
+>>>>>>> upstream/main
 }
 
 .tagSummary {
@@ -37,11 +109,21 @@
   min-width: 0;
 }
 
+<<<<<<< HEAD
+=======
+.tagCloudInner {
+  min-width: 0;
+  padding-top: var(--rf-space-2);
+  overflow: hidden;
+}
+
+>>>>>>> upstream/main
 .tagChips {
   composes: scrollbarThin from "../../../components/shared/scrollbar.module.css";
   min-width: 0;
   max-height: 200px;
   overflow: hidden auto;
+<<<<<<< HEAD
   padding-right: var(--space-1);
 }
 
@@ -57,6 +139,37 @@
 
 .tagChipActive {
   box-shadow: 0 0 0 1px var(--accent-8);
+=======
+  padding-right: var(--rf-space-1);
+}
+
+.tagChip {
+  display: inline-flex;
+  max-width: 100%;
+  min-height: 22px;
+  align-items: center;
+  padding: var(--rf-space-2xs) var(--rf-space-xs);
+  overflow: hidden;
+  border: var(--rf-hairline) solid var(--rf-border);
+  border-radius: var(--rf-radius-chip);
+  background: transparent;
+  color: var(--rf-color-muted);
+  cursor: pointer;
+  font: 650 var(--rf-text-1) / 1 var(--rf-font-ui);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tagChip:hover {
+  background: var(--rf-surface-1);
+  color: var(--rf-color-fg);
+}
+
+.tagChipActive {
+  border-color: var(--rf-color-accent);
+  background: var(--rf-color-accent-soft);
+  color: var(--rf-color-accent);
+>>>>>>> upstream/main
 }
 
 .tagChipStale {
@@ -64,11 +177,19 @@
   text-decoration: line-through;
 }
 
+<<<<<<< HEAD
+=======
+.errorState {
+  flex-shrink: 0;
+}
+
+>>>>>>> upstream/main
 .list {
   composes: scrollbarThin from "../../../components/shared/scrollbar.module.css";
   flex: 1;
   min-height: 0;
   overflow: auto;
+<<<<<<< HEAD
   padding-right: var(--space-1);
 }
 
@@ -87,6 +208,36 @@
 .cardPinned {
   border-color: var(--amber-8);
   box-shadow: 0 0 0 1px var(--amber-a7);
+=======
+  padding-right: var(--rf-space-1);
+}
+
+.list > * {
+  flex-shrink: 0;
+}
+
+.loadingState {
+  display: flex;
+  justify-content: center;
+  padding: var(--rf-space-4);
+}
+
+.card {
+  min-height: 64px;
+  padding: var(--rf-panel-pad);
+  cursor: default;
+  transition:
+    background-color var(--rf-dur-fast) var(--rf-ease-standard),
+    border-color var(--rf-dur-fast) var(--rf-ease-standard);
+}
+
+.card:hover {
+  background: var(--rf-surface-1);
+}
+
+.cardPinned {
+  box-shadow: inset 2px 0 0 var(--rf-color-warning);
+>>>>>>> upstream/main
 }
 
 .cardFrame {
@@ -94,10 +245,15 @@
 }
 
 .cardCollapsedRow {
+<<<<<<< HEAD
+=======
+  min-width: 0;
+>>>>>>> upstream/main
   min-height: 40px;
 }
 
 .cardBodyButton {
+<<<<<<< HEAD
   appearance: none;
   display: flex;
   flex: 1;
@@ -105,6 +261,15 @@
   min-height: 40px;
   padding: 0;
   border: 0;
+=======
+  display: flex;
+  min-width: 0;
+  min-height: 40px;
+  flex: 1;
+  padding: 0;
+  border: 0;
+  appearance: none;
+>>>>>>> upstream/main
   background: transparent;
   color: inherit;
   cursor: pointer;
@@ -113,6 +278,7 @@
 }
 
 .cardBodyButton:hover .cardTitle {
+<<<<<<< HEAD
   color: var(--accent-11);
 }
 
@@ -126,6 +292,21 @@
   flex: 1;
   min-width: 0;
   min-height: 40px;
+=======
+  color: var(--rf-color-accent);
+}
+
+.cardBodyButton:focus-visible {
+  border-radius: var(--rf-radius-ctl);
+  outline: var(--rf-focus-ring-w) solid var(--rf-focus-ring);
+  outline-offset: var(--rf-hairline);
+}
+
+.cardBodyColumn {
+  min-width: 0;
+  min-height: 40px;
+  flex: 1;
+>>>>>>> upstream/main
 }
 
 .cardTitleRow {
@@ -133,8 +314,13 @@
 }
 
 .cardBadges {
+<<<<<<< HEAD
   flex-shrink: 0;
   min-width: 0;
+=======
+  min-width: 0;
+  flex-shrink: 0;
+>>>>>>> upstream/main
 }
 
 .cardControls {
@@ -142,12 +328,24 @@
 }
 
 .cardIconButton {
+<<<<<<< HEAD
   width: 22px;
   height: 22px;
 }
 
 .cardIconButton:hover {
   color: var(--accent-11);
+=======
+  color: var(--rf-color-muted);
+}
+
+.cardIconButton:hover:not(:disabled) {
+  color: var(--rf-color-accent);
+}
+
+.iconButtonPinned {
+  color: var(--rf-color-warning);
+>>>>>>> upstream/main
 }
 
 .cardTitle {
@@ -159,7 +357,11 @@
 }
 
 .cardTitleEmpty {
+<<<<<<< HEAD
   color: var(--gray-10);
+=======
+  color: var(--rf-color-muted);
+>>>>>>> upstream/main
   font-style: italic;
 }
 
@@ -167,7 +369,11 @@
   min-width: 0;
 }
 
+<<<<<<< HEAD
 .cardPreview {
+=======
+.cardPreviewMuted {
+>>>>>>> upstream/main
   display: block;
   min-width: 0;
   overflow: hidden;
@@ -176,6 +382,7 @@
 }
 
 .cardPreviewEmpty {
+<<<<<<< HEAD
   flex: 1;
   min-width: 0;
 }
@@ -183,6 +390,15 @@
 .cardDate {
   flex: 0 0 auto;
   max-width: 34%;
+=======
+  min-width: 0;
+  flex: 1;
+}
+
+.cardDate {
+  max-width: 34%;
+  flex: 0 0 auto;
+>>>>>>> upstream/main
   overflow: hidden;
   text-align: right;
   text-overflow: ellipsis;
@@ -190,12 +406,25 @@
 }
 
 .archivePopover {
+<<<<<<< HEAD
   width: 220px;
+=======
+  width: min(220px, calc(100vw - 2 * var(--rf-space-3)));
+}
+
+.expandedGrid {
+  pointer-events: none;
+}
+
+.expandedGrid[data-open="true"] {
+  pointer-events: auto;
+>>>>>>> upstream/main
 }
 
 .expandedContent {
   composes: scrollbarThin from "../../../components/shared/scrollbar.module.css";
   display: flex;
+<<<<<<< HEAD
   flex-direction: column;
   gap: var(--space-3);
   max-height: 420px;
@@ -207,6 +436,26 @@
 
 .expandedMarkdown {
   color: var(--gray-12);
+=======
+  max-height: 420px;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--rf-space-3);
+  padding: var(--rf-space-3) 0 0;
+  overflow: auto;
+  opacity: 0;
+  transform: translateY(var(--rf-collapse-enter-y)) translateZ(0);
+}
+
+.expandedGrid[data-open="true"] .expandedContent {
+  opacity: 1;
+  transform: translateY(0) translateZ(0);
+}
+
+.expandedMarkdown {
+  min-width: 0;
+  color: var(--rf-color-fg);
+>>>>>>> upstream/main
 }
 
 .expandedTags {
@@ -215,27 +464,47 @@
 
 .frontmatterTable {
   width: 100%;
+<<<<<<< HEAD
   border-collapse: collapse;
   color: var(--gray-11);
   font-size: var(--font-size-1);
+=======
+  min-width: 0;
+  border-collapse: collapse;
+  color: var(--rf-color-muted);
+  font-size: var(--rf-text-1);
+>>>>>>> upstream/main
 }
 
 .frontmatterTable th,
 .frontmatterTable td {
+<<<<<<< HEAD
   padding: var(--space-1) var(--space-2);
   border-top: 1px solid var(--gray-a4);
+=======
+  padding: var(--rf-space-1) var(--rf-space-2);
+  border-top: var(--rf-hairline) solid var(--rf-border);
+>>>>>>> upstream/main
   vertical-align: top;
 }
 
 .frontmatterTable th {
   width: 1%;
+<<<<<<< HEAD
   color: var(--gray-10);
+=======
+  color: var(--rf-color-muted);
+>>>>>>> upstream/main
   font-weight: 500;
   text-align: left;
   white-space: nowrap;
 }
 
 .frontmatterTable td {
+<<<<<<< HEAD
+=======
+  min-width: 0;
+>>>>>>> upstream/main
   word-break: break-word;
 }
 
@@ -243,6 +512,7 @@
   font-style: italic;
 }
 
+<<<<<<< HEAD
 .pendingState {
   color: var(--gray-11);
 }
@@ -251,3 +521,67 @@
   padding: var(--space-6) var(--space-3);
   text-align: center;
 }
+=======
+.emptyState {
+  padding: var(--rf-space-6) var(--rf-space-3);
+  color: var(--rf-color-muted);
+  text-align: center;
+}
+
+@media (max-width: 480px) {
+  .root {
+    padding: var(--rf-panel-pad-compact);
+  }
+
+  .header,
+  .tagSummary,
+  .cardCollapsedRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .filters,
+  .card {
+    padding: var(--rf-panel-pad-compact);
+  }
+
+  .filterControl,
+  .searchBox {
+    width: 100%;
+    flex-basis: 100%;
+  }
+
+  .cardControls {
+    align-items: flex-start;
+  }
+
+  .cardDate {
+    max-width: 42%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card,
+  .tagChip,
+  .expandedContent {
+    transition: none;
+  }
+
+  .expandedContent {
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .expandedContent {
+    transition:
+      opacity var(--rf-collapse-duration) var(--rf-ease-entrance),
+      transform var(--rf-collapse-duration) var(--rf-ease-entrance);
+    will-change: opacity, transform;
+  }
+
+  .expandedGrid:not([data-open="true"]) .expandedContent {
+    will-change: auto;
+  }
+}
+>>>>>>> upstream/main

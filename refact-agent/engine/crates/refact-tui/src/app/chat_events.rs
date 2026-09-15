@@ -544,6 +544,7 @@ impl App {
         };
         let state = match runtime_state {
             "idle" => SessionState::Idle,
+            "starting" => SessionState::Starting,
             "generating" => SessionState::Generating,
             "executing_tools" => SessionState::ExecutingTools,
             "paused" => SessionState::Paused,

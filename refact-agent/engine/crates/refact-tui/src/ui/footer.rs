@@ -14,6 +14,7 @@ use crate::vendored::line_truncation::truncate_line_with_ellipsis_if_overflow;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FooterRuntimeState {
     Idle,
+    Starting,
     Generating,
     ExecutingTools,
     Paused,
@@ -37,6 +38,7 @@ impl FooterRuntimeState {
         }
         match app.session_state() {
             SessionState::Idle => Self::Idle,
+            SessionState::Starting => Self::Starting,
             SessionState::Generating => Self::Generating,
             SessionState::ExecutingTools => Self::ExecutingTools,
             SessionState::Paused => Self::Paused,
@@ -50,6 +52,7 @@ impl FooterRuntimeState {
     fn label(self) -> &'static str {
         match self {
             Self::Idle => "idle",
+            Self::Starting => "starting",
             Self::Generating => "generating",
             Self::ExecutingTools => "running tools",
             Self::Paused => "approval pending",
@@ -65,6 +68,7 @@ impl FooterRuntimeState {
     fn icon(self) -> &'static str {
         match self {
             Self::Idle => "●",
+            Self::Starting => "◆",
             Self::Generating => "◆",
             Self::ExecutingTools => "◆",
             Self::Paused => "◆",
@@ -80,6 +84,7 @@ impl FooterRuntimeState {
     fn color(self) -> Color {
         match self {
             Self::Idle => Color::Green,
+            Self::Starting => Color::Cyan,
             Self::Generating => Color::Cyan,
             Self::ExecutingTools => Color::Cyan,
             Self::Paused => Color::Yellow,

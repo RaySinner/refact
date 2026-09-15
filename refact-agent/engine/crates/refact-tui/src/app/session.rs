@@ -5,6 +5,7 @@ use super::*;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SessionState {
     Idle,
+    Starting,
     Generating,
     ExecutingTools,
     Paused,
@@ -25,6 +26,7 @@ impl SessionState {
     pub fn as_str(self) -> &'static str {
         match self {
             SessionState::Idle => "idle",
+            SessionState::Starting => "starting",
             SessionState::Generating => "generating",
             SessionState::ExecutingTools => "tools",
             SessionState::Paused => "paused",
@@ -38,7 +40,9 @@ impl SessionState {
     pub fn shows_working_indicator(self) -> bool {
         matches!(
             self,
-            SessionState::Generating | SessionState::ExecutingTools
+            SessionState::Starting
+                | SessionState::Generating
+                | SessionState::ExecutingTools
         )
     }
 }

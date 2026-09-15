@@ -202,6 +202,7 @@ fn composer_status(app: &App) -> Option<String> {
     match app.session_state() {
         _ if app.composer_history_search().is_some() => Some(history_search_title(app)),
         _ if app.ctrl_c_quit_armed().is_some() => Some("Ctrl-C again to exit".to_string()),
+        SessionState::Starting => Some("starting · Enter queues · Esc cancels".to_string()),
         SessionState::Generating => Some("generating · Enter queues · Esc cancels".to_string()),
         SessionState::ExecutingTools => {
             Some("running tools · Enter queues · Esc cancels".to_string())
@@ -226,7 +227,8 @@ fn composer_hint_line(app: &App, status: Option<String>) -> Line<'static> {
     }
     let busy = matches!(
         app.session_state(),
-        SessionState::Generating
+        SessionState::Starting
+            | SessionState::Generating
             | SessionState::ExecutingTools
             | SessionState::Paused
             | SessionState::WaitingIde

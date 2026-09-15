@@ -132,6 +132,7 @@ pub struct BrowserMeta {
 #[serde(rename_all = "snake_case")]
 pub enum SessionState {
     Idle,
+    Starting,
     Generating,
     ExecutingTools,
     Paused,
@@ -151,6 +152,7 @@ impl std::fmt::Display for SessionState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             SessionState::Idle => write!(f, "idle"),
+            SessionState::Starting => write!(f, "starting"),
             SessionState::Generating => write!(f, "generating"),
             SessionState::ExecutingTools => write!(f, "executing_tools"),
             SessionState::Paused => write!(f, "paused"),
@@ -1382,6 +1384,11 @@ mod tests {
 
         let parsed: SessionState = serde_json::from_str("\"executing_tools\"").unwrap();
         assert_eq!(parsed, SessionState::ExecutingTools);
+
+        let starting_json = serde_json::to_string(&SessionState::Starting).unwrap();
+        assert_eq!(starting_json, "\"starting\"");
+        let parsed: SessionState = serde_json::from_str("\"starting\"").unwrap();
+        assert_eq!(parsed, SessionState::Starting);
     }
 
     #[test]

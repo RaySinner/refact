@@ -46,6 +46,7 @@ const AGENT_DIFF_MAX_OUTPUT_BYTES_DEFAULT: usize = 4_194_304;
 const PROCESS_SUBSCRIBE_PREVIEW_BYTES_DEFAULT: usize = 2_000;
 const REVIEW_DIFF_CHAR_CAP_DEFAULT: usize = 400_000;
 const REVIEW_MAX_DIFF_PATCH_BYTES_DEFAULT: usize = 4_194_304;
+const TASK_AGENT_MAX_RETRIES_DEFAULT: usize = 3;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(default, deny_unknown_fields)]
@@ -98,6 +99,7 @@ pub struct TrajectoryRuntimeSettings {
     pub process_subscribe_preview_bytes: usize,
     pub review_diff_char_cap: usize,
     pub review_max_diff_patch_bytes: usize,
+    pub task_agent_max_retries: usize,
 }
 
 impl Default for TrajectoryRuntimeSettings {
@@ -153,6 +155,7 @@ impl Default for TrajectoryRuntimeSettings {
             process_subscribe_preview_bytes: PROCESS_SUBSCRIBE_PREVIEW_BYTES_DEFAULT,
             review_diff_char_cap: REVIEW_DIFF_CHAR_CAP_DEFAULT,
             review_max_diff_patch_bytes: REVIEW_MAX_DIFF_PATCH_BYTES_DEFAULT,
+            task_agent_max_retries: TASK_AGENT_MAX_RETRIES_DEFAULT,
         }
     }
 }
@@ -522,7 +525,8 @@ pub fn validate(settings: &TrajectoryRuntimeSettings) -> Result<(), String> {
         settings.review_max_diff_patch_bytes,
         4_096,
         268_435_456,
-    )
+    )?;
+    validate_usize("task_agent_max_retries", settings.task_agent_max_retries, 0, 10)
 }
 
 fn validate_usize(name: &str, value: usize, minimum: usize, maximum: usize) -> Result<(), String> {
@@ -671,6 +675,11 @@ trajectory_writer_enabled: false
         assert_eq!(loaded.review_diff_char_cap, defaults.review_diff_char_cap);
         assert_eq!(loaded.cat_max_input_paths, defaults.cat_max_input_paths);
         assert!(loaded.cat_line_ranges_enabled);
+        assert_eq!(
+            loaded.task_agent_max_retries,
+            defaults.task_agent_max_retries
+        );
+        assert_eq!(loaded.task_agent_max_retries, 3);
         assert!(validate(&loaded).is_ok());
     }
 

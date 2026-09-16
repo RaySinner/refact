@@ -503,6 +503,7 @@ fn trajectory_settings_fields() -> Vec<TrajectorySettingField> {
         live_usize("process_subscribe_preview_bytes", 50, 100_000),
         live_usize("review_diff_char_cap", 4_096, 8_388_608),
         live_usize("review_max_diff_patch_bytes", 4_096, 268_435_456),
+        live_usize("task_agent_max_retries", 0, 10),
     ]
 }
 
@@ -654,7 +655,7 @@ mod tests {
             initial.config,
             crate::runtime_settings::TrajectoryRuntimeSettings::default()
         );
-        assert_eq!(initial.fields.len(), 48);
+        assert_eq!(initial.fields.len(), 49);
         assert!(initial
             .fields
             .iter()

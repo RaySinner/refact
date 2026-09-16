@@ -426,6 +426,8 @@ pub struct BoardCard {
     pub assignee: Option<String>,
     pub agent_chat_id: Option<String>,
     #[serde(default)]
+    pub retry_count: usize,
+    #[serde(default)]
     pub status_updates: Vec<StatusUpdate>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub comments: Vec<CardComment>,
@@ -581,6 +583,7 @@ mod tests {
             instructions: String::new(),
             assignee: None,
             agent_chat_id: None,
+            retry_count: 0,
             status_updates: vec![],
             comments: vec![],
             final_report: None,

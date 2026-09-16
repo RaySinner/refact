@@ -740,6 +740,7 @@ fn build_fix_card(
         ),
         assignee: None,
         agent_chat_id: None,
+        retry_count: 0,
         status_updates: vec![StatusUpdate {
             timestamp: now.to_string(),
             message: format!("Created after post-merge regression in {}", source_card.id),

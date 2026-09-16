@@ -75,7 +75,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 #debug = true
 strip = true
 opt-level = "z"
-lto = true
+lto = "thin"
 
 [profile.ci-release]
 inherits = "release"
@@ -85,6 +85,7 @@ codegen-units = 16
 
 [profile.dev]
 debug = "line-tables-only"
+split-debuginfo = "unpacked"
 
 [profile.dev.package."*"]
 debug = false
@@ -201,7 +202,7 @@ test = false
 bench = false
 
 [features]
-default = ["voice"]
+default = []
 voice = ["refact-voice/voice"]
 bench = []
 perf-tests = []

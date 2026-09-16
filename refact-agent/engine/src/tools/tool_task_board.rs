@@ -14,6 +14,7 @@ use crate::tools::tools_description::{
 use crate::tasks::storage;
 use crate::tasks::types::{AbVariants, BoardCard, ScopeGuardMode, TaskBoard};
 use crate::tasks::events::{TaskEvent, emit_task_event};
+use refact_runtime_api::SessionState;
 
 fn make_source() -> ToolSource {
     ToolSource {
@@ -186,6 +187,20 @@ fn parse_string_set(value: Option<&Value>) -> HashSet<String> {
             .collect(),
         _ => HashSet::new(),
     }
+}
+
+fn is_session_state_active(state: &Option<SessionState>) -> bool {
+    matches!(
+        state,
+        Some(
+            SessionState::Starting
+                | SessionState::Generating
+                | SessionState::ExecutingTools
+                | SessionState::Paused
+                | SessionState::WaitingIde
+                | SessionState::WaitingUserInput
+        )
+    )
 }
 
 fn card_matches_filter(card: &BoardCard, filter: &BoardFilter) -> bool {
@@ -1002,7 +1017,7 @@ impl Tool for ToolTaskBoardMoveCard {
         tool_call_id: &String,
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
-        let (is_planner, gcx) = {
+        let (is_planner, gcx, chat_facade) = {
             let ccx_lock = ccx.lock().await;
             let is_planner = ccx_lock
                 .task_meta
@@ -1010,7 +1025,8 @@ impl Tool for ToolTaskBoardMoveCard {
                 .map(|m| m.role == "planner")
                 .unwrap_or(false);
             let gcx = ccx_lock.app.gcx.clone();
-            (is_planner, gcx)
+            let chat_facade = ccx_lock.app.chat.facade.clone();
+            (is_planner, gcx, chat_facade)
         };
 
         if !is_planner {
@@ -1043,6 +1059,23 @@ impl Tool for ToolTaskBoardMoveCard {
             .get_card_mut(card_id)
             .ok_or(format!("Card {} not found", card_id))?;
         let old_column = card.column.clone();
+        let agent_chat_id = card.agent_chat_id.clone();
+
+        if old_column == "doing"
+            && (column == "failed" || column == "planned")
+            && agent_chat_id.is_some()
+        {
+            if let Some(ref chat_id) = agent_chat_id {
+                let state = chat_facade.session_state(chat_id).await?;
+                if is_session_state_active(&state) {
+                    return Err(format!(
+                        "Cannot move card {} from doing to {} while agent {} is active. \
+                         Cancel the agent with cancel_agent first.",
+                        card_id, column, chat_id
+                    ));
+                }
+            }
+        }
 
         if column == "doing" && card.started_at.is_none() {
             card.started_at = Some(now.clone());
@@ -1123,7 +1156,7 @@ impl Tool for ToolTaskBoardDeleteCard {
         tool_call_id: &String,
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
-        let (is_planner, gcx) = {
+        let (is_planner, gcx, chat_facade) = {
             let ccx_lock = ccx.lock().await;
             let is_planner = ccx_lock
                 .task_meta
@@ -1131,7 +1164,8 @@ impl Tool for ToolTaskBoardDeleteCard {
                 .map(|m| m.role == "planner")
                 .unwrap_or(false);
             let gcx = ccx_lock.app.gcx.clone();
-            (is_planner, gcx)
+            let chat_facade = ccx_lock.app.chat.facade.clone();
+            (is_planner, gcx, chat_facade)
         };
 
         if !is_planner {
@@ -1150,6 +1184,21 @@ impl Tool for ToolTaskBoardDeleteCard {
         let existed = board.cards.iter().any(|c| c.id == card_id);
         if !existed {
             return Err(format!("Card {} not found", card_id));
+        }
+
+        if let Some(card) = board.cards.iter().find(|c| c.id == card_id) {
+            if card.column == "doing" || card.agent_chat_id.is_some() {
+                if let Some(ref chat_id) = card.agent_chat_id {
+                    let state = chat_facade.session_state(chat_id).await?;
+                    if is_session_state_active(&state) {
+                        return Err(format!(
+                            "Cannot delete card {} while agent {} is active. \
+                             Cancel the agent with cancel_agent first.",
+                            card_id, chat_id
+                        ));
+                    }
+                }
+            }
         }
 
         board.cards.retain(|c| c.id != card_id);

@@ -30,7 +30,7 @@ pub const AGENT_EXPLORATION_INSTRUCTIONS: &str = r#"2. **Delegate exploration to
 
 **Tools available for subagents**:
 - `tree()` - project structure; add `use_ast=true` for symbols
-- `cat()` - read files; supports line ranges like `file.rs:10-50`
+- `cat()` - read files (prefer to open full files)
 - `glob()` - find files by path pattern
 - `search_symbol_definition()` - trace code flow
 - `search_pattern()` - regex search inside file contents

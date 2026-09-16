@@ -45,6 +45,7 @@ struct CatLimits {
     max_lines: usize,
     max_expanded_files: usize,
     max_file_bytes: usize,
+    line_ranges_enabled: bool,
 }
 
 impl CatLimits {
@@ -55,6 +56,7 @@ impl CatLimits {
             max_lines: settings.cat_max_lines,
             max_expanded_files: settings.cat_max_expanded_files,
             max_file_bytes: settings.cat_max_file_bytes,
+            line_ranges_enabled: settings.cat_line_ranges_enabled,
         }
     }
 }
@@ -83,6 +85,7 @@ struct CatResolvedPath {
 fn parse_cat_args(
     args: &HashMap<String, Value>,
     max_input_paths: usize,
+    line_ranges_enabled: bool,
 ) -> Result<(Vec<CatPathRequest>, Vec<String>, Vec<String>), String> {
     fn try_parse_line_range(s: &str) -> Result<Option<(usize, usize)>, String> {
         let s = s.trim();
@@ -128,7 +131,14 @@ fn parse_cat_args(
         let (file_path, range) = if let Some(colon_pos) = path_str.rfind(':') {
             match try_parse_line_range(&path_str[colon_pos + 1..])? {
                 Some((start, end)) => {
-                    (path_str[..colon_pos].trim().to_string(), Some((start, end)))
+                    let file_path = path_str[..colon_pos].trim().to_string();
+                    if !line_ranges_enabled {
+                        return Err(format!(
+                            "Line range reading is disabled in settings. Call cat('{}') without line numbers to read the file.",
+                            file_path
+                        ));
+                    }
+                    (file_path, Some((start, end)))
                 }
                 None => (path_str, None),
             }
@@ -197,7 +207,8 @@ impl Tool for ToolCat {
     ) -> Result<(bool, Vec<ContextEnum>), String> {
         let mut corrections = false;
         let limits = CatLimits::current();
-        let (paths, symbols, mut input_notices) = parse_cat_args(args, limits.max_input_paths)?;
+        let (paths, symbols, mut input_notices) =
+            parse_cat_args(args, limits.max_input_paths, limits.line_ranges_enabled)?;
         let (gcx, execution_scope) = {
             let cgcx = ccx.lock().await;
             (cgcx.app.gcx.clone(), cgcx.execution_scope.clone())
@@ -950,9 +961,14 @@ async fn paths_and_symbols_to_cat_with_path_ranges(
                         }
                         None => {
                             if total_lines > limits.max_lines {
+                                let hint = if limits.line_ranges_enabled {
+                                    format!("💡 Use cat('{}:START-END') to read specific line ranges or raise cat_max_lines in trajectory settings", p)
+                                } else {
+                                    "💡 Raise cat_max_lines in trajectory settings".to_string()
+                                };
                                 not_found_messages.push(format!(
-                                    "⚠️ {} has {} lines, showing first {} lines (limit: cat_max_lines = {}). 💡 Use cat('{}:START-END') to read specific line ranges or raise cat_max_lines in trajectory settings",
-                                    p, total_lines, limits.max_lines, limits.max_lines, p
+                                    "⚠️ {} has {} lines, showing first {} lines (limit: cat_max_lines = {}). {}",
+                                    p, total_lines, limits.max_lines, limits.max_lines, hint
                                 ));
                             }
                             (1, total_lines.min(limits.max_lines))
@@ -976,9 +992,14 @@ async fn paths_and_symbols_to_cat_with_path_ranges(
                     if e.contains("byte search limit") {
                         filenames_present
                             .push(refact_core::chat_types::normalize_file_name(p.clone()));
+                        let hint = if limits.line_ranges_enabled {
+                            format!("💡 Use cat('{}:START-END') to read a specific line range or raise cat_max_file_bytes in trajectory settings.", p)
+                        } else {
+                            "💡 Raise cat_max_file_bytes in trajectory settings.".to_string()
+                        };
                         not_found_messages.push(format!(
-                            "⚠️ {} exceeds the {} byte read limit and was skipped (limit: cat_max_file_bytes = {}). 💡 Use cat('{}:START-END') to read a specific line range or raise cat_max_file_bytes in trajectory settings.",
-                            p, limits.max_file_bytes, limits.max_file_bytes, p
+                            "⚠️ {} exceeds the {} byte read limit and was skipped (limit: cat_max_file_bytes = {}). {}",
+                            p, limits.max_file_bytes, limits.max_file_bytes, hint
                         ));
                     } else {
                         not_found_messages.push(format!("{}: {}", p, e));
@@ -1404,6 +1425,38 @@ mod tests {
                 && text.contains("cat_max_input_paths = 2"),
             "expected a quantified input-path cap notice, got: {}",
             text
+        );
+    }
+
+    #[tokio::test]
+    #[serial(runtime_settings)]
+    async fn tool_cat_rejects_line_range_when_disabled() {
+        let _guard = SettingsGuard::install(|settings| {
+            settings.cat_line_ranges_enabled = false;
+        });
+        let temp = tempfile::Builder::new()
+            .prefix("refact-tool-cat-")
+            .tempdir()
+            .unwrap();
+        let file = temp.path().join("f.rs");
+        write_lines(&file, 8);
+        let ccx = ccx_for_root(temp.path()).await;
+
+        let mut tool = ToolCat {
+            config_path: String::new(),
+        };
+        let result = tool
+            .tool_execute(
+                ccx,
+                &"cat-call".to_string(),
+                &cat_args(format!("{}:1-5", file.to_string_lossy())),
+            )
+            .await;
+        let err = result.expect_err("expected rejection");
+        assert!(
+            err.contains("Line range reading is disabled in settings"),
+            "unexpected error: {}",
+            err
         );
     }
 

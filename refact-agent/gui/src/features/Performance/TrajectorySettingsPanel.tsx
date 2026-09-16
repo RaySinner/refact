@@ -85,6 +85,7 @@ const SETTINGS_GROUPS: SettingsGroup[] = [
     description:
       "Caps on how much the file, log, diff, and process tools may read in one call. Raising these gives the model more complete context and increases token spend and memory use.",
     names: [
+      "cat_line_ranges_enabled",
       "cat_max_input_paths",
       "cat_max_lines",
       "cat_max_file_bytes",

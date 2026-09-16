@@ -224,11 +224,26 @@ const NEW_LIMIT_FIELDS: {
   },
 ];
 
+const NEW_BOOLEAN_FIELDS: {
+  name: string;
+  group: string;
+  value: boolean;
+  label: string;
+}[] = [
+  {
+    name: "cat_line_ranges_enabled",
+    group: "File and log reading",
+    value: true,
+    label: "Cat line ranges enabled",
+  },
+];
+
 function settingsResponseWithNewLimits(): TrajectorySettingsResponse {
   const base = settingsResponse();
-  const extra = Object.fromEntries(
-    NEW_LIMIT_FIELDS.map((field) => [field.name, field.value]),
-  );
+  const extra = Object.fromEntries([
+    ...NEW_LIMIT_FIELDS.map((field) => [field.name, field.value]),
+    ...NEW_BOOLEAN_FIELDS.map((field) => [field.name, field.value]),
+  ]);
   const config = { ...base.config, ...extra };
   return {
     ...base,
@@ -242,6 +257,11 @@ function settingsResponseWithNewLimits(): TrajectorySettingsResponse {
         value_type: "integer" as const,
         minimum: 1,
         maximum: 100000000,
+        apply_mode: "live" as const,
+      })),
+      ...NEW_BOOLEAN_FIELDS.map((field) => ({
+        name: field.name,
+        value_type: "boolean" as const,
         apply_mode: "live" as const,
       })),
     ],
@@ -415,6 +435,14 @@ describe("TrajectorySettingsPanel", () => {
       const input = screen.getByRole("spinbutton", { name: field.label });
       expect(input).toHaveValue(field.value);
       const section = input.closest("section");
+      expect(section, `no section for "${field.name}"`).not.toBeNull();
+      expect(section).toHaveTextContent(field.group);
+    }
+
+    for (const field of NEW_BOOLEAN_FIELDS) {
+      const toggle = screen.getByRole("switch", { name: field.label });
+      expect(toggle).toBeChecked();
+      const section = toggle.closest("section");
       expect(section, `no section for "${field.name}"`).not.toBeNull();
       expect(section).toHaveTextContent(field.group);
     }

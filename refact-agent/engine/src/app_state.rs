@@ -264,6 +264,7 @@ impl ChatSessionFacade for EngineChatSessionFacade {
         for message in request.messages {
             session.add_message(message);
         }
+        session.set_runtime_state(crate::chat::types::SessionState::Starting, None);
         session.increment_version();
         Ok(())
     }

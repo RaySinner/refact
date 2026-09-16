@@ -733,6 +733,19 @@ async fn create_spawn_worktree(
             ..Default::default()
         })
         .await?;
+    let worktree_root = created.worktree.meta.root.clone();
+    let worktree_meta = tokio::fs::metadata(&worktree_root).await.map_err(|_| {
+        format!(
+            "Subagent worktree '{}' does not exist on disk",
+            worktree_root.display()
+        )
+    })?;
+    if !worktree_meta.is_dir() {
+        return Err(format!(
+            "Subagent worktree '{}' is not a directory",
+            worktree_root.display()
+        ));
+    }
     Ok(Some(SpawnedWorktree {
         meta: created.worktree.meta,
         base_branch,

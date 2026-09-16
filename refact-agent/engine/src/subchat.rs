@@ -2025,7 +2025,7 @@ pub(crate) async fn install_stateful_subchat_session(
     };
     if config.background_agent_id.is_some() {
         let mut session = session_arc.lock().await;
-        session.set_runtime_state(crate::chat::types::SessionState::Generating, None);
+        session.set_runtime_state(crate::chat::types::SessionState::Starting, None);
     }
 }
 

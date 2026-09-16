@@ -367,6 +367,20 @@ async fn prepare_agent_worktree_with_base_and_suffix(
         .await
         .map_err(|e| map_task_base_branch_error(e, task_meta.base_branch.as_deref()))?;
 
+    let worktree_root = created.worktree.meta.root.clone();
+    let worktree_meta = tokio::fs::metadata(&worktree_root).await.map_err(|_| {
+        format!(
+            "Agent worktree '{}' does not exist on disk",
+            worktree_root.display()
+        )
+    })?;
+    if !worktree_meta.is_dir() {
+        return Err(format!(
+            "Agent worktree '{}' is not a directory",
+            worktree_root.display()
+        ));
+    }
+
     if created.dirty_source_warning {
         tracing::warn!(
             "Spawning agent from committed base — local uncommitted changes are excluded from the agent's worktree"

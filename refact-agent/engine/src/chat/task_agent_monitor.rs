@@ -1,4 +1,4 @@
-// Task agent failure detection and automatic cleanup
+﻿// Task agent failure detection and automatic cleanup
 //
 // This module monitors task agents and automatically marks them as failed when:
 // - Streaming errors occur (network, model, timeout)
@@ -777,6 +777,35 @@ fn format_user_error_action(action: &str) -> &'static str {
     }
 }
 
+async fn retry_agent_session(app: &AppState, session_arc: &Arc<AMutex<ChatSession>>) {
+    let mut session = session_arc.lock().await;
+    session.clear_stream_for_retry();
+    let request = refact_chat_api::CommandRequest {
+        client_request_id: Uuid::new_v4().to_string(),
+        priority: true,
+        command: refact_chat_api::ChatCommand::UserMessage {
+            content: json!("Continue"),
+            attachments: vec![],
+            context_files: vec![],
+            suppress_auto_enrichment: false,
+            client_message_id: None,
+        },
+    };
+    session.enqueue_priority_command(request);
+    let processor_running = session.queue_processor_running.clone();
+    let queue_notify = session.queue_notify.clone();
+    drop(session);
+    if !processor_running.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        tokio::spawn(crate::chat::queue::process_command_queue(
+            app.clone(),
+            session_arc.clone(),
+            processor_running,
+        ));
+    } else {
+        queue_notify.notify_one();
+    }
+}
+
 /// Detect if a session error should cause task agent failure
 pub async fn handle_agent_streaming_error(
     app: AppState,
@@ -793,6 +822,62 @@ pub async fn handle_agent_streaming_error(
         card_id,
         error_message
     );
+
+    let max_retries = crate::runtime_settings::current().task_agent_max_retries;
+
+    let (should_retry, current_attempt) = {
+        let mut retry_info = (false, 0usize);
+        let card_id_owned = card_id.clone();
+        let error_msg = error_message.to_string();
+        let _ = storage::update_board_atomic(app.gcx.clone(), &task_meta.task_id, move |board| {
+            if let Some(card) = board.get_card_mut(&card_id_owned) {
+                if card.column == "doing" && card.retry_count < max_retries {
+                    card.retry_count += 1;
+                    retry_info = (true, card.retry_count);
+                    card.status_updates.push(StatusUpdate {
+                        timestamp: Utc::now().to_rfc3339(),
+                        message: format!(
+                            "Retrying agent after streaming error (attempt {}/{}): {}",
+                            card.retry_count, max_retries, error_msg
+                        ),
+                    });
+                }
+            }
+            Ok(())
+        })
+        .await;
+        retry_info
+    };
+
+    if should_retry {
+        tracing::warn!(
+            "Retrying task agent card {} (attempt {}/{}): {}",
+            card_id,
+            current_attempt,
+            max_retries,
+            error_message
+        );
+        if let Ok(board) = storage::load_board(app.gcx.clone(), &task_meta.task_id).await {
+            if let Some(card) = board.get_card(card_id) {
+                if let Some(ref agent_chat_id) = card.agent_chat_id {
+                    let sessions = app.chat.sessions.clone();
+                    let session_arc = {
+                        let sessions_read = sessions.read().await;
+                        sessions_read.get(agent_chat_id).cloned()
+                    };
+                    if let Some(session_arc) = session_arc {
+                        retry_agent_session(&app, &session_arc).await;
+                    } else {
+                        tracing::warn!(
+                            "Cannot retry agent {}: session not found",
+                            agent_chat_id
+                        );
+                    }
+                }
+            }
+        }
+        return;
+    }
 
     let failure_kind = AgentFailureKind::from_error(error_message);
     let failure_reason = failure_kind.final_report_reason(error_message);

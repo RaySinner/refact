@@ -58,6 +58,7 @@ const SETTINGS_GROUPS: SettingsGroup[] = [
       "max_parallel_tools",
       "max_images_per_message",
       "max_file_size",
+      "task_agent_max_retries",
     ],
   },
   {

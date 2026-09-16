@@ -222,6 +222,12 @@ const NEW_LIMIT_FIELDS: {
     value: 262144,
     label: "Review max diff patch bytes",
   },
+  {
+    name: "task_agent_max_retries",
+    group: "Chat limits",
+    value: 3,
+    label: "Task agent max retries",
+  },
 ];
 
 const NEW_BOOLEAN_FIELDS: {

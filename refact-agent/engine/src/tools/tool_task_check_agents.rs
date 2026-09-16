@@ -15,6 +15,7 @@ use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType
 use refact_runtime_api::{ChatSessionFacade, SessionState};
 
 const DEFAULT_LIMIT: usize = 20;
+const GRACE_PERIOD_SECS: i64 = 180;
 
 pub struct ToolTaskCheckAgents;
 
@@ -567,11 +568,17 @@ fn latest_timestamp(
     times.into_iter().flatten().max()
 }
 
-fn classify_agent_status(status: &AgentStatus, _now: DateTime<Utc>) -> AgentStateKind {
+fn classify_agent_status(status: &AgentStatus, now: DateTime<Utc>) -> AgentStateKind {
     match status.column.as_str() {
         "done" => AgentStateKind::Done,
         "failed" => AgentStateKind::Failed,
         "doing" => {
+            if matches!(status.session_state, Some(SessionState::Starting)) {
+                return AgentStateKind::Running;
+            }
+            if in_grace_period(status, now) {
+                return AgentStateKind::Running;
+            }
             if matches!(status.session_state, Some(SessionState::Error)) {
                 return AgentStateKind::Stuck;
             }
@@ -605,6 +612,16 @@ fn classify_agent_status(status: &AgentStatus, _now: DateTime<Utc>) -> AgentStat
     }
 }
 
+fn in_grace_period(status: &AgentStatus, now: DateTime<Utc>) -> bool {
+    status.column == "doing"
+        && status.agent_chat_id != "none"
+        && matches!(status.session_state, None | Some(SessionState::Starting))
+        && status
+            .last_activity_at
+            .map(|last| now.signed_duration_since(last).num_seconds() < GRACE_PERIOD_SECS)
+            .unwrap_or(false)
+}
+
 fn generation_loop_is_off(status: &AgentStatus) -> bool {
     matches!(status.session_state, Some(SessionState::Idle) | None)
 }
@@ -617,8 +634,13 @@ pub(crate) fn has_active_agent_statuses(statuses: &[AgentStatus]) -> bool {
 }
 
 fn waitable_agent_status_at(status: &AgentStatus, now: DateTime<Utc>) -> bool {
-    status.column == "doing"
-        && status.session_state.is_some()
+    if status.column != "doing" {
+        return false;
+    }
+    if in_grace_period(status, now) {
+        return true;
+    }
+    status.session_state.is_some()
         && matches!(
             classify_agent_status(status, now),
             AgentStateKind::Running | AgentStateKind::Paused
@@ -654,6 +676,7 @@ fn format_agent_status_detail_at(status: &AgentStatus, now: DateTime<Utc>) -> St
         AgentStateKind::Running => match &status.session_state {
             Some(SessionState::Generating) => ("🔄", "Generating response"),
             Some(SessionState::ExecutingTools) => ("⚙️", "Executing tools"),
+            Some(SessionState::Starting) => ("🚀", "Starting up"),
             Some(SessionState::WaitingIde) => ("⏳", "Waiting for IDE"),
             Some(SessionState::Idle) => ("💤", "Idle (waiting)"),
             None => ("❓", "Unknown/offline"),
@@ -1041,6 +1064,7 @@ fn format_compact_line(status: &AgentStatus, now: DateTime<Utc>) -> String {
             let (emoji, state_text) = match status.session_state {
                 Some(SessionState::ExecutingTools) => ("⚙️", "exec tools"),
                 Some(SessionState::Generating) => ("🔄", "generating"),
+                Some(SessionState::Starting) => ("🚀", "starting"),
                 Some(SessionState::WaitingIde) => ("⏳", "waiting ide"),
                 Some(SessionState::Idle) => ("💤", "idle"),
                 None => ("❓", "offline"),
@@ -1439,6 +1463,52 @@ mod tests {
 
         assert!(output.starts_with("⚠️  Alerts: 1 stuck, 0 failed, 0 needing approval"));
         assert!(output.contains("STUCK"));
+    }
+
+    #[test]
+    fn starting_agent_is_running() {
+        let statuses = vec![status("T-1", "P0", "doing", Some(SessionState::Starting), 1)];
+        let output =
+            format_agent_statuses_at(&statuses, &query(AgentReportFormat::Compact), now()).unwrap();
+        assert!(output.starts_with("⚠️  Alerts: 0 stuck, 0 failed, 0 needing approval"));
+        assert!(!output.contains("STUCK"));
+        assert!(output.contains("starting"));
+    }
+
+    #[test]
+    fn fresh_doing_card_without_session_is_running_during_grace_period() {
+        let statuses = vec![status("T-1", "P0", "doing", None, 1)];
+        let output =
+            format_agent_statuses_at(&statuses, &query(AgentReportFormat::Compact), now()).unwrap();
+        assert!(output.starts_with("⚠️  Alerts: 0 stuck, 0 failed, 0 needing approval"));
+        assert!(!output.contains("STUCK"));
+    }
+
+    #[test]
+    fn stale_doing_card_without_session_is_stuck_after_grace_period() {
+        let statuses = vec![status("T-1", "P0", "doing", None, 5)];
+        let output =
+            format_agent_statuses_at(&statuses, &query(AgentReportFormat::Compact), now()).unwrap();
+        assert!(output.starts_with("⚠️  Alerts: 1 stuck, 0 failed, 0 needing approval"));
+        assert!(output.contains("STUCK"));
+    }
+
+    #[test]
+    fn waitable_agent_status_at_returns_true_for_starting_agent() {
+        let status = status("T-1", "P0", "doing", Some(SessionState::Starting), 1);
+        assert!(waitable_agent_status_at(&status, now()));
+    }
+
+    #[test]
+    fn waitable_agent_status_at_returns_true_for_fresh_none_agent() {
+        let status = status("T-1", "P0", "doing", None, 1);
+        assert!(waitable_agent_status_at(&status, now()));
+    }
+
+    #[test]
+    fn waitable_agent_status_at_returns_false_for_stale_none_agent() {
+        let status = status("T-1", "P0", "doing", None, 5);
+        assert!(!waitable_agent_status_at(&status, now()));
     }
 
     #[test]

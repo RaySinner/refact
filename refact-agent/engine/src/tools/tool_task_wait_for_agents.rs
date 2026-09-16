@@ -402,6 +402,17 @@ mod tests {
     }
 
     #[test]
+    fn wait_agents_waits_for_starting_agents() {
+        let mut status = make_status("T-1", "doing");
+        status.session_state = Some(refact_runtime_api::SessionState::Starting);
+        let statuses = vec![status];
+        let query = parse_agent_status_query(&HashMap::new()).unwrap();
+        let waitable = waitable_agent_statuses(&statuses, &query, false);
+        let ids = resolve_waiting_card_ids(&waitable);
+        assert_eq!(ids, vec!["T-1"]);
+    }
+
+    #[test]
     fn wait_agents_caps_waiting_for_card_ids_at_50() {
         let statuses: Vec<AgentStatus> = (1..=60)
             .map(|i| make_status(&format!("T-{}", i), "doing"))

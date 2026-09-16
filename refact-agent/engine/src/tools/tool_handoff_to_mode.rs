@@ -618,7 +618,7 @@ async fn finalize_handoff_inner(
                 );
             }
         }
-        SessionState::ExecutingTools | SessionState::Idle | SessionState::Completed => {}
+        SessionState::ExecutingTools | SessionState::Idle | SessionState::Completed | SessionState::Starting => {}
     }
     if messages.is_empty() {
         return Err("Cannot handoff an empty chat".to_string());

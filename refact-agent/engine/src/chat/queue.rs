@@ -1272,6 +1272,7 @@ async fn process_command_queue_inner(
             let state = session.runtime.state;
             let is_busy = state == SessionState::Generating
                 || state == SessionState::ExecutingTools
+                || state == SessionState::Starting
                 || session.turn_depth > 0
                 || crate::chat::context_rebuild::compression_attempt_active(&session);
 

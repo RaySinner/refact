@@ -36,6 +36,7 @@ async fn enrich_task_meta_with_session_state(gcx: Arc<GlobalContext>, meta: &mut
             continue;
         }
         match session.runtime.state {
+            crate::chat::types::SessionState::Starting => {}
             crate::chat::types::SessionState::Paused => has_paused = true,
             crate::chat::types::SessionState::WaitingIde => has_waiting_ide = true,
             crate::chat::types::SessionState::WaitingUserInput => has_waiting_user_input = true,

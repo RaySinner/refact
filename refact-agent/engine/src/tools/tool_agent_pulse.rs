@@ -269,6 +269,7 @@ fn render_agent_pulse_at(pulse: &AgentPulse, now: DateTime<Utc>) -> String {
 
 fn format_session_state(state: Option<SessionState>, card_column: &str) -> String {
     match state {
+        Some(SessionState::Starting) => "⏳ starting".to_string(),
         Some(SessionState::Idle) => "💤 idle".to_string(),
         Some(SessionState::Generating) => "🔄 generating response".to_string(),
         Some(SessionState::ExecutingTools) => "⚙️ executing tools".to_string(),

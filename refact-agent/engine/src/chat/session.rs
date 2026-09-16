@@ -2667,6 +2667,7 @@ impl ChatSession {
         if let Some(ref tx) = self.trajectory_events_tx {
             let state_str = match self.runtime.state {
                 SessionState::Idle => "idle",
+                SessionState::Starting => "starting",
                 SessionState::Generating => "generating",
                 SessionState::ExecutingTools => "executing_tools",
                 SessionState::Paused => "paused",

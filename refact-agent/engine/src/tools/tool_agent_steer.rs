@@ -90,6 +90,7 @@ async fn planner_task_id(
 
 fn state_label(state: SessionState) -> String {
     match state {
+        SessionState::Starting => "⏳ Starting".to_string(),
         SessionState::Idle => "💤 Idle".to_string(),
         SessionState::Generating => "🔄 Generating response".to_string(),
         SessionState::ExecutingTools => "⚙️ Executing tools".to_string(),

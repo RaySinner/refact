@@ -37,6 +37,7 @@ const CAT_MAX_INPUT_PATHS_DEFAULT: usize = 512;
 const CAT_MAX_LINES_DEFAULT: usize = 5_000;
 const CAT_MAX_FILE_BYTES_DEFAULT: usize = 8_388_608;
 const CAT_MAX_EXPANDED_FILES_DEFAULT: usize = 2_048;
+const CAT_LINE_RANGES_ENABLED_DEFAULT: bool = true;
 const GET_LOGS_MAX_TAIL_BYTES_DEFAULT: usize = 1_048_576;
 const PLANNER_QNA_QUESTION_LIMIT_DEFAULT: usize = 8_000;
 const PLANNER_QNA_ANSWER_LIMIT_DEFAULT: usize = 8_000;
@@ -88,6 +89,7 @@ pub struct TrajectoryRuntimeSettings {
     pub cat_max_lines: usize,
     pub cat_max_file_bytes: usize,
     pub cat_max_expanded_files: usize,
+    pub cat_line_ranges_enabled: bool,
     pub get_logs_max_tail_bytes: usize,
     pub planner_qna_question_limit: usize,
     pub planner_qna_answer_limit: usize,
@@ -142,6 +144,7 @@ impl Default for TrajectoryRuntimeSettings {
             cat_max_lines: CAT_MAX_LINES_DEFAULT,
             cat_max_file_bytes: CAT_MAX_FILE_BYTES_DEFAULT,
             cat_max_expanded_files: CAT_MAX_EXPANDED_FILES_DEFAULT,
+            cat_line_ranges_enabled: CAT_LINE_RANGES_ENABLED_DEFAULT,
             get_logs_max_tail_bytes: GET_LOGS_MAX_TAIL_BYTES_DEFAULT,
             planner_qna_question_limit: PLANNER_QNA_QUESTION_LIMIT_DEFAULT,
             planner_qna_answer_limit: PLANNER_QNA_ANSWER_LIMIT_DEFAULT,
@@ -667,6 +670,7 @@ trajectory_writer_enabled: false
         );
         assert_eq!(loaded.review_diff_char_cap, defaults.review_diff_char_cap);
         assert_eq!(loaded.cat_max_input_paths, defaults.cat_max_input_paths);
+        assert!(loaded.cat_line_ranges_enabled);
         assert!(validate(&loaded).is_ok());
     }
 

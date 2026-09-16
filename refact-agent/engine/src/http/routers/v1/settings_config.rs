@@ -494,6 +494,7 @@ fn trajectory_settings_fields() -> Vec<TrajectorySettingField> {
         live_usize("cat_max_lines", 100, 1_000_000),
         live_usize("cat_max_file_bytes", 4_096, 268_435_456),
         live_usize("cat_max_expanded_files", 1, 100_000),
+        live_bool("cat_line_ranges_enabled"),
         live_usize("get_logs_max_tail_bytes", 4_096, 268_435_456),
         live_usize("planner_qna_question_limit", 200, 1_000_000),
         live_usize("planner_qna_answer_limit", 200, 1_000_000),
@@ -653,7 +654,7 @@ mod tests {
             initial.config,
             crate::runtime_settings::TrajectoryRuntimeSettings::default()
         );
-        assert_eq!(initial.fields.len(), 47);
+        assert_eq!(initial.fields.len(), 48);
         assert!(initial
             .fields
             .iter()

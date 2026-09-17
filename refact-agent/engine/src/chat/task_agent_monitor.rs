@@ -780,6 +780,7 @@ fn format_user_error_action(action: &str) -> &'static str {
 async fn retry_agent_session(app: &AppState, session_arc: &Arc<AMutex<ChatSession>>) {
     let mut session = session_arc.lock().await;
     session.clear_stream_for_retry();
+    session.task_agent_error = None;
     let request = refact_chat_api::CommandRequest {
         client_request_id: Uuid::new_v4().to_string(),
         priority: true,
@@ -1934,9 +1935,8 @@ async fn check_for_stuck_agents(app: AppState) -> Result<(), String> {
                     .as_deref()
                     .unwrap_or("Unknown error")
                     .to_string();
-                let planner_chat_id = session
-                    .thread
-                    .task_meta
+                let task_meta_opt = session.thread.task_meta.clone();
+                let planner_chat_id = task_meta_opt
                     .as_ref()
                     .and_then(|meta| meta.planner_chat_id.clone());
 
@@ -1948,18 +1948,22 @@ async fn check_for_stuck_agents(app: AppState) -> Result<(), String> {
                     error_msg
                 );
 
-                let failure_kind = AgentFailureKind::from_error(&error_msg);
-                let failure_reason = failure_kind.final_report_reason(&error_msg);
-                mark_agent_as_failed(
-                    app.clone(),
-                    task_id,
-                    &card.id,
-                    card.assignee.as_deref(),
-                    planner_chat_id.as_deref(),
-                    &failure_reason,
-                    failure_kind,
-                )
-                .await?;
+                if let Some(task_meta) = task_meta_opt {
+                    handle_agent_streaming_error(app.clone(), &task_meta, &error_msg).await;
+                } else {
+                    let failure_kind = AgentFailureKind::from_error(&error_msg);
+                    let failure_reason = failure_kind.final_report_reason(&error_msg);
+                    mark_agent_as_failed(
+                        app.clone(),
+                        task_id,
+                        &card.id,
+                        card.assignee.as_deref(),
+                        planner_chat_id.as_deref(),
+                        &failure_reason,
+                        failure_kind,
+                    )
+                    .await?;
+                }
                 continue;
             }
 
@@ -2287,6 +2291,31 @@ mod tests {
             .insert(planner_chat_id, planner_arc.clone());
 
         (temp, app, task.id, agent_chat_id, session_arc, planner_arc)
+    }
+
+    #[tokio::test]
+    async fn agent_in_error_state_retries_without_premature_failure() {
+        let (_temp, app, task_id, agent_chat_id, agent_arc, _planner_arc) =
+            setup_monitor_case("doing", SessionState::Error, Duration::from_secs(10), vec![]).await;
+        {
+            let mut session = agent_arc.lock().await;
+            session.runtime.error = Some("Stream error test".to_string());
+            session.task_agent_error = Some("Stream error test".to_string());
+        }
+
+        check_for_stuck_agents(app.clone()).await.unwrap();
+
+        let board = storage::load_board(app.gcx.clone(), &task_id)
+            .await
+            .unwrap();
+        let card = board.get_card("T-1").unwrap();
+        assert_eq!(card.column, "doing", "card should stay in doing on first error retry");
+        assert_eq!(card.retry_count, 1);
+        assert!(card.status_updates.iter().any(|u| u.message.contains("Retrying agent after streaming error")));
+
+        let session = agent_arc.lock().await;
+        assert_eq!(session.runtime.state, SessionState::Idle);
+        assert!(session.task_agent_error.is_none());
     }
 
     #[tokio::test]

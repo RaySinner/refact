@@ -615,7 +615,10 @@ fn classify_agent_status(status: &AgentStatus, now: DateTime<Utc>) -> AgentState
 fn in_grace_period(status: &AgentStatus, now: DateTime<Utc>) -> bool {
     status.column == "doing"
         && status.agent_chat_id != "none"
-        && matches!(status.session_state, None | Some(SessionState::Starting))
+        && matches!(
+            status.session_state,
+            None | Some(SessionState::Starting | SessionState::Idle)
+        )
         && status
             .last_activity_at
             .map(|last| now.signed_duration_since(last).num_seconds() < GRACE_PERIOD_SECS)
@@ -1457,10 +1460,29 @@ mod tests {
 
     #[test]
     fn doing_agent_is_stuck_when_generation_loop_is_off() {
-        let statuses = vec![status("T-1", "P0", "doing", Some(SessionState::Idle), 2)];
+        let statuses = vec![status("T-1", "P0", "doing", Some(SessionState::Idle), 5)];
         let output =
             format_agent_statuses_at(&statuses, &query(AgentReportFormat::Compact), now()).unwrap();
 
+        assert!(output.starts_with("⚠️  Alerts: 1 stuck, 0 failed, 0 needing approval"));
+        assert!(output.contains("STUCK"));
+    }
+
+    #[test]
+    fn idle_agent_is_running_during_grace_period() {
+        let statuses = vec![status("T-1", "P0", "doing", Some(SessionState::Idle), 2)];
+        let output =
+            format_agent_statuses_at(&statuses, &query(AgentReportFormat::Compact), now()).unwrap();
+        assert!(output.starts_with("⚠️  Alerts: 0 stuck, 0 failed, 0 needing approval"));
+        assert!(!output.contains("STUCK"));
+        assert_eq!(classify_agent_status(&statuses[0], now()), AgentStateKind::Running);
+    }
+
+    #[test]
+    fn stale_idle_agent_is_stuck_after_grace_period() {
+        let statuses = vec![status("T-1", "P0", "doing", Some(SessionState::Idle), 5)];
+        let output =
+            format_agent_statuses_at(&statuses, &query(AgentReportFormat::Compact), now()).unwrap();
         assert!(output.starts_with("⚠️  Alerts: 1 stuck, 0 failed, 0 needing approval"));
         assert!(output.contains("STUCK"));
     }
@@ -1508,6 +1530,18 @@ mod tests {
     #[test]
     fn waitable_agent_status_at_returns_false_for_stale_none_agent() {
         let status = status("T-1", "P0", "doing", None, 5);
+        assert!(!waitable_agent_status_at(&status, now()));
+    }
+
+    #[test]
+    fn waitable_agent_status_at_returns_true_for_fresh_idle_agent() {
+        let status = status("T-1", "P0", "doing", Some(SessionState::Idle), 1);
+        assert!(waitable_agent_status_at(&status, now()));
+    }
+
+    #[test]
+    fn waitable_agent_status_at_returns_false_for_stale_idle_agent() {
+        let status = status("T-1", "P0", "doing", Some(SessionState::Idle), 5);
         assert!(!waitable_agent_status_at(&status, now()));
     }
 

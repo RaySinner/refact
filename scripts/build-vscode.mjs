@@ -18,8 +18,8 @@ const VSCODE_DIR = join(ROOT, "plugins", "vscode");
 const VSCODE_ASSETS = join(VSCODE_DIR, "assets");
 
 const IS_WIN = process.platform === "win32";
-let BINARY_SRC = join(ENGINE_DIR, "target", "release", "refact-lsp" + (IS_WIN ? ".exe" : ""));
-const BINARY_DST = join(VSCODE_ASSETS, IS_WIN ? "refact-lsp.exe" : "refact-lsp");
+let BINARY_SRC = join(ENGINE_DIR, "target", "release", "refact" + (IS_WIN ? ".exe" : ""));
+const BINARY_DST = join(VSCODE_ASSETS, IS_WIN ? "refact.exe" : "refact");
 
 function cmdExt(base) {
   return IS_WIN ? `${base}.cmd` : base;
@@ -67,8 +67,8 @@ if (existsSync(BINARY_SRC)) {
   console.log("\n[6/6 Engine] Using existing packaged binary");
   BINARY_SRC = BINARY_DST;
 } else {
-  console.log("\n[6/6 Engine] Building Rust LSP engine (cold ~15-30 min)...");
-  run("cargo build", ENGINE_DIR, "cargo", ["build", "--release"], {
+  console.log("\n[6/6 Engine] Building Rust engine...");
+  run("cargo build", ENGINE_DIR, "cargo", ["build", "--release", "--bin", "refact", "--no-default-features"], {
     REFACT_SKIP_GUI_BUILD: "1",
   });
 }

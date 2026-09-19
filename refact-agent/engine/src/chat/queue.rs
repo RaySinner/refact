@@ -358,6 +358,8 @@ pub fn apply_setparams_patch(
     patch: &serde_json::Value,
 ) -> (bool, serde_json::Value) {
     let mut changed = false;
+    let mut model_changed = false;
+    let mut context_cap_changed = false;
 
     if let Some(model) = patch.get("model").and_then(|v| v.as_str()) {
         if thread.model != model {
@@ -370,6 +372,7 @@ pub fn apply_setparams_patch(
                 thread.previous_response_id = None;
             }
             changed = true;
+            model_changed = true;
         }
     }
     if let Some(mode) = patch.get("mode").and_then(|v| v.as_str()) {
@@ -495,12 +498,14 @@ pub fn apply_setparams_patch(
             if thread.context_tokens_cap.is_some() {
                 thread.context_tokens_cap = None;
                 changed = true;
+                context_cap_changed = true;
             }
         } else if let Some(n) = cap.as_u64() {
             let new_cap = Some(n as usize);
             if thread.context_tokens_cap != new_cap {
                 thread.context_tokens_cap = new_cap;
                 changed = true;
+                context_cap_changed = true;
             }
         }
         // Invalid type (not null, not number) - ignore, keep current value
@@ -673,6 +678,15 @@ pub fn apply_setparams_patch(
         }
     }
 
+    let invalidated_cap = (model_changed || context_cap_changed)
+        && patch.get("auto_compression_cap").is_none()
+        && thread.auto_compression_cap.is_some();
+    if invalidated_cap {
+        thread.auto_compression_cap = None;
+        thread.auto_compression_cap_pending = true;
+        changed = true;
+    }
+
     let mut sanitized_patch = patch.clone();
     if pending_auto_compression_cap_reset {
         if let Some(obj) = sanitized_patch.as_object_mut() {
@@ -693,6 +707,9 @@ pub fn apply_setparams_patch(
             } else {
                 obj.remove("worktree");
             }
+        }
+        if invalidated_cap {
+            obj.insert("auto_compression_cap".to_string(), serde_json::Value::Null);
         }
     }
 
@@ -4007,6 +4024,91 @@ mod tests {
         assert!(!changed);
         assert_eq!(thread.context_tokens_cap, Some(4096)); // Value preserved
     }
+    #[test]
+    fn test_model_switch_invalidates_auto_compression_cap() {
+        let mut thread = ThreadParams::default();
+        thread.model = "old-model".into();
+        thread.auto_compression_cap = Some(123_000);
+        thread.auto_compression_cap_pending = false;
+
+        let patch = json!({"model": "new-model"});
+        let (changed, sanitized) = apply_setparams_patch(&mut thread, &patch);
+
+        assert!(changed);
+        assert_eq!(thread.model, "new-model");
+        assert_eq!(thread.auto_compression_cap, None);
+        assert!(thread.auto_compression_cap_pending);
+        assert!(sanitized.get("auto_compression_cap").is_some());
+        assert!(sanitized["auto_compression_cap"].is_null());
+    }
+
+    #[test]
+    fn test_context_cap_change_invalidates_auto_compression_cap() {
+        let mut thread = ThreadParams::default();
+        thread.model = "my-model".into();
+        thread.context_tokens_cap = Some(200_000);
+        thread.auto_compression_cap = Some(180_000);
+        thread.auto_compression_cap_pending = false;
+
+        let patch = json!({"context_tokens_cap": 500_000});
+        let (changed, sanitized) = apply_setparams_patch(&mut thread, &patch);
+
+        assert!(changed);
+        assert_eq!(thread.context_tokens_cap, Some(500_000));
+        assert_eq!(thread.auto_compression_cap, None);
+        assert!(thread.auto_compression_cap_pending);
+        assert!(sanitized["auto_compression_cap"].is_null());
+    }
+
+    #[test]
+    fn test_context_cap_null_invalidates_auto_compression_cap() {
+        let mut thread = ThreadParams::default();
+        thread.context_tokens_cap = Some(200_000);
+        thread.auto_compression_cap = Some(180_000);
+        thread.auto_compression_cap_pending = false;
+
+        let patch = json!({"context_tokens_cap": null});
+        let (changed, sanitized) = apply_setparams_patch(&mut thread, &patch);
+
+        assert!(changed);
+        assert!(thread.context_tokens_cap.is_none());
+        assert_eq!(thread.auto_compression_cap, None);
+        assert!(thread.auto_compression_cap_pending);
+        assert!(sanitized["auto_compression_cap"].is_null());
+    }
+
+    #[test]
+    fn test_explicit_auto_compression_cap_preserves_value_on_model_switch() {
+        let mut thread = ThreadParams::default();
+        thread.model = "old-model".into();
+        thread.auto_compression_cap = Some(100_000);
+        thread.auto_compression_cap_pending = false;
+
+        let patch = json!({"model": "new-model", "auto_compression_cap": 250_000});
+        let (changed, sanitized) = apply_setparams_patch(&mut thread, &patch);
+
+        assert!(changed);
+        assert_eq!(thread.model, "new-model");
+        assert_eq!(thread.auto_compression_cap, Some(250_000));
+        assert!(!thread.auto_compression_cap_pending);
+        assert_eq!(sanitized["auto_compression_cap"], json!(250_000));
+    }
+
+    #[test]
+    fn test_model_switch_without_prior_cap_does_not_add_null_to_sanitized() {
+        let mut thread = ThreadParams::default();
+        thread.model = "old-model".into();
+
+        let patch = json!({"model": "new-model"});
+        let (changed, sanitized) = apply_setparams_patch(&mut thread, &patch);
+
+        assert!(changed);
+        assert_eq!(thread.model, "new-model");
+        assert_eq!(thread.auto_compression_cap, None);
+        assert!(!thread.auto_compression_cap_pending);
+        assert!(sanitized.get("auto_compression_cap").is_none());
+    }
+
 
     #[test]
     fn test_apply_setparams_include_project_info() {

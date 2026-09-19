@@ -36,7 +36,16 @@ pub fn safe_provider_error_diagnostic_with_limit(error: &str, max_chars: usize) 
     if max_chars == 0 {
         return String::new();
     }
-    let (window, source_truncated) = provider_error_diagnostic_window(error, max_chars);
+    let friendly_error = if error.contains("Mandatory reconstruction input and instructions exceed resolved analyzer context") {
+        error.replace(
+            "Mandatory reconstruction input and instructions exceed resolved analyzer context",
+            "Conversation is too long to be automatically summarized for context compression. Try starting a new chat or deleting unneeded messages."
+        )
+    } else {
+        error.to_string()
+    };
+    
+    let (window, source_truncated) = provider_error_diagnostic_window(&friendly_error, max_chars);
     let redacted = redact_provider_error_diagnostic(window);
     let needs_truncation = source_truncated || redacted.len() > max_chars;
     cap_provider_error_diagnostic(&redacted, max_chars, needs_truncation)
@@ -371,6 +380,14 @@ mod tests {
             .unwrap_or_default();
         assert!(!raw_error.contains("sk-retrysecret12345678"));
         assert!(raw_error.contains("[REDACTED"));
+    }
+
+    #[test]
+    fn test_safe_provider_error_diagnostic_translates_mode_transition_error() {
+        let error = "Context rebuild failed: Mandatory reconstruction input and instructions exceed resolved analyzer context. Original trace: ...";
+        let diagnostic = safe_provider_error_diagnostic(error);
+        assert!(diagnostic.contains("Conversation is too long to be automatically summarized for context compression. Try starting a new chat or deleting unneeded messages."));
+        assert!(!diagnostic.contains("Mandatory reconstruction input"));
     }
 
     #[test]

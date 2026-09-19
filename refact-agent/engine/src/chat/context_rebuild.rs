@@ -858,12 +858,13 @@ pub async fn apply_context_rebuild_with_reason(
             if compression_attempt_active(&s) || s.abort_flag.load(Ordering::SeqCst) {
                 return CompactionOutcome::NothingToCompact;
             }
+            let safe_err = crate::chat::diagnostics::safe_provider_error_diagnostic(&e);
             s.append_error_message_deduped(&format!(
                 "Context rebuild failed: {}",
-                crate::chat::diagnostics::safe_provider_error_diagnostic(&e)
+                safe_err
             ));
             s.last_rebuild_attempt_version = Some(s.trajectory_version);
-            s.set_runtime_state(SessionState::Error, Some("Context rebuild failed".into()));
+            s.set_runtime_state(SessionState::Error, Some(format!("Context rebuild failed: {}", safe_err)));
             CompactionOutcome::LlmUnavailable
         }
     }

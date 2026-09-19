@@ -9,7 +9,7 @@ subchat:
   stateful: false
   model_type: default
   n_ctx: 200000
-  max_new_tokens: 32000
+  max_new_tokens: 4096
   temperature: 0.0
   tokens_for_rag: 0
 

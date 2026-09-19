@@ -55,6 +55,10 @@ pub enum ChatModelType {
     Default,
     Thinking,
     Buddy,
+    #[serde(rename = "model_2")]
+    Model2,
+    #[serde(rename = "task_planner")]
+    TaskPlanner,
 }
 
 impl Default for ChatModelType {

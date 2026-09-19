@@ -7,6 +7,7 @@ import { MessageListEditor } from "./MessageListEditor";
 import {
   Button,
   Field,
+  FieldSelect,
   FieldSwitch,
   FieldText,
   FieldTextarea,
@@ -340,12 +341,17 @@ const SubchatTab: React.FC<{
           />
         </Field>
         <Field label="Model Type">
-          <FieldText
-            value={safeString(subchat.model_type)}
-            onChange={(value) =>
-              patch(["subchat", "model_type"], value || undefined)
-            }
-            placeholder="Default"
+          <FieldSelect
+            value={safeString(subchat.model_type) || "default"}
+            onChange={(value) => patch(["subchat", "model_type"], value || undefined)}
+            options={[
+              { value: "default", label: "Default" },
+              { value: "light", label: "Light" },
+              { value: "thinking", label: "Thinking" },
+              { value: "buddy", label: "Buddy" },
+              { value: "model_2", label: "Chat Model 2" },
+              { value: "task_planner", label: "Task Planner" },
+            ]}
           />
         </Field>
       </div>

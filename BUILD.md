@@ -1,7 +1,7 @@
 # Полная сборка Refact (GUI + Rust-движок + VS Code расширение)
 
 > Документ для сборочного агента. Описывает полный конвейер сборки решения
-> **Refact** (v8.6.4) на **Windows x64** из чистого состояния:
+> **Refact** (v8.6.5) на **Windows x64** из чистого состояния:
 > 1. Графический компонент (React/TypeScript, `refact-agent/gui`)
 > 2. Rust-движок (`refact-agent/engine` → `refact.exe`)
 > 3. VS Code расширение (`plugins/vscode` → `.vsix`)
@@ -99,7 +99,7 @@ npm pack
 
 **Результат:**
 - `refact-agent/gui/dist/chat/` — собранный UI (используется движком).
-- `refact-agent/gui/refact-chat-js-8.6.4.tgz` — npm-пакет (используется расширением).
+- `refact-agent/gui/refact-chat-js-8.6.5.tgz` — npm-пакет (используется расширением).
   Размер ~33 МБ.
 
 > ⚠️ `npm ci` запускает `postinstall: patch-package` — это нормально, патчи из `patches/` применяются автоматически.
@@ -151,13 +151,13 @@ cargo build --bin refact --release
 ```
 Ожидаемый вывод (коммит = HEAD из шага 0):
 ```
-refact 8.6.4
-             version 8.6.4
+refact 8.6.5
+             version 8.6.5
               commit <HEAD-коммит>
             build_os windows-x86_64
         rust_version rustc 1.98.1 (...)
        cargo_version cargo 1.98.1 (...)
-    daemon_version 8.6.4
+    daemon_version 8.6.5
 ```
 **Проверить, что `commit` совпадает с HEAD из `git log`.** Если не совпадает — бинарник старый, пересобрать.
 
@@ -189,7 +189,7 @@ Set-Location C:\Raid\Repos\Rust\refact-main\plugins\vscode
 npm ci
 
 # 4.2. Установка GUI-тарбола (путь относительный от plugins/vscode)
-npm install ..\..\refact-agent\gui\refact-chat-js-8.6.4.tgz --save-exact
+npm install ..\..\refact-agent\gui\refact-chat-js-8.6.5.tgz --save-exact
 
 # 4.3. Компиляция TypeScript расширения
 npm run compile
@@ -198,7 +198,7 @@ npm run compile
 npx @vscode/vsce package --target win32-x64
 ```
 
-**Результат:** `plugins/vscode/codify-win32-x64-8.6.4.vsix` (~103 МБ).
+**Результат:** `plugins/vscode/codify-win32-x64-8.6.5.vsix` (~103 МБ).
 
 ### 7.1. ОБЯЗАТЕЛЬНО: откат временных изменений
 
@@ -210,7 +210,7 @@ git checkout -- plugins/vscode/package.json plugins/vscode/package-lock.json
 git status   # должен быть чистым (кроме .vsix и assets/refact.exe, если они не игнорируются)
 ```
 
-> ⚠️ Если забыть откатить — в git попадёт `file:../../refact-agent/gui/refact-chat-js-8.6.4.tgz`
+> ⚠️ Если забыть откатить — в git попадёт `file:../../refact-agent/gui/refact-chat-js-8.6.5.tgz`
 > вместо `file:../../refact-agent/gui`, что сломает CI-сборку.
 
 ---

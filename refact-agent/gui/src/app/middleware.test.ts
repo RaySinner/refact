@@ -1809,6 +1809,54 @@ describe("context limit middleware", () => {
     });
   });
 
+  it("sends user's explicit context cap when it differs from old model max", async () => {
+    const THREAD_ID = "explicit-context-cap-chat";
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response(null, { status: 200 }));
+    const thread = makeThread(THREAD_ID);
+    thread.thread.model = "old-model";
+    thread.thread.modelMaximumContextTokens = 8192;
+    thread.thread.currentMaximumContextTokens = 8192;
+    thread.thread.context_tokens_cap = 4096;
+    vi.stubGlobal("fetch", fetchMock);
+
+    const store = setUpStore({
+      config: { host: "vscode", lspPort: 8001, themeProps: {} },
+      chat: {
+        current_thread_id: THREAD_ID,
+        open_thread_ids: [THREAD_ID],
+        threads: { [THREAD_ID]: thread },
+        system_prompt: {},
+        tool_use: "explore" as const,
+        sse_refresh_requested: null,
+        stream_version: 0,
+      },
+    });
+
+    store.dispatch(
+      setChatModel({
+        model: "new-model",
+        modelMaxContextTokens: 128000,
+        previousModelMaxContextTokens: 8192,
+      }),
+    );
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const [, init] = fetchMock.mock.calls[0] ?? [];
+    expect(init).toBeDefined();
+    const body = JSON.parse(String(init?.body)) as {
+      type?: string;
+      patch?: Record<string, unknown>;
+    };
+
+    expect(body.type).toBe("set_params");
+    expect(body.patch).toEqual({
+      model: "new-model",
+      context_tokens_cap: 4096,
+    });
+  });
+
   it("does not sync unchanged model context cap", async () => {
     const THREAD_ID = "unchanged-context-cap-chat";
     const fetchMock = vi

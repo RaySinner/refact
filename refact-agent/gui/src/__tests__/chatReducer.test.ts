@@ -863,6 +863,76 @@ describe("Chat Thread Reducer - Core Functionality", () => {
         200000,
       );
     });
+
+    test("model_switch_resets_auto_compression_cap_when_model_max_changes", () => {
+      let state = chatReducer(
+        initialState,
+        setAutoCompressionCap({ chatId, value: 8192 }),
+      );
+      const existingRuntime = requireThread(state, chatId);
+      const withModelMax: Chat = {
+        ...state,
+        threads: {
+          ...state.threads,
+          [chatId]: {
+            ...existingRuntime,
+            thread: {
+              ...existingRuntime.thread,
+              modelMaximumContextTokens: 8192,
+              context_tokens_cap: 8192,
+            },
+          },
+        },
+      };
+
+      const afterSwitch = chatReducer(
+        withModelMax,
+        setChatModel({
+          model: "new-model",
+          modelMaxContextTokens: 128000,
+          previousModelMaxContextTokens: 8192,
+        }),
+      );
+
+      expect(
+        afterSwitch.threads[chatId]?.thread.auto_compression_cap,
+      ).toBeUndefined();
+    });
+
+    test("model_switch_preserves_auto_compression_cap_when_model_max_unchanged", () => {
+      let state = chatReducer(
+        initialState,
+        setAutoCompressionCap({ chatId, value: 8192 }),
+      );
+      const existingRuntime = requireThread(state, chatId);
+      const withModelMax: Chat = {
+        ...state,
+        threads: {
+          ...state.threads,
+          [chatId]: {
+            ...existingRuntime,
+            thread: {
+              ...existingRuntime.thread,
+              modelMaximumContextTokens: 8192,
+              context_tokens_cap: 8192,
+            },
+          },
+        },
+      };
+
+      const afterSwitch = chatReducer(
+        withModelMax,
+        setChatModel({
+          model: "new-model",
+          modelMaxContextTokens: 8192,
+          previousModelMaxContextTokens: 8192,
+        }),
+      );
+
+      expect(afterSwitch.threads[chatId]?.thread.auto_compression_cap).toBe(
+        8192,
+      );
+    });
   });
 
   describe("Edge Cases", () => {

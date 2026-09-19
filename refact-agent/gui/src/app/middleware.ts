@@ -2134,6 +2134,7 @@ startListening({
   actionCreator: setChatModel,
   effect: async (action, listenerApi) => {
     const state = listenerApi.getState();
+    const originalState = listenerApi.getOriginalState();
     const apiKey = state.config.apiKey;
     const chatId = action.payload.chatId ?? state.chat.current_thread_id;
     const runtime = chatId ? state.chat.threads[chatId] : undefined;
@@ -2144,7 +2145,15 @@ startListening({
       model: action.payload.model,
     };
     if (action.payload.modelMaxContextTokens !== undefined) {
-      patch.context_tokens_cap = runtime.thread.context_tokens_cap ?? null;
+      const originalCap =
+        originalState.chat.threads[chatId]?.thread.context_tokens_cap;
+      const prevMax =
+        action.payload.previousModelMaxContextTokens ??
+        originalState.chat.threads[chatId]?.thread.modelMaximumContextTokens;
+      const wasAutoSet = originalCap != null && originalCap === prevMax;
+      patch.context_tokens_cap = wasAutoSet
+        ? action.payload.modelMaxContextTokens
+        : originalCap ?? null;
     }
 
     try {

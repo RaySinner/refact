@@ -142,6 +142,8 @@ impl Tool for ToolSubagent {
             args.model_name.as_deref(),
             args.model_type.as_deref(),
             &current_model,
+            config.subchat.model.as_deref(),
+            config.subchat.model_type.as_deref(),
         )
         .await?;
         let peer_snapshot = peer_snapshot(&app, &parent_root_chat_id, &args.target_files).await;
@@ -444,13 +446,19 @@ async fn resolve_model(
     model_name: Option<&str>,
     model_type: Option<&str>,
     parent_model: &str,
+    config_model_name: Option<&str>,
+    config_model_type: Option<&str>,
 ) -> Result<(String, Option<String>), String> {
     let caps = try_load_caps_quickly_if_not_present(gcx, 0)
         .await
         .map_err(|error| format!("failed to load caps: {error:?}"))?;
-    let model_id = if let Some(model_name) = model_name {
+
+    let effective_model_name = model_name.or(config_model_name);
+    let effective_model_type = model_type.or(config_model_type);
+
+    let model_id = if let Some(model_name) = effective_model_name {
         model_name.to_string()
-    } else if let Some(model_type) = model_type {
+    } else if let Some(model_type) = effective_model_type {
         let slot = match model_type {
             "default" => &caps.defaults.chat_default_model,
             "light" => &caps.defaults.chat_light_model,
@@ -458,7 +466,11 @@ async fn resolve_model(
             "buddy" => &caps.defaults.chat_buddy_model,
             "model_2" => &caps.defaults.chat_model_2,
             "task_planner" => &caps.defaults.task_planner_agent_model,
-            _ => unreachable!("model type validated before resolution"),
+            _ => {
+                return Err(format!(
+                    "invalid model_type `{model_type}`. Expected: default, light, thinking, buddy, model_2, task_planner"
+                ))
+            }
         };
         if slot.trim().is_empty() {
             return Err(format!(
@@ -470,9 +482,9 @@ async fn resolve_model(
     } else {
         parent_model.to_string()
     };
-    let selected_type = model_name
+    let selected_type = effective_model_name
         .is_none()
-        .then(|| model_type.map(str::to_string))
+        .then(|| effective_model_type.map(str::to_string))
         .flatten();
     let model = crate::caps::resolve_chat_model(caps, &model_id)
         .map_err(|error| format!("model `{model_id}` is not available: {error}"))?;
@@ -895,13 +907,13 @@ mod tests {
         let gcx = crate::global_context::tests::make_test_gcx().await;
         install_test_caps(gcx.clone()).await;
         for model_type in MODEL_TYPES {
-            let (model, selected) = resolve_model(gcx.clone(), None, Some(model_type), "parent")
+            let (model, selected) = resolve_model(gcx.clone(), None, Some(model_type), "parent", None, None)
                 .await
                 .unwrap();
             assert_eq!(model, format!("test/{model_type}"));
             assert_eq!(selected.as_deref(), Some(*model_type));
         }
-        let (model, selected) = resolve_model(gcx, Some("test/light"), Some("thinking"), "parent")
+        let (model, selected) = resolve_model(gcx, Some("test/light"), Some("thinking"), "parent", None, None)
             .await
             .unwrap();
         assert_eq!(model, "test/light");
@@ -917,7 +929,7 @@ mod tests {
             .clone();
         caps.defaults.chat_buddy_model.clear();
         gcx.caps_state.write().await.caps = Some(Arc::new(caps));
-        let error = resolve_model(gcx, None, Some("buddy"), "parent")
+        let error = resolve_model(gcx, None, Some("buddy"), "parent", None, None)
             .await
             .unwrap_err();
         assert!(error.contains("not configured"));

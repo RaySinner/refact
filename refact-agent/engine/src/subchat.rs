@@ -941,9 +941,11 @@ pub async fn resolve_subchat_params(
         Some(mt) if mt.eq_ignore_ascii_case("thinking") => ChatModelType::Thinking,
         Some(mt) if mt.eq_ignore_ascii_case("default") => ChatModelType::Default,
         Some(mt) if mt.eq_ignore_ascii_case("buddy") => ChatModelType::Buddy,
+        Some(mt) if mt.eq_ignore_ascii_case("model_2") => ChatModelType::Model2,
+        Some(mt) if mt.eq_ignore_ascii_case("task_planner") => ChatModelType::TaskPlanner,
         Some(mt) => {
             return Err(format!(
-                "invalid model_type '{}' for '{}', expected: light, default, thinking, buddy",
+                "invalid model_type '{}' for '{}', expected: light, default, thinking, buddy, model_2, task_planner",
                 mt, tool_name
             ))
         }
@@ -1040,6 +1042,8 @@ async fn resolve_subchat_model_inner(
         ChatModelType::Default => &caps.defaults.chat_default_model,
         ChatModelType::Thinking => &caps.defaults.chat_thinking_model,
         ChatModelType::Buddy => &caps.defaults.chat_buddy_model,
+        ChatModelType::Model2 => &caps.defaults.chat_model_2,
+        ChatModelType::TaskPlanner => &caps.defaults.task_planner_agent_model,
     };
     let model_label = subchat_model_type_label(params.subchat_model_type);
 
@@ -1111,6 +1115,8 @@ fn subchat_model_type_config_value(model_type: ChatModelType) -> &'static str {
         ChatModelType::Default => "default",
         ChatModelType::Thinking => "thinking",
         ChatModelType::Buddy => "buddy",
+        ChatModelType::Model2 => "model_2",
+        ChatModelType::TaskPlanner => "task_planner",
     }
 }
 
@@ -1120,6 +1126,8 @@ fn subchat_model_type_label(model_type: ChatModelType) -> &'static str {
         ChatModelType::Default => "Default model",
         ChatModelType::Thinking => "Thinking model",
         ChatModelType::Buddy => "Buddy model",
+        ChatModelType::Model2 => "Chat Model 2",
+        ChatModelType::TaskPlanner => "Task Planner model",
     }
 }
 

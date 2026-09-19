@@ -1345,7 +1345,9 @@ mod tests {
                     let valid = model_type.eq_ignore_ascii_case("light")
                         || model_type.eq_ignore_ascii_case("default")
                         || model_type.eq_ignore_ascii_case("thinking")
-                        || model_type.eq_ignore_ascii_case("buddy");
+                        || model_type.eq_ignore_ascii_case("buddy")
+                        || model_type.eq_ignore_ascii_case("model_2")
+                        || model_type.eq_ignore_ascii_case("task_planner");
                     assert!(
                         valid,
                         "Subagent '{}' has invalid model_type: {}",

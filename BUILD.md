@@ -128,12 +128,19 @@ cargo build --bin refact --release
 - Предупреждения (dead_code, unused imports) — **нормальны**, не являются ошибкой.
 - Ошибки в `#[cfg(test)]`-коде (тестовые фикстуры) **не мешают** release-сборке — тестовый код в релиз не компилируется.
 
+**Вариант с `REFACT_USE_PREBUILT_GUI=1`** (рекомендуется, если GUI только что собран в шаге 1):
+```powershell
+$env:REFACT_USE_PREBUILT_GUI = "1"
+cargo build --bin refact --release
+```
+`build.rs` **не пересобирает** GUI (пропускает npm ci/tsc/vite), но **всё равно копирует** свежие `gui/dist/chat` → `engine/assets/chat/dist/chat` и встраивает в бинарник. Это быстрее полного цикла и гарантирует, что в `refact.exe` попадёт именно что только собрали. **Использовано в проверочной сборке 19.09.2026.**
+
 **Вариант с `REFACT_SKIP_GUI_BUILD=1`** (только если GUI-ассеты уже свежие в `engine/assets/chat/dist/chat`):
 ```powershell
 $env:REFACT_SKIP_GUI_BUILD = "1"
 cargo build --bin refact --release
 ```
-Без этого флага `build.rs` пересоберёт GUI сам (npm ci + tsc + vite ×2) — медленнее, но гарантирует свежие ассеты.
+Полностью пропускает и сборку, и копирование GUI-ассетов. Без обоих флагов `build.rs` пересоберёт GUI сам (npm ci + tsc + vite ×2) — медленнее, но гарантирует свежие ассеты.
 
 **Результат:** `refact-agent/engine/target/release/refact.exe` (~203 МБ).
 

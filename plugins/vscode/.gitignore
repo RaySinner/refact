@@ -2,11 +2,11 @@ dist
 node_modules
 src/test/*
 *.vsix
-out/*
+# out/*
 package.json
 images/.DS_Store
 .DS_Store
-assets/refact*
+# assets/refact*
 !assets/refact-logo*
 .refact/*
 .idea/*

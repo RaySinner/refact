@@ -284,7 +284,7 @@ web_modules/
 
 # Next.js build output
 **/.next
-**/out
+# **/out
 
 # Nuxt.js build / generate output
 .nuxt
@@ -307,11 +307,11 @@ dist
 .refact-tmp/
 
 # Plugin build outputs after monorepo migration
-plugins/vscode/out/
+# plugins/vscode/out/
 plugins/vscode/node_modules/
 plugins/vscode/chat_package*/
 plugins/vscode/*.vsix
-plugins/vscode/assets/refact*
+# plugins/vscode/assets/refact*
 !plugins/vscode/assets/refact-logo*
 plugins/intellij/build/
 plugins/intellij/out/

@@ -33,7 +33,6 @@ use crate::privacy::{PrivacyObservationRuntimeState, PrivacySettings};
 use crate::background_tasks::BackgroundTasksHolder;
 use crate::ext::hooks_runner::HooksConfig;
 use crate::scheduler::SchedulerConfig;
-use crate::voice::SharedVoiceService;
 use crate::yaml_configs::customization_registry::RegistryCacheManager;
 use crate::knowledge_index::KnowledgeIndex;
 use refact_context_api::{HttpClientAccess, PathsAccess, ShutdownAccess};
@@ -401,7 +400,6 @@ pub struct GlobalContext {
     pub trajectory_index_coordinator:
         Arc<crate::chat::trajectory_index::TrajectoryIndexCoordinator>,
     pub performance_telemetry: Arc<crate::chat::perf_telemetry::PerformanceTelemetry>,
-    pub voice_service: SharedVoiceService,
     pub project_registry_cache: Arc<StdRwLock<RegistryCacheManager>>,
     pub providers: Arc<ARwLock<ProviderRegistry>>,
     pub quota_cache: Arc<AMutex<ProviderQuotaCache>>,
@@ -486,7 +484,6 @@ impl GlobalContext {
                     .notification_events_tx
                     .clone()
                     .expect("notification event sender is not initialized"),
-                voice_service: self.voice_service.clone(),
             },
             buddy: BuddyServices {
                 buddy: self.buddy.clone(),
@@ -913,7 +910,6 @@ pub async fn create_global_context(
             crate::chat::trajectory_index::TrajectoryIndexCoordinator::new(),
         ),
         performance_telemetry: crate::chat::perf_diagnostics::process_telemetry(),
-        voice_service: crate::voice::VoiceService::new(),
         project_registry_cache: Arc::new(StdRwLock::new(RegistryCacheManager::new())),
         providers: Arc::new(ARwLock::new(
             load_providers_from_config(&config_dir, &http_client)
@@ -1245,7 +1241,6 @@ pub mod tests {
                 crate::chat::trajectory_index::TrajectoryIndexCoordinator::new_with_local_listing_counters(),
             ),
             performance_telemetry: crate::chat::perf_diagnostics::process_telemetry(),
-            voice_service: crate::voice::VoiceService::new(),
             project_registry_cache: Arc::new(StdRwLock::new(RegistryCacheManager::new())),
             providers: Arc::new(ARwLock::new(ProviderRegistry::default())),
             quota_cache: Arc::new(AMutex::new(ProviderQuotaCache::default())),

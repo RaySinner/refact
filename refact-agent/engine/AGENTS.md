@@ -4,13 +4,12 @@ Binary: `refact-lsp` — AI coding agent, HTTP + LSP server. Rust 2021 edition, 
 
 ## Stack
 
-Axum (HTTP), tower-lsp (LSP), tree-sitter extraction, SQLite + FTS5 (CodeGraph), SQLite + vec0 (VecDB memory plane), refact-codegraph, refact-codegraph-parsers, refact-codehealth, refact-codewiki, refact-git-intel, git2, headless_chrome, whisper-rs (optional, feature-gated), rmcp (MCP).
+Axum (HTTP), tower-lsp (LSP), tree-sitter extraction, SQLite + FTS5 (CodeGraph), SQLite + vec0 (VecDB memory plane), refact-codegraph, refact-codegraph-parsers, refact-codehealth, refact-codewiki, refact-git-intel, git2, headless_chrome, rmcp (MCP).
 
 ## Build
 
 ```bash
 cargo build --release                    # binary at target/release/refact-lsp
-cargo build --release --features voice   # with Whisper transcription
 cargo test --lib && cargo test --doc
 bash tools/compile_bench.sh               # compile-time before/after benchmark
 ```
@@ -57,7 +56,6 @@ src/
   tasks/               — Kanban task board (planning/active/paused/completed/abandoned)
   caps/                — model capabilities resolution
   git/                 — shadow repos, checkpoints
-  voice/               — Whisper transcription, streaming sessions
   yaml_configs/        — defaults for modes, providers, toolbox commands, prompts
   postprocessing/      — token-aware truncation and context-file prioritization
   agentic/             — commit messages, agentic edit flows
@@ -950,7 +948,7 @@ session and durable stores, so a single hook call may perform the inline action 
 
 Base: `http://127.0.0.1:{port}/v1/`. Middleware: permissive CORS, 15MB body limit.
 
-Key endpoints: `/ping`, `/caps`, `/graceful-shutdown`, `/p/{project_id}/v1/chats/{id}/commands`, `/p/{project_id}/v1/chats/subscribe` (project-scoped chat protocol; `daemon::chat_client::ProxyChatClient` is the in-tree client), `/chat` (legacy), `/code-completion`, `/code-lens`, `/tools`, `/tools-check-if-confirmation-needed`, `/ast-file-symbols`, `/ast-status` (legacy alias to CodeGraph status), `/rag-status`, `/vdb-search`, `/vdb-status`, `/codegraph-search`, `/codegraph-status`, `/code-intel/*`, `/git-commit`, `/checkpoints-preview`, `/checkpoints-restore`, `/integrations`, `/integration-get`, `/integration-save`, `/knowledge/update-memory`, `/knowledge/delete-memory`, `/knowledge-graph`, `/voice/transcribe`, `/voice/stream/{id}`, `/voice/stream/{id}/chunk`.
+Key endpoints: `/ping`, `/caps`, `/graceful-shutdown`, `/p/{project_id}/v1/chats/{id}/commands`, `/p/{project_id}/v1/chats/subscribe` (project-scoped chat protocol; `daemon::chat_client::ProxyChatClient` is the in-tree client), `/chat` (legacy), `/code-completion`, `/code-lens`, `/tools`, `/tools-check-if-confirmation-needed`, `/ast-file-symbols`, `/ast-status` (legacy alias to CodeGraph status), `/rag-status`, `/vdb-search`, `/vdb-status`, `/codegraph-search`, `/codegraph-status`, `/code-intel/*`, `/git-commit`, `/checkpoints-preview`, `/checkpoints-restore`, `/integrations`, `/integration-get`, `/integration-save`, `/knowledge/update-memory`, `/knowledge/delete-memory`, `/knowledge-graph`.
 
 ## CodeGraph and indexing
 

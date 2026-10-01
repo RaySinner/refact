@@ -94,10 +94,6 @@ use crate::chat::{
     handle_v1_trajectories_get, handle_v1_trajectory_path, handle_v1_trajectories_save,
     handle_v1_trajectories_delete, handle_v1_trajectories_subscribe,
 };
-use crate::http::routers::v1::voice::{
-    handle_v1_voice_transcribe, handle_v1_voice_download, handle_v1_voice_status,
-    handle_v1_voice_stream_subscribe, handle_v1_voice_stream_chunk,
-};
 use crate::http::routers::v1::tasks::{
     handle_list_tasks, handle_create_task, handle_get_task, handle_delete_task, handle_get_board,
     handle_create_card_comment, handle_patch_board, handle_get_planner_instructions,
@@ -196,7 +192,6 @@ mod trajectory_ops;
 pub mod v1_browser;
 mod v1_integrations;
 pub mod vecdb;
-pub mod voice;
 mod workspace;
 mod worktrees;
 
@@ -603,17 +598,6 @@ pub fn make_v1_router(app_state: AppState) -> Router<AppState> {
         .route(
             "/chats/:chat_id/queue/:client_request_id",
             delete(handle_v1_chat_cancel_queued).patch(handle_v1_chat_reprioritize_queued),
-        )
-        .route("/voice/transcribe", post(handle_v1_voice_transcribe))
-        .route("/voice/download", post(handle_v1_voice_download))
-        .route("/voice/status", get(handle_v1_voice_status))
-        .route(
-            "/voice/stream/:session_id/subscribe",
-            get(handle_v1_voice_stream_subscribe),
-        )
-        .route(
-            "/voice/stream/:session_id/chunk",
-            post(handle_v1_voice_stream_chunk),
         )
         .route("/sidebar/subscribe", get(sidebar::handle_sidebar_subscribe))
         .route("/tasks", get(handle_list_tasks))

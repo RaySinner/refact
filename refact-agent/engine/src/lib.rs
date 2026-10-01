@@ -50,7 +50,6 @@ pub use refact_core::custom_error;
 pub use refact_integrations;
 pub use refact_scratchpads;
 pub use refact_tool_api;
-pub use refact_voice;
 pub mod fuzzy_search;
 
 pub mod agents;
@@ -121,7 +120,6 @@ pub mod privacy;
 pub mod stats;
 pub mod tasks;
 pub mod trajectory_memos;
-pub mod voice;
 
 #[cfg(test)]
 pub mod test_paths;

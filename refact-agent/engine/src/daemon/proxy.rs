@@ -369,7 +369,7 @@ fn is_sse_request(headers: &HeaderMap, path: &str) -> bool {
 
 fn path_is_streaming(path: &str) -> bool {
     let path = path.split('?').next().unwrap_or(path);
-    path.ends_with("/subscribe") || path.contains("/voice/stream/")
+    path.ends_with("/subscribe")
 }
 
 fn request_headers(headers: &HeaderMap, project_id: &str) -> reqwest::header::HeaderMap {
@@ -760,10 +760,6 @@ mod tests {
         assert!(is_sse_request(
             &headers,
             "/v1/sidebar/subscribe?after_seq=3"
-        ));
-        assert!(is_sse_request(
-            &headers,
-            "/v1/voice/stream/abc123/subscribe"
         ));
     }
 

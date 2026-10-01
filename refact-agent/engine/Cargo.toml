@@ -32,7 +32,6 @@ members = [
     "crates/refact-pricing-core",
     "crates/refact-scope-utils",
     "crates/refact-caps-core",
-    "crates/refact-voice",
     "crates/refact-context-api",
     "crates/refact-runtime-api",
     "crates/refact-exec",
@@ -82,6 +81,18 @@ inherits = "release"
 strip = false
 lto = "thin"
 codegen-units = 16
+
+# Local iteration profile: release-grade optimization, but no LTO and with
+# incremental codegen. Dropping the ThinLTO pass removes the long single
+# -process link step that dominates a 200 MB binary, and `incremental` lets
+# cargo reuse codegen units when only workspace crates changed.
+# Ship artifacts must still come from `release`; this is for local rebuilds.
+[profile.fast-release]
+inherits = "release"
+lto = false
+codegen-units = 16
+incremental = true
+debug = false
 
 [profile.dev]
 debug = "line-tables-only"
@@ -170,7 +181,7 @@ opt-level = 3
 
 [package]
 name = "refact-lsp"
-version = "8.6.5"
+version = "8.6.6"
 edition = "2021"
 build = "build.rs"
 
@@ -203,7 +214,6 @@ bench = false
 
 [features]
 default = []
-voice = ["refact-voice/voice"]
 bench = []
 perf-tests = []
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -257,7 +267,6 @@ refact-at-web = { path = "crates/refact-at-web" }
 refact-pricing-core = { path = "crates/refact-pricing-core" }
 refact-scope-utils = { path = "crates/refact-scope-utils" }
 refact-caps-core = { path = "crates/refact-caps-core" }
-refact-voice = { path = "crates/refact-voice" }
 refact-context-api = { path = "crates/refact-context-api", features = ["http-client"] }
 refact-runtime-api = { path = "crates/refact-runtime-api" }
 refact-exec = { path = "crates/refact-exec" }

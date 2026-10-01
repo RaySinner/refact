@@ -39,7 +39,6 @@ use crate::privacy::PrivacySettings;
 use crate::providers::ProviderRegistry;
 use crate::stats::event::LlmCallEvent;
 use crate::tasks::events::TaskEventEnvelope;
-use crate::voice::SharedVoiceService;
 use crate::yaml_configs::customization_registry::RegistryCacheManager;
 pub use refact_caps_core::caps_state::CapsState;
 pub use refact_core::tokenizer_state::TokenizerState;
@@ -94,7 +93,6 @@ pub struct ChatServices {
     pub task_events_tx: tokio::sync::broadcast::Sender<TaskEventEnvelope>,
     pub task_events_seq: Arc<AtomicU64>,
     pub notification_events_tx: tokio::sync::broadcast::Sender<NotificationEvent>,
-    pub voice_service: SharedVoiceService,
 }
 
 #[derive(Clone)]

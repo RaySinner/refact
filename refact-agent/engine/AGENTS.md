@@ -8,21 +8,69 @@ Axum (HTTP), tower-lsp (LSP), tree-sitter extraction, SQLite + FTS5 (CodeGraph),
 
 ## Build
 
-```bash
-cargo build --release                    # binary at target/release/refact-lsp
-cargo test --lib && cargo test --doc
-bash tools/compile_bench.sh               # compile-time before/after benchmark
+**Engine builds are minutes, not tens of minutes. Never run a release build to verify a
+change — it costs tens of minutes (LTO + `opt-level = "z"` + `strip`) and it is the wrong
+tool for the job. To verify a change you want `check` mode.**
+
+Always go through the build script. It sets up the Windows toolchain (cargo, LLVM, Node,
+MSVC), honours `REFACT_SKIP_GUI_BUILD`, and exits with cargo's exit code:
+
+```powershell
+# Verification after editing Rust code — DEFAULT, no arguments needed
+.\tools\dev\engine-build.ps1
+
+# A runnable, optimized binary without LTO (target/fast-release/refact-lsp)
+.\tools\dev\engine-build.ps1 -Mode fast
+
+# Unit tests (compiles the whole test target first)
+.\tools\dev\engine-build.ps1 -Mode test
+
+# Shipping artifact ONLY — slow, do not use for verification
+.\tools\dev\engine-build.ps1 -Mode release
 ```
 
-Release profile: `opt-level = "z"`, `lto = true`, `strip = true`. It does not configure `codegen-units`; the separate `ci-release` profile inherits release settings, then overrides `strip = false`, `lto = "thin"`, and `codegen-units = 16`.
+| Mode | Command | Use |
+|---|---|---|
+| `check` (default) | `cargo check --workspace --all-targets` | **verifying a change compiles** |
+| `fast` | `cargo build --profile fast-release --bin refact-lsp` | a runnable binary, no LTO |
+| `release` | `cargo build --release --bin refact-lsp` | packaging / shipping only |
+| `test` | `cargo test --lib` | unit tests |
+| `clean` | removes `target/fast-release` | reclaiming the fast-build cache |
+
+Rule of thumb: if you just want to know "does it compile", you are running `check`. If you
+find yourself typing `cargo build --release` to find that out, stop — use check mode. The
+only reason to build `release` is to produce an artifact you are shipping or packaging.
+
+`tools/dev/build-env.ps1` is the lower-level environment helper (PATH, `CARGO_INCREMENTAL=0`
+for sccache, `NODE_OPTIONS`); `tools/dev/engine-build.ps1` dot-sources it and adds the mode
+handling. The other tracked dev scripts (`check.sh`, `perf.sh`, `compile_bench.sh`) sit
+alongside them in `tools/dev/`.
+
+Measured on this Windows box (2026-10-02, worktree with no `target/`):
+`check` = **1396 s (23 min) cold**; `cargo check -p refact-lsp --lib` on a warm
+`target/` = **1004 s (17 min)**. Incremental no-op re-runs are seconds. A release build
+costs far more, which is why it is not the verification path.
+
+### sccache is bypassed on purpose
+The user-wide `~/.cargo/config.toml` sets `rustc-wrapper = "sccache"`. sccache re-spawns
+rustc with the full argument list, and `refact-lsp` alone carries ~150 `--extern` paths
+under a long worktree directory, which overruns the Windows 32 767-character command-line
+limit. sccache then fails with `os error 206` and **rustc never runs**, which also hides
+real type errors behind an opaque spawn failure. `engine-build.ps1` passes
+`--config <file>` with `rustc-wrapper = ""` to bypass it. Do not "fix" a build that reports
+os error 206 by reinstalling sccache - it is the wrapper, not the cache.
+
+Release profile: `opt-level = "z"`, `lto = true`, `strip = true`. It does not configure
+`codegen-units`; the separate `ci-release` profile inherits release settings, then overrides
+`strip = false`, `lto = "thin"`, and `codegen-units = 16`. The `fast-release` profile also
+inherits release, but sets `lto = false`, `codegen-units = 16`, `incremental = true` — this
+is the profile local iteration should use instead of `release`.
 
 Dev profile keeps workspace crates debuggable but optimizes CodeGraph's parser and SQLite dependencies with `[profile.dev.package.*] opt-level = 3`: tree-sitter core, every tree-sitter grammar crate, `tree-sitter-language`, `rusqlite`, `tokio-rusqlite`, `libsqlite3-sys`, and `sqlite-vec`. This makes `target/debug/refact-lsp` indexing close to release speed for parse-dominated cold indexes; the first dev build is slower because these dependencies compile optimized, and the shared sccache setup mitigates repeated work across worktrees.
 
-`cargo build`, `cargo run`, and release builds normally rebuild and embed GUI assets. `REFACT_SKIP_GUI_BUILD=1` skips that refresh only for API-only developer builds.
+`cargo build`, `cargo run`, and release builds normally rebuild and embed GUI assets. `REFACT_SKIP_GUI_BUILD=1` skips that refresh only for API-only developer builds; the build script sets it for `check` and `fast` so a Rust-side check never rebuilds the frontend.
 
 ### Worktree delivery
-
-Run checks in the worktree before landing its changes. `merge_worktree` squash-merges a worktree into the local `main` branch; it does not publish anything. Push separately afterward with `git push origin main`.
 
 ## Architecture
 

@@ -406,6 +406,7 @@ impl ChatSession {
         Self {
             chat_id: chat_id.clone(),
             derived_privacy_zones: crate::privacy::records::new_derived_privacy_zones(),
+            tool_loop_guard: crate::tools::tool_call_loop_guard::ToolCallLoopGuard::new(),
             thread: ThreadParams {
                 id: chat_id,
                 ..Default::default()
@@ -540,6 +541,7 @@ impl ChatSession {
         Self {
             chat_id,
             derived_privacy_zones: crate::privacy::records::new_derived_privacy_zones(),
+            tool_loop_guard: crate::tools::tool_call_loop_guard::ToolCallLoopGuard::new(),
             thread,
             messages,
             runtime,

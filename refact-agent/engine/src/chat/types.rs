@@ -285,6 +285,7 @@ impl TrajectoryCommitIntent {
 pub struct ChatSession {
     pub chat_id: String,
     pub derived_privacy_zones: crate::privacy::records::DerivedPrivacyZones,
+    pub tool_loop_guard: crate::tools::tool_call_loop_guard::ToolCallLoopGuard,
     pub thread: ThreadParams,
     pub messages: Vec<ChatMessage>,
     pub runtime: RuntimeState,

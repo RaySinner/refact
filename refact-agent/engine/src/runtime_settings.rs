@@ -47,6 +47,8 @@ const PROCESS_SUBSCRIBE_PREVIEW_BYTES_DEFAULT: usize = 2_000;
 const REVIEW_DIFF_CHAR_CAP_DEFAULT: usize = 400_000;
 const REVIEW_MAX_DIFF_PATCH_BYTES_DEFAULT: usize = 4_194_304;
 const TASK_AGENT_MAX_RETRIES_DEFAULT: usize = 3;
+const TOOL_LOOP_GUARD_ENABLED_DEFAULT: bool = true;
+const TOOL_LOOP_GUARD_THRESHOLD_DEFAULT: usize = 3;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(default, deny_unknown_fields)]
@@ -100,6 +102,8 @@ pub struct TrajectoryRuntimeSettings {
     pub review_diff_char_cap: usize,
     pub review_max_diff_patch_bytes: usize,
     pub task_agent_max_retries: usize,
+    pub tool_loop_guard_enabled: bool,
+    pub tool_loop_guard_threshold: usize,
 }
 
 impl Default for TrajectoryRuntimeSettings {
@@ -156,6 +160,8 @@ impl Default for TrajectoryRuntimeSettings {
             review_diff_char_cap: REVIEW_DIFF_CHAR_CAP_DEFAULT,
             review_max_diff_patch_bytes: REVIEW_MAX_DIFF_PATCH_BYTES_DEFAULT,
             task_agent_max_retries: TASK_AGENT_MAX_RETRIES_DEFAULT,
+            tool_loop_guard_enabled: TOOL_LOOP_GUARD_ENABLED_DEFAULT,
+            tool_loop_guard_threshold: TOOL_LOOP_GUARD_THRESHOLD_DEFAULT,
         }
     }
 }
@@ -526,7 +532,13 @@ pub fn validate(settings: &TrajectoryRuntimeSettings) -> Result<(), String> {
         4_096,
         268_435_456,
     )?;
-    validate_usize("task_agent_max_retries", settings.task_agent_max_retries, 0, 10)
+    validate_usize("task_agent_max_retries", settings.task_agent_max_retries, 0, 10)?;
+    validate_usize(
+        "tool_loop_guard_threshold",
+        settings.tool_loop_guard_threshold,
+        1,
+        100,
+    )
 }
 
 fn validate_usize(name: &str, value: usize, minimum: usize, maximum: usize) -> Result<(), String> {

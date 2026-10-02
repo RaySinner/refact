@@ -32,6 +32,7 @@ mod tool_ast_definition;
 pub mod tool_background_agents;
 mod tool_card_comment;
 mod tool_cat;
+pub mod tool_call_loop_guard;
 pub mod tool_chrome;
 mod tool_clean_background_processes;
 #[cfg(test)]

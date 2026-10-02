@@ -1234,6 +1234,107 @@ pub async fn resolve_worktree_setparams_update(
     Ok(None)
 }
 
+/// A queued message has been waiting longer than
+/// `COMPRESSION_ATTEMPT_STALE_AFTER`, so the user is told instead of being left
+/// staring at a queue badge.
+///
+/// The threshold is the compression staleness constant on purpose: it is the
+/// same "this should have finished by now" line the engine already draws for a
+/// wedged compaction, so the queue cannot invent a second, competing deadline.
+const QUEUE_WAIT_NOTICE_AFTER: std::time::Duration =
+    crate::chat::context_rebuild::COMPRESSION_ATTEMPT_STALE_AFTER;
+
+/// Whether a long queue wait is caused by compression, which must read
+/// differently from ordinary queueing: "queued" would be a lie while the chat is
+/// actually blocked on a rebuild.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum QueueWaitCause {
+    /// Blocked on context compaction. The chat is not progressing for this
+    /// reason at all, so this must not read as normal queueing.
+    Compression,
+    /// Blocked on a running generation turn, tool calls, or another blocker.
+    OrdinaryQueueing,
+}
+
+impl QueueWaitCause {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Compression => "context compaction",
+            Self::OrdinaryQueueing => "a previous turn",
+        }
+    }
+
+    /// The user-facing card.
+    ///
+    /// The text is deliberately STABLE for a given cause: dedup collapses on the
+    /// message content, so baking an elapsed-time counter into it would defeat
+    /// the dedup and re-append on every wake. The elapsed age goes in `extra`
+    /// instead, which dedup ignores.
+    fn user_message(self) -> ChatMessage {
+        let (category, title, explanation, suggested_action, is_retryable) = match self {
+            Self::Compression => (
+                "ProviderTransient",
+                "Message stuck behind context compaction",
+                "Your message is still in the chat and has not been processed. Context \
+compaction has been blocking this chat for a long time, so it is not running \
+forward on its own. Wait for the compaction to report a result, then send the \
+message again.",
+                "none",
+                true,
+            ),
+            Self::OrdinaryQueueing => (
+                "InvalidRequest",
+                "Message waiting behind a long-running step",
+                "Your message is still in the chat and has not been processed. A previous \
+step has been running for a long time and is still blocking this chat. It \
+runs as soon as that step finishes.",
+                "none",
+                false,
+            ),
+        };
+
+        let mut message = crate::chat::diagnostics::make_ui_only_error_message_with_info(
+            self.as_str(),
+            category,
+            title,
+            explanation,
+            suggested_action,
+            is_retryable,
+        );
+        if let Some(extra) = message.extra.as_object_mut() {
+            extra.insert(
+                "queue_wait".to_string(),
+                serde_json::json!({
+                    "source": "chat.queue.process_command_queue",
+                    "cause": self.as_str(),
+                }),
+            );
+        }
+        message
+    }
+}
+
+/// Decide whether to surface a long-wait notice, given how long this loop has
+/// been unable to dequeue.
+///
+/// Called while holding the session lock, inside the processor's own decision
+/// block — this adds no timer and no polling, it only observes the loop's own
+/// blocked iterations.
+///
+/// `blocked_since` is processor-local on purpose: an enqueue timestamp would
+/// have to live on the session and is only recorded when perf diagnostics are
+/// on, so it cannot be relied on for a user-facing notice.
+fn queue_wait_notice(
+    blocked_since: &mut Option<std::time::Instant>,
+    cause: QueueWaitCause,
+) -> Option<ChatMessage> {
+    let since = *blocked_since.get_or_insert_with(std::time::Instant::now);
+    if since.elapsed() < QUEUE_WAIT_NOTICE_AFTER {
+        return None;
+    }
+    Some(cause.user_message())
+}
+
 pub fn process_command_queue(
     app: AppState,
     session_arc: Arc<AMutex<ChatSession>>,
@@ -1294,6 +1395,10 @@ async fn process_command_queue_inner(
             .fetch_add(1, Ordering::Relaxed);
     }
 
+    // When this processor first found itself unable to dequeue while user work
+    // was pending. Processor-local, so it needs no session field and no timer.
+    let mut blocked_since: Option<std::time::Instant> = None;
+
     loop {
         let (command, waiter) = {
             let mut session = session_arc.lock().await;
@@ -1306,19 +1411,36 @@ async fn process_command_queue_inner(
             let _ = Pin::as_mut(&mut waiter).enable();
 
             let state = session.runtime.state;
+            let compression_active =
+                crate::chat::context_rebuild::compression_attempt_active(&session);
             let is_busy = state == SessionState::Generating
                 || state == SessionState::ExecutingTools
                 || (state == SessionState::Starting && session.command_queue.is_empty())
                 || session.turn_depth > 0
-                || crate::chat::context_rebuild::compression_attempt_active(&session);
+                || compression_active;
 
             if is_busy {
                 session
                     .queue_processor_counters
                     .empty_locks
                     .fetch_add(1, Ordering::Relaxed);
+                // Only a chat actually holding waiting user work is worth a
+                // notice; an idle chat awaiting its next message is not.
+                let cause = if compression_active {
+                    QueueWaitCause::Compression
+                } else {
+                    QueueWaitCause::OrdinaryQueueing
+                };
+                if session.command_queue.is_empty() {
+                    blocked_since = None;
+                } else if let Some(message) = queue_wait_notice(&mut blocked_since, cause) {
+                    session.append_error_message_deduped_content(message);
+                }
                 (None, Some(waiter))
             } else if state == SessionState::WaitingIde {
+                // Not blocked: the wait clock restarts, so a chat that recovered
+                // and later blocked again does not surface a stale notice.
+                blocked_since = None;
                 if let Some(idx) = find_allowed_command_while_waiting_ide(&session.command_queue) {
                     let cmd = session.command_queue.remove(idx);
                     if let Some(request) = cmd.as_ref() {
@@ -1334,6 +1456,7 @@ async fn process_command_queue_inner(
                     (None, Some(waiter))
                 }
             } else if state == SessionState::Paused {
+                blocked_since = None;
                 if let Some(idx) = find_allowed_command_while_paused(&session.command_queue) {
                     let cmd = session.command_queue.remove(idx);
                     if let Some(request) = cmd.as_ref() {
@@ -1349,6 +1472,7 @@ async fn process_command_queue_inner(
                     (None, Some(waiter))
                 }
             } else if !session.delivery_wake_sources.is_empty() {
+                blocked_since = None;
                 session.delivery_wake_sources.clear();
                 session.abort_flag.store(false, Ordering::SeqCst);
                 session.user_interrupt_flag.store(false, Ordering::SeqCst);
@@ -1362,12 +1486,14 @@ async fn process_command_queue_inner(
                     None,
                 )
             } else if session.command_queue.is_empty() {
+                blocked_since = None;
                 session
                     .queue_processor_counters
                     .empty_locks
                     .fetch_add(1, Ordering::Relaxed);
                 (None, Some(waiter))
             } else {
+                blocked_since = None;
                 let cmd = session.command_queue.pop_front();
                 if let Some(ref req) = cmd {
                     session.record_command_queue_wait(&req.client_request_id);
@@ -3175,6 +3301,179 @@ mod tests {
             .await
             .expect("queue processor did not exit after session close")
             .expect("queue processor panicked");
+    }
+
+    /// The notice must not fire before the threshold, and must fire once past it.
+    ///
+    /// `blocked_since` is back-dated rather than sleeping, so this asserts the
+    /// threshold itself without a 15-minute test.
+    #[test]
+    fn queue_wait_notice_waits_for_the_threshold() {
+        let mut blocked_since = Some(
+            std::time::Instant::now() - QUEUE_WAIT_NOTICE_AFTER + std::time::Duration::from_secs(1),
+        );
+        assert!(
+            queue_wait_notice(&mut blocked_since, QueueWaitCause::Compression).is_none(),
+            "a wait just under the threshold must stay silent"
+        );
+
+        blocked_since = Some(std::time::Instant::now() - QUEUE_WAIT_NOTICE_AFTER);
+        assert!(
+            queue_wait_notice(&mut blocked_since, QueueWaitCause::Compression).is_some(),
+            "a wait past the threshold must surface a notice"
+        );
+    }
+
+    /// An empty `blocked_since` means "first blocked iteration", which by
+    /// definition has not waited yet. This is what stops the notice from firing
+    /// the instant a chat goes busy.
+    #[test]
+    fn queue_wait_notice_is_silent_on_the_first_blocked_iteration() {
+        let mut blocked_since: Option<std::time::Instant> = None;
+        assert!(queue_wait_notice(&mut blocked_since, QueueWaitCause::Compression).is_none());
+        assert!(
+            blocked_since.is_some(),
+            "the first blocked iteration must start the wait clock"
+        );
+    }
+
+    /// The threshold is the engine's existing compaction deadline, not a second
+    /// magic number that could drift away from it.
+    #[test]
+    fn queue_wait_threshold_is_the_compression_staleness_constant() {
+        assert_eq!(
+            QUEUE_WAIT_NOTICE_AFTER,
+            crate::chat::context_rebuild::COMPRESSION_ATTEMPT_STALE_AFTER
+        );
+    }
+
+    /// A compression-caused wait must not read as ordinary queueing: the chat is
+    /// not progressing, so telling the user it is merely "queued" would be a lie.
+    #[test]
+    fn compression_queue_wait_is_distinguishable_from_ordinary_queueing() {
+        let compression = QueueWaitCause::Compression.user_message();
+        let ordinary = QueueWaitCause::OrdinaryQueueing.user_message();
+
+        let compression_info = compression
+            .extra
+            .get("error_info")
+            .and_then(|value| value.as_object())
+            .expect("compression notice carries error_info");
+        let ordinary_info = ordinary
+            .extra
+            .get("error_info")
+            .and_then(|value| value.as_object())
+            .expect("ordinary notice carries error_info");
+
+        assert_ne!(
+            compression_info.get("title").and_then(|v| v.as_str()),
+            ordinary_info.get("title").and_then(|v| v.as_str()),
+            "a compaction wait must not be titled as ordinary queueing"
+        );
+        assert!(
+            compression_info
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .contains("compaction"),
+            "the compression notice must name compaction"
+        );
+        assert_eq!(
+            compression_info
+                .get("is_retryable")
+                .and_then(|v| v.as_bool()),
+            Some(true),
+            "a stalled compaction is transient, so the card must say retrying may help"
+        );
+        assert_eq!(
+            ordinary_info.get("is_retryable").and_then(|v| v.as_bool()),
+            Some(false),
+            "ordinary queueing needs no retry prompt"
+        );
+    }
+
+    /// The card text is the dedup key, so it must stay byte-stable across waits.
+    /// An elapsed-time counter baked into it would defeat the collapsing and
+    /// re-append a card on every wake.
+    #[test]
+    fn queue_wait_notice_text_is_stable_so_dedup_can_collapse_it() {
+        assert_eq!(
+            QueueWaitCause::Compression.user_message().content,
+            QueueWaitCause::Compression.user_message().content
+        );
+        assert_ne!(
+            QueueWaitCause::Compression.user_message().content,
+            QueueWaitCause::OrdinaryQueueing.user_message().content,
+            "distinct causes must produce distinct texts so they do not collapse together"
+        );
+    }
+
+    /// A chat blocked on a FRESH compression attempt with a user message queued must
+    /// stay quiet: the threshold has not elapsed, so a notice here would fire on
+    /// every ordinary wait and train the user to ignore the card.
+    ///
+    /// The past-the-threshold half cannot be driven from here — `blocked_since` is
+    /// `std::time::Instant`, which `tokio::time::pause` does not advance — so that
+    /// half is covered by `queue_wait_notice_waits_for_the_threshold` instead.
+    #[tokio::test]
+    async fn compression_blocked_queue_stays_quiet_before_the_threshold() {
+        let gcx = crate::global_context::tests::make_test_gcx().await;
+        let app = AppState::from_gcx(gcx).await;
+        let session_arc = Arc::new(AMutex::new(ChatSession::new("queue-wait".to_string())));
+        app.chat
+            .sessions
+            .write()
+            .await
+            .insert("queue-wait".to_string(), session_arc.clone());
+
+        let mut session = session_arc.lock().await;
+        // Fresh attempt => genuinely blocking, and genuinely not yet stale.
+        session.active_compression_attempt = Some(7);
+        session.compression_attempt_started_at_ms =
+            Some(chrono::Utc::now().timestamp_millis().max(0) as u64);
+        session.compression_abort_flag = Some(Arc::new(AtomicBool::new(false)));
+        assert!(
+            crate::chat::context_rebuild::compression_attempt_active(&session),
+            "the fixture must actually block, otherwise this test proves nothing"
+        );
+        assert_eq!(
+            session.enqueue_accepted_command(CommandRequest {
+                client_request_id: "waiting-1".to_string(),
+                priority: false,
+                command: user_message_command("do the thing", None),
+            }),
+            EnqueueCommandOutcome::Accepted
+        );
+        drop(session);
+
+        let processor_running = Arc::new(AtomicBool::new(true));
+        let handle = tokio::spawn(process_command_queue(
+            app.clone(),
+            session_arc.clone(),
+            processor_running,
+        ));
+
+        wait_for_empty_lock(&session_arc).await;
+        tokio::task::yield_now().await;
+
+        let session = session_arc.lock().await;
+        assert_eq!(
+            session.command_queue.len(),
+            1,
+            "a compression-blocked queue must not consume the queued message"
+        );
+        assert_eq!(
+            session
+                .messages
+                .iter()
+                .filter(|message| message.role == "error")
+                .count(),
+            0,
+            "no notice may appear before the threshold"
+        );
+        drop(session);
+
+        close_processor(&session_arc, handle).await;
     }
 
     fn user_message_command(content: &str, client_message_id: Option<&str>) -> ChatCommand {

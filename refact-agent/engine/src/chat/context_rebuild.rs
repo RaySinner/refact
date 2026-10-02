@@ -65,7 +65,11 @@ pub struct ManualCompressionApplyResult {
 /// An attempt older than this is treated as abandoned: its reservation can no
 /// longer be trusted to reach a terminal phase, so it must not wedge generation,
 /// the command queue, or the quiet compression gate forever.
-const COMPRESSION_ATTEMPT_STALE_AFTER: Duration = Duration::from_secs(15 * 60);
+///
+/// Also the point at which a user waiting on that attempt deserves to be told
+/// something is wrong, so `queue.rs` reuses this exact threshold instead of
+/// inventing a second one.
+pub(crate) const COMPRESSION_ATTEMPT_STALE_AFTER: Duration = Duration::from_secs(15 * 60);
 
 /// Bound on the reconstruction subchat. Sized above one honest attempt plus its
 /// full retry ladder (5 attempts, 5+15+45+120s of backoff, 5 min idle watchdog)

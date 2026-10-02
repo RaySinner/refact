@@ -8,7 +8,7 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::call_validation::{ChatContent, ChatMessage, ChatUsage};
-use crate::chat::diagnostics::make_ui_only_error_message;
+use crate::chat::diagnostics::{make_ui_only_error_message, make_ui_only_error_message_with_info};
 use crate::chat::internal_roles::{event, EventSubkind, GOAL_ROLE};
 use crate::chat::perf_diagnostics::{self, PerfComponent, PerfOutcome};
 
@@ -392,6 +392,117 @@ fn background_process_cleanup_notice(killed_count: usize) -> ChatMessage {
         json!({ "killed_count": killed_count }),
         format!("Cleared {killed_count} background processes from this chat"),
     )
+}
+
+/// Why `start_stream` refused to open a new assistant turn.
+///
+/// Every variant carries its own `error_info` rather than being classified from
+/// prose. That is deliberate: `make_ui_only_error_message` runs
+/// `classify_user_error` over the text, and a message like "waiting for a mode
+/// switch" matches no known provider fingerprint, so it would land in
+/// `UserErrorCategory::Unknown` and render as the generic "Unknown error" card,
+/// hiding the very cause we are trying to surface. The GUI renders
+/// `error_info.title` and `error_info.explanation`, so those carry the meaning.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum StreamStartRefusal {
+    /// A context rebuild owns the session right now. Transient: the user's
+    /// message is intact and runs once compaction finishes.
+    Compression,
+    /// A rebuild was requested and has not run yet.
+    PendingContextRebuild,
+    /// A mode handoff is queued and still owns the conversation.
+    PendingModeHandoff,
+    /// The active context cannot be projected; generation cannot build a prompt.
+    InvalidActiveContext(String),
+    /// Tool calls from a previous step are still executing.
+    ExecutingTools,
+    /// A draft assistant response is still open.
+    DraftOpen,
+}
+
+impl StreamStartRefusal {
+    pub(crate) fn as_str(&self) -> &'static str {
+        match self {
+            Self::Compression => "a context rebuild is in progress",
+            Self::PendingContextRebuild => "a context rebuild is pending",
+            Self::PendingModeHandoff => "a mode handoff is pending",
+            Self::InvalidActiveContext(_) => "the active context is invalid",
+            Self::ExecutingTools => "tool calls are still executing",
+            Self::DraftOpen => "a draft response is still open",
+        }
+    }
+
+    fn user_message(&self) -> ChatMessage {
+        let (category, title, explanation, suggested_action, is_retryable) = match self {
+            Self::Compression => (
+                "ProviderTransient",
+                "Waiting for context compaction",
+                "Context compaction is still running, so this message has not been processed \
+yet. It stays in the chat and runs as soon as compaction finishes. If compaction does \
+not finish, this chat reports that compaction stopped instead of staying silent.",
+                "none",
+                true,
+            ),
+            Self::PendingContextRebuild => (
+                "InvalidRequest",
+                "Waiting for a context rebuild",
+                "A context rebuild is queued for this chat and has not run yet, so this message \
+has not been processed. The rebuild runs before the next request, then this message is \
+picked up.",
+                "none",
+                false,
+            ),
+            Self::PendingModeHandoff => (
+                "InvalidRequest",
+                "Waiting for a mode switch",
+                "A mode switch is still being applied to this chat, so this message has not been \
+processed yet. It is picked up once the switch completes.",
+                "none",
+                false,
+            ),
+            Self::InvalidActiveContext(detail) => {
+                return make_ui_only_error_message(&format!(
+                    "Invalid active context: {detail}. Explicit rebuild required before generation"
+                ));
+            }
+            Self::ExecutingTools => (
+                "InvalidRequest",
+                "Previous tool calls are still running",
+                "Tool calls from the previous step have not finished, so this message has not \
+been processed yet. It is picked up as soon as those tool calls return.",
+                "none",
+                false,
+            ),
+            Self::DraftOpen => (
+                "InvalidRequest",
+                "Previous response is still open",
+                "An assistant response is still in progress, so this message has not been \
+processed yet. It is picked up once that response finishes.",
+                "none",
+                false,
+            ),
+        };
+
+        let cause = self.as_str();
+        let mut message = make_ui_only_error_message_with_info(
+            cause,
+            category,
+            title,
+            explanation,
+            suggested_action,
+            is_retryable,
+        );
+        if let Some(extra) = message.extra.as_object_mut() {
+            extra.insert(
+                "refusal".to_string(),
+                serde_json::json!({
+                    "source": "chat.session.start_stream",
+                    "cause": cause,
+                }),
+            );
+        }
+        message
+    }
 }
 
 impl ChatSession {
@@ -2919,14 +3030,11 @@ impl ChatSession {
     }
 
     pub fn start_stream(&mut self) -> Option<(String, Arc<AtomicBool>)> {
-        if crate::chat::context_rebuild::compression_attempt_active(self)
-            || self.pending_context_rebuild.is_some()
-            || self.pending_mode_handoff.is_some()
-            || refact_core::active_context::active_context(&self.messages).is_err()
-            || self.runtime.state == SessionState::ExecutingTools
-            || self.draft_message.is_some()
-        {
-            warn!("Attempted to start stream while already executing tools or draft exists");
+        if let Some(refusal) = self.stream_start_refusal() {
+            warn!(
+                "Attempted to start stream while blocked: {}",
+                refusal.as_str()
+            );
             return None;
         }
         self.wait_delivery_boundary = false;
@@ -2946,6 +3054,44 @@ impl ChatSession {
         });
         self.touch();
         Some((message_id, self.abort_flag.clone()))
+    }
+
+    /// The first blocker that would make `start_stream` refuse, in the order the
+    /// refusal check applies them.
+    ///
+    /// Compression is checked first because it is the wait a user can actually
+    /// observe (the "Compacting older context…" spinner), so naming it beats
+    /// naming whatever incidental state happens to be set alongside it.
+    pub(crate) fn stream_start_refusal(&self) -> Option<StreamStartRefusal> {
+        if crate::chat::context_rebuild::compression_attempt_active(self) {
+            return Some(StreamStartRefusal::Compression);
+        }
+        if self.pending_context_rebuild.is_some() {
+            return Some(StreamStartRefusal::PendingContextRebuild);
+        }
+        if self.pending_mode_handoff.is_some() {
+            return Some(StreamStartRefusal::PendingModeHandoff);
+        }
+        if let Err(error) = refact_core::active_context::active_context(&self.messages) {
+            return Some(StreamStartRefusal::InvalidActiveContext(error.to_string()));
+        }
+        if self.runtime.state == SessionState::ExecutingTools {
+            return Some(StreamStartRefusal::ExecutingTools);
+        }
+        if self.draft_message.is_some() {
+            return Some(StreamStartRefusal::DraftOpen);
+        }
+        None
+    }
+
+    /// Tell the user why nothing happened, instead of only logging it.
+    ///
+    /// Idempotent by construction: `append_error_message_deduped_content`
+    /// collapses repeats of the same text, so a session that keeps waking up
+    /// while blocked bumps `repeat_count` on one card rather than appending a
+    /// new one on every wake.
+    pub(crate) fn append_stream_start_refusal(&mut self, refusal: &StreamStartRefusal) {
+        self.append_error_message_deduped_content(refusal.user_message());
     }
 
     pub fn emit_stream_delta(&mut self, ops: Vec<DeltaOp>) {
@@ -3147,8 +3293,13 @@ impl ChatSession {
     /// messages in between, e.g. goal nudges), bump its `repeat_count` and
     /// emit `MessageUpdated` instead of appending another copy.
     pub fn append_error_message_deduped(&mut self, error: &str) {
+        self.append_error_message_deduped_content(make_ui_only_error_message(error));
+    }
+
+    /// Same collapsing rule as `append_error_message_deduped`, for callers that
+    /// build the message themselves (e.g. a caller-supplied `error_info`).
+    pub(crate) fn append_error_message_deduped_content(&mut self, fresh: ChatMessage) {
         const LOOKBACK_PAST_EVENTS: usize = 4;
-        let fresh = make_ui_only_error_message(error);
         let fresh_text = fresh.content.content_text_only();
 
         let mut candidate_idx: Option<usize> = None;
@@ -4454,6 +4605,167 @@ mod tests {
         reset.start_stream();
         reset.reset_compaction_runtime_state();
         assert!(reset.stream_started_at.is_none());
+    }
+
+    fn now_millis() -> u64 {
+        chrono::Utc::now().timestamp_millis().max(0) as u64
+    }
+
+    fn reserve_compression(session: &mut ChatSession) {
+        session.active_compression_attempt = Some(7);
+        session.compression_attempt_started_at_ms = Some(now_millis());
+        session.compression_abort_flag = Some(Arc::new(AtomicBool::new(false)));
+    }
+
+    /// A refused `start_stream` must leave a message the user can actually see.
+    ///
+    /// Asserts on `error_info`, not only on `content`: `ErrorMessage.tsx` renders
+    /// `error_info.title`/`explanation` for a structured error and shows only a
+    /// generic title otherwise, so a card without `error_info` would drop the
+    /// cause. That is the swallow this test exists to prevent.
+    #[test]
+    fn refused_start_stream_surfaces_a_visible_error_naming_the_cause() {
+        let mut session = make_session();
+        reserve_compression(&mut session);
+
+        assert!(session.start_stream().is_none());
+        let refusal = session
+            .stream_start_refusal()
+            .expect("a live compression reservation must refuse");
+        session.append_stream_start_refusal(&refusal);
+
+        let card = session
+            .messages
+            .iter()
+            .rev()
+            .find(|message| message.role == "error")
+            .expect("a refused start must append a visible error card");
+        assert!(
+            crate::chat::diagnostics::is_ui_only_message(card),
+            "the notice must be a ui-only diagnostic, not a hidden `event` role"
+        );
+        let info = card
+            .extra
+            .get("error_info")
+            .and_then(|value| value.as_object())
+            .expect("the notice must carry error_info or the GUI hides the cause");
+        assert_eq!(
+            info.get("title").and_then(|value| value.as_str()),
+            Some("Waiting for context compaction"),
+            "a compression refusal must read as a compaction wait"
+        );
+        let explanation = info
+            .get("explanation")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default();
+        assert!(
+            explanation.contains("compaction"),
+            "the card must name the blocker: {explanation}"
+        );
+        assert_eq!(
+            info.get("category").and_then(|value| value.as_str()),
+            Some("ProviderTransient"),
+            "compression is transient; the card must not claim it is terminal"
+        );
+        assert_eq!(
+            info.get("is_retryable").and_then(|value| value.as_bool()),
+            Some(true)
+        );
+    }
+
+    /// Each blocker gets its own cause, and compression outranks the rest because
+    /// it is the wait the user can actually see on screen.
+    #[test]
+    fn stream_start_refusal_distinguishes_every_blocker() {
+        let mut session = make_session();
+        assert_eq!(session.stream_start_refusal(), None);
+
+        session.pending_mode_handoff = Some(Default::default());
+        assert_eq!(
+            session.stream_start_refusal(),
+            Some(StreamStartRefusal::PendingModeHandoff)
+        );
+        session.pending_mode_handoff = None;
+
+        session.pending_context_rebuild = Some(
+            crate::chat::context_rebuild::PendingContextRebuild {
+                model: None,
+                trigger: "u4-test".to_string(),
+            },
+        );
+        assert_eq!(
+            session.stream_start_refusal(),
+            Some(StreamStartRefusal::PendingContextRebuild)
+        );
+        session.pending_context_rebuild = None;
+
+        session.set_runtime_state(SessionState::ExecutingTools, None);
+        assert_eq!(
+            session.stream_start_refusal(),
+            Some(StreamStartRefusal::ExecutingTools)
+        );
+        session.runtime.state = SessionState::Idle;
+
+        session.start_stream().expect("an idle session starts");
+        assert_eq!(
+            session.stream_start_refusal(),
+            Some(StreamStartRefusal::DraftOpen)
+        );
+
+        reserve_compression(&mut session);
+        assert_eq!(
+            session.stream_start_refusal(),
+            Some(StreamStartRefusal::Compression),
+            "compression must outrank the open draft, since it is the visible wait"
+        );
+    }
+
+    /// Repeated refusals for the same cause must collapse into one card, so a
+    /// chat that keeps retrying does not grow a card per retry.
+    #[test]
+    fn repeated_stream_start_refusals_do_not_spam_messages() {
+        let mut session = make_session();
+        let refusal = StreamStartRefusal::PendingModeHandoff;
+        for _ in 0..5 {
+            session.append_stream_start_refusal(&refusal);
+        }
+
+        let errors: Vec<_> = session
+            .messages
+            .iter()
+            .filter(|message| message.role == "error")
+            .collect();
+        assert_eq!(
+            errors.len(),
+            1,
+            "five identical refusals must not append five cards"
+        );
+        assert_eq!(
+            errors[0]
+                .extra
+                .get("repeat_count")
+                .and_then(|value| value.as_u64()),
+            Some(5),
+            "the collapse must remain visible as a repeat count"
+        );
+    }
+
+    /// Distinct causes must NOT collapse together, or a second blocker would be
+    /// hidden behind the first.
+    #[test]
+    fn distinct_refusal_causes_each_get_their_own_card() {
+        let mut session = make_session();
+        session.append_stream_start_refusal(&StreamStartRefusal::PendingModeHandoff);
+        session.append_stream_start_refusal(&StreamStartRefusal::ExecutingTools);
+
+        assert_eq!(
+            session
+                .messages
+                .iter()
+                .filter(|message| message.role == "error")
+                .count(),
+            2
+        );
     }
 
     #[test]

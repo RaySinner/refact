@@ -1770,6 +1770,10 @@ pub fn start_generation(
 
             let (abort_flag, abort_notify) = {
                 let mut session = session_arc.lock().await;
+                // Re-check the blocker here so the notice can name it. `start_stream`
+                // refuses on the same predicate, so this cannot race into a
+                // different cause.
+                let refusal = session.stream_start_refusal();
                 match session.start_stream() {
                     Some((_message_id, abort_flag)) => {
                         session.delivery_wake_sources.clear();
@@ -1777,10 +1781,14 @@ pub fn start_generation(
                         (abort_flag, notify)
                     }
                     None => {
+                        let refusal =
+                            refusal.expect("start_stream refuses only via this predicate");
                         warn!(
-                            "Cannot start generation for {}: already generating",
-                            chat_id
+                            "Cannot start generation for {}: {}",
+                            chat_id,
+                            refusal.as_str()
                         );
+                        session.append_stream_start_refusal(&refusal);
                         break;
                     }
                 }

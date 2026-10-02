@@ -152,6 +152,47 @@ pub fn make_ui_only_error_message(error: &str) -> ChatMessage {
     }
 }
 
+/// A ui-only error message whose `error_info` is supplied by the caller instead
+/// of being inferred from the text.
+///
+/// Needed when the text is a deliberate, engine-authored explanation rather than
+/// a raw provider failure: the GUI renders `error_info.title`/`explanation` and
+/// only falls back to the text, so a caller-authored cause must live in
+/// `error_info` to stay visible. `content` still carries `raw_error`, which the
+/// GUI also renders unless it equals `content`.
+pub fn make_ui_only_error_message_with_info(
+    raw_error: &str,
+    category: &str,
+    title: &str,
+    explanation: &str,
+    suggested_action: &str,
+    is_retryable: bool,
+) -> ChatMessage {
+    let redacted_error = safe_provider_error_diagnostic(raw_error);
+    let mut extra = json!({
+        "error_info": {
+            "category": category,
+            "title": title,
+            "explanation": explanation,
+            "suggested_action": suggested_action,
+            "is_retryable": is_retryable,
+            "raw_error": redacted_error,
+        }
+    })
+    .as_object()
+    .cloned()
+    .unwrap_or_default();
+    mark_ui_only(&mut extra);
+
+    ChatMessage {
+        message_id: Uuid::new_v4().to_string(),
+        role: "error".to_string(),
+        content: ChatContent::SimpleText(redacted_error),
+        extra,
+        ..Default::default()
+    }
+}
+
 pub fn make_ui_only_retry_status_message(
     error: &str,
     attempt: usize,

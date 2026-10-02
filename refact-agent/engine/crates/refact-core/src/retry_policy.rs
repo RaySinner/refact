@@ -115,6 +115,10 @@ const CONTEXT_LIMIT_PATTERNS: &[&str] = &[
     "payload exceeds size limit",
     "exceeds the maximum number of tokens",
     "exceed the maximum number of tokens",
+    // Engine-side context-budget guards (chat/context_rebuild.rs).
+    "request cap",
+    "output reserve",
+    "no useful completed context",
 ];
 
 const AUTHENTICATION_PATTERNS: &[&str] = &[
@@ -239,6 +243,11 @@ const NETWORK_FAILURE_PATTERNS: &[&str] = &[
     "no such host",
     "network unreachable",
     "proxy error",
+    // Remote-side cancellation: the peer ended the stream, not a user abort.
+    "stream canceled",
+    "operation canceled",
+    "operation was canceled",
+    "canceled by peer",
 ];
 
 const STREAM_CORRUPTED_PATTERNS: &[&str] = &[
@@ -283,6 +292,7 @@ const PROVIDER_TRANSIENT_PATTERNS: &[&str] = &[
     "timeout",
     "timed out",
     "deadline exceeded",
+    "stream stalled",
     "temporarily unavailable",
     "try again",
     "overloaded",
@@ -318,6 +328,7 @@ const INVALID_REQUEST_PATTERNS: &[&str] = &[
     "invalid argument",
     "unknown variant",
     "no endpoint configured",
+    "endpoint url is empty",
     "invalid content-type header",
     "streaming with n > 1 is not supported",
     "unsupported",
@@ -1159,6 +1170,51 @@ mod tests {
                 decision: cancelled(),
                 category: UserErrorCategory::Unknown,
             },
+            ErrorCase {
+                error: "LLM stream stalled",
+                decision: retry_transient(),
+                category: UserErrorCategory::ProviderTransient,
+            },
+            ErrorCase {
+                error: "Context rebuild failed: Mandatory system/tools and output reserve exceed request cap",
+                decision: context_limit(),
+                category: UserErrorCategory::ContextTooLarge,
+            },
+            ErrorCase {
+                error: "Context rebuild failed: Reconstruction must be smaller and fit request cap (before=200, after=260, cap=180)",
+                decision: context_limit(),
+                category: UserErrorCategory::ContextTooLarge,
+            },
+            ErrorCase {
+                error: "Context operation failed: Reconstruction produced no useful completed context",
+                decision: context_limit(),
+                category: UserErrorCategory::ContextTooLarge,
+            },
+            ErrorCase {
+                error: "LLM request failed: HTTP/2 stream canceled",
+                decision: retry_transient(),
+                category: UserErrorCategory::NetworkFailure,
+            },
+            ErrorCase {
+                error: "Stream error: operation canceled",
+                decision: retry_transient(),
+                category: UserErrorCategory::NetworkFailure,
+            },
+            ErrorCase {
+                error: "Stream error: operation was canceled",
+                decision: retry_transient(),
+                category: UserErrorCategory::NetworkFailure,
+            },
+            ErrorCase {
+                error: "operation canceled by peer",
+                decision: retry_transient(),
+                category: UserErrorCategory::NetworkFailure,
+            },
+            ErrorCase {
+                error: "LLM endpoint URL is empty",
+                decision: non_retryable(),
+                category: UserErrorCategory::InvalidRequest,
+            },
         ];
 
         assert!(cases.len() >= 50);
@@ -1292,6 +1348,11 @@ mod tests {
             "HTTP/2 stream canceled must not be classified as user cancellation, got {:?}",
             decision
         );
+        assert_eq!(
+            classify_user_error("LLM request failed: HTTP/2 stream canceled"),
+            UserErrorCategory::NetworkFailure
+        );
+        assert!(decision.is_retryable_transient());
     }
 
     #[test]
@@ -1301,6 +1362,107 @@ mod tests {
             !decision.is_user_cancelled(),
             "remote-side cancellation must not be classified as user cancellation, got {:?}",
             decision
+        );
+        assert_eq!(
+            classify_user_error("operation canceled by peer"),
+            UserErrorCategory::NetworkFailure
+        );
+        assert!(decision.is_retryable_transient());
+    }
+
+    #[test]
+    fn engine_stream_stalled_is_provider_transient_and_retryable() {
+        assert_eq!(
+            classify_user_error("LLM stream stalled"),
+            UserErrorCategory::ProviderTransient
+        );
+        assert!(user_error_info(UserErrorCategory::ProviderTransient).is_retryable);
+        assert_eq!(
+            classify_llm_error_for_retry("LLM stream stalled"),
+            RetryDecision::Retry {
+                reason: "transient_error"
+            }
+        );
+    }
+
+    #[test]
+    fn engine_context_cap_phrases_are_context_too_large_bare_and_wrapped() {
+        let bare = [
+            "Mandatory system/tools and output reserve exceed request cap",
+            "Reconstruction must be smaller and fit request cap (before=200, after=260, cap=180)",
+            "Reconstruction produced no useful completed context",
+        ];
+        for phrase in bare {
+            assert_eq!(
+                classify_user_error(phrase),
+                UserErrorCategory::ContextTooLarge,
+                "bare phrase must be ContextTooLarge: {}",
+                phrase
+            );
+            assert_eq!(
+                classify_user_error(&format!("Context rebuild failed: {phrase}")),
+                UserErrorCategory::ContextTooLarge,
+                "rebuild wrapper must stay ContextTooLarge: {}",
+                phrase
+            );
+            assert_eq!(
+                classify_user_error(&format!("Context operation failed: {phrase}")),
+                UserErrorCategory::ContextTooLarge,
+                "operation wrapper must stay ContextTooLarge: {}",
+                phrase
+            );
+            assert_eq!(
+                classify_llm_error_for_retry(phrase),
+                RetryDecision::ContextLimit {
+                    reason: "context_limit"
+                }
+            );
+        }
+        assert_eq!(
+            user_error_info(UserErrorCategory::ContextTooLarge).suggested_action,
+            "compact"
+        );
+    }
+
+    #[test]
+    fn remote_cancellation_strings_are_network_failures() {
+        for error in [
+            "LLM request failed: HTTP/2 stream canceled",
+            "Stream error: operation canceled",
+            "Stream error: operation was canceled",
+            "operation canceled by peer",
+        ] {
+            assert_eq!(
+                classify_user_error(error),
+                UserErrorCategory::NetworkFailure,
+                "remote cancellation must be NetworkFailure: {}",
+                error
+            );
+            let decision = classify_llm_error_for_retry(error);
+            assert!(
+                !decision.is_user_cancelled(),
+                "not user cancelled: {}",
+                error
+            );
+            assert!(
+                decision.is_retryable_transient(),
+                "remote cancellation must be retryable: {}",
+                error
+            );
+        }
+    }
+
+    #[test]
+    fn empty_endpoint_url_is_invalid_request() {
+        assert_eq!(
+            classify_user_error("LLM endpoint URL is empty"),
+            UserErrorCategory::InvalidRequest
+        );
+        assert_eq!(
+            classify_llm_error_for_retry("LLM endpoint URL is empty"),
+            RetryDecision::DoNotRetry {
+                reason: "non_retryable_error"
+            }
         );
     }
 

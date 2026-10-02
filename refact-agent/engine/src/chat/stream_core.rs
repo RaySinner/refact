@@ -19,8 +19,7 @@ use crate::privacy::destinations::clear_for_model;
 
 use super::openai_codex_ws::{OpenAICodexWebSocketResponseTracker, OpenAICodexWebSocketSession};
 use super::types::{
-    DeltaOp, effective_stream_idle_timeout, stream_heartbeat, stream_idle_timeout,
-    stream_total_timeout,
+    DeltaOp, StreamIdleWatchdog, stream_heartbeat, stream_idle_timeout, stream_total_timeout,
 };
 use super::retry_policy::{classify_llm_error_for_retry, should_retry_llm_error, RetryDecision};
 use super::openai_merge::ToolCallAccumulator;
@@ -2213,7 +2212,7 @@ async fn run_llm_ndjson_request<C: StreamCollector>(
     collector: &mut C,
     request_sent_at: Option<Instant>,
     chat_id: Option<&str>,
-    idle_timeout: Duration,
+    idle_watchdog: StreamIdleWatchdog,
 ) -> Result<Vec<ChoiceFinal>, String> {
     let mut stream = response.bytes_stream();
     let mut pending = Vec::new();
@@ -2222,6 +2221,7 @@ async fn run_llm_ndjson_request<C: StreamCollector>(
     let mut provider_ttft_recorded = false;
     let stream_started_at = Instant::now();
     let mut last_event_at = Instant::now();
+    let mut provider_progressed = false;
     let mut heartbeat = tokio::time::interval(stream_heartbeat());
     heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
@@ -2239,7 +2239,7 @@ async fn run_llm_ndjson_request<C: StreamCollector>(
                 if stream_started_at.elapsed() > stream_total_timeout() {
                     return Err("LLM stream timeout".to_string());
                 }
-                if last_event_at.elapsed() > idle_timeout {
+                if last_event_at.elapsed() > idle_watchdog.timeout(provider_progressed) {
                     return Err("LLM stream stalled".to_string());
                 }
                 continue;
@@ -2269,6 +2269,7 @@ async fn run_llm_ndjson_request<C: StreamCollector>(
             }
         };
         last_event_at = Instant::now();
+        provider_progressed = true;
         let has_complete_event = request_sent_at.is_some() && !provider_ttft_recorded && {
             let mut line_has_content = false;
             pending.iter().chain(bytes.iter()).any(|byte| {
@@ -2460,10 +2461,13 @@ pub(crate) async fn run_llm_stream_with_prepare_started<C: StreamCollector>(
 
     // A large prompt takes proportionally longer to prefill, and the provider emits no
     // progress events while it does, so the idle watchdog gets a prompt-size-scaled
-    // deadline instead of the flat base timeout.
+    // deadline for the prefill window only. Once the provider has actually delivered
+    // something, generation speed — not prompt size — bounds a stall, so the watchdog
+    // reverts to the base deadline.
     let prompt_tokens =
         crate::chat::trajectory_ops::approx_token_count(&params.llm_request.messages);
-    let idle_timeout = effective_stream_idle_timeout((prompt_tokens > 0).then_some(prompt_tokens));
+    let idle_watchdog =
+        StreamIdleWatchdog::for_prompt_tokens((prompt_tokens > 0).then_some(prompt_tokens));
 
     if let Some(started_at) = prepare_started_at {
         perf_diagnostics::record(
@@ -2855,7 +2859,7 @@ pub(crate) async fn run_llm_stream_with_prepare_started<C: StreamCollector>(
             &mut tracking_collector,
             provider_ttft_started_at,
             params.chat_id.as_deref(),
-            idle_timeout,
+            idle_watchdog,
         )
         .await
         .map_err(|e| LlmStreamError::new(e, *tracking_collector.partial_output_emitted))
@@ -2871,6 +2875,7 @@ pub(crate) async fn run_llm_stream_with_prepare_started<C: StreamCollector>(
     let stream_started_at = Instant::now();
     let mut last_progress_event_count = 0;
     let mut last_progress_at = Instant::now();
+    let mut provider_progressed = false;
     let mut heartbeat = tokio::time::interval(stream_heartbeat());
     heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
@@ -2898,8 +2903,9 @@ pub(crate) async fn run_llm_stream_with_prepare_started<C: StreamCollector>(
                 if progress_event_count != last_progress_event_count {
                     last_progress_event_count = progress_event_count;
                     last_progress_at = Instant::now();
+                    provider_progressed = true;
                 }
-                if last_progress_at.elapsed() > idle_timeout {
+                if last_progress_at.elapsed() > idle_watchdog.timeout(provider_progressed) {
                     return Err(LlmStreamError::new(
                         "LLM stream stalled",
                         *tracking_collector.partial_output_emitted,

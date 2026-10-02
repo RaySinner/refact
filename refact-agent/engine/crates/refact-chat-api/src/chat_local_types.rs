@@ -101,18 +101,74 @@ pub fn stream_total_timeout() -> Duration {
 /// - the result never reaches [`stream_total_timeout`], so the total-timeout backstop stays
 ///   authoritative.
 pub fn effective_stream_idle_timeout(prompt_tokens: Option<usize>) -> Duration {
-    let base = stream_idle_timeout();
+    effective_idle_timeout_for(stream_idle_timeout(), stream_total_timeout(), prompt_tokens)
+}
+
+/// Pure arithmetic behind [`effective_stream_idle_timeout`], split out so it can be exercised
+/// against arbitrary base/total pairs without touching the process-global runtime timeout
+/// table.
+///
+/// The configured base is clamped FIRST, so every return path — and every caller — is bounded
+/// by the total-timeout backstop even when a runtime sets an idle timeout larger than
+/// `stream_total_timeout()`. Such a configuration is a misconfiguration: the total timeout is a
+/// safety backstop, not a preference that an idle value may exceed.
+fn effective_idle_timeout_for(
+    idle: Duration,
+    total: Duration,
+    prompt_tokens: Option<usize>,
+) -> Duration {
+    let cap = total.saturating_sub(STREAM_IDLE_TOTAL_TIMEOUT_MARGIN);
+    let base = idle.min(cap);
     let Some(prompt_tokens) = prompt_tokens else {
         return base;
     };
-    let cap = stream_total_timeout().saturating_sub(STREAM_IDLE_TOTAL_TIMEOUT_MARGIN);
-    if prompt_tokens <= STREAM_IDLE_PREFILL_SCALING_MIN_TOKENS || base >= cap {
+    if prompt_tokens <= STREAM_IDLE_PREFILL_SCALING_MIN_TOKENS {
         return base;
     }
     let extra_seconds = u64::try_from(prompt_tokens / STREAM_IDLE_PREFILL_TOKENS_PER_EXTRA_SECOND)
         .unwrap_or(u64::MAX);
     base.saturating_add(Duration::from_secs(extra_seconds))
         .min(cap)
+}
+
+/// The idle deadline the stream watchdog should use, split into the two regimes a stream
+/// actually has.
+///
+/// [`effective_stream_idle_timeout`] scales patience with prompt size because PREFILL time
+/// grows with the prompt while the provider emits nothing. Once the first provider progress
+/// event lands, the request is GENERATING: a stall then reflects generation throughput, which
+/// does not depend on prompt size, so the scaled deadline would take minutes longer than the
+/// configured base to notice a dead connection.
+///
+/// Hold this for the lifetime of one request and ask for the deadline with the current
+/// `provider_progressed` state; both HTTP watchdog sites use it so the two paths cannot drift.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StreamIdleWatchdog {
+    base: Duration,
+    prefill: Duration,
+}
+
+impl StreamIdleWatchdog {
+    pub fn new(base: Duration, prefill: Duration) -> Self {
+        Self { base, prefill }
+    }
+
+    pub fn for_prompt_tokens(prompt_tokens: Option<usize>) -> Self {
+        Self::new(
+            effective_stream_idle_timeout(None),
+            effective_stream_idle_timeout(prompt_tokens),
+        )
+    }
+
+    /// Deadline for the current stream state: scaled while the provider has produced nothing
+    /// yet, base once it has.
+    pub fn timeout(&self, provider_progressed: bool) -> Duration {
+        if provider_progressed {
+            self.base
+        } else {
+            self.prefill
+        }
+    }
 }
 
 pub fn stream_heartbeat() -> Duration {
@@ -306,6 +362,90 @@ mod tests {
                 "the total-timeout backstop must stay authoritative"
             );
         }
+    }
+
+    fn idle_timeout_for(idle: Duration, total: Duration, prompt_tokens: Option<usize>) -> Duration {
+        effective_idle_timeout_for(idle, total, prompt_tokens)
+    }
+
+    const TOTAL: Duration = Duration::from_secs(30 * 60);
+    const CAP: Duration = Duration::from_secs(29 * 60);
+
+    #[test]
+    fn idle_timeout_is_clamped_when_base_exceeds_total_backstop() {
+        // Reproduces the review case: a runtime configuring a 24h idle against a 60s total
+        // must not get a 24h idle deadline back.
+        let total = Duration::from_secs(60);
+        let cap = total.saturating_sub(STREAM_IDLE_TOTAL_TIMEOUT_MARGIN);
+        assert_eq!(
+            idle_timeout_for(Duration::from_secs(86_400), total, None),
+            cap
+        );
+        for prompt_tokens in [None, Some(0), Some(1_000), Some(500_000), Some(usize::MAX)] {
+            assert!(
+                idle_timeout_for(Duration::from_secs(86_400), total, prompt_tokens) <= cap,
+                "prompt {prompt_tokens:?} escaped the total-timeout backstop"
+            );
+        }
+    }
+
+    #[test]
+    fn idle_timeout_never_exceeds_total_backstop_across_base_boundaries() {
+        // idle == total - margin, idle == total, idle > total.
+        let boundaries = [
+            CAP,
+            TOTAL,
+            TOTAL + STREAM_IDLE_TOTAL_TIMEOUT_MARGIN,
+            TOTAL * 2,
+            Duration::from_secs(u64::MAX / 2),
+        ];
+        for idle in boundaries {
+            for prompt_tokens in [None, Some(0), Some(8_000), Some(9_000), Some(usize::MAX)] {
+                let result = idle_timeout_for(idle, TOTAL, prompt_tokens);
+                assert!(
+                    result <= CAP,
+                    "idle {idle:?} / prompt {prompt_tokens:?} gave {result:?}, above cap {CAP:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn idle_timeout_scaling_still_applies_when_base_fits() {
+        let small = idle_timeout_for(Duration::from_secs(300), TOTAL, Some(8_000));
+        let large = idle_timeout_for(Duration::from_secs(300), TOTAL, Some(500_000));
+        assert_eq!(small, Duration::from_secs(300));
+        assert_eq!(large, Duration::from_secs(800));
+    }
+
+    #[test]
+    fn idle_watchdog_scales_only_until_first_progress() {
+        let watchdog = StreamIdleWatchdog::new(Duration::from_secs(300), Duration::from_secs(800));
+        assert_eq!(
+            watchdog.timeout(false),
+            Duration::from_secs(800),
+            "the first event's deadline is the prefill window"
+        );
+        assert_eq!(
+            watchdog.timeout(true),
+            Duration::from_secs(300),
+            "after the provider delivers, a stall must be caught at the configured base"
+        );
+    }
+
+    #[test]
+    fn idle_watchdog_is_unaffected_when_no_scaling_is_needed() {
+        let watchdog = StreamIdleWatchdog::new(Duration::from_secs(300), Duration::from_secs(300));
+        assert_eq!(watchdog.timeout(false), Duration::from_secs(300));
+        assert_eq!(watchdog.timeout(true), Duration::from_secs(300));
+    }
+
+    #[test]
+    fn idle_watchdog_clamps_post_progress_deadline_too() {
+        let watchdog =
+            StreamIdleWatchdog::new(Duration::from_secs(86_400), Duration::from_secs(86_400));
+        assert!(watchdog.timeout(true) <= CAP);
+        assert!(watchdog.timeout(false) <= CAP);
     }
 
     #[test]

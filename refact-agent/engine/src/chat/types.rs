@@ -9,8 +9,9 @@ use refact_runtime_api::{ToolCatalogSnapshot, TurnToolPool};
 
 pub use refact_chat_api::chat_local_types::{
     effective_stream_idle_timeout, max_queue_size, session_cleanup_interval, session_idle_timeout,
-    stream_heartbeat, stream_idle_timeout, stream_total_timeout, EnqueueCommandOutcome,
-    PendingBrowserMessage, PendingSkillDeactivation, TrajectorySourceIdentity,
+    StreamIdleWatchdog, stream_heartbeat, stream_idle_timeout, stream_total_timeout,
+    EnqueueCommandOutcome, PendingBrowserMessage, PendingSkillDeactivation,
+    TrajectorySourceIdentity,
 };
 pub use refact_chat_api::{
     delivery_id_of_message, ActiveCommandContext, BackgroundAgentSummary, BrowserMeta,

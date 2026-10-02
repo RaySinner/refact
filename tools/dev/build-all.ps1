@@ -131,13 +131,26 @@ else {
         # job waits for the GUI job's success sentinel before invoking cargo. The
         # wait is bounded and reports a real error instead of hanging forever.
         if ($WaitForGui) {
+            # Poll the sentinel QUIETLY. The previous version printed a line every
+            # 10 s for the whole GUI build; with npm writing progress to the same
+            # remoting channel that flooded it and the PSRemotingTransportException
+            # below killed the job. Silence costs nothing and removes the cause.
+            #
+            # A dead remoting channel also surfaces here as a silently missing
+            # sentinel, so the wait must not assume the GUI job is healthy. When the
+            # channel breaks, the GUI job is gone too and there is nothing left to
+            # wait for - fall through and let the packaging stage report the real
+            # error instead of hanging for 90 minutes.
             $deadline = (Get-Date).AddMinutes(90)
             while (-not (Test-Path $sentinel)) {
                 if ((Get-Date) -gt $deadline) {
-                    throw "timed out after 90 minutes waiting for the GUI job to produce $sentinel"
+                    throw "timed out after 90 minutes waiting for the GUI build to produce $sentinel"
                 }
-                Write-Host '[engine] waiting for the GUI build to finish ...'
-                Start-Sleep -Seconds 10
+                if ($null -eq (Get-Job -Name 'gui' -ErrorAction SilentlyContinue)) {
+                    Write-Host '[engine] GUI job is gone (channel lost); not waiting any longer'
+                    break
+                }
+                Start-Sleep -Seconds 15
             }
         }
 
@@ -173,11 +186,25 @@ if ($jobs.Count -gt 0) {
 # aborts the script at the logging line instead of reaching the failure report.
 function Write-JobReport {
     param($Job, [string]$Label)
-    $state = $Job.State
     $previous = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
-        $output = Receive-Job -Job $Job -Keep 2>&1 | Out-String
+        # A job whose remoting channel died (PSRemotingTransportException, e.g.
+        # after the GUI build saturated it) can throw from Receive-Job AND from the
+        # State getter. Neither is allowed to abort the script: the whole point of
+        # this function is to TELL the user what happened.
+        try {
+            $state = $Job.State
+        }
+        catch {
+            $state = 'Broken'
+        }
+        try {
+            $output = Receive-Job -Job $Job -Keep 2>&1 | Out-String
+        }
+        catch {
+            $output = "output unavailable: $($_.Exception.Message)"
+        }
     }
     finally {
         $ErrorActionPreference = $previous

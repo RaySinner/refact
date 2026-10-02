@@ -3006,6 +3006,200 @@ impl Drop for InterruptibleWaitGuard {
 
 type SerialToolRegistry = std::collections::HashSet<String>;
 
+/// Decide what the loop guard says about one completed tool call, without touching
+/// any session.
+///
+/// Pure and session-free so the whole policy can be exercised by a unit test
+/// without constructing an `AppState` or a `ChatSession`. Returns `None` — meaning
+/// "behave exactly as if the guard did not exist" — when:
+///
+/// * the guard is disabled,
+/// * the call did not succeed (a failed call produced no new output, so counting it
+///   would punish the agent for a transient error), or
+/// * the tool is an interruptible wait tool. Polling `process_wait` is *correct*
+///   behaviour and its output legitimately repeats until the process finishes, so
+///   exempting it is what keeps the guard from breaking normal waiting.
+fn loop_guard_next(
+    guard: &mut crate::tools::tool_call_loop_guard::ToolCallLoopGuard,
+    enabled: bool,
+    canonical_name: &str,
+    identity_key: &str,
+    result_digest: u64,
+    threshold: usize,
+    success: bool,
+) -> Option<crate::tools::tool_call_loop_guard::LoopVerdict> {
+    if !enabled || !success {
+        return None;
+    }
+    if refact_tool_api::is_interruptible_wait_tool_name(canonical_name) {
+        return None;
+    }
+    Some(guard.observe(identity_key, result_digest, threshold))
+}
+
+/// Turn a guard verdict into the messages and context files the model will see.
+///
+/// * `None` and `FirstCall` return the input untouched, byte for byte. That is the
+///   guarantee that ordinary tool use is completely unaffected by this guard.
+/// * `Warn` keeps the real result and prepends a warning to the tool message, so
+///   the agent sees both the answer and the nudge.
+/// * `Block` withholds the result entirely: one `tool_failed` message explaining the
+///   block, and **no** `ContextFile`. Forgetting the latter would leak the very
+///   content the block is meant to stop the agent from re-reading.
+fn apply_loop_guard(
+    verdict: Option<crate::tools::tool_call_loop_guard::LoopVerdict>,
+    tool_name: &str,
+    threshold: usize,
+    tool_call_id: &str,
+    had_corrections: bool,
+    msgs: Vec<ChatMessage>,
+    files: Vec<ContextFile>,
+) -> (bool, Vec<ChatMessage>, Vec<ContextFile>) {
+    use crate::tools::tool_call_loop_guard::{loop_block_text, loop_warning_text, LoopVerdict};
+
+    let mut msgs = msgs;
+    match verdict {
+        None | Some(LoopVerdict::FirstCall) => (had_corrections, msgs, files),
+        Some(LoopVerdict::Warn { consecutive }) => {
+            let warning = loop_warning_text(tool_name, consecutive, threshold);
+            // Index first, then borrow: `iter_mut().find(..).or_else(|| first_mut())`
+            // would be two mutable borrows of `msgs` in one expression (E0499).
+            let target = msgs
+                .iter()
+                .position(|message| message.role == "tool")
+                .or(if msgs.is_empty() { None } else { Some(0) });
+            if let Some(index) = target {
+                let prefix = format!("{warning}\n\n");
+                match &mut msgs[index].content {
+                    ChatContent::SimpleText(text) => {
+                        text.insert_str(0, &prefix);
+                    }
+                    _ => {
+                        msgs[index].content = ChatContent::SimpleText(format!(
+                            "{prefix}{}",
+                            msgs[index].content.content_text_only()
+                        ));
+                    }
+                }
+            } else {
+                // No message to attach to: warn on its own rather than lose the nudge.
+                msgs.push(ChatMessage {
+                    message_id: Uuid::new_v4().to_string(),
+                    role: "tool".to_string(),
+                    content: ChatContent::SimpleText(warning),
+                    tool_call_id: tool_call_id.to_string(),
+                    ..Default::default()
+                });
+            }
+            (had_corrections, msgs, files)
+        }
+        Some(LoopVerdict::Block { consecutive }) => {
+            let blocked = ChatMessage {
+                message_id: Uuid::new_v4().to_string(),
+                role: "tool".to_string(),
+                content: ChatContent::SimpleText(loop_block_text(
+                    tool_name,
+                    consecutive,
+                    threshold,
+                )),
+                tool_call_id: tool_call_id.to_string(),
+                tool_failed: Some(true),
+                ..Default::default()
+            };
+            (true, vec![blocked], Vec::new())
+        }
+    }
+}
+
+/// Feed one completed tool result through the per-chat loop guard and rewrite the
+/// result if the guard warns or blocks.
+///
+/// Any condition that stops the guard from having an opinion returns the input
+/// untouched: the guard disabled, no session for this chat, an unknown tool name,
+/// or an exempt wait tool. `execute_single_tool` is on the hot path for every tool
+/// call, so those paths must stay cheap and must never fail the call.
+async fn loop_guard_apply_to_result(
+    app: &AppState,
+    chat_id: &str,
+    catalog: &ToolCatalogSnapshot,
+    tool_call: &ChatToolCall,
+    had_corrections: bool,
+    msgs: Vec<ChatMessage>,
+    files: Vec<ContextFile>,
+) -> (bool, Vec<ChatMessage>, Vec<ContextFile>) {
+    let settings = crate::runtime_settings::current();
+    if !settings.tool_loop_guard_enabled {
+        return (had_corrections, msgs, files);
+    }
+
+    // Canonical name: the catalog knows the real tool name, but a Claude-Code
+    // compatible alias may be what the model emitted. Resolve both spellings so the
+    // identity key (and therefore the `cat` override) is keyed by the real name.
+    let raw_name = tool_call.function.name.as_str();
+    let canonical_name = match catalog
+        .index
+        .tools
+        .iter()
+        .find(|desc| {
+            desc.name == raw_name
+                || desc.name
+                    == crate::llm::adapters::claude_code_compat::cc_resolve_tool_name(raw_name)
+        })
+        .map(|desc| desc.name.clone())
+    {
+        Some(name) => name,
+        // Unknown tool: it did not run, so there is nothing to observe.
+        None => return (had_corrections, msgs, files),
+    };
+
+    if refact_tool_api::is_interruptible_wait_tool_name(&canonical_name) {
+        return (had_corrections, msgs, files);
+    }
+
+    let identity_key = crate::tools::tool_call_loop_guard::identity_key_for(
+        &canonical_name,
+        &tool_call.function.arguments,
+    );
+    let digest = crate::tools::tool_call_loop_guard::result_digest(&msgs, &files);
+
+    // Clone the Arc and drop the map guard BEFORE locking the session: holding the
+    // sessions read lock across the session lock (or any IO) risks a deadlock and
+    // would stall every other chat.
+    let session_arc = {
+        let sessions = app.chat.sessions.read().await;
+        sessions.get(chat_id).cloned()
+    };
+    let Some(session_arc) = session_arc else {
+        return (had_corrections, msgs, files);
+    };
+
+    // A result message marked `tool_failed` did not succeed, so it made no progress
+    // and must not advance the counter.
+    let success = !msgs.iter().any(|message| message.tool_failed == Some(true));
+    let verdict = {
+        let mut session = session_arc.lock().await;
+        loop_guard_next(
+            &mut session.tool_loop_guard,
+            settings.tool_loop_guard_enabled,
+            &canonical_name,
+            &identity_key,
+            digest,
+            settings.tool_loop_guard_threshold,
+            success,
+        )
+    };
+
+    apply_loop_guard(
+        verdict,
+        &canonical_name,
+        settings.tool_loop_guard_threshold,
+        &tool_call.id,
+        had_corrections,
+        msgs,
+        files,
+    )
+}
+
 async fn execute_single_tool(
     app: AppState,
     ccx: Arc<AMutex<AtCommandsContext>>,
@@ -3259,6 +3453,22 @@ async fn execute_single_tool(
         1,
         Some(execution_class),
     );
+
+    // The single central observation point for the loop guard. Every tool — builtin,
+    // integration or MCP, serial or parallel — funnels through this function, so one
+    // call here covers all of them and no individual tool file needs to know the
+    // guard exists. It runs after the post-tool hook so a hook-blocked result is
+    // already gone from the path.
+    let (had_corrections, msgs, files) = loop_guard_apply_to_result(
+        &app,
+        &session_id,
+        &catalog,
+        &tool_call,
+        had_corrections,
+        msgs,
+        files,
+    )
+    .await;
 
     (idx, had_corrections, msgs, files)
 }
@@ -3942,5 +4152,351 @@ mod interruptible_wait_tests {
         .await
         .is_err());
         assert!(!session.lock().await.runtime.waiting_interruptible);
+    }
+}
+
+/// The central loop-guard wiring: `loop_guard_next` decides, `apply_loop_guard`
+/// rewrites. Both are pure so the whole policy is testable without an `AppState`.
+#[cfg(test)]
+mod loop_guard_tests {
+    use super::*;
+    use crate::tools::tool_call_loop_guard::{
+        identity_key_for, LoopVerdict, ToolCallLoopGuard, CAT_TOOL_NAME,
+    };
+
+    const THRESHOLD: usize = 3;
+
+    fn guard() -> ToolCallLoopGuard {
+        ToolCallLoopGuard::new()
+    }
+
+    fn decide(
+        guard: &mut ToolCallLoopGuard,
+        canonical_name: &str,
+        identity_key: &str,
+        digest: u64,
+    ) -> Option<LoopVerdict> {
+        loop_guard_next(
+            guard,
+            true,
+            canonical_name,
+            identity_key,
+            digest,
+            THRESHOLD,
+            true,
+        )
+    }
+
+    fn tool_message(text: &str) -> Vec<ChatMessage> {
+        vec![ChatMessage {
+            message_id: Uuid::new_v4().to_string(),
+            role: "tool".to_string(),
+            content: ChatContent::SimpleText(text.to_string()),
+            tool_call_id: "call-1".to_string(),
+            tool_failed: Some(false),
+            ..Default::default()
+        }]
+    }
+
+    fn context_file() -> Vec<ContextFile> {
+        vec![ContextFile {
+            file_name: "src/main.rs".to_string(),
+            file_content: "fn main() {}".to_string(),
+            ..Default::default()
+        }]
+    }
+
+    fn text_of(messages: &[ChatMessage]) -> String {
+        messages
+            .iter()
+            .map(|message| message.content.content_text_only())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// Drive a whole chain and return what the model would see after each call.
+    fn drive(
+        guard: &mut ToolCallLoopGuard,
+        canonical_name: &str,
+        identity_key: &str,
+        repeats: usize,
+        digest_of: impl Fn(usize) -> u64,
+        files: bool,
+    ) -> Vec<(bool, Vec<ChatMessage>, Vec<ContextFile>)> {
+        (0..repeats)
+            .map(|round| {
+                let payload = format!("result-{round}");
+                let verdict = decide(guard, canonical_name, identity_key, digest_of(round));
+                apply_loop_guard(
+                    verdict,
+                    canonical_name,
+                    THRESHOLD,
+                    "call-1",
+                    false,
+                    tool_message(&payload),
+                    if files { context_file() } else { Vec::new() },
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn first_call_is_byte_identical_to_no_guard() {
+        let mut g = guard();
+        let (corrections, messages, files) = apply_loop_guard(
+            decide(&mut g, "grep", "grep\u{1}k", 1),
+            "grep",
+            THRESHOLD,
+            "call-1",
+            false,
+            tool_message("the original result"),
+            context_file(),
+        );
+        assert!(!corrections);
+        assert_eq!(messages.len(), 1);
+        assert_eq!(text_of(&messages), "the original result");
+        assert_eq!(files.len(), 1, "a first call must not touch context files");
+    }
+
+    #[test]
+    fn identical_call_warns_twice_then_blocks_with_no_leaked_content() {
+        let mut g = guard();
+        let outcomes = drive(
+            &mut g,
+            "process_list",
+            "process_list\u{1}k",
+            4,
+            |_| 42,
+            true,
+        );
+
+        // 1st call: untouched.
+        assert_eq!(text_of(&outcomes[0].1), "result-0");
+        // 2nd and 3rd: real result preserved AND a warning prepended.
+        for round in 1..=2 {
+            let (_, messages, files) = &outcomes[round];
+            let text = text_of(messages);
+            assert!(text.starts_with("Warning: `process_list`"), "{text}");
+            assert!(text.contains(&format!("result-{round}")), "{text}");
+            assert_eq!(files.len(), 1, "a warning must not withhold content");
+        }
+        // 4th: blocked. The result is gone, and so is the ContextFile.
+        let (corrections, messages, files) = &outcomes[3];
+        assert!(*corrections, "a block is a correction");
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].role, "tool");
+        assert_eq!(messages[0].tool_failed, Some(true));
+        let text = text_of(messages);
+        assert!(text.starts_with("Blocked: `process_list`"), "{text}");
+        assert!(
+            !text.contains("result-3"),
+            "a block must withhold the result: {text}"
+        );
+        assert!(
+            files.is_empty(),
+            "a block must not leak the withheld content as a ContextFile"
+        );
+    }
+
+    #[test]
+    fn changed_result_resets_the_counter_and_never_blocks() {
+        let mut g = guard();
+        // Same call every round, but the digest changes every round: the agent is
+        // making progress (the file changed, the process advanced).
+        let outcomes = drive(&mut g, "cat", "cat\u{1}k", 10, |round| round as u64, true);
+        for (round, (corrections, messages, files)) in outcomes.iter().enumerate() {
+            assert!(
+                !text_of(messages).contains("Warning") && !text_of(messages).contains("Blocked"),
+                "round {round} must not be warned or blocked"
+            );
+            assert!(!*corrections, "round {round} must not be a correction");
+            assert_eq!(messages.len(), 1);
+            assert_eq!(files.len(), 1);
+        }
+        assert_eq!(g.consecutive(), 1, "progress keeps resetting the chain");
+    }
+
+    #[test]
+    fn different_tools_never_warn() {
+        let mut g = guard();
+        for name in ["shell", "grep", "cat", "process_read", "ls"] {
+            let (_, messages, _) = apply_loop_guard(
+                decide(&mut g, name, &format!("{name}\u{1}k"), 42),
+                name,
+                THRESHOLD,
+                "call-1",
+                false,
+                tool_message("ok"),
+                Vec::new(),
+            );
+            assert_eq!(text_of(&messages), "ok", "{name} must be untouched");
+        }
+        assert_eq!(g.consecutive(), 1);
+    }
+
+    #[test]
+    fn exempt_wait_tools_never_warn_or_block_however_often_they_repeat() {
+        for name in ["sleep", "process_wait", "agent_wait"] {
+            let mut g = guard();
+            for _ in 0..10 {
+                let verdict = decide(&mut g, name, &format!("{name}\u{1}k"), 42);
+                assert_eq!(verdict, None, "{name} must not be observed at all");
+                let (_, messages, files) = apply_loop_guard(
+                    verdict,
+                    name,
+                    THRESHOLD,
+                    "call-1",
+                    false,
+                    tool_message("still running"),
+                    Vec::new(),
+                );
+                assert_eq!(
+                    text_of(&messages),
+                    "still running",
+                    "{name} must be served normally"
+                );
+                assert_eq!(files.len(), 0);
+            }
+            assert_eq!(g.consecutive(), 0, "{name} must leave the guard untouched");
+        }
+    }
+
+    #[test]
+    fn disabled_guard_is_completely_inert() {
+        let mut g = guard();
+        for _ in 0..10 {
+            let verdict = loop_guard_next(
+                &mut g,
+                false,
+                "process_list",
+                "process_list\u{1}k",
+                42,
+                THRESHOLD,
+                true,
+            );
+            assert_eq!(verdict, None);
+            let (corrections, messages, files) = apply_loop_guard(
+                verdict,
+                "process_list",
+                THRESHOLD,
+                "call-1",
+                false,
+                tool_message("still running"),
+                context_file(),
+            );
+            assert!(!corrections);
+            assert_eq!(text_of(&messages), "still running");
+            assert_eq!(files.len(), 1);
+        }
+        assert_eq!(g.consecutive(), 0, "a disabled guard must not observe");
+    }
+
+    #[test]
+    fn a_failed_call_does_not_advance_the_counter() {
+        let mut g = guard();
+        // One real call establishes the chain.
+        assert_eq!(
+            decide(&mut g, "grep", "grep\u{1}k", 42),
+            Some(LoopVerdict::FirstCall)
+        );
+        // A failing call must be ignored entirely.
+        let verdict = loop_guard_next(&mut g, true, "grep", "grep\u{1}k", 42, THRESHOLD, false);
+        assert_eq!(verdict, None);
+        assert_eq!(
+            g.consecutive(),
+            1,
+            "a failed call made no progress and must not count"
+        );
+        // The next successful identical call is therefore the 2nd, not the 5th.
+        assert_eq!(
+            decide(&mut g, "grep", "grep\u{1}k", 42),
+            Some(LoopVerdict::Warn { consecutive: 2 })
+        );
+    }
+
+    #[test]
+    fn cat_of_the_same_file_by_different_line_ranges_counts_as_repeats() {
+        // This is the whole reason card L-2 added a `cat` identity override: reading a
+        // file line by line must look like ONE repeated call, not a fresh one each time.
+        let mut g = guard();
+        let ranges = [
+            r#"{"paths":"src/main.rs"}"#,
+            r#"{"paths":"src/main.rs:1"}"#,
+            r#"{"paths":"src/main.rs:10-20"}"#,
+            r#"{"paths":"src/main.rs:30-40"}"#,
+            r#"{"paths":"src/main.rs"}"#,
+        ];
+        let mut verdicts = Vec::new();
+        for range in ranges {
+            let key = identity_key_for(CAT_TOOL_NAME, range);
+            verdicts.push(decide(&mut g, CAT_TOOL_NAME, &key, 7));
+        }
+        assert_eq!(verdicts[0], Some(LoopVerdict::FirstCall));
+        assert_eq!(verdicts[1], Some(LoopVerdict::Warn { consecutive: 2 }));
+        assert_eq!(verdicts[2], Some(LoopVerdict::Warn { consecutive: 3 }));
+        assert_eq!(verdicts[3], Some(LoopVerdict::Block { consecutive: 4 }));
+        assert_eq!(verdicts[4], Some(LoopVerdict::Block { consecutive: 5 }));
+    }
+
+    #[test]
+    fn warn_survives_multimodal_content_and_an_empty_result() {
+        let mut g = guard();
+        decide(&mut g, "grep", "grep\u{1}k", 1);
+        // A non-SimpleText result must still receive the warning.
+        let (_, messages, _) = apply_loop_guard(
+            decide(&mut g, "grep", "grep\u{1}k", 1),
+            "grep",
+            THRESHOLD,
+            "call-1",
+            false,
+            vec![ChatMessage {
+                role: "tool".to_string(),
+                content: ChatContent::Multimodal(vec![
+                    refact_core::chat_types::MultimodalElement {
+                        m_type: "text".to_string(),
+                        m_content: "image result".to_string(),
+                    },
+                ]),
+                ..Default::default()
+            }],
+            Vec::new(),
+        );
+        let text = text_of(&messages);
+        assert!(text.starts_with("Warning: `grep`"), "{text}");
+        assert!(text.contains("image result"), "{text}");
+
+        // No messages at all: the warning must still reach the model.
+        let (corrections, messages, files) = apply_loop_guard(
+            Some(LoopVerdict::Warn { consecutive: 2 }),
+            "grep",
+            THRESHOLD,
+            "call-9",
+            false,
+            Vec::new(),
+            Vec::new(),
+        );
+        assert!(!corrections, "a warning is not a correction");
+        assert_eq!(messages.len(), 1);
+        assert!(text_of(&messages).starts_with("Warning:"));
+        assert_eq!(messages[0].tool_call_id, "call-9");
+        assert!(files.is_empty());
+    }
+
+    #[test]
+    fn a_block_reports_the_tool_call_it_replaced() {
+        let blocked = apply_loop_guard(
+            Some(LoopVerdict::Block { consecutive: 9 }),
+            "process_read",
+            THRESHOLD,
+            "call-42",
+            false,
+            tool_message("payload"),
+            context_file(),
+        );
+        assert_eq!(blocked.0, true);
+        assert_eq!(blocked.1.len(), 1);
+        assert_eq!(blocked.1[0].tool_call_id, "call-42");
+        assert_eq!(blocked.1[0].role, "tool");
+        assert!(blocked.2.is_empty());
     }
 }

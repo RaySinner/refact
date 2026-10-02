@@ -145,6 +145,11 @@ fn status(session: &mut ChatSession, phase: CompressionPhase, reason: Option<Com
         session.compression_attempt_started_at_ms = None;
         session.compression_abort_flag = None;
         session.clear_compression_gate_diagnostics();
+        // This is the single authoritative post-compression finalisation point: every
+        // terminal phase (Applied, Failed, Skipped) passes through here. Summarizing
+        // rewrote the history the model sees, so any repeated-call chain counted
+        // against the old transcript is meaningless — the next call starts fresh.
+        session.tool_loop_guard.clear();
         session.queue_notify.notify_waiters();
     }
     session.refresh_goal_runtime_mirror();
@@ -1518,6 +1523,48 @@ mod tests {
             Some(CompressionPhase::Failed),
             "a dropped attempt must reach a terminal phase"
         );
+    }
+
+    #[test]
+    fn terminal_compression_phase_clears_the_tool_loop_guard() {
+        use crate::tools::tool_call_loop_guard::ToolCallLoopGuard;
+
+        let mut s = ChatSession::new("loop-guard-compression".into());
+        s.tool_loop_guard = ToolCallLoopGuard::new();
+        // Build up a chain of identical repeats so there is something to clear.
+        s.tool_loop_guard.observe("cat\u{1}a.rs", 7, 3);
+        s.tool_loop_guard.observe("cat\u{1}a.rs", 7, 3);
+        assert_eq!(s.tool_loop_guard.consecutive(), 2);
+
+        // A running phase is not finalisation: compression is still under way, and
+        // clearing here would let a loop survive across a rebuild.
+        status(&mut s, CompressionPhase::Running, None);
+        assert_eq!(
+            s.tool_loop_guard.consecutive(),
+            2,
+            "Running must not clear the loop guard"
+        );
+
+        for phase in [
+            CompressionPhase::Applied,
+            CompressionPhase::Failed,
+            CompressionPhase::Skipped,
+        ] {
+            // Re-seed a chain. Two calls are needed: after `clear()` the first
+            // observe() is a FirstCall (consecutive == 1), not yet a repeat. The
+            // exact count varies with what the previous iteration left behind,
+            // so assert the chain is live rather than pinning a number.
+            s.tool_loop_guard.observe("cat\u{1}a.rs", 7, 3);
+            s.tool_loop_guard.observe("cat\u{1}a.rs", 7, 3);
+            assert!(s.tool_loop_guard.consecutive() >= 2);
+            status(&mut s, phase, None);
+            assert_eq!(
+                s.tool_loop_guard.consecutive(),
+                0,
+                "{phase:?} must clear the loop guard"
+            );
+            assert!(s.tool_loop_guard.last_key().is_none(), "{phase:?}");
+        }
     }
 
     #[test]

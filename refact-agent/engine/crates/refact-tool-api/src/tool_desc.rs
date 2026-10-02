@@ -259,14 +259,25 @@ pub fn make_openai_tool_value(
 }
 
 // The descriptor gate is used because the registry facade hides the Tool trait.
-const INTERRUPTIBLE_WAIT_TOOLS: &[&str] = &["sleep", "process_wait", "agent_wait"];
+pub const INTERRUPTIBLE_WAIT_TOOLS: &[&str] = &["sleep", "process_wait", "agent_wait"];
+
+/// Whether `name` is one of the interruptible wait tools, regardless of source.
+///
+/// [`ToolDesc::is_interruptible_wait`] additionally requires a builtin source, which
+/// is the right check when a descriptor is available. Callers that only hold a tool
+/// *name* (the loop guard, for instance) need this name-only form; treating a
+/// same-named MCP tool as ordinary work there is harmless, whereas missing the
+/// exemption would count legitimate `process_wait` polling as a loop.
+pub fn is_interruptible_wait_tool_name(name: &str) -> bool {
+    INTERRUPTIBLE_WAIT_TOOLS.contains(&name)
+}
 
 impl ToolDesc {
     /// Only builtin wait tools can open an interruptible delivery boundary.
     /// An MCP tool with the same name remains ordinary work.
     pub fn is_interruptible_wait(&self) -> bool {
         matches!(self.source.source_type, ToolSourceType::Builtin)
-            && INTERRUPTIBLE_WAIT_TOOLS.contains(&self.name.as_str())
+            && is_interruptible_wait_tool_name(&self.name)
     }
 
     pub fn into_openai_style(self, strict: bool) -> Value {
@@ -303,6 +314,43 @@ mod tests {
         desc.name = "sleep".into();
         desc.source.source_type = ToolSourceType::Integration;
         assert!(!desc.is_interruptible_wait());
+    }
+
+    #[test]
+    fn is_interruptible_wait_tool_name_matches_by_name_only() {
+        // The descriptor gate additionally requires a builtin source; the name-only
+        // helper must not, so a caller holding just a name still gets the exemption.
+        for name in ["sleep", "process_wait", "agent_wait"] {
+            assert!(is_interruptible_wait_tool_name(name), "{name}");
+        }
+        for name in [
+            "shell",
+            "process_start",
+            "process_read",
+            "process_list",
+            "task_wait_for_agents",
+            "wait_agents",
+            "cat",
+            "",
+        ] {
+            assert!(!is_interruptible_wait_tool_name(name), "{name}");
+        }
+        // The list is not a substring match.
+        assert!(!is_interruptible_wait_tool_name("my_sleep"));
+        assert!(!is_interruptible_wait_tool_name("Sleep"));
+        // Exactly one source of truth: the helper agrees with the const.
+        for name in [
+            "sleep",
+            "process_wait",
+            "agent_wait",
+            "shell",
+            "process_read",
+        ] {
+            assert_eq!(
+                is_interruptible_wait_tool_name(name),
+                INTERRUPTIBLE_WAIT_TOOLS.contains(&name)
+            );
+        }
     }
 
     #[test]

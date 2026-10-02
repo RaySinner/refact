@@ -378,3 +378,8 @@ refact-agent/engine/lock_err.txt
 # ignore that single file, not the sibling .rlib/.rmeta/.d files next to it, so
 # it would not actually stop the flood. Prefer setting CARGO_TARGET_DIR inside
 # `target/` (already ignored) over pointing it at a new directory in the repo root.
+
+# build-all.ps1 generated part scripts, stdout/stderr logs and the GUI sentinel.
+# The logs are the only record of a 50-minute build, so they are kept out of git
+# but never deleted by the script.
+/.build-logs/

@@ -8,6 +8,15 @@
 # Nothing needs to be passed for the normal case. A release engine build takes
 # 40-50 minutes cold, so -Check is the cheap way to see whether a change compiles.
 #
+# Concurrency: the GUI and engine parts are separate powershell.exe processes
+# started with Start-Process BEFORE either is waited on, so they genuinely
+# overlap. Start-Job is deliberately not used: a PowerShell 5.1 job streams the
+# child runspace's output over a PSRemoting channel, and the sustained npm/cargo
+# output saturates that channel on this machine until it dies with
+# PSRemotingTransportException (FullyQualifiedErrorId 2100,PSSessionStateBroken),
+# killing the job mid-build. Start-Process has no such channel - the child writes
+# straight to its own log file.
+#
 # ASCII only on purpose: Windows PowerShell 5.1 reads .ps1 files as ANSI when
 # there is no BOM, so non-ASCII characters here would be mangled.
 [CmdletBinding()]
@@ -26,9 +35,21 @@ $vscodeDir = Join-Path $repoRoot 'plugins\vscode'
 $buildEnvScript = Join-Path $PSScriptRoot 'build-env.ps1'
 $sccacheBypass = Join-Path $env:TEMP 'refact-build-all-nosccache.toml'
 
-# Written by the GUI job only after `npm pack` has SUCCEEDED. The engine job
-# gates on this, see the comment there.
-$guiSentinel = Join-Path $guiDir '.build-all-gui.ready'
+# Every runtime artifact lives here: the two generated part scripts, their stdout
+# and stderr logs, and the GUI success sentinel. The directory is ignored by the
+# root .gitignore so a build never leaves untracked files behind; the logs are
+# never deleted, because on a failed 50-minute build they are the only evidence.
+$logDir = Join-Path $repoRoot '.build-logs'
+$guiLog = Join-Path $logDir 'gui.log'
+$guiErrLog = Join-Path $logDir 'gui.log.err'
+$engineLog = Join-Path $logDir 'engine.log'
+$engineErrLog = Join-Path $logDir 'engine.log.err'
+$guiPartScript = Join-Path $logDir 'gui-part.ps1'
+$enginePartScript = Join-Path $logDir 'engine-part.ps1'
+
+# Written by the GUI part only after `npm pack` has SUCCEEDED. The engine part
+# gates on this, see the comment in engine-part.ps1.
+$guiSentinel = Join-Path $logDir 'gui.ready'
 
 foreach ($required in @($guiDir, $engineDir, $vscodeDir, $buildEnvScript)) {
     if (-not (Test-Path $required)) {
@@ -51,6 +72,15 @@ foreach ($required in @($guiDir, $engineDir, $vscodeDir, $buildEnvScript)) {
 # rejects the bare key as invalid TOML. A config FILE avoids the shell entirely.
 [IO.File]::WriteAllText($sccacheBypass, "[build]`r`nrustc-wrapper = `"`"`r`n")
 
+# The generated part scripts are ASCII, but they are read by Windows PowerShell
+# 5.1, which treats a BOM-less file as ANSI. Write them without a BOM so the
+# bytes are identical under either interpretation.
+$asciiNoBom = New-Object System.Text.UTF8Encoding($false)
+
+if (-not (Test-Path $logDir)) {
+    New-Item -ItemType Directory -Path $logDir | Out-Null
+}
+
 $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
 function Write-Banner {
@@ -69,166 +99,235 @@ $assetExe = Join-Path $vscodeDir 'assets\refact.exe'
 
 Write-Banner "version $guiVersion"
 
-# A stale sentinel from a previous run would let the engine job start immediately.
+# A stale sentinel from a previous run would let the engine part start immediately.
 Remove-Item $guiSentinel -Force -ErrorAction SilentlyContinue
 
-$guiJob = $null
-$engineJob = $null
+# --------------------------------------------------------------------------------
+# The two part scripts.
+#
+# Each is a real file because Start-Process -File needs one: passing a script
+# BLOCK to a child process is not possible without the remoting channel this card
+# exists to avoid. They are generated rather than committed because they only
+# carry parameters, all of which are passed on the command line.
+# --------------------------------------------------------------------------------
+
+$guiPartSource = @'
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $true)][string]$GuiDir,
+    [Parameter(Mandatory = $true)][string]$BuildEnvScript,
+    [Parameter(Mandatory = $true)][string]$Sentinel
+)
+
+# npm writes deprecation and progress notices to stderr as a matter of course.
+# Under 'Stop' each one is a terminating error, so a perfectly healthy `npm ci`
+# would abort. Success is judged on LastExitCode instead.
+$ErrorActionPreference = 'Continue'
+
+try {
+    . $BuildEnvScript
+    Set-Location $GuiDir
+
+    # `npm ci` deletes node_modules before reinstalling, so on a worktree that
+    # already has it (or on a shared junction) that is pure waste and, for the
+    # latter, destructive. Only install when the directory is absent.
+    if (-not (Test-Path (Join-Path $GuiDir 'node_modules'))) {
+        & npm.cmd ci
+        if ($LASTEXITCODE -ne 0) { throw "npm ci failed (exit $LASTEXITCODE)" }
+    }
+    else {
+        Write-Host '[gui] node_modules already present, skipping npm ci'
+    }
+
+    # build:fast produces the same bundles as `npm run build` minus the eslint
+    # pass, and keeps the .d.ts rollup that plugins/vscode needs to compile.
+    & npm.cmd run build:fast
+    if ($LASTEXITCODE -ne 0) { throw "npm run build:fast failed (exit $LASTEXITCODE)" }
+
+    & npm.cmd pack
+    if ($LASTEXITCODE -ne 0) { throw "npm pack failed (exit $LASTEXITCODE)" }
+
+    [IO.File]::WriteAllText($Sentinel, 'ok')
+    exit 0
+}
+catch {
+    Write-Host "[gui] FAILED: $($_.Exception.Message)" -ForegroundColor Red
+    exit 1
+}
+'@
+
+$enginePartSource = @'
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $true)][string]$EngineDir,
+    [Parameter(Mandatory = $true)][string]$BuildEnvScript,
+    [Parameter(Mandatory = $true)][string]$Sentinel,
+    [Parameter(Mandatory = $true)][string]$SccacheBypass,
+    # "1" or "0", not a [switch]: passing `-CheckMode False` to a switch parameter
+    # is ambiguous in PowerShell 5.1, where the value can bind either way.
+    [string]$CheckMode = '0',
+    [int]$GuiProcId = 0
+)
+
+$ErrorActionPreference = 'Continue'
+
+try {
+    . $BuildEnvScript
+    Set-Location $EngineDir
+
+    # REFACT_USE_PREBUILT_GUI=1 makes build.rs skip the npm build, but it does
+    # NOT skip the `gui/dist/chat` -> `engine/assets/chat/dist/chat` copy, and
+    # build.rs runs before any Rust is compiled. Copying a half-written dist
+    # would silently bake a stale or partial UI into the binary, so this part
+    # waits for the GUI part's success sentinel before invoking cargo. The wait
+    # is bounded and reports a real error instead of hanging forever.
+    if ($GuiProcId -gt 0) {
+        # Poll QUIETLY. The previous implementation printed a line every 10 s for
+        # the whole GUI build; silence costs nothing now that output goes to a
+        # file anyway.
+        $deadline = (Get-Date).AddMinutes(90)
+        while (-not (Test-Path $Sentinel)) {
+            if ((Get-Date) -gt $deadline) {
+                throw "timed out after 90 minutes waiting for the GUI build to produce $Sentinel"
+            }
+            # A dead GUI process shows up here as a sentinel that never appears, so
+            # the wait must not assume the GUI part is healthy. Get-Process is a
+            # local OS query - no remoting involved, unlike the Get-Job check the
+            # Start-Job version needed.
+            if ($null -eq (Get-Process -Id $GuiProcId -ErrorAction SilentlyContinue)) {
+                Write-Host '[engine] the GUI process is gone; not waiting any longer'
+                break
+            }
+            Start-Sleep -Seconds 15
+        }
+    }
+
+    # Never REFACT_SKIP_GUI_BUILD=1: that skips the asset copy too, which would
+    # ship a binary with no UI at all.
+    $env:REFACT_USE_PREBUILT_GUI = '1'
+    Remove-Item Env:\REFACT_SKIP_GUI_BUILD -ErrorAction SilentlyContinue
+
+    $cargoArgs = @('--config', $SccacheBypass)
+    if ($CheckMode -eq '1') { $cargoArgs += @('check', '--workspace', '--all-targets') }
+    else { $cargoArgs += @('build', '--release', '--bin', 'refact') }
+
+    $proc = Start-Process -FilePath 'cargo' -ArgumentList $cargoArgs `
+        -WorkingDirectory $EngineDir -NoNewWindow -Wait -PassThru
+    if ($proc.ExitCode -ne 0) { throw "cargo exited with $($proc.ExitCode)" }
+    exit 0
+}
+catch {
+    Write-Host "[engine] FAILED: $($_.Exception.Message)" -ForegroundColor Red
+    exit 1
+}
+'@
+
+[IO.File]::WriteAllText($guiPartScript, $guiPartSource, $asciiNoBom)
+[IO.File]::WriteAllText($enginePartScript, $enginePartSource, $asciiNoBom)
+
+# Launch one part as a detached powershell.exe with its own stdout and stderr
+# files. The caller must not wait here: both parts are started first, so their
+# runtimes actually overlap.
+function Start-BuildPart {
+    param(
+        [string]$Script,
+        [string[]]$ScriptArgs,
+        [string]$StdOut,
+        [string]$StdErr
+    )
+    foreach ($file in @($StdOut, $StdErr)) {
+        if (Test-Path $file) { Remove-Item $file -Force -ErrorAction SilentlyContinue }
+    }
+    $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $Script) + $ScriptArgs
+    $proc = Start-Process -FilePath 'powershell.exe' -ArgumentList $arguments `
+        -RedirectStandardOutput $StdOut -RedirectStandardError $StdErr `
+        -WindowStyle Hidden -PassThru
+    # Touch .Handle before the child exits. A Process object obtained from
+    # Start-Process -PassThru does not reliably keep a queryable handle, and
+    # reading .ExitCode afterwards then throws "No process is associated with
+    # this object". Caching the handle here is the documented workaround.
+    $null = $proc.Handle
+    return $proc
+}
+
+$guiProc = $null
+$engineProc = $null
 
 if ($SkipGui) {
-    Write-Banner "GUI job SKIPPED (-SkipGui)"
+    Write-Banner "GUI part SKIPPED (-SkipGui)"
 }
 else {
-    $guiJob = Start-Job -Name 'gui' -ScriptBlock {
-        param($guiDir, $buildEnvScript, $sentinel)
-        . $buildEnvScript
-        # npm writes deprecation and progress notices to stderr as a matter of
-        # course. Under 'Stop' each one is a terminating error, so a perfectly
-        # healthy `npm ci` would abort the job. Success is judged on LastExitCode.
-        $ErrorActionPreference = 'Continue'
-        # Start-Job inherits the CALLER's working directory, which is the repo
-        # root, not the GUI. Without this, npm ci resolves the root package.json
-        # and fails with EUSAGE.
-        Set-Location $guiDir
-
-        # `npm ci` deletes node_modules before reinstalling, so on a worktree that
-        # already has it (or on a shared junction) that is pure waste and, for the
-        # latter, destructive. Only install when the directory is absent.
-        if (-not (Test-Path (Join-Path $guiDir 'node_modules'))) {
-            & npm.cmd ci
-            if ($LASTEXITCODE -ne 0) { throw "npm ci failed (exit $LASTEXITCODE)" }
-        }
-        else {
-            Write-Host '[gui] node_modules already present, skipping npm ci'
-        }
-
-        # build:fast produces the same bundles as `npm run build` minus the eslint
-        # pass, and keeps the .d.ts rollup that plugins/vscode needs to compile.
-        & npm.cmd run build:fast
-        if ($LASTEXITCODE -ne 0) { throw "npm run build:fast failed (exit $LASTEXITCODE)" }
-
-        & npm.cmd pack
-        if ($LASTEXITCODE -ne 0) { throw "npm pack failed (exit $LASTEXITCODE)" }
-
-        [IO.File]::WriteAllText($sentinel, 'ok')
-    } -ArgumentList $guiDir, $buildEnvScript, $guiSentinel
+    $guiProc = Start-BuildPart -Script $guiPartScript `
+        -ScriptArgs @('-GuiDir', $guiDir, '-BuildEnvScript', $buildEnvScript, '-Sentinel', $guiSentinel) `
+        -StdOut $guiLog -StdErr $guiErrLog
 }
 
 if ($SkipEngine) {
-    Write-Banner "engine job SKIPPED (-SkipEngine)"
+    Write-Banner "engine part SKIPPED (-SkipEngine)"
 }
 else {
-    $engineJob = Start-Job -Name 'engine' -ScriptBlock {
-        param($engineDir, $buildEnvScript, $sentinel, $sccacheBypass, $CheckMode, $WaitForGui)
-        . $buildEnvScript
-        $ErrorActionPreference = 'Continue'
-        Set-Location $engineDir
+    $checkModeArg = if ($Check) { '1' } else { '0' }
+    # 0 when the GUI part is skipped: with no GUI process to wait for, the
+    # sentinel wait must not run at all.
+    $guiProcIdArg = if ($guiProc) { $guiProc.Id } else { 0 }
+    $engineProc = Start-BuildPart -Script $enginePartScript `
+        -ScriptArgs @('-EngineDir', $engineDir, '-BuildEnvScript', $buildEnvScript, '-Sentinel', $guiSentinel, '-SccacheBypass', $sccacheBypass, '-CheckMode', $checkModeArg, '-GuiProcId', "$guiProcIdArg") `
+        -StdOut $engineLog -StdErr $engineErrLog
+}
 
-        # REFACT_USE_PREBUILT_GUI=1 makes build.rs skip the npm build, but it does
-        # NOT skip the `gui/dist/chat` -> `engine/assets/chat/dist/chat` copy, and
-        # build.rs runs before any Rust is compiled. Copying a half-written dist
-        # would silently bake a stale or partial UI into the binary, so the engine
-        # job waits for the GUI job's success sentinel before invoking cargo. The
-        # wait is bounded and reports a real error instead of hanging forever.
-        if ($WaitForGui) {
-            # Poll the sentinel QUIETLY. The previous version printed a line every
-            # 10 s for the whole GUI build; with npm writing progress to the same
-            # remoting channel that flooded it and the PSRemotingTransportException
-            # below killed the job. Silence costs nothing and removes the cause.
-            #
-            # A dead remoting channel also surfaces here as a silently missing
-            # sentinel, so the wait must not assume the GUI job is healthy. When the
-            # channel breaks, the GUI job is gone too and there is nothing left to
-            # wait for - fall through and let the packaging stage report the real
-            # error instead of hanging for 90 minutes.
-            $deadline = (Get-Date).AddMinutes(90)
-            while (-not (Test-Path $sentinel)) {
-                if ((Get-Date) -gt $deadline) {
-                    throw "timed out after 90 minutes waiting for the GUI build to produce $sentinel"
-                }
-                if ($null -eq (Get-Job -Name 'gui' -ErrorAction SilentlyContinue)) {
-                    Write-Host '[engine] GUI job is gone (channel lost); not waiting any longer'
-                    break
-                }
-                Start-Sleep -Seconds 15
+$parts = @()
+if ($guiProc) { $parts += $guiProc }
+if ($engineProc) { $parts += $engineProc }
+
+if ($parts.Count -gt 0) {
+    Write-Banner 'building (GUI and engine run concurrently)'
+    # WaitForExit() rather than Wait-Process: it is what makes .ExitCode readable
+    # afterwards, and Wait-Job/Wait-Process on Process objects does not populate it.
+    foreach ($part in $parts) { $part.WaitForExit() }
+    Write-Host "gui log         : $guiLog"
+    Write-Host "engine log      : $engineLog"
+}
+
+# On failure the child output only exists in the redirected log files, and a build
+# script that fails silently is what makes a 50-minute run undebuggable. Print the
+# tail of the log that failed plus both full paths.
+function Write-PartFailure {
+    param([string]$Label, [string[]]$LogPaths, [int]$Tail = 40)
+    Write-Host ''
+    Write-Host "$Label part FAILED (exit code $($script:lastExit[$Label]))" -ForegroundColor Red
+    foreach ($path in $LogPaths) {
+        Write-Host "--- last $Tail lines of $path ---" -ForegroundColor Red
+        if (Test-Path $path) {
+            foreach ($line in @(Get-Content -LiteralPath $path -Tail $Tail -ErrorAction SilentlyContinue)) {
+                Write-Host $line
             }
         }
-
-        # Never REFACT_SKIP_GUI_BUILD=1: that skips the asset copy too, which would
-        # ship a binary with no UI at all.
-        $env:REFACT_USE_PREBUILT_GUI = '1'
-        Remove-Item Env:\REFACT_SKIP_GUI_BUILD -ErrorAction SilentlyContinue
-
-        $cargoArgs = @('--config', $sccacheBypass)
-        if ($CheckMode) { $cargoArgs += @('check', '--workspace', '--all-targets') }
-        else { $cargoArgs += @('build', '--release', '--bin', 'refact') }
-
-        $proc = Start-Process -FilePath 'cargo' -ArgumentList $cargoArgs `
-            -WorkingDirectory $engineDir -NoNewWindow -Wait -PassThru
-        if ($proc.ExitCode -ne 0) { throw "cargo exited with $($proc.ExitCode)" }
-    } -ArgumentList $engineDir, $buildEnvScript, $guiSentinel, $sccacheBypass, [bool]$Check, (-not $SkipGui)
-}
-
-$jobs = @()
-if ($guiJob) { $jobs += $guiJob }
-if ($engineJob) { $jobs += $engineJob }
-
-if ($jobs.Count -gt 0) {
-    Write-Banner 'building (GUI and engine run concurrently)'
-    Wait-Job -Job $jobs | Out-Null
-}
-
-# Print a finished job's output and report whether it succeeded.
-#
-# Receive-Job 2>&1 merges the job's stderr into ErrorRecords, and under the
-# script-wide $ErrorActionPreference = 'Stop' that merge is ITSELF a terminating
-# error. Without the temporary override, a build that merely printed a warning
-# aborts the script at the logging line instead of reaching the failure report.
-function Write-JobReport {
-    param($Job, [string]$Label)
-    $previous = $ErrorActionPreference
-    $ErrorActionPreference = 'Continue'
-    try {
-        # A job whose remoting channel died (PSRemotingTransportException, e.g.
-        # after the GUI build saturated it) can throw from Receive-Job AND from the
-        # State getter. Neither is allowed to abort the script: the whole point of
-        # this function is to TELL the user what happened.
-        try {
-            $state = $Job.State
-        }
-        catch {
-            $state = 'Broken'
-        }
-        try {
-            $output = Receive-Job -Job $Job -Keep 2>&1 | Out-String
-        }
-        catch {
-            $output = "output unavailable: $($_.Exception.Message)"
+        else {
+            Write-Host '(no output captured - the process died before writing anything)'
         }
     }
-    finally {
-        $ErrorActionPreference = $previous
-    }
-    if ($output) { Write-Host $output }
-    return [pscustomobject]@{ Label = $Label; State = $state; Ok = ($state -eq 'Completed') }
 }
 
-# Collect and print both logs before deciding anything, so a failure report always
-# carries the output of the job that did not cause it too. The job state has to be
-# read BEFORE Remove-Job, which discards it.
-$reports = @()
-if ($guiJob) { $reports += Write-JobReport -Job $guiJob -Label 'GUI' }
-if ($engineJob) { $reports += Write-JobReport -Job $engineJob -Label 'engine' }
-if ($guiJob) { Remove-Job -Job $guiJob -Force }
-if ($engineJob) { Remove-Job -Job $engineJob -Force }
+# Read every exit code BEFORE deciding anything, so a failure report always names
+# the part that actually failed. A non-zero code fails the build before anything is
+# verified, copied or packaged.
+$script:lastExit = @{}
+$failedParts = @()
 
-# Fail before anything is verified, copied or packaged.
-$failed = @($reports | Where-Object { -not $_.Ok })
-if ($failed.Count -gt 0) {
+if ($guiProc) {
+    $script:lastExit['GUI'] = $guiProc.ExitCode
+    if ($guiProc.ExitCode -ne 0) { $failedParts += 'GUI' }
+}
+if ($engineProc) {
+    $script:lastExit['engine'] = $engineProc.ExitCode
+    if ($engineProc.ExitCode -ne 0) { $failedParts += 'engine' }
+}
+
+if ($failedParts.Count -gt 0) {
+    if ($failedParts -contains 'GUI') { Write-PartFailure -Label 'GUI' -LogPaths @($guiLog, $guiErrLog) }
+    if ($failedParts -contains 'engine') { Write-PartFailure -Label 'engine' -LogPaths @($engineLog, $engineErrLog) }
     Write-Host ''
-    foreach ($report in $failed) {
-        Write-Host "$($report.Label) job FAILED (state $($report.State))" -ForegroundColor Red
-    }
+    Write-Host "full logs: $logDir" -ForegroundColor Red
     Write-Host 'build stage failed - nothing was packaged' -ForegroundColor Red
     exit 1
 }

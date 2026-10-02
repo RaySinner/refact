@@ -865,7 +865,7 @@ describe("Chat Thread Reducer - Core Functionality", () => {
     });
 
     test("model_switch_resets_auto_compression_cap_when_model_max_changes", () => {
-      let state = chatReducer(
+      const state = chatReducer(
         initialState,
         setAutoCompressionCap({ chatId, value: 8192 }),
       );
@@ -900,7 +900,7 @@ describe("Chat Thread Reducer - Core Functionality", () => {
     });
 
     test("model_switch_preserves_auto_compression_cap_when_model_max_unchanged", () => {
-      let state = chatReducer(
+      const state = chatReducer(
         initialState,
         setAutoCompressionCap({ chatId, value: 8192 }),
       );

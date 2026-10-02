@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
 
-import type { TrajectorySettingsResponse } from "../../services/refact/performance";
+import type {
+  TrajectorySettingValue,
+  TrajectorySettingsConfig,
+  TrajectorySettingsResponse,
+} from "../../services/refact/performance";
 import { server } from "../../utils/mockServer";
 import { render, screen, waitFor } from "../../utils/test-utils";
 import { TrajectorySettingsPanel } from "./TrajectorySettingsPanel";
@@ -246,10 +250,17 @@ const NEW_BOOLEAN_FIELDS: {
 
 function settingsResponseWithNewLimits(): TrajectorySettingsResponse {
   const base = settingsResponse();
-  const extra = Object.fromEntries([
-    ...NEW_LIMIT_FIELDS.map((field) => [field.name, field.value]),
-    ...NEW_BOOLEAN_FIELDS.map((field) => [field.name, field.value]),
-  ]);
+  const entries: [string, TrajectorySettingValue][] = [
+    ...NEW_LIMIT_FIELDS.map((field): [string, TrajectorySettingValue] => [
+      field.name,
+      field.value,
+    ]),
+    ...NEW_BOOLEAN_FIELDS.map((field): [string, TrajectorySettingValue] => [
+      field.name,
+      field.value,
+    ]),
+  ];
+  const extra: TrajectorySettingsConfig = Object.fromEntries(entries);
   const config = { ...base.config, ...extra };
   return {
     ...base,

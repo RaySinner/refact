@@ -46,6 +46,9 @@ pub struct MCPMetricsCollector {
     pub metrics: MCPServerMetrics,
     response_window: VecDeque<f64>,
     process_start: Option<Instant>,
+    // Only `sample_cpu_percent` reads this, and that is `#[cfg(target_os = "linux")]`.
+    // On other targets the field is written by `new()` but never read.
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     last_cpu_stat: Option<(u64, Instant)>,
 }
 
@@ -146,6 +149,14 @@ impl MCPMetricsCollector {
     }
 
     pub fn refresh_process_metrics(&mut self) {
+        // `pid` is only consumed by the Linux /proc readers below, so it is bound
+        // unconditionally to keep the `None => return` early exit on every target.
+        #[cfg(not(target_os = "linux"))]
+        let _pid = match self.metrics.process_pid {
+            Some(p) => p,
+            None => return,
+        };
+        #[cfg(target_os = "linux")]
         let pid = match self.metrics.process_pid {
             Some(p) => p,
             None => return,

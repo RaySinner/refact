@@ -146,7 +146,6 @@ async fn run_command(
             };
         }
     };
-    let child_id = child.id();
     match tokio::time::timeout(timeout, child.wait_with_output()).await {
         Ok(Ok(output)) => {
             let text = format!(

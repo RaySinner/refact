@@ -51,6 +51,9 @@ pub struct GuiPublicOriginCandidates {
     pub origins: Vec<String>,
 }
 
+// Both LAN-enumeration helpers below are called only from the non-Windows
+// `local_lan_ipv4_hosts`, which returns an empty list on Windows.
+#[cfg_attr(target_os = "windows", allow(dead_code))]
 fn is_candidate_lan_ipv4(ip: Ipv4Addr) -> bool {
     !(ip.is_loopback()
         || ip.is_link_local()
@@ -60,6 +63,7 @@ fn is_candidate_lan_ipv4(ip: Ipv4Addr) -> bool {
         || ip.is_unspecified())
 }
 
+#[cfg_attr(target_os = "windows", allow(dead_code))]
 fn is_likely_virtual_interface_name(name: &str) -> bool {
     let name = name.to_ascii_lowercase();
     name.starts_with("docker")

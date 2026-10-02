@@ -2115,10 +2115,11 @@ mod tests {
             *gcx.documents_state.workspace_folders.lock().unwrap() = vec![workspace];
         }
 
-        let allowed_dirs = get_allowed_enrichment_dirs(gcx).await;
-
         #[cfg(unix)]
-        assert!(allowed_dirs.is_empty());
+        {
+            let allowed_dirs = get_allowed_enrichment_dirs(gcx).await;
+            assert!(allowed_dirs.is_empty());
+        }
     }
 
     #[test]

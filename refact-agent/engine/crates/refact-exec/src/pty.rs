@@ -66,9 +66,13 @@ pub fn spawn_pty(
 
 #[cfg(test)]
 mod tests {
+    // Every test that uses these is `#[cfg(unix)]`; on Windows the module body is empty.
+    #[cfg(unix)]
     use std::time::Duration;
 
+    #[cfg(unix)]
     use crate::types::{ExecOutputStream, ExecSpawnRequest};
+    #[cfg(unix)]
     use crate::ExecRegistry;
 
     #[cfg(unix)]

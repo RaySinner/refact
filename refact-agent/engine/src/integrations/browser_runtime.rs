@@ -1073,6 +1073,9 @@ mod tests {
 
     #[test]
     fn profile_lock_is_not_live_for_a_dead_pid() {
+        // Chrome only writes the SingletonLock symlink on unix, so `dir` is only
+        // read inside the `#[cfg(unix)]` block below.
+        #[cfg_attr(not(unix), allow(unused_variables))]
         let dir = tempfile::tempdir().unwrap();
         let dead_pid = 4_294_000_001u32;
         assert!(!pid_is_alive(dead_pid));

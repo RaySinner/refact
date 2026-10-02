@@ -769,11 +769,9 @@ fn status_label(status: &ExecStatus) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
-    use hyper::body::{to_bytes, HttpBody};
+    use hyper::body::to_bytes;
     use serde_json::{json, Value};
     use tower::ServiceExt;
 

@@ -276,6 +276,8 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().join("repo");
         std::fs::create_dir_all(&root).unwrap();
+        // Only the `#[cfg(unix)]` block below pushes another entry.
+        #[cfg_attr(not(unix), allow(unused_mut))]
         let mut roots = vec![
             root.clone(),
             root.join("."),

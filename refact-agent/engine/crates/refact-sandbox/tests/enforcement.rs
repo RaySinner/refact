@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
+// Every Landlock test below is `#[cfg(target_os = "linux")]`.
+#[cfg(target_os = "linux")]
+use std::path::PathBuf;
 use std::process::{Command, Output};
 use std::time::{Duration, Instant};
 
@@ -107,6 +110,8 @@ fn bwrap_network_isolation_fast_fails_loopback_curl() {
     assert!(started.elapsed() < Duration::from_secs(2));
 }
 
+// Only called from `#[cfg(target_os = "linux")]` Landlock tests.
+#[cfg(target_os = "linux")]
 fn hidden_landlock_output(spec: &ExecSandboxSpec, program: &str, args: &[String]) -> Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_refact-sandbox-helper"));
     command

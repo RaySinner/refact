@@ -298,6 +298,9 @@ fn synthesize_responses_context_cutoff_error_if_needed(
     error
 }
 
+// Kept for callers that want the redacted form for logging without the surrounding
+// message; currently nothing in the binary calls it.
+#[allow(dead_code)]
 fn safe_context_limit_error_for_log(error: &str) -> String {
     safe_provider_error_diagnostic(error)
 }

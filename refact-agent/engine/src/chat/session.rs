@@ -908,6 +908,13 @@ impl ChatSession {
         true
     }
 
+    /// Rewrites the trailing `goal_pursuit` nudge event in place instead of appending a
+    /// new one, keeping the `count`/`last_at_ms` payload bounded across repeated nudges.
+    ///
+    /// Currently invoked only from the unit test below — no production caller exists, so
+    /// repeated goal nudges are still appended one message per nudge. Reported rather
+    /// than removed: wiring it up belongs with whatever owns goal-nudge emission.
+    #[allow(dead_code)]
     pub(crate) fn coalesce_tail_goal_nudge_event(&mut self, at_ms: u64) -> bool {
         let is_tail_nudge = self.messages.last().is_some_and(|message| {
             goal_event_subkind(message) == Some("goal_pursuit")

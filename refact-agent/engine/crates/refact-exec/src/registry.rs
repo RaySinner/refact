@@ -331,6 +331,8 @@ fn kill_descendant_processes(root_pid: i32) -> Result<(), String> {
 #[cfg(test)]
 async fn stop_rejected_child(
     mut child: tokio::process::Child,
+    // Only the `#[cfg(unix)]` group-kill arm below reads this.
+    #[cfg_attr(not(unix), allow(unused_variables))]
     process_group_isolated: bool,
 ) -> Result<(), String> {
     let mut cleanup_error = None;
@@ -410,6 +412,8 @@ struct ExecCleanupTarget {
     snapshot: ExecProcessSnapshot,
     child: Option<tokio::process::Child>,
     runtime: Option<ExecProcessRuntime>,
+    // Read only by the `#[cfg(unix)]` process-group kill paths.
+    #[cfg_attr(not(unix), allow(dead_code))]
     process_group_isolated: bool,
 }
 
@@ -459,7 +463,12 @@ struct ExecRemoveTarget {
     kind: ExecRemoveTargetKind,
     runtime: Option<ExecProcessRuntime>,
     child: Option<tokio::process::Child>,
+    // Both are read only by the `#[cfg(unix)]` process-group kill paths: the flag decides
+    // whether to signal the group, and `was_terminal` downgrades a group-kill failure to a
+    // debug log for an already-exited child.
+    #[cfg_attr(not(unix), allow(dead_code))]
     process_group_isolated: bool,
+    #[cfg_attr(not(unix), allow(dead_code))]
     was_terminal: bool,
 }
 
@@ -683,7 +692,9 @@ impl ExecRegistry {
         Ok(snapshot)
     }
 
-    #[cfg(test)]
+    // Only called from the `#[cfg(unix)]` test
+    // `register_non_isolated_child_for_test_keeps_non_production_coverage`.
+    #[cfg(all(test, unix))]
     async fn register_non_isolated_child_for_test(
         &self,
         meta: ExecProcessMeta,

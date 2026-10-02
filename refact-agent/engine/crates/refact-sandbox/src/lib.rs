@@ -104,6 +104,9 @@ pub struct SandboxStatus {
 }
 
 #[derive(Clone, Copy)]
+// `Bwrap` and `Landlock` are only ever selected on Linux; other targets compile
+// `select_provider_uncached` down to `Noop` and never construct them.
+#[allow(dead_code)]
 enum ProviderKind {
     Bwrap,
     Landlock,
@@ -164,6 +167,9 @@ fn select_provider_uncached() -> (ProviderKind, Enforcement) {
     }
 }
 
+// Only called from the Linux branch of `select_provider_uncached` (and its own tests),
+// so non-Linux builds have no call site.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 fn select_from_probes(
     bwrap_enforcement: Enforcement,
     landlock_enforcement: Enforcement,

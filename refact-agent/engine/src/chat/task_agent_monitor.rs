@@ -827,6 +827,13 @@ pub async fn handle_agent_streaming_error(
     let max_retries = crate::runtime_settings::current().task_agent_max_retries;
 
     let (should_retry, current_attempt) = {
+        // NOTE: this assignment is currently unreachable. The updater closure below is
+        // `move`, so it captures `retry_info` by value and mutates only its own copy;
+        // `should_retry` therefore stays `false` and the `retry_agent_session` branch
+        // below never runs. The persisted `retry_count` and `status_updates` pushes do
+        // take effect. Reported rather than fixed: repairing it would newly enable
+        // task-agent auto-retry, which is a behaviour change outside this cleanup.
+        #[allow(unused_assignments)]
         let mut retry_info = (false, 0usize);
         let card_id_owned = card_id.clone();
         let error_msg = error_message.to_string();

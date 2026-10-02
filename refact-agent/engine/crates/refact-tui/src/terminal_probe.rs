@@ -1,3 +1,5 @@
+// `is_terminal()` is only called from the unix `default_colors` implementation.
+#[cfg(unix)]
 use std::io::IsTerminal;
 use std::time::Duration;
 
@@ -77,6 +79,9 @@ pub(crate) fn default_colors(_timeout: Duration) -> std::io::Result<Option<Defau
     Ok(None)
 }
 
+// Only the unix `default_colors` implementation calls this; the non-unix one returns
+// `Ok(None)` without probing.
+#[cfg_attr(not(unix), allow(dead_code))]
 fn should_probe_default_colors(stdout_is_tty: bool) -> bool {
     stdout_is_tty
 }

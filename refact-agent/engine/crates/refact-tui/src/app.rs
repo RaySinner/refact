@@ -6740,6 +6740,9 @@ new-chat = "ctrl-x"
         ignore = "Windows artifact runners crash when this test spawns cmd"
     )]
     fn editor_round_trip_appends_with_fake_editor_script() {
+        // On Windows the editor is a literal `cmd /C` string, so the temp dir is only
+        // read by the `#[cfg(not(windows))]` script-writing branch below.
+        #[cfg_attr(windows, allow(unused_variables))]
         let dir = tempfile::tempdir().unwrap();
         #[cfg(windows)]
         let editor = "cmd /C echo extra>>".to_string();

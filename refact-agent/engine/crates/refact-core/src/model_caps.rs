@@ -414,8 +414,6 @@ pub fn resolve_model_caps(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::provider_types::{ModelPricing, ModelPricingTier};
-    use serde_json::json;
 
     fn caps_with(entries: &[(&str, usize)]) -> HashMap<String, ModelCapabilities> {
         entries

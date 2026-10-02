@@ -63,7 +63,11 @@ impl ExecSpawnResult {
 
 struct PtyRuntimeProcess {
     child: Box<dyn portable_pty::Child + Send>,
+    // Only the `#[cfg(unix)]` PTY teardown path reads `process_id` (to signal the
+    // process group). `writer` is likewise only written on spawn, never read back here.
+    #[cfg_attr(not(unix), allow(dead_code))]
     process_id: Option<u32>,
+    #[cfg_attr(not(unix), allow(dead_code))]
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
     master: Option<Box<dyn MasterPty + Send>>,
 }
@@ -450,6 +454,10 @@ fn drain_reader_into_registry(
     }
 }
 
+// Wraps `drain_reader_into_registry` in `spawn_blocking`. Nothing calls this: the PTY pump
+// spawns a named thread directly instead (see `pump_pty_output`). Kept as the async-pump
+// counterpart, but nothing reaches it on any target.
+#[allow(dead_code)]
 fn pump_blocking_output(
     registry: ExecRegistry,
     process_id: crate::types::ExecProcessId,
@@ -927,6 +935,8 @@ impl ExecRegistry {
             return self.spawn_pty(request, sandbox_provider).await;
         }
 
+        // Only the Linux-only observation block below mutates it.
+        #[cfg_attr(not(target_os = "linux"), allow(unused_mut))]
         let mut command = shell_command(&request, sandbox_provider)?;
         #[cfg(target_os = "linux")]
         let observation_setup = match observation_setup {

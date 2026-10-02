@@ -9,11 +9,16 @@ use uuid::Uuid;
 use crate::app_state::AppState;
 use crate::global_context::GlobalContext;
 use crate::chat::trajectory_ops::{CompressOptions, TransformStats, compress_in_place};
+// Both of these are used only by the `#[cfg(test)]` helper
+// `transfer_goal_into_transition_messages` and its tests.
+#[cfg(test)]
 use crate::call_validation::ChatMessage;
 use crate::agentic::mode_transition::{
-    GoalTransferResult, ReconstructionRequest, reconstruct_context,
-    insert_goal_messages_before_plan, transfer_goal_ownership,
+    GoalTransferResult, ReconstructionRequest, insert_goal_messages_before_plan,
+    reconstruct_context,
 };
+#[cfg(test)]
+use crate::agentic::mode_transition::transfer_goal_ownership;
 use crate::chat::types::SessionState;
 use crate::tools::tool_handoff_to_mode::{persist_transition, transition_goal, transition_report};
 

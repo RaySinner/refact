@@ -1,5 +1,10 @@
+// PathBuf is only constructed by the Linux probe helper and the tests; on other
+// targets the whole Landlock path compiles out and these imports would be unused.
+#[cfg(any(target_os = "linux", test))]
 use std::path::PathBuf;
 
+// Only the Linux `probe` implementation shells out to the probe helpers.
+#[cfg(target_os = "linux")]
 use crate::probe::{run_with_timeout, PROBE_TIMEOUT};
 use crate::{Enforcement, ExecSandboxSpec, SandboxError, SandboxProvider};
 
@@ -166,6 +171,9 @@ fn apply_landlock(spec: &ExecSandboxSpec) -> Result<Enforcement, SandboxError> {
     }
 }
 
+// Every caller (`confine` and `apply_landlock`) is Linux-only, so on other targets this
+// has no call site. It still guards both the Linux confine and launcher paths there.
+#[cfg(target_os = "linux")]
 fn ensure_supported_spec(spec: &ExecSandboxSpec) -> Result<(), SandboxError> {
     if spec.allow_network {
         Ok(())

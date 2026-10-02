@@ -12,7 +12,10 @@ use tempfile::NamedTempFile;
 
 use crate::global_context::GlobalContext;
 use crate::integrations::integr_abstract::{IntegrationTrait, IntegrationCommon};
-use super::session_mcp::{McpClientHandler, McpRunningService, SessionMCP, add_log_entry};
+use super::session_mcp::{McpClientHandler, McpRunningService, add_log_entry};
+// `SessionMCP` is only named inside the `#[cfg(target_os = "linux")]` observation block.
+#[cfg(target_os = "linux")]
+use super::session_mcp::SessionMCP;
 use super::mcp_path_resolution;
 use super::integr_mcp_common::{CommonMCPSettings, MCPTransportInitializer, impl_mcp_integration_trait};
 

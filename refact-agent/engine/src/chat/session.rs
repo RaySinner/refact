@@ -508,15 +508,13 @@ processed yet. It is picked up once that response finishes.",
             suggested_action,
             is_retryable,
         );
-        if let Some(extra) = message.extra.as_object_mut() {
-            extra.insert(
-                "refusal".to_string(),
-                serde_json::json!({
-                    "source": "chat.session.start_stream",
-                    "cause": cause,
-                }),
-            );
-        }
+        message.extra.insert(
+            "refusal".to_string(),
+            serde_json::json!({
+                "source": "chat.session.start_stream",
+                "cause": cause,
+            }),
+        );
         message
     }
 }

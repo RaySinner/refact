@@ -1301,15 +1301,13 @@ runs as soon as that step finishes.",
             suggested_action,
             is_retryable,
         );
-        if let Some(extra) = message.extra.as_object_mut() {
-            extra.insert(
-                "queue_wait".to_string(),
-                serde_json::json!({
-                    "source": "chat.queue.process_command_queue",
-                    "cause": self.as_str(),
-                }),
-            );
-        }
+        message.extra.insert(
+            "queue_wait".to_string(),
+            serde_json::json!({
+                "source": "chat.queue.process_command_queue",
+                "cause": self.as_str(),
+            }),
+        );
         message
     }
 }

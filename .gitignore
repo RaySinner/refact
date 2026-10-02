@@ -320,11 +320,13 @@ dist
 .refact-tmp/
 
 # Plugin build outputs after monorepo migration
-# plugins/vscode/out/
+plugins/vscode/out/
 plugins/vscode/node_modules/
 plugins/vscode/chat_package*/
 plugins/vscode/*.vsix
-# plugins/vscode/assets/refact*
+# Compiled engine binaries staged into the extension for local packaging.
+# GitHub rejects pushes over 100 MB and these are rebuilt by tools/dev/build.
+plugins/vscode/assets/refact*
 !plugins/vscode/assets/refact-logo*
 plugins/intellij/build/
 plugins/intellij/out/
@@ -340,6 +342,15 @@ plugins/intellij/src/main/resources/webview/dist/
 /refact-*.zip
 
 .playwright-mcp/
+# Build/package log dumps captured while packaging the VSCode extension
+# (node_modules listings, vsix prepublish output). Regenerate, never commit.
+/plugins/vscode/nl.txt
+/plugins/vscode/npm_list.txt
+/plugins/vscode/pkg_full.txt
+/plugins/vscode/pkg_result.txt
+# Editor/backup scratch files
+.gitignore.bak
+*.bak
 issue-18.png
 ui-audit-*.html
 /ui-*.png

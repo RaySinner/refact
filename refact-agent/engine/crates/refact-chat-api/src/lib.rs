@@ -642,6 +642,18 @@ pub struct RuntimeState {
     pub compression_phase: Option<CompressionPhase>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub compression_reason: Option<CompressionReason>,
+    /// Read-only diagnostics for the automatic-compaction gate. `None` on
+    /// `compression_estimated_tokens` means the local estimate was unavailable,
+    /// never "a very large context". Only meaningful while a compression attempt
+    /// is in flight; terminal phases clear all three.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compression_estimated_tokens: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compression_effective_cap: Option<usize>,
+    /// Names the cap input that won the gate's `min()`: `model_window`,
+    /// `context_tokens_cap`, `auto_compression_cap`, or `model_window_fallback`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compression_cap_source: Option<String>,
     #[serde(default)]
     pub pause_reasons: Vec<PauseReason>,
     #[serde(default)]
@@ -670,6 +682,9 @@ impl Default for RuntimeState {
             is_compressing: false,
             compression_phase: None,
             compression_reason: None,
+            compression_estimated_tokens: None,
+            compression_effective_cap: None,
+            compression_cap_source: None,
             pause_reasons: Vec::new(),
             queued_items: Vec::new(),
             auto_approved_tool_ids: Vec::new(),
@@ -1809,6 +1824,40 @@ mod tests {
         assert_eq!(runtime.goal_tokens_used, 0);
         assert_eq!(runtime.goal_no_progress_turns, 0);
         assert!(!runtime.is_compressing);
+        assert_eq!(runtime.compression_phase, None);
+        assert_eq!(runtime.compression_reason, None);
+        // New gate diagnostics are additive: an old snapshot that predates them
+        // must still deserialize, with them absent rather than zeroed.
+        assert_eq!(runtime.compression_estimated_tokens, None);
+        assert_eq!(runtime.compression_effective_cap, None);
+        assert_eq!(runtime.compression_cap_source, None);
+        let json = serde_json::to_value(&runtime).unwrap();
+        assert!(json.get("compression_estimated_tokens").is_none());
+        assert!(json.get("compression_effective_cap").is_none());
+        assert!(json.get("compression_cap_source").is_none());
+    }
+
+    #[test]
+    fn test_runtime_state_compression_gate_diagnostics_roundtrip() {
+        let mut runtime = RuntimeState::default();
+        runtime.is_compressing = true;
+        runtime.compression_phase = Some(CompressionPhase::Checking);
+        runtime.compression_estimated_tokens = Some(181_670);
+        runtime.compression_effective_cap = Some(200_000);
+        runtime.compression_cap_source = Some("context_tokens_cap".to_string());
+
+        let json = serde_json::to_value(&runtime).unwrap();
+        assert_eq!(json["compression_estimated_tokens"], 181_670);
+        assert_eq!(json["compression_effective_cap"], 200_000);
+        assert_eq!(json["compression_cap_source"], "context_tokens_cap");
+
+        let roundtrip: RuntimeState = serde_json::from_value(json).unwrap();
+        assert_eq!(roundtrip.compression_estimated_tokens, Some(181_670));
+        assert_eq!(roundtrip.compression_effective_cap, Some(200_000));
+        assert_eq!(
+            roundtrip.compression_cap_source.as_deref(),
+            Some("context_tokens_cap")
+        );
     }
 
     fn delivery_with(messages: Vec<ChatMessage>) -> PendingDelivery {

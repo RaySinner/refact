@@ -117,6 +117,7 @@ fn status(session: &mut ChatSession, phase: CompressionPhase, reason: Option<Com
         session.active_compression_attempt = None;
         session.compression_attempt_started_at_ms = None;
         session.compression_abort_flag = None;
+        session.clear_compression_gate_diagnostics();
         session.queue_notify.notify_waiters();
     }
     session.refresh_goal_runtime_mirror();
@@ -261,6 +262,31 @@ fn at_auto_cap(used: usize, cap: usize) -> bool {
     cap > 0 && used >= cap
 }
 
+/// The gate's resolved cap and which input won it. Diagnostic only: the value is
+/// byte-identical to the inline `min()` this replaced, so triggering is unchanged.
+/// `model_window_fallback` means every positive candidate was absent and the cap
+/// fell back to `n_ctx` — including the degenerate all-zero case.
+pub fn resolve_effective_compression_cap(
+    n_ctx: usize,
+    context_tokens_cap: Option<usize>,
+    auto_compression_cap: Option<usize>,
+) -> (usize, &'static str) {
+    let candidate = |value: usize, source: &'static str| (value > 0).then_some((value, source));
+    [
+        candidate(n_ctx, "model_window"),
+        context_tokens_cap
+            .filter(|value| *value > 0)
+            .map(|value| (value, "context_tokens_cap")),
+        auto_compression_cap
+            .filter(|value| *value > 0)
+            .map(|value| (value, "auto_compression_cap")),
+    ]
+    .into_iter()
+    .flatten()
+    .min_by_key(|(value, _)| *value)
+    .unwrap_or((n_ctx, "model_window_fallback"))
+}
+
 /// A prefix can budget the next request only when both mandatory parts are present
 /// and the canonical tools are the array the wire adapters serialize.
 fn budget_prefix_is_usable(prefix: &refact_chat_api::FrozenRequestPrefix) -> bool {
@@ -350,7 +376,12 @@ struct ReconstructionMetrics {
 }
 
 impl ReconstructionMetrics {
-    fn to_json(self) -> serde_json::Value {
+    fn to_json(
+        self,
+        request_cap: usize,
+        auto_cap: usize,
+        auto_cap_source: &str,
+    ) -> serde_json::Value {
         let saved = self.tokens_before.saturating_sub(self.tokens_after);
         let reduction_percent = if self.tokens_before == 0 {
             0
@@ -364,6 +395,9 @@ impl ReconstructionMetrics {
             "tokens_after": self.tokens_after,
             "estimated_tokens_saved": saved,
             "reduction_percent": reduction_percent,
+            "request_cap": request_cap,
+            "auto_compression_cap": auto_cap,
+            "auto_compression_cap_source": auto_cap_source,
         })
     }
 }
@@ -663,6 +697,11 @@ pub async fn rebuild_session(
         }
     };
     let metrics = validate_output(&messages, &outcome.messages, request_cap, tokenizer)?;
+    let (auto_cap, auto_cap_source) = resolve_effective_compression_cap(
+        n_ctx,
+        thread.context_tokens_cap,
+        thread.auto_compression_cap,
+    );
     let report = make_reconstruction_report(
         outcome.messages,
         ReconstructionMetadata {
@@ -671,7 +710,7 @@ pub async fn rebuild_session(
             trigger: Some(request.trigger),
             from_mode: Some(thread.mode.clone()),
             to_mode: Some(thread.mode.clone()),
-            metrics: Some(metrics.to_json()),
+            metrics: Some(metrics.to_json(request_cap, auto_cap, auto_cap_source)),
         },
     )
     .map_err(|e| e.to_string());
@@ -815,7 +854,7 @@ pub async fn apply_context_rebuild_with_reason(
             return CompactionOutcome::NothingToCompact;
         };
         let tokenizer = model_tokenizer(gcx.clone(), &model).await;
-        let s = session.lock().await;
+        let mut s = session.lock().await;
         if !idle(&s)
             || s.last_rebuild_attempt_version == Some(s.trajectory_version)
             || serde_json::to_value(&s.thread).ok() != serde_json::to_value(thread).ok()
@@ -825,17 +864,16 @@ pub async fn apply_context_rebuild_with_reason(
         let Ok(view) = active_context(&s.messages) else {
             return CompactionOutcome::NothingToCompact;
         };
-        let cap = [
-            Some(n_ctx),
+        let (cap, cap_source) = resolve_effective_compression_cap(
+            n_ctx,
             thread.context_tokens_cap,
             thread.auto_compression_cap,
-        ]
-        .into_iter()
-        .flatten()
-        .filter(|v| *v > 0)
-        .min()
-        .unwrap_or(n_ctx);
+        );
         let used = estimated_tokens(&view.messages, tokenizer, !s.provider_usage_stale);
+        // usize::MAX means the local linearization failed. Report it as an
+        // unavailable estimate so the diagnostics never display it as a real
+        // (and absurdly large) context size, while the gate still compares it.
+        s.set_compression_gate_diagnostics((used != usize::MAX).then_some(used), cap, cap_source);
         if !at_auto_cap(used, cap) {
             return CompactionOutcome::NothingToCompact;
         }
@@ -899,6 +937,7 @@ pub async fn drain_pending(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use refact_chat_api::ChatEvent;
     fn fixture() -> (ChatSession, ThreadParams, u64, ChatMessage) {
         let mut s = ChatSession::new("transaction-test".into());
         s.add_message(ChatMessage::new(
@@ -1334,6 +1373,176 @@ mod tests {
         let s = session.lock().await;
         assert_eq!(serde_json::to_value(&s.messages).unwrap(), before);
         assert!(s.last_rebuild_attempt_version.is_none());
+    }
+
+    #[test]
+    fn cap_source_identifies_every_winning_input_including_the_fallback() {
+        // (n_ctx, context_tokens_cap, auto_compression_cap) -> (cap, source)
+        let table: [(usize, Option<usize>, Option<usize>, usize, &str); 8] = [
+            // the model window alone is a positive candidate, so it wins
+            (1_000_000, None, None, 1_000_000, "model_window"),
+            // a stale context_tokens_cap pins the cap far below the model window:
+            // this is the divergence the card exists to make visible
+            (1_000_000, Some(50_000), None, 50_000, "context_tokens_cap"),
+            // the auto cap wins when it is the smallest
+            (
+                1_000_000,
+                Some(900_000),
+                Some(720_000),
+                720_000,
+                "auto_compression_cap",
+            ),
+            // context_tokens_cap wins when it beats both others
+            (
+                1_000_000,
+                Some(600_000),
+                Some(720_000),
+                600_000,
+                "context_tokens_cap",
+            ),
+            // zero means "unset" and is skipped, not a zero cap
+            (1_000_000, Some(0), Some(0), 1_000_000, "model_window"),
+            // a zero context_tokens_cap does not mask a smaller auto cap
+            (
+                1_000_000,
+                Some(0),
+                Some(800_000),
+                800_000,
+                "auto_compression_cap",
+            ),
+            // only the auto cap is set
+            (1_000_000, None, Some(50), 50, "auto_compression_cap"),
+            // n_ctx itself is non-positive, so no candidate survives and the
+            // fallback is the honest answer
+            (0, None, None, 0, "model_window_fallback"),
+        ];
+        for (n_ctx, context_cap, auto_cap, expected_cap, expected_source) in table {
+            let (cap, source) = resolve_effective_compression_cap(n_ctx, context_cap, auto_cap);
+            assert_eq!(
+                cap, expected_cap,
+                "cap for n_ctx={n_ctx} {context_cap:?} {auto_cap:?}"
+            );
+            assert_eq!(
+                source, expected_source,
+                "source for n_ctx={n_ctx} {context_cap:?} {auto_cap:?}"
+            );
+        }
+
+        // A zero model window still lets a set cap win, so the fallback is only
+        // reported when genuinely nothing was available.
+        assert_eq!(
+            resolve_effective_compression_cap(0, Some(10), None),
+            (10, "context_tokens_cap")
+        );
+    }
+
+    #[test]
+    fn cap_resolution_preserves_the_original_min_semantics_exactly() {
+        // The pre-card inline expression, kept verbatim as the behavioural oracle.
+        let original = |n_ctx: usize, context_cap: Option<usize>, auto_cap: Option<usize>| {
+            [Some(n_ctx), context_cap, auto_cap]
+                .into_iter()
+                .flatten()
+                .filter(|v| *v > 0)
+                .min()
+                .unwrap_or(n_ctx)
+        };
+        for n_ctx in [0usize, 1, 4_096, 1_000_000, usize::MAX] {
+            for context_cap in [
+                None,
+                Some(0),
+                Some(1),
+                Some(50_000),
+                Some(1_000_000),
+                Some(usize::MAX),
+            ] {
+                for auto_cap in [None, Some(0), Some(720), Some(999_999), Some(usize::MAX)] {
+                    let expected = original(n_ctx, context_cap, auto_cap);
+                    let (cap, _) = resolve_effective_compression_cap(n_ctx, context_cap, auto_cap);
+                    assert_eq!(
+                        cap, expected,
+                        "cap changed for n_ctx={n_ctx} context={context_cap:?} auto={auto_cap:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn gate_diagnostics_are_published_cleared_and_reject_a_failed_estimate() {
+        let mut s = ChatSession::new("gate-diagnostics".into());
+
+        // Populated after a gate evaluation, and mirrored onto RuntimeState so the
+        // snapshot carries them.
+        s.set_compression_gate_diagnostics(Some(181_670), 200_000, "context_tokens_cap");
+        assert_eq!(s.compression_estimated_tokens, Some(181_670));
+        assert_eq!(s.compression_effective_cap, Some(200_000));
+        assert_eq!(
+            s.compression_cap_source.as_deref(),
+            Some("context_tokens_cap")
+        );
+        assert_eq!(s.runtime.compression_estimated_tokens, Some(181_670));
+        assert_eq!(s.runtime.compression_effective_cap, Some(200_000));
+        assert_eq!(
+            s.runtime.compression_cap_source.as_deref(),
+            Some("context_tokens_cap")
+        );
+        if let ChatEvent::Snapshot { runtime, .. } = s.snapshot() {
+            assert_eq!(runtime.compression_estimated_tokens, Some(181_670));
+            assert_eq!(runtime.compression_effective_cap, Some(200_000));
+            assert_eq!(
+                runtime.compression_cap_source.as_deref(),
+                Some("context_tokens_cap")
+            );
+        } else {
+            panic!("expected Snapshot");
+        }
+
+        // An unavailable estimate (usize::MAX from a failed linearization) must read
+        // as unavailable, never as a plausible huge context.
+        s.set_compression_gate_diagnostics(None, 200_000, "auto_compression_cap");
+        assert_eq!(s.compression_estimated_tokens, None);
+        assert_eq!(s.compression_effective_cap, Some(200_000));
+
+        // Cleared on a terminal compression phase, exactly like the other fields.
+        status(&mut s, CompressionPhase::Running, None);
+        assert!(s.is_compressing);
+        status(&mut s, CompressionPhase::Applied, None);
+        assert!(!s.is_compressing);
+        assert!(s.compression_estimated_tokens.is_none());
+        assert!(s.compression_effective_cap.is_none());
+        assert!(s.compression_cap_source.is_none());
+        assert!(s.runtime.compression_estimated_tokens.is_none());
+        assert!(s.runtime.compression_effective_cap.is_none());
+        assert!(s.runtime.compression_cap_source.is_none());
+    }
+
+    #[test]
+    fn reset_compaction_runtime_state_clears_gate_diagnostics() {
+        let mut s = ChatSession::new("gate-reset".into());
+        s.set_compression_gate_diagnostics(Some(50_000), 60_000, "auto_compression_cap");
+        s.reset_compaction_runtime_state();
+        assert!(s.compression_estimated_tokens.is_none());
+        assert!(s.compression_effective_cap.is_none());
+        assert!(s.compression_cap_source.is_none());
+        assert!(s.runtime.compression_estimated_tokens.is_none());
+        assert!(s.runtime.compression_effective_cap.is_none());
+        assert!(s.runtime.compression_cap_source.is_none());
+    }
+
+    #[test]
+    fn reconstruction_report_states_which_cap_the_rebuild_was_measured_against() {
+        let source = vec![ChatMessage::new("user".into(), "a".repeat(1000))];
+        let smaller = vec![ChatMessage::new("user".into(), "a".repeat(900))];
+        let metrics = validate_output(&source, &smaller, usize::MAX, None).unwrap();
+        let json = metrics.to_json(4_096, 720, "auto_compression_cap");
+        assert_eq!(json["request_cap"], 4_096);
+        assert_eq!(json["auto_compression_cap"], 720);
+        assert_eq!(json["auto_compression_cap_source"], "auto_compression_cap");
+        // The pre-existing metric fields are untouched.
+        assert_eq!(json["messages_before"], 1);
+        assert_eq!(json["messages_after"], 1);
+        assert!(json["tokens_before"].as_u64().unwrap() > json["tokens_after"].as_u64().unwrap());
     }
 
     #[test]

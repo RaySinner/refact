@@ -13,7 +13,9 @@
 //! resets and the call is served normally.
 
 use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
 use std::hash::Hasher;
+use std::sync::{LazyLock, RwLock};
 
 use crate::call_validation::{ChatContent, ChatMessage, ContextFile};
 
@@ -111,6 +113,145 @@ fn normalize_args_json(args_json: &str) -> String {
         }
         _ => trimmed.to_string(),
     }
+}
+
+/// Signature of a tool-specific identity extractor.
+///
+/// It receives the parsed arguments and returns the part of the identity that
+/// distinguishes "the same call" for that tool. Anything it deliberately ignores
+/// (e.g. `cat`'s line ranges) stops affecting the fingerprint.
+pub type IdentityExtractor = fn(&serde_json::Value) -> String;
+
+/// Per-tool identity overrides, keyed by canonical tool name.
+///
+/// `cat` is pre-registered here (it is a builtin) so no chat-layer code has to
+/// remember to install it. Locking is fallible-tolerant: a poisoned or contended
+/// lock degrades to "no override", never a panic.
+static IDENTITY_OVERRIDES: LazyLock<RwLock<HashMap<String, IdentityExtractor>>> =
+    LazyLock::new(|| {
+        let mut overrides: HashMap<String, IdentityExtractor> = HashMap::new();
+        overrides.insert(CAT_TOOL_NAME.to_string(), cat_identity_value);
+        RwLock::new(overrides)
+    });
+
+/// Register (or, with `None`, clear) an identity override for a tool.
+///
+/// Intended for builtin registration and tests, not for per-request wiring: the
+/// table is process-global, so calling it on every tool call would be wasteful
+/// and would let a request change global identity semantics.
+pub fn set_identity_override(canonical_tool_name: &str, extract: Option<IdentityExtractor>) {
+    if let Ok(mut overrides) = IDENTITY_OVERRIDES.write() {
+        match extract {
+            Some(extract) => {
+                overrides.insert(canonical_tool_name.to_string(), extract);
+            }
+            None => {
+                overrides.remove(canonical_tool_name);
+            }
+        }
+    }
+}
+
+/// Identity key for a tool call, honouring a registered override.
+///
+/// Falls back to [`call_identity_key`] (canonical tool name + normalized
+/// arguments) when no override is registered or the arguments do not parse.
+pub fn identity_key_for(canonical_tool_name: &str, args_json: &str) -> String {
+    let override_fn = IDENTITY_OVERRIDES
+        .read()
+        .ok()
+        .and_then(|overrides| overrides.get(canonical_tool_name).copied());
+    if let Some(extract) = override_fn {
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(args_json.trim()) {
+            return extract(&value);
+        }
+    }
+    call_identity_key(canonical_tool_name, args_json)
+}
+
+/// Canonical name of the file-reading tool, used to key its identity override.
+pub const CAT_TOOL_NAME: &str = "cat";
+
+/// Identity fingerprint for a `cat` call: the requested paths with any
+/// `:START` / `:START-END` suffix stripped, each normalized through
+/// `normalize_file_name`, sorted and de-duplicated.
+///
+/// Reading a file line-by-line is the loop this guard exists to catch, so
+/// `cat("a.rs")` and `cat("a.rs:10-20")` MUST share a key. Path order inside one
+/// call is ignored (models list paths in any order) and duplicate entries
+/// collapse, so `cat("a.rs:1-20", "a.rs:30-40")` also equals `cat("a.rs")`.
+///
+/// Every argument other than `paths` is folded in with the generic canonical JSON
+/// normalization, so `cat(paths="a.rs", symbols="foo")` and `symbols="bar"` stay
+/// distinct calls. Malformed JSON, a missing `paths`, or a non-string `paths`
+/// degrade to the raw argument string instead of panicking.
+pub fn cat_identity(args_json: &str) -> String {
+    let trimmed = args_json.trim();
+    let Ok(serde_json::Value::Object(fields)) = serde_json::from_str::<serde_json::Value>(trimmed)
+    else {
+        return format!("{CAT_TOOL_NAME}\u{1}{trimmed}");
+    };
+
+    let paths_key = match fields.get("paths") {
+        Some(serde_json::Value::String(raw_paths)) => canonical_cat_paths(raw_paths),
+        Some(other) => serde_json::to_string(other).unwrap_or_else(|_| "\u{1}unrenderable".into()),
+        None => String::new(),
+    };
+
+    let mut other_args: Vec<(&String, &serde_json::Value)> = fields
+        .iter()
+        .filter(|(key, _)| key.as_str() != "paths")
+        .collect();
+    other_args.sort_by(|left, right| left.0.cmp(right.0));
+    let rendered: Vec<String> = other_args
+        .into_iter()
+        .map(|(key, value)| {
+            let key_json = serde_json::to_string(key).unwrap_or_else(|_| "\"\"".to_string());
+            format!("{key_json}:{}", canonical_json(value))
+        })
+        .collect();
+
+    format!(
+        "{CAT_TOOL_NAME}\u{1}paths={paths_key}\u{1}args={{{}}}",
+        rendered.join(",")
+    )
+}
+
+/// `cat` identity extractor in the shape [`IDENTITY_OVERRIDES`] stores.
+///
+/// Round-trips through JSON so the registered function and the directly callable
+/// [`cat_identity`] share one implementation instead of drifting apart.
+fn cat_identity_value(value: &serde_json::Value) -> String {
+    let rendered = serde_json::to_string(value).unwrap_or_default();
+    cat_identity(&rendered)
+}
+
+/// Split, range-strip, normalize, sort and de-duplicate a comma-separated `paths`.
+///
+/// The range suffix is parsed with the very same `try_parse_line_range` that
+/// `tool_cat` itself uses (extracted to module scope for this purpose), so the
+/// guard can never disagree with the tool about what `:1-20` means. A path whose
+/// suffix is not a valid range (`C:/x/a.rs`) keeps it, exactly as the tool does.
+fn canonical_cat_paths(raw_paths: &str) -> String {
+    let mut normalized: Vec<String> = raw_paths
+        .split(',')
+        .map(|entry| {
+            let entry = entry.trim();
+            let stripped = match entry.rfind(':') {
+                Some(colon) => match crate::tools::tool_cat::try_parse_line_range(&entry[colon + 1..])
+                {
+                    Ok(Some(_)) => entry[..colon].trim().to_string(),
+                    // Not a range, or an invalid one: keep the entry verbatim.
+                    _ => entry.to_string(),
+                },
+                None => entry.to_string(),
+            };
+            refact_core::chat_types::normalize_file_name(stripped)
+        })
+        .collect();
+    normalized.sort();
+    normalized.dedup();
+    normalized.join(",")
 }
 
 /// Deterministic JSON rendering with recursively sorted object keys.
@@ -384,5 +525,115 @@ mod tests {
         let key = call_identity_key("cat", "not json at all");
         assert!(key.starts_with("cat"));
         assert!(key.contains("not json at all"));
+    }
+
+    #[test]
+    fn cat_identity_ignores_line_ranges() {
+        // The whole point of the override: reading a file line-by-line is the loop
+        // the guard must see, so every range spelling collapses to the whole-file read.
+        let whole = cat_identity(r#"{"paths":"a.rs"}"#);
+        assert_eq!(whole, cat_identity(r#"{"paths":"a.rs:1"}"#));
+        assert_eq!(whole, cat_identity(r#"{"paths":"a.rs:1-20"}"#));
+        assert_eq!(whole, cat_identity(r#"{"paths":"a.rs:30-40"}"#));
+        assert_eq!(whole, cat_identity(r#"{"paths":" a.rs : 5 - 7 "}"#));
+        assert_ne!(whole, cat_identity(r#"{"paths":"b.rs"}"#));
+    }
+
+    #[test]
+    fn cat_identity_strips_ranges_from_windows_paths() {
+        let whole = cat_identity(r#"{"paths":"C:/x/a.rs"}"#);
+        assert_eq!(whole, cat_identity(r#"{"paths":"C:/x/a.rs:5"}"#));
+        assert_eq!(whole, cat_identity(r#"{"paths":"C:/x/a.rs:5-9"}"#));
+        // Backslashes normalize to forward slashes, so both spellings agree.
+        assert_eq!(whole, cat_identity(r#"{"paths":"C:\\x\\a.rs"}"#));
+        // An invalid range (`start > end`) is NOT a range for the tool either, so
+        // the suffix stays part of the path and the two differ.
+        assert_ne!(whole, cat_identity(r#"{"paths":"C:/x/a.rs:9-5"}"#));
+    }
+
+    #[test]
+    fn cat_identity_is_order_insensitive_and_shares_file_components() {
+        let left = cat_identity(r#"{"paths":"a.rs:1-20,g.rs"}"#);
+        let right = cat_identity(r#"{"paths":"g.rs,a.rs:30-40"}"#);
+        assert_eq!(left, right);
+        assert!(left.contains("a.rs") && left.contains("g.rs"), "{left}");
+        // Duplicate entries collapse rather than growing the key.
+        assert_eq!(left, cat_identity(r#"{"paths":"a.rs:1-20,g.rs,a.rs:7"}"#));
+        assert_ne!(left, cat_identity(r#"{"paths":"a.rs:1-20"}"#));
+    }
+
+    #[test]
+    fn cat_identity_keeps_other_arguments_significant() {
+        let base = cat_identity(r#"{"paths":"a.rs"}"#);
+        assert_ne!(base, cat_identity(r#"{"paths":"a.rs","symbols":"foo"}"#));
+        assert_ne!(
+            cat_identity(r#"{"paths":"a.rs","symbols":"foo"}"#),
+            cat_identity(r#"{"paths":"a.rs","symbols":"bar"}"#)
+        );
+        // Key order inside the arguments object is still normalized away.
+        assert_eq!(
+            cat_identity(r#"{"paths":"a.rs:3-4","symbols":"foo"}"#),
+            cat_identity(r#"{"symbols":"foo","paths":"a.rs"}"#)
+        );
+    }
+
+    #[test]
+    fn cat_identity_does_not_panic_on_malformed_input() {
+        for bad in [
+            "not json at all",
+            "{}",
+            r#"{"paths":123}"#,
+            r#"{"paths":null}"#,
+            r#"{"paths":""}"#,
+            r#"{"paths":"a.rs:","other":"x"}"#,
+            r#"{"paths":"::"}"#,
+            r#"{"paths":"a.rs:-"}"#,
+        ] {
+            let key = cat_identity(bad);
+            assert!(key.starts_with(CAT_TOOL_NAME), "{bad} => {key}");
+        }
+        // Missing `paths` still distinguishes tools/args rather than collapsing.
+        assert_eq!(cat_identity("{}"), cat_identity("{}"));
+    }
+
+    #[test]
+    fn identity_key_for_uses_the_registered_override_only_for_matching_tools() {
+        assert_eq!(
+            identity_key_for("cat", r#"{"paths":"a.rs:10-20"}"#),
+            cat_identity(r#"{"paths":"a.rs:10-20"}"#)
+        );
+        assert_ne!(
+            identity_key_for("cat", r#"{"paths":"a.rs:10-20"}"#),
+            call_identity_key("cat", r#"{"paths":"a.rs:10-20"}"#)
+        );
+        // An unregistered tool keeps the default fingerprint.
+        let unregistered = identity_key_for("process_read", r#"{"b":1,"a":2}"#);
+        assert_eq!(unregistered, call_identity_key("process_read", r#"{"b":1,"a":2}"#));
+        assert_eq!(unregistered, call_identity_key("process_read", r#"{"a":2,"b":1}"#));
+        // Malformed args fall back to the default instead of panicking.
+        assert_eq!(
+            identity_key_for("cat", "not json at all"),
+            call_identity_key("cat", "not json at all")
+        );
+    }
+
+    #[test]
+    fn set_identity_override_registers_and_clears() {
+        // serial_test is not used here: the override table is process-global, so
+        // restore it before the assertion rather than relying on test ordering.
+        fn extract_only_path(value: &serde_json::Value) -> String {
+            format!("probe\u{1}{}", value.get("p").and_then(|v| v.as_str()).unwrap_or(""))
+        }
+        set_identity_override("probe_tool", Some(extract_only_path));
+        assert_eq!(
+            identity_key_for("probe_tool", r#"{"p":"x","junk":"y"}"#),
+            "probe\u{1}x"
+        );
+
+        set_identity_override("probe_tool", None);
+        assert_eq!(
+            identity_key_for("probe_tool", r#"{"p":"x","junk":"y"}"#),
+            call_identity_key("probe_tool", r#"{"p":"x","junk":"y"}"#)
+        );
     }
 }

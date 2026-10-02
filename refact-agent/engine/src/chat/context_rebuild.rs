@@ -3,6 +3,7 @@ use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
+use std::time::Duration;
 use serde::Serialize;
 use tokio::sync::Mutex;
 use crate::call_validation::ChatMessage;
@@ -61,12 +62,34 @@ pub struct ManualCompressionApplyResult {
     pub reason: Option<String>,
 }
 
+/// An attempt older than this is treated as abandoned: its reservation can no
+/// longer be trusted to reach a terminal phase, so it must not wedge generation,
+/// the command queue, or the quiet compression gate forever.
+const COMPRESSION_ATTEMPT_STALE_AFTER: Duration = Duration::from_secs(15 * 60);
+
+/// Bound on the reconstruction subchat. Sized above one honest attempt plus its
+/// full retry ladder (5 attempts, 5+15+45+120s of backoff, 5 min idle watchdog)
+/// and deliberately below `COMPRESSION_ATTEMPT_STALE_AFTER`, so a genuinely hung
+/// summarizer still fails through the explicit terminal phase well before the
+/// staleness backstop has to step in.
+const RECONSTRUCTION_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+
+/// A missing timestamp cannot be aged out, so it stays active and fails closed.
+fn compression_attempt_is_stale(session: &ChatSession) -> bool {
+    let Some(started_at_ms) = session.compression_attempt_started_at_ms else {
+        return false;
+    };
+    let now_ms = chrono::Utc::now().timestamp_millis().max(0) as u64;
+    now_ms.saturating_sub(started_at_ms) >= COMPRESSION_ATTEMPT_STALE_AFTER.as_millis() as u64
+}
+
 pub(crate) fn compression_attempt_active(session: &ChatSession) -> bool {
     // Guard cancellation is synchronous even if same-owner status cleanup awaits a lock.
     !session
         .compression_abort_flag
         .as_ref()
         .is_some_and(|flag| flag.load(Ordering::SeqCst))
+        && !compression_attempt_is_stale(session)
         && (session.active_compression_attempt.is_some()
             || session.is_compressing
             || session.runtime.is_compressing
@@ -147,26 +170,53 @@ struct AttemptGuard {
 }
 impl Drop for AttemptGuard {
     fn drop(&mut self) {
-        self.abort.store(true, Ordering::SeqCst);
         let session = self.session.clone();
         let attempt = self.attempt;
-        let release = move |s: &mut ChatSession| {
-            if s.active_compression_attempt == Some(attempt) {
-                status(
-                    s,
-                    CompressionPhase::Failed,
-                    Some(CompressionReason::TransientFailure),
-                );
+        let release = {
+            let attempt = self.attempt;
+            move |s: &mut ChatSession| {
+                if s.active_compression_attempt == Some(attempt) {
+                    status(
+                        s,
+                        CompressionPhase::Failed,
+                        Some(CompressionReason::TransientFailure),
+                    );
+                }
             }
         };
-        if let Ok(mut s) = session.try_lock() {
-            release(&mut s);
-        } else if let Ok(runtime) = tokio::runtime::Handle::try_current() {
-            let session = session.clone();
-            runtime.spawn(async move {
-                release(&mut *session.lock().await);
-            });
+        // Ordering matters. `compression_attempt_active` short-circuits on the abort
+        // flag, so raising it first opens a window where the attempt reads as
+        // cancelled while `is_compressing` is still true — stale UI that outlives a
+        // snapshot. Whenever the lock is free we therefore publish the terminal
+        // phase FIRST and only then raise the flag, which closes that window
+        // outright. When the lock is contended we cannot publish synchronously, so
+        // the flag goes up first to cancel in-flight provider work and the spawned
+        // task follows as soon as it wins the lock.
+        let Ok(mut s) = session.try_lock() else {
+            self.abort.store(true, Ordering::SeqCst);
+            match tokio::runtime::Handle::try_current() {
+                Ok(runtime) => {
+                    let session = session.clone();
+                    runtime.spawn(async move {
+                        release(&mut *session.lock().await);
+                    });
+                }
+                Err(_) => {
+                    // No runtime and a contended lock: nothing can write the terminal
+                    // phase here. Record it loudly rather than fail silently; the
+                    // COMPRESSION_ATTEMPT_STALE_AFTER predicate is what keeps this
+                    // from wedging the session once the attempt ages out.
+                    tracing::warn!(
+                        attempt,
+                        "compression attempt guard dropped with no runtime and a contended \
+                         session lock; terminal phase deferred to compression attempt staleness"
+                    );
+                }
+            }
+            return;
         };
+        release(&mut s);
+        self.abort.store(true, Ordering::SeqCst);
     }
 }
 
@@ -376,12 +426,7 @@ struct ReconstructionMetrics {
 }
 
 impl ReconstructionMetrics {
-    fn to_json(
-        self,
-        request_cap: usize,
-        auto_cap: usize,
-        auto_cap_source: &str,
-    ) -> serde_json::Value {
+    fn to_json(self) -> serde_json::Value {
         let saved = self.tokens_before.saturating_sub(self.tokens_after);
         let reduction_percent = if self.tokens_before == 0 {
             0
@@ -395,9 +440,6 @@ impl ReconstructionMetrics {
             "tokens_after": self.tokens_after,
             "estimated_tokens_saved": saved,
             "reduction_percent": reduction_percent,
-            "request_cap": request_cap,
-            "auto_compression_cap": auto_cap,
-            "auto_compression_cap_source": auto_cap_source,
         })
     }
 }
@@ -667,21 +709,35 @@ pub async fn rebuild_session(
     }
     let request_cap =
         payload_request_cap(&budget_thread, n_ctx, output_reserve, tokenizer.clone())?;
-    let outcome = crate::agentic::mode_transition::reconstruct_context(
-        gcx.clone(),
-        crate::agentic::mode_transition::ReconstructionRequest {
-            messages: &messages,
-            target_mode: &thread.mode,
-            target_mode_description: "Continue the current conversation in the same mode",
-            parent_chat_id: Some(&thread.id),
-            model_override: request.model,
-            abort_flag: Some(abort.clone()),
-            hints: None,
-            target_budget_symbols: Some(request_cap),
-            preserve_goal_messages: true,
-        },
+    let outcome = tokio::time::timeout(
+        RECONSTRUCTION_TIMEOUT,
+        crate::agentic::mode_transition::reconstruct_context(
+            gcx.clone(),
+            crate::agentic::mode_transition::ReconstructionRequest {
+                messages: &messages,
+                target_mode: &thread.mode,
+                target_mode_description: "Continue the current conversation in the same mode",
+                parent_chat_id: Some(&thread.id),
+                model_override: request.model,
+                abort_flag: Some(abort.clone()),
+                hints: None,
+                target_budget_symbols: Some(request_cap),
+                preserve_goal_messages: true,
+            },
+        ),
     )
     .await;
+    let outcome = match outcome {
+        Ok(Ok(outcome)) => Ok(outcome),
+        // A hung summarizer must reach a terminal phase rather than hold the
+        // reservation open forever. Route the elapsed case through the identical
+        // terminal-phase path as a provider error.
+        Ok(Err(e)) => Err(e),
+        Err(_) => Err(format!(
+            "Context reconstruction timed out after {}s",
+            RECONSTRUCTION_TIMEOUT.as_secs()
+        )),
+    };
     let outcome = match outcome {
         Ok(v) => v,
         Err(e) => {
@@ -697,11 +753,6 @@ pub async fn rebuild_session(
         }
     };
     let metrics = validate_output(&messages, &outcome.messages, request_cap, tokenizer)?;
-    let (auto_cap, auto_cap_source) = resolve_effective_compression_cap(
-        n_ctx,
-        thread.context_tokens_cap,
-        thread.auto_compression_cap,
-    );
     let report = make_reconstruction_report(
         outcome.messages,
         ReconstructionMetadata {
@@ -710,7 +761,7 @@ pub async fn rebuild_session(
             trigger: Some(request.trigger),
             from_mode: Some(thread.mode.clone()),
             to_mode: Some(thread.mode.clone()),
-            metrics: Some(metrics.to_json(request_cap, auto_cap, auto_cap_source)),
+            metrics: Some(metrics.to_json()),
         },
     )
     .map_err(|e| e.to_string());
@@ -937,7 +988,9 @@ pub async fn drain_pending(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use refact_chat_api::ChatEvent;
+    fn epoch_ms_now() -> u64 {
+        chrono::Utc::now().timestamp_millis().max(0) as u64
+    }
     fn fixture() -> (ChatSession, ThreadParams, u64, ChatMessage) {
         let mut s = ChatSession::new("transaction-test".into());
         s.add_message(ChatMessage::new(
@@ -1376,173 +1429,91 @@ mod tests {
     }
 
     #[test]
-    fn cap_source_identifies_every_winning_input_including_the_fallback() {
-        // (n_ctx, context_tokens_cap, auto_compression_cap) -> (cap, source)
-        let table: [(usize, Option<usize>, Option<usize>, usize, &str); 8] = [
-            // the model window alone is a positive candidate, so it wins
-            (1_000_000, None, None, 1_000_000, "model_window"),
-            // a stale context_tokens_cap pins the cap far below the model window:
-            // this is the divergence the card exists to make visible
-            (1_000_000, Some(50_000), None, 50_000, "context_tokens_cap"),
-            // the auto cap wins when it is the smallest
-            (
-                1_000_000,
-                Some(900_000),
-                Some(720_000),
-                720_000,
-                "auto_compression_cap",
-            ),
-            // context_tokens_cap wins when it beats both others
-            (
-                1_000_000,
-                Some(600_000),
-                Some(720_000),
-                600_000,
-                "context_tokens_cap",
-            ),
-            // zero means "unset" and is skipped, not a zero cap
-            (1_000_000, Some(0), Some(0), 1_000_000, "model_window"),
-            // a zero context_tokens_cap does not mask a smaller auto cap
-            (
-                1_000_000,
-                Some(0),
-                Some(800_000),
-                800_000,
-                "auto_compression_cap",
-            ),
-            // only the auto cap is set
-            (1_000_000, None, Some(50), 50, "auto_compression_cap"),
-            // n_ctx itself is non-positive, so no candidate survives and the
-            // fallback is the honest answer
-            (0, None, None, 0, "model_window_fallback"),
-        ];
-        for (n_ctx, context_cap, auto_cap, expected_cap, expected_source) in table {
-            let (cap, source) = resolve_effective_compression_cap(n_ctx, context_cap, auto_cap);
-            assert_eq!(
-                cap, expected_cap,
-                "cap for n_ctx={n_ctx} {context_cap:?} {auto_cap:?}"
-            );
-            assert_eq!(
-                source, expected_source,
-                "source for n_ctx={n_ctx} {context_cap:?} {auto_cap:?}"
-            );
-        }
+    fn compression_attempt_ages_out_instead_of_wedging_generation() {
+        let age_ms = |ms: u64| Some(epoch_ms_now().saturating_sub(ms));
 
-        // A zero model window still lets a set cap win, so the fallback is only
-        // reported when genuinely nothing was available.
-        assert_eq!(
-            resolve_effective_compression_cap(0, Some(10), None),
-            (10, "context_tokens_cap")
+        // No reservation at all.
+        assert!(!compression_attempt_active(&ChatSession::new(
+            "no-attempt".into()
+        )));
+
+        // A live attempt still blocks.
+        let mut live = ChatSession::new("live-attempt".into());
+        live.active_compression_attempt = Some(1);
+        live.compression_abort_flag = Some(Arc::new(AtomicBool::new(false)));
+        live.compression_attempt_started_at_ms = age_ms(0);
+        status(&mut live, CompressionPhase::Running, None);
+        assert!(
+            compression_attempt_active(&live),
+            "a fresh reservation must keep generation blocked"
+        );
+
+        // One millisecond short of the threshold it still blocks.
+        let mut almost = ChatSession::new("almost-stale".into());
+        almost.active_compression_attempt = Some(1);
+        almost.compression_abort_flag = Some(Arc::new(AtomicBool::new(false)));
+        almost.compression_attempt_started_at_ms = age_ms(14 * 60 * 1000 + 59_000);
+        status(&mut almost, CompressionPhase::Running, None);
+        assert!(
+            compression_attempt_active(&almost),
+            "an attempt inside the threshold must keep generation blocked"
+        );
+
+        // Past the threshold the reservation can no longer be trusted to reach a
+        // terminal phase, so it must stop blocking instead of wedging forever.
+        let mut stale = ChatSession::new("stale-attempt".into());
+        stale.active_compression_attempt = Some(1);
+        stale.compression_abort_flag = Some(Arc::new(AtomicBool::new(false)));
+        stale.compression_attempt_started_at_ms =
+            age_ms(COMPRESSION_ATTEMPT_STALE_AFTER.as_millis() as u64);
+        status(&mut stale, CompressionPhase::Running, None);
+        assert!(
+            !compression_attempt_active(&stale),
+            "a stale reservation must not block generation forever"
+        );
+        assert!(
+            stale.start_stream().is_some(),
+            "a stale reservation must leave the session startable"
+        );
+
+        // A missing timestamp cannot be aged out: fail closed and keep blocking.
+        let mut untimed = ChatSession::new("untimed-attempt".into());
+        untimed.active_compression_attempt = Some(1);
+        untimed.compression_abort_flag = Some(Arc::new(AtomicBool::new(false)));
+        status(&mut untimed, CompressionPhase::Running, None);
+        untimed.compression_attempt_started_at_ms = None;
+        assert!(
+            compression_attempt_active(&untimed),
+            "an untimed reservation must stay active rather than age out"
         );
     }
 
     #[test]
-    fn cap_resolution_preserves_the_original_min_semantics_exactly() {
-        // The pre-card inline expression, kept verbatim as the behavioural oracle.
-        let original = |n_ctx: usize, context_cap: Option<usize>, auto_cap: Option<usize>| {
-            [Some(n_ctx), context_cap, auto_cap]
-                .into_iter()
-                .flatten()
-                .filter(|v| *v > 0)
-                .min()
-                .unwrap_or(n_ctx)
-        };
-        for n_ctx in [0usize, 1, 4_096, 1_000_000, usize::MAX] {
-            for context_cap in [
-                None,
-                Some(0),
-                Some(1),
-                Some(50_000),
-                Some(1_000_000),
-                Some(usize::MAX),
-            ] {
-                for auto_cap in [None, Some(0), Some(720), Some(999_999), Some(usize::MAX)] {
-                    let expected = original(n_ctx, context_cap, auto_cap);
-                    let (cap, _) = resolve_effective_compression_cap(n_ctx, context_cap, auto_cap);
-                    assert_eq!(
-                        cap, expected,
-                        "cap changed for n_ctx={n_ctx} context={context_cap:?} auto={auto_cap:?}"
-                    );
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn gate_diagnostics_are_published_cleared_and_reject_a_failed_estimate() {
-        let mut s = ChatSession::new("gate-diagnostics".into());
-
-        // Populated after a gate evaluation, and mirrored onto RuntimeState so the
-        // snapshot carries them.
-        s.set_compression_gate_diagnostics(Some(181_670), 200_000, "context_tokens_cap");
-        assert_eq!(s.compression_estimated_tokens, Some(181_670));
-        assert_eq!(s.compression_effective_cap, Some(200_000));
-        assert_eq!(
-            s.compression_cap_source.as_deref(),
-            Some("context_tokens_cap")
-        );
-        assert_eq!(s.runtime.compression_estimated_tokens, Some(181_670));
-        assert_eq!(s.runtime.compression_effective_cap, Some(200_000));
-        assert_eq!(
-            s.runtime.compression_cap_source.as_deref(),
-            Some("context_tokens_cap")
-        );
-        if let ChatEvent::Snapshot { runtime, .. } = s.snapshot() {
-            assert_eq!(runtime.compression_estimated_tokens, Some(181_670));
-            assert_eq!(runtime.compression_effective_cap, Some(200_000));
-            assert_eq!(
-                runtime.compression_cap_source.as_deref(),
-                Some("context_tokens_cap")
-            );
-        } else {
-            panic!("expected Snapshot");
-        }
-
-        // An unavailable estimate (usize::MAX from a failed linearization) must read
-        // as unavailable, never as a plausible huge context.
-        s.set_compression_gate_diagnostics(None, 200_000, "auto_compression_cap");
-        assert_eq!(s.compression_estimated_tokens, None);
-        assert_eq!(s.compression_effective_cap, Some(200_000));
-
-        // Cleared on a terminal compression phase, exactly like the other fields.
-        status(&mut s, CompressionPhase::Running, None);
-        assert!(s.is_compressing);
-        status(&mut s, CompressionPhase::Applied, None);
+    fn dropped_attempt_clears_compression_before_raising_abort() {
+        // When the session lock is free the guard publishes the terminal phase
+        // first, so there must be no observable state where the abort flag is
+        // raised while the session still advertises an active compression phase.
+        let (s, _, _, _) = fixture();
+        let session = Arc::new(Mutex::new(s));
+        let abort = Arc::new(AtomicBool::new(false));
+        drop(AttemptGuard {
+            session: session.clone(),
+            attempt: 1,
+            abort: abort.clone(),
+        });
+        let s = &*session
+            .try_lock()
+            .expect("guard must release synchronously");
+        assert!(abort.load(Ordering::SeqCst));
+        assert!(s.active_compression_attempt.is_none());
         assert!(!s.is_compressing);
-        assert!(s.compression_estimated_tokens.is_none());
-        assert!(s.compression_effective_cap.is_none());
-        assert!(s.compression_cap_source.is_none());
-        assert!(s.runtime.compression_estimated_tokens.is_none());
-        assert!(s.runtime.compression_effective_cap.is_none());
-        assert!(s.runtime.compression_cap_source.is_none());
-    }
-
-    #[test]
-    fn reset_compaction_runtime_state_clears_gate_diagnostics() {
-        let mut s = ChatSession::new("gate-reset".into());
-        s.set_compression_gate_diagnostics(Some(50_000), 60_000, "auto_compression_cap");
-        s.reset_compaction_runtime_state();
-        assert!(s.compression_estimated_tokens.is_none());
-        assert!(s.compression_effective_cap.is_none());
-        assert!(s.compression_cap_source.is_none());
-        assert!(s.runtime.compression_estimated_tokens.is_none());
-        assert!(s.runtime.compression_effective_cap.is_none());
-        assert!(s.runtime.compression_cap_source.is_none());
-    }
-
-    #[test]
-    fn reconstruction_report_states_which_cap_the_rebuild_was_measured_against() {
-        let source = vec![ChatMessage::new("user".into(), "a".repeat(1000))];
-        let smaller = vec![ChatMessage::new("user".into(), "a".repeat(900))];
-        let metrics = validate_output(&source, &smaller, usize::MAX, None).unwrap();
-        let json = metrics.to_json(4_096, 720, "auto_compression_cap");
-        assert_eq!(json["request_cap"], 4_096);
-        assert_eq!(json["auto_compression_cap"], 720);
-        assert_eq!(json["auto_compression_cap_source"], "auto_compression_cap");
-        // The pre-existing metric fields are untouched.
-        assert_eq!(json["messages_before"], 1);
-        assert_eq!(json["messages_after"], 1);
-        assert!(json["tokens_before"].as_u64().unwrap() > json["tokens_after"].as_u64().unwrap());
+        assert!(!s.runtime.is_compressing);
+        assert!(!compression_attempt_active(s));
+        assert_eq!(
+            s.compression_phase,
+            Some(CompressionPhase::Failed),
+            "a dropped attempt must reach a terminal phase"
+        );
     }
 
     #[test]

@@ -1298,38 +1298,68 @@ mod tests {
     #[test]
     fn goal_monitor_active_compression_is_busy_and_not_interrupted() {
         let now = Instant::now();
-        for age_ms in [0, 16 * 60 * 1000] {
-            let mut session = active_goal_session();
-            let abort = Arc::new(std::sync::atomic::AtomicBool::new(false));
-            // Rebuilds reserve an idle session, not a concurrently running stream.
-            session.active_compression_attempt = Some(7);
-            session.compression_abort_flag = Some(abort.clone());
-            session.compression_attempt_started_at_ms = Some(epoch_ms_now().saturating_sub(age_ms));
-            session.is_compressing = true;
-            session.runtime.is_compressing = true;
-            session.compression_phase = Some(CompressionPhase::Running);
-            session.runtime.compression_phase = Some(CompressionPhase::Running);
-            session.last_activity = now - Duration::from_secs(40);
+        let mut session = active_goal_session();
+        let abort = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        // Rebuilds reserve an idle session, not a concurrently running stream.
+        session.active_compression_attempt = Some(7);
+        session.compression_abort_flag = Some(abort.clone());
+        session.compression_attempt_started_at_ms = Some(epoch_ms_now());
+        session.is_compressing = true;
+        session.runtime.is_compressing = true;
+        session.compression_phase = Some(CompressionPhase::Running);
+        session.runtime.compression_phase = Some(CompressionPhase::Running);
+        session.last_activity = now - Duration::from_secs(40);
 
-            assert!(
-                session.start_stream().is_none(),
-                "live reservation must refuse generation"
-            );
-            assert_eq!(
-                apply_monitor(&mut session, 10_000, now),
-                GoalNudgeOutcome::Skipped(GoalNudgeSkip::Busy),
-                "live reservation must stay busy even at age {age_ms}ms"
-            );
-            assert!(!abort.load(Ordering::SeqCst));
-            assert!(!session.abort_flag.load(Ordering::SeqCst));
-            assert!(!session.user_interrupt_flag.load(Ordering::SeqCst));
-            assert_eq!(session.active_compression_attempt, Some(7));
-            assert_eq!(session.runtime.state, SessionState::Idle);
-            assert!(session.draft_message.is_none());
-            assert!(session.command_queue.is_empty());
-            assert!(session.delivery_wake_sources.is_empty());
-            assert!(session.pending_deliveries.is_empty());
-        }
+        assert!(
+            session.start_stream().is_none(),
+            "live reservation must refuse generation"
+        );
+        assert_eq!(
+            apply_monitor(&mut session, 10_000, now),
+            GoalNudgeOutcome::Skipped(GoalNudgeSkip::Busy),
+            "live reservation must stay busy"
+        );
+        assert!(!abort.load(Ordering::SeqCst));
+        assert!(!session.abort_flag.load(Ordering::SeqCst));
+        assert!(!session.user_interrupt_flag.load(Ordering::SeqCst));
+        assert_eq!(session.active_compression_attempt, Some(7));
+        assert_eq!(session.runtime.state, SessionState::Idle);
+        assert!(session.draft_message.is_none());
+        assert!(session.command_queue.is_empty());
+        assert!(session.delivery_wake_sources.is_empty());
+        assert!(session.pending_deliveries.is_empty());
+    }
+
+    #[test]
+    fn goal_monitor_stale_compression_attempt_never_wedges_generation() {
+        // A reservation whose summarizer hung must age out instead of refusing
+        // generation forever. The 16-minute attempt is past the 15-minute
+        // COMPRESSION_ATTEMPT_STALE_AFTER threshold.
+        let now = Instant::now();
+        let mut session = active_goal_session();
+        let abort = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        session.active_compression_attempt = Some(7);
+        session.compression_abort_flag = Some(abort.clone());
+        session.compression_attempt_started_at_ms =
+            Some(epoch_ms_now().saturating_sub(16 * 60 * 1000));
+        session.is_compressing = true;
+        session.runtime.is_compressing = true;
+        session.compression_phase = Some(CompressionPhase::Running);
+        session.runtime.compression_phase = Some(CompressionPhase::Running);
+        session.last_activity = now - Duration::from_secs(40);
+
+        assert_eq!(
+            apply_monitor(&mut session, 10_000, now),
+            GoalNudgeOutcome::Nudged(GoalNudgeReason::Idle),
+            "a stale reservation must stop counting as busy"
+        );
+        assert!(
+            session.start_stream().is_some(),
+            "a stale reservation must not refuse generation forever"
+        );
+        assert!(!abort.load(Ordering::SeqCst));
+        assert!(!session.abort_flag.load(Ordering::SeqCst));
+        assert!(!session.user_interrupt_flag.load(Ordering::SeqCst));
     }
 
     #[test]

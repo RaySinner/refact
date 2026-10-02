@@ -187,6 +187,19 @@ Cargo.lock
 # (a gitignored lock let rust-cache pin a bad aws-lc-sys 0.42.0 that build-aborts on CI gcc).
 !refact-agent/engine/Cargo.lock
 
+# Alternate cargo target dirs used for parallel/review builds.
+# A custom CARGO_TARGET_DIR is not covered by the `target/` rule, so every
+# .rlib/.rmeta/.d lands in git status and floods the SCM badge with ~17k entries.
+/.cargo-target*/
+/.review-target/
+**/.cargo-target*/
+/**/review-target/
+# Keep cargo build output out even if a scratch target dir uses another name.
+# These only match dirs that actually hold a cargo build layout, so real source
+# dirs named debug/ or release/ are not shadowed.
+**/target/debug/
+**/target/release/
+
 # Misc
 zutils/
 
@@ -336,3 +349,21 @@ refact-agent/engine/e2e-*.txt
 node_modules
 
 .refact/review_scratch/
+
+# Agent/build scratch output written into the repo root during local builds.
+# These are throwaway logs, probes and cargo metadata dumps, not project files.
+/.refact_tmp_status.txt
+/l1*.txt
+/probe*.txt
+/gui-baseline-*.txt
+/engine-test-build.txt
+/*.diff
+# cargo metadata / build stderr dumps (never tracked; regenerate with cargo)
+/refact-agent/engine/meta.json
+refact-agent/engine/*.err
+refact-agent/engine/lock_err.txt
+
+# NOTE: a `/CACHEDIR.TAG` pattern is deliberately NOT used here. Git can only
+# ignore that single file, not the sibling .rlib/.rmeta/.d files next to it, so
+# it would not actually stop the flood. Prefer setting CARGO_TARGET_DIR inside
+# `target/` (already ignored) over pointing it at a new directory in the repo root.

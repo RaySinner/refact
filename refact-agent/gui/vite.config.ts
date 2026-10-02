@@ -103,24 +103,35 @@ function makeConfig(library: "browser" | "node") {
         "process.env.NODE_ENV": "'production'",
       };
 
-      CONFIG.plugins?.push([
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-call
-        eslint({
-          exclude: [
-            "**/node_modules/**",
-            "**/virtual:/**",
-            "**/src/features/Buddy/**",
-          ],
-        }) as PluginOption,
-      ]);
+      // Local escape hatch: set REFACT_SKIP_GUI_LINT=1 / REFACT_SKIP_GUI_DTS=1
+      // to drop the two slowest plugins from a packaging build. The emitted
+      // bundles are byte-identical; only the lint pass and the rolled-up .d.ts
+      // files are omitted, so never use it for a publish.
+      const skipLint = process.env.REFACT_SKIP_GUI_LINT === "1";
+      const skipDts = process.env.REFACT_SKIP_GUI_DTS === "1";
 
-      CONFIG.plugins?.push([
-        dts({
-          outDir: OUT_DIR,
-          rollupTypes: true,
-          insertTypesEntry: true,
-        }),
-      ]);
+      if (!skipLint) {
+        CONFIG.plugins?.push([
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+          eslint({
+            exclude: [
+              "**/node_modules/**",
+              "**/virtual:/**",
+              "**/src/features/Buddy/**",
+            ],
+          }) as PluginOption,
+        ]);
+      }
+
+      if (!skipDts) {
+        CONFIG.plugins?.push([
+          dts({
+            outDir: OUT_DIR,
+            rollupTypes: true,
+            insertTypesEntry: true,
+          }),
+        ]);
+      }
 
       CONFIG.build = {
         ...CONFIG.build,

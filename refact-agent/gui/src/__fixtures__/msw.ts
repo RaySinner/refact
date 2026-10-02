@@ -44,19 +44,6 @@ export const goodPing: HttpHandler = http.get("*/v1/ping", () => {
   return HttpResponse.text("pong");
 });
 
-export const goodVoiceStatus: HttpHandler = http.get(
-  "*/v1/voice/status",
-  () => {
-    return HttpResponse.json({
-      enabled: false,
-      model_loaded: false,
-      model_name: "",
-      is_downloading: false,
-      download_progress: 0,
-    });
-  },
-);
-
 export const emptyWorktrees: HttpHandler = http.get("*/v1/worktrees", () => {
   return HttpResponse.json({
     project_hash: "test",

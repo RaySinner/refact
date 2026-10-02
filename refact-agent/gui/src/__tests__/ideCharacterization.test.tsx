@@ -111,7 +111,6 @@ const appHandlers = [
       },
     }),
   ),
-  http.get("*/v1/voice/status", () => HttpResponse.json({ available: false })),
   http.get("*/v1/chats/:chatId/skills-status", () =>
     HttpResponse.json({
       skills_available: 0,

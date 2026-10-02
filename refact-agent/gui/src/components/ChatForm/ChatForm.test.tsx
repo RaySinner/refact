@@ -54,10 +54,6 @@ const goodChatModes = http.get("*/v1/chat-modes", () =>
   }),
 );
 
-const noVoiceStatus = http.get("*/v1/voice/status", () =>
-  HttpResponse.json({ available: false }),
-);
-
 const noWorktrees = http.get("*/v1/worktrees", () =>
   HttpResponse.json({
     project_hash: "test",
@@ -81,7 +77,6 @@ const handlers = [
   emptyTrajectories,
   trajectorySave,
   goodChatModes,
-  noVoiceStatus,
   noWorktrees,
   queuedChatCommand,
 ];

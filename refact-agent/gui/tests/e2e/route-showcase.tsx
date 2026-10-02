@@ -1368,18 +1368,7 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       }),
     );
   }
-  if (path === "/v1/voice/status") {
-    return Promise.resolve(
-      jsonResponse({
-        enabled: false,
-        model_loaded: false,
-        model_name: "",
-        is_downloading: false,
-        download_progress: 0,
-      }),
-    );
-  }
-  if (path === "/v1/at-command-completion") {
+if (path === "/v1/at-command-completion") {
     return Promise.resolve(
       jsonResponse({
         completions: [],

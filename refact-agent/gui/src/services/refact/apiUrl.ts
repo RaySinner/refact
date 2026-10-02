@@ -65,7 +65,6 @@ const ENGINE_V1_ENDPOINT_SEGMENTS = new Set([
   "tools",
   "trajectories",
   "vecdb-search",
-  "voice",
   "worktrees",
 ]);
 

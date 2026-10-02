@@ -347,9 +347,6 @@ function taskWorkspaceHandlers(
     http.get("*/v1/caps", () =>
       HttpResponse.json({ chat_models: [], completion_models: [] }),
     ),
-    http.get("*/v1/voice/status", () =>
-      HttpResponse.json({ enabled: false, available: false }),
-    ),
     http.get("*/v1/chats/:id/skills-status", () =>
       HttpResponse.json({ enabled: false, skills: [] }),
     ),

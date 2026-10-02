@@ -4,7 +4,6 @@ import {
   emptyWorktrees,
   goodCaps,
   goodChatModes,
-  goodVoiceStatus,
 } from "../../__fixtures__/msw";
 import { ChatStoryHarness } from "../../__stories__/ChatStoryHarness";
 import { makeChatThread } from "../../__stories__/chatStoryState";
@@ -136,7 +135,7 @@ const meta = {
   args: { goal: activeGoal },
   parameters: {
     msw: {
-      handlers: [emptyWorktrees, goodCaps, goodChatModes, goodVoiceStatus],
+      handlers: [emptyWorktrees, goodCaps, goodChatModes],
     },
   },
 } satisfies Meta<typeof GoalWidgetStory>;

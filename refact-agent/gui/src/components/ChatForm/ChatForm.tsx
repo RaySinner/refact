@@ -111,7 +111,6 @@ import { ErrorCallout, InformationCallout } from "../Callout";
 import { ToolConfirmation } from "./ToolConfirmation";
 import { selectThreadConfirmationById } from "../../features/Chat/Thread";
 import { AttachImagesButton } from "../Dropzone";
-import { MicrophoneButton, MicrophoneButtonRef } from "./MicrophoneButton";
 import { useAttachedImages } from "../../hooks/useAttachedImages";
 import {
   selectChatErrorById,
@@ -195,8 +194,6 @@ export const ChatForm: React.FC<ChatFormProps> = ({
     }
   }, [chatError, chatId, reportError]);
   const [helpInfo, setHelpInfo] = React.useState<React.ReactNode | null>(null);
-  const [isVoiceActive, setIsVoiceActive] = React.useState(false);
-  const [liveTranscript, setLiveTranscript] = React.useState("");
   const [inputResetKey, setInputResetKey] = React.useState(0);
   const [isComposerExpanded, setIsComposerExpanded] = React.useState(false);
   const [openComposerMenus, setOpenComposerMenus] = React.useState(0);
@@ -238,7 +235,6 @@ export const ChatForm: React.FC<ChatFormProps> = ({
   const attachedImages = useAppSelector((state) =>
     selectThreadImagesById(state, chatId),
   );
-  const microphoneRef = React.useRef<MicrophoneButtonRef>(null);
 
   const allDisabled = caps.usableModelsForPlan.every((option) => {
     if (typeof option === "string") return false;
@@ -260,13 +256,6 @@ export const ChatForm: React.FC<ChatFormProps> = ({
     isOnline,
     isContextFull,
   ]);
-
-  const disableMicrophone = useMemo(() => {
-    if (allDisabled) return true;
-    if (isContextFull) return true;
-    if (!isOnline) return true;
-    return false;
-  }, [allDisabled, isContextFull, isOnline]);
 
   const {
     processAndInsertImages,
@@ -339,13 +328,6 @@ export const ChatForm: React.FC<ChatFormProps> = ({
 
   const [value, setValue, isSendImmediately, setIsSendImmediately] =
     useInputValue(() => unCheckAll());
-
-  const displayedInputValue =
-    isVoiceActive && liveTranscript
-      ? value.trim()
-        ? `${value}\n${liveTranscript}`
-        : liveTranscript
-      : value;
 
   const valueRef = React.useRef(value);
   valueRef.current = value;
@@ -482,20 +464,6 @@ export const ChatForm: React.FC<ChatFormProps> = ({
     setIsSendImmediately,
   ]);
 
-  const handleLiveTranscript = useCallback((text: string) => {
-    setLiveTranscript(text);
-  }, []);
-
-  const handleRecordingChange = useCallback(
-    (isRecording: boolean, isFinishing: boolean) => {
-      setIsVoiceActive(isRecording || isFinishing);
-      if (!isRecording && !isFinishing) {
-        setLiveTranscript("");
-      }
-    },
-    [],
-  );
-
   const focusComposerInput = useCallback(() => {
     setIsComposerExpanded(true);
     window.requestAnimationFrame(() => {
@@ -620,13 +588,6 @@ export const ChatForm: React.FC<ChatFormProps> = ({
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.ctrlKey && event.shiftKey && event.code === "Space") {
-        event.preventDefault();
-        if (!disableMicrophone && microphoneRef.current) {
-          void microphoneRef.current.toggleRecording();
-        }
-      }
-
       if (
         event.key === "Enter" &&
         !event.ctrlKey &&
@@ -645,7 +606,7 @@ export const ChatForm: React.FC<ChatFormProps> = ({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [disableMicrophone, focusComposerInput]);
+  }, [focusComposerInput]);
 
   if (pauseReasonsWithPause.pause) {
     return (
@@ -760,7 +721,7 @@ export const ChatForm: React.FC<ChatFormProps> = ({
                   onHelpClick={handleHelpCommand}
                   commands={commands}
                   requestCommandsCompletion={requestCompletion}
-                  value={displayedInputValue}
+                  value={value}
                   onChange={handleChange}
                   onSubmit={(event) => {
                     handleEnter(event);
@@ -769,11 +730,9 @@ export const ChatForm: React.FC<ChatFormProps> = ({
                     argumentPlaceholdersRef.current = placeholders;
                   }}
                   placeholder={
-                    isVoiceActive
-                      ? "Listening..."
-                      : commands.completions.length < 1
-                        ? "Type @ or / for commands"
-                        : ""
+                    commands.completions.length < 1
+                      ? "Type @ or / for commands"
+                      : ""
                   }
                   render={(props) => (
                     <TextAreaWithChips
@@ -783,7 +742,6 @@ export const ChatForm: React.FC<ChatFormProps> = ({
                       host={host}
                       onOpenFile={queryPathThenOpenFile}
                       autoFocus={isComposerExpanded && autoFocus}
-                      readOnly={isVoiceActive}
                       onPaste={handlePastingFile}
                     />
                   )}
@@ -870,22 +828,6 @@ export const ChatForm: React.FC<ChatFormProps> = ({
                       </span>
                     )}
                   <span className={styles.hideActionSeventh}>
-                    <MicrophoneButton
-                      ref={microphoneRef}
-                      onTranscript={(text) => {
-                        setValue((prev) => {
-                          if (prev.trim()) {
-                            return `${prev}\n${text}`;
-                          }
-                          return text;
-                        });
-                      }}
-                      onLiveTranscript={handleLiveTranscript}
-                      onRecordingChange={handleRecordingChange}
-                      disabled={disableMicrophone}
-                    />
-                  </span>
-                  <span className={styles.hideActionSeventh}>
                     <ThreadInfoButton
                       chatId={chatId}
                       onOpenChange={handleComposerMenuOpenChange}
@@ -911,7 +853,7 @@ export const ChatForm: React.FC<ChatFormProps> = ({
               </div>
               <span data-composer-no-expand="true">
                 <UnifiedSendButton
-                  disabled={isVoiceActive || !isOnline || allDisabled}
+                  disabled={!isOnline || allDisabled}
                   isStreaming={isStreaming || isWaiting}
                   hasText={
                     value.trim().length > 0 ||

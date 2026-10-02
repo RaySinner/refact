@@ -11,6 +11,21 @@ const DEFAULT_STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const STREAM_TOTAL_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const STREAM_HEARTBEAT: Duration = Duration::from_secs(2);
 
+/// Prompt size (in tokens) at which idle-timeout scaling starts. Prompts at or below this
+/// size keep the configured base idle timeout unchanged, so small chats behave exactly as
+/// they did before scaling existed.
+const STREAM_IDLE_PREFILL_SCALING_MIN_TOKENS: usize = 8_000;
+
+/// Prefill throughput assumption used for scaling: one extra second of patience per
+/// thousand prompt tokens. Prefill time grows with prompt size (a local endpoint
+/// processing a large prompt legitimately emits nothing for minutes), so a flat idle
+/// deadline kills healthy long-prompt requests.
+const STREAM_IDLE_PREFILL_TOKENS_PER_EXTRA_SECOND: usize = 1_000;
+
+/// Head-room kept between the scaled idle timeout and the total stream timeout, so the
+/// total-timeout backstop always fires first and stays authoritative.
+const STREAM_IDLE_TOTAL_TIMEOUT_MARGIN: Duration = Duration::from_secs(60);
+
 #[derive(Clone, Copy)]
 pub struct RuntimeChatTimeouts {
     pub max_queue_size: usize,
@@ -70,6 +85,34 @@ pub fn stream_total_timeout() -> Duration {
         .read()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .stream_total
+}
+
+/// Idle deadline the stream watchdog should actually use for this request.
+///
+/// `stream_idle_timeout()` stays a flat value tuned for small prompts. A large prompt
+/// takes proportionally longer to prefill, during which the provider emits no progress
+/// events, so the flat deadline kills healthy requests. This scales the deadline with the
+/// prompt size while keeping these invariants:
+///
+/// - unknown prompt size (`None`) returns the configured base value unchanged;
+/// - a prompt at or below [`STREAM_IDLE_PREFILL_SCALING_MIN_TOKENS`] returns the configured
+///   base value unchanged, so small chats behave exactly as before;
+/// - the result is monotonically non-decreasing in prompt size;
+/// - the result never reaches [`stream_total_timeout`], so the total-timeout backstop stays
+///   authoritative.
+pub fn effective_stream_idle_timeout(prompt_tokens: Option<usize>) -> Duration {
+    let base = stream_idle_timeout();
+    let Some(prompt_tokens) = prompt_tokens else {
+        return base;
+    };
+    let cap = stream_total_timeout().saturating_sub(STREAM_IDLE_TOTAL_TIMEOUT_MARGIN);
+    if prompt_tokens <= STREAM_IDLE_PREFILL_SCALING_MIN_TOKENS || base >= cap {
+        return base;
+    }
+    let extra_seconds = u64::try_from(prompt_tokens / STREAM_IDLE_PREFILL_TOKENS_PER_EXTRA_SECOND)
+        .unwrap_or(u64::MAX);
+    base.saturating_add(Duration::from_secs(extra_seconds))
+        .min(cap)
 }
 
 pub fn stream_heartbeat() -> Duration {
@@ -210,6 +253,60 @@ mod tests {
     use super::*;
     use refact_core::chat_types::ChatContent;
     use serde_json::json;
+
+    #[test]
+    fn effective_idle_timeout_returns_base_for_unknown_prompt_size() {
+        assert_eq!(effective_stream_idle_timeout(None), stream_idle_timeout());
+    }
+
+    #[test]
+    fn effective_idle_timeout_returns_base_for_small_prompt() {
+        assert_eq!(
+            effective_stream_idle_timeout(Some(1_000)),
+            stream_idle_timeout()
+        );
+    }
+
+    #[test]
+    fn effective_idle_timeout_grows_for_large_prompt() {
+        assert!(
+            effective_stream_idle_timeout(Some(500_000)) > stream_idle_timeout(),
+            "a 500k-token prompt must get more patience than the flat base timeout"
+        );
+    }
+
+    #[test]
+    fn effective_idle_timeout_is_monotonic_in_prompt_size() {
+        let mut previous = effective_stream_idle_timeout(Some(0));
+        for prompt_tokens in [
+            1_000,
+            8_000,
+            12_000,
+            64_000,
+            250_000,
+            500_000,
+            2_000_000,
+            usize::MAX / 2,
+        ] {
+            let current = effective_stream_idle_timeout(Some(prompt_tokens));
+            assert!(
+                current >= previous,
+                "idle timeout must not shrink: {prompt_tokens} tokens gave {current:?} after {previous:?}"
+            );
+            previous = current;
+        }
+    }
+
+    #[test]
+    fn effective_idle_timeout_stays_below_total_timeout_for_absurd_prompt() {
+        let total = stream_total_timeout();
+        for prompt_tokens in [500_000, usize::MAX / 2, usize::MAX] {
+            assert!(
+                effective_stream_idle_timeout(Some(prompt_tokens)) < total,
+                "the total-timeout backstop must stay authoritative"
+            );
+        }
+    }
 
     #[test]
     fn is_segment_summary_detects_assistant_compression_kind() {

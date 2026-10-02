@@ -18,7 +18,10 @@ use crate::llm::adapter::{AdapterSettings, HttpParts, StreamParseError};
 use crate::privacy::destinations::clear_for_model;
 
 use super::openai_codex_ws::{OpenAICodexWebSocketResponseTracker, OpenAICodexWebSocketSession};
-use super::types::{DeltaOp, stream_heartbeat, stream_idle_timeout, stream_total_timeout};
+use super::types::{
+    DeltaOp, effective_stream_idle_timeout, stream_heartbeat, stream_idle_timeout,
+    stream_total_timeout,
+};
 use super::retry_policy::{classify_llm_error_for_retry, should_retry_llm_error, RetryDecision};
 use super::openai_merge::ToolCallAccumulator;
 
@@ -2210,6 +2213,7 @@ async fn run_llm_ndjson_request<C: StreamCollector>(
     collector: &mut C,
     request_sent_at: Option<Instant>,
     chat_id: Option<&str>,
+    idle_timeout: Duration,
 ) -> Result<Vec<ChoiceFinal>, String> {
     let mut stream = response.bytes_stream();
     let mut pending = Vec::new();
@@ -2235,7 +2239,7 @@ async fn run_llm_ndjson_request<C: StreamCollector>(
                 if stream_started_at.elapsed() > stream_total_timeout() {
                     return Err("LLM stream timeout".to_string());
                 }
-                if last_event_at.elapsed() > stream_idle_timeout() {
+                if last_event_at.elapsed() > idle_timeout {
                     return Err("LLM stream stalled".to_string());
                 }
                 continue;
@@ -2453,6 +2457,13 @@ pub(crate) async fn run_llm_stream_with_prepare_started<C: StreamCollector>(
         messages_count = params.llm_request.messages.len(),
         "LLM streaming request"
     );
+
+    // A large prompt takes proportionally longer to prefill, and the provider emits no
+    // progress events while it does, so the idle watchdog gets a prompt-size-scaled
+    // deadline instead of the flat base timeout.
+    let prompt_tokens =
+        crate::chat::trajectory_ops::approx_token_count(&params.llm_request.messages);
+    let idle_timeout = effective_stream_idle_timeout((prompt_tokens > 0).then_some(prompt_tokens));
 
     if let Some(started_at) = prepare_started_at {
         perf_diagnostics::record(
@@ -2844,6 +2855,7 @@ pub(crate) async fn run_llm_stream_with_prepare_started<C: StreamCollector>(
             &mut tracking_collector,
             provider_ttft_started_at,
             params.chat_id.as_deref(),
+            idle_timeout,
         )
         .await
         .map_err(|e| LlmStreamError::new(e, *tracking_collector.partial_output_emitted))
@@ -2887,7 +2899,7 @@ pub(crate) async fn run_llm_stream_with_prepare_started<C: StreamCollector>(
                     last_progress_event_count = progress_event_count;
                     last_progress_at = Instant::now();
                 }
-                if last_progress_at.elapsed() > stream_idle_timeout() {
+                if last_progress_at.elapsed() > idle_timeout {
                     return Err(LlmStreamError::new(
                         "LLM stream stalled",
                         *tracking_collector.partial_output_emitted,

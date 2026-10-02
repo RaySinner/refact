@@ -14,6 +14,29 @@ const options = [
   { value: "roomy", label: "Roomy" },
 ];
 
+function readCssRule(source: string, selectorText: string): string {
+  const group = selectorText
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) =>
+      part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+"),
+    )
+    .join("\\s*,\\s*");
+  const match = new RegExp(`(?:^|\\r?\\n)\\s*${group}\\s*{`).exec(source);
+  if (match?.index === undefined) {
+    throw new Error(`Missing CSS block for ${selectorText}`);
+  }
+  const open = source.indexOf("{", match.index);
+  let depth = 0;
+  for (let i = open; i < source.length; i += 1) {
+    if (source[i] === "{") depth += 1;
+    if (source[i] === "}") depth -= 1;
+    if (depth === 0) return source.slice(open + 1, i);
+  }
+  throw new Error(`Unclosed CSS block for ${selectorText}`);
+}
+
 function GlobeIcon() {
   return (
     <svg aria-hidden="true" data-testid="globe-icon" viewBox="0 0 16 16">
@@ -133,9 +156,9 @@ describe("SegmentedControl", () => {
       path.resolve(__dirname, "SegmentedControl.module.css"),
       "utf8",
     );
-    const root = css.match(/\.root \{[^}]+\}/)?.[0] ?? "";
-    const segment = css.match(/\.segment \{[^}]+\}/)?.[0] ?? "";
-    const label = css.match(/\.label \{[^}]+\}/)?.[0] ?? "";
+    const root = readCssRule(css, ".root");
+    const segment = readCssRule(css, ".segment");
+    const label = readCssRule(css, ".label");
 
     expect(root).toContain("display: inline-grid;");
     expect(root).toContain("grid-auto-columns: minmax(0, 1fr);");
@@ -149,10 +172,12 @@ describe("SegmentedControl", () => {
       path.resolve(__dirname, "SegmentedControl.module.css"),
       "utf8",
     );
-    const root = css.match(/\.root \{[^}]+\}/)?.[0] ?? "";
-    const sizeSm = css.match(/\.size-sm \{[^}]+\}/)?.[0] ?? "";
-    const sizeSmLabel =
-      css.match(/\.size-sm \.segment,\n\.size-sm \.label \{[^}]+\}/)?.[0] ?? "";
+    const root = readCssRule(css, ".root");
+    const sizeSm = readCssRule(css, ".size-sm");
+    const sizeSmLabel = readCssRule(
+      css,
+      ".size-sm .segment,\n.size-sm .label",
+    );
 
     expect(root).toContain(
       "height: calc(var(--rf-control-h-sm) + 2 * var(--rf-segment-padding));",

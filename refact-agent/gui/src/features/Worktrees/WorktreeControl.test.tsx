@@ -17,6 +17,29 @@ import { server } from "../../utils/mockServer";
 type JsonObject = Record<string, unknown>;
 type Host = "web" | "ide" | "vscode" | "jetbrains";
 
+function readCssRule(source: string, selectorText: string): string {
+  const group = selectorText
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) =>
+      part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+"),
+    )
+    .join("\\s*,\\s*");
+  const match = new RegExp(`(?:^|\\r?\\n)\\s*${group}\\s*{`).exec(source);
+  if (match?.index === undefined) {
+    throw new Error(`Missing CSS block for ${selectorText}`);
+  }
+  const open = source.indexOf("{", match.index);
+  let depth = 0;
+  for (let i = open; i < source.length; i += 1) {
+    if (source[i] === "{") depth += 1;
+    if (source[i] === "}") depth -= 1;
+    if (depth === 0) return source.slice(open + 1, i);
+  }
+  throw new Error(`Unclosed CSS block for ${selectorText}`);
+}
+
 function makeWorktreeRecord(
   id: string,
   branch: string,
@@ -467,10 +490,11 @@ describe("WorktreeControl", () => {
       path.resolve(__dirname, "Worktrees.module.css"),
       "utf8",
     );
-    const dialogInner =
-      css.match(/\.dialogContentWrapper \{[^}]+\}/)?.[0] ?? "";
-    const branchPicker =
-      css.match(/\.branchPicker,\n\.branchPicker input \{[^}]+\}/)?.[0] ?? "";
+    const dialogInner = readCssRule(css, ".dialogContentWrapper");
+    const branchPicker = readCssRule(
+      css,
+      ".branchPicker,\n.branchPicker input",
+    );
 
     expect(dialogInner).toContain("max-width: 100%;");
     expect(dialogInner).toContain("min-width: 0;");

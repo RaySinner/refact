@@ -67,6 +67,29 @@ function renderModeSelect(
   });
 }
 
+function readCssRule(source: string, selectorText: string): string {
+  const group = selectorText
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) =>
+      part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+"),
+    )
+    .join("\\s*,\\s*");
+  const match = new RegExp(`(?:^|\\r?\\n)\\s*${group}\\s*{`).exec(source);
+  if (match?.index === undefined) {
+    throw new Error(`Missing CSS block for ${selectorText}`);
+  }
+  const open = source.indexOf("{", match.index);
+  let depth = 0;
+  for (let i = open; i < source.length; i += 1) {
+    if (source[i] === "{") depth += 1;
+    if (source[i] === "}") depth -= 1;
+    if (depth === 0) return source.slice(open + 1, i);
+  }
+  throw new Error(`Unclosed CSS block for ${selectorText}`);
+}
+
 function chatStateWithMessages() {
   const chat = createDefaultChatState();
   const threadId = chat.current_thread_id;
@@ -123,15 +146,14 @@ describe("ModeSelect", () => {
       path.resolve(__dirname, "ModeSelect.module.css"),
       "utf8",
     );
-    const content =
-      css.match(/\.content,\n\.content > div \{[^}]+\}/)?.[0] ?? "";
-    const item = css.match(/\.item,\n\.addModeItem \{[^}]+\}/)?.[0] ?? "";
+    const content = readCssRule(css, ".content,\n.content > div");
+    const item = readCssRule(css, ".item,\n.addModeItem");
 
     expect(content).toContain("min-width: 0;");
     expect(item).toContain("width: 100%;");
     expect(item).toContain("border-radius: 0;");
 
-    const selected = css.match(/\.itemSelected \{[^}]+\}/)?.[0] ?? "";
+    const selected = readCssRule(css, ".itemSelected");
     expect(selected).toContain("background: var(--rf-surface-2);");
   });
 

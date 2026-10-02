@@ -421,6 +421,9 @@ impl ChatSession {
             is_compressing: false,
             compression_phase: None,
             compression_reason: None,
+            compression_estimated_tokens: None,
+            compression_effective_cap: None,
+            compression_cap_source: None,
             pending_context_rebuild: None,
             pending_mode_handoff: None,
             last_rebuild_attempt_version: None,
@@ -549,6 +552,9 @@ impl ChatSession {
             is_compressing: false,
             compression_phase: None,
             compression_reason: None,
+            compression_estimated_tokens: None,
+            compression_effective_cap: None,
+            compression_cap_source: None,
             pending_context_rebuild: None,
             pending_mode_handoff: None,
             last_rebuild_attempt_version: None,
@@ -1091,6 +1097,32 @@ impl ChatSession {
         self.emit(event);
     }
 
+    /// Publish the automatic-compaction gate's decision inputs as read-only
+    /// diagnostics. `estimated` is `None` when the local estimate was
+    /// unavailable, so an unavailable estimate never reads as a huge context.
+    pub(crate) fn set_compression_gate_diagnostics(
+        &mut self,
+        estimated: Option<usize>,
+        cap: usize,
+        cap_source: &str,
+    ) {
+        self.compression_estimated_tokens = estimated;
+        self.compression_effective_cap = Some(cap);
+        self.compression_cap_source = Some(cap_source.to_string());
+        self.runtime.compression_estimated_tokens = estimated;
+        self.runtime.compression_effective_cap = Some(cap);
+        self.runtime.compression_cap_source = Some(cap_source.to_string());
+    }
+
+    pub(crate) fn clear_compression_gate_diagnostics(&mut self) {
+        self.compression_estimated_tokens = None;
+        self.compression_effective_cap = None;
+        self.compression_cap_source = None;
+        self.runtime.compression_estimated_tokens = None;
+        self.runtime.compression_effective_cap = None;
+        self.runtime.compression_cap_source = None;
+    }
+
     pub fn reset_compaction_runtime_state(&mut self) {
         self.clear_stream_and_confirmation_timestamps();
         self.release_turn_only_state();
@@ -1105,6 +1137,7 @@ impl ChatSession {
         self.runtime.compression_phase = None;
         self.compression_reason = None;
         self.runtime.compression_reason = None;
+        self.clear_compression_gate_diagnostics();
         if let Some(abort_flag) = self.compression_abort_flag.take() {
             abort_flag.store(true, Ordering::SeqCst);
         }
@@ -1430,6 +1463,9 @@ impl ChatSession {
         runtime.is_compressing = self.is_compressing;
         runtime.compression_phase = self.compression_phase;
         runtime.compression_reason = self.compression_reason;
+        runtime.compression_estimated_tokens = self.compression_estimated_tokens;
+        runtime.compression_effective_cap = self.compression_effective_cap;
+        runtime.compression_cap_source = self.compression_cap_source.clone();
         runtime.queued_items = self.build_queued_items();
         runtime.queue_size = runtime.queued_items.len();
         ChatEvent::Snapshot {
@@ -2617,6 +2653,7 @@ impl ChatSession {
                 self.compression_phase = None;
                 self.compression_reason = None;
             }
+            self.clear_compression_gate_diagnostics();
         }
         self.runtime.is_compressing = self.is_compressing;
         self.runtime.compression_phase = self.compression_phase;

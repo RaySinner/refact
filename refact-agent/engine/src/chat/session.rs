@@ -433,6 +433,20 @@ impl StreamStartRefusal {
     }
 
     fn user_message(&self) -> ChatMessage {
+        // Built before the match so the borrow outlives the tuple below. The detail is
+        // interpolated rather than matched on: `classify_user_error` recognises none of the
+        // real `ActiveContextError` prose, so routing this arm through the classifier-based
+        // `make_ui_only_error_message` renders it as "Unknown error" — the exact swallow this
+        // enum exists to prevent.
+        let invalid_context_detail = match self {
+            Self::InvalidActiveContext(detail) => Some(format!(
+                "The stored history for this chat could not be projected into a request \
+                 context ({detail}), so this message has not been processed. An explicit \
+                 context rebuild is required before generation can continue."
+            )),
+            _ => None,
+        };
+
         let (category, title, explanation, suggested_action, is_retryable) = match self {
             Self::Compression => (
                 "ProviderTransient",
@@ -460,11 +474,13 @@ processed yet. It is picked up once the switch completes.",
                 "none",
                 false,
             ),
-            Self::InvalidActiveContext(detail) => {
-                return make_ui_only_error_message(&format!(
-                    "Invalid active context: {detail}. Explicit rebuild required before generation"
-                ));
-            }
+            Self::InvalidActiveContext(_) => (
+                "InvalidRequest",
+                "This chat needs an explicit context rebuild",
+                invalid_context_detail.as_deref().unwrap_or_default(),
+                "compact",
+                false,
+            ),
             Self::ExecutingTools => (
                 "InvalidRequest",
                 "Previous tool calls are still running",
@@ -4765,6 +4781,154 @@ mod tests {
                 .filter(|message| message.role == "error")
                 .count(),
             2
+        );
+    }
+
+    /// Every cause must have its own user-facing phrasing.
+    ///
+    /// `as_str()` feeds the `refusal.cause` field and the `raw_error` of the card,
+    /// and two causes reading identically would (a) make two distinct blockers
+    /// present as one to the user and (b) collapse into a single dedup entry, so
+    /// the second blocker would never get its own card.
+    #[test]
+    fn stream_start_refusal_as_str_is_non_empty_and_pairwise_distinct() {
+        let causes = [
+            StreamStartRefusal::Compression,
+            StreamStartRefusal::PendingContextRebuild,
+            StreamStartRefusal::PendingModeHandoff,
+            StreamStartRefusal::InvalidActiveContext("detail".to_string()),
+            StreamStartRefusal::ExecutingTools,
+            StreamStartRefusal::DraftOpen,
+        ];
+
+        for (index, left) in causes.iter().enumerate() {
+            assert!(!left.as_str().is_empty(), "{left:?} must render a phrase");
+            for right in causes.iter().skip(index + 1) {
+                assert_ne!(
+                    left.as_str(),
+                    right.as_str(),
+                    "{left:?} and {right:?} read identically, so one blocker would hide the other"
+                );
+            }
+        }
+    }
+
+    /// An unprojectable history is the one refusal cause whose detail text has no
+    /// provider fingerprint, so its card MUST be built with an authored
+    /// `error_info`.
+    ///
+    /// This arm used to early-return `make_ui_only_error_message(...)`, which
+    /// re-runs `classify_user_error` over the prose. Four of the five real
+    /// `ActiveContextError` detail strings classify as `UserErrorCategory::Unknown`,
+    /// so the GUI rendered the generic "Unknown error" card — precisely the swallow
+    /// this enum exists to prevent. The detail is asserted to survive, and the title
+    /// to be authored, so a regression to the classifier is caught here rather than
+    /// by a user staring at "Unknown error".
+    #[test]
+    fn invalid_active_context_refusal_keeps_an_authored_visible_card() {
+        let mut session = make_session();
+        session.add_message(ChatMessage {
+            summarized_range: Some((0, 2)),
+            ..ChatMessage::new("user".to_string(), "legacy summary".to_string())
+        });
+
+        let refusal = session
+            .stream_start_refusal()
+            .expect("a legacy summary must block generation");
+        assert!(
+            matches!(&refusal, StreamStartRefusal::InvalidActiveContext(detail) if detail.contains("explicit rebuild")),
+            "expected an InvalidActiveContext refusal naming the rebuild, got {refusal:?}"
+        );
+
+        session.append_stream_start_refusal(&refusal);
+
+        let card = session
+            .messages
+            .iter()
+            .rev()
+            .find(|message| message.role == "error")
+            .expect("a refused start must append a visible error card");
+        assert!(
+            crate::chat::diagnostics::is_ui_only_message(card),
+            "the notice must be a ui-only diagnostic"
+        );
+
+        let info = card
+            .extra
+            .get("error_info")
+            .and_then(|value| value.as_object())
+            .expect("the notice must carry error_info or the GUI falls back to plain text");
+
+        let title = info
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+        assert!(
+            title.contains("rebuild"),
+            "the card must name the action the user needs, not \"Unknown error\": {title}"
+        );
+        assert_ne!(
+            title, "Unknown error",
+            "this arm must not fall back to the classifier's Unknown card"
+        );
+
+        let explanation = info
+            .get("explanation")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+        assert!(
+            explanation.contains("could not be projected"),
+            "the card must carry an authored explanation, not the classifier's generic one: \
+             {explanation}"
+        );
+        assert!(
+            explanation.contains("Legacy compressed history needs an explicit rebuild"),
+            "the authored explanation must keep the underlying reason: {explanation}"
+        );
+        assert_eq!(
+            info.get("is_retryable").and_then(|v| v.as_bool()),
+            Some(false),
+            "a chat that needs an explicit rebuild will not fix itself on retry"
+        );
+    }
+
+    /// The same detail string must always produce the same card text, because
+    /// `append_error_message_deduped_content` collapses on content.
+    ///
+    /// An error detail is stable here (it is the `Display` of the projection
+    /// failure), but this pins the property the dedup relies on: the reason is
+    /// carried in `content`, not in a varying field.
+    #[test]
+    fn repeated_invalid_active_context_refusals_collapse_into_one_card() {
+        let mut session = make_session();
+        session.add_message(ChatMessage {
+            summarized_range: Some((0, 2)),
+            ..ChatMessage::new("user".to_string(), "legacy summary".to_string())
+        });
+        let refusal = session
+            .stream_start_refusal()
+            .expect("a legacy summary must block generation");
+
+        for _ in 0..3 {
+            session.append_stream_start_refusal(&refusal);
+        }
+
+        let errors: Vec<_> = session
+            .messages
+            .iter()
+            .filter(|message| message.role == "error")
+            .collect();
+        assert_eq!(
+            errors.len(),
+            1,
+            "three identical refusals must not append three cards"
+        );
+        assert_eq!(
+            errors[0]
+                .extra
+                .get("repeat_count")
+                .and_then(|value| value.as_u64()),
+            Some(3)
         );
     }
 

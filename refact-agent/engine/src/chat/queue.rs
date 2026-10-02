@@ -1324,15 +1324,28 @@ runs as soon as that step finishes.",
 /// `blocked_since` is processor-local on purpose: an enqueue timestamp would
 /// have to live on the session and is only recorded when perf diagnostics are
 /// on, so it cannot be relied on for a user-facing notice.
+///
+/// The threshold comparison is split into the pure `should_notify` so the boundary
+/// is testable from an injected duration. Driving it through `Instant::elapsed()`
+/// would force a test to either sleep for 15 minutes or back-date a clock it does
+/// not control, and `tokio::time::pause` does not move `std::time::Instant`.
 fn queue_wait_notice(
     blocked_since: &mut Option<std::time::Instant>,
     cause: QueueWaitCause,
 ) -> Option<ChatMessage> {
     let since = *blocked_since.get_or_insert_with(std::time::Instant::now);
-    if since.elapsed() < QUEUE_WAIT_NOTICE_AFTER {
+    if !should_notify(since.elapsed()) {
         return None;
     }
     Some(cause.user_message())
+}
+
+/// Whether a wait of `elapsed` has passed long enough to be worth surfacing.
+///
+/// Inclusive at the threshold: a wait of exactly `QUEUE_WAIT_NOTICE_AFTER` counts,
+/// so the notice fires on the first observation at or past the deadline.
+fn should_notify(elapsed: std::time::Duration) -> bool {
+    elapsed >= QUEUE_WAIT_NOTICE_AFTER
 }
 
 pub fn process_command_queue(
@@ -3390,6 +3403,53 @@ mod tests {
             Some(false),
             "ordinary queueing needs no retry prompt"
         );
+    }
+
+    /// The threshold boundary, driven from an injected duration rather than by
+    /// back-dating a clock.
+    ///
+    /// Inclusive at the threshold: the first observation at or past the deadline
+    /// must notify. Asserting both sides of the boundary is what catches a `>` vs
+    /// `>=` slip, which would either delay the notice by one wake or fire it one
+    /// wake early.
+    #[test]
+    fn queue_wait_notice_threshold_boundary() {
+        let second = std::time::Duration::from_secs(1);
+
+        assert!(
+            !should_notify(std::time::Duration::ZERO),
+            "a wait that just started must stay silent"
+        );
+        assert!(
+            !should_notify(QUEUE_WAIT_NOTICE_AFTER - second),
+            "one second short of the deadline must stay silent"
+        );
+        assert!(
+            should_notify(QUEUE_WAIT_NOTICE_AFTER),
+            "the deadline itself must notify"
+        );
+        assert!(
+            should_notify(QUEUE_WAIT_NOTICE_AFTER + second),
+            "a wait past the deadline must notify"
+        );
+        assert!(
+            should_notify(std::time::Duration::MAX),
+            "an extreme elapsed must not overflow the comparison"
+        );
+    }
+
+    /// The cause label is what distinguishes the two cards in `queue_wait.cause`,
+    /// so it must differ per cause — otherwise a compaction stall and an ordinary
+    /// long turn would collapse into one dedup entry.
+    #[test]
+    fn queue_wait_cause_as_str_is_distinct() {
+        assert_ne!(
+            QueueWaitCause::Compression.as_str(),
+            QueueWaitCause::OrdinaryQueueing.as_str(),
+            "the two causes must not share a label"
+        );
+        assert!(!QueueWaitCause::Compression.as_str().is_empty());
+        assert!(!QueueWaitCause::OrdinaryQueueing.as_str().is_empty());
     }
 
     /// The card text is the dedup key, so it must stay byte-stable across waits.

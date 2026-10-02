@@ -328,7 +328,17 @@ describe("TrajectorySettingsPanel", () => {
     await user.clear(input);
     await user.type(input, "9");
 
-    expect(screen.getByText("Allowed range: 10–10,000.")).toBeInTheDocument();
+    // The panel formats the range through `toLocaleString`, so grouping
+    // separators follow the host locale. Derive the expectation the same way
+    // rather than hardcoding US grouping. Matchers normalize whitespace in the
+    // element text but not in the expectation, so fold the expectation's own
+    // grouping whitespace (some locales use NBSP) too.
+    const allowedRange =
+      `Allowed range: ${(10).toLocaleString()}–${(10_000).toLocaleString()}.`.replace(
+        /\s+/g,
+        " ",
+      );
+    expect(screen.getByText(allowedRange)).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Save settings" }),
     ).toBeDisabled();

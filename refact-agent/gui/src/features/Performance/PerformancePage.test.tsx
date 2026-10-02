@@ -130,10 +130,26 @@ describe("PerformancePage", () => {
     expect(
       (await screen.findAllByText("Tool · Runtime")).length,
     ).toBeGreaterThan(0);
-    expect(screen.getAllByText("1.5 ms").length).toBeGreaterThan(0);
+    // Production renders numbers through `toLocaleString`, so the decimal and
+    // grouping separators follow the host locale. Derive the expectation the same
+    // way. Matchers normalize whitespace in the element text but not in the
+    // expectation, so also fold any NBSP grouping the locale inserts.
+    const localized = (value: number) =>
+      value
+        .toLocaleString(undefined, { maximumFractionDigits: 1 })
+        .replace(/\s+/g, " ");
+    const integer = (value: number) =>
+      value.toLocaleString(undefined, { maximumFractionDigits: 0 });
+    expect(screen.getAllByText(`${localized(1.5)} ms`).length).toBeGreaterThan(
+      0,
+    );
     expect(screen.getAllByText("2 s").length).toBeGreaterThan(0);
     expect(
-      screen.getAllByText("1.5 MB · 4 items · 2 batch items").length,
+      screen.getAllByText(
+        `${localized(1.5)} MB · ${integer(4)} items · ${integer(
+          2,
+        )} batch items`,
+      ).length,
     ).toBeGreaterThan(0);
     expect(screen.getByText("Chat advancement")).toBeInTheDocument();
     expect(
@@ -285,9 +301,14 @@ describe("PerformancePage", () => {
 
 describe("performance formatters", () => {
   it("formats duration and byte values with readable units", () => {
+    // Production renders through `toLocaleString`, so the decimal separator
+    // follows the host locale. Derive the expectation the same way instead of
+    // hardcoding US formatting.
+    const decimal = (value: number) =>
+      value.toLocaleString(undefined, { maximumFractionDigits: 1 });
     expect(formatDurationUs(900)).toBe("900 µs");
-    expect(formatDurationUs(1_500)).toBe("1.5 ms");
+    expect(formatDurationUs(1_500)).toBe(`${decimal(1.5)} ms`);
     expect(formatDurationUs(2_000_000)).toBe("2 s");
-    expect(formatBytes(1_572_864)).toBe("1.5 MB");
+    expect(formatBytes(1_572_864)).toBe(`${decimal(1.5)} MB`);
   });
 });

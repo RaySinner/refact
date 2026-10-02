@@ -128,6 +128,8 @@ describe("provider quota formatting", () => {
   });
 
   it("formats Codex credit and spend-control details", () => {
+    const credit = (value: number) =>
+      value.toLocaleString(undefined, { maximumFractionDigits: 2 });
     expect(
       formatCodexCreditsSummary({
         balance: 0,
@@ -145,13 +147,17 @@ describe("provider quota formatting", () => {
         approx_cloud_messages: [1, 2.5],
         approx_local_messages: [3, 4],
       }),
-    ).toBe("overage reached · cloud approx 1 / 2.5 · local approx 3 / 4");
+    ).toBe(
+      `overage reached · cloud approx ${credit(1)} / ${credit(
+        2.5,
+      )} · local approx ${credit(3)} / ${credit(4)}`,
+    );
 
     expect(
       formatCodexSpendControl({
         reached: false,
         individual_limit: 10.5,
       }),
-    ).toBe("reached no · individual limit 10.5");
+    ).toBe(`reached no · individual limit ${credit(10.5)}`);
   });
 });

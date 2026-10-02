@@ -3,6 +3,11 @@ import { render, screen } from "../../utils/test-utils";
 import { SummarizationMessage } from "./SummarizationMessage";
 import { syntheticCompressionReportMessage } from "../../services/refact/types";
 
+// Production renders token counts through `toLocaleString`, so the grouping
+// separator follows the host locale (comma, NBSP, period, ...). Matchers only
+// normalize whitespace in the element text, never in the expectation, so fold
+// the expectation's own grouping whitespace to a plain space too.
+const grouped = (value: number) => value.toLocaleString().replace(/\s+/g, " ");
 describe("reconstructed history disclosure", () => {
   it("retains flattened metadata and renders payload inside a collapsed report", async () => {
     const message = syntheticCompressionReportMessage({
@@ -73,9 +78,9 @@ describe("reconstructed history disclosure", () => {
     expect(screen.getByText(/claude_code\/claude-opus-5/)).toBeInTheDocument();
     const stats = screen.getByTestId("summarization-card-stats");
     expect(stats).toHaveTextContent("Tokens before");
-    expect(stats).toHaveTextContent("134,486");
+    expect(stats).toHaveTextContent(grouped(134486));
     expect(stats).toHaveTextContent("Tokens after");
-    expect(stats).toHaveTextContent("41,590");
+    expect(stats).toHaveTextContent(grouped(41590));
     expect(stats).toHaveTextContent("69%");
     expect(screen.queryByText("Mode:", { exact: false })).toBeNull();
   });

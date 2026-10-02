@@ -127,7 +127,13 @@ describe("ProviderUsageIndicator", () => {
     expect(
       screen.getByRole("progressbar", { name: "Weekly messages" }),
     ).toHaveAttribute("aria-valuenow", "75");
-    expect(screen.getByText("750 / 1,000")).toBeInTheDocument();
+    const amount = (value: number) =>
+      new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 })
+        .format(value)
+        .replace(/\s+/g, " ");
+    expect(
+      screen.getByText(`${amount(750)} / ${amount(1000)}`),
+    ).toBeInTheDocument();
     expect(screen.getByText("Pro")).toBeInTheDocument();
     expect(screen.getByText("12 USD")).toBeInTheDocument();
     expect(screen.getByText("provider-api")).toBeInTheDocument();

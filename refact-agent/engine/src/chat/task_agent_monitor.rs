@@ -2131,6 +2131,7 @@ mod tests {
             instructions: "Test instructions".to_string(),
             assignee,
             agent_chat_id,
+            retry_count: 0,
             status_updates: vec![],
             comments: vec![],
             final_report: None,

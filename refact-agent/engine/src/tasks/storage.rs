@@ -670,6 +670,7 @@ mod tests {
                     instructions: String::new(),
                     assignee: None,
                     agent_chat_id: None,
+                    retry_count: 0,
                     status_updates: vec![StatusUpdate {
                         timestamp: now.clone(),
                         message: "failure reason with details".to_string(),
@@ -839,6 +840,7 @@ mod tests {
                 instructions: String::new(),
                 assignee: Some("ab".to_string()),
                 agent_chat_id: None,
+                retry_count: 0,
                 status_updates: vec![],
                 comments: vec![],
                 final_report: None,

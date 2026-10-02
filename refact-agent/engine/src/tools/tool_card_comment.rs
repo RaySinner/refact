@@ -387,6 +387,7 @@ mod tests {
             instructions: String::new(),
             assignee: Some("agent-1".to_string()),
             agent_chat_id: Some(format!("agent-chat-{}", id)),
+            retry_count: 0,
             status_updates: vec![],
             comments,
             final_report: None,

@@ -1001,6 +1001,7 @@ mod tests {
             instructions: "Do the thing".to_string(),
             assignee: None,
             agent_chat_id: None,
+            retry_count: 0,
             status_updates: vec![],
             comments: vec![],
             final_report: None,

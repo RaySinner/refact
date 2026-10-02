@@ -1343,6 +1343,7 @@ mod tests {
             instructions: format!("Implement {} with enough details for a short brief.", title),
             assignee: None,
             agent_chat_id: None,
+            retry_count: 0,
             status_updates: vec![],
             comments: vec![],
             final_report: None,

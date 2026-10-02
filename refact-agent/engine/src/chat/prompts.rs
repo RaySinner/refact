@@ -865,6 +865,7 @@ mod tests {
             instructions: String::new(),
             assignee: None,
             agent_chat_id: None,
+            retry_count: 0,
             status_updates: Vec::new(),
             comments: vec![],
             final_report: None,

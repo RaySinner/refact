@@ -831,6 +831,7 @@ mod tests {
             instructions: "Fix the bug".to_string(),
             assignee: Some("old-agent".to_string()),
             agent_chat_id: Some(format!("agent-{}-old", id)),
+            retry_count: 0,
             status_updates: vec![StatusUpdate {
                 timestamp: "2024-01-01T10:00:00Z".to_string(),
                 message: "Agent started".to_string(),
@@ -926,6 +927,7 @@ mod tests {
             instructions: "do stuff".to_string(),
             assignee: Some("active-agent".to_string()),
             agent_chat_id: Some("agent-T-3-active".to_string()),
+            retry_count: 0,
             status_updates: vec![],
             comments: vec![],
             final_report: None,

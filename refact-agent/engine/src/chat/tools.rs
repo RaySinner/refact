@@ -3416,7 +3416,8 @@ async fn execute_single_tool(
         .map(|m| serde_json::Value::Object(m.into_iter().collect()));
     let post_payload = HookPayload {
         hook_event_name: "PostToolUse".to_string(),
-        session_id,
+        // Cloned: the loop guard below still needs `session_id`, and the payload owns it.
+        session_id: session_id.clone(),
         project_dir,
         tool_name: Some(tool_call.function.name.clone()),
         tool_input: args_value,

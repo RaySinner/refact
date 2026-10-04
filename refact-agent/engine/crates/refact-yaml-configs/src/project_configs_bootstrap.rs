@@ -798,6 +798,91 @@ tools:
     }
 
     #[test]
+    fn default_mode_ids_are_unique() {
+        let mut seen: Vec<String> = Vec::new();
+        for (filename, content) in get_defaults_for_kind("modes") {
+            let config: crate::customization_types::ModeConfig = serde_yaml::from_str(&content)
+                .unwrap_or_else(|err| panic!("{filename} should parse: {err}"));
+            assert!(
+                !seen.contains(&config.id),
+                "{filename} reuses mode id '{}'",
+                config.id
+            );
+            seen.push(config.id);
+        }
+    }
+
+    #[test]
+    fn task_architect_mode_declares_room_and_nudge_contract() {
+        let content = get_defaults_for_kind("modes")
+            .into_iter()
+            .find(|(filename, _)| filename == "task_architect.yaml")
+            .expect("task_architect.yaml must ship as a default mode")
+            .1;
+        let config: crate::customization_types::ModeConfig =
+            serde_yaml::from_str(&content).expect("task_architect.yaml should parse");
+
+        for tool in [
+            "spawn_agents_batch",
+            "wait_agents",
+            "check_agents",
+            "agent_steer",
+            "agent_pulse",
+            "agent_diff",
+            "agent_finish",
+            "restart_agent",
+            "mark_done",
+        ] {
+            assert!(
+                config.tools.iter().any(|declared| declared == tool),
+                "task_architect must declare '{tool}'"
+            );
+        }
+
+        for section in [
+            "## Your role",
+            "## The room",
+            "## Assigning work",
+            "## Running the room",
+            "## Stalling and nudging",
+            "## Finishing",
+        ] {
+            assert!(
+                config.prompt.contains(section),
+                "task_architect prompt must contain '{section}'"
+            );
+        }
+
+        assert!(
+            config.prompt.contains("silence is never success"),
+            "task_architect must state that silence is not success"
+        );
+        assert!(
+            config.prompt.contains("`coder`"),
+            "task_architect must state the mandatory coder role"
+        );
+    }
+
+    #[test]
+    fn nudge_guidance_in_default_modes_explains_the_reminder() {
+        let mut checked = 0;
+        for (filename, content) in get_defaults_for_kind("modes") {
+            if !content.contains("## If you finish without acting") {
+                continue;
+            }
+            checked += 1;
+            let config: crate::customization_types::ModeConfig = serde_yaml::from_str(&content)
+                .unwrap_or_else(|err| panic!("{filename} should parse: {err}"));
+            // The prompt is a YAML block scalar, so its own line wrapping survives
+            // parsing. Compare on whitespace-collapsed text.
+            let flat = config.prompt.split_whitespace().collect::<Vec<_>>().join(" ");
+            assert!(
+                flat.contains("the engine may remind you to act"),
+                "{filename} nudge section must tell the agent why it is nudged"
+            );
+        }
+        assert!(checked > 0, "at least one default mode must carry nudge guidance");
+    }#[test]
     fn default_modes_with_update_plan_guidance_require_schema_19() {
         for (filename, content) in get_defaults_for_kind("modes") {
             if !content.contains("update_plan") {

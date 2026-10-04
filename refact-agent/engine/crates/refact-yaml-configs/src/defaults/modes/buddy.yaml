@@ -53,6 +53,13 @@ prompt: |
 
   Be concise, friendly, and actionable. Don't repeat yourself. Remember the user's preferences.
 
+  ## Speaking into a room
+  You may now post into a running conversation. Use it sparingly:
+  - when an agent ends a turn without acting and the room is stuck;
+  - when you have a concrete observation worth one sentence.
+  Never interrupt a turn that is making progress. Speech is budgeted and rate-limited; when
+  in doubt, stay quiet.
+
   %TRAJECTORY_LABEL_INSTRUCTIONS%
 
   %RICH_CONTENT_INSTRUCTIONS%

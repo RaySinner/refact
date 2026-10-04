@@ -789,15 +789,37 @@ impl BoardCard {
             }
         }
 
-        let running_architects = self
-            .team_members
+        // Последовательная роль (allows_parallel() == false) не делит время выполнения
+        // с другими: пока она активна, в комнате не должно быть второго активного члена.
+        // Правило выводится из контракта роли, а не захардкожено под архитектора —
+        // новая непараллельная роль подхватится автоматически (Google ADK: интерактивный
+        // агент не может работать параллельно — «непонятно, кому он отвечает»).
+        let active: Vec<&TeamMember> = self.team_members.iter().filter(|m| m.is_active()).collect();
+        let sequential_active: Vec<&TeamMember> = active
             .iter()
-            .filter(|member| member.typed_role() == Some(TeamRole::Architect) && member.is_active())
-            .count();
-        if running_architects > 1 {
+            .copied()
+            .filter(|m| {
+                m.typed_role()
+                    .map(|role| !role.allows_parallel())
+                    .unwrap_or(false)
+            })
+            .collect();
+        if !sequential_active.is_empty() && active.len() > 1 {
+            let active_roles: Vec<&str> = active
+                .iter()
+                .map(|m| m.typed_role().map(|r| r.as_str()).unwrap_or("unknown"))
+                .collect();
+            let sequential_roles: Vec<&str> = sequential_active
+                .iter()
+                .map(|m| m.typed_role().map(|r| r.as_str()).unwrap_or("unknown"))
+                .collect();
             return Err(format!(
-                "card {} has {} running architects; the architect role is sequential",
-                self.id, running_architects
+                "card {}: the {} role is sequential, but {} members are active \
+                 simultaneously (active roles: {}); finish or pause the parallel members first",
+                self.id,
+                sequential_roles.join(", "),
+                active.len(),
+                active_roles.join(", ")
             ));
         }
 
@@ -1467,8 +1489,47 @@ team_members:
         let mut card = card("T-1", "Room", "doing", vec![]);
         card.team_members = vec![
             member("architect", Some(TeamStatus::Running)),
-            member("coder", Some(TeamStatus::Running)),
+            member("coder", Some(TeamStatus::Pending)),
             member("reviewer", Some(TeamStatus::Pending)),
+        ];
+
+        assert!(card.validate_team().is_ok());
+    }
+
+    #[test]
+    fn validate_team_rejects_running_architect_with_active_peer() {
+        let mut card = card("T-1", "Room", "doing", vec![]);
+        card.team_members = vec![
+            member("architect", Some(TeamStatus::Running)),
+            member("coder", Some(TeamStatus::Running)),
+        ];
+
+        let error = card.validate_team().unwrap_err();
+
+        assert!(error.contains("architect"), "{error}");
+        assert!(error.contains("coder"), "{error}");
+        assert!(error.contains("active roles"), "{error}");
+    }
+
+    #[test]
+    fn validate_team_allows_running_architect_when_others_pending() {
+        let mut card = card("T-1", "Room", "doing", vec![]);
+        card.team_members = vec![
+            member("architect", Some(TeamStatus::Running)),
+            member("coder", Some(TeamStatus::Pending)),
+            member("reviewer", Some(TeamStatus::Done)),
+        ];
+
+        assert!(card.validate_team().is_ok());
+    }
+
+    #[test]
+    fn validate_team_allows_parallel_members_without_running_architect() {
+        let mut card = card("T-1", "Room", "doing", vec![]);
+        card.team_members = vec![
+            member("architect", Some(TeamStatus::Pending)),
+            member("coder", Some(TeamStatus::Running)),
+            member("reviewer", Some(TeamStatus::Running)),
         ];
 
         assert!(card.validate_team().is_ok());

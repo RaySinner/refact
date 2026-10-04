@@ -445,6 +445,10 @@ pub struct ThreadParams {
     pub buddy_meta: Option<BuddyThreadMeta>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auto_compact_enabled: Option<bool>,
+    /// Включено ли автоматическое подталкивание агента, который закончил ход
+    /// обычным текстом, не вызвав ни одного инструмента.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_nudge_enabled: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub frozen_request_prefix: Option<FrozenRequestPrefix>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -507,6 +511,16 @@ impl ThreadParams {
     pub fn auto_compact_enabled_effective(&self) -> bool {
         self.auto_compact_enabled.unwrap_or(true)
     }
+
+    /// Включено ли автоматическое подталкивание агента, который закончил ход
+    /// обычным текстом, не вызвав ни одного инструмента.
+    ///
+    /// По умолчанию ВЫКЛЮЧЕНО: принуждение к вызову инструмента в обычной беседе
+    /// ломает диалог. В агентских чатах включается явно (или автоматически для
+    /// `task_meta.role == "agents"`).
+    pub fn agent_nudge_enabled_effective(&self) -> bool {
+        self.agent_nudge_enabled.unwrap_or(false)
+    }
 }
 
 impl Default for ThreadParams {
@@ -544,10 +558,61 @@ impl Default for ThreadParams {
             auto_enrichment_enabled: None,
             buddy_meta: None,
             auto_compact_enabled: None,
+            agent_nudge_enabled: None,
             frozen_request_prefix: None,
             claude_code_identity: None,
             reactive_compact_attempts: None,
         }
+    }
+}
+
+/// Роль скрытой инструкции nudge (аналог `cd_instruction` у length-stop recovery).
+pub const NUDGE_ROLE: &str = "cd_instruction";
+
+/// `tool_call_id` маркер-метка, по которой считаются попытки nudge в истории,
+/// ровно как `LENGTH_STOP_CONTINUE_MARKER` в generation.rs.
+pub const NUDGE_MARKER: &str = "silent_tail_nudge";
+
+/// Сигнал «агент закончил ход обычным текстом, не вызвав ни одного инструмента».
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SilentTailSignal {
+    /// Сколько раз подряд в этом ходе срабатывал nudge.
+    pub attempts: u32,
+    /// Максимально допустимое число попыток nudge за один ход.
+    pub max_attempts: u32,
+    /// Финальный текст ответа, который модель произнесла вместо вызова
+    /// инструмента. Нужен, чтобы инструкция могла ссылаться на конкретный ответ.
+    pub last_response_text: String,
+    /// Модель, на которой это произошло — для диагностики.
+    pub model: Option<String>,
+}
+
+impl SilentTailSignal {
+    /// Должен ли движок вставить очередную инструкцию.
+    pub fn should_nudge(&self) -> bool {
+        self.attempts < self.max_attempts
+    }
+
+    /// Исчерпаны ли попытки — пора эскалировать планировщику.
+    pub fn exhausted(&self) -> bool {
+        !self.should_nudge()
+    }
+
+    /// Инструкция для следующей попытки.
+    ///
+    /// `finish_tool` — имя инструмента завершения, доступного в этом чате
+    /// (для агентского чата это `agent_finish`), чтобы не хардкодить и не
+    /// упоминать инструмент, которого агент не видит.
+    ///
+    /// Текст инструкции англоязычный: движок работает с англоязычными
+    /// промптами, и русская фраза здесь моделью понята не будет.
+    pub fn nudge_message(&self, finish_tool: &str) -> String {
+        format!(
+            "Your previous response ended without calling any tool, so the work is not recorded \
+             and the task is left hanging. Do not end the turn with plain text again: perform the \
+             next required action with a tool call. If the card is genuinely complete, call \
+             `{finish_tool}`. If you are blocked, call `agent_ask_planner`."
+        )
     }
 }
 
@@ -1789,6 +1854,96 @@ mod tests {
         assert!(params.auto_compact_enabled.is_none());
         assert!(params.auto_compact_enabled_effective());
         assert!(params.auto_compression_cap.is_none());
+    }
+
+    fn silent_tail(attempts: u32, max_attempts: u32) -> SilentTailSignal {
+        SilentTailSignal {
+            attempts,
+            max_attempts,
+            last_response_text: "I looked at the reeds and think we are done.".to_string(),
+            model: Some("test-model".to_string()),
+        }
+    }
+
+    #[test]
+    fn silent_tail_should_nudge_until_max_attempts() {
+        assert!(silent_tail(0, 2).should_nudge());
+        assert!(silent_tail(1, 2).should_nudge());
+        assert!(!silent_tail(2, 2).should_nudge());
+        assert!(!silent_tail(3, 2).should_nudge());
+        assert!(!silent_tail(0, 0).should_nudge());
+    }
+
+    #[test]
+    fn silent_tail_exhausted_is_inverse_of_should_nudge() {
+        for attempts in 0..5 {
+            for max_attempts in 0..5 {
+                let signal = silent_tail(attempts, max_attempts);
+                assert_eq!(signal.exhausted(), !signal.should_nudge());
+            }
+        }
+    }
+
+    #[test]
+    fn nudge_message_mentions_the_finish_tool() {
+        let message = silent_tail(0, 2).nudge_message("agent_finish");
+        assert!(message.contains("agent_finish"));
+        assert!(!silent_tail(0, 2).nudge_message("other_finish").contains("agent_finish`."));
+    }
+
+    #[test]
+    fn nudge_message_is_not_empty_and_actionable() {
+        let message = silent_tail(0, 2).nudge_message("agent_finish");
+        assert!(message.chars().count() > 50);
+        assert!(message.contains("tool call"));
+        assert!(message.contains("agent_ask_planner"));
+    }
+
+    #[test]
+    fn agent_nudge_defaults_to_disabled() {
+        assert!(!ThreadParams::default().agent_nudge_enabled_effective());
+    }
+
+    #[test]
+    fn agent_nudge_respects_explicit_true() {
+        let enabled = ThreadParams {
+            agent_nudge_enabled: Some(true),
+            ..Default::default()
+        };
+        assert!(enabled.agent_nudge_enabled_effective());
+
+        let disabled = ThreadParams {
+            agent_nudge_enabled: Some(false),
+            ..Default::default()
+        };
+        assert!(!disabled.agent_nudge_enabled_effective());
+    }
+
+    #[test]
+    fn agent_nudge_missing_in_json_is_effectively_disabled() {
+        let json = r#"{
+            "id":"test",
+            "title":"Test",
+            "model":"gpt-4",
+            "mode":"agent",
+            "tool_use":"agent",
+            "include_project_info":true,
+            "checkpoints_enabled":true
+        }"#;
+
+        let params: ThreadParams = serde_json::from_str(json).unwrap();
+        assert!(params.agent_nudge_enabled.is_none());
+        assert!(!params.agent_nudge_enabled_effective());
+
+        let default_json = serde_json::to_value(ThreadParams::default()).unwrap();
+        assert!(default_json.get("agent_nudge_enabled").is_none());
+    }
+
+    #[test]
+    fn nudge_marker_is_distinct_from_length_stop_marker() {
+        assert_eq!(NUDGE_MARKER, "silent_tail_nudge");
+        assert_ne!(NUDGE_MARKER, "length_stop_continue");
+        assert_eq!(NUDGE_ROLE, "cd_instruction");
     }
 
     #[test]

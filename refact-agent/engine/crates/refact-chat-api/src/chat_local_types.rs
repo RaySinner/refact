@@ -149,6 +149,9 @@ pub struct StreamIdleWatchdog {
 }
 
 impl StreamIdleWatchdog {
+    /// Builds a watchdog from two ALREADY CLAMPED deadlines. The total-timeout clamp is
+    /// applied by [`effective_stream_idle_timeout`], which [`Self::for_prompt_tokens`] calls;
+    /// passing raw configuration values here silently opts out of that invariant.
     pub fn new(base: Duration, prefill: Duration) -> Self {
         Self { base, prefill }
     }
@@ -442,10 +445,27 @@ mod tests {
 
     #[test]
     fn idle_watchdog_clamps_post_progress_deadline_too() {
-        let watchdog =
-            StreamIdleWatchdog::new(Duration::from_secs(86_400), Duration::from_secs(86_400));
-        assert!(watchdog.timeout(true) <= CAP);
-        assert!(watchdog.timeout(false) <= CAP);
+        // The post-progress deadline is the configured base, so it has to inherit the
+        // total-timeout clamp. That clamp lives in `effective_idle_timeout_for` -- the pure
+        // arithmetic every production construction path goes through -- and NOT in
+        // `StreamIdleWatchdog`, which only stores whatever it was handed. Feeding raw
+        // 24h values straight into `StreamIdleWatchdog::new` therefore cannot clamp them,
+        // so this builds the watchdog the way `for_prompt_tokens` does.
+        let configured = Duration::from_secs(86_400);
+        let watchdog = StreamIdleWatchdog::new(
+            idle_timeout_for(configured, TOTAL, None),
+            idle_timeout_for(configured, TOTAL, Some(500_000)),
+        );
+        assert_eq!(
+            watchdog.timeout(true),
+            CAP,
+            "the post-progress deadline is the configured base and must stay clamped"
+        );
+        assert!(
+            watchdog.timeout(false) <= CAP,
+            "a large prompt must not push the prefill deadline past the cap: {:?}",
+            watchdog.timeout(false)
+        );
     }
 
     #[test]

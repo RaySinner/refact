@@ -241,12 +241,167 @@ impl AbVariants {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TeamRole {
+    /// Ведущий архитектор комнаты. Создаёт/назначает, синтезирует итог.
+    Architect,
+    /// Обязательный исполнитель, реализующий изменения в коде.
+    Coder,
+    /// Ревью/проверка чужой работы. Не редактирует код.
+    Reviewer,
+    /// Сбор требований, разведка, исследование.
+    Researcher,
+    /// Специалист конкретного домена (тесты, документация, производительность).
+    Specialist,
+}
+
+impl TeamRole {
+    /// Обязательные роли комнаты. Пустая комната без `Coder` невалидна —
+    /// это структурный контракт, а не просьба в промпте.
+    pub fn is_required_in_room(self) -> bool {
+        matches!(self, TeamRole::Coder)
+    }
+
+    /// Может ли роль работать параллельно с другими.
+    pub fn allows_parallel(self) -> bool {
+        !matches!(self, TeamRole::Architect)
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TeamRole::Architect => "architect",
+            TeamRole::Coder => "coder",
+            TeamRole::Reviewer => "reviewer",
+            TeamRole::Researcher => "researcher",
+            TeamRole::Specialist => "specialist",
+        }
+    }
+
+    /// Разбор строки роли. Нераспознанное значение — `None`, не паника.
+    pub fn parse(raw: &str) -> Option<Self> {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "architect" => Some(TeamRole::Architect),
+            "coder" => Some(TeamRole::Coder),
+            "reviewer" => Some(TeamRole::Reviewer),
+            "researcher" => Some(TeamRole::Researcher),
+            "specialist" => Some(TeamRole::Specialist),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum TeamStatus {
+    /// Назначен, но ещё не начал.
+    #[default]
+    Pending,
+    /// Работает.
+    Running,
+    /// Закончил успешно, есть отчёт.
+    Done,
+    /// Закончил частично — отчёт помечен partial.
+    Partial,
+    /// Упал или отменён.
+    Failed,
+}
+
+impl TeamStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TeamStatus::Pending => "pending",
+            TeamStatus::Running => "running",
+            TeamStatus::Done => "done",
+            TeamStatus::Partial => "partial",
+            TeamStatus::Failed => "failed",
+        }
+    }
+
+    pub fn is_terminal(self) -> bool {
+        matches!(
+            self,
+            TeamStatus::Done | TeamStatus::Partial | TeamStatus::Failed
+        )
+    }
+
+    /// Разбор строки статуса. Учитывает и новый kebab-case, и старые значения
+    /// доски (`doing`, `idle`, `done`, ...).
+    pub fn parse(raw: &str) -> Option<Self> {
+        match raw.trim().to_ascii_lowercase().replace('_', "-").as_str() {
+            "pending" | "planned" | "idle" | "starting" => Some(TeamStatus::Pending),
+            "running" | "doing" | "active" => Some(TeamStatus::Running),
+            "done" | "completed" | "complete" => Some(TeamStatus::Done),
+            "partial" | "partially-done" => Some(TeamStatus::Partial),
+            "failed" | "error" | "cancelled" | "canceled" => Some(TeamStatus::Failed),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct TeamMemberReport {
+    pub summary: String,
+    pub success: bool,
+    pub partial: bool,
+    pub files_changed: Vec<String>,
+    pub verification: Vec<String>,
+    pub completed_at: String,
+}
+
+impl TeamMember {
+    /// Типизированная роль; при нераспознанной строке — `None` (не паникуем).
+    pub fn typed_role(&self) -> Option<TeamRole> {
+        TeamRole::parse(&self.role)
+    }
+
+    /// Типизированный статус; приоритет у `member_status`, фолбэк — парс `status`.
+    pub fn typed_status(&self) -> TeamStatus {
+        self.member_status
+            .or_else(|| self.status.as_deref().and_then(TeamStatus::parse))
+            .unwrap_or_default()
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.typed_status() == TeamStatus::Running
+    }
+
+    pub fn is_terminal(&self) -> bool {
+        self.typed_status().is_terminal()
+    }
+
+    /// Стабильный ключ слота отчёта, по одному на члена (ADK `output_key`).
+    pub fn report_key(&self) -> String {
+        if let Some(chat_id) = self.agent_chat_id.as_deref().filter(|id| !id.is_empty()) {
+            return format!("team/{}", chat_id);
+        }
+        if let Some(agent_id) = self.agent_id.as_deref().filter(|id| !id.is_empty()) {
+            return format!("team/{}", agent_id);
+        }
+        match self.typed_role() {
+            Some(role) => format!("team/{}", role.as_str()),
+            None => format!("team/{}", self.role.trim().replace(' ', "-")),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct TeamMember {
     pub role: String,
     pub agent_chat_id: Option<String>,
     pub agent_branch: Option<String>,
     pub status: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_worktree: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub member_status: Option<TeamStatus>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mandate: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub report: Option<TeamMemberReport>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -569,6 +724,107 @@ impl TaskBoard {
     }
 }
 
+impl BoardCard {
+    /// Члены комнаты. Пустой Vec = одиночная карточка (обратная совместимость).
+    pub fn team(&self) -> &[TeamMember] {
+        &self.team_members
+    }
+
+    pub fn is_room(&self) -> bool {
+        self.team_members.len() > 1
+    }
+
+    pub fn team_member_by_agent_id(&self, agent_id: &str) -> Option<&TeamMember> {
+        self.team_members
+            .iter()
+            .find(|member| member.agent_id.as_deref() == Some(agent_id))
+    }
+
+    pub fn team_member_by_chat_id(&self, chat_id: &str) -> Option<&TeamMember> {
+        self.team_members
+            .iter()
+            .find(|member| member.agent_chat_id.as_deref() == Some(chat_id))
+    }
+
+    /// Уникальные слоты отчётов — по одному на члена (ADK `output_key`).
+    pub fn team_report_keys(&self) -> Vec<String> {
+        let mut keys: Vec<String> = Vec::new();
+        for member in &self.team_members {
+            let key = member.report_key();
+            if !keys.contains(&key) {
+                keys.push(key);
+            }
+        }
+        keys
+    }
+
+    /// Валидация комнаты. `Err` с понятным сообщением, если нарушен контракт.
+    pub fn validate_team(&self) -> Result<(), String> {
+        if !self.is_room() {
+            return Ok(());
+        }
+
+        let has_coder = self.team_members.iter().any(|member| {
+            member
+                .typed_role()
+                .map(|role| role.is_required_in_room())
+                .unwrap_or(false)
+        });
+        if !has_coder {
+            return Err(format!(
+                "card {} is a room without the required coder role",
+                self.id
+            ));
+        }
+
+        for duplicate in [
+            self.duplicate_team_value(|member| member.agent_id.as_deref()),
+            self.duplicate_team_value(|member| member.agent_chat_id.as_deref()),
+        ] {
+            if let Some(value) = duplicate {
+                return Err(format!(
+                    "card {} has a duplicate team member identity '{}'",
+                    self.id, value
+                ));
+            }
+        }
+
+        let running_architects = self
+            .team_members
+            .iter()
+            .filter(|member| member.typed_role() == Some(TeamRole::Architect) && member.is_active())
+            .count();
+        if running_architects > 1 {
+            return Err(format!(
+                "card {} has {} running architects; the architect role is sequential",
+                self.id, running_architects
+            ));
+        }
+
+        Ok(())
+    }
+
+    fn duplicate_team_value<'a, F>(&'a self, pick: F) -> Option<&'a str>
+    where
+        F: Fn(&'a TeamMember) -> Option<&'a str>,
+    {
+        let mut seen: Vec<&str> = vec![];
+        for member in &self.team_members {
+            let Some(value) = pick(member) else {
+                continue;
+            };
+            if value.is_empty() {
+                continue;
+            }
+            if seen.contains(&value) {
+                return Some(value);
+            }
+            seen.push(value);
+        }
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -821,18 +1077,21 @@ mod tests {
                 agent_chat_id: Some("chat-implementer".into()),
                 agent_branch: Some("team/implementer".into()),
                 status: Some("doing".into()),
+                ..Default::default()
             },
             TeamMember {
                 role: "tester".into(),
                 agent_chat_id: Some("chat-tester".into()),
                 agent_branch: Some("team/tester".into()),
                 status: Some("idle".into()),
+                ..Default::default()
             },
             TeamMember {
                 role: "reviewer".into(),
                 agent_chat_id: None,
                 agent_branch: None,
                 status: Some("done".into()),
+                ..Default::default()
             },
         ];
 
@@ -1074,5 +1333,265 @@ mod tests {
 
         assert!(decoded.base_branch.is_none());
         assert!(decoded.base_commit.is_none());
+    }
+
+    fn member(role: &str, status: Option<TeamStatus>) -> TeamMember {
+        TeamMember {
+            role: role.into(),
+            member_status: status,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn team_role_roundtrips_through_kebab_case() {
+        for role in [
+            TeamRole::Architect,
+            TeamRole::Coder,
+            TeamRole::Reviewer,
+            TeamRole::Researcher,
+            TeamRole::Specialist,
+        ] {
+            let encoded = serde_json::to_string(&role).unwrap();
+            let decoded: TeamRole = serde_json::from_str(&encoded).unwrap();
+            assert_eq!(decoded, role);
+            assert_eq!(TeamRole::parse(role.as_str()), Some(role));
+        }
+
+        assert_eq!(
+            serde_json::to_string(&TeamRole::Architect).unwrap(),
+            "\"architect\""
+        );
+    }
+
+    #[test]
+    fn team_status_roundtrips_through_kebab_case() {
+        for status in [
+            TeamStatus::Pending,
+            TeamStatus::Running,
+            TeamStatus::Done,
+            TeamStatus::Partial,
+            TeamStatus::Failed,
+        ] {
+            let encoded = serde_json::to_string(&status).unwrap();
+            let decoded: TeamStatus = serde_json::from_str(&encoded).unwrap();
+            assert_eq!(decoded, status);
+        }
+
+        assert_eq!(TeamStatus::default(), TeamStatus::Pending);
+    }
+
+    #[test]
+    fn team_member_deserializes_legacy_yaml_without_new_fields() {
+        let card: BoardCard = serde_yaml::from_str(
+            r#"
+id: T-1
+title: Legacy room
+column: doing
+assignee: null
+agent_chat_id: null
+created_at: '2026-05-16T00:00:00Z'
+started_at: null
+completed_at: null
+team_members:
+  - role: implementer
+    agent_chat_id: chat-implementer
+    agent_branch: team/implementer
+    status: doing
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(card.team_members.len(), 1);
+        let first = &card.team_members[0];
+        assert_eq!(first.role, "implementer");
+        assert_eq!(first.agent_chat_id.as_deref(), Some("chat-implementer"));
+        assert!(first.agent_id.is_none());
+        assert!(first.agent_worktree.is_none());
+        assert!(first.member_status.is_none());
+        assert!(first.mandate.is_none());
+        assert!(first.report.is_none());
+    }
+
+    #[test]
+    fn typed_status_falls_back_to_legacy_string() {
+        let legacy = TeamMember {
+            role: "implementer".into(),
+            status: Some("doing".into()),
+            ..Default::default()
+        };
+        let explicit = TeamMember {
+            role: "implementer".into(),
+            status: Some("doing".into()),
+            member_status: Some(TeamStatus::Done),
+            ..Default::default()
+        };
+        let unknown = TeamMember {
+            role: "implementer".into(),
+            status: Some("что-то новое".into()),
+            ..Default::default()
+        };
+
+        assert_eq!(legacy.typed_status(), TeamStatus::Running);
+        assert_eq!(explicit.typed_status(), TeamStatus::Done);
+        assert_eq!(unknown.typed_status(), TeamStatus::Pending);
+        assert!(!legacy.is_terminal());
+    }
+
+    #[test]
+    fn unknown_role_string_does_not_panic() {
+        let member = TeamMember {
+            role: "что-то новое".into(),
+            ..Default::default()
+        };
+
+        assert_eq!(member.typed_role(), None);
+        assert!(TeamRole::parse("").is_none());
+    }
+
+    #[test]
+    fn validate_team_rejects_room_without_coder() {
+        let mut card = card("T-1", "Room", "doing", vec![]);
+        card.team_members = vec![
+            member("reviewer", Some(TeamStatus::Pending)),
+            member("architect", Some(TeamStatus::Pending)),
+        ];
+
+        let error = card.validate_team().unwrap_err();
+
+        assert!(error.contains("coder"), "{error}");
+    }
+
+    #[test]
+    fn validate_team_accepts_room_with_coder() {
+        let mut card = card("T-1", "Room", "doing", vec![]);
+        card.team_members = vec![
+            member("architect", Some(TeamStatus::Running)),
+            member("coder", Some(TeamStatus::Running)),
+            member("reviewer", Some(TeamStatus::Pending)),
+        ];
+
+        assert!(card.validate_team().is_ok());
+    }
+
+    #[test]
+    fn validate_team_rejects_duplicate_agent_id() {
+        let mut card = card("T-1", "Room", "doing", vec![]);
+        card.team_members = vec![
+            TeamMember {
+                role: "architect".into(),
+                agent_id: Some("bgagent-same".into()),
+                member_status: Some(TeamStatus::Pending),
+                ..Default::default()
+            },
+            TeamMember {
+                role: "coder".into(),
+                agent_id: Some("bgagent-same".into()),
+                member_status: Some(TeamStatus::Pending),
+                ..Default::default()
+            },
+        ];
+
+        let error = card.validate_team().unwrap_err();
+
+        assert!(error.contains("bgagent-same"), "{error}");
+    }
+
+    #[test]
+    fn validate_team_rejects_two_running_architects() {
+        let mut card = card("T-1", "Room", "doing", vec![]);
+        card.team_members = vec![
+            member("architect", Some(TeamStatus::Running)),
+            member("coder", Some(TeamStatus::Running)),
+            member("architect", Some(TeamStatus::Running)),
+        ];
+
+        let error = card.validate_team().unwrap_err();
+
+        assert!(error.contains("architect"), "{error}");
+    }
+
+    #[test]
+    fn team_report_keys_are_unique_per_member() {
+        let mut card = card("T-1", "Room", "doing", vec![]);
+        card.team_members = vec![
+            TeamMember {
+                role: "architect".into(),
+                agent_chat_id: Some("chat-a".into()),
+                ..Default::default()
+            },
+            TeamMember {
+                role: "coder".into(),
+                agent_chat_id: Some("chat-b".into()),
+                ..Default::default()
+            },
+        ];
+
+        let keys = card.team_report_keys();
+
+        assert_eq!(
+            keys,
+            vec!["team/chat-a".to_string(), "team/chat-b".to_string()]
+        );
+    }
+
+    #[test]
+    fn single_card_is_not_a_room() {
+        let mut card = card("T-1", "Single", "planned", vec![]);
+
+        assert!(!card.is_room());
+        assert!(card.validate_team().is_ok());
+        assert!(card.team_report_keys().is_empty());
+        assert!(card.team().is_empty());
+
+        card.team_members = vec![member("coder", Some(TeamStatus::Pending))];
+
+        assert!(!card.is_room());
+        assert!(card.validate_team().is_ok());
+    }
+
+    #[test]
+    fn team_member_lookups_find_by_identity() {
+        let mut card = card("T-1", "Room", "doing", vec![]);
+        card.team_members = vec![
+            TeamMember {
+                role: "architect".into(),
+                agent_id: Some("bgagent-a".into()),
+                agent_chat_id: Some("chat-a".into()),
+                member_status: Some(TeamStatus::Running),
+                mandate: Some("Свести итог".into()),
+                ..Default::default()
+            },
+            TeamMember {
+                role: "coder".into(),
+                agent_id: Some("bgagent-b".into()),
+                agent_chat_id: Some("chat-b".into()),
+                member_status: Some(TeamStatus::Done),
+                report: Some(TeamMemberReport {
+                    summary: "done".into(),
+                    success: true,
+                    partial: false,
+                    files_changed: vec!["src/lib.rs".into()],
+                    verification: vec!["cargo test -p refact-tasks".into()],
+                    completed_at: "2026-05-16T01:00:00Z".into(),
+                }),
+                ..Default::default()
+            },
+        ];
+
+        assert_eq!(card.team().len(), 2);
+        assert_eq!(
+            card.team_member_by_agent_id("bgagent-b")
+                .and_then(|member| member.typed_role()),
+            Some(TeamRole::Coder)
+        );
+        assert_eq!(
+            card.team_member_by_chat_id("chat-a")
+                .and_then(|member| member.mandate.clone()),
+            Some("Свести итог".to_string())
+        );
+        assert!(card.team_member_by_agent_id("missing").is_none());
+        assert!(card.team_members[0].is_active());
+        assert!(card.team_members[1].is_terminal());
     }
 }

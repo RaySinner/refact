@@ -2536,6 +2536,86 @@ pub async fn buddy_background_task(gcx: AppState) {
                     }
                 }
 
+                // Phase 1.6: Buddy answers a task agent's question the planner has
+                // left hanging. Deliberately independent of the interjection pass:
+                // a question can be overdue while every agent is busy, and "the agent
+                // is working" is not "the answer arrived". Off by default, so this
+                // whole block is skipped unless the user asked for it.
+                let backstop_plan = {
+                    let buddy = buddy_arc.lock().await;
+                    buddy.as_ref().and_then(|svc| {
+                        svc.settings.planner_backstop_enabled.then(|| {
+                            (
+                                svc.settings.clone(),
+                                svc.state.speech_rotation.clone(),
+                                svc.auto_quiet_window,
+                            )
+                        })
+                    })
+                };
+                if let Some((settings, rotation, auto_quiet_window)) = backstop_plan {
+                    let task_ids: Vec<String> = crate::tasks::storage::list_tasks(gcx.gcx.clone())
+                        .await
+                        .unwrap_or_default()
+                        .into_iter()
+                        .filter(|meta| {
+                            !matches!(
+                                meta.status,
+                                crate::tasks::types::TaskStatus::Completed
+                                    | crate::tasks::types::TaskStatus::Abandoned
+                            )
+                        })
+                        .map(|meta| meta.id)
+                        .collect();
+                    let candidates =
+                        super::planner_backstop_runner::collect_backstop_candidates(
+                            &gcx, &task_ids,
+                        )
+                        .await;
+                    for candidate in candidates {
+                        let card_id = candidate.question.card_id.clone();
+                        let outcome = super::planner_backstop_runner::maybe_answer_overdue_question(
+                            &gcx,
+                            settings.clone(),
+                            rotation.clone(),
+                            auto_quiet_window,
+                            &candidate.task_id,
+                            &candidate.question,
+                        )
+                        .await;
+                        match &outcome {
+                            super::planner_backstop_runner::BackstopOutcome::Answered { .. }
+                            | super::planner_backstop_runner::BackstopOutcome::NotifiedHuman {
+                                ..
+                            } => {
+                                // Charge the interjection budget: the agent paid a
+                                // whole turn to read this, same as any other message
+                                // Buddy puts in an agent's transcript.
+                                let mut buddy = buddy_arc.lock().await;
+                                if let Some(svc) = buddy.as_mut() {
+                                    svc.record_interjection_emission(
+                                        &format!("backstop:{card_id}"),
+                                        "planner backstop",
+                                    );
+                                }
+                            }
+                            super::planner_backstop_runner::BackstopOutcome::Skipped {
+                                question_id,
+                                reason,
+                            } => {
+                                tracing::debug!(
+                                    target: "buddy.planner_backstop",
+                                    task_id = %candidate.task_id,
+                                    card_id = %card_id,
+                                    question_id = %question_id,
+                                    reason = %reason,
+                                    "buddy planner backstop skipped"
+                                );
+                            }
+                        }
+                    }
+                }
+
                 // Phase 2: attach humor outside the buddy lock.
                 let mut ready: Vec<(BuddyOpportunity, u64)> = Vec::with_capacity(humor_tasks.len());
                 for (mut opp, kind, cooldown_secs) in humor_tasks {

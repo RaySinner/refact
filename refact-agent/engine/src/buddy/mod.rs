@@ -14,6 +14,7 @@ pub mod jobs;
 pub mod memory_lifecycle;
 pub mod observers;
 pub mod opportunities;
+pub mod planner_backstop_runner;
 pub mod policy;
 pub mod pulse;
 pub mod pulse_inject;

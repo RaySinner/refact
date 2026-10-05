@@ -194,38 +194,116 @@ async fn room_card_id(ccx: &Arc<AMutex<AtCommandsContext>>) -> Option<(String, S
     Some((task_id, card_id))
 }
 
-/// Whether `to` names a peer on the caller's own card, and if so that peer's chat id.
+/// The room peers `to` addresses, and who is writing to them.
 ///
 /// A task agent is a plain chat session, not a `BackgroundAgent`, so peers are addressed by chat
 /// id and found through the caller's card roster — not through the parent/child tree. The bus is
 /// deliberately scoped to one card: two members of *different* rooms stay unreachable, exactly as
 /// the tree rule keeps unrelated agents unreachable.
 ///
+/// `to = None` means "the whole room": the default, because a room is a team and a message meant
+/// for the team is the common case. `to = Some(chat)` narrows it to one member, and a name that is
+/// not on this card yields `None` rather than an empty broadcast — reaching the wrong room is
+/// exactly what this scoping exists to prevent.
+///
 /// The author's provenance comes out of the same roster read, so attribution costs no second
 /// board load and cannot disagree with the reachability decision that permitted the delivery.
-pub(crate) async fn resolve_room_peer(
+pub(crate) async fn resolve_room_peers(
     gcx: Arc<GlobalContext>,
     task_id: &str,
     caller_card_id: &str,
     caller_chat_id: &str,
-    to: &str,
-) -> Option<RoomPeer> {
+    to: Option<&str>,
+) -> Option<Vec<RoomPeer>> {
     let board = crate::tasks::storage::load_board(gcx, task_id).await.ok()?;
     let card = board.get_card(caller_card_id)?;
-    if crate::tasks::rooms::same_room(card, caller_chat_id, to) {
-        let author = crate::tasks::rooms::room_member_provenance(card, caller_chat_id)?;
-        return Some(RoomPeer {
-            chat_id: to.to_string(),
-            author,
-        });
+    let author = crate::tasks::rooms::room_member_provenance(card, caller_chat_id)?;
+    match to {
+        Some(chat_id) => {
+            if !crate::tasks::rooms::same_room(card, caller_chat_id, chat_id) {
+                return None;
+            }
+            Some(vec![RoomPeer {
+                chat_id: chat_id.to_string(),
+                author,
+            }])
+        }
+        None => {
+            let peers: Vec<RoomPeer> = card
+                .team()
+                .iter()
+                .filter(|member| {
+                    member
+                        .agent_chat_id
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|id| !id.is_empty())
+                        .is_some_and(|id| id != caller_chat_id)
+                })
+                .map(|member| RoomPeer {
+                    chat_id: member.agent_chat_id.clone().unwrap_or_default(),
+                    author: author.clone(),
+                })
+                .collect();
+            // A room of one is not a room. Say "nobody to tell" instead of
+            // reporting a successful delivery of zero messages.
+            if peers.is_empty() {
+                None
+            } else {
+                Some(peers)
+            }
+        }
     }
-    None
 }
 
 /// A reachable room peer plus who is writing to it.
+#[derive(Clone)]
 pub(crate) struct RoomPeer {
     pub chat_id: String,
     pub author: refact_chat_api::MessageProvenance,
+}
+
+/// Deliver one room message to every peer, naming the ones that got it.
+///
+/// The author is stamped *before* the text is built: the byline a GUI draws must survive the
+/// delivery intact, so the notice content names the peer while the provenance names the speaker.
+/// A failure on one peer aborts the rest — a partially delivered room message that then claims
+/// success would leave half the room believing it was told something the other half never heard.
+async fn deliver_room_message(
+    app: AppState,
+    peers: Vec<RoomPeer>,
+    card_id: &str,
+    from_chat_id: &str,
+    text: &str,
+    push: PushMode,
+) -> Result<String, String> {
+    let targets: Vec<String> = peers.iter().map(|peer| peer.chat_id.clone()).collect();
+    for peer in peers {
+        let author_json = serde_json::to_value(&peer.author).unwrap_or(serde_json::Value::Null);
+        let mut message = crate::chat::internal_roles::event(
+            crate::chat::internal_roles::EventSubkind::SystemNotice,
+            "agents.room_message",
+            json!({
+                "card_id": card_id,
+                "from": from_chat_id,
+                "provenance": author_json,
+            }),
+            format!("[message from room peer {}]\n{text}", peer.chat_id),
+        );
+        refact_chat_api::attach_provenance(&mut message, peer.author);
+        crate::chat::deliver_to_chat(
+            app.clone(),
+            &peer.chat_id,
+            PendingDelivery::new(
+                vec![message],
+                push,
+                "agents.room_message".to_string(),
+                true,
+            ),
+        )
+        .await?;
+    }
+    Ok(format!("Message queued for: {}.", targets.join(", ")))
 }
 
 fn short_id(agent_id: &str) -> &str {
@@ -343,17 +421,23 @@ impl Tool for ToolAgentMessage {
             self.config_path.clone(),
             "agent_message",
             "Agent Message",
-            "Send a message to a child or descendant agent, or use to=parent to ask or notify the parent agent.",
+            "Send a message to a child or descendant agent, to a peer in the same agent room, or \
+             to every peer in the room (omit `to` from a room chat), or use to=parent to ask or \
+             notify the parent agent. Keep the text short: it is a summary for the room, never a \
+             pasted tool output.",
             json!({
                 "type": "object",
                 "properties": {
-                    "to": {"type": "string", "description": "A child/descendant agent id, or parent."},
+                    "to": {
+                        "type": "string",
+                        "description": "A child/descendant agent id, a room peer's chat id, 'all' for every peer in your room, or 'parent'. Omit only when you are in a room and mean every peer."
+                    },
                     "text": {"type": "string", "description": "Message text."},
                     "expects_reply": {"type": "boolean", "description": "When messaging parent, create a tracked question."},
                     "push": PushMode::schema(),
                     "reply_to": {"type": "string", "description": "Question id being answered when messaging a child."}
                 },
-                "required": ["to", "text"]
+                "required": ["text"]
             }),
         )
     }
@@ -364,12 +448,47 @@ impl Tool for ToolAgentMessage {
         tool_call_id: &String,
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
-        let to = required_string(args, "to")?;
+        let to = optional_string(args, "to");
         let text = required_string(args, "text")?;
         let expects_reply = optional_bool(args, "expects_reply")?;
         let push = PushMode::from_args(args)?;
         let reply_to = optional_string(args, "reply_to");
         let (app, chat_id, root_chat_id, caller_agent_id) = context(&ccx).await;
+
+        // A room member may address the whole room (no `to`, or `to="all"`) or one
+        // member by chat id. A name that is not on this card falls through to the
+        // registry path, which keeps the existing subagent contract and its error
+        // message intact.
+        let room_address: Option<Option<String>> = match to.as_deref() {
+            None | Some("all") if caller_agent_id.is_none() => Some(None),
+            Some(name) if caller_agent_id.is_none() => Some(Some(name.to_string())),
+            _ => None,
+        };
+        if let Some(address) = room_address {
+            if let Some((task_id, peer_card_id)) = room_card_id(&ccx).await {
+                if let Some(peers) = resolve_room_peers(
+                    app.gcx.clone(),
+                    &task_id,
+                    &peer_card_id,
+                    &chat_id,
+                    address.as_deref(),
+                )
+                .await
+                {
+                    return Ok(output(
+                        tool_call_id,
+                        deliver_room_message(app, peers, &peer_card_id, &chat_id, &text, push).await?,
+                    ));
+                }
+            }
+            if address.is_none() {
+                return Err(
+                    "No other room member to message on this card.".to_string(),
+                );
+            }
+        }
+
+        let to = to.ok_or_else(|| "Missing 'to'".to_string())?;
 
         if to == "parent" {
             let Some(agent_id) = caller_agent_id else {
@@ -407,49 +526,6 @@ impl Tool for ToolAgentMessage {
             )
             .await?;
             return Ok(output(tool_call_id, "Note sent to parent.".to_string()));
-        }
-
-        // A room peer is addressed by chat id and delivered through the chat bus; a background
-        // subagent is addressed by agent id and delivered through the agent registry. Trying the
-        // registry first keeps the existing subagent contract untouched.
-        if caller_agent_id.is_none() {
-            if let Some((task_id, peer_card_id)) = room_card_id(&ccx).await {
-                if let Some(peer) =
-                    resolve_room_peer(app.gcx.clone(), &task_id, &peer_card_id, &chat_id, &to).await
-                {
-                    // Stamp the author *before* the text is built: the byline a GUI draws must
-                    // survive the delivery intact, so the notice content names the peer while the
-                    // provenance names the speaker.
-                    let author_json =
-                        serde_json::to_value(&peer.author).unwrap_or(serde_json::Value::Null);
-                    let mut message = crate::chat::internal_roles::event(
-                        crate::chat::internal_roles::EventSubkind::SystemNotice,
-                        "agents.room_message",
-                        json!({
-                            "card_id": peer_card_id,
-                            "from": chat_id,
-                            "provenance": author_json,
-                        }),
-                        format!("[message from room peer {}]\n{text}", peer.chat_id),
-                    );
-                    refact_chat_api::attach_provenance(&mut message, peer.author);
-                    crate::chat::deliver_to_chat(
-                        app,
-                        &peer.chat_id,
-                        PendingDelivery::new(
-                            vec![message],
-                            push,
-                            "agents.room_message".to_string(),
-                            true,
-                        ),
-                    )
-                    .await?;
-                    return Ok(output(
-                        tool_call_id,
-                        format!("Message queued for room peer {}.", peer.chat_id),
-                    ));
-                }
-            }
         }
 
         let target = can_message_agent(
@@ -1350,6 +1426,245 @@ mod tests {
         assert_eq!(provenance.role, "architect");
     }
 
+    #[tokio::test]
+    async fn room_message_defaults_to_all_members() {
+        let gcx = crate::global_context::tests::make_test_gcx().await;
+        let app = AppState::from_gcx(gcx.clone()).await;
+        let workspace = tempfile::tempdir().unwrap();
+        *gcx.documents_state.workspace_folders.lock().unwrap() = vec![workspace.path().to_path_buf()];
+
+        crate::tasks::storage::save_board(
+            gcx.clone(),
+            "task-room",
+            &crate::tasks::types::TaskBoard {
+                cards: vec![room_board_card(&[
+                    "agent-T-1-arch",
+                    "agent-T-1-code",
+                    "agent-T-1-rev",
+                ])],
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let (code, _) = room_session(&app, "agent-T-1-code").await;
+        let (review, _) = room_session(&app, "agent-T-1-rev").await;
+        let (architect, _) = room_session(&app, "agent-T-1-arch").await;
+        let ccx = room_context(&app, "agent-T-1-arch", "task-room", "T-1").await;
+
+        let mut tool = ToolAgentMessage {
+            config_path: String::new(),
+        };
+        // No `to` at all: a room member addressing the room.
+        let delivered = text(
+            tool.tool_execute(ccx, &"call".to_string(), &args(&[("text", json!("plan agreed, go"))]))
+                .await
+                .unwrap(),
+        );
+
+        assert!(delivered.contains("agent-T-1-code"), "{delivered}");
+        assert!(delivered.contains("agent-T-1-rev"), "{delivered}");
+        for session in [&code, &review] {
+            assert!(
+                session
+                    .lock()
+                    .await
+                    .messages
+                    .iter()
+                    .any(|message| message
+                        .content
+                        .content_text_only()
+                        .contains("plan agreed, go")),
+                "a broadcast must reach every other member"
+            );
+        }
+        assert!(
+            !architect
+                .lock()
+                .await
+                .messages
+                .iter()
+                .any(|message| message
+                    .content
+                    .content_text_only()
+                    .contains("plan agreed, go")),
+            "the sender must not receive its own message"
+        );
+    }
+
+    #[tokio::test]
+    async fn room_message_can_target_single_member() {
+        let gcx = crate::global_context::tests::make_test_gcx().await;
+        let app = AppState::from_gcx(gcx.clone()).await;
+        let workspace = tempfile::tempdir().unwrap();
+        *gcx.documents_state.workspace_folders.lock().unwrap() = vec![workspace.path().to_path_buf()];
+
+        crate::tasks::storage::save_board(
+            gcx.clone(),
+            "task-room",
+            &crate::tasks::types::TaskBoard {
+                cards: vec![room_board_card(&[
+                    "agent-T-1-arch",
+                    "agent-T-1-code",
+                    "agent-T-1-rev",
+                ])],
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let (code, _) = room_session(&app, "agent-T-1-code").await;
+        let (review, _) = room_session(&app, "agent-T-1-rev").await;
+        let ccx = room_context(&app, "agent-T-1-arch", "task-room", "T-1").await;
+
+        let mut tool = ToolAgentMessage {
+            config_path: String::new(),
+        };
+        tool.tool_execute(
+            ccx,
+            &"call".to_string(),
+            &args(&[
+                ("to", json!("agent-T-1-code")),
+                ("text", json!("only you")),
+            ]),
+        )
+        .await
+        .unwrap();
+
+        assert!(
+            code.lock()
+                .await
+                .messages
+                .iter()
+                .any(|message| message.content.content_text_only().contains("only you")),
+            "the addressed member must get the message"
+        );
+        assert!(
+            !review
+                .lock()
+                .await
+                .messages
+                .iter()
+                .any(|message| message.content.content_text_only().contains("only you")),
+            "an addressed message must not leak to the rest of the room"
+        );
+    }
+
+    #[tokio::test]
+    async fn foreign_card_members_cannot_receive_message() {
+        let gcx = crate::global_context::tests::make_test_gcx().await;
+        let app = AppState::from_gcx(gcx.clone()).await;
+        let workspace = tempfile::tempdir().unwrap();
+        *gcx.documents_state.workspace_folders.lock().unwrap() = vec![workspace.path().to_path_buf()];
+
+        crate::tasks::storage::save_board(
+            gcx.clone(),
+            "task-room",
+            &crate::tasks::types::TaskBoard {
+                cards: vec![
+                    room_board_card(&["agent-T-1-arch", "agent-T-1-code"]),
+                    room_board_card_for("T-2", &["agent-T-2-arch", "agent-T-2-code"]),
+                ],
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let (other_room, _) = room_session(&app, "agent-T-2-code").await;
+        let ccx = room_context(&app, "agent-T-1-arch", "task-room", "T-1").await;
+
+        let mut tool = ToolAgentMessage {
+            config_path: String::new(),
+        };
+        let error = tool
+            .tool_execute(
+                ccx,
+                &"call".to_string(),
+                &args(&[
+                    ("to", json!("agent-T-2-code")),
+                    ("text", json!("crossing rooms")),
+                ]),
+            )
+            .await
+            .unwrap_err();
+
+        assert!(error.contains("direct children or descendants"), "{error}");
+        assert!(
+            !other_room
+                .lock()
+                .await
+                .messages
+                .iter()
+                .any(|message| message
+                    .content
+                    .content_text_only()
+                    .contains("crossing rooms")),
+            "a rejected delivery must not land anywhere"
+        );
+    }
+
+    #[tokio::test]
+    async fn neighbour_tool_output_never_enters_my_context() {
+        // The invariant behind "room members talk, not through each other's tool
+        // output": each member is its own `ChatSession`, so a message delivered to a
+        // neighbour is simply not in this session. If this test ever fails because
+        // the two sessions were merged, the whole context-isolation story is gone.
+        let gcx = crate::global_context::tests::make_test_gcx().await;
+        let app = AppState::from_gcx(gcx.clone()).await;
+        let workspace = tempfile::tempdir().unwrap();
+        *gcx.documents_state.workspace_folders.lock().unwrap() = vec![workspace.path().to_path_buf()];
+
+        crate::tasks::storage::save_board(
+            gcx.clone(),
+            "task-room",
+            &crate::tasks::types::TaskBoard {
+                cards: vec![room_board_card(&["agent-T-1-arch", "agent-T-1-code"])],
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let (code, _) = room_session(&app, "agent-T-1-code").await;
+        let (architect, _) = room_session(&app, "agent-T-1-arch").await;
+        let ccx = room_context(&app, "agent-T-1-arch", "task-room", "T-1").await;
+
+        let mut tool = ToolAgentMessage {
+            config_path: String::new(),
+        };
+        tool.tool_execute(
+            ccx,
+            &"call".to_string(),
+            &args(&[("text", json!("for the code agent only"))]),
+        )
+        .await
+        .unwrap();
+
+        let neighbour_got_it = code
+            .lock()
+            .await
+            .messages
+            .iter()
+            .any(|message| message
+                .content
+                .content_text_only()
+                .contains("for the code agent only"));
+        let author_saw_it = architect
+            .lock()
+            .await
+            .messages
+            .iter()
+            .any(|message| message
+                .content
+                .content_text_only()
+                .contains("for the code agent only"));
+
+        assert!(neighbour_got_it, "the message is the only channel between them");
+        assert!(
+            !author_saw_it,
+            "a delivered room message must not loop back into the sender's transcript"
+        );
+    }
+
     /// Provenance of the message carrying `needle` in the peer's chat.
     async fn delivered_provenance(
         session: &Arc<AMutex<ChatSession>>,
@@ -1428,6 +1743,15 @@ mod tests {
         let workspace = tempfile::tempdir().unwrap();
         *app.gcx.documents_state.workspace_folders.lock().unwrap() =
             vec![workspace.path().to_path_buf()];
+        (room_session_only(app, chat_id).await, workspace)
+    }
+
+    /// A second (or third) member's session, *without* touching the workspace.
+    ///
+    /// `room_session` installs a fresh tempdir, and the previous one is deleted on drop — so a test
+    /// that needs two peers must keep the workspace and add only the sessions, or the board written
+    /// into the first tempdir disappears and the roster read starts failing for the wrong reason.
+    async fn room_session_only(app: &AppState, chat_id: &str) -> Arc<AMutex<ChatSession>> {
         let session = Arc::new(AMutex::new(ChatSession::new(chat_id.to_string())));
         session
             .lock()
@@ -1439,7 +1763,7 @@ mod tests {
             .write()
             .await
             .insert(chat_id.to_string(), session.clone());
-        (session, workspace)
+        session
     }
 
     async fn room_context(

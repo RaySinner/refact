@@ -223,6 +223,8 @@ pub struct BuddySettingsRequest {
     pub muted_chat_ids: Option<Vec<String>>,
     #[serde(default, deserialize_with = "deserialize_optional_field")]
     pub daily_llm_token_budget: Option<Option<u64>>,
+    pub planner_backstop_enabled: Option<bool>,
+    pub planner_backstop_after_secs: Option<u64>,
     pub observers: Option<ObserverTogglesPatch>,
     pub palette_index: Option<usize>,
 }
@@ -258,6 +260,14 @@ impl BuddySettingsRequest {
                 return Err(ScratchError::new(
                     StatusCode::BAD_REQUEST,
                     "quiet_hours_end must be 0-23".to_string(),
+                ));
+            }
+        }
+        if let Some(secs) = self.planner_backstop_after_secs {
+            if secs == 0 {
+                return Err(ScratchError::new(
+                    StatusCode::BAD_REQUEST,
+                    "planner_backstop_after_secs must be greater than 0".to_string(),
                 ));
             }
         }
@@ -342,6 +352,12 @@ impl BuddySettingsRequest {
         }
         if let Some(v) = self.daily_llm_token_budget {
             settings.daily_llm_token_budget = v.filter(|budget| *budget > 0);
+        }
+        if let Some(v) = self.planner_backstop_enabled {
+            settings.planner_backstop_enabled = v;
+        }
+        if let Some(v) = self.planner_backstop_after_secs {
+            settings.planner_backstop_after_secs = v.max(1);
         }
         if let Some(observers) = &self.observers {
             observers.apply_to(&mut settings.observers);

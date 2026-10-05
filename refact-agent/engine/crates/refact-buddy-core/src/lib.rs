@@ -9,6 +9,7 @@ pub mod facts;
 pub mod memory_dedup;
 pub mod memory_lifecycle_model;
 pub mod opportunities;
+pub mod planner_backstop;
 pub mod policy;
 pub mod queue;
 pub mod runtime_queue;

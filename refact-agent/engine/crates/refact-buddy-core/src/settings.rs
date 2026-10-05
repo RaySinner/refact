@@ -121,6 +121,14 @@ pub struct BuddySettings {
     pub muted_chat_ids: Vec<String>,
     #[serde(default)]
     pub daily_llm_token_budget: Option<u64>,
+    /// Whether Buddy may answer a task agent's question when the planner has been
+    /// silent past the configured delay. Off by default: answering on a human's
+    /// behalf is a decision the user must hand over deliberately.
+    #[serde(default)]
+    pub planner_backstop_enabled: bool,
+    /// Seconds a question must go unanswered before the backstop may act.
+    #[serde(default = "default_planner_backstop_after_secs")]
+    pub planner_backstop_after_secs: u64,
     #[serde(default)]
     pub observers: ObserverToggles,
 }
@@ -139,6 +147,10 @@ fn default_quiet_start() -> u8 {
 
 fn default_quiet_end() -> u8 {
     8
+}
+
+fn default_planner_backstop_after_secs() -> u64 {
+    crate::planner_backstop::DEFAULT_PLANNER_BACKSTOP_AFTER_SECS
 }
 
 impl Default for BuddySettings {
@@ -164,6 +176,8 @@ impl Default for BuddySettings {
             muted_intents: Vec::new(),
             muted_chat_ids: Vec::new(),
             daily_llm_token_budget: None,
+            planner_backstop_enabled: false,
+            planner_backstop_after_secs: default_planner_backstop_after_secs(),
             observers: ObserverToggles::default(),
         }
     }
@@ -188,6 +202,11 @@ mod tests {
         assert!(settings.muted_intents.is_empty());
         assert!(settings.muted_chat_ids.is_empty());
         assert_eq!(settings.daily_llm_token_budget, None);
+        assert!(!settings.planner_backstop_enabled);
+        assert_eq!(
+            settings.planner_backstop_after_secs,
+            crate::planner_backstop::DEFAULT_PLANNER_BACKSTOP_AFTER_SECS
+        );
     }
 
     #[test]

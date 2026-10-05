@@ -67,6 +67,14 @@ pub fn budget_for(intent: SpeechIntent) -> SpeechBudget {
             per_day: 30,
             priority: 2,
         },
+        // Deliberately tighter than `ChatReaction`: this text lands in an
+        // agent's transcript as a message, not as a bubble beside the chat, so
+        // every emission costs the agent a turn.
+        SpeechIntent::AgentInterjection => SpeechBudget {
+            per_hour: 1,
+            per_day: 6,
+            priority: 7,
+        },
     }
 }
 
@@ -133,6 +141,7 @@ pub fn intent_key(intent: SpeechIntent) -> &'static str {
         SpeechIntent::QuestAccept => "quest_accept",
         SpeechIntent::QuestComplete => "quest_complete",
         SpeechIntent::ChatReaction => "chat_reaction",
+        SpeechIntent::AgentInterjection => "agent_interjection",
     }
 }
 pub fn parse_intent_key(token: &str) -> Option<SpeechIntent> {
@@ -149,6 +158,7 @@ pub fn parse_intent_key(token: &str) -> Option<SpeechIntent> {
         "quest_accept" => Some(SpeechIntent::QuestAccept),
         "quest_complete" => Some(SpeechIntent::QuestComplete),
         "chat_reaction" => Some(SpeechIntent::ChatReaction),
+        "agent_interjection" => Some(SpeechIntent::AgentInterjection),
         _ => None,
     }
 }
@@ -166,6 +176,7 @@ pub const ALL_INTENT_KEYS: &[&str] = &[
     "quest_accept",
     "quest_complete",
     "chat_reaction",
+    "agent_interjection",
 ];
 
 pub fn hour_in_quiet_window(hour: u32, start: u8, end: u8) -> bool {

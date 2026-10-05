@@ -133,10 +133,12 @@ const SPEECH_INTENT_KEYS: string[] = [
   "quest_accept",
   "quest_complete",
   "chat_reaction",
+  "agent_interjection",
 ];
 
 const SPEECH_INTENT_LABELS: Record<string, string> = {
   chat_reaction: "Chat reactions",
+  agent_interjection: "Agent interjections",
 };
 
 const buildPromptPatch = (value: string): BuddySettingsPatch => {

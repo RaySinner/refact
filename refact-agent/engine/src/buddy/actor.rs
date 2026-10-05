@@ -1404,6 +1404,45 @@ impl BuddyService {
             .is_over_budget(&today, self.settings.daily_llm_token_budget)
     }
 
+    /// Charge an agent interjection to the speech budget, and remember it in the
+    /// decision log so a dropped nudge is visible in the GUI rather than silent.
+    ///
+    /// This is deliberately *not* the same path as `gate_chat_reaction_event`:
+    /// that one lets an `intent_budget` drop through for runtime events. An
+    /// interjection is stricter on purpose — see
+    /// [`super::chat_interjection::gate_interjection`].
+    pub fn record_interjection_emission(&mut self, chat_id: &str, text: &str) {
+        let now = Utc::now();
+        super::speech_policy::record_emission(
+            &mut self.state.speech_rotation,
+            SpeechIntent::AgentInterjection,
+            now,
+        );
+        self.record_speech_decision(
+            &BuddySpeechItem {
+                id: format!("buddy-interjection-{}", Uuid::new_v4()),
+                text: crate::llm::safe_truncate(text, 120).to_string(),
+                mood: "neutral".to_string(),
+                scope: "global".to_string(),
+                persistent: false,
+                ttl_seconds: 10,
+                dedupe_key: None,
+                speech_intent: Some(
+                    super::speech_policy::intent_key(SpeechIntent::AgentInterjection)
+                        .to_string(),
+                ),
+                created_at: now.to_rfc3339(),
+                controls: vec![],
+                chat_id: Some(chat_id.to_string()),
+            },
+            Some(SpeechIntent::AgentInterjection),
+            super::speech_policy::SpeechGateDecision {
+                allowed: true,
+                reason: "interjection_delivered",
+            },
+        );
+    }
+
     pub fn record_workflow_failure_report(
         &mut self,
         report: super::workflows::WorkflowFailureReport,
@@ -2442,6 +2481,60 @@ pub async fn buddy_background_task(gcx: AppState) {
                         )
                     }
                 }; // buddy lock released — LLM humor calls happen outside the lock
+
+                // Phase 1.5: Buddy may speak into a live agent chat. Runs after
+                // the facts are ingested (they are the trigger) and outside the
+                // buddy lock (it awaits boards and chat sessions).
+                let interjection_plan = {
+                    let buddy = buddy_arc.lock().await;
+                    buddy.as_ref().map(|svc| {
+                        let facts = svc.fact_store.iter().cloned().collect::<Vec<_>>();
+                        (
+                            super::chat_interjection::stuck_task_ids(&facts),
+                            svc.settings.clone(),
+                            svc.state.speech_rotation.clone(),
+                            svc.auto_quiet_window,
+                            svc.llm_budget_exhausted(),
+                        )
+                    })
+                };
+                if let Some((stuck, settings, rotation, auto_quiet_window, llm_exhausted)) =
+                    interjection_plan.filter(|(stuck, ..)| !stuck.is_empty())
+                {
+                    let targets =
+                        super::chat_interjection::collect_interjection_targets(&gcx, &stuck).await;
+                    for target in targets {
+                        let text =
+                            super::chat_interjection::build_interjection_text(&target);
+                        match super::chat_interjection::maybe_interject_with_agent(
+                            gcx.clone(),
+                            &target,
+                            settings.clone(),
+                            rotation.clone(),
+                            auto_quiet_window,
+                            llm_exhausted,
+                        )
+                        .await
+                        {
+                            Ok(_) => {
+                                let mut buddy = buddy_arc.lock().await;
+                                if let Some(svc) = buddy.as_mut() {
+                                    svc.record_interjection_emission(&target.chat_id, &text);
+                                }
+                            }
+                            Err(reason) => {
+                                tracing::debug!(
+                                    target: "buddy.chat_interjection",
+                                    task_id = %target.task_id,
+                                    card_id = %target.card_id,
+                                    agent_chat_id = %target.chat_id,
+                                    reason = reason.as_str(),
+                                    "buddy interjection skipped"
+                                );
+                            }
+                        }
+                    }
+                }
 
                 // Phase 2: attach humor outside the buddy lock.
                 let mut ready: Vec<(BuddyOpportunity, u64)> = Vec::with_capacity(humor_tasks.len());

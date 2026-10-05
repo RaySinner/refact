@@ -91,6 +91,7 @@ const RUST_ALL_INTENT_KEYS: string[] = [
   "quest_accept",
   "quest_complete",
   "chat_reaction",
+  "agent_interjection",
 ];
 
 const RUST_DEFAULT_BUDDY_SETTINGS: BuddySettings = {
@@ -284,6 +285,7 @@ describe("Buddy schema contract", () => {
       "quest_accept",
       "quest_complete",
       "chat_reaction",
+      "agent_interjection",
     ]);
   });
 });

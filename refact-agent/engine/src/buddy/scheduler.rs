@@ -129,7 +129,8 @@ fn speech_runtime_bubble_policy(intent: SpeechIntent) -> BuddyBubblePolicy {
         SpeechIntent::Humor
         | SpeechIntent::Insight
         | SpeechIntent::MemoryPulseCommentary
-        | SpeechIntent::ChatReaction => BuddyBubblePolicy::Ambient,
+        | SpeechIntent::ChatReaction
+        | SpeechIntent::AgentInterjection => BuddyBubblePolicy::Ambient,
         SpeechIntent::Greeting
         | SpeechIntent::Tour
         | SpeechIntent::Milestone
@@ -151,6 +152,7 @@ fn speech_runtime_priority(intent: SpeechIntent) -> &'static str {
         SpeechIntent::Insight | SpeechIntent::MemoryPulseCommentary => "normal",
         SpeechIntent::Greeting | SpeechIntent::Tour | SpeechIntent::Suggestion => "low",
         SpeechIntent::Humor | SpeechIntent::ChatReaction => "low",
+        SpeechIntent::AgentInterjection => "normal",
     }
 }
 
@@ -163,6 +165,7 @@ fn speech_runtime_scene(intent: SpeechIntent) -> &'static str {
         }
         SpeechIntent::Greeting | SpeechIntent::Tour | SpeechIntent::QuestAccept => "welcome",
         SpeechIntent::Humor | SpeechIntent::ChatReaction => "playful",
+        SpeechIntent::AgentInterjection => "insight",
     }
 }
 

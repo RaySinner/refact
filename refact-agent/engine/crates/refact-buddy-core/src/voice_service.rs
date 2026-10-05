@@ -12,6 +12,10 @@ pub enum SpeechIntent {
     QuestAccept,
     QuestComplete,
     ChatReaction,
+    /// Buddy speaks into a live task-agent chat, rather than into its own chat
+    /// or the planner's. It has its own budget because it is the only intent
+    /// whose text is delivered as a chat message instead of a bubble.
+    AgentInterjection,
 }
 
 impl SpeechIntent {
@@ -29,6 +33,7 @@ impl SpeechIntent {
             SpeechIntent::QuestAccept => "speech:quest_accept",
             SpeechIntent::QuestComplete => "speech:quest_complete",
             SpeechIntent::ChatReaction => "speech:chat_reaction",
+            SpeechIntent::AgentInterjection => "speech:agent_interjection",
         }
     }
 
@@ -41,7 +46,8 @@ impl SpeechIntent {
             SpeechIntent::Suggestion
             | SpeechIntent::Insight
             | SpeechIntent::MemoryPulseCommentary
-            | SpeechIntent::ChatReaction => "curious",
+            | SpeechIntent::ChatReaction
+            | SpeechIntent::AgentInterjection => "curious",
         }
     }
 }

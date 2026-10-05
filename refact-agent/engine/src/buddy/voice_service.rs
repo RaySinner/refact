@@ -54,6 +54,7 @@ impl SpeechIntentWireToken for SpeechIntent {
             SpeechIntent::QuestAccept => "quest_accept",
             SpeechIntent::QuestComplete => "quest_complete",
             SpeechIntent::ChatReaction => "chat_reaction",
+            SpeechIntent::AgentInterjection => "agent_interjection",
         }
     }
 }

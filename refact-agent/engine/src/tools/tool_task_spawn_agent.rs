@@ -599,7 +599,7 @@ pub(crate) fn spawn_role(args: &HashMap<String, Value>) -> Result<String, String
     // Roles are free text now. The user names a member for what it is on this card, so refusing
     // "designer" or "qa" would put the hardcoded job list back in the way. What a member may do is
     // decided by its agent definition (`writes`, `decision_maker`), not by its name.
-    optional_nonempty_string_arg(args, "role")?.unwrap_or_else(|| DEFAULT_ROOM_ROLE.to_string())
+    Ok(optional_nonempty_string_arg(args, "role")?.unwrap_or_else(|| DEFAULT_ROOM_ROLE.to_string()))
 }
 
 /// Refuse a spawn that the card cannot accept, re-checking every rule the room contract has.

@@ -157,7 +157,7 @@ pub fn reject_room_growth(card: &BoardCard, adding: usize) -> Option<String> {
 /// A roster written by the create-room tool already names who works on the card and what each of
 /// them may do. A later spawn must *claim* that slot rather than append a second member with the
 /// same role, or the roster would list one agent twice.
-pub fn claim_planned_slot(card: &mut BoardCard, role: &str) -> Option<&mut TeamMember> {
+pub fn claim_planned_slot<'a>(card: &'a mut BoardCard, role: &str) -> Option<&'a mut TeamMember> {
     let role = role.trim();
     card.team_members.iter_mut().find(|member| {
         member.agent_chat_id.is_none()

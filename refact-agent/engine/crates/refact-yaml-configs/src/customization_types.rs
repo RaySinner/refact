@@ -293,6 +293,32 @@ pub struct ProjectRegistry {
 mod tests {
     use super::*;
 
+    /// A subagent definition with none of the room-behaviour fields set, so a test can opt into
+    /// exactly the flags it cares about instead of repeating fifteen defaults.
+    fn roomless_subagent(id: &str) -> SubagentConfig {
+        SubagentConfig {
+            schema_version: 1,
+            id: id.to_string(),
+            title: id.to_string(),
+            description: String::new(),
+            specific: false,
+            expose_as_tool: false,
+            has_code: false,
+            tool: None,
+            subchat: SubchatConfig::default(),
+            messages: SubagentMessages::default(),
+            prompts: SubagentPrompts::default(),
+            gather_files: GatherFilesConfig::default(),
+            tools: vec![],
+            writes: true,
+            decision_maker: false,
+            room_role_hint: None,
+            base: None,
+            match_models: None,
+            extra: HashMap::new(),
+        }
+    }
+
     #[test]
     fn test_tool_confirm_rule_serialization() {
         let rule = ToolConfirmRule {
@@ -521,6 +547,9 @@ another_extra: 123
             prompts: SubagentPrompts::default(),
             gather_files: GatherFilesConfig::default(),
             tools: vec![],
+            writes: true,
+            decision_maker: false,
+            room_role_hint: None,
             base: None,
             match_models: None,
             extra: {
@@ -547,6 +576,9 @@ another_extra: 123
             prompts: SubagentPrompts::default(),
             gather_files: GatherFilesConfig::default(),
             tools: vec![],
+            writes: true,
+            decision_maker: false,
+            room_role_hint: None,
             base: Some("base".to_string()),
             match_models: Some(vec!["gpt-*".to_string()]),
             extra: {
@@ -564,6 +596,51 @@ another_extra: 123
         assert!(result.expose_as_tool);
         assert!(result.extra.contains_key("base_extra"));
         assert!(result.extra.contains_key("override_extra"));
+    }
+
+    #[test]
+    fn subagent_override_carries_room_behavior() {
+        let base = SubagentConfig {
+            schema_version: 1,
+            id: "base".to_string(),
+            ..roomless_subagent("base")
+        };
+        let override_cfg = SubagentConfig {
+            writes: false,
+            decision_maker: true,
+            room_role_hint: Some("  arbitrates the room  ".to_string()),
+            ..roomless_subagent("override")
+        };
+
+        let result = base.apply_override(&override_cfg);
+
+        assert!(!result.writes());
+        assert!(result.is_decision_maker());
+        assert_eq!(result.room_hint(), Some("arbitrates the room"));
+    }
+
+    #[test]
+    fn subagent_override_cannot_widen_behavior() {
+        let base = SubagentConfig {
+            schema_version: 1,
+            id: "base".to_string(),
+            writes: false,
+            room_role_hint: Some("reads only".to_string()),
+            ..roomless_subagent("base")
+        };
+        // An override that says nothing keeps the base's restrictions, the same way
+        // `expose_as_tool` only ever promotes.
+        let override_cfg = SubagentConfig {
+            schema_version: 1,
+            id: "override".to_string(),
+            ..roomless_subagent("override")
+        };
+
+        let result = base.apply_override(&override_cfg);
+
+        assert!(!result.writes(), "a silent override must not re-grant writing");
+        assert!(!result.is_decision_maker());
+        assert_eq!(result.room_hint(), Some("reads only"));
     }
 
     #[test]

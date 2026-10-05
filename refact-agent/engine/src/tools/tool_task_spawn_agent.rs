@@ -591,18 +591,15 @@ pub(crate) fn claim_room_slot(
     card.team_members = vec![member];
 }
 
-/// Default room role for a spawn. `coder` is the only role `validate_team` requires, and it is
-/// also the honest default for a card an agent was asked to just "work on".
+/// Default room role for a spawn: the honest name for a card an agent was asked to just "work on".
+/// It is a label, not a contract — validation reads the agent definition, not this string.
 pub(crate) const DEFAULT_ROOM_ROLE: &str = "coder";
 
 pub(crate) fn spawn_role(args: &HashMap<String, Value>) -> Result<String, String> {
-    let role = optional_nonempty_string_arg(args, "role")?.unwrap_or_else(|| DEFAULT_ROOM_ROLE.to_string());
-    if crate::tasks::types::TeamRole::parse(&role).is_none() {
-        return Err(format!(
-            "Unknown role '{role}'. Use architect, coder, reviewer, researcher, or specialist."
-        ));
-    }
-    Ok(role)
+    // Roles are free text now. The user names a member for what it is on this card, so refusing
+    // "designer" or "qa" would put the hardcoded job list back in the way. What a member may do is
+    // decided by its agent definition (`writes`, `decision_maker`), not by its name.
+    optional_nonempty_string_arg(args, "role")?.unwrap_or_else(|| DEFAULT_ROOM_ROLE.to_string())
 }
 
 /// Refuse a spawn that the card cannot accept, re-checking every rule the room contract has.
@@ -895,7 +892,7 @@ impl Tool for ToolTaskSpawnAgent {
                     },
                     "role": {
                         "type": "string",
-                        "description": "Room role for this member: architect, coder, reviewer, researcher, or specialist (default: coder). A room must contain a coder. The architect role is sequential — it cannot run while another member is active."
+                        "description": "Free-text name for this member's part of the work (default: coder): coder, reviewer, designer, qa, whatever fits the card. Roles are labels, not a fixed job list, and a room needs nobody in particular. What a member may do comes from its agent definition (writes, decision_maker), not from this name. The architect label is sequential: it cannot run while another member is active."
                     },
                     "role_mandate": {
                         "type": "string",
@@ -2583,16 +2580,33 @@ mod tests {
 
     #[test]
     fn spawn_into_room_rejected_when_validate_team_fails() {
-        // Two researchers and an architect is a room with no coder: `validate_team` must refuse it.
+        // Two writing members that claim the same file: the roster is a valid room shape, but the
+        // pair would overwrite each other, so `validate_team` must refuse it.
         let mut card = test_card("T-1", "doing", None);
         card.team_members = vec![
-            crate::tasks::rooms::new_room_member("researcher", "a1", "agent-T-1-a1", None, None, None, vec![]),
-            crate::tasks::rooms::new_room_member("researcher", "a2", "agent-T-1-a2", None, None, None, vec![]),
+            crate::tasks::rooms::new_room_member("implementer", "a1", "agent-T-1-a1", None, None, None, vec![]),
+            crate::tasks::rooms::new_room_member("refactorer", "a2", "agent-T-1-a2", None, None, None, vec![]),
         ];
+        card.team_members[0].target_files = vec!["src/lib.rs".into()];
+        card.team_members[1].target_files = vec!["src/lib.rs".into()];
 
         let error = check_spawn_precondition(&card).unwrap_err();
 
-        assert!(error.contains("coder"), "{error}");
+        assert!(error.contains("both write"), "{error}");
+        assert!(error.contains("src/lib.rs"), "{error}");
+    }
+
+    #[test]
+    fn spawn_accepts_a_room_of_readers_and_free_roles() {
+        // The removed "a room must contain a coder" rule: what used to be an invalid room is now a
+        // legitimate one, because roles are labels and nobody is required to write.
+        let mut card = test_card("T-1", "doing", None);
+        card.team_members = vec![
+            crate::tasks::rooms::new_room_member("researcher", "a1", "agent-T-1-a1", None, None, None, vec![]),
+            crate::tasks::rooms::new_room_member("дизайнер", "a2", "agent-T-1-a2", None, None, None, vec![]),
+        ];
+
+        assert!(check_spawn_precondition(&card).is_ok());
     }
 
     #[test]
@@ -2625,16 +2639,18 @@ mod tests {
     }
 
     #[test]
-    fn spawn_role_defaults_to_coder_and_rejects_unknown_names() {
+    fn spawn_role_defaults_to_coder_and_accepts_free_text() {
         assert_eq!(spawn_role(&HashMap::new()).unwrap(), DEFAULT_ROOM_ROLE);
 
         let args = HashMap::from([("role".to_string(), json!("architect"))]);
         assert_eq!(spawn_role(&args).unwrap(), "architect");
 
-        let args = HashMap::from([("role".to_string(), json!("wizard"))]);
-        let error = spawn_role(&args).unwrap_err();
-        assert!(error.contains("wizard"), "{error}");
-        assert!(error.contains("coder"), "{error}");
+        // Roles are free text: the user names a member for this card, and refusing an unknown
+        // word would reintroduce the hardcoded job list this card removed.
+        for role in ["wizard", "designer", "qa-инженер"] {
+            let args = HashMap::from([("role".to_string(), json!(role))]);
+            assert_eq!(spawn_role(&args).unwrap(), role);
+        }
     }
 
     #[test]

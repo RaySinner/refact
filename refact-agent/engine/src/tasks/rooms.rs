@@ -74,6 +74,13 @@ pub fn new_room_member(
         mandate,
         report: None,
         tools,
+        // Left unstamped on purpose: a member whose behaviour nobody recorded must behave as a
+        // writer, so `spawn_agent` failing to resolve an agent definition can only ever be too
+        // permissive, never silently read-only.
+        writes: None,
+        decision_maker: None,
+        room_role_hint: None,
+        target_files: Vec::new(),
     }
 }
 
@@ -186,6 +193,11 @@ fn parse_team_member(value: &Value) -> Option<TeamMember> {
         .or_else(|| field("status"))
         .and_then(|raw| TeamStatus::parse(&raw));
 
+    let flag = |key: &str| object.and_then(|map| map.get(key)).and_then(Value::as_bool);
+    let writes = flag("writes");
+    let decision_maker = flag("decision_maker");
+    let room_role_hint = field("room_role_hint");
+
     let tools = value
         .as_object()
         .and_then(|map| map.get("tools"))
@@ -212,6 +224,23 @@ fn parse_team_member(value: &Value) -> Option<TeamMember> {
         mandate: field("mandate"),
         report: None,
         tools,
+        writes,
+        decision_maker,
+        room_role_hint,
+        target_files: value
+            .as_object()
+            .and_then(|map| map.get("target_files"))
+            .and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::trim)
+                    .filter(|file| !file.is_empty())
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default(),
     })
 }
 
@@ -246,6 +275,10 @@ fn parse_team_members_from_string(spec: &str) -> Result<Vec<TeamMember>, String>
             mandate: None,
             report: None,
             tools: Vec::new(),
+            writes: None,
+            decision_maker: None,
+            room_role_hint: None,
+            target_files: Vec::new(),
         });
     }
     Ok(members)
@@ -529,6 +562,49 @@ mod tests {
         assert_eq!(members[1].role, "coder");
         assert_eq!(members[1].agent_chat_id.as_deref(), Some("agent-T-1-code"));
         assert_eq!(members[1].typed_status(), TeamStatus::Pending);
+    }
+
+    #[test]
+    fn parse_team_members_reads_room_behaviour() {
+        let value = serde_json::json!([
+            {
+                "role": "tech-lead",
+                "chat_id": "agent-T-1-lead",
+                "writes": false,
+                "decision_maker": true,
+                "room_role_hint": "arbitrates the room",
+                "target_files": ["notes/decisions.md"]
+            },
+            {"role": "implementer", "chat_id": "agent-T-1-code"}
+        ]);
+
+        let members = parse_team_members(Some(&value)).unwrap();
+
+        let lead = &members[0];
+        assert!(!lead.writes());
+        assert!(lead.is_decision_maker());
+        assert!(lead.allows_parallel(), "a decision maker works alongside its peers");
+        assert_eq!(lead.room_role_hint.as_deref(), Some("arbitrates the room"));
+        assert_eq!(lead.target_files, vec!["notes/decisions.md".to_string()]);
+
+        // An entry that says nothing keeps the historical defaults: writes, decides nothing.
+        let implementer = &members[1];
+        assert!(implementer.writes());
+        assert!(!implementer.is_decision_maker());
+        assert!(implementer.room_role_hint.is_none());
+        assert!(implementer.target_files.is_empty());
+    }
+
+    #[test]
+    fn parse_team_members_ignores_a_non_boolean_writes_flag() {
+        // A model that passes "false" as a string must not silently make an agent read-only.
+        let value = serde_json::json!([
+            {"role": "coder", "chat_id": "agent-T-1-code", "writes": "false"}
+        ]);
+
+        let members = parse_team_members(Some(&value)).unwrap();
+
+        assert!(members[0].writes());
     }
 
     #[test]

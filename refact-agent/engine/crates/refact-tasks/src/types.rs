@@ -257,12 +257,6 @@ pub enum TeamRole {
 }
 
 impl TeamRole {
-    /// Обязательные роли комнаты. Пустая комната без `Coder` невалидна —
-    /// это структурный контракт, а не просьба в промпте.
-    pub fn is_required_in_room(self) -> bool {
-        matches!(self, TeamRole::Coder)
-    }
-
     /// Может ли роль работать параллельно с другими.
     pub fn allows_parallel(self) -> bool {
         !matches!(self, TeamRole::Architect)
@@ -367,6 +361,31 @@ impl TeamMember {
         self.typed_status() == TeamStatus::Running
     }
 
+    /// Whether this member edits the workspace. A member with no recorded behaviour is a writer,
+    /// because that is what every member was before the flag existed.
+    pub fn writes(&self) -> bool {
+        self.writes.unwrap_or(true)
+    }
+
+    /// Whether this member is the room's decision maker.
+    pub fn is_decision_maker(&self) -> bool {
+        self.decision_maker.unwrap_or(false)
+    }
+
+    /// Whether this member may work while another member is active.
+    ///
+    /// A role name alone cannot answer this for a free role the user invented, so a member is
+    /// parallel-capable unless its role is one the engine knows to be sequential. The decision
+    /// maker is also parallel-capable: it decides from the others' reports, not instead of them.
+    pub fn allows_parallel(&self) -> bool {
+        if self.is_decision_maker() {
+            return true;
+        }
+        self.typed_role()
+            .map(|role| role.allows_parallel())
+            .unwrap_or(true)
+    }
+
     pub fn is_terminal(&self) -> bool {
         self.typed_status().is_terminal()
     }
@@ -407,6 +426,22 @@ pub struct TeamMember {
     /// template would silently claim a tool the user never allowed for this member.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tools: Vec<String>,
+    /// Whether this member edits the workspace, stamped from the agent definition's `writes`.
+    /// `None` means the definition said nothing, which is read as "writes" — the historical
+    /// behaviour, so a board written before this field existed still behaves the old way.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub writes: Option<bool>,
+    /// Whether this member is the room's decision maker, from the definition's `decision_maker`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decision_maker: Option<bool>,
+    /// Why this member belongs in the room, from the definition's `room_role_hint`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub room_role_hint: Option<String>,
+    /// Files this member owns. Two writers sharing a file is the room conflict worth refusing:
+    /// Claude Code's rule is "assign separate files or modules", and a name-based ban would
+    /// refuse rooms that are actually fine.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub target_files: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -769,17 +804,30 @@ impl BoardCard {
             return Ok(());
         }
 
-        let has_coder = self.team_members.iter().any(|member| {
-            member
-                .typed_role()
-                .map(|role| role.is_required_in_room())
-                .unwrap_or(false)
-        });
-        if !has_coder {
+        let decision_makers: Vec<&TeamMember> = self
+            .team_members
+            .iter()
+            .filter(|member| member.is_decision_maker())
+            .collect();
+        if decision_makers.len() > 1 {
             return Err(format!(
-                "card {} is a room without the required coder role",
-                self.id
+                "card {} has {} decision makers ({}); a room has at most one, because two \
+                 agents deciding the same card is a coin flip, not a decision",
+                self.id,
+                decision_makers.len(),
+                describe_members(&decision_makers)
             ));
+        }
+
+        for member in &decision_makers {
+            if member.writes() {
+                return Err(format!(
+                    "card {}: '{}' is the decision maker and also writes (writes: true). \
+                     Synthesis and implementation are separate jobs: give the decision maker \
+                     an agent definition with writes: false, or drop decision_maker.",
+                    self.id, member.role
+                ));
+            }
         }
 
         for duplicate in [
@@ -794,6 +842,15 @@ impl BoardCard {
             }
         }
 
+        if let Some((left, right, file)) = self.writer_file_conflict() {
+            return Err(format!(
+                "card {}: '{}' and '{}' both write '{}'. Two teammates editing the same file \
+                 overwrite each other; split the files between them, or make one of them \
+                 read-only (writes: false) in its agent definition.",
+                self.id, left, right, file
+            ));
+        }
+
         // Последовательная роль (allows_parallel() == false) не делит время выполнения
         // с другими: пока она активна, в комнате не должно быть второго активного члена.
         // Правило выводится из контракта роли, а не захардкожено под архитектора —
@@ -803,11 +860,7 @@ impl BoardCard {
         let sequential_active: Vec<&TeamMember> = active
             .iter()
             .copied()
-            .filter(|m| {
-                m.typed_role()
-                    .map(|role| !role.allows_parallel())
-                    .unwrap_or(false)
-            })
+            .filter(|m| !m.allows_parallel())
             .collect();
         if !sequential_active.is_empty() && active.len() > 1 {
             let active_roles: Vec<&str> = active
@@ -850,6 +903,49 @@ impl BoardCard {
         }
         None
     }
+
+    /// The first file two writing members both claim, as `(left role, right role, file)`.
+    ///
+    /// Only members that write can conflict: a read-only member editing nothing cannot overwrite
+    /// anybody, so it is free to read a file a writer is editing. Members that declared no files
+    /// never conflict either — we cannot prove an overlap we were not told about.
+    pub fn writer_file_conflict(&self) -> Option<(&str, &str, String)> {
+        let writers: Vec<&TeamMember> = self
+            .team_members
+            .iter()
+            .filter(|member| member.writes() && !member.target_files.is_empty())
+            .collect();
+        for (index, left) in writers.iter().enumerate() {
+            for right in writers.iter().skip(index + 1) {
+                if let Some(file) = shared_target_file(left, right) {
+                    return Some((left.role.as_str(), right.role.as_str(), file));
+                }
+            }
+        }
+        None
+    }
+}
+
+fn describe_members(members: &[&TeamMember]) -> String {
+    members
+        .iter()
+        .map(|member| member.role.as_str())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn shared_target_file(left: &TeamMember, right: &TeamMember) -> Option<String> {
+    left.target_files
+        .iter()
+        .map(|file| file.trim())
+        .filter(|file| !file.is_empty())
+        .find(|file| {
+            right
+                .target_files
+                .iter()
+                .any(|other| other.trim() == *file)
+        })
+        .map(str::to_string)
 }
 
 #[cfg(test)]
@@ -1370,6 +1466,22 @@ mod tests {
         }
     }
 
+    fn behaviour(
+        role: &str,
+        writes: bool,
+        decision_maker: bool,
+        target_files: &[&str],
+    ) -> TeamMember {
+        TeamMember {
+            role: role.into(),
+            member_status: Some(TeamStatus::Pending),
+            writes: Some(writes),
+            decision_maker: Some(decision_maker),
+            target_files: target_files.iter().map(|file| (*file).to_string()).collect(),
+            ..Default::default()
+        }
+    }
+
     #[test]
     fn team_role_roundtrips_through_kebab_case() {
         for role in [
@@ -1438,6 +1550,45 @@ team_members:
         assert!(first.member_status.is_none());
         assert!(first.mandate.is_none());
         assert!(first.report.is_none());
+        assert!(first.writes.is_none());
+        assert!(first.decision_maker.is_none());
+        assert!(first.room_role_hint.is_none());
+        assert!(first.target_files.is_empty());
+        assert!(
+            first.writes(),
+            "a board written before the field existed must still behave as a writer"
+        );
+        assert!(!first.is_decision_maker());
+    }
+
+    #[test]
+    fn room_role_hint_is_optional_and_round_trips() {
+        let hinted = behaviour("qa", false, false, &[]);
+        let hinted = TeamMember {
+            room_role_hint: Some("catches what the implementer missed".into()),
+            ..hinted
+        };
+
+        let encoded = serde_json::to_string(&hinted).unwrap();
+        let decoded: TeamMember = serde_json::from_str(&encoded).unwrap();
+
+        assert_eq!(
+            decoded.room_role_hint.as_deref(),
+            Some("catches what the implementer missed")
+        );
+
+        // A member whose behaviour was never stamped keeps the board file exactly as it was:
+        // absent fields stay absent, so an old room does not grow `writes: null` noise.
+        let unstamped = TeamMember {
+            role: "qa".into(),
+            agent_chat_id: Some("agent-T-1-qa".into()),
+            ..Default::default()
+        };
+        let encoded = serde_json::to_string(&unstamped).unwrap();
+        assert!(!encoded.contains("room_role_hint"));
+        assert!(!encoded.contains("decision_maker"));
+        assert!(!encoded.contains("writes"));
+        assert!(!encoded.contains("target_files"));
     }
 
     #[test]
@@ -1477,16 +1628,149 @@ team_members:
     }
 
     #[test]
-    fn validate_team_rejects_room_without_coder() {
+    fn legacy_team_role_strings_still_parse() {
         let mut card = card("T-1", "Room", "doing", vec![]);
         card.team_members = vec![
             member("reviewer", Some(TeamStatus::Pending)),
             member("architect", Some(TeamStatus::Pending)),
         ];
 
+        for role in [
+            "coder",
+            "reviewer",
+            "architect",
+            "researcher",
+            "specialist",
+        ] {
+            assert!(TeamRole::parse(role).is_some(), "{role} must still parse");
+        }
+        assert_eq!(
+            card.team_members[0].typed_role(),
+            Some(TeamRole::Reviewer),
+            "a legacy role string keeps its typed classification"
+        );
+        assert!(
+            card.validate_team().is_ok(),
+            "a room of legacy roles needs no coder"
+        );
+    }
+
+    #[test]
+    fn custom_role_string_does_not_break_validation() {
+        let mut card = card("T-1", "Room", "doing", vec![]);
+        card.team_members = vec![
+            member("дизайнер", Some(TeamStatus::Running)),
+            member("qa-инженер", Some(TeamStatus::Running)),
+        ];
+
+        assert!(card.team_members[0].typed_role().is_none());
+        assert!(
+            card.validate_team().is_ok(),
+            "a free role is parallel-capable and needs no enum variant"
+        );
+    }
+
+    #[test]
+    fn at_most_one_decision_maker_in_room() {
+        let mut card = card("T-1", "Room", "doing", vec![]);
+        card.team_members = vec![
+            behaviour("tech-lead", false, true, &[]),
+            behaviour("second-lead", false, true, &[]),
+            behaviour("coder", true, false, &["src/lib.rs"]),
+        ];
+
         let error = card.validate_team().unwrap_err();
 
-        assert!(error.contains("coder"), "{error}");
+        assert!(error.contains("2 decision makers"), "{error}");
+        assert!(error.contains("tech-lead"), "{error}");
+        assert!(error.contains("second-lead"), "{error}");
+    }
+
+    #[test]
+    fn decision_maker_must_not_write() {
+        let mut card = card("T-1", "Room", "doing", vec![]);
+        card.team_members = vec![
+            behaviour("tech-lead", true, true, &["src/lib.rs"]),
+            behaviour("coder", true, false, &["src/other.rs"]),
+        ];
+
+        let error = card.validate_team().unwrap_err();
+
+        assert!(error.contains("decision maker and also writes"), "{error}");
+        assert!(error.contains("writes: false"), "{error}");
+    }
+
+    #[test]
+    fn room_without_decision_maker_is_valid() {
+        let mut card = card("T-1", "Room", "doing", vec![]);
+        card.team_members = vec![
+            behaviour("implementer", true, false, &["src/a.rs"]),
+            behaviour("tester", true, false, &["src/b.rs"]),
+        ];
+
+        assert!(
+            card.validate_team().is_ok(),
+            "the planner synthesizes outside the room; nobody inside has to decide"
+        );
+    }
+
+    #[test]
+    fn read_only_agent_does_not_conflict_on_files() {
+        let mut card = card("T-1", "Room", "doing", vec![]);
+        card.team_members = vec![
+            behaviour("implementer", true, false, &["src/lib.rs"]),
+            behaviour("reader", false, false, &["src/lib.rs"]),
+        ];
+
+        assert!(card.writer_file_conflict().is_none());
+        assert!(card.validate_team().is_ok());
+    }
+
+    #[test]
+    fn two_writing_agents_with_overlapping_files_are_rejected() {
+        let mut card = card("T-1", "Room", "doing", vec![]);
+        card.team_members = vec![
+            behaviour("implementer", true, false, &["src/lib.rs", "src/a.rs"]),
+            behaviour("refactorer", true, false, &["src/a.rs", "src/b.rs"]),
+        ];
+
+        let error = card.validate_team().unwrap_err();
+
+        assert!(error.contains("src/a.rs"), "{error}");
+        assert!(error.contains("overwrite each other"), "{error}");
+        assert_eq!(
+            card.writer_file_conflict(),
+            Some(("implementer", "refactorer", "src/a.rs".to_string()))
+        );
+    }
+
+    #[test]
+    fn writers_with_disjoint_files_are_accepted() {
+        let mut card = card("T-1", "Room", "doing", vec![]);
+        card.team_members = vec![
+            behaviour("implementer", true, false, &["src/a.rs"]),
+            behaviour("refactorer", true, false, &["src/b.rs"]),
+            behaviour("unspecified", true, false, &[]),
+        ];
+
+        assert!(card.writer_file_conflict().is_none());
+        assert!(card.validate_team().is_ok());
+    }
+
+    #[test]
+    fn decision_maker_may_work_while_a_peer_is_active() {
+        let mut card = card("T-1", "Room", "doing", vec![]);
+        card.team_members = vec![
+            behaviour("architect", false, true, &[]),
+            behaviour("implementer", true, false, &["src/a.rs"]),
+        ];
+        card.team_members[1].member_status = Some(TeamStatus::Running);
+
+        assert!(card.team_members[0].allows_parallel());
+        assert!(
+            card.validate_team().is_ok(),
+            "a decision maker synthesizes from reports while the room runs"
+        );
     }
 
     #[test]

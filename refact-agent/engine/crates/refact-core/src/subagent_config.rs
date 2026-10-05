@@ -27,6 +27,19 @@ pub struct SubagentConfig {
     pub gather_files: GatherFilesConfig,
     #[serde(default)]
     pub tools: Vec<String>,
+    /// Whether this agent edits the workspace. Room validation reads it to decide whether two
+    /// members sharing a file are a conflict, so an agent that only investigates sets it to false.
+    /// Default true: a definition that says nothing about writing is assumed to write.
+    #[serde(default = "default_writes")]
+    pub writes: bool,
+    /// Whether this agent is the one that decides inside a room. At most one member may claim it,
+    /// and a decision maker must not also write: synthesis and implementation are separate jobs.
+    #[serde(default)]
+    pub decision_maker: bool,
+    /// Why this agent belongs in a room, in one line. Unlike `description` (which tells an
+    /// orchestrator when to call the agent), this is what a room neighbour reads about its peer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub room_role_hint: Option<String>,
     #[serde(default)]
     pub base: Option<String>,
     #[serde(default)]
@@ -35,7 +48,29 @@ pub struct SubagentConfig {
     pub extra: HashMap<String, serde_yaml::Value>,
 }
 
+fn default_writes() -> bool {
+    true
+}
+
 impl SubagentConfig {
+    /// Whether this agent edits the workspace.
+    pub fn writes(&self) -> bool {
+        self.writes
+    }
+
+    /// Whether this agent is the room's decision maker.
+    pub fn is_decision_maker(&self) -> bool {
+        self.decision_maker
+    }
+
+    /// Why this agent belongs in a room, blank-guard included.
+    pub fn room_hint(&self) -> Option<&str> {
+        self.room_role_hint
+            .as_deref()
+            .map(str::trim)
+            .filter(|hint| !hint.is_empty())
+    }
+
     pub fn apply_override(&self, ovr: &SubagentConfig) -> SubagentConfig {
         let mut result = self.clone();
         if !ovr.title.is_empty() {
@@ -131,6 +166,17 @@ impl SubagentConfig {
         }
         if !ovr.tools.is_empty() {
             result.tools = ovr.tools.clone();
+        }
+        // `writes` promotes to false like `expose_as_tool` promotes to true, so an override can
+        // only narrow what the base definition was allowed to do, never widen it silently.
+        if !ovr.writes {
+            result.writes = false;
+        }
+        if ovr.decision_maker {
+            result.decision_maker = true;
+        }
+        if let Some(hint) = ovr.room_hint() {
+            result.room_role_hint = Some(hint.to_string());
         }
         for (k, v) in &ovr.extra {
             result.extra.insert(k.clone(), v.clone());

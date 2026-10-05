@@ -4,6 +4,8 @@ title: Visual QA
 description: Read-only pre-merge visual regression gate with browser runtime diagnostics
 expose_as_tool: true
 has_code: false
+writes: false
+room_role_hint: Catches visual regressions in a PR with browser evidence, editing nothing.
 
 tool:
   description: Run an existing golden-baseline suite and return a pass or fail verdict with artifacts and browser evidence

@@ -857,10 +857,64 @@ tools:
             config.prompt.contains("silence is never success"),
             "task_architect must state that silence is not success"
         );
+        // The mandatory-coder rule is gone (roles are free text, behaviour comes from the agent
+        // definition), so the prompt must advertise the rules that validation actually enforces.
         assert!(
-            config.prompt.contains("`coder`"),
-            "task_architect must state the mandatory coder role"
+            config.prompt.contains("writes: false"),
+            "task_architect must state the read-only contract"
         );
+        assert!(
+            config.prompt.contains("decision_maker: true"),
+            "task_architect must state the at-most-one-decision-maker rule"
+        );
+        assert!(
+            !config.prompt.contains("is rejected by validation, so assign it first"),
+            "the removed mandatory-coder rule must not stay in the prompt"
+        );
+    }
+
+    #[test]
+    fn subagent_defaults_are_backward_compatible() {
+        // The two audit agents are the only shipped definitions that say they do not write; every
+        // other one omits the field entirely and must keep the historical "writes" default.
+        let declared_read_only = ["design_review.yaml", "visual_qa.yaml"];
+        let mut checked = 0;
+        for (filename, content) in get_defaults_for_kind("subagents") {
+            let config: refact_core::subagent_config::SubagentConfig =
+                serde_yaml::from_str(&content)
+                    .unwrap_or_else(|err| panic!("{filename} should parse: {err}"));
+            checked += 1;
+            assert_eq!(
+                config.writes(),
+                !declared_read_only.contains(&filename.as_str()),
+                "{filename}: writes must come from the definition, not from the parser"
+            );
+            assert!(!config.is_decision_maker(), "{filename} must not decide");
+        }
+        assert!(checked >= 30, "expected the shipped subagent corpus, got {checked}");
+    }
+
+    #[test]
+    fn read_only_agents_declare_their_room_behavior() {
+        // The two audit agents exist precisely to look without touching, so their definitions are
+        // the honest place to say so. This keeps `writes: false` discoverable in the registry
+        // rather than only in a board a spawn happened to write.
+        for id in ["design_review", "visual_qa"] {
+            let filename = format!("{id}.yaml");
+            let content = get_defaults_for_kind("subagents")
+                .into_iter()
+                .find(|(candidate, _)| *candidate == filename)
+                .unwrap_or_else(|| panic!("{id}.yaml must ship as a default subagent"))
+                .1;
+            let config: refact_core::subagent_config::SubagentConfig =
+                serde_yaml::from_str(&content).expect("subagent should parse");
+
+            assert!(!config.writes(), "{id} must declare writes: false");
+            assert!(
+                config.room_hint().is_some(),
+                "{id} must say why it belongs in a room"
+            );
+        }
     }
 
     #[test]

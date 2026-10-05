@@ -4,6 +4,8 @@ title: Design Review
 description: Read-only UI audit grounded in design-system and live-browser measurements
 expose_as_tool: true
 has_code: false
+writes: false
+room_role_hint: Judges the live UI against the design system before a change is merged.
 
 tool:
   description: Audit a live UI and return an interactive evidence-backed design review without editing files

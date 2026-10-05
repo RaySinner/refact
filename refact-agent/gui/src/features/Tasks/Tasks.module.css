@@ -146,13 +146,38 @@
 }
 
 .roomMember {
+  appearance: none;
+  background: transparent;
+  border-top: none;
+  border-right: none;
+  border-bottom: none;
+  border-left: 2px solid var(--room-member-stripe);
   display: inline-flex;
   align-items: center;
   gap: var(--rf-space-1);
   padding: 0 var(--rf-space-1);
-  border-left: 2px solid var(--room-member-stripe);
   min-width: 0;
   line-height: 1.4;
+  font-family: inherit;
+  font-size: inherit;
+  text-align: left;
+  cursor: default;
+  border-radius: var(--rf-radius-chip);
+  transition: background 0.15s ease;
+}
+
+.roomMemberClickable {
+  cursor: pointer;
+}
+
+.roomMemberClickable:hover,
+.roomMemberClickable:focus-visible {
+  background: color-mix(in oklab, var(--room-member-stripe) 20%, transparent);
+}
+
+.roomMemberClickable:focus-visible {
+  outline: var(--rf-focus-ring-w) solid var(--rf-focus-ring);
+  outline-offset: 1px;
 }
 
 .roomMemberInitials {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "../../utils/test-utils";
 import type {
   BoardCard,
@@ -140,6 +140,33 @@ describe("KanbanCard agent badge", () => {
     expect(roleAccentSlot("architect")).not.toBe(roleAccentSlot("coder"));
     expect(architect.getAttribute("style")).not.toEqual(
       coder.getAttribute("style"),
+    );
+  });
+
+  it("room_member_badge_click_triggers_on_agent_click", async () => {
+    const onAgentClick = vi.fn();
+    const { user } = render(
+      <KanbanBoard
+        board={makeBoard(
+          makeCard({
+            agent_chat_id: "card-chat-id",
+            team_members: [
+              makeMember({ role: "architect", agent_chat_id: "chat-arch" }),
+              makeMember({ role: "coder", agent_chat_id: "chat-coder" }),
+            ],
+          }),
+        )}
+        onAgentClick={onAgentClick}
+      />,
+    );
+
+    const coderBadge = screen.getByTestId("room-member-coder");
+    await user.click(coderBadge);
+
+    expect(onAgentClick).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agent_chat_id: "chat-coder",
+      }),
     );
   });
 });

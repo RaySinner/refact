@@ -13,6 +13,7 @@ import {
 } from "../../components/ui";
 import { Checkbox } from "../../components/Checkbox";
 import {
+  Bot,
   ChevronDown,
   FileText,
   GitBranch,
@@ -777,6 +778,7 @@ interface CardDetailProps {
   onMerge: (worktree: CardWorktreeTarget) => void;
   onOpenWorktree: (worktree: CardWorktreeTarget) => void;
   onDeleteWorktree: (worktree: CardWorktreeTarget) => void;
+  onOpenAgentChat?: (card: BoardCard, targetChatId?: string) => void;
 }
 
 const CardDetail: React.FC<CardDetailProps> = ({
@@ -791,6 +793,7 @@ const CardDetail: React.FC<CardDetailProps> = ({
   onMerge,
   onOpenWorktree,
   onDeleteWorktree,
+  onOpenAgentChat,
 }) => {
   const worktreeActionsDisabled = !worktree || !isActionableWorktree(worktree);
   const worktreeActionsTooltip = worktree?.legacy
@@ -827,14 +830,29 @@ const CardDetail: React.FC<CardDetailProps> = ({
               {card.title}
             </Dialog.Title>
           </div>
-          <Badge tone={cardStatusTone(card.column)}>
-            {card.column === "doing" ||
-            card.column === "done" ||
-            card.column === "failed" ? (
-              <AgentStatusDot status={card.column} size="small" />
+          <Flex align="center" gap="2">
+            {card.agent_chat_id && onOpenAgentChat ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() =>
+                  onOpenAgentChat(card, card.agent_chat_id ?? undefined)
+                }
+              >
+                <Icon icon={Bot} size="sm" tone="accent" />
+                Open Agent Chat
+              </Button>
             ) : null}
-            {card.column}
-          </Badge>
+            <Badge tone={cardStatusTone(card.column)}>
+              {card.column === "doing" ||
+              card.column === "done" ||
+              card.column === "failed" ? (
+                <AgentStatusDot status={card.column} size="small" />
+              ) : null}
+              {card.column}
+            </Badge>
+          </Flex>
         </div>
 
         <section className={styles.cardDetailMetaGrid}>
@@ -1626,9 +1644,10 @@ export const TaskWorkspace: React.FC<TaskWorkspaceProps> = ({ taskId }) => {
   );
 
   const handleCardAgentClick = useCallback(
-    (card: BoardCard) => {
-      if (!card.agent_chat_id) return;
-      handleSelectAgent(card.id, card.agent_chat_id);
+    (card: BoardCard, targetChatId?: string) => {
+      const chatId = targetChatId ?? card.agent_chat_id;
+      if (!chatId) return;
+      handleSelectAgent(card.id, chatId);
       setSelectedCardId(null);
     },
     [handleSelectAgent],
@@ -2095,6 +2114,7 @@ export const TaskWorkspace: React.FC<TaskWorkspaceProps> = ({ taskId }) => {
             onMerge={handleMergeCardWorktree}
             onOpenWorktree={(worktree) => void handleOpenCardWorktree(worktree)}
             onDeleteWorktree={handleDeleteCardWorktree}
+            onOpenAgentChat={handleCardAgentClick}
           />
         )}
       </Dialog>

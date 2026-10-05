@@ -47,12 +47,21 @@ function columnToneClass(columnId: string): string {
 
 interface RoomMemberProps {
   member: TeamMember;
+  card: BoardCard;
+  onAgentClick?: (card: BoardCard) => void;
 }
 
-const RoomMemberBadge: React.FC<RoomMemberProps> = ({ member }) => {
+const RoomMemberBadge: React.FC<RoomMemberProps> = ({
+  member,
+  card,
+  onAgentClick,
+}) => {
   const accent = roleAccent(member.role);
   const label = roleLabel(member.role);
   const status = memberStatusText(member);
+  const targetChatId = member.agent_chat_id ?? card.agent_chat_id;
+  const isClickable = Boolean(targetChatId);
+
   const details = [
     `Role: ${label}`,
     `Status: ${status}`,
@@ -60,13 +69,30 @@ const RoomMemberBadge: React.FC<RoomMemberProps> = ({ member }) => {
     member.tools && member.tools.length > 0
       ? `Tools: ${member.tools.join(", ")}`
       : null,
+    isClickable ? "Click to open agent chat" : null,
   ]
     .filter(Boolean)
     .join("\n");
 
+  const handleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+    if (!targetChatId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const cardWithChat =
+      targetChatId === card.agent_chat_id
+        ? card
+        : { ...card, agent_chat_id: targetChatId };
+    onAgentClick?.(cardWithChat);
+  };
+
   return (
-    <span
-      className={styles.roomMember}
+    <button
+      type="button"
+      className={classNames(
+        styles.roomMember,
+        isClickable && styles.roomMemberClickable,
+      )}
+      onClick={handleClick}
       title={details}
       data-testid={`room-member-${member.role}`}
       style={
@@ -81,15 +107,21 @@ const RoomMemberBadge: React.FC<RoomMemberProps> = ({ member }) => {
       </span>
       <span className={styles.roomMemberRole}>{label}</span>
       <span className={styles.roomMemberStatus}>{status}</span>
-    </span>
+    </button>
   );
 };
 
 interface RoomRosterProps {
   members: TeamMember[];
+  card: BoardCard;
+  onAgentClick?: (card: BoardCard) => void;
 }
 
-const RoomRoster: React.FC<RoomRosterProps> = ({ members }) => (
+const RoomRoster: React.FC<RoomRosterProps> = ({
+  members,
+  card,
+  onAgentClick,
+}) => (
   <div className={styles.roomRoster} data-testid="room-roster">
     {members.map((member, index) => (
       <RoomMemberBadge
@@ -97,6 +129,8 @@ const RoomRoster: React.FC<RoomRosterProps> = ({ members }) => (
           member.agent_chat_id ?? member.agent_id ?? `${member.role}-${index}`
         }
         member={member}
+        card={card}
+        onAgentClick={onAgentClick}
       />
     ))}
   </div>
@@ -135,7 +169,7 @@ const KanbanCard: React.FC<KanbanCardProps> = ({
   const hasDeps = card.depends_on.length > 0;
   const worktree = cardWorktreeLabel(card);
   const roomMembers = roomMembersOf(card);
-  const isRoom = roomMembers.length > 0;
+  const isRoom = roomMembers.length > 1;
 
   return (
     <Card
@@ -156,7 +190,13 @@ const KanbanCard: React.FC<KanbanCardProps> = ({
 
         <span className={styles.kanbanCardTitle}>{card.title}</span>
 
-        {isRoom && <RoomRoster members={roomMembers} />}
+        {isRoom && (
+          <RoomRoster
+            members={roomMembers}
+            card={card}
+            onAgentClick={onAgentClick}
+          />
+        )}
 
         <div className={styles.kanbanCardBadges}>
           {!isRoom &&

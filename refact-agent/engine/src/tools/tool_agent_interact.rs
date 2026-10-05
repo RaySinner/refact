@@ -200,19 +200,32 @@ async fn room_card_id(ccx: &Arc<AMutex<AtCommandsContext>>) -> Option<(String, S
 /// id and found through the caller's card roster — not through the parent/child tree. The bus is
 /// deliberately scoped to one card: two members of *different* rooms stay unreachable, exactly as
 /// the tree rule keeps unrelated agents unreachable.
-pub(crate) async fn resolve_room_peer_chat_id(
+///
+/// The author's provenance comes out of the same roster read, so attribution costs no second
+/// board load and cannot disagree with the reachability decision that permitted the delivery.
+pub(crate) async fn resolve_room_peer(
     gcx: Arc<GlobalContext>,
     task_id: &str,
     caller_card_id: &str,
     caller_chat_id: &str,
     to: &str,
-) -> Option<String> {
+) -> Option<RoomPeer> {
     let board = crate::tasks::storage::load_board(gcx, task_id).await.ok()?;
     let card = board.get_card(caller_card_id)?;
     if crate::tasks::rooms::same_room(card, caller_chat_id, to) {
-        return Some(to.to_string());
+        let author = crate::tasks::rooms::room_member_provenance(card, caller_chat_id)?;
+        return Some(RoomPeer {
+            chat_id: to.to_string(),
+            author,
+        });
     }
     None
+}
+
+/// A reachable room peer plus who is writing to it.
+pub(crate) struct RoomPeer {
+    pub chat_id: String,
+    pub author: refact_chat_api::MessageProvenance,
 }
 
 fn short_id(agent_id: &str) -> &str {
@@ -401,25 +414,30 @@ impl Tool for ToolAgentMessage {
         // registry first keeps the existing subagent contract untouched.
         if caller_agent_id.is_none() {
             if let Some((task_id, peer_card_id)) = room_card_id(&ccx).await {
-                if let Some(peer_chat_id) = resolve_room_peer_chat_id(
-                    app.gcx.clone(),
-                    &task_id,
-                    &peer_card_id,
-                    &chat_id,
-                    &to,
-                )
-                .await
+                if let Some(peer) =
+                    resolve_room_peer(app.gcx.clone(), &task_id, &peer_card_id, &chat_id, &to).await
                 {
+                    // Stamp the author *before* the text is built: the byline a GUI draws must
+                    // survive the delivery intact, so the notice content names the peer while the
+                    // provenance names the speaker.
+                    let author_json =
+                        serde_json::to_value(&peer.author).unwrap_or(serde_json::Value::Null);
+                    let mut message = crate::chat::internal_roles::event(
+                        crate::chat::internal_roles::EventSubkind::SystemNotice,
+                        "agents.room_message",
+                        json!({
+                            "card_id": peer_card_id,
+                            "from": chat_id,
+                            "provenance": author_json,
+                        }),
+                        format!("[message from room peer {}]\n{text}", peer.chat_id),
+                    );
+                    refact_chat_api::attach_provenance(&mut message, peer.author);
                     crate::chat::deliver_to_chat(
                         app,
-                        &peer_chat_id,
+                        &peer.chat_id,
                         PendingDelivery::new(
-                            vec![crate::chat::internal_roles::event(
-                                crate::chat::internal_roles::EventSubkind::SystemNotice,
-                                "agents.room_message",
-                                json!({"card_id": peer_card_id, "from": chat_id}),
-                                format!("[message from room peer {chat_id}]\n{text}"),
-                            )],
+                            vec![message],
                             push,
                             "agents.room_message".to_string(),
                             true,
@@ -428,7 +446,7 @@ impl Tool for ToolAgentMessage {
                     .await?;
                     return Ok(output(
                         tool_call_id,
-                        format!("Message queued for room peer {peer_chat_id}."),
+                        format!("Message queued for room peer {}.", peer.chat_id),
                     ));
                 }
             }
@@ -1188,6 +1206,165 @@ mod tests {
             .unwrap_err();
 
         assert!(error.contains("direct children or descendants"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn room_message_carries_author_chat_id() {
+        let gcx = crate::global_context::tests::make_test_gcx().await;
+        let app = AppState::from_gcx(gcx.clone()).await;
+        let workspace = tempfile::tempdir().unwrap();
+        *gcx.documents_state.workspace_folders.lock().unwrap() =
+            vec![workspace.path().to_path_buf()];
+
+        crate::tasks::storage::save_board(
+            gcx.clone(),
+            "task-room",
+            &crate::tasks::types::TaskBoard {
+                cards: vec![room_board_card(&["agent-T-1-arch", "agent-T-1-code"])],
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let (session, _) = room_session(&app, "agent-T-1-code").await;
+        let ccx = room_context(&app, "agent-T-1-arch", "task-room", "T-1").await;
+
+        let mut tool = ToolAgentMessage {
+            config_path: String::new(),
+        };
+        tool.tool_execute(
+            ccx,
+            &"call".to_string(),
+            &args(&[
+                ("to", json!("agent-T-1-code")),
+                ("text", json!("parser is done")),
+            ]),
+        )
+        .await
+        .unwrap();
+
+        let provenance = delivered_provenance(&session, "parser is done").await;
+        assert_eq!(provenance.chat_id, "agent-T-1-arch");
+        assert_eq!(provenance.card_id.as_deref(), Some("T-1"));
+    }
+
+    #[tokio::test]
+    async fn room_message_carries_role_for_accent() {
+        let gcx = crate::global_context::tests::make_test_gcx().await;
+        let app = AppState::from_gcx(gcx.clone()).await;
+        let workspace = tempfile::tempdir().unwrap();
+        *gcx.documents_state.workspace_folders.lock().unwrap() =
+            vec![workspace.path().to_path_buf()];
+
+        crate::tasks::storage::save_board(
+            gcx.clone(),
+            "task-room",
+            &crate::tasks::types::TaskBoard {
+                cards: vec![room_board_card(&["agent-T-1-arch", "agent-T-1-code"])],
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let (session, _) = room_session(&app, "agent-T-1-code").await;
+        let ccx = room_context(&app, "agent-T-1-arch", "task-room", "T-1").await;
+
+        let mut tool = ToolAgentMessage {
+            config_path: String::new(),
+        };
+        tool.tool_execute(
+            ccx,
+            &"call".to_string(),
+            &args(&[
+                ("to", json!("agent-T-1-code")),
+                ("text", json!("split the work first")),
+            ]),
+        )
+        .await
+        .unwrap();
+
+        let provenance = delivered_provenance(&session, "split the work first").await;
+        assert_eq!(provenance.role, "architect");
+        assert_eq!(provenance.display_name, "architect");
+        assert_eq!(
+            provenance.accent(),
+            refact_chat_api::role_accent("architect"),
+            "the accent a GUI draws must be the one the engine assigned"
+        );
+    }
+
+    #[tokio::test]
+    async fn provenance_survives_trajectory_roundtrip() {
+        let gcx = crate::global_context::tests::make_test_gcx().await;
+        let app = AppState::from_gcx(gcx.clone()).await;
+        let workspace = tempfile::tempdir().unwrap();
+        *gcx.documents_state.workspace_folders.lock().unwrap() =
+            vec![workspace.path().to_path_buf()];
+
+        crate::tasks::storage::save_board(
+            gcx.clone(),
+            "task-room",
+            &crate::tasks::types::TaskBoard {
+                cards: vec![room_board_card(&["agent-T-1-arch", "agent-T-1-code"])],
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let (session, _) = room_session(&app, "agent-T-1-code").await;
+        let ccx = room_context(&app, "agent-T-1-arch", "task-room", "T-1").await;
+
+        let mut tool = ToolAgentMessage {
+            config_path: String::new(),
+        };
+        tool.tool_execute(
+            ccx,
+            &"call".to_string(),
+            &args(&[
+                ("to", json!("agent-T-1-code")),
+                ("text", json!("survives a save")),
+            ]),
+        )
+        .await
+        .unwrap();
+
+        // Force the same serialization a trajectory save performs, then read the provenance back.
+        let message = session
+            .lock()
+            .await
+            .messages
+            .iter()
+            .find(|message| {
+                message
+                    .content
+                    .content_text_only()
+                    .contains("survives a save")
+            })
+            .cloned()
+            .expect("room message delivered");
+        let restored: ChatMessage =
+            serde_json::from_value(serde_json::to_value(&message).unwrap()).unwrap();
+
+        let provenance = refact_chat_api::provenance_from_message(&restored).unwrap();
+        assert_eq!(provenance.chat_id, "agent-T-1-arch");
+        assert_eq!(provenance.role, "architect");
+    }
+
+    /// Provenance of the message carrying `needle` in the peer's chat.
+    async fn delivered_provenance(
+        session: &Arc<AMutex<ChatSession>>,
+        needle: &str,
+    ) -> refact_chat_api::MessageProvenance {
+        let message = session
+            .lock()
+            .await
+            .messages
+            .iter()
+            .find(|message| message.content.content_text_only().contains(needle))
+            .cloned()
+            .unwrap_or_else(|| panic!("room message {needle:?} must reach the peer"));
+        refact_chat_api::provenance_from_message(&message)
+            .unwrap_or_else(|| panic!("room message {needle:?} must carry provenance"))
     }
 
     fn room_board_card(chats: &[&str]) -> crate::tasks::types::BoardCard {

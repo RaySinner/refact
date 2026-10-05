@@ -8,6 +8,7 @@ pub mod diagnostics;
 pub mod goal_ledger;
 pub mod goal_role;
 pub mod internal_roles;
+pub mod message_provenance;
 pub mod notification_event;
 pub mod plan_role;
 pub mod tool_enrichment;
@@ -31,6 +32,10 @@ pub use tool_enrichment::{
     ToolEnrichmentReferenceDetails, TOOL_ENRICHMENT_EXTRA_KEY, TOOL_ENRICHMENT_SCHEMA_VERSION,
 };
 pub use refact_core::buddy_meta::BuddyThreadMeta;
+pub use message_provenance::{
+    attach_provenance, provenance_from_extra, provenance_from_message, role_accent,
+    MessageProvenance, RoleAccent, PROVENANCE_EXTRA_KEY,
+};
 pub use refact_core::chat_types::{
     delivery_id_of_message, ChatMessage, ContextFile, DeliveryOutcome, PendingDelivery, PushMode,
     DELIVERY_EXTRA_KEY,

@@ -8,6 +8,8 @@
 
 use serde_json::Value;
 
+use refact_chat_api::MessageProvenance;
+
 use crate::tasks::types::{BoardCard, TeamMember, TeamStatus};
 
 /// Upper bound on members in one room.
@@ -253,6 +255,61 @@ fn parse_team_members_from_string(spec: &str) -> Result<Vec<TeamMember>, String>
 pub fn same_room(card: &BoardCard, left_chat_id: &str, right_chat_id: &str) -> bool {
     card.team_member_by_chat_id(left_chat_id).is_some()
         && card.team_member_by_chat_id(right_chat_id).is_some()
+}
+
+/// The one rule that turns a room member into a name.
+///
+/// Role first, because the role is the part a reader wants; the ordinal appears only when the role
+/// is not unique in the room, which is exactly the case where the role alone would be ambiguous
+/// (`coder` twice in one room would draw two identical bylines and read as one author).
+pub fn member_display_name(role: &str, position_in_role: usize, same_role_count: usize) -> String {
+    let role = role.trim();
+    let role = if role.is_empty() { "agent" } else { role };
+    if same_role_count < 2 {
+        return role.to_string();
+    }
+    format!("{role} #{}", position_in_role.max(1))
+}
+
+/// Provenance for `member` of `card` — who this is, in which room, wearing which accent.
+///
+/// The single place that reads a `TeamMember` to answer "who was that". Callers pass the card they
+/// already loaded rather than re-reading the board: a delivery stamps provenance while holding
+/// the roster it resolved the peer from, so a second read would only add latency and a window in
+/// which the room changed mid-message.
+pub fn member_provenance(card: &BoardCard, member: &TeamMember) -> MessageProvenance {
+    let same_role_count = card
+        .team()
+        .iter()
+        .filter(|peer| peer.role.trim() == member.role.trim())
+        .count();
+    let position_in_role = card
+        .team()
+        .iter()
+        .filter(|peer| peer.role.trim() == member.role.trim())
+        .position(|peer| {
+            peer.agent_chat_id.as_deref() == member.agent_chat_id.as_deref()
+                && peer.agent_id.as_deref() == member.agent_id.as_deref()
+        })
+        .map(|index| index + 1)
+        .unwrap_or(1);
+
+    MessageProvenance {
+        chat_id: member
+            .agent_chat_id
+            .clone()
+            .or_else(|| member.agent_id.clone())
+            .unwrap_or_default(),
+        role: member.role.trim().to_string(),
+        display_name: member_display_name(&member.role, position_in_role, same_role_count),
+        card_id: Some(card.id.clone()),
+    }
+}
+
+/// Provenance for whoever is speaking from `caller_chat_id` in `card`, if that is a room member.
+pub fn room_member_provenance(card: &BoardCard, caller_chat_id: &str) -> Option<MessageProvenance> {
+    let provenance = member_provenance(card, card.team_member_by_chat_id(caller_chat_id)?);
+    provenance.chat_id.is_empty().then_some(provenance)
 }
 
 /// Members of the same room, as one line each, for a prompt or tool output.
@@ -516,5 +573,74 @@ mod tests {
         assert!(lines[0].contains("running"));
         assert!(lines[0].contains("agent-T-1-arch"));
         assert!(lines[1].contains("pending"));
+    }
+
+    #[test]
+    fn display_name_is_deterministic_for_same_member() {
+        let mut card = card("T-1", "doing");
+        card.team_members = vec![
+            member("architect", "agent-T-1-arch", TeamStatus::Running),
+            member("coder", "agent-T-1-code", TeamStatus::Running),
+        ];
+
+        let first = member_provenance(&card, &card.team_members[1]).display_name;
+        let second = member_provenance(&card, &card.team_members[1]).display_name;
+
+        assert_eq!(first, second);
+        assert_eq!(first, "coder");
+    }
+
+    #[test]
+    fn duplicate_roles_get_distinct_bylines() {
+        let mut card = card("T-1", "doing");
+        card.team_members = vec![
+            member("coder", "agent-T-1-a", TeamStatus::Running),
+            member("coder", "agent-T-1-b", TeamStatus::Running),
+        ];
+
+        let names = card
+            .team()
+            .iter()
+            .map(|peer| member_provenance(&card, peer).display_name)
+            .collect::<Vec<_>>();
+
+        assert_ne!(
+            names[0], names[1],
+            "two same-role members must not share a byline"
+        );
+        assert!(names.iter().all(|name| name.starts_with("coder")));
+    }
+
+    #[test]
+    fn messages_from_different_rooms_have_different_provenance() {
+        let mut first = card("T-1", "doing");
+        first.team_members = vec![
+            member("architect", "agent-T-1-arch", TeamStatus::Running),
+            member("coder", "agent-T-1-code", TeamStatus::Running),
+        ];
+        let mut second = card("T-2", "doing");
+        second.team_members = vec![
+            member("architect", "agent-T-2-arch", TeamStatus::Running),
+            member("coder", "agent-T-2-code", TeamStatus::Running),
+        ];
+
+        let from_first = room_member_provenance(&first, "agent-T-1-code").unwrap();
+        let from_second = room_member_provenance(&second, "agent-T-2-code").unwrap();
+
+        assert_ne!(from_first.chat_id, from_second.chat_id);
+        assert_ne!(from_first.card_id, from_second.card_id);
+        assert_eq!(
+            from_first.display_name, from_second.display_name,
+            "same role in a different room is still the same byline"
+        );
+    }
+
+    #[test]
+    fn a_non_member_has_no_provenance() {
+        let mut card = card("T-1", "doing");
+        card.team_members = vec![member("coder", "agent-T-1-code", TeamStatus::Running)];
+
+        assert!(room_member_provenance(&card, "agent-T-9-stranger").is_none());
+        assert!(room_member_provenance(&card, "planner-task-1-1").is_none());
     }
 }

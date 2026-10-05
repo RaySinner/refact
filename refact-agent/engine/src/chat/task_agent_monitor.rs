@@ -49,6 +49,12 @@ const MAX_STALL_PLANNER_NOTIFICATIONS_PER_CARD: usize = 2;
 const STALL_PLANNER_NOTIFY_GRACE: Duration = Duration::from_secs(60);
 const STALL_PLANNER_NOTIFY_COOLDOWN_SECONDS: i64 = 5 * 60;
 const STALL_PLANNER_NOTIFY_STATUS_PREFIX: &str = "Planner notified about stall:";
+const STALL_AGENT_NOTIFY_STATUS_PREFIX: &str = "Agent notified about stall:";
+const STALL_ESCALATION_STATUS_PREFIX: &str = "Stalled agent escalation recorded:";
+/// A nudge to the agent is a second line of defence behind the in-turn nudge from
+/// `generation.rs`; it gets its own, separate budget so the two never starve
+/// each other and so exhausting one never marks the card failed.
+const MAX_STALL_AGENT_NOTIFICATIONS_PER_CARD: usize = 2;
 const TASK_AGENT_MONITOR_SOURCE: &str = "chat.task_agent_monitor";
 
 fn task_agent_monitor_notice(payload: serde_json::Value, content: String) -> ChatMessage {
@@ -225,15 +231,18 @@ fn make_runtime_event(
     }
 }
 
-fn stall_planner_notifications(card: &BoardCard) -> (usize, Option<chrono::DateTime<Utc>>) {
+/// Count and timestamp the status updates recorded under one notification prefix.
+/// Each family (planner escalation, agent nudge) is counted on its own prefix, so a
+/// nudge aimed at the agent can never eat the planner's notification budget.
+fn stall_notifications_with_prefix(
+    card: &BoardCard,
+    prefix: &str,
+) -> (usize, Option<chrono::DateTime<Utc>>) {
     let mut count = 0usize;
     let mut latest = None;
 
     for update in &card.status_updates {
-        if !update
-            .message
-            .starts_with(STALL_PLANNER_NOTIFY_STATUS_PREFIX)
-        {
+        if !update.message.starts_with(prefix) {
             continue;
         }
         count += 1;
@@ -249,9 +258,28 @@ fn stall_planner_notifications(card: &BoardCard) -> (usize, Option<chrono::DateT
     (count, latest)
 }
 
+fn stall_planner_notifications(card: &BoardCard) -> (usize, Option<chrono::DateTime<Utc>>) {
+    stall_notifications_with_prefix(card, STALL_PLANNER_NOTIFY_STATUS_PREFIX)
+}
+
+fn stall_agent_notifications(card: &BoardCard) -> (usize, Option<chrono::DateTime<Utc>>) {
+    stall_notifications_with_prefix(card, STALL_AGENT_NOTIFY_STATUS_PREFIX)
+}
+
 fn stall_planner_notify_allowed(card: &BoardCard, now: chrono::DateTime<Utc>) -> bool {
-    let (count, latest) = stall_planner_notifications(card);
-    if count >= MAX_STALL_PLANNER_NOTIFICATIONS_PER_CARD {
+    stall_notify_allowed(
+        stall_planner_notifications(card),
+        MAX_STALL_PLANNER_NOTIFICATIONS_PER_CARD,
+        now,
+    )
+}
+
+fn stall_notify_allowed(
+    (count, latest): (usize, Option<chrono::DateTime<Utc>>),
+    max_notifications: usize,
+    now: chrono::DateTime<Utc>,
+) -> bool {
+    if count >= max_notifications {
         return false;
     }
     if let Some(latest) = latest {
@@ -497,21 +525,23 @@ impl StallKind {
     }
 }
 
-async fn record_stall_planner_notification(
+/// Append one `prefix`-scoped status update to the card, guarding against the
+/// card leaving `doing` and against exceeding that prefix's budget/cooldown.
+async fn record_stall_notification(
     app: AppState,
     task_id: &str,
     card_id: &str,
     agent_chat_id: &str,
-    reason: &str,
+    prefix: &str,
+    max_notifications: usize,
+    detail: &str,
 ) -> Result<bool, String> {
     let card_id_owned = card_id.to_string();
     let agent_chat_id_owned = agent_chat_id.to_string();
     let now = Utc::now();
     let timestamp = now.to_rfc3339();
-    let message = format!(
-        "{} {} ({})",
-        STALL_PLANNER_NOTIFY_STATUS_PREFIX, agent_chat_id, reason
-    );
+    let message = format!("{} {} ({})", prefix, agent_chat_id, detail);
+    let prefix = prefix.to_string();
 
     storage::update_board_atomic(app.gcx.clone(), task_id, move |board| {
         let card = board
@@ -520,7 +550,11 @@ async fn record_stall_planner_notification(
         if card.column != "doing"
             || card.agent_chat_id.as_deref() != Some(agent_chat_id_owned.as_str())
             || card.assignee.is_none()
-            || !stall_planner_notify_allowed(card, now)
+            || !stall_notify_allowed(
+                stall_notifications_with_prefix(card, &prefix),
+                max_notifications,
+                now,
+            )
         {
             return Ok(false);
         }
@@ -533,6 +567,25 @@ async fn record_stall_planner_notification(
     })
     .await
     .map(|(_, recorded)| recorded)
+}
+
+async fn record_stall_planner_notification(
+    app: AppState,
+    task_id: &str,
+    card_id: &str,
+    agent_chat_id: &str,
+    reason: &str,
+) -> Result<bool, String> {
+    record_stall_notification(
+        app,
+        task_id,
+        card_id,
+        agent_chat_id,
+        STALL_PLANNER_NOTIFY_STATUS_PREFIX,
+        MAX_STALL_PLANNER_NOTIFICATIONS_PER_CARD,
+        reason,
+    )
+    .await
 }
 
 fn build_stalled_agent_planner_message(
@@ -609,6 +662,180 @@ fn build_stalled_agent_planner_message(
     )
 }
 
+/// The concrete next action, so the agent does not merely learn that it stalled.
+fn build_stalled_agent_self_message(card: &BoardCard, kind: StallKind, stalled_for: Duration) -> String {
+    let state = match kind {
+        StallKind::IdleNoFinish => format!(
+            "Your last turn ended without calling any tool, and you have been idle for {}.",
+            humantime::format_duration(stalled_for)
+        ),
+        StallKind::Completed => format!(
+            "You emitted a finish-like tool but card `{}` was never updated, and you have been idle for {}.",
+            card.id,
+            humantime::format_duration(stalled_for)
+        ),
+        StallKind::GeneratingNoTokens => format!(
+            "Your stream produced no tokens for {}.",
+            humantime::format_duration(stalled_for)
+        ),
+        StallKind::ExecutingToolsNoProgress => format!(
+            "A tool you started has reported no progress for {}.",
+            humantime::format_duration(stalled_for)
+        ),
+    };
+
+    format!(
+        "{state}\n\nNothing was recorded for card `{card_id}`, so the work looks unfinished to the planner.\n\n\
+Do exactly one of these now:\n\
+1. The card is done — call `agent_finish` with the report.\n\
+2. Work remains — continue with a real tool call (never a bare text answer).\n\
+3. You are blocked — call `agent_ask_planner` with `urgency=\"block\"` and say what you need.",
+        card_id = card.id,
+    )
+}
+
+/// Every chat this card owns: the primary `agent_chat_id` plus the active
+/// members of a room card. Duplicates and blanks are dropped.
+fn stalled_agent_chat_targets(card: &BoardCard) -> Vec<String> {
+    let mut targets: Vec<String> = Vec::new();
+    let mut push = |chat_id: Option<&str>| {
+        let Some(chat_id) = chat_id.map(str::trim).filter(|id| !id.is_empty()) else {
+            return;
+        };
+        if !targets.iter().any(|existing| existing == chat_id) {
+            targets.push(chat_id.to_string());
+        }
+    };
+    push(card.agent_chat_id.as_deref());
+    for member in card.team() {
+        if member.is_active() {
+            push(member.agent_chat_id.as_deref());
+        }
+    }
+    targets
+}
+
+/// Wake the agent itself, not just the planner. The agent is the only party that
+/// can unstick the card: the planner can restart or reassign, but it cannot make
+/// the agent finish its own turn.
+///
+/// `PushMode::WhenIdle` (never `Append`): the notice must not land inside an open
+/// assistant/tool-result window, and it must wait for the whole multi-step turn to
+/// end so it cannot split a turn that is still making progress. This has a real
+/// interaction with `agent_session_idle_stall_ready`: that predicate refuses a
+/// session with a non-empty `pending_deliveries`, so a queued nudge suppresses the
+/// next stall detection until the nudge lands and the session drains again.
+async fn notify_agent_about_stall(
+    app: AppState,
+    task_id: &str,
+    card: &BoardCard,
+    agent_chat_id: &str,
+    kind: StallKind,
+    stalled_for: Duration,
+) -> Result<bool, String> {
+    let targets = stalled_agent_chat_targets(card);
+    if targets.is_empty() {
+        return Ok(false);
+    }
+
+    let message = build_stalled_agent_self_message(card, kind, stalled_for);
+    let mut notified = false;
+
+    for target in targets {
+        // The budget is tracked against the primary agent chat so a room card does
+        // not get one nudge per member per pass.
+        if !record_stall_notification(
+            app.clone(),
+            task_id,
+            &card.id,
+            agent_chat_id,
+            STALL_AGENT_NOTIFY_STATUS_PREFIX,
+            MAX_STALL_AGENT_NOTIFICATIONS_PER_CARD,
+            kind.short_reason(),
+        )
+        .await?
+        {
+            return Ok(notified);
+        }
+
+        let notice = task_agent_monitor_notice(
+            json!({
+                "kind": "stalled_agent_self",
+                "task_id": task_id,
+                "card_id": card.id.as_str(),
+                "agent_chat_id": target.as_str(),
+                "stall_kind": format!("{:?}", kind),
+                "reason": kind.short_reason(),
+                "stalled_for_secs": stalled_for.as_secs(),
+            }),
+            message.clone(),
+        );
+
+        match deliver_to_chat(
+            app.clone(),
+            &target,
+            PendingDelivery::new(
+                vec![notice],
+                PushMode::WhenIdle,
+                TASK_AGENT_MONITOR_SOURCE,
+                true,
+            ),
+        )
+        .await
+        {
+            Ok(_) => {
+                notified = true;
+                tracing::info!(
+                    "Notified stalled agent {} on card {} in task {} ({}): {}",
+                    target,
+                    card.id,
+                    task_id,
+                    kind.short_reason(),
+                    agent_chat_id
+                );
+            }
+            Err(error) => {
+                // Recorded above, so this is already durable on the card; the log
+                // names the target because a room card may have several.
+                tracing::warn!(
+                    "Failed to notify stalled agent {} on card {} in task {}: {}",
+                    target,
+                    card.id,
+                    task_id,
+                    error
+                );
+                return Ok(notified);
+            }
+        }
+    }
+
+    Ok(notified)
+}
+
+/// Record an escalation that had nowhere to go. Silence here is what made a
+/// stalled agent look like a healthy wait: the planner was never told, and the
+/// card showed nothing either.
+async fn record_stall_escalation(
+    app: AppState,
+    task_id: &str,
+    card_id: &str,
+    agent_chat_id: &str,
+    detail: &str,
+) {
+    let card_id_owned = card_id.to_string();
+    let message = format!("{} {} ({})", STALL_ESCALATION_STATUS_PREFIX, agent_chat_id, detail);
+    let _ = storage::update_board_atomic(app.gcx.clone(), task_id, move |board| {
+        if let Some(card) = board.get_card_mut(&card_id_owned) {
+            card.status_updates.push(StatusUpdate {
+                timestamp: Utc::now().to_rfc3339(),
+                message: message.clone(),
+            });
+        }
+        Ok(())
+    })
+    .await;
+}
+
 async fn notify_planner_about_stalled_agent(
     app: AppState,
     task_id: &str,
@@ -622,11 +849,23 @@ async fn notify_planner_about_stalled_agent(
     let short_reason = kind.short_reason();
 
     let Some(planner_chat_id) = planner_chat_id else {
-        tracing::warn!(
-            "Cannot notify planner about stalled agent for card {} in task {}: no planner_chat_id",
+        // "Nowhere to deliver" is not "delivered": the planner was never told and
+        // the card showed nothing, which is exactly the silence this path must not
+        // have. Record it durably so the UI and `board_get` show the escalation.
+        tracing::error!(
+            "Cannot notify planner about stalled agent for card {} in task {} ({}): no planner_chat_id; escalation recorded on the card",
             card_id,
-            task_id
+            task_id,
+            short_reason
         );
+        record_stall_escalation(
+            app.clone(),
+            task_id,
+            card_id,
+            agent_chat_id,
+            &format!("{}; planner chat id unknown, escalation not delivered", short_reason),
+        )
+        .await;
         return Ok(false);
     };
 
@@ -668,6 +907,23 @@ async fn notify_planner_about_stalled_agent(
     .await
     .is_err()
     {
+        tracing::error!(
+            "Planner {} for task {} is not a usable planner chat; stalled-agent escalation for card {} recorded on the card",
+            planner_chat_id,
+            task_id,
+            card_id
+        );
+        record_stall_escalation(
+            app.clone(),
+            task_id,
+            card_id,
+            agent_chat_id,
+            &format!(
+                "{}; planner {} is not a known planner chat, escalation not delivered",
+                short_reason, planner_chat_id
+            ),
+        )
+        .await;
         return Ok(false);
     }
 
@@ -683,7 +939,7 @@ async fn notify_planner_about_stalled_agent(
         return Ok(false);
     }
 
-    deliver_to_chat(
+    if let Err(error) = deliver_to_chat(
         app.clone(),
         planner_chat_id,
         PendingDelivery::new(
@@ -693,7 +949,32 @@ async fn notify_planner_about_stalled_agent(
             true,
         ),
     )
-    .await?;
+    .await
+    {
+        // Distinct from "no planner chat": here the destination existed and the
+        // transport failed, so the recorded detail carries the transport error.
+        tracing::error!(
+            "Failed to deliver stalled-agent escalation for card {} to planner {}: {}",
+            card_id,
+            planner_chat_id,
+            error
+        );
+        record_stall_escalation(
+            app.clone(),
+            task_id,
+            card_id,
+            agent_chat_id,
+            &format!(
+                "{}; delivery to planner {} failed: {} (the '{}' record above did not reach the planner)",
+                short_reason,
+                planner_chat_id,
+                error,
+                STALL_PLANNER_NOTIFY_STATUS_PREFIX
+            ),
+        )
+        .await;
+        return Ok(false);
+    }
 
     tracing::info!(
         "Notified planner {} about stalled agent for card {} ({}): {}",
@@ -2037,6 +2318,24 @@ async fn check_for_stuck_agents(app: AppState) -> Result<(), String> {
                     )
                     .await?;
                 } else if stall_planner_notify_allowed(card, now) {
+                    if let Err(error) = notify_agent_about_stall(
+                        app.clone(),
+                        task_id,
+                        card,
+                        agent_chat_id,
+                        kind,
+                        stall_elapsed,
+                    )
+                    .await
+                    {
+                        tracing::warn!(
+                            "Failed to notify stalled agent {} on card {} in task {}: {}",
+                            agent_chat_id,
+                            card.id,
+                            task_id,
+                            error
+                        );
+                    }
                     let notify_result = notify_planner_about_stalled_agent(
                         app.clone(),
                         task_id,
@@ -2301,6 +2600,15 @@ mod tests {
         (temp, app, task.id, agent_chat_id, session_arc, planner_arc)
     }
 
+    async fn board_card(app: &AppState, task_id: &str) -> BoardCard {
+        storage::load_board(app.gcx.clone(), task_id)
+            .await
+            .unwrap()
+            .get_card("T-1")
+            .unwrap()
+            .clone()
+    }
+
     #[tokio::test]
     async fn agent_in_error_state_retries_without_premature_failure() {
         let (_temp, app, task_id, agent_chat_id, agent_arc, _planner_arc) =
@@ -2344,9 +2652,17 @@ mod tests {
                 && update.message.contains(&agent_chat_id)
         }));
 
-        assert!(
-            agent_arc.lock().await.command_queue.is_empty(),
-            "agent itself should NOT receive a message"
+        let agent = agent_arc.lock().await;
+        assert!(agent.command_queue.is_empty());
+        assert_eq!(
+            agent.messages.len(),
+            1,
+            "the agent itself must be nudged, not only the planner"
+        );
+        assert_eq!(
+            agent.messages[0].extra["delivery"]["source"],
+            json!(TASK_AGENT_MONITOR_SOURCE),
+            "the nudge must be provenance-stamped like any delivered message"
         );
 
         let planner = planner_arc.lock().await;
@@ -2554,6 +2870,272 @@ mod tests {
         assert!(stalled_agent_should_fail_after_notify_failure(
             AGENT_STUCK_TIMEOUT
         ));
+    }
+
+    #[tokio::test]
+    async fn agent_is_notified_when_silent_without_finish() {
+        let (_temp, app, task_id, agent_chat_id, agent_arc, _planner_arc) =
+            setup_monitor_case("doing", SessionState::Idle, Duration::from_secs(90), vec![])
+                .await;
+
+        check_for_stuck_agents(app.clone()).await.unwrap();
+
+        let board = storage::load_board(app.gcx.clone(), &task_id)
+            .await
+            .unwrap();
+        let card = board.get_card("T-1").unwrap();
+        assert!(
+            card.status_updates.iter().any(|update| {
+                update.message.starts_with(STALL_AGENT_NOTIFY_STATUS_PREFIX)
+                    && update.message.contains(&agent_chat_id)
+            }),
+            "the agent nudge must be recorded on the card, got {:?}",
+            card.status_updates
+        );
+
+        let agent = agent_arc.lock().await;
+        let notice = agent
+            .messages
+            .last()
+            .expect("the stalled agent itself must receive a notice");
+        assert_eq!(notice.role, "event");
+        assert_eq!(
+            notice.extra["event"]["source"],
+            json!(TASK_AGENT_MONITOR_SOURCE)
+        );
+        assert_eq!(
+            notice.extra["event"]["payload"]["kind"],
+            json!("stalled_agent_self")
+        );
+        let text = notice.content.content_text_only();
+        assert!(text.contains("agent_finish"), "{text}");
+        assert!(text.contains("agent_ask_planner"), "{text}");
+        assert!(text.contains("T-1"), "{text}");
+    }
+
+    #[tokio::test]
+    async fn agent_notification_uses_when_idle_push_mode() {
+        // A generating agent is the case where the push mode actually decides
+        // something: the turn is still open, so `WhenIdle` must hold the nudge
+        // instead of splicing it into the live turn.
+        let (_temp, app, _task_id, _agent_chat_id, agent_arc, _planner_arc) = setup_monitor_case(
+            "doing",
+            SessionState::Generating,
+            Duration::from_secs(600),
+            vec![],
+        )
+        .await;
+
+        check_for_stuck_agents(app.clone()).await.unwrap();
+
+        let agent = agent_arc.lock().await;
+        let delivery = agent
+            .pending_deliveries
+            .front()
+            .expect("an open turn must hold the nudge");
+        assert_eq!(
+            delivery.push,
+            PushMode::WhenIdle,
+            "Append could land inside an open assistant/tool window"
+        );
+        assert!(delivery.wake, "an idle agent must be woken, not just queued");
+    }
+
+    /// An idle agent's turn is over, so the nudge lands at once; an agent still
+    /// mid-turn holds it until the whole turn ends. Both states are the ones
+    /// `WhenIdle` exists for, and neither leaves the message stranded.
+    #[tokio::test]
+    async fn agent_notification_waits_for_the_whole_turn() {
+        let (_temp, app, _task_id, _agent_chat_id, agent_arc, _planner_arc) =
+            setup_monitor_case("doing", SessionState::Idle, Duration::from_secs(90), vec![])
+                .await;
+        check_for_stuck_agents(app.clone()).await.unwrap();
+        assert!(
+            agent_arc.lock().await.messages.len() == 1,
+            "an idle agent has no draft or tool window, so the nudge lands now"
+        );
+
+        let (_temp, app, _task_id, _agent_chat_id, agent_arc, _planner_arc) =
+            setup_monitor_case("doing", SessionState::Generating, Duration::from_secs(600), vec![])
+                .await;
+        check_for_stuck_agents(app.clone()).await.unwrap();
+        let agent = agent_arc.lock().await;
+        assert_eq!(
+            agent.pending_deliveries.len(),
+            1,
+            "a still-running turn must hold the nudge"
+        );
+        assert!(
+            agent.messages.is_empty(),
+            "the nudge must not split an in-flight turn"
+        );
+    }
+
+    #[tokio::test]
+    async fn escalation_is_recorded_on_card_when_planner_missing() {
+        let (_temp, app, task_id, agent_chat_id, _agent_arc, _planner_arc) =
+            setup_monitor_case("doing", SessionState::Idle, Duration::from_secs(90), vec![])
+                .await;
+
+        assert!(
+            !notify_planner_about_stalled_agent(
+                app.clone(),
+                &task_id,
+                &board_card(&app, &task_id).await,
+                &agent_chat_id,
+                None,
+                StallKind::IdleNoFinish,
+                Duration::from_secs(90),
+            )
+            .await
+            .unwrap()
+        );
+
+        let board = storage::load_board(app.gcx.clone(), &task_id)
+            .await
+            .unwrap();
+        let card = board.get_card("T-1").unwrap();
+        assert!(
+            card.status_updates.iter().any(|update| {
+                update
+                    .message
+                    .starts_with(STALL_ESCALATION_STATUS_PREFIX)
+                    && update.message.contains("planner chat id unknown")
+            }),
+            "a missing planner must be recorded, not swallowed; got {:?}",
+            card.status_updates
+        );
+        assert!(
+            card.status_updates
+                .iter()
+                .all(|update| !update.message.starts_with(STALL_PLANNER_NOTIFY_STATUS_PREFIX)),
+            "nothing was delivered, so no success record may be written"
+        );
+    }
+
+    /// "Nowhere to deliver" and "delivery broke" must not look the same: the
+    /// second one means a real chat existed and the transport failed.
+    #[tokio::test]
+    async fn escalation_delivery_failure_is_distinguishable() {
+        let (_temp, app, task_id, agent_chat_id, _agent_arc, planner_arc) =
+            setup_monitor_case("doing", SessionState::Idle, Duration::from_secs(90), vec![])
+                .await;
+        // A real destination that cannot accept the batch: the planner chat
+        // exists and is a valid planner, but its delivery queue is saturated.
+        {
+            let mut planner = planner_arc.lock().await;
+            for n in 0..crate::chat::types::max_queue_size() {
+                planner.pending_deliveries.push_back(PendingDelivery::with_id(
+                    format!("filler-{n}"),
+                    vec![ChatMessage::new("user".into(), "filler".into())],
+                    PushMode::Append,
+                    "test",
+                    false,
+                ));
+            }
+        }
+
+        let card = board_card(&app, &task_id).await;
+        assert!(
+            !notify_planner_about_stalled_agent(
+                app.clone(),
+                &task_id,
+                &card,
+                &agent_chat_id,
+                Some("planner-test"),
+                StallKind::IdleNoFinish,
+                Duration::from_secs(90),
+            )
+            .await
+            .unwrap()
+        );
+
+        let board = storage::load_board(app.gcx.clone(), &task_id)
+            .await
+            .unwrap();
+        let card = board.get_card("T-1").unwrap();
+        assert!(
+            card.status_updates.iter().any(|update| {
+                update
+                    .message
+                    .starts_with(STALL_ESCALATION_STATUS_PREFIX)
+                    && update.message.contains("delivery to planner planner-test failed")
+                    && update.message.contains("chat delivery queue is full")
+                    && update.message.contains(STALL_PLANNER_NOTIFY_STATUS_PREFIX)
+            }),
+            "a broken delivery must name the transport failure and retract the premature 'notified' line; got {:?}",
+            card.status_updates
+        );
+        assert!(
+            card.status_updates
+                .iter()
+                .all(|update| !update.message.contains("planner chat id unknown")),
+            "a failed delivery is not a missing planner chat"
+        );
+    }
+
+    #[tokio::test]
+    async fn agent_notification_does_not_consume_planner_notification_budget() {
+        let recent = StatusUpdate {
+            timestamp: Utc::now().to_rfc3339(),
+            message: format!("{} agent-T-1", STALL_AGENT_NOTIFY_STATUS_PREFIX),
+        };
+        let (_temp, app, task_id, _agent_chat_id, agent_arc, planner_arc) = setup_monitor_case(
+            "doing",
+            SessionState::Idle,
+            Duration::from_secs(90),
+            vec![recent],
+        )
+        .await;
+
+        check_for_stuck_agents(app.clone()).await.unwrap();
+
+        let board = storage::load_board(app.gcx.clone(), &task_id)
+            .await
+            .unwrap();
+        let card = board.get_card("T-1").unwrap();
+        assert_eq!(stall_agent_notifications(card).0, 1);
+        assert_eq!(
+            stall_planner_notifications(card).0,
+            1,
+            "the planner escalation still has its own full budget"
+        );
+        assert_eq!(
+            planner_arc.lock().await.pending_deliveries.len(),
+            1,
+            "a recent agent nudge must not silence the planner escalation"
+        );
+        assert!(
+            agent_arc.lock().await.messages.is_empty(),
+            "the agent cooldown still applies to the agent's own nudges"
+        );
+    }
+
+    #[tokio::test]
+    async fn exhausted_agent_nudges_do_not_mark_the_card_failed() {
+        let spent = (0..MAX_STALL_AGENT_NOTIFICATIONS_PER_CARD)
+            .map(|_| StatusUpdate {
+                timestamp: (Utc::now() - chrono::Duration::hours(1)).to_rfc3339(),
+                message: format!("{} agent-T-1", STALL_AGENT_NOTIFY_STATUS_PREFIX),
+            })
+            .collect();
+        let (_temp, app, task_id, _agent_chat_id, agent_arc, _planner_arc) =
+            setup_monitor_case("doing", SessionState::Idle, Duration::from_secs(90), spent).await;
+
+        check_for_stuck_agents(app.clone()).await.unwrap();
+
+        let board = storage::load_board(app.gcx.clone(), &task_id)
+            .await
+            .unwrap();
+        assert_eq!(
+            board.get_card("T-1").unwrap().column,
+            "doing",
+            "exhausting the agent's own nudge budget must not fail the card"
+        );
+        assert!(
+            agent_arc.lock().await.messages.is_empty(),
+            "no agent nudge may be sent once its own budget is spent"
+        );
     }
 
     #[test]

@@ -13,6 +13,7 @@ use crate::agents::types::{BackgroundAgent, BgAgentStatus};
 use crate::app_state::AppState;
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
+use crate::global_context::GlobalContext;
 use crate::postprocessing::pp_command_output::OutputFilter;
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
 
@@ -180,6 +181,38 @@ async fn can_message_agent(
         }
     }
     Err("You may only message your direct children or descendants.".to_string())
+}
+
+/// The `(task_id, card_id)` the calling chat works on, if it is a task agent bound to a card.
+async fn room_card_id(ccx: &Arc<AMutex<AtCommandsContext>>) -> Option<(String, String)> {
+    let guard = ccx.lock().await;
+    let task_id = guard.task_meta.as_ref()?.task_id.clone();
+    let card_id = guard.task_meta.as_ref()?.card_id.clone()?;
+    if task_id.is_empty() || card_id.is_empty() {
+        return None;
+    }
+    Some((task_id, card_id))
+}
+
+/// Whether `to` names a peer on the caller's own card, and if so that peer's chat id.
+///
+/// A task agent is a plain chat session, not a `BackgroundAgent`, so peers are addressed by chat
+/// id and found through the caller's card roster — not through the parent/child tree. The bus is
+/// deliberately scoped to one card: two members of *different* rooms stay unreachable, exactly as
+/// the tree rule keeps unrelated agents unreachable.
+pub(crate) async fn resolve_room_peer_chat_id(
+    gcx: Arc<GlobalContext>,
+    task_id: &str,
+    caller_card_id: &str,
+    caller_chat_id: &str,
+    to: &str,
+) -> Option<String> {
+    let board = crate::tasks::storage::load_board(gcx, task_id).await.ok()?;
+    let card = board.get_card(caller_card_id)?;
+    if crate::tasks::rooms::same_room(card, caller_chat_id, to) {
+        return Some(to.to_string());
+    }
+    None
 }
 
 fn short_id(agent_id: &str) -> &str {
@@ -361,6 +394,44 @@ impl Tool for ToolAgentMessage {
             )
             .await?;
             return Ok(output(tool_call_id, "Note sent to parent.".to_string()));
+        }
+
+        // A room peer is addressed by chat id and delivered through the chat bus; a background
+        // subagent is addressed by agent id and delivered through the agent registry. Trying the
+        // registry first keeps the existing subagent contract untouched.
+        if caller_agent_id.is_none() {
+            if let Some((task_id, peer_card_id)) = room_card_id(&ccx).await {
+                if let Some(peer_chat_id) = resolve_room_peer_chat_id(
+                    app.gcx.clone(),
+                    &task_id,
+                    &peer_card_id,
+                    &chat_id,
+                    &to,
+                )
+                .await
+                {
+                    crate::chat::deliver_to_chat(
+                        app,
+                        &peer_chat_id,
+                        PendingDelivery::new(
+                            vec![crate::chat::internal_roles::event(
+                                crate::chat::internal_roles::EventSubkind::SystemNotice,
+                                "agents.room_message",
+                                json!({"card_id": peer_card_id, "from": chat_id}),
+                                format!("[message from room peer {chat_id}]\n{text}"),
+                            )],
+                            push,
+                            "agents.room_message".to_string(),
+                            true,
+                        ),
+                    )
+                    .await?;
+                    return Ok(output(
+                        tool_call_id,
+                        format!("Message queued for room peer {peer_chat_id}."),
+                    ));
+                }
+            }
         }
 
         let target = can_message_agent(
@@ -1024,4 +1095,204 @@ mod tests {
         );
         assert_parent_notice_persisted(&app, "parent", "hello parent").await;
     }
+
+#[tokio::test]
+    async fn room_members_can_message_each_other() {
+        let gcx = crate::global_context::tests::make_test_gcx().await;
+        let app = AppState::from_gcx(gcx.clone()).await;
+        let workspace = tempfile::tempdir().unwrap();
+        *gcx.documents_state.workspace_folders.lock().unwrap() = vec![workspace.path().to_path_buf()];
+
+        let board_card = room_board_card(&["agent-T-1-arch", "agent-T-1-code"]);
+        crate::tasks::storage::save_board(
+            gcx.clone(),
+            "task-room",
+            &crate::tasks::types::TaskBoard {
+                cards: vec![board_card],
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let (session, _) = room_session(&app, "agent-T-1-arch").await;
+        let ccx = room_context(&app, "agent-T-1-arch", "task-room", "T-1").await;
+
+        let mut tool = ToolAgentMessage {
+            config_path: String::new(),
+        };
+        let delivered = text(
+            tool.tool_execute(
+                ccx,
+                &"call".to_string(),
+                &args(&[
+                    ("to", json!("agent-T-1-code")),
+                    ("text", json!("parser is done, review it")),
+                ]),
+            )
+            .await
+            .unwrap(),
+        );
+
+        assert!(delivered.contains("agent-T-1-code"), "{delivered}");
+        assert!(
+            session
+                .lock()
+                .await
+                .messages
+                .iter()
+                .any(|message| message
+                    .content
+                    .content_text_only()
+                    .contains("parser is done, review it")),
+            "peer message must land in the peer's chat"
+        );
+    }
+
+    #[tokio::test]
+    async fn agents_on_different_cards_still_cannot_message() {
+        let gcx = crate::global_context::tests::make_test_gcx().await;
+        let app = AppState::from_gcx(gcx.clone()).await;
+        let workspace = tempfile::tempdir().unwrap();
+        *gcx.documents_state.workspace_folders.lock().unwrap() = vec![workspace.path().to_path_buf()];
+
+        crate::tasks::storage::save_board(
+            gcx.clone(),
+            "task-room",
+            &crate::tasks::types::TaskBoard {
+                cards: vec![
+                    room_board_card(&["agent-T-1-arch", "agent-T-1-code"]),
+                    room_board_card_for("T-2", &["agent-T-2-arch", "agent-T-2-code"]),
+                ],
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let (_session, _peer) = room_session(&app, "agent-T-2-code").await;
+        let ccx = room_context(&app, "agent-T-1-arch", "task-room", "T-1").await;
+
+        let mut tool = ToolAgentMessage {
+            config_path: String::new(),
+        };
+        let error = tool
+            .tool_execute(
+                ccx,
+                &"call".to_string(),
+                &args(&[
+                    ("to", json!("agent-T-2-code")),
+                    ("text", json!("crossing rooms")),
+                ]),
+            )
+            .await
+            .unwrap_err();
+
+        assert!(error.contains("direct children or descendants"), "{error}");
+    }
+
+    fn room_board_card(chats: &[&str]) -> crate::tasks::types::BoardCard {
+        room_board_card_for("T-1", chats)
+    }
+
+    fn room_board_card_for(
+        card_id: &str,
+        chats: &[&str],
+    ) -> crate::tasks::types::BoardCard {
+        let roles = ["architect", "coder"];
+        let members = chats
+            .iter()
+            .enumerate()
+            .map(|(index, chat)| {
+                let mut member = crate::tasks::rooms::new_room_member(
+                    roles[index.min(roles.len() - 1)],
+                    &format!("agent-id-{index}"),
+                    chat,
+                    None,
+                    None,
+                    None,
+                );
+                member.member_status = Some(crate::tasks::types::TeamStatus::Running);
+                member
+            })
+            .collect();
+        crate::tasks::types::BoardCard {
+            id: card_id.to_string(),
+            title: format!("Card {card_id}"),
+            column: "doing".to_string(),
+            priority: "P1".to_string(),
+            depends_on: vec![],
+            instructions: String::new(),
+            assignee: None,
+            agent_chat_id: None,
+            retry_count: 0,
+            status_updates: vec![],
+            comments: vec![],
+            final_report: None,
+            final_report_structured: None,
+            verifier_report: None,
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            started_at: None,
+            last_heartbeat_at: None,
+            completed_at: None,
+            agent_branch: None,
+            agent_worktree: None,
+            agent_worktree_name: None,
+            base_branch: None,
+            base_commit: None,
+            ab_variants: None,
+            team_members: members,
+            target_files: vec![],
+            scope_guard_mode: Default::default(),
+        }
+    }
+
+    async fn room_session(app: &AppState, chat_id: &str) -> (Arc<AMutex<ChatSession>>, tempfile::TempDir) {
+        let workspace = tempfile::tempdir().unwrap();
+        *app.gcx.documents_state.workspace_folders.lock().unwrap() =
+            vec![workspace.path().to_path_buf()];
+        let session = Arc::new(AMutex::new(ChatSession::new(chat_id.to_string())));
+        session
+            .lock()
+            .await
+            .queue_processor_running
+            .store(true, Ordering::SeqCst);
+        app.chat
+            .sessions
+            .write()
+            .await
+            .insert(chat_id.to_string(), session.clone());
+        (session, workspace)
+    }
+
+    async fn room_context(
+        app: &AppState,
+        chat_id: &str,
+        task_id: &str,
+        card_id: &str,
+    ) -> Arc<AMutex<AtCommandsContext>> {
+        let ccx = Arc::new(AMutex::new(
+            AtCommandsContext::new_from_app(
+                app.clone(),
+                4096,
+                20,
+                false,
+                vec![],
+                chat_id.to_string(),
+                Some("planner-room".to_string()),
+                "test/model".to_string(),
+                None,
+                None,
+            )
+            .await,
+        ));
+        ccx.lock().await.task_meta = Some(refact_chat_api::TaskMeta {
+            task_id: task_id.to_string(),
+            role: "agents".to_string(),
+            agent_id: Some("agent-id-0".to_string()),
+            card_id: Some(card_id.to_string()),
+            planner_chat_id: Some("planner-room".to_string()),
+        });
+        ccx
+    }
+
 }

@@ -308,10 +308,24 @@ fn validate_spawn_agent_cards(
             continue;
         };
         if card.column != "planned" {
-            errors[idx] = Some(format!(
-                "Card {} is in column '{}', expected ready planned card",
-                item.card_id, card.column
-            ));
+            // A room is topped up after its first member moved the card to 'doing'; a lone card
+            // still has to sit in 'planned' so a batch cannot race a card the planner has not
+            // released yet.
+            let topping_up_room = !card.team_members.is_empty();
+            if let Some(error) = crate::tasks::rooms::reject_spawn_into_card(card) {
+                errors[idx] = Some(error);
+                continue;
+            }
+            if !topping_up_room {
+                errors[idx] = Some(format!(
+                    "Card {} is in column '{}', expected ready planned card",
+                    item.card_id, card.column
+                ));
+                continue;
+            }
+        }
+        if let Err(error) = card.validate_team() {
+            errors[idx] = Some(error);
             continue;
         }
         if !ready.contains(&item.card_id) {

@@ -16,7 +16,7 @@ use crate::app_state::AppState;
 use crate::global_context::GlobalContext;
 use crate::custom_error::ScratchError;
 use crate::tasks::comments::{self, CreateCardComment};
-use crate::tasks::types::{BoardCard, StatusUpdate, TaskBoard, TaskMeta, TaskStatus, TrajectoryInfo};
+use crate::tasks::types::{BoardCard, StatusUpdate, TaskBoard, TaskMeta, TaskStatus, TeamMember, TrajectoryInfo};
 use crate::chat::trajectories::TrajectoryEvent;
 use crate::tasks::events::{TaskEvent, TaskEventEnvelope};
 use crate::tasks::storage;
@@ -102,6 +102,8 @@ pub enum BoardPatch {
         instructions: Option<String>,
         #[serde(default)]
         target_files: Option<Vec<String>>,
+        #[serde(default)]
+        team_members: Option<Vec<TeamMember>>,
     },
     MoveCard {
         id: String,
@@ -486,6 +488,7 @@ pub async fn handle_patch_board(
                 depends_on,
                 instructions,
                 target_files,
+                team_members,
             } => {
                 let card = board
                     .get_card_mut(&id)
@@ -504,6 +507,10 @@ pub async fn handle_patch_board(
                 }
                 if let Some(files) = target_files {
                     card.target_files = files;
+                }
+                if let Some(members) = team_members {
+                    card.team_members = members;
+                    card.validate_team().map_err(|error| format!("Card {id}: {error}"))?;
                 }
             }
             BoardPatch::MoveCard { id, column } => {

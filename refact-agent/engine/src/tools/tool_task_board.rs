@@ -11,6 +11,7 @@ use crate::call_validation::{ChatMessage, ChatContent, ContextEnum};
 use crate::tools::tools_description::{
     Tool, ToolDesc, ToolSource, ToolSourceType, json_schema_from_params,
 };
+use crate::tasks::rooms::parse_team_members;
 use crate::tasks::storage;
 use crate::tasks::types::{AbVariants, BoardCard, ScopeGuardMode, TaskBoard};
 use crate::tasks::events::{TaskEvent, emit_task_event};
@@ -941,6 +942,11 @@ impl Tool for ToolTaskBoardUpdateCard {
         if args.contains_key("target_files") {
             card.target_files = parse_target_files(args.get("target_files"), &card.instructions);
         }
+        if args.contains_key("team_members") {
+            card.team_members = parse_team_members(args.get("team_members"))?;
+            card.validate_team()
+                .map_err(|error| format!("Card {}: {error}", card.id))?;
+        }
 
         board.rev += 1;
         storage::save_board(gcx.clone(), &task_id, &board).await?;
@@ -978,26 +984,55 @@ impl Tool for ToolTaskBoardUpdateCard {
             source: make_source(),
             experimental: false,
             allow_parallel: false,
-            description: "Update an existing card's fields.".to_string(),
-            input_schema: json_schema_from_params(
-                &[
-                    ("card_id", "string", "Card ID to update"),
-                    ("title", "string", "New title"),
-                    ("priority", "string", "New priority"),
-                    ("instructions", "string", "New instructions"),
-                    (
-                        "depends_on",
-                        "string",
-                        "Comma-separated list of new dependencies (e.g., \"T-1, T-2\")",
-                    ),
-                    (
-                        "target_files",
-                        "string",
-                        "Comma-separated target file paths this card is expected to touch",
-                    ),
-                ],
-                &["card_id"],
-            ),
+            description: "Update an existing card's fields, including the roster of an agent room.".to_string(),
+            input_schema: {
+                let mut schema = json_schema_from_params(
+                    &[
+                        ("card_id", "string", "Card ID to update"),
+                        ("title", "string", "New title"),
+                        ("priority", "string", "New priority"),
+                        ("instructions", "string", "New instructions"),
+                        (
+                            "depends_on",
+                            "string",
+                            "Comma-separated list of new dependencies (e.g., \"T-1, T-2\")",
+                        ),
+                        (
+                            "target_files",
+                            "string",
+                            "Comma-separated target file paths this card is expected to touch",
+                        ),
+                    ],
+                    &["card_id"],
+                );
+                schema["properties"]["team_members"] = json!({
+                    "type": "array",
+                    "description": "Room roster. Replaces the card's members; spawn_agent adds to it. A room must contain a coder.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "role": {
+                                "type": "string",
+                                "description": "architect, coder, reviewer, researcher, or specialist",
+                            },
+                            "agent_chat_id": {
+                                "type": "string",
+                                "description": "Agent chat id of this member (agent-<card_id>-<suffix>)",
+                            },
+                            "member_status": {
+                                "type": "string",
+                                "description": "pending, running, done, partial, or failed",
+                            },
+                            "mandate": {
+                                "type": "string",
+                                "description": "What this member is responsible for",
+                            },
+                        },
+                        "required": ["role", "agent_chat_id"],
+                    },
+                });
+                schema
+            },
             output_schema: None,
             annotations: None,
         }

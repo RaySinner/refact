@@ -12,6 +12,7 @@ use crate::call_validation::{ChatMessage, ChatContent, ContextEnum, ContextFile}
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::chat::internal_roles::{event, EventSubkind};
 use crate::chat::trajectories::resolve_task_planner_controller_chat_id;
+use crate::tasks::rooms;
 use crate::tasks::storage;
 use crate::tasks::types::{BoardCard, StatusUpdate};
 use crate::global_context::{GlobalContext, try_load_caps_quickly_if_not_present};
@@ -482,6 +483,48 @@ pub(crate) fn build_agent_prompt(
     )
 }
 
+/// Prompt for a member of a multi-agent room.
+///
+/// The roster is embedded because a room member cannot guess who else is on the card: its chat
+/// has no shared history, exactly like the isolated contexts Claude Code agent teams rely on.
+/// The named bus is what turns a set of isolated workers into a team.
+pub(crate) fn build_room_member_prompt(
+    card_title: &str,
+    instructions: &str,
+    dependency_context: &str,
+    suggested_steps: usize,
+    role: &str,
+    mandate: Option<&str>,
+    roster: &[String],
+) -> String {
+    let base = build_agent_prompt(card_title, instructions, dependency_context, suggested_steps);
+    let mandate_line = mandate
+        .map(|mandate| format!("\n**Your mandate:** {mandate}"))
+        .unwrap_or_default();
+    let roster_section = if roster.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "\n\n## Room\nYou are the `{role}` on this card{mandate_line}.\n\n\
+             Other members (each has its own context and its own git worktree):\n{}\n",
+            roster
+                .iter()
+                .map(|line| format!("- {line}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        )
+    };
+
+    format!(
+        "{base}{roster_section}\n\
+         ## Working in a room\n\
+         - Use `agent_message(to=\"<peer chat id>\", text=...)` to reach a peer; the address is the chat id above.\n\
+         - An architect role is sequential: it cannot run at the same time as another member.\n\
+         - Your report is recorded per member, so summarise what *you* did and what you verified.\n\
+         - Merge and the card's final report are the architect's job, not yours."
+    )
+}
+
 pub(crate) fn mark_card_agent_started(
     card: &mut BoardCard,
     agent_id: &str,
@@ -503,6 +546,74 @@ pub(crate) fn mark_card_agent_started(
         timestamp: Utc::now().to_rfc3339(),
         message: "Agent started working on card".to_string(),
     });
+}
+
+/// Claim a room slot on `card` for a newly spawned member.
+///
+/// A card that already carries `team_members` is a room: the new member is *appended* and the
+/// scalar mirrors (`assignee`, `agent_chat_id`, the worktree fields) are left pointing at the
+/// first member. Overwriting them would make the second agent invisible to every code path that
+/// still reads the scalars — including the spawn guard, which would then think the card is
+/// free and happily let a third agent overwrite the second.
+///
+/// A card with no `team_members` keeps the historical scalar-only behaviour verbatim.
+pub(crate) fn claim_room_slot(
+    card: &mut BoardCard,
+    role: &str,
+    agent_id: &str,
+    agent_chat_id: &str,
+    worktree_branch: Option<String>,
+    worktree_path: Option<String>,
+    mandate: Option<String>,
+) {
+    let is_room = !card.team_members.is_empty();
+    let member = rooms::new_room_member(
+        role,
+        agent_id,
+        agent_chat_id,
+        worktree_branch,
+        worktree_path,
+        mandate,
+    );
+
+    if is_room {
+        card.team_members.push(member);
+        card.status_updates.push(StatusUpdate {
+            timestamp: Utc::now().to_rfc3339(),
+            message: format!("Agent {agent_id} joined the room as {role}"),
+        });
+        return;
+    }
+
+    mark_card_agent_started(card, agent_id, agent_chat_id, None, None, None);
+    card.team_members = vec![member];
+}
+
+/// Default room role for a spawn. `coder` is the only role `validate_team` requires, and it is
+/// also the honest default for a card an agent was asked to just "work on".
+pub(crate) const DEFAULT_ROOM_ROLE: &str = "coder";
+
+pub(crate) fn spawn_role(args: &HashMap<String, Value>) -> Result<String, String> {
+    let role = optional_nonempty_string_arg(args, "role")?.unwrap_or_else(|| DEFAULT_ROOM_ROLE.to_string());
+    if crate::tasks::types::TeamRole::parse(&role).is_none() {
+        return Err(format!(
+            "Unknown role '{role}'. Use architect, coder, reviewer, researcher, or specialist."
+        ));
+    }
+    Ok(role)
+}
+
+/// Refuse a spawn that the card cannot accept, re-checking every rule the room contract has.
+///
+/// This runs both before the worktree is created (cheap failure) and inside the atomic board
+/// update (so two concurrent spawns cannot both pass on a stale snapshot). `Err` messages name
+/// the room limit, the terminal column, or `validate_team`'s own reason so the planner can act
+/// without reading the source.
+pub(crate) fn check_spawn_precondition(card: &BoardCard) -> Result<(), String> {
+    if let Some(error) = rooms::reject_spawn_into_card(card) {
+        return Err(error);
+    }
+    card.validate_team()
 }
 
 pub(crate) fn restore_original_card_if_current_agent(
@@ -772,13 +883,21 @@ impl Tool for ToolTaskSpawnAgent {
             },
             experimental: false,
             allow_parallel: false,
-            description: "Spawn an agent to work on a specific task card. The agent runs in the background as a real chat session. Returns immediately with a hyperlink to view the agent's progress. The agent will call agent_finish() when done.".to_string(),
+            description: "Spawn an agent to work on a specific task card. The agent runs in the background as a real chat session. Returns immediately with a hyperlink to view the agent's progress. The agent will call agent_finish() when done. Spawning onto a card that already has members adds a room member instead of replacing the agent; pass `role` and `role_mandate` to staff the room.".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
                     "card_id": {
                         "type": "string",
                         "description": "Card ID to work on"
+                    },
+                    "role": {
+                        "type": "string",
+                        "description": "Room role for this member: architect, coder, reviewer, researcher, or specialist (default: coder). A room must contain a coder. The architect role is sequential — it cannot run while another member is active."
+                    },
+                    "role_mandate": {
+                        "type": "string",
+                        "description": "What this specific member is responsible for, recorded on the room roster so peers can read it."
                     },
                     "suggested_steps": {
                         "type": "integer",
@@ -910,12 +1029,9 @@ impl Tool for ToolTaskSpawnAgent {
                 card_id, card.column
             ));
         }
-        if card.column == "doing" && card.agent_chat_id.is_some() {
-            return Err(format!(
-                "Card {} already has an active agent ({}). Use check_agents to monitor it, or move the card back to 'planned' to respawn.",
-                card_id, card.agent_chat_id.as_ref().unwrap()
-            ));
-        }
+        check_spawn_precondition(card)?;
+        let role = spawn_role(args)?;
+        let mandate = optional_nonempty_string_arg(args, "role_mandate")?;
 
         let agent_id = Uuid::new_v4().to_string();
         let agent_chat_id = format!("agent-{}-{}", card_id, &agent_id[..8]);
@@ -982,6 +1098,8 @@ impl Tool for ToolTaskSpawnAgent {
         let card_id_owned = card_id.to_string();
         let agent_id_clone = agent_id.clone();
         let agent_chat_id_clone = agent_chat_id.clone();
+        let role_clone = role.clone();
+        let mandate_clone = mandate.clone();
         let worktree_branch = prepared_worktree.branch_name();
         let worktree_path_str = Some(
             prepared_worktree
@@ -1016,22 +1134,17 @@ impl Tool for ToolTaskSpawnAgent {
                 if card.column != "planned" && card.column != "doing" {
                     return Err(format!("Card {} is in column '{}', expected 'planned' or 'doing'", card_id_owned, card.column));
                 }
-                if card.column == "doing" && card.agent_chat_id.is_some() {
-                    let existing_chat_id = card.agent_chat_id.as_ref().unwrap();
-                    return Err(format!(
-                        "Card {} already has an active agent ({}). Use check_agents to monitor it, or move the card back to 'planned' to respawn.",
-                        card_id_owned, existing_chat_id
-                    ));
-                }
-
-                mark_card_agent_started(
+                check_spawn_precondition(card)?;
+                claim_room_slot(
                     card,
+                    &role_clone,
                     &agent_id_clone,
                     &agent_chat_id_clone,
                     worktree_branch.clone(),
                     worktree_path_str.clone(),
-                    worktree_name.clone(),
+                    mandate_clone.clone(),
                 );
+                card.validate_team().map_err(|error| format!("Card {card_id_owned}: {error}"))?;
                 card.base_branch = base_branch_from_prep.clone();
                 card.base_commit = base_commit_from_prep.clone();
 
@@ -1107,12 +1220,27 @@ impl Tool for ToolTaskSpawnAgent {
             &planner_chat_id,
             prepared_worktree.meta.clone(),
         );
-        let user_prompt = build_agent_prompt(
-            &card_title,
-            &card_instructions,
-            &dependency_context,
-            suggested_steps,
-        );
+        let user_prompt = match board
+            .get_card(card_id)
+            .map(|card| rooms::describe_room(card))
+            .filter(|roster| !roster.is_empty() && roster.len() > 1)
+        {
+            Some(roster) => build_room_member_prompt(
+                &card_title,
+                &card_instructions,
+                &dependency_context,
+                suggested_steps,
+                &role,
+                mandate.as_deref(),
+                &roster,
+            ),
+            None => build_agent_prompt(
+                &card_title,
+                &card_instructions,
+                &dependency_context,
+                suggested_steps,
+            ),
+        };
         let user_msg = event(
             EventSubkind::SystemNotice,
             "tool.task_spawn_agent",
@@ -2345,4 +2473,207 @@ mod tests {
         let paths = validate_files_to_open(&args).unwrap();
         assert_eq!(paths, vec!["/foo/bar.txt", "/baz.txt"]);
     }
+
+#[test]
+    fn second_agent_appends_to_room_instead_of_overwriting() {
+        let mut card = test_card("T-1", "planned", None);
+
+        claim_room_slot(
+            &mut card,
+            "architect",
+            "agent-1",
+            "agent-T-1-arch",
+            Some("branch-1".into()),
+            Some("/wt/1".into()),
+            None,
+        );
+        claim_room_slot(
+            &mut card,
+            "coder",
+            "agent-2",
+            "agent-T-1-code",
+            Some("branch-2".into()),
+            Some("/wt/2".into()),
+            Some("write the parser".into()),
+        );
+
+        assert_eq!(card.team_members.len(), 2);
+        // The scalars still describe the FIRST member, so every legacy reader (spawn guard,
+        // merge, worktree lookup) keeps pointing at a real agent instead of an empty value.
+        assert_eq!(card.assignee.as_deref(), Some("agent-1"));
+        assert_eq!(card.agent_chat_id.as_deref(), Some("agent-T-1-arch"));
+        assert_eq!(card.agent_branch.as_deref(), Some("branch-1"));
+
+        assert_eq!(card.team_members[0].role, "architect");
+        assert_eq!(
+            card.team_members[0].agent_chat_id.as_deref(),
+            Some("agent-T-1-arch")
+        );
+        assert_eq!(card.team_members[1].role, "coder");
+        assert_eq!(
+            card.team_members[1].agent_chat_id.as_deref(),
+            Some("agent-T-1-code")
+        );
+        assert_eq!(card.team_members[1].agent_branch.as_deref(), Some("branch-2"));
+        assert_eq!(
+            card.team_members[1].agent_worktree.as_deref(),
+            Some("/wt/2")
+        );
+        assert_eq!(
+            card.team_members[1].mandate.as_deref(),
+            Some("write the parser")
+        );
+        assert!(card
+            .status_updates
+            .iter()
+            .any(|update| update.message.contains("joined the room as coder")));
+    }
+
+    #[test]
+    fn single_card_keeps_scalar_assignment_behavior() {
+        let mut card = test_card("T-1", "planned", None);
+
+        claim_room_slot(
+            &mut card,
+            "coder",
+            "agent-1",
+            "agent-T-1-1111",
+            Some("branch-1".into()),
+            Some("/wt/1".into()),
+            None,
+        );
+
+        // Everything the historical scalar path promised still holds.
+        assert_eq!(card.column, "doing");
+        assert_eq!(card.assignee.as_deref(), Some("agent-1"));
+        assert_eq!(card.agent_chat_id.as_deref(), Some("agent-T-1-1111"));
+        assert!(card.started_at.is_some());
+        assert!(card
+            .status_updates
+            .iter()
+            .any(|update| update.message == "Agent started working on card"));
+
+        // ...plus one roster entry, so a later spawn appends instead of overwriting.
+        assert_eq!(card.team_members.len(), 1);
+        assert_eq!(card.team_members[0].role, "coder");
+    }
+
+    #[test]
+    fn spawn_into_room_rejected_when_validate_team_fails() {
+        // Two researchers and an architect is a room with no coder: `validate_team` must refuse it.
+        let mut card = test_card("T-1", "doing", None);
+        card.team_members = vec![
+            crate::tasks::rooms::new_room_member("researcher", "a1", "agent-T-1-a1", None, None, None),
+            crate::tasks::rooms::new_room_member("researcher", "a2", "agent-T-1-a2", None, None, None),
+        ];
+
+        let error = check_spawn_precondition(&card).unwrap_err();
+
+        assert!(error.contains("coder"), "{error}");
+    }
+
+    #[test]
+    fn spawn_rejects_duplicate_room_identity() {
+        let mut card = test_card("T-1", "doing", None);
+        card.team_members = vec![
+            crate::tasks::rooms::new_room_member("architect", "same", "agent-T-1-a", None, None, None),
+            crate::tasks::rooms::new_room_member("coder", "same", "agent-T-1-b", None, None, None),
+        ];
+
+        let error = check_spawn_precondition(&card).unwrap_err();
+
+        assert!(error.contains("duplicate team member identity"), "{error}");
+        assert!(error.contains("same"), "{error}");
+    }
+
+    #[test]
+    fn spawn_rejects_running_architect_beside_active_peer() {
+        let mut card = test_card("T-1", "doing", None);
+        card.team_members = vec![
+            crate::tasks::rooms::new_room_member("architect", "a1", "agent-T-1-a1", None, None, None),
+            crate::tasks::rooms::new_room_member("coder", "a2", "agent-T-1-a2", None, None, None),
+        ];
+        card.team_members[0].member_status = Some(crate::tasks::types::TeamStatus::Running);
+        card.team_members[1].member_status = Some(crate::tasks::types::TeamStatus::Running);
+
+        let error = check_spawn_precondition(&card).unwrap_err();
+
+        assert!(error.contains("sequential"), "{error}");
+    }
+
+    #[test]
+    fn spawn_role_defaults_to_coder_and_rejects_unknown_names() {
+        assert_eq!(spawn_role(&HashMap::new()).unwrap(), DEFAULT_ROOM_ROLE);
+
+        let args = HashMap::from([("role".to_string(), json!("architect"))]);
+        assert_eq!(spawn_role(&args).unwrap(), "architect");
+
+        let args = HashMap::from([("role".to_string(), json!("wizard"))]);
+        let error = spawn_role(&args).unwrap_err();
+        assert!(error.contains("wizard"), "{error}");
+        assert!(error.contains("coder"), "{error}");
+    }
+
+    #[test]
+    fn concurrent_room_claims_do_not_lose_members() {
+        // `update_board_atomic` gives each claim the whole board, so a claim can never read a
+        // stale roster. Model the critical section: claims are applied to the same card in
+        // sequence and every member must survive.
+        let mut card = test_card("T-1", "planned", None);
+
+        for index in 0..3 {
+            let mut room = card.clone();
+            // Each claimant validated against the snapshot it was handed...
+            check_spawn_precondition(&room).unwrap();
+            // ...then applied its own mutation on top of the current board.
+            claim_room_slot(
+                &mut card,
+                "coder",
+                &format!("agent-{index}"),
+                &format!("agent-T-1-{index}"),
+                None,
+                None,
+                None,
+            );
+        }
+
+        assert_eq!(card.team_members.len(), 3);
+        let chats: Vec<&str> = card
+            .team_members
+            .iter()
+            .filter_map(|member| member.agent_chat_id.as_deref())
+            .collect();
+        assert_eq!(
+            chats,
+            vec!["agent-T-1-0", "agent-T-1-1", "agent-T-1-2"],
+            "every claim must be preserved, none overwritten"
+        );
+        assert_eq!(card.validate_team().unwrap(), ());
+        assert_eq!(card.assignee.as_deref(), Some("agent-0"));
+    }
+
+    #[test]
+    fn room_prompt_names_the_roster_and_the_bus() {
+        let prompt = build_room_member_prompt(
+            "Card T-1",
+            "do the thing",
+            "",
+            30,
+            "coder",
+            Some("write the parser"),
+            &["architect [running] agent-T-1-arch".to_string()],
+        );
+
+        assert!(prompt.contains("You are the `coder`"), "{prompt}");
+        assert!(prompt.contains("write the parser"), "{prompt}");
+        assert!(prompt.contains("agent-T-1-arch"), "{prompt}");
+        assert!(
+            prompt.contains("agent_message(to=\"<peer chat id>\""),
+            "the room must tell the member how to reach peers: {prompt}"
+        );
+        // The original single-agent guidance must survive.
+        assert!(prompt.contains("agent_finish()"), "{prompt}");
+        assert!(prompt.contains("## Instructions"), "{prompt}");
+    }
+
 }

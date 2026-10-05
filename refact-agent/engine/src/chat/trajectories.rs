@@ -2337,6 +2337,7 @@ fn is_known_trajectory_top_level_key(key: &str) -> bool {
             | "auto_enrichment_enabled"
             | "buddy_meta"
             | "auto_compact_enabled"
+            | "agent_nudge_enabled"
             | "frozen_request_prefix"
             | "claude_code_identity"
             | "reactive_compact_attempts"
@@ -3168,6 +3169,7 @@ async fn load_trajectory_candidate(
             .and_then(|v| serde_json::from_value(v.clone()).ok()),
 
         auto_compact_enabled: t.get("auto_compact_enabled").and_then(|v| v.as_bool()),
+        agent_nudge_enabled: t.get("agent_nudge_enabled").and_then(|v| v.as_bool()),
         frozen_request_prefix,
         claude_code_identity,
         // Runtime-only: saves strip this key and loads ignore injected values
@@ -3531,6 +3533,7 @@ I'm your **Task Planner**. I handle the complete task lifecycle - from investiga
         active_skill: None,
         buddy_meta: None,
         auto_compact_enabled: None,
+        agent_nudge_enabled: None,
         frozen_request_prefix: None,
         claude_code_identity: None,
         reactive_compact_attempts: None,
@@ -18640,6 +18643,7 @@ mod tests {
                 auto_enrichment_enabled: None,
                 buddy_meta: None,
                 auto_compact_enabled: None,
+                agent_nudge_enabled: None,
                 frozen_request_prefix: None,
                 claude_code_identity: None,
                 reactive_compact_attempts: None,

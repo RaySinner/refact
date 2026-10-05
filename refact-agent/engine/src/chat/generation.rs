@@ -6,6 +6,8 @@ use tokio::sync::{Mutex as AMutex};
 use tracing::{info, warn};
 use uuid::Uuid;
 use refact_buddy_core::types::BuddyRuntimeEvent;
+use refact_chat_api::{NUDGE_MARKER, NUDGE_ROLE, SilentTailSignal};
+use refact_runtime_api::ToolCatalogSnapshot;
 
 use crate::app_state::AppState;
 use crate::buddy::chat_reactions::{maybe_enqueue_chat_activity_reaction, ChatActivityCompletion};
@@ -1307,6 +1309,15 @@ const LENGTH_STOP_CONTINUE_MARKER: &str = "length_stop_continue";
 const MAX_LENGTH_STOP_RECOVERY_ATTEMPTS: usize = 2;
 const LENGTH_STOP_BOOSTED_MAX_NEW_TOKENS: usize = 16_000;
 
+/// Tool an agent is told to call when it ends a turn with plain text. It is
+/// only ever named after `chat_exposes_finish_tool` confirmed the running mode
+/// actually offers it, so the nudge never asks for a tool the model cannot see.
+const SILENT_TAIL_FINISH_TOOL: &str = "agent_finish";
+/// How many times a single turn may be nudged back after a silent tail. After
+/// the last attempt the branch falls through to its normal `break` and the stall
+/// monitor escalates.
+const MAX_SILENT_TAIL_NUDGE_ATTEMPTS: u32 = 2;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LengthStopKind {
     EmptyOutput,
@@ -1368,6 +1379,157 @@ fn length_stop_continue_instruction(kind: LengthStopKind) -> ChatMessage {
         content: ChatContent::SimpleText(text.to_string()),
         ..Default::default()
     }
+}
+
+fn silent_tail_nudge_attempts(messages: &[ChatMessage]) -> u32 {
+    let start = messages
+        .iter()
+        .rposition(|message| message.role == "user")
+        .map_or(0, |idx| idx + 1);
+    messages[start..]
+        .iter()
+        .filter(|message| message.role == NUDGE_ROLE && message.tool_call_id == NUDGE_MARKER)
+        .count() as u32
+}
+
+fn is_task_agent_chat(thread: &ThreadParams) -> bool {
+    thread
+        .task_meta
+        .as_ref()
+        .is_some_and(|meta| meta.role == "agents")
+}
+
+fn chat_exposes_finish_tool(catalog: Option<&ToolCatalogSnapshot>) -> bool {
+    catalog.is_some_and(|catalog| {
+        catalog
+            .index
+            .tools
+            .iter()
+            .any(|tool| tool.name == SILENT_TAIL_FINISH_TOOL)
+    })
+}
+
+/// Pure decision for the silent-tail nudge: the instruction to insert, or `None`
+/// when this turn must keep going through its normal `break`.
+///
+/// Every gate lives here so the behaviour is testable without an LLM: the flag
+/// must be on, the chat must be a task agent, the running mode must actually
+/// expose the finish tool, the model must have said something, and this turn
+/// must still be under `max_attempts` nudges.
+fn decide_silent_tail_nudge(
+    messages: &[ChatMessage],
+    nudge_enabled: bool,
+    is_agent_chat: bool,
+    has_finish_tool: bool,
+    max_attempts: u32,
+    last_response_text: &str,
+    model: Option<&str>,
+) -> Option<String> {
+    if !nudge_enabled || !is_agent_chat || !has_finish_tool {
+        return None;
+    }
+    if last_response_text.trim().is_empty() {
+        return None;
+    }
+    let signal = SilentTailSignal {
+        attempts: silent_tail_nudge_attempts(messages),
+        max_attempts,
+        last_response_text: last_response_text.to_string(),
+        model: model.map(str::to_string),
+    };
+    signal
+        .should_nudge()
+        .then(|| signal.nudge_message(SILENT_TAIL_FINISH_TOOL))
+}
+
+/// What the silent-tail check decided for the current `NoToolCalls` step.
+enum SilentTailNudge {
+    /// A nudge was inserted; the turn continues.
+    Nudged,
+    /// Attempts are spent; the branch falls through to its normal `break` and
+    /// the stall monitor escalates.
+    Exhausted { attempts: u32 },
+    /// The nudge does not apply here at all.
+    NotApplicable,
+}
+
+async fn maybe_nudge_after_silent_tail(
+    app: AppState,
+    session_arc: &Arc<AMutex<ChatSession>>,
+) -> SilentTailNudge {
+    let (messages, thread, catalog, last_response_text) = {
+        let session = session_arc.lock().await;
+        (
+            session.messages.clone(),
+            session.thread.clone(),
+            session.tool_catalog.clone(),
+            session
+                .messages
+                .last()
+                .map(|message| message.content.content_text_only())
+                .unwrap_or_default(),
+        )
+    };
+    let model = (!thread.model.is_empty()).then_some(thread.model.as_str());
+    let nudge_enabled = thread.agent_nudge_enabled_effective();
+    let is_agent_chat = is_task_agent_chat(&thread);
+    let has_finish_tool = chat_exposes_finish_tool(catalog.as_deref());
+    let attempts = silent_tail_nudge_attempts(&messages);
+
+    let Some(text) = decide_silent_tail_nudge(
+        &messages,
+        nudge_enabled,
+        is_agent_chat,
+        has_finish_tool,
+        MAX_SILENT_TAIL_NUDGE_ATTEMPTS,
+        &last_response_text,
+        model,
+    ) else {
+        let exhausted = nudge_enabled
+            && is_agent_chat
+            && has_finish_tool
+            && !last_response_text.trim().is_empty()
+            && attempts >= MAX_SILENT_TAIL_NUDGE_ATTEMPTS;
+        if exhausted {
+            let (task_id, card_id, chat_id) = {
+                let session = session_arc.lock().await;
+                let meta = session.thread.task_meta.as_ref();
+                (
+                    meta.map(|meta| meta.task_id.clone()).unwrap_or_default(),
+                    meta.and_then(|meta| meta.card_id.clone())
+                        .unwrap_or_default(),
+                    session.chat_id.clone(),
+                )
+            };
+            warn!(
+                "silent_tail: nudge exhausted after {} attempt(s); card={} task={} chat={} model={:?}",
+                attempts,
+                card_id,
+                task_id,
+                chat_id,
+                model,
+            );
+            return SilentTailNudge::Exhausted { attempts };
+        }
+        return SilentTailNudge::NotApplicable;
+    };
+
+    {
+        let mut session = session_arc.lock().await;
+        session.add_message(ChatMessage {
+            role: NUDGE_ROLE.to_string(),
+            tool_call_id: NUDGE_MARKER.to_string(),
+            content: ChatContent::SimpleText(text),
+            ..Default::default()
+        });
+    }
+    maybe_save_trajectory_with_intent(
+        app,
+        session_arc.clone(),
+        TrajectoryCommitIntent::Checkpoint,
+    )
+    .await;
+    SilentTailNudge::Nudged
 }
 
 async fn maybe_recover_after_length_stop(
@@ -2120,6 +2282,10 @@ pub fn start_generation(
                         .await
                     {
                         continue;
+                    }
+                    match maybe_nudge_after_silent_tail(app.clone(), &session_arc).await {
+                        SilentTailNudge::Nudged => continue,
+                        SilentTailNudge::Exhausted { .. } | SilentTailNudge::NotApplicable => {}
                     }
                     let should_continue = {
                         let session = session_arc.lock().await;
@@ -4896,6 +5062,111 @@ mod tests {
     }
     fn length_stop_marker_msg() -> ChatMessage {
         length_stop_continue_instruction(LengthStopKind::PartialOutput)
+    }
+
+    fn nudge_marker_msg() -> ChatMessage {
+        ChatMessage {
+            role: NUDGE_ROLE.to_string(),
+            tool_call_id: NUDGE_MARKER.to_string(),
+            content: ChatContent::SimpleText("nudge".to_string()),
+            ..Default::default()
+        }
+    }
+
+    fn decide(
+        messages: &[ChatMessage],
+        nudge_enabled: bool,
+        is_agent_chat: bool,
+        has_finish_tool: bool,
+        last_response_text: &str,
+    ) -> Option<String> {
+        decide_silent_tail_nudge(
+            messages,
+            nudge_enabled,
+            is_agent_chat,
+            has_finish_tool,
+            MAX_SILENT_TAIL_NUDGE_ATTEMPTS,
+            last_response_text,
+            Some("test-model"),
+        )
+    }
+
+    fn agent_turn_with_nudges(nudges: usize) -> Vec<ChatMessage> {
+        let mut messages = vec![make_user_msg("do the card")];
+        messages.push(make_assistant_msg("I looked at it and think we are done."));
+        for _ in 0..nudges {
+            messages.push(nudge_marker_msg());
+            messages.push(make_assistant_msg("still just talking."));
+        }
+        messages
+    }
+
+    #[test]
+    fn nudge_not_inserted_when_disabled() {
+        let messages = agent_turn_with_nudges(0);
+        assert!(decide(&messages, false, true, true, "I think we are done.").is_none());
+    }
+
+    #[test]
+    fn nudge_not_inserted_in_plain_chat() {
+        let messages = agent_turn_with_nudges(0);
+        assert!(decide(&messages, true, false, true, "I think we are done.").is_none());
+    }
+
+    #[test]
+    fn nudge_not_inserted_without_finish_tool() {
+        let messages = agent_turn_with_nudges(0);
+        assert!(decide(&messages, true, true, false, "I think we are done.").is_none());
+    }
+
+    #[test]
+    fn nudge_not_inserted_for_empty_response() {
+        let messages = agent_turn_with_nudges(0);
+        assert!(decide(&messages, true, true, true, "").is_none());
+        assert!(decide(&messages, true, true, true, "   \n ").is_none());
+    }
+
+    #[test]
+    fn nudge_inserted_on_first_silent_tail() {
+        let messages = agent_turn_with_nudges(0);
+        assert!(decide(&messages, true, true, true, "I think we are done.").is_some());
+    }
+
+    #[test]
+    fn nudge_text_mentions_finish_tool() {
+        let messages = agent_turn_with_nudges(0);
+        let text = decide(&messages, true, true, true, "I think we are done.").unwrap();
+        assert!(text.contains(SILENT_TAIL_FINISH_TOOL));
+        assert!(text.contains("tool call"));
+    }
+
+    #[test]
+    fn nudge_not_inserted_after_max_attempts() {
+        let messages = agent_turn_with_nudges(MAX_SILENT_TAIL_NUDGE_ATTEMPTS as usize);
+        assert!(decide(&messages, true, true, true, "still just talking.").is_none());
+    }
+
+    #[test]
+    fn nudge_attempts_counted_only_since_last_user_message() {
+        let mut messages = vec![make_user_msg("first turn")];
+        messages.push(nudge_marker_msg());
+        messages.push(make_assistant_msg("silence"));
+        messages.push(make_user_msg("second turn"));
+        messages.push(make_assistant_msg("silence again"));
+        assert_eq!(silent_tail_nudge_attempts(&messages), 0);
+        assert!(decide(&messages, true, true, true, "silence again").is_some());
+    }
+
+    #[test]
+    fn nudge_stops_after_second_attempt_in_conversation() {
+        let mut messages = agent_turn_with_nudges(0);
+        assert!(decide(&messages, true, true, true, "I think we are done.").is_some());
+        messages.push(nudge_marker_msg());
+        messages.push(make_assistant_msg("still just talking."));
+        assert!(decide(&messages, true, true, true, "still just talking.").is_some());
+        messages.push(nudge_marker_msg());
+        messages.push(make_assistant_msg("still just talking."));
+        assert!(decide(&messages, true, true, true, "still just talking.").is_none());
     }
 
     #[test]

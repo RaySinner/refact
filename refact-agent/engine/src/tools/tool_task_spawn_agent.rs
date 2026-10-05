@@ -598,6 +598,7 @@ pub(crate) fn build_agent_thread_params(
         auto_enrichment_enabled: None,
         buddy_meta: None,
         auto_compact_enabled: None,
+        agent_nudge_enabled: None,
         frozen_request_prefix: None,
         claude_code_identity: None,
         reactive_compact_attempts: None,

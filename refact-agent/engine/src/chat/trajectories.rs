@@ -3533,7 +3533,6 @@ I'm your **Task Planner**. I handle the complete task lifecycle - from investiga
         active_skill: None,
         buddy_meta: None,
         auto_compact_enabled: None,
-        agent_nudge_enabled: None,
         frozen_request_prefix: None,
         claude_code_identity: None,
         reactive_compact_attempts: None,

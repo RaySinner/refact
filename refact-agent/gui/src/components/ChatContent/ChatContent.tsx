@@ -69,6 +69,13 @@ import { SelectionToolbar } from "./SelectionToolbar";
 import { ErrorMessageCard } from "./ErrorMessage";
 import { SummarizationMessage as SummarizationMessageCard } from "./SummarizationMessage";
 import { PlanBanner } from "./PlanBanner";
+import { RoomAttributionFrame } from "./RoomAttribution/RoomAttributionFrame";
+import {
+  displayItemExtra,
+  roomAttributionForItems,
+  type AttributedItem,
+} from "./RoomAttribution/roomAttribution";
+import { formatExactClockTime } from "../../utils/formatDateToHumanReadable";
 import type {
   CompressionPhase,
   CompressionReason,
@@ -339,6 +346,46 @@ export const ChatContent: React.FC<ChatContentProps> = ({
     return displayItems.length > 0 ? displayItems.length - 1 : undefined;
   }, [displayItems]);
 
+  // A message the engine stamped no time for still deserves one, and the GUI is the
+  // only side that saw when it arrive. Recorded on first sight and never rewritten, so
+  // a message does not change its clock every time it re-renders.
+  // Keys are derived from a message's role and index, so two chats share them. The
+  // map is therefore scoped to one chat and rebuilt whenever the chat changes.
+  const seenChatIdRef = useRef<string | null>(null);
+  const firstSeenMsRef = useRef(new Map<string, number>());
+  const clientTimezone = useMemo(
+    () => Intl.DateTimeFormat().resolvedOptions().timeZone,
+    [],
+  );
+
+  const attributedItems = useMemo<AttributedItem<DisplayItem>[]>(() => {
+    if (seenChatIdRef.current !== renderChatId) {
+      seenChatIdRef.current = renderChatId;
+      firstSeenMsRef.current = new Map<string, number>();
+    }
+
+    const nowMs = Date.now();
+    const liveKeys = new Set<string>();
+    for (const item of displayItems) {
+      if (liveKeys.has(item.key)) continue;
+      liveKeys.add(item.key);
+      if (!firstSeenMsRef.current.has(item.key)) {
+        firstSeenMsRef.current.set(item.key, nowMs);
+      }
+    }
+    for (const key of firstSeenMsRef.current.keys()) {
+      if (!liveKeys.has(key)) firstSeenMsRef.current.delete(key);
+    }
+
+    return roomAttributionForItems(
+      displayItems,
+      (item) => item.key,
+      displayItemExtra,
+      (epochMs) => formatExactClockTime(epochMs, clientTimezone),
+      (_extra, item) => firstSeenMsRef.current.get(item.key) ?? null,
+    );
+  }, [displayItems, clientTimezone, renderChatId]);
+
   const handleProcessCompletedClick = useCallback((processId: string) => {
     revealProcessOutput(processId);
   }, []);
@@ -389,7 +436,7 @@ export const ChatContent: React.FC<ChatContentProps> = ({
     ],
   );
 
-  const renderDisplayItem = useCallback(
+  const renderItemBody = useCallback(
     (item: DisplayItem): React.ReactNode => {
       switch (item.type) {
         case "plain_text":
@@ -521,6 +568,21 @@ export const ChatContent: React.FC<ChatContentProps> = ({
     ],
   );
 
+  const renderDisplayItem = useCallback(
+    ({ item, attribution }: AttributedItem<DisplayItem>): React.ReactNode => {
+      const rendered = renderItemBody(item);
+      // No provenance, no frame. A plain conversation and a lone agent card must keep
+      // exactly the transcript they had before rooms existed.
+      if (attribution === null) return rendered;
+      return (
+        <RoomAttributionFrame attribution={attribution}>
+          {rendered}
+        </RoomAttributionFrame>
+      );
+    },
+    [renderItemBody],
+  );
+
   if (showLoading) {
     return (
       <Flex
@@ -563,7 +625,7 @@ export const ChatContent: React.FC<ChatContentProps> = ({
           <Box className={styles.transcriptScrollRegion}>
             <VirtualizedChatList
               key={renderChatId}
-              items={displayItems}
+              items={attributedItems}
               renderItem={renderDisplayItem}
               initialScrollIndex={initialScrollIndex}
               footer={virtuosoFooter}

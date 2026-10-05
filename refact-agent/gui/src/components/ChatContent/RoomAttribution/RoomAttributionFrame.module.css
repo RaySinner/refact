@@ -1,0 +1,54 @@
+.roomFrame {
+  display: flex;
+  gap: 2;
+  align-items: stretch;
+}
+
+.stripe {
+  flex: 0 0 auto;
+  width: 2px;
+  border-radius: 1px;
+  background-color: var(--room-stripe-fallback, transparent);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 1;
+  min-width: 0;
+  flex: 1 1 auto;
+  padding-top: 2px;
+}
+
+.byline {
+  display: flex;
+  align-items: baseline;
+  gap: 2;
+  font-size: 10px;
+  line-height: 1.4;
+  min-width: 0;
+  color: var(--room-label-fallback, var(--gray-11));
+}
+
+.name {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--room-label-fallback, var(--gray-11));
+}
+
+.time {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--gray-11);
+}
+
+/* The hairline that says "another agent starts here". Kept the colour of the agent
+   that follows it, so the boundary is legible without a second glance at the byline. */
+.divider {
+  border: 0;
+  border-top: 1px solid var(--room-stripe-fallback, var(--gray-6));
+  margin: 0;
+  padding: 0;
+}

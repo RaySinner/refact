@@ -706,7 +706,7 @@ mod tests {
         let mut card = card();
         card.column = "done".to_string();
 
-        let error = build_room_members(&card(), &[request("code_edit")], &registry()).unwrap_err();
+        let error = build_room_members(&card, &[request("code_edit")], &registry()).unwrap_err();
 
         assert!(error.contains("terminal column"), "{error}");
     }
@@ -785,7 +785,7 @@ mod tests {
     #[test]
     fn reserved_slot_is_claimed_by_a_later_spawn_of_the_same_role() {
         let mut card = card();
-        let members = build_room_members(&card(), &[request("code_edit")], &registry()).unwrap();
+        let members = build_room_members(&card, &[request("code_edit")], &registry()).unwrap();
         card.team_members = members;
 
         let claimed = rooms::claim_planned_slot(&mut card, "code_edit").expect("slot is reserved");
@@ -803,7 +803,7 @@ mod tests {
     fn a_spawn_of_an_unreserved_role_does_not_claim_someone_elses_slot() {
         let mut card = card();
         card.team_members =
-            build_room_members(&card(), &[request("code_edit")], &registry()).unwrap();
+            build_room_members(&card, &[request("code_edit")], &registry()).unwrap();
 
         assert!(
             rooms::claim_planned_slot(&mut card, "reviewer").is_none(),

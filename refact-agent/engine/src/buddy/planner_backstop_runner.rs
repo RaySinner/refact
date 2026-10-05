@@ -10,7 +10,6 @@ use refact_core::chat_types::{PendingDelivery, PushMode};
 use crate::app_state::AppState;
 use crate::chat::delivery::deliver_to_chat;
 use crate::chat::internal_roles::{event, EventSubkind};
-use crate::global_context::SharedGlobalContext;
 use crate::tasks::storage::{load_board, update_board_atomic};
 use crate::tasks::types::StatusUpdate;
 
@@ -67,12 +66,12 @@ fn split_question_and_urgency(text: &str) -> (String, BackstopUrgency) {
 }
 
 pub async fn collect_backstop_candidates(
-    gcx: &SharedGlobalContext,
+    app: &AppState,
     task_ids: &[String],
 ) -> Vec<BackstopCandidate> {
     let mut candidates = Vec::new();
     for task_id in task_ids {
-        let board = match load_board(gcx, task_id).await {
+        let board = match load_board(app.gcx.clone(), task_id).await {
             Ok(b) => b,
             Err(_) => continue,
         };
@@ -126,14 +125,14 @@ pub async fn collect_backstop_candidates(
 }
 
 pub async fn maybe_answer_overdue_question(
-    gcx: &SharedGlobalContext,
+    app: &AppState,
     settings: BuddySettings,
     rotation: SpeechRotationState,
     auto_quiet_window: Option<(u8, u8)>,
     task_id: &str,
     question: &BackstopQuestion,
 ) -> BackstopOutcome {
-    let board = match load_board(gcx, task_id).await {
+    let board = match load_board(app.gcx.clone(), task_id).await {
         Ok(b) => b,
         Err(e) => {
             return BackstopOutcome::Skipped {
@@ -180,7 +179,7 @@ pub async fn maybe_answer_overdue_question(
             let reply_status = reply_marker(&question.question_id, &answer);
             let q_id = question.question_id.clone();
             let c_id = question.card_id.clone();
-            let _ = update_board_atomic(gcx.clone(), task_id, move |board| {
+            let _ = update_board_atomic(app.gcx.clone(), task_id, move |board| {
                 if let Some(c) = board.get_card_mut(&c_id) {
                     c.status_updates.push(StatusUpdate {
                         timestamp: Utc::now().to_rfc3339(),
@@ -203,9 +202,8 @@ pub async fn maybe_answer_overdue_question(
                     }),
                     answer.clone(),
                 );
-                let app = AppState::from_gcx(gcx.clone());
                 let _ = deliver_to_chat(
-                    app,
+                    app.clone(),
                     &chat_id,
                     PendingDelivery::new(vec![msg], PushMode::WhenIdle, BACKSTOP_SOURCE, true),
                 )
@@ -228,9 +226,8 @@ pub async fn maybe_answer_overdue_question(
                     }),
                     text.clone(),
                 );
-                let app = AppState::from_gcx(gcx.clone());
                 let _ = deliver_to_chat(
-                    app,
+                    app.clone(),
                     &chat_id,
                     PendingDelivery::new(vec![msg], PushMode::WhenIdle, BACKSTOP_SOURCE, true),
                 )

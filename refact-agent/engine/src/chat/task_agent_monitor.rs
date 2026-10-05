@@ -2611,7 +2611,7 @@ mod tests {
 
     #[tokio::test]
     async fn agent_in_error_state_retries_without_premature_failure() {
-        let (_temp, app, task_id, agent_chat_id, agent_arc, _planner_arc) =
+        let (_temp, app, task_id, _agent_chat_id, agent_arc, _planner_arc) =
             setup_monitor_case("doing", SessionState::Error, Duration::from_secs(10), vec![]).await;
         {
             let mut session = agent_arc.lock().await;

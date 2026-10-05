@@ -1118,7 +1118,7 @@ impl Tool for ToolTaskSpawnAgent {
                 .to_string_lossy()
                 .to_string(),
         );
-        let worktree_name = Some(prepared_worktree.worktree_name());
+        let _worktree_name = Some(prepared_worktree.worktree_name());
         let base_branch_from_prep = prepared_worktree.meta.base_branch.clone();
         let base_commit_from_prep = prepared_worktree.meta.base_commit.clone();
 
@@ -2661,7 +2661,7 @@ mod tests {
         let mut card = test_card("T-1", "planned", None);
 
         for index in 0..3 {
-            let mut room = card.clone();
+            let room = card.clone();
             // Each claimant validated against the snapshot it was handed...
             check_spawn_precondition(&room).unwrap();
             // ...then applied its own mutation on top of the current board.

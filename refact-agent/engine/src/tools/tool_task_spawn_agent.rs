@@ -565,6 +565,7 @@ pub(crate) fn claim_room_slot(
     worktree_branch: Option<String>,
     worktree_path: Option<String>,
     mandate: Option<String>,
+    tools: Vec<String>,
 ) {
     let is_room = !card.team_members.is_empty();
     let member = rooms::new_room_member(
@@ -574,6 +575,7 @@ pub(crate) fn claim_room_slot(
         worktree_branch,
         worktree_path,
         mandate,
+        tools,
     );
 
     if is_room {
@@ -1100,6 +1102,18 @@ impl Tool for ToolTaskSpawnAgent {
         let agent_chat_id_clone = agent_chat_id.clone();
         let role_clone = role.clone();
         let mandate_clone = mandate.clone();
+        // The tool names this member actually gets, recorded on the card so peers can see what
+        // their neighbours are able to do. Resolved from the member's own mode, not from the
+        // template it was spawned from: the allowed set is a per-spawn fact.
+        let member_tools: Vec<String> = crate::tools::tools_list::get_tools_for_mode(
+            gcx.clone(),
+            "task_agent",
+            Some(&model),
+        )
+        .await
+        .into_iter()
+        .map(|tool| tool.tool_description().name)
+        .collect();
         let worktree_branch = prepared_worktree.branch_name();
         let worktree_path_str = Some(
             prepared_worktree
@@ -1143,6 +1157,7 @@ impl Tool for ToolTaskSpawnAgent {
                     worktree_branch.clone(),
                     worktree_path_str.clone(),
                     mandate_clone.clone(),
+                    member_tools.clone(),
                 );
                 card.validate_team().map_err(|error| format!("Card {card_id_owned}: {error}"))?;
                 card.base_branch = base_branch_from_prep.clone();
@@ -2486,6 +2501,7 @@ mod tests {
             Some("branch-1".into()),
             Some("/wt/1".into()),
             None,
+            vec!["cat".into()],
         );
         claim_room_slot(
             &mut card,
@@ -2495,6 +2511,7 @@ mod tests {
             Some("branch-2".into()),
             Some("/wt/2".into()),
             Some("write the parser".into()),
+            vec!["cat".into(), "shell".into()],
         );
 
         assert_eq!(card.team_members.len(), 2);
@@ -2527,6 +2544,11 @@ mod tests {
             .status_updates
             .iter()
             .any(|update| update.message.contains("joined the room as coder")));
+        assert_eq!(
+            card.team_members[1].tools,
+            vec!["cat".to_string(), "shell".to_string()],
+            "the roster must be able to tell peers what each member may use"
+        );
     }
 
     #[test]
@@ -2541,6 +2563,7 @@ mod tests {
             Some("branch-1".into()),
             Some("/wt/1".into()),
             None,
+            vec!["cat".into()],
         );
 
         // Everything the historical scalar path promised still holds.
@@ -2563,8 +2586,8 @@ mod tests {
         // Two researchers and an architect is a room with no coder: `validate_team` must refuse it.
         let mut card = test_card("T-1", "doing", None);
         card.team_members = vec![
-            crate::tasks::rooms::new_room_member("researcher", "a1", "agent-T-1-a1", None, None, None),
-            crate::tasks::rooms::new_room_member("researcher", "a2", "agent-T-1-a2", None, None, None),
+            crate::tasks::rooms::new_room_member("researcher", "a1", "agent-T-1-a1", None, None, None, vec![]),
+            crate::tasks::rooms::new_room_member("researcher", "a2", "agent-T-1-a2", None, None, None, vec![]),
         ];
 
         let error = check_spawn_precondition(&card).unwrap_err();
@@ -2576,8 +2599,8 @@ mod tests {
     fn spawn_rejects_duplicate_room_identity() {
         let mut card = test_card("T-1", "doing", None);
         card.team_members = vec![
-            crate::tasks::rooms::new_room_member("architect", "same", "agent-T-1-a", None, None, None),
-            crate::tasks::rooms::new_room_member("coder", "same", "agent-T-1-b", None, None, None),
+            crate::tasks::rooms::new_room_member("architect", "same", "agent-T-1-a", None, None, None, vec![]),
+            crate::tasks::rooms::new_room_member("coder", "same", "agent-T-1-b", None, None, None, vec![]),
         ];
 
         let error = check_spawn_precondition(&card).unwrap_err();
@@ -2590,8 +2613,8 @@ mod tests {
     fn spawn_rejects_running_architect_beside_active_peer() {
         let mut card = test_card("T-1", "doing", None);
         card.team_members = vec![
-            crate::tasks::rooms::new_room_member("architect", "a1", "agent-T-1-a1", None, None, None),
-            crate::tasks::rooms::new_room_member("coder", "a2", "agent-T-1-a2", None, None, None),
+            crate::tasks::rooms::new_room_member("architect", "a1", "agent-T-1-a1", None, None, None, vec![]),
+            crate::tasks::rooms::new_room_member("coder", "a2", "agent-T-1-a2", None, None, None, vec![]),
         ];
         card.team_members[0].member_status = Some(crate::tasks::types::TeamStatus::Running);
         card.team_members[1].member_status = Some(crate::tasks::types::TeamStatus::Running);
@@ -2634,6 +2657,7 @@ mod tests {
                 None,
                 None,
                 None,
+                vec![],
             );
         }
 

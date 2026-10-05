@@ -1210,6 +1210,7 @@ mod tests {
                     None,
                     None,
                     None,
+                    vec![],
                 );
                 member.member_status = Some(crate::tasks::types::TeamStatus::Running);
                 member

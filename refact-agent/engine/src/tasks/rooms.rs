@@ -59,6 +59,7 @@ pub fn new_room_member(
     worktree_branch: Option<String>,
     worktree_path: Option<String>,
     mandate: Option<String>,
+    tools: Vec<String>,
 ) -> TeamMember {
     TeamMember {
         role: role.to_string(),
@@ -70,6 +71,7 @@ pub fn new_room_member(
         member_status: Some(TeamStatus::Pending),
         mandate,
         report: None,
+        tools,
     }
 }
 
@@ -182,6 +184,21 @@ fn parse_team_member(value: &Value) -> Option<TeamMember> {
         .or_else(|| field("status"))
         .and_then(|raw| TeamStatus::parse(&raw));
 
+    let tools = value
+        .as_object()
+        .and_then(|map| map.get("tools"))
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+
     Some(TeamMember {
         role,
         agent_chat_id: Some(chat_id),
@@ -192,6 +209,7 @@ fn parse_team_member(value: &Value) -> Option<TeamMember> {
         member_status,
         mandate: field("mandate"),
         report: None,
+        tools,
     })
 }
 
@@ -225,6 +243,7 @@ fn parse_team_members_from_string(spec: &str) -> Result<Vec<TeamMember>, String>
             member_status: None,
             mandate: None,
             report: None,
+            tools: Vec::new(),
         });
     }
     Ok(members)
@@ -294,7 +313,7 @@ mod tests {
     }
 
     fn member(role: &str, chat: &str, status: TeamStatus) -> TeamMember {
-        let mut member = new_room_member(role, "agent-id", chat, None, None, None);
+        let mut member = new_room_member(role, "agent-id", chat, None, None, None, vec![]);
         member.member_status = Some(status);
         member
     }
@@ -308,6 +327,7 @@ mod tests {
             Some("branch".into()),
             Some("/tmp/wt".into()),
             Some("write the parser".into()),
+            vec!["cat".into(), "shell".into()],
         );
 
         assert_eq!(member.role, "coder");
@@ -318,6 +338,7 @@ mod tests {
         assert!(!member.is_terminal());
         assert_eq!(member.mandate.as_deref(), Some("write the parser"));
         assert_eq!(member.report_key(), "team/agent-T-1-1111");
+        assert_eq!(member.tools, vec!["cat".to_string(), "shell".to_string()]);
     }
 
     #[test]

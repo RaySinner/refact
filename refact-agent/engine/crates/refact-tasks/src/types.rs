@@ -402,6 +402,11 @@ pub struct TeamMember {
     pub mandate: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub report: Option<TeamMemberReport>,
+    /// Names of the tools this member was actually given, so a peer can tell what its
+    /// neighbours are able to do. This is the *as-spawned* fact: deriving it from the mode
+    /// template would silently claim a tool the user never allowed for this member.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tools: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

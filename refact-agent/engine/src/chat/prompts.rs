@@ -1740,6 +1740,37 @@ mod tests {
     }
 }
 
+/// Re-read the caller's card and swap in the fresh room roster.
+///
+/// Deliberately NOT the session preamble: the preamble is only assembled when the active context
+/// has no system message, so a roster baked there would freeze at spawn time — a peer who
+/// finished, or joined later, would stay invisible forever. This block is rebuilt on every
+/// request, carries its own marker, and replaces the previous block.
+///
+/// A non-room caller costs nothing: `load_room_roster` returns `None` for a card without a
+/// roster, so plain conversations and single-agent cards are unaffected.
+async fn inject_fresh_room_roster(
+    app: &AppState,
+    messages: &mut Vec<ChatMessage>,
+    chat_id: &str,
+    task_id: &str,
+    card_id: &str,
+) {
+    let roster = match super::room_roster::load_room_roster(
+        app.gcx.clone(),
+        task_id,
+        card_id,
+        Some(chat_id),
+    )
+    .await
+    {
+        Some(roster) => roster,
+        None => return,
+    };
+    let insert_pos = super::room_roster::upsert_room_roster_message(messages, roster);
+    tracing::info!("Injected fresh room roster at position {}", insert_pos);
+}
+
 pub async fn prepend_the_right_system_prompt_and_maybe_more_initial_messages(
     app: AppState,
     mut messages: Vec<call_validation::ChatMessage>,
@@ -1829,6 +1860,10 @@ pub async fn prepend_the_right_system_prompt_and_maybe_more_initial_messages(
             .as_ref()
             .map(|m| m.task_id.clone())
             .or_else(|| infer_task_id_from_chat_id(&chat_meta.chat_id));
+        let roster_ids = task_meta.as_ref().and_then(|meta| {
+            let card_id = meta.card_id.clone()?;
+            Some((meta.task_id.clone(), card_id))
+        });
         match inject_task_memories(
             &app,
             &mut messages,
@@ -1842,6 +1877,11 @@ pub async fn prepend_the_right_system_prompt_and_maybe_more_initial_messages(
             Err(e) => {
                 tracing::warn!("Failed to inject task memories: {}", e);
             }
+        }
+
+        if let Some((task_id, card_id)) = roster_ids {
+            inject_fresh_room_roster(&app, &mut messages, &chat_meta.chat_id, &task_id, &card_id)
+                .await;
         }
     }
 

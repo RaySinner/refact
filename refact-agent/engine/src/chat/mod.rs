@@ -29,6 +29,7 @@ pub mod post_merge_check;
 pub mod prepare;
 pub mod prompt_snippets;
 pub mod prompts;
+pub mod room_roster;
 mod queue;
 pub(crate) mod retry_policy;
 mod session;

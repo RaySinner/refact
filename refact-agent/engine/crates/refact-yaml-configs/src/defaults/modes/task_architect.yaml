@@ -169,6 +169,7 @@ tools:
   - board_delete
   - board_move
   - ready_cards
+  - create_room
   - spawn_agent
   - spawn_ab
   - pick_ab_winner

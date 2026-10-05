@@ -84,6 +84,88 @@ pub fn new_room_member(
     }
 }
 
+/// A room member reserved from an agent definition, before its chat exists.
+///
+/// The planner writes the roster first and spawns each member afterwards, so a planned member has
+/// no identity yet. It must still be a `Pending` member with its behaviour already recorded:
+/// whether it writes and whether it decides are properties of the *definition*, and a roster that
+/// waited for the spawn to learn them could no longer reject a conflicting room.
+pub struct RoomSlot {
+    pub role: String,
+    pub mandate: Option<String>,
+    pub writes: bool,
+    pub decision_maker: bool,
+    pub room_role_hint: Option<String>,
+    pub tools: Vec<String>,
+    pub target_files: Vec<String>,
+}
+
+/// The member record for a reserved slot.
+pub fn planned_room_member(slot: RoomSlot) -> TeamMember {
+    TeamMember {
+        role: slot.role,
+        agent_chat_id: None,
+        agent_branch: None,
+        status: None,
+        agent_id: None,
+        agent_worktree: None,
+        member_status: Some(TeamStatus::Pending),
+        mandate: slot.mandate,
+        report: None,
+        tools: slot.tools,
+        writes: Some(slot.writes),
+        decision_maker: Some(slot.decision_maker),
+        room_role_hint: slot.room_role_hint,
+        target_files: slot.target_files,
+    }
+}
+
+/// Stamp the definition's behaviour onto a member that has not been spawned yet.
+pub fn apply_agent_behavior(
+    member: &mut TeamMember,
+    writes: bool,
+    decision_maker: bool,
+    room_role_hint: Option<String>,
+) {
+    member.writes = Some(writes);
+    member.decision_maker = Some(decision_maker);
+    if let Some(hint) = room_role_hint {
+        member.room_role_hint = Some(hint);
+    }
+}
+
+/// Refuse a roster that the card cannot take, counting the members about to be added.
+pub fn reject_room_growth(card: &BoardCard, adding: usize) -> Option<String> {
+    if is_terminal_column(&card.column) {
+        return Some(format!(
+            "Card {} is in terminal column '{}'; reset it before filling its room.",
+            card.id, card.column
+        ));
+    }
+    let total = card.team_members.len().saturating_add(adding);
+    if total > MAX_ROOM_SIZE {
+        return Some(format!(
+            "A room on card {} would hold {total} members (limit is {MAX_ROOM_SIZE}).",
+            card.id
+        ));
+    }
+    None
+}
+
+/// Fill the reserved slot a spawn was promised, or report that the roster has no free slot for it.
+///
+/// A roster written by the create-room tool already names who works on the card and what each of
+/// them may do. A later spawn must *claim* that slot rather than append a second member with the
+/// same role, or the roster would list one agent twice.
+pub fn claim_planned_slot(card: &mut BoardCard, role: &str) -> Option<&mut TeamMember> {
+    let role = role.trim();
+    card.team_members.iter_mut().find(|member| {
+        member.agent_chat_id.is_none()
+            && member.agent_id.is_none()
+            && member.role.trim() == role
+    })
+}
+
 /// Reports of every member that produced one, plus whether the room is finished.
 ///
 /// `room_complete` means every member reached a terminal status — it deliberately does *not* mean

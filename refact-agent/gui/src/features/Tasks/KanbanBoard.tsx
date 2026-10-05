@@ -6,7 +6,14 @@ import type {
   TaskBoard,
   BoardCard,
   BoardColumn,
+  TeamMember,
 } from "../../services/refact/tasks";
+import {
+  memberStatusText,
+  roleAccent,
+  roleInitials,
+  roleLabel,
+} from "../../utils/roomRoleAccent";
 import { BranchIcon } from "../Worktrees/BranchIcon";
 import styles from "./Tasks.module.css";
 
@@ -38,6 +45,67 @@ function columnToneClass(columnId: string): string {
   return styles.kanbanColumnPlanned;
 }
 
+interface RoomMemberProps {
+  member: TeamMember;
+}
+
+const RoomMemberBadge: React.FC<RoomMemberProps> = ({ member }) => {
+  const accent = roleAccent(member.role);
+  const label = roleLabel(member.role);
+  const status = memberStatusText(member);
+  const details = [
+    `Role: ${label}`,
+    `Status: ${status}`,
+    member.mandate ? `Mandate: ${member.mandate}` : null,
+    member.tools && member.tools.length > 0
+      ? `Tools: ${member.tools.join(", ")}`
+      : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  return (
+    <span
+      className={styles.roomMember}
+      title={details}
+      data-testid={`room-member-${member.role}`}
+      style={
+        {
+          "--room-member-stripe": accent.stripe,
+          "--room-member-label": accent.label,
+        } as React.CSSProperties
+      }
+    >
+      <span className={styles.roomMemberInitials} aria-hidden="true">
+        {roleInitials(member.role)}
+      </span>
+      <span className={styles.roomMemberRole}>{label}</span>
+      <span className={styles.roomMemberStatus}>{status}</span>
+    </span>
+  );
+};
+
+interface RoomRosterProps {
+  members: TeamMember[];
+}
+
+const RoomRoster: React.FC<RoomRosterProps> = ({ members }) => (
+  <div className={styles.roomRoster} data-testid="room-roster">
+    {members.map((member, index) => (
+      <RoomMemberBadge
+        key={
+          member.agent_chat_id ?? member.agent_id ?? `${member.role}-${index}`
+        }
+        member={member}
+      />
+    ))}
+  </div>
+);
+
+function roomMembersOf(card: BoardCard): TeamMember[] {
+  return card.team_members ?? [];
+}
+
 interface KanbanCardProps {
   card: BoardCard;
   onClick?: (card: BoardCard) => void;
@@ -66,6 +134,8 @@ const KanbanCard: React.FC<KanbanCardProps> = ({
   const hasAgent = card.assignee !== null;
   const hasDeps = card.depends_on.length > 0;
   const worktree = cardWorktreeLabel(card);
+  const roomMembers = roomMembersOf(card);
+  const isRoom = roomMembers.length > 0;
 
   return (
     <Card
@@ -86,8 +156,11 @@ const KanbanCard: React.FC<KanbanCardProps> = ({
 
         <span className={styles.kanbanCardTitle}>{card.title}</span>
 
+        {isRoom && <RoomRoster members={roomMembers} />}
+
         <div className={styles.kanbanCardBadges}>
-          {hasAgent &&
+          {!isRoom &&
+            hasAgent &&
             (card.agent_chat_id ? (
               <button
                 type="button"

@@ -134,6 +134,50 @@
   outline-offset: var(--rf-space-2xs);
 }
 
+/* Agent room roster. Deliberately dense: a 2px stripe plus tiny labels, no
+   cards or padding — the board has to fit several rooms on screen at once.
+   Role colours arrive as inline custom properties fed by roleAccent(), so no
+   colour literal lives here. */
+.roomRoster {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--rf-space-1);
+  min-width: 0;
+}
+
+.roomMember {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--rf-space-1);
+  padding: 0 var(--rf-space-1);
+  border-left: 2px solid var(--room-member-stripe);
+  min-width: 0;
+  line-height: 1.4;
+}
+
+.roomMemberInitials {
+  color: var(--room-member-label);
+  font-size: 11px;
+  font-weight: var(--rf-weight-semibold);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.roomMemberRole {
+  color: var(--room-member-label);
+  font-size: 11px;
+  font-weight: var(--rf-weight-medium);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.roomMemberStatus {
+  color: var(--rf-color-faint);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
 .kanbanColumnHeader {
   display: flex;
   align-items: center;

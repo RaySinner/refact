@@ -40,6 +40,27 @@
   --rf-chart-8: #8fa3b8;
   --rf-chart-grid: rgba(255, 255, 255, 0.08);
   --rf-chart-axis: rgba(255, 255, 255, 0.32);
+  /* Agent-room role accents. `--room-stripe-N` is the thin role stripe, the
+     `--room-label-N` pair is its readable text colour. Slot N is assigned by
+     `roleAccentSlot` in src/utils/roomRoleAccent.ts — named roles hold a fixed
+     slot, unrecognised roles are hashed into the last two. Change a value here
+     to retheme every room surface at once. */
+  --room-stripe-1: #9aa9e6;
+  --room-label-1: #b6c1f0;
+  --room-stripe-2: #5fae8b;
+  --room-label-2: #7cc4a4;
+  --room-stripe-3: #cda04e;
+  --room-label-3: #dcb874;
+  --room-stripe-4: #6cb6c9;
+  --room-label-4: #86c8d7;
+  --room-stripe-5: #b08ad1;
+  --room-label-5: #c2a2de;
+  --room-stripe-6: #d39a6a;
+  --room-label-6: #e0ad83;
+  --room-stripe-7: #8fa3b8;
+  --room-label-7: #a8b8c9;
+  --room-stripe-8: #d8736d;
+  --room-label-8: #e2908b;
   --rf-radius-chip: 6px;
   --rf-radius-ctl: 8px;
   --rf-radius-card: 10px;
@@ -269,6 +290,24 @@
   --rf-chart-8: #5e7490;
   --rf-chart-grid: rgba(0, 0, 0, 0.09);
   --rf-chart-axis: rgba(0, 0, 0, 0.45);
+  /* Room role accents on light: same hue families as the dark block, darkened
+     so the label colours stay readable on the light card surface. */
+  --room-stripe-1: #4a5bb5;
+  --room-label-1: #38469b;
+  --room-stripe-2: #1e7a52;
+  --room-label-2: #17603f;
+  --room-stripe-3: #8f5e08;
+  --room-label-3: #744d06;
+  --room-stripe-4: #2f7285;
+  --room-label-4: #265b6b;
+  --room-stripe-5: #6f4a99;
+  --room-label-5: #5a3b7c;
+  --room-stripe-6: #96602f;
+  --room-label-6: #7a4d26;
+  --room-stripe-7: #4c5f77;
+  --room-label-7: #3d4d61;
+  --room-stripe-8: #c13c33;
+  --room-label-8: #a13029;
   --rf-elev-overlay: 0 14px 40px rgba(0, 0, 0, 0.16);
   --rf-elev-panel: 0 1px 2px rgba(0, 0, 0, 0.08);
 }

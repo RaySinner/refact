@@ -45,6 +45,44 @@ export interface CardComment {
   reply_to: string | null;
 }
 
+/** Mirrors the engine's `TeamStatus` (kebab-case on the wire). */
+export type TeamMemberStatus =
+  | "pending"
+  | "running"
+  | "done"
+  | "partial"
+  | "failed";
+
+export interface TeamMemberReport {
+  summary: string;
+  success: boolean;
+  partial: boolean;
+  files_changed: string[];
+  verification: string[];
+  completed_at: string;
+}
+
+/**
+ * One member of a card's agent room. Mirrors the engine's `TeamMember`.
+ *
+ * `status` is the legacy board scalar and is free-form; `member_status` is the
+ * typed one and wins when both are present. Unknown extra keys from the engine
+ * are ignored rather than rejected.
+ */
+export interface TeamMember {
+  role: string;
+  agent_chat_id?: string | null;
+  agent_branch?: string | null;
+  status?: string | null;
+  agent_id?: string | null;
+  agent_worktree?: string | null;
+  member_status?: TeamMemberStatus | null;
+  mandate?: string | null;
+  report?: TeamMemberReport | null;
+  /** Tool names the member was actually spawned with. */
+  tools?: string[];
+}
+
 export interface BoardCard {
   id: string;
   title: string;
@@ -67,6 +105,8 @@ export interface BoardCard {
   base_commit?: string;
   target_files: string[];
   comments?: CardComment[];
+  /** Agent room roster. Absent or empty means a single-agent card. */
+  team_members?: TeamMember[];
 }
 
 export function isBoardCard(value: unknown): value is BoardCard {

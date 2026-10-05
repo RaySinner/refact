@@ -20,7 +20,7 @@
   </p>
 </div>
 
-**10+ agent modes · 50+ tools · 20+ provider families · worktree-isolated agent fleets · MCP · skills · subagents · BYOK · 100% local — zero cloud**
+**10+ agent modes · 50+ tools · Agent Rooms & Teams · worktree-isolated agent fleets · Buddy interjections · MCP · skills · subagents · BYOK · 100% local — zero cloud**
 
 ## Install
 
@@ -98,6 +98,8 @@ Buddy is the little project gremlin that keeps watching while you step away: it 
 - Creates editable drafts for skills, commands, subagents, modes, AGENTS.md updates, and defaults instead of forcing changes straight into the tree.
 - Files GitHub issues for confirmed product bugs, after gathering enough diagnostic context to avoid noisy drive-by reports.
 - Speaks through the GUI as opportunities, speech bubbles, recent error panels, autonomous chat history, and reviewable draft cards.
+- **Interjects in live agent chats:** Buddy can step in with timely guidance when an autonomous agent is spinning wheels or stuck, delivering gentle contextual nudges via `WhenIdle` delivery without interrupting active work.
+- **Planner question backstop:** When agents ask questions (`agent_ask_planner`) and the human planner is away, Buddy watches the queue and provides procedural guidance or stops blocking questions safely without guessing human intent.
 - Stays guarded by default: Buddy mode has `auto_approve_editing_tools: false` and `auto_approve_dangerous_commands: false`, so code changes and risky commands remain under your control.
 
 → Deep dive: [Buddy](https://github.com/JegernOUTT/refact/wiki/Buddy)
@@ -113,6 +115,10 @@ Describe a feature once; the planner cracks it into cards, launches a tiny swarm
 - Each spawned card agent gets its own branch and isolated worktree under the worktree registry; edits, tests, crashes, and spicy gremlin detours stay quarantined until the planner chooses to merge.
 - Agents self-verify before finishing, then a verifier can re-check the card, capture command results, concerns, and recommendations, and leave a planner-visible report on the card.
 - The planner owns the merge loop: inspect the agent diff, merge or squash the branch, run post-merge checks, auto-mark regressions, and preserve dirty worktrees when a run needs inspection or rescue.
+- **Agent Rooms & Multi-Agent Teams:** Cards aren't limited to a single worker. Use `create_room` to staff a card with multiple specialized subagents from your local registry (architects, coders, reviewers, QA). Room members communicate via internal messaging and receive fresh turn-by-turn rosters of their peers.
+- **Conflict-free teamwork by file partitioning:** Following proven multi-agent design, write permissions and target files are explicitly partitioned among members so concurrent workers never overwrite each other.
+- **Silent-tail recovery & proactive nudging:** Agents that end a turn with plain text instead of completing tool calls are automatically caught by the engine's nudge loop, keeping the task moving without human intervention or infinite hangs.
+- **Visual room attribution & exact timestamps in GUI:** Chat transcripts clearly delimit peer messages with role-accented strips, member identifiers, and precise 24-hour timestamps (`HH:MM:SS`), while Kanban cards display the full staffed crew with live status badges.
 - A/B card racing lets the planner spawn two variants for one card, compare their worktrees, then pick the winner instead of arguing with vibes in a comment thread.
 - Live steering is built in: pause, resume, cancel, restart fresh or resume from a retained worktree, broadcast guidance, answer agent questions, and inspect pulses for state, last activity, tool calls, edits, and blockers.
 - The payoff is ridiculous in the best way: describe the feature, watch a fleet of sandboxed agents build and test the pieces in parallel, then let the planner merge the clean winners into one coherent change.
@@ -291,6 +297,9 @@ Full guide: [CLI and daemon installation guide](https://github.com/JegernOUTT/re
 | BYOK providers                    | Broad hosted, local, OpenAI-compatible, and custom provider support                   | Usually one vendor or a small provider set |
 | Autonomous agents                 | Tool-using agent modes with shell, file, browser, MCP, and delegation support         | Often chat-first with limited autonomy     |
 | Task planner + cards              | Planner chats, task boards, per-card agents, and worktree isolation                   | Usually external project tracking          |
+| Multi-Agent Rooms & Teams         | Staff cards with custom subagent teams, peer messaging, disjoint file safety           | Single-agent or strictly sequential queues |
+| Silent-tail & hang recovery       | Auto-nudge inside turns, monitor idle-waking, Buddy question backstops                | Agents freeze silently on empty tools      |
+| Live Buddy interjection           | Proactive non-preempting hints and assistance into active agent chats                 | Passive observer or separate chat only     |
 | Persistent memory + autoinjection | `.refact/` knowledge, trajectories, tasks, integrations, VecDB, and context injection | Often ephemeral or account-cloud memory    |
 | Hidden static plans               | `set_plan`, `update_plan`, and `get_plan` preserve base plans plus append-only deltas | Rarely supported                           |
 | MCP / skills / subagents          | MCP lazy discovery, skills, slash commands, hooks, subagents, and marketplaces        | Varies by vendor                           |

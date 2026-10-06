@@ -27,6 +27,7 @@ pub mod tool_agent_interact;
 mod tool_agent_lifecycle;
 mod tool_agent_planner_qna;
 mod tool_agent_pulse;
+mod tool_agent_registry;
 mod tool_agent_steer;
 mod tool_ast_definition;
 pub mod tool_background_agents;

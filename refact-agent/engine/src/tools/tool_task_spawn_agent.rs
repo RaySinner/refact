@@ -550,13 +550,21 @@ pub(crate) fn mark_card_agent_started(
 
 /// Claim a room slot on `card` for a newly spawned member.
 ///
-/// A card that already carries `team_members` is a room: the new member is *appended* and the
-/// scalar mirrors (`assignee`, `agent_chat_id`, the worktree fields) are left pointing at the
-/// first member. Overwriting them would make the second agent invisible to every code path that
-/// still reads the scalars — including the spawn guard, which would then think the card is
-/// free and happily let a third agent overwrite the second.
+/// A card that already carries `team_members` is a room. The spawn must *claim the reserved
+/// slot* the room's roster already named — not push a second member with the same role, which
+/// would list one agent twice. Claiming fills the slot's identity (`agent_id`, `agent_chat_id`,
+/// the worktree fields) and, because the spawn just created a real, working session, moves it
+/// to `Running` — the status it had to stay `Pending` for while the roster was only a plan.
 ///
-/// A card with no `team_members` keeps the historical scalar-only behaviour verbatim.
+/// A member becomes `Running` only if its role may work in parallel: a sequential role (the
+/// architect) stays `Pending` so `validate_team` can still refuse it once it actually starts,
+/// and so a parallel peer is free to be `Running` beside it.
+///
+/// If the roster has no reserved slot for this role, the spawn is refused rather than quietly
+/// appending a member the user never put in the room.
+///
+/// A card with no `team_members` is a single-agent card: the member is recorded and the card's
+/// scalar fields are filled exactly as the historical path did.
 pub(crate) fn claim_room_slot(
     card: &mut BoardCard,
     role: &str,
@@ -566,9 +574,58 @@ pub(crate) fn claim_room_slot(
     worktree_path: Option<String>,
     mandate: Option<String>,
     tools: Vec<String>,
-) {
+) -> Result<(), String> {
     let is_room = !card.team_members.is_empty();
-    let member = rooms::new_room_member(
+
+    if is_room {
+        let branch_for_promote = worktree_branch.clone();
+        let path_for_promote = worktree_path.clone();
+        // Claiming the slot borrows `card.team_members`, so the decision to promote (which only
+        // needs the slot's behaviour) is computed inside this block and the borrow is dropped
+        // before the card's scalars and status log are touched.
+        let writes = {
+            let Some(member) = rooms::claim_planned_slot(card, role) else {
+                return Err(format!(
+                    "Card {} has no reserved slot for role '{}'. The room roster was created \
+                     with a different set of roles; create or edit the room with board_update \
+                     before spawning it.",
+                    card.id,
+                    role.trim()
+                ));
+            };
+            let writes = member.writes();
+            let parallel = member.allows_parallel();
+            member.agent_id = Some(agent_id.to_string());
+            member.agent_chat_id = Some(agent_chat_id.to_string());
+            member.agent_branch = worktree_branch;
+            member.agent_worktree = worktree_path;
+            if let Some(mandate) = mandate {
+                member.mandate = Some(mandate);
+            }
+            member.tools = tools;
+            member.member_status = Some(if parallel {
+                crate::tasks::types::TeamStatus::Running
+            } else {
+                crate::tasks::types::TeamStatus::Pending
+            });
+            writes
+        };
+        card.status_updates.push(StatusUpdate {
+            timestamp: Utc::now().to_rfc3339(),
+            message: format!("Agent {agent_id} joined the room as {role}"),
+        });
+        promote_to_primary_owner(
+            card,
+            agent_id,
+            agent_chat_id,
+            branch_for_promote,
+            path_for_promote,
+            writes,
+        );
+        return Ok(());
+    }
+
+    let mut member = rooms::new_room_member(
         role,
         agent_id,
         agent_chat_id,
@@ -577,18 +634,53 @@ pub(crate) fn claim_room_slot(
         mandate,
         tools,
     );
-
-    if is_room {
-        card.team_members.push(member);
-        card.status_updates.push(StatusUpdate {
-            timestamp: Utc::now().to_rfc3339(),
-            message: format!("Agent {agent_id} joined the room as {role}"),
-        });
-        return;
-    }
-
+    member.member_status = Some(if member.allows_parallel() {
+        crate::tasks::types::TeamStatus::Running
+    } else {
+        crate::tasks::types::TeamStatus::Pending
+    });
     mark_card_agent_started(card, agent_id, agent_chat_id, None, None, None);
     card.team_members = vec![member];
+    Ok(())
+}
+
+/// Primary Owner promotion: the first *writing* member of a room becomes the card's owner.
+///
+/// `agent_diff`, `merge_agent`, the spawn guard and the monitor all still read the card's scalar
+/// fields, so the writing member's identity is mirrored onto them. A read-only member (a
+/// reviewer, a decision maker) never owns the card: it has no worktree to diff or merge.
+///
+/// Only the first writer promotes, so the card keeps pointing at one stable agent even as more
+/// read-only members join. The card moves to `doing` and records `started_at` the first time a
+/// writer is promoted.
+fn promote_to_primary_owner(
+    card: &mut BoardCard,
+    agent_id: &str,
+    agent_chat_id: &str,
+    worktree_branch: Option<String>,
+    worktree_path: Option<String>,
+    writes: bool,
+) {
+    if !writes {
+        return;
+    }
+    // Only the first writer becomes the owner; a later writer must not steal the scalars that
+    // the earlier owner's diff/merge paths already depend on.
+    if card.agent_chat_id.is_some() {
+        return;
+    }
+    mark_card_agent_started(
+        card,
+        agent_id,
+        agent_chat_id,
+        worktree_branch,
+        worktree_path,
+        None,
+    );
+    card.status_updates.push(StatusUpdate {
+        timestamp: Utc::now().to_rfc3339(),
+        message: format!("Agent {agent_id} is the primary owner of card {}", card.id),
+    });
 }
 
 /// Default room role for a spawn: the honest name for a card an agent was asked to just "work on".
@@ -1155,7 +1247,8 @@ impl Tool for ToolTaskSpawnAgent {
                     worktree_path_str.clone(),
                     mandate_clone.clone(),
                     member_tools.clone(),
-                );
+                )
+                .map_err(|error| format!("Card {card_id_owned}: {error}"))?;
                 card.validate_team().map_err(|error| format!("Card {card_id_owned}: {error}"))?;
                 card.base_branch = base_branch_from_prep.clone();
                 card.base_commit = base_commit_from_prep.clone();
@@ -2486,10 +2579,27 @@ mod tests {
         assert_eq!(paths, vec!["/foo/bar.txt", "/baz.txt"]);
     }
 
-#[test]
-    fn second_agent_appends_to_room_instead_of_overwriting() {
-        let mut card = test_card("T-1", "planned", None);
+    fn reserved_slot(role: &str, writes: Option<bool>) -> crate::tasks::types::TeamMember {
+        rooms::planned_room_member(rooms::RoomSlot {
+            role: role.to_string(),
+            mandate: None,
+            writes: writes.unwrap_or(true),
+            decision_maker: false,
+            room_role_hint: None,
+            tools: vec![],
+            target_files: vec![],
+        })
+    }
 
+    #[test]
+    fn second_agent_claims_reserved_slot_and_becomes_primary_owner() {
+        let mut card = test_card("T-1", "planned", None);
+        // The roster is reserved up front: a deciding (read-only) architect and a writing coder.
+        card.team_members =
+            vec![reserved_slot("architect", Some(false)), reserved_slot("coder", Some(true))];
+
+        // The architect's spawn claims its slot. A sequential role stays Pending, so the room is
+        // still valid, and it does not take the card (it will decide, not implement).
         claim_room_slot(
             &mut card,
             "architect",
@@ -2499,7 +2609,20 @@ mod tests {
             Some("/wt/1".into()),
             None,
             vec!["cat".into()],
+        )
+        .unwrap();
+        assert_eq!(card.team_members.len(), 2);
+        assert_eq!(
+            card.team_members[0].member_status,
+            Some(crate::tasks::types::TeamStatus::Pending)
         );
+        assert!(
+            card.agent_chat_id.is_none(),
+            "a deciding/reading member must not own the card"
+        );
+
+        // The coder's spawn claims the second slot. It is the first writer, so it becomes the
+        // primary owner: its scalars are promoted, it goes Running, and the card starts.
         claim_room_slot(
             &mut card,
             "coder",
@@ -2509,20 +2632,11 @@ mod tests {
             Some("/wt/2".into()),
             Some("write the parser".into()),
             vec!["cat".into(), "shell".into()],
-        );
+        )
+        .unwrap();
 
+        // The reserved slot was *filled in place* — not a second member appended for "coder".
         assert_eq!(card.team_members.len(), 2);
-        // The scalars still describe the FIRST member, so every legacy reader (spawn guard,
-        // merge, worktree lookup) keeps pointing at a real agent instead of an empty value.
-        assert_eq!(card.assignee.as_deref(), Some("agent-1"));
-        assert_eq!(card.agent_chat_id.as_deref(), Some("agent-T-1-arch"));
-        assert_eq!(card.agent_branch.as_deref(), Some("branch-1"));
-
-        assert_eq!(card.team_members[0].role, "architect");
-        assert_eq!(
-            card.team_members[0].agent_chat_id.as_deref(),
-            Some("agent-T-1-arch")
-        );
         assert_eq!(card.team_members[1].role, "coder");
         assert_eq!(
             card.team_members[1].agent_chat_id.as_deref(),
@@ -2537,15 +2651,101 @@ mod tests {
             card.team_members[1].mandate.as_deref(),
             Some("write the parser")
         );
-        assert!(card
-            .status_updates
-            .iter()
-            .any(|update| update.message.contains("joined the room as coder")));
         assert_eq!(
             card.team_members[1].tools,
             vec!["cat".to_string(), "shell".to_string()],
             "the roster must be able to tell peers what each member may use"
         );
+        assert_eq!(
+            card.team_members[1].member_status,
+            Some(crate::tasks::types::TeamStatus::Running)
+        );
+
+        // Primary owner promotion: the card's scalars now point at the coder, and the card moved
+        // to doing with a start time, so every legacy reader (monitor, diff, merge) sees it.
+        assert_eq!(card.assignee.as_deref(), Some("agent-2"));
+        assert_eq!(card.agent_chat_id.as_deref(), Some("agent-T-1-code"));
+        assert_eq!(card.agent_branch.as_deref(), Some("branch-2"));
+        assert_eq!(card.column, "doing");
+        assert!(card.started_at.is_some());
+        assert!(card
+            .status_updates
+            .iter()
+            .any(|update| update.message.contains("primary owner")));
+        assert!(card
+            .status_updates
+            .iter()
+            .any(|update| update.message.contains("joined the room as coder")));
+    }
+
+    #[test]
+    fn spawning_a_role_the_room_never_reserved_is_rejected() {
+        let mut card = test_card("T-1", "planned", None);
+        card.team_members = vec![reserved_slot("coder", Some(true))];
+
+        let error = claim_room_slot(
+            &mut card,
+            "reviewer",
+            "agent-2",
+            "agent-T-1-rev",
+            Some("branch-2".into()),
+            Some("/wt/2".into()),
+            None,
+            vec!["cat".into()],
+        )
+        .unwrap_err();
+
+        assert!(error.contains("no reserved slot"), "{error}");
+        // Refusing a foreign role must not append it to the roster.
+        assert_eq!(card.team_members.len(), 1);
+        assert!(card.team_members[0].agent_chat_id.is_none());
+    }
+
+    #[test]
+    fn read_only_member_joins_without_becoming_owner() {
+        let mut card = test_card("T-1", "planned", None);
+        card.team_members = vec![
+            reserved_slot("coder", Some(true)),
+            reserved_slot("reviewer", Some(false)),
+        ];
+
+        // The writer claims first and owns the card.
+        claim_room_slot(
+            &mut card,
+            "coder",
+            "agent-1",
+            "agent-T-1-code",
+            Some("branch-1".into()),
+            Some("/wt/1".into()),
+            None,
+            vec![],
+        )
+        .unwrap();
+        assert_eq!(card.assignee.as_deref(), Some("agent-1"));
+        assert_eq!(card.agent_chat_id.as_deref(), Some("agent-T-1-code"));
+
+        // A read-only member claims its slot: it goes Running, but must not take the scalars.
+        claim_room_slot(
+            &mut card,
+            "reviewer",
+            "agent-2",
+            "agent-T-1-rev",
+            Some("branch-2".into()),
+            Some("/wt/2".into()),
+            None,
+            vec![],
+        )
+        .unwrap();
+        assert_eq!(
+            card.team_members[1].member_status,
+            Some(crate::tasks::types::TeamStatus::Running)
+        );
+        assert_eq!(
+            card.assignee.as_deref(),
+            Some("agent-1"),
+            "a read-only peer must not steal ownership"
+        );
+        assert_eq!(card.agent_chat_id.as_deref(), Some("agent-T-1-code"));
     }
 
     #[test]
@@ -2561,7 +2761,8 @@ mod tests {
             Some("/wt/1".into()),
             None,
             vec!["cat".into()],
-        );
+        )
+        .unwrap();
 
         // Everything the historical scalar path promised still holds.
         assert_eq!(card.column, "doing");
@@ -2573,9 +2774,14 @@ mod tests {
             .iter()
             .any(|update| update.message == "Agent started working on card"));
 
-        // ...plus one roster entry, so a later spawn appends instead of overwriting.
+        // ...plus one roster entry, now the sole (and writing) member, so a later spawn of a
+        // different role can claim a reserved slot beside it.
         assert_eq!(card.team_members.len(), 1);
         assert_eq!(card.team_members[0].role, "coder");
+        assert_eq!(
+            card.team_members[0].member_status,
+            Some(crate::tasks::types::TeamStatus::Running)
+        );
     }
 
     #[test]
@@ -2656,9 +2862,14 @@ mod tests {
     #[test]
     fn concurrent_room_claims_do_not_lose_members() {
         // `update_board_atomic` gives each claim the whole board, so a claim can never read a
-        // stale roster. Model the critical section: claims are applied to the same card in
-        // sequence and every member must survive.
+        // stale roster. Model the critical section: a reserved roster, then each spawn claims its
+        // own slot in sequence and every member must be filled, none duplicated or lost.
         let mut card = test_card("T-1", "planned", None);
+        card.team_members = vec![
+            reserved_slot("coder", Some(true)),
+            reserved_slot("reviewer", Some(false)),
+            reserved_slot("designer", Some(true)),
+        ];
 
         for index in 0..3 {
             let room = card.clone();
@@ -2667,14 +2878,15 @@ mod tests {
             // ...then applied its own mutation on top of the current board.
             claim_room_slot(
                 &mut card,
-                "coder",
+                ["coder", "reviewer", "designer"][index],
                 &format!("agent-{index}"),
                 &format!("agent-T-1-{index}"),
                 None,
                 None,
                 None,
                 vec![],
-            );
+            )
+            .unwrap();
         }
 
         assert_eq!(card.team_members.len(), 3);
@@ -2686,9 +2898,10 @@ mod tests {
         assert_eq!(
             chats,
             vec!["agent-T-1-0", "agent-T-1-1", "agent-T-1-2"],
-            "every claim must be preserved, none overwritten"
+            "every claim must fill its slot, none duplicated"
         );
         assert_eq!(card.validate_team().unwrap(), ());
+        // The first writer (the coder) is the primary owner.
         assert_eq!(card.assignee.as_deref(), Some("agent-0"));
     }
 

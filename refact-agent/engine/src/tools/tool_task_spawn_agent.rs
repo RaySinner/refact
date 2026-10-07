@@ -515,13 +515,31 @@ pub(crate) fn build_room_member_prompt(
         )
     };
 
+    let role_directive = if matches!(role, "reviewer" | "qa" | "architect" | "auditor") {
+        "### Role Directive: Reviewer / Inspector\n\
+         - Your task is to verify changes and inspect diffs or architecture.\n\
+         - Coordinate with peers via `agent_message(to=\"<peer chat id>\", text=...)`.\n\
+         - Do not edit source files if your mandate is review-only. When review is complete, record your findings in `agent_finish`.\n"
+    } else {
+        "### Role Directive: Implementer\n\
+         - You MUST inspect the codebase and implement the requested changes directly in your worktree.\n\
+         - DO NOT call `agent_finish` prematurely without writing code or verifying your changes.\n\
+         - Once implementation and checks are done, summarise your work and call `agent_finish(success=true, report=...)` or inform your peers via `agent_message`.\n"
+    };
+    let critical_guard = "\
+        ### Critical Rule on Completion:\n\
+        - DO NOT give up or call `agent_finish(success=false)` without attempting to use your tools to inspect the files and perform work.\n\
+        - Each member is responsible for their own mandate.\n";
+
     format!(
         "{base}{roster_section}\n\
          ## Working in a room\n\
          - Use `agent_message(to=\"<peer chat id>\", text=...)` to reach a peer; the address is the chat id above.\n\
          - An architect role is sequential: it cannot run at the same time as another member.\n\
          - Your report is recorded per member, so summarise what *you* did and what you verified.\n\
-         - Merge and the card's final report are the architect's job, not yours."
+         - Merge and the card's final report are the architect's job, not yours.\n\
+         {role_directive}\n\
+         {critical_guard}"
     )
 }
 

@@ -1,36 +1,91 @@
+/* The outer bubble. A single rounded card carries the stripe (pinned to its inner
+   left edge), the byline and the message body, so a room message reads as one unit. */
 .roomFrame {
-  display: flex;
-  gap: 2;
-  align-items: stretch;
+  position: relative;
+  min-width: 0;
+  border: 1px solid
+    color-mix(
+      in srgb,
+      var(--room-stripe-fallback) 18%,
+      var(--rf-border, rgba(255, 255, 255, 0.08))
+    );
+  border-radius: 8px;
+  background-color: color-mix(
+    in srgb,
+    var(--room-stripe-fallback) 6%,
+    transparent
+  );
+  /* Left padding clears the floating stripe; the rest keeps the bubble cozy. */
+  padding: 5px 8px 5px 12px;
 }
 
+/* The accent bar, pinned to the card's inner left edge and inset from the top and
+   bottom so it floats rather than runs the full height. Its colour is the role
+   stripe itself, un-tinted, so the role is legible from the bar alone. */
 .stripe {
-  flex: 0 0 auto;
-  width: 2px;
-  border-radius: 1px;
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: 4px;
+  width: 3px;
+  border-radius: 999px;
   background-color: var(--room-stripe-fallback, transparent);
 }
 
 .body {
   display: flex;
   flex-direction: column;
-  gap: 1;
+  gap: 4px;
   min-width: 0;
-  flex: 1 1 auto;
-  padding-top: 2px;
 }
 
+/* Boundary between two agents' turns. Sits above the byline of the newer speaker
+   and keeps that speaker's accent, so the seam is legible without a second glance. */
+.divider {
+  border: 0;
+  border-top: 1px solid
+    color-mix(
+      in srgb,
+      var(--room-stripe-fallback) 45%,
+      var(--rf-border, rgba(255, 255, 255, 0.08))
+    );
+  margin: 0 0 2px;
+  padding: 0;
+}
+
+/* Byline bar: role pill, name and timestamp. */
 .byline {
   display: flex;
-  align-items: baseline;
-  gap: 2;
-  font-size: 10px;
-  line-height: 1.4;
+  align-items: center;
+  gap: 6px;
   min-width: 0;
-  color: var(--room-label-fallback, var(--gray-11));
+  font-size: 11px;
+  line-height: 1.4;
 }
 
+/* Uppercase role badge: tinted fill, role border, role-coloured text. */
+.rolePill {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid
+    color-mix(in srgb, var(--room-stripe-fallback) 38%, transparent);
+  background-color: color-mix(
+    in srgb,
+    var(--room-stripe-fallback) 15%,
+    transparent
+  );
+  color: var(--room-label-fallback, var(--gray-11));
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* The agent's signature. Tinted in the role colour; truncates before the clock. */
 .name {
+  min-width: 0;
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -38,17 +93,10 @@
   color: var(--room-label-fallback, var(--gray-11));
 }
 
+/* The clock, pushed to the right edge of the byline with tabular figures. */
 .time {
   flex: 0 0 auto;
+  margin-left: auto;
   font-variant-numeric: tabular-nums;
   color: var(--gray-11);
-}
-
-/* The hairline that says "another agent starts here". Kept the colour of the agent
-   that follows it, so the boundary is legible without a second glance at the byline. */
-.divider {
-  border: 0;
-  border-top: 1px solid var(--room-stripe-fallback, var(--gray-6));
-  margin: 0;
-  padding: 0;
 }

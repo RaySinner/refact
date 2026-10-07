@@ -36,6 +36,7 @@ import type {
   WorktreeMeta,
   WorktreeRecordView,
 } from "../../services/refact";
+import type { TeamMember } from "../../services/refact/tasks";
 import { taskDocumentsApi } from "../../services/refact/taskDocumentsApi";
 import { taskMemoriesApi } from "../../services/refact/taskMemoriesApi";
 import { server } from "../../utils/mockServer";
@@ -2360,6 +2361,70 @@ describe("TaskWorkspace CardDetail dialog", () => {
 
     await user.tab();
     expect(dialog.contains(document.activeElement)).toBe(true);
+  });
+
+  it("room_card_lists_members_and_switches_to_their_chat_from_card_detail", async () => {
+    const roomMembers: TeamMember[] = [
+      {
+        role: "architect",
+        agent_chat_id: "arch-T-1",
+        member_status: "running",
+        mandate: "Architect the task",
+        tools: ["read", "plan"],
+      },
+      {
+        role: "coder",
+        agent_chat_id: "coder-T-1",
+        member_status: "pending",
+        mandate: "Implement the task",
+        tools: ["edit", "run"],
+      },
+    ];
+    const card = makeCard({
+      title: "Room card with two members",
+      agent_chat_id: "arch-T-1",
+      team_members: roomMembers,
+    });
+    server.use(...taskWorkspaceHandlers(card, []));
+
+    const { user, store } = render(<TaskWorkspace taskId={TASK_ID} />, {
+      preloadedState: workspacePreloadedState(),
+    });
+
+    await user.click(await openCardDetail(card));
+
+    const dialog = await screen.findByRole("dialog", {
+      name: /Room card with two members/,
+    });
+    expect(dialog).toBeInTheDocument();
+
+    // "Agent Room (N members)" badge appears in the header when N > 1.
+    expect(
+      within(dialog).getByText(/Agent Room \(2 members\)/),
+    ).toBeInTheDocument();
+
+    // Each member is listed with role, status, mandate and tools.
+    const membersList = within(dialog).getByTestId("card-detail-room-members");
+    expect(within(membersList).getByText("coder")).toBeInTheDocument();
+    expect(within(membersList).getByText("pending")).toBeInTheDocument();
+    expect(within(membersList).getByText("Implement the task")).toBeInTheDocument();
+    expect(within(membersList).getAllByText("edit").length).toBeGreaterThan(0);
+
+    // Clicking a member's "Open chat" switches to that member's thread.
+    await user.click(
+      within(membersList).getByTestId("room-member-open-coder-T-1"),
+    );
+
+    // The dialog closes and the active thread becomes the member's chat.
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("dialog", { name: /Room card with two members/ }),
+      ).not.toBeInTheDocument();
+    });
+    await waitFor(() => {
+      const state = store.getState();
+      expect(state.chat.current_thread_id).toBe("coder-T-1");
+    });
   });
 });
 

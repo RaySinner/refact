@@ -20,6 +20,7 @@ import {
   ListChecks,
   Plus,
   Target,
+  Users,
   X,
 } from "lucide-react";
 import { AgentStatusDot } from "./AgentStatusDot";
@@ -37,6 +38,12 @@ import {
   BoardCard,
   tasksApi,
 } from "../../services/refact/tasks";
+import {
+  memberStatusText,
+  roleAccent,
+  roleInitials,
+  roleLabel,
+} from "../../utils/roomRoleAccent";
 import { Markdown } from "../../components/Markdown";
 import { ModeMenuItem } from "../../components/ChatForm/ModeSelect";
 import modeSelectStyles from "../../components/ChatForm/ModeSelect.module.css";
@@ -196,6 +203,16 @@ const cardStatusTone = (
   if (column === "done") return "success";
   if (column === "failed") return "danger";
   if (column === "doing") return "accent";
+  return "muted";
+};
+
+const memberStatusTone = (
+  status: string,
+): React.ComponentProps<typeof Badge>["tone"] => {
+  if (status === "done") return "success";
+  if (status === "failed") return "danger";
+  if (status === "partial") return "warning";
+  if (status === "running") return "accent";
   return "muted";
 };
 
@@ -393,31 +410,83 @@ const PlannerPanel: React.FC<PlannerPanelProps> = ({
 type AgentChatStatus = "doing" | "done" | "failed";
 
 interface AgentChatEntry {
-  card: BoardCard;
+  cardId: string;
+  chatId: string;
   status: AgentChatStatus;
+  title: string;
+  /** Present when the entry is a member of a card's agent room. */
+  role?: string;
 }
 
+/**
+ * One list row per agent chat. A plain card with a single `agent_chat_id`
+ * yields one row; a card whose `team_members` each carry an `agent_chat_id`
+ * yields one row per member so every agent in the room is reachable from the
+ * rail and the switcher. Rows keep the board's doing → done → failed ordering.
+ */
 function agentChatEntries(cards: BoardCard[]): AgentChatEntry[] {
-  const byColumn = (column: AgentChatStatus): AgentChatEntry[] =>
-    cards
-      .filter((card) => card.column === column && card.agent_chat_id)
-      .map((card) => ({ card, status: column }));
-  return [...byColumn("doing"), ...byColumn("done"), ...byColumn("failed")];
+  const forColumn = (column: AgentChatStatus): AgentChatEntry[] => {
+    const base = cards.filter((card) => card.column === column);
+    const out: AgentChatEntry[] = [];
+    for (const card of base) {
+      const members = (card.team_members ?? []).filter(
+        (m) => m.agent_chat_id,
+      );
+      if (members.length > 0) {
+        for (const m of members) {
+          const chatId = m.agent_chat_id;
+          if (!chatId) continue;
+          out.push({
+            cardId: card.id,
+            chatId,
+            status: column,
+            title: card.title,
+            role: m.role,
+          });
+        }
+      } else if (card.agent_chat_id) {
+        out.push({
+          cardId: card.id,
+          chatId: card.agent_chat_id,
+          status: column,
+          title: card.title,
+        });
+      }
+    }
+    return out;
+  };
+  return [
+    ...forColumn("doing"),
+    ...forColumn("done"),
+    ...forColumn("failed"),
+  ];
 }
 
 interface AgentItemProps {
-  card: BoardCard;
+  cardId: string;
+  title: string;
+  role?: string;
   status: AgentChatStatus;
   isSelected: boolean;
   onSelect: () => void;
 }
 
+/**
+ * One row in the rail / switcher agent list. `role` is set for agent-room
+ * members, which renders a tinted role chip so members are scannable; a plain
+ * single-agent card shows the card title instead.
+ */
 const AgentItem: React.FC<AgentItemProps> = ({
-  card,
+  cardId,
+  title,
+  role,
   status,
   isSelected,
   onSelect,
 }) => {
+  const isRoomMember = role !== undefined;
+  const accent = isRoomMember ? roleAccent(role) : undefined;
+  const label = isRoomMember ? roleLabel(role) : title;
   return (
     <Box
       className={`${styles.panelItem} rf-pressable ${
@@ -425,7 +494,11 @@ const AgentItem: React.FC<AgentItemProps> = ({
       }`}
       role="button"
       tabIndex={0}
-      aria-label={`Open agent chat ${card.id} ${card.title}`}
+      aria-label={
+        isRoomMember
+          ? `Open ${label} agent chat for ${cardId}`
+          : `Open agent chat ${cardId} ${title}`
+      }
       onClick={onSelect}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
@@ -438,11 +511,29 @@ const AgentItem: React.FC<AgentItemProps> = ({
         <AgentStatusDot status={status} size="medium" />
       </div>
       <Flex align="center" gap="1" className={styles.panelItemContent}>
+        {accent && role && (
+          <span
+            className={styles.agentItemRoleChip}
+            title={label}
+            style={
+              {
+                "--room-member-stripe": accent.stripe,
+                "--room-member-label": accent.label,
+              } as React.CSSProperties
+            }
+          >
+            {roleInitials(role)}
+          </span>
+        )}
         <Badge tone="muted" className={styles.agentItemBadge}>
-          {card.id}
+          {cardId}
         </Badge>
-        <Text size="1" className={styles.panelItemTitle}>
-          {card.title}
+        <Text
+          size="1"
+          className={styles.panelItemTitle}
+          title={isRoomMember ? title : undefined}
+        >
+          {label}
         </Text>
       </Flex>
     </Box>
@@ -478,19 +569,19 @@ const AgentsPanel: React.FC<AgentsPanelProps> = ({
             scrollbars="vertical"
           >
             <Flex direction="column" gap="1" className="rf-stagger">
-              {agents.map(({ card, status }) => (
+              {agents.map((entry) => (
                 <AgentItem
-                  key={card.id}
-                  card={card}
-                  status={status}
+                  key={`${entry.cardId}:${entry.chatId}`}
+                  cardId={entry.cardId}
+                  title={entry.title}
+                  status={entry.status}
+                  role={entry.role}
                   isSelected={
                     activeChat?.type === "agent" &&
-                    activeChat.cardId === card.id
+                    activeChat.cardId === entry.cardId &&
+                    activeChat.chatId === entry.chatId
                   }
-                  onSelect={() =>
-                    card.agent_chat_id &&
-                    onSelectAgent(card.id, card.agent_chat_id)
-                  }
+                  onSelect={() => onSelectAgent(entry.cardId, entry.chatId)}
                 />
               ))}
             </Flex>
@@ -594,7 +685,11 @@ const ChatSwitcher: React.FC<ChatSwitcherProps> = ({
   const agents = agentChatEntries(cards);
   const activeAgent =
     activeChat?.type === "agent"
-      ? agents.find(({ card }) => card.id === activeChat.cardId)
+      ? agents.find(
+          (entry) =>
+            entry.cardId === activeChat.cardId &&
+            entry.chatId === activeChat.chatId,
+        )
       : undefined;
 
   return (
@@ -666,19 +761,21 @@ const ChatSwitcher: React.FC<ChatSwitcherProps> = ({
               Task Agents
             </Text>
             <Flex direction="column" gap="1">
-              {agents.map(({ card, status }) => (
+              {agents.map((entry) => (
                 <AgentItem
-                  key={card.id}
-                  card={card}
-                  status={status}
+                  key={`${entry.cardId}:${entry.chatId}`}
+                  cardId={entry.cardId}
+                  title={entry.title}
+                  status={entry.status}
+                  role={entry.role}
                   isSelected={
                     activeChat?.type === "agent" &&
-                    activeChat.cardId === card.id
+                    activeChat.cardId === entry.cardId &&
+                    activeChat.chatId === entry.chatId
                   }
                   onSelect={() => {
-                    if (!card.agent_chat_id) return;
                     setOpen(false);
-                    onSelectAgent(card.id, card.agent_chat_id);
+                    onSelectAgent(entry.cardId, entry.chatId);
                   }}
                 />
               ))}
@@ -816,6 +913,9 @@ const CardDetail: React.FC<CardDetailProps> = ({
       button
     );
 
+  const roomMembers = card.team_members ?? [];
+  const isRoom = roomMembers.length > 0;
+
   return (
     <Dialog.Content
       className={styles.cardDetailDialog}
@@ -831,6 +931,16 @@ const CardDetail: React.FC<CardDetailProps> = ({
             </Dialog.Title>
           </div>
           <Flex align="center" gap="2">
+            {roomMembers.length > 1 && (
+              <Badge
+                tone="accent"
+                className={styles.cardDetailRoomBadge}
+                data-testid="card-detail-room-badge"
+              >
+                <Icon icon={Users} size="sm" tone="accent" />
+                Agent Room ({roomMembers.length} members)
+              </Badge>
+            )}
             {card.agent_chat_id && onOpenAgentChat ? (
               <Button
                 type="button"
@@ -904,6 +1014,101 @@ const CardDetail: React.FC<CardDetailProps> = ({
             </div>
           )}
         </section>
+
+        {isRoom && (
+          <section className={styles.cardDetailSectionBlock}>
+            <div className={styles.cardDetailSectionHeader}>
+              <Icon icon={Users} size="sm" tone="muted" />
+              <Text size="2" weight="medium">
+                Room Members
+              </Text>
+              <Badge tone="muted">{roomMembers.length}</Badge>
+            </div>
+            <div
+              className={styles.roomMemberList}
+              data-testid="card-detail-room-members"
+            >
+              {roomMembers.map((member, index) => {
+                const accent = roleAccent(member.role);
+                const status = memberStatusText(member);
+                const key =
+                  member.agent_chat_id ??
+                  member.agent_id ??
+                  `${member.role}-${index}`;
+                return (
+                  <div
+                    key={key}
+                    className={styles.roomMemberRow}
+                    style={
+                      {
+                        "--room-member-stripe": accent.stripe,
+                        "--room-member-label": accent.label,
+                      } as React.CSSProperties
+                    }
+                  >
+                    <span
+                      className={styles.roomMemberRowStripe}
+                      aria-hidden="true"
+                    />
+                    <div className={styles.roomMemberRowBody}>
+                      <div className={styles.roomMemberRowIdentity}>
+                        <span
+                          className={styles.roomMemberInitials}
+                          aria-hidden="true"
+                        >
+                          {roleInitials(member.role)}
+                        </span>
+                        <Text
+                          size="2"
+                          weight="medium"
+                          className={styles.roomMemberRowRole}
+                        >
+                          {roleLabel(member.role)}
+                        </Text>
+                        <Badge tone={memberStatusTone(status)}>
+                          {status}
+                        </Badge>
+                      </div>
+                      {member.mandate && (
+                        <Text size="1" color="gray" className={styles.roomMemberMandate}>
+                          {member.mandate}
+                        </Text>
+                      )}
+                      {member.tools && member.tools.length > 0 && (
+                        <div className={styles.cardDetailChipRow}>
+                          {member.tools.map((tool) => (
+                            <Badge key={tool} tone="muted">
+                              {tool}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    {member.agent_chat_id && onOpenAgentChat ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className={styles.roomMemberRowAction}
+                        data-testid={`room-member-open-${key}`}
+                        onClick={() =>
+                          onOpenAgentChat(card, member.agent_chat_id ?? undefined)
+                        }
+                      >
+                        <Icon icon={Bot} size="sm" tone="accent" />
+                        Open chat
+                      </Button>
+                    ) : (
+                      <Badge tone="muted" className={styles.roomMemberRowAction}>
+                        no chat
+                      </Badge>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
 
         {worktreeLabel && (
           <section className={styles.cardDetailSectionBlock}>
@@ -1408,7 +1613,15 @@ export const TaskWorkspace: React.FC<TaskWorkspaceProps> = ({ taskId }) => {
   useEffect(() => {
     if (activeChat?.type === "agent" && board) {
       const card = board.cards.find((c) => c.id === activeChat.cardId);
-      if (!card || card.agent_chat_id !== activeChat.chatId) {
+      const isChatInCard =
+        card &&
+        (card.agent_chat_id === activeChat.chatId ||
+          Boolean(
+            card.team_members?.some(
+              (member) => member.agent_chat_id === activeChat.chatId,
+            ),
+          ));
+      if (!isChatInCard) {
         const fallbackPlannerId = plannerChats[0]?.id;
         dispatch(
           setTaskActiveChat({
@@ -1427,14 +1640,26 @@ export const TaskWorkspace: React.FC<TaskWorkspaceProps> = ({ taskId }) => {
     const card = board.cards.find(
       (candidate) =>
         candidate.id === activeChat.cardId &&
-        candidate.agent_chat_id === activeChat.chatId,
+        (candidate.agent_chat_id === activeChat.chatId ||
+          Boolean(
+            candidate.team_members?.some(
+              (m) => m.agent_chat_id === activeChat.chatId,
+            ),
+          )),
     );
     if (!card) return;
+
+    const member = card.team_members?.find(
+      (m) => m.agent_chat_id === activeChat.chatId,
+    );
+    const title = member?.role
+      ? formatAgentChatTitle(card.id, `${card.title} (${member.role})`)
+      : formatAgentChatTitle(card.id, card.title);
 
     dispatch(
       createChatWithId({
         id: activeChat.chatId,
-        title: formatAgentChatTitle(card.id, card.title),
+        title,
         isTaskChat: true,
         openTab: false,
         mode: "TASK_AGENT",
@@ -1617,10 +1842,17 @@ export const TaskWorkspace: React.FC<TaskWorkspaceProps> = ({ taskId }) => {
       const card = board?.cards.find((c) => c.id === cardId);
       const cardTitle = card?.title ?? `Card ${cardId}`;
 
+      const member = card?.team_members?.find(
+        (m) => m.agent_chat_id === chatId,
+      );
+      const title = member?.role
+        ? formatAgentChatTitle(cardId, `${cardTitle} (${member.role})`)
+        : formatAgentChatTitle(cardId, cardTitle);
+
       dispatch(
         createChatWithId({
           id: chatId,
-          title: formatAgentChatTitle(cardId, cardTitle),
+          title,
           isTaskChat: true,
           openTab: false,
           mode: "TASK_AGENT",
@@ -1638,6 +1870,7 @@ export const TaskWorkspace: React.FC<TaskWorkspaceProps> = ({ taskId }) => {
           activeChat: { type: "agent", cardId, chatId },
         }),
       );
+      dispatch(switchToThread({ id: chatId, openTab: false }));
       openChatTab();
     },
     [board, taskId, dispatch, openChatTab],

@@ -203,6 +203,84 @@
   white-space: nowrap;
 }
 
+/* Agent-room roster in the card details dialog. Full-width, readable rows,
+   each with a 3px role stripe + tinted initials fed by roleAccent(). */
+.roomMemberList {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--rf-space-1);
+}
+
+.roomMemberRow {
+  --room-member-stripe: var(--rf-border);
+  --room-member-label: var(--rf-color-muted);
+
+  display: flex;
+  align-items: center;
+  gap: var(--rf-space-2);
+  min-width: 0;
+  padding: var(--rf-space-2) var(--rf-space-2) var(--rf-space-2) var(--rf-space-3);
+  position: relative;
+  border: var(--rf-hairline) solid var(--rf-border);
+  border-radius: var(--rf-radius-ctl);
+  background: color-mix(in oklab, var(--rf-surface-glass) 52%, transparent);
+}
+
+.roomMemberRowStripe {
+  position: absolute;
+  top: var(--rf-space-1);
+  bottom: var(--rf-space-1);
+  left: var(--rf-space-1);
+  width: 3px;
+  border-radius: var(--rf-radius-pill);
+  background: var(--room-member-stripe);
+}
+
+.roomMemberRowBody {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--rf-space-1);
+}
+
+.roomMemberRowIdentity {
+  display: flex;
+  align-items: center;
+  gap: var(--rf-space-2);
+  min-width: 0;
+}
+
+.roomMemberRow .roomMemberInitials {
+  flex-shrink: 0;
+  font-size: 13px;
+}
+
+.roomMemberRowIdentity .roomMemberRowRole {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.roomMemberMandate {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.roomMemberRowAction {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.cardDetailRoomBadge {
+  gap: var(--rf-space-1);
+  align-items: center;
+}
+
 .kanbanColumnHeader {
   display: flex;
   align-items: center;
@@ -768,6 +846,30 @@
 .agentItemBadge {
   flex-shrink: 0;
   white-space: nowrap;
+}
+
+/* Role chip in rail/switcher agent rows. A 2px role stripe ring plus tinted
+   initials so a room member's row reads the same role colour as everywhere
+   else. Driven by inline --room-member-stripe / --room-member-label from
+   roleAccent(). */
+.agentItemRoleChip {
+  --room-member-stripe: var(--rf-border);
+  --room-member-label: var(--rf-color-muted);
+
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--rf-radius-pill);
+  border: 2px solid var(--room-member-stripe);
+  color: var(--room-member-label);
+  font-size: 10px;
+  font-weight: var(--rf-weight-semibold);
+  letter-spacing: 0.02em;
+  line-height: 1;
+  text-transform: uppercase;
 }
 
 .cardDetailDialog {

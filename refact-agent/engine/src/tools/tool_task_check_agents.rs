@@ -9,7 +9,7 @@ use tokio::sync::Mutex as AMutex;
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
 use crate::tasks::storage;
-use crate::tasks::types::{AbVariantInfo, BoardCard, TaskBoard};
+use crate::tasks::types::{AbVariantInfo, BoardCard, TaskBoard, TeamMember};
 use crate::tools::task_tool_helpers::{human_age, require_bound_planner_task, truncate_chars};
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
 use refact_runtime_api::{ChatSessionFacade, SessionState};
@@ -39,6 +39,7 @@ pub(crate) struct AgentStatus {
     pub(crate) final_report: Option<String>,
     pub(crate) last_tool_name: Option<String>,
     pub(crate) change_seq: u64,
+    pub(crate) room_members: Vec<TeamMember>,
 }
 
 impl AgentStatus {
@@ -481,6 +482,7 @@ fn agent_status_from_card(
         final_report: card.final_report.clone(),
         last_tool_name,
         change_seq,
+        room_members: card.team_members.clone(),
     }
 }
 
@@ -534,6 +536,7 @@ fn agent_status_from_ab_variant(
         final_report,
         last_tool_name,
         change_seq,
+        room_members: vec![],
     }
 }
 
@@ -720,6 +723,15 @@ fn format_agent_status_detail_at(status: &AgentStatus, now: DateTime<Utc>) -> St
         result.push_str(&format!("\n**Final Report:**\n{}\n", preview));
     } else if let Some(update) = &status.last_status_update {
         result.push_str(&format!("\n**Last Update:** {}\n", update));
+    }
+
+    if status.room_members.len() > 1 {
+        result.push_str("\n**Room members:**\n");
+        for member in &status.room_members {
+            let chat = member.agent_chat_id.as_deref().unwrap_or("\u{2014}");
+            let member_status = member.typed_status().as_str();
+            result.push_str(&format!("- {} \u{2014} `{}` ({})\n", member.role, chat, member_status));
+        }
     }
 
     result
@@ -1244,6 +1256,7 @@ mod tests {
             },
             last_tool_name: Some("cat".to_string()),
             change_seq: ts.timestamp() as u64,
+            room_members: vec![],
         }
     }
 
@@ -1896,5 +1909,58 @@ mod tests {
         );
 
         assert!(output.contains("No agents have been spawned yet for this task"));
+    }
+
+    #[test]
+    fn detail_format_shows_room_members_for_room_cards() {
+        let mut status = status("T-1", "P0", "doing", Some(SessionState::Generating), 3);
+        status.room_members = vec![
+            TeamMember {
+                role: "coder".to_string(),
+                agent_chat_id: Some("agent-T-1-coder".to_string()),
+                member_status: Some(crate::tasks::types::TeamStatus::Running),
+                ..Default::default()
+            },
+            TeamMember {
+                role: "reviewer".to_string(),
+                agent_chat_id: Some("agent-T-1-reviewer".to_string()),
+                member_status: Some(crate::tasks::types::TeamStatus::Running),
+                ..Default::default()
+            },
+        ];
+        let output =
+            format_agent_statuses_at(&[status], &query(AgentReportFormat::Detail), now()).unwrap();
+
+        assert!(output.contains("**Room members:**"));
+        assert!(output.contains("coder \u{2014} `agent-T-1-coder` (running)"));
+        assert!(output.contains("reviewer \u{2014} `agent-T-1-reviewer` (running)"));
+    }
+
+    #[test]
+    fn detail_format_hides_room_members_for_single_agent_cards() {
+        let status = status("T-1", "P0", "doing", Some(SessionState::Generating), 3);
+        let output =
+            format_agent_statuses_at(&[status], &query(AgentReportFormat::Detail), now()).unwrap();
+
+        assert!(!output.contains("**Room members:**"));
+    }
+
+    #[test]
+    fn compact_format_does_not_show_room_members() {
+        let mut status = status("T-1", "P0", "doing", Some(SessionState::Generating), 3);
+        status.room_members = vec![
+            TeamMember {
+                role: "coder".to_string(),
+                ..Default::default()
+            },
+            TeamMember {
+                role: "reviewer".to_string(),
+                ..Default::default()
+            },
+        ];
+        let output =
+            format_agent_statuses_at(&[status], &query(AgentReportFormat::Compact), now()).unwrap();
+
+        assert!(!output.contains("**Room members:**"));
     }
 }

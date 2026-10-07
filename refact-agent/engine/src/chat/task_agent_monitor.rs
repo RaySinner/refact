@@ -295,6 +295,14 @@ fn stalled_agent_should_fail_after_notify_failure(stall_elapsed: Duration) -> bo
     stall_elapsed >= AGENT_STUCK_TIMEOUT
 }
 
+/// True when `chat_id` is the card's primary agent or any of its room members.
+fn card_accepts_agent_chat_id(card: &BoardCard, chat_id: &str) -> bool {
+    if card.agent_chat_id.as_deref() == Some(chat_id) {
+        return true;
+    }
+    card.team().iter().any(|m| m.agent_chat_id.as_deref() == Some(chat_id))
+}
+
 fn linked_agent_session_matches(session: &ChatSession, task_id: &str, card: &BoardCard) -> bool {
     let Some(meta) = session.thread.task_meta.as_ref() else {
         return false;
@@ -548,7 +556,7 @@ async fn record_stall_notification(
             .get_card_mut(&card_id_owned)
             .ok_or_else(|| format!("Card {} not found", card_id_owned))?;
         if card.column != "doing"
-            || card.agent_chat_id.as_deref() != Some(agent_chat_id_owned.as_str())
+            || !card_accepts_agent_chat_id(card, &agent_chat_id_owned)
             || card.assignee.is_none()
             || !stall_notify_allowed(
                 stall_notifications_with_prefix(card, &prefix),
@@ -2386,8 +2394,6 @@ async fn check_for_stuck_agents(app: AppState) -> Result<(), String> {
                 && session.pending_deliveries.is_empty()
                 && elapsed > AGENT_STUCK_TIMEOUT
             {
-                drop(session);
-
                 tracing::warn!(
                     "Agent for card {} appears stuck (idle for {:?})",
                     card.id,
@@ -2407,6 +2413,71 @@ async fn check_for_stuck_agents(app: AppState) -> Result<(), String> {
                     AgentFailureKind::Permanent,
                 )
                 .await?;
+            }
+            drop(session);
+
+            for member in card.team() {
+                if !member.is_active() {
+                    continue;
+                }
+                let Some(member_chat_id) = member.agent_chat_id.as_deref() else {
+                    continue;
+                };
+                if member_chat_id == agent_chat_id {
+                    continue;
+                }
+                let member_session_arc = {
+                    let sessions_read = sessions.read().await;
+                    sessions_read.get(member_chat_id).cloned()
+                };
+                let Some(member_session_arc) = member_session_arc else {
+                    continue;
+                };
+                let member_session = member_session_arc.lock().await;
+                let member_elapsed = member_session.last_activity.elapsed();
+                let member_is_stalled =
+                    matches!(
+                        member_session.runtime.state,
+                        SessionState::Idle | SessionState::Completed
+                    )
+                        && member_session.command_queue.is_empty()
+                        && member_session.pending_deliveries.is_empty()
+                        && member_elapsed > AGENT_STUCK_TIMEOUT;
+                if member_is_stalled {
+                    drop(member_session);
+                    tracing::warn!(
+                        "Room member {} ({}) on card {} appears stuck (idle for {})",
+                        member.role,
+                        member_chat_id,
+                        card.id,
+                        humantime::format_duration(member_elapsed)
+                    );
+                    if stall_planner_notify_allowed(card, Utc::now()) {
+                        let kind = match member_session_arc.lock().await.runtime.state {
+                            SessionState::Completed => StallKind::Completed,
+                            _ => StallKind::IdleNoFinish,
+                        };
+                        let _ = notify_agent_about_stall(
+                            app.clone(),
+                            task_id,
+                            card,
+                            member_chat_id,
+                            kind,
+                            member_elapsed,
+                        )
+                        .await;
+                        let _ = notify_planner_about_stalled_agent(
+                            app.clone(),
+                            task_id,
+                            card,
+                            member_chat_id,
+                            planner_chat_id.as_deref(),
+                            kind,
+                            member_elapsed,
+                        )
+                        .await;
+                    }
+                }
             }
         }
     }
@@ -3659,6 +3730,88 @@ mod tests {
         assert!(
             session.command_queue.is_empty(),
             "no wake message when state is not WaitingUserInput"
+        );
+    }
+
+    #[test]
+    fn card_accepts_agent_chat_id_matches_primary_and_room_members() {
+        let mut card = create_test_card("T-1", "doing", Some("agent-1".to_string()));
+        card.agent_chat_id = Some("primary-chat".to_string());
+        card.team_members = vec![
+            crate::tasks::types::TeamMember {
+                role: "coder".to_string(),
+                agent_chat_id: Some("primary-chat".to_string()),
+                ..Default::default()
+            },
+            crate::tasks::types::TeamMember {
+                role: "reviewer".to_string(),
+                agent_chat_id: Some("reviewer-chat".to_string()),
+                ..Default::default()
+            },
+        ];
+
+        assert!(card_accepts_agent_chat_id(&card, "primary-chat"));
+        assert!(card_accepts_agent_chat_id(&card, "reviewer-chat"));
+        assert!(!card_accepts_agent_chat_id(&card, "stranger-chat"));
+    }
+
+    #[tokio::test]
+    async fn room_member_idle_stall_triggers_notification() {
+        let (_temp, app, task_id, _agent_chat_id, _agent_arc, _planner_arc) =
+            setup_monitor_case("doing", SessionState::Generating, Duration::from_secs(1), vec![])
+                .await;
+        let room_member_chat_id = "agent-T-1-reviewer".to_string();
+        {
+            storage::update_board_atomic(app.gcx.clone(), &task_id, |board| {
+                if let Some(card) = board.get_card_mut("T-1") {
+                    card.team_members = vec![
+                        crate::tasks::types::TeamMember {
+                            role: "coder".to_string(),
+                            agent_chat_id: Some("agent-T-1".to_string()),
+                            member_status: Some(crate::tasks::types::TeamStatus::Running),
+                            ..Default::default()
+                        },
+                        crate::tasks::types::TeamMember {
+                            role: "reviewer".to_string(),
+                            agent_chat_id: Some(room_member_chat_id.clone()),
+                            member_status: Some(crate::tasks::types::TeamStatus::Running),
+                            ..Default::default()
+                        },
+                    ];
+                }
+                Ok(())
+            })
+            .await
+            .unwrap();
+        }
+        let member_session = make_test_agent_session(
+            &task_id,
+            "T-1",
+            "agent-2",
+            &room_member_chat_id,
+            SessionState::Idle,
+            AGENT_STUCK_TIMEOUT + Duration::from_secs(10),
+        );
+        let member_arc = Arc::new(tokio::sync::Mutex::new(member_session));
+        app.chat
+            .sessions
+            .write()
+            .await
+            .insert(room_member_chat_id.clone(), member_arc.clone());
+
+        check_for_stuck_agents(app.clone()).await.unwrap();
+
+        let board = storage::load_board(app.gcx.clone(), &task_id)
+            .await
+            .unwrap();
+        let card = board.get_card("T-1").unwrap();
+        assert!(
+            card.status_updates
+                .iter()
+                .any(|u| u.message.starts_with(STALL_AGENT_NOTIFY_STATUS_PREFIX)
+                    && u.message.contains(&room_member_chat_id)),
+            "room member stall must be recorded on the card; got {:?}",
+            card.status_updates
         );
     }
 

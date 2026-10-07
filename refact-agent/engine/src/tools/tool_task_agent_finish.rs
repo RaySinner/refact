@@ -13,7 +13,7 @@ use crate::chat::verifier::{schedule_card_verifier_after_finish, ExpectedCardSta
 use crate::tasks::storage;
 use crate::tasks::types::{
     AbVariantFinish, AbVariantInfo, BoardCard, FinalReport, StatusUpdate, SuggestedCard,
-    VerificationResult,
+    TeamMemberReport, TeamStatus, VerificationResult,
 };
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
 use crate::worktrees::types::WorktreeMeta;
@@ -168,18 +168,23 @@ async fn refresh_finish_heartbeat_if_current(
             card.last_heartbeat_at = Some(heartbeat.clone());
             return Ok(());
         }
-        if card.agent_chat_id.as_deref() != Some(finish_chat_id_owned.as_str()) {
+        if !is_room_finisher(card, &finish_chat_id_owned) {
             return Err(format!(
                 "Card {} is now owned by agent_chat_id={:?}, not {}",
                 card_id_owned, card.agent_chat_id, finish_chat_id_owned
             ));
         }
-        if let Some(expected_agent_id) = expected_agent_id_owned.as_deref() {
-            if card.assignee.as_deref() != Some(expected_agent_id) {
-                return Err(format!(
-                    "Card {} is now assigned to {:?}, not {}",
-                    card_id_owned, card.assignee, expected_agent_id
-                ));
+        // The scalar owner's agent id is mirrored in `assignee`; a room member that is not the
+        // owner has its identity in its own team slot (already verified above), so the assignee
+        // check applies only to the owner.
+        if card.agent_chat_id.as_deref() == Some(finish_chat_id_owned.as_str()) {
+            if let Some(expected_agent_id) = expected_agent_id_owned.as_deref() {
+                if card.assignee.as_deref() != Some(expected_agent_id) {
+                    return Err(format!(
+                        "Card {} is now assigned to {:?}, not {}",
+                        card_id_owned, card.assignee, expected_agent_id
+                    ));
+                }
             }
         }
         card.last_heartbeat_at = Some(heartbeat.clone());
@@ -526,6 +531,109 @@ fn mark_finished_card(
             message: format!("Agent failed: {}", report.markdown),
         });
     }
+}
+
+/// Whether `finish_chat_id` may finish `card`: the scalar owner or any room member.
+///
+/// A room is a card carrying several `team_members`; after the spawn protocol fills a slot, the
+/// card's scalar `agent_chat_id` points at the primary (first writing) owner, but every member
+/// must be able to call `agent_finish` for its own slot.
+fn is_room_finisher(card: &BoardCard, finish_chat_id: &str) -> bool {
+    if card.agent_chat_id.as_deref() == Some(finish_chat_id) {
+        return true;
+    }
+    card.team_member_by_chat_id(finish_chat_id).is_some()
+}
+
+/// Record one room member's finish in its own `team_members` entry.
+///
+/// The member's `member_status` becomes `Done` or `Failed` and its `report` is stored, but the
+/// card's column and scalar fields are left untouched: a single member finishing does not finish
+/// the card. The caller finalizes the card only once every member is terminal.
+fn mark_room_member_finished(
+    card: &mut BoardCard,
+    finish_chat_id: &str,
+    success: bool,
+    report: &ParsedFinishReport,
+    completed_at: &str,
+) -> Result<(), String> {
+    let member = card
+        .team_members
+        .iter_mut()
+        .find(|member| member.agent_chat_id.as_deref() == Some(finish_chat_id))
+        .ok_or_else(|| {
+            format!(
+                "Card {} has no room member for chat {}",
+                card.id, finish_chat_id
+            )
+        })?;
+    if member.is_terminal() {
+        return Err(format!(
+            "Room member '{}' on card {} has already finished. Cannot finish twice.",
+            member.role, card.id
+        ));
+    }
+    member.member_status = Some(if success {
+        TeamStatus::Done
+    } else {
+        TeamStatus::Failed
+    });
+    member.status = Some(if success {
+        "done".to_string()
+    } else {
+        "failed".to_string()
+    });
+    member.report = Some(TeamMemberReport {
+        summary: report.markdown.clone(),
+        success,
+        partial: false,
+        files_changed: Vec::new(),
+        verification: Vec::new(),
+        completed_at: completed_at.to_string(),
+    });
+    Ok(())
+}
+
+/// Finalize the card now that every room member has reported.
+///
+/// The card is `done` only when every member succeeded; any failed or partial member fails the
+/// card. The card-level `final_report` aggregates each member's report so the planner reads one
+/// answer instead of N.
+fn finalize_room_card(
+    card: &mut BoardCard,
+    reports: &crate::tasks::rooms::RoomReports,
+    commit_hash: Option<&str>,
+) {
+    let room_success = reports.failed.is_empty();
+    let now = Utc::now().to_rfc3339();
+    let mut combined = format!("# Room Report: {}\n", card.title);
+    for (key, summary) in &reports.reports {
+        combined.push_str(&format!("\n## {key}\n{}\n", summary.trim()));
+    }
+    if room_success {
+        card.column = "done".to_string();
+    } else {
+        card.column = "failed".to_string();
+    }
+    card.completed_at = Some(now.clone());
+    card.final_report = Some(combined);
+    if let Some(hash) = commit_hash {
+        card.status_updates.push(StatusUpdate {
+            timestamp: now.clone(),
+            message: format!("Auto-committed: {}", hash),
+        });
+    }
+    card.status_updates.push(StatusUpdate {
+        timestamp: now.clone(),
+        message: if room_success {
+            "Room completed: all members finished successfully".to_string()
+        } else {
+            format!(
+                "Room failed: member(s) {} did not succeed",
+                reports.failed.join(", ")
+            )
+        },
+    });
 }
 
 fn mark_ab_variant_finished(
@@ -895,7 +1003,7 @@ impl Tool for ToolTaskAgentFinish {
 
         let finish_agent_id_for_update = finish_agent_id.clone();
         let ab_variant_key_for_update = ab_variant_key.clone();
-        let (board, (card_title, all_finished, verifier_expected_state, finished_ab_variant)) =
+        let (board, (card_title, all_finished, verifier_expected_state, finished_ab_variant, card_success)) =
             storage::update_board_atomic(gcx.clone(), &task_id, move |board| {
                 let next_board_rev = board.rev + 1;
                 let card = board
@@ -919,6 +1027,7 @@ impl Tool for ToolTaskAgentFinish {
                         all_finished,
                         None,
                         Some(variant_key.to_string()),
+                        true,
                     ));
                 }
 
@@ -929,22 +1038,57 @@ impl Tool for ToolTaskAgentFinish {
                     ));
                 }
 
-                if card.agent_chat_id.as_deref() != Some(finish_chat_id.as_str()) {
+                if !is_room_finisher(card, &finish_chat_id) {
                     return Err(format!(
                         "Card {} is now owned by agent_chat_id={:?}, not {}",
                         card_id_owned, card.agent_chat_id, finish_chat_id
                     ));
                 }
-                if let Some(expected_agent_id) = finish_agent_id_for_update.as_deref() {
-                    if card.assignee.as_deref() != Some(expected_agent_id) {
-                        return Err(format!(
-                            "Card {} is now assigned to {:?}, not {}",
-                            card_id_owned, card.assignee, expected_agent_id
-                        ));
+                // A non-owner room member has its identity in its own slot (verified above); the
+                // assignee is the primary owner's mirror, so the check applies to the owner only.
+                if card.agent_chat_id.as_deref() == Some(finish_chat_id.as_str()) {
+                    if let Some(expected_agent_id) = finish_agent_id_for_update.as_deref() {
+                        if card.assignee.as_deref() != Some(expected_agent_id) {
+                            return Err(format!(
+                                "Card {} is now assigned to {:?}, not {}",
+                                card_id_owned, card.assignee, expected_agent_id
+                            ));
+                        }
                     }
                 }
 
                 let card_title = card.title.clone();
+                let completed_at = Utc::now().to_rfc3339();
+
+                if card.is_room() {
+                    mark_room_member_finished(
+                        card,
+                        &finish_chat_id,
+                        success_clone,
+                        &report_clone,
+                        &completed_at,
+                    )?;
+                    let reports = crate::tasks::rooms::collect_room_reports(card);
+                    let room_complete = reports.room_complete();
+                    if room_complete {
+                        finalize_room_card(card, &reports, commit_hash.as_deref());
+                    }
+                    let verifier_expected_state = if room_complete {
+                        Some(ExpectedCardState::from_card(next_board_rev, card))
+                    } else {
+                        None
+                    };
+                    let agents_active = agents_active(&board.cards);
+                    let all_finished = agents_active == 0 && room_complete;
+                    let room_success = reports.failed.is_empty();
+                    return Ok((
+                        card_title,
+                        all_finished,
+                        verifier_expected_state,
+                        None,
+                        room_success,
+                    ));
+                }
 
                 mark_finished_card(card, success_clone, &report_clone, commit_hash.as_deref());
                 let verifier_expected_state = ExpectedCardState::from_card(next_board_rev, card);
@@ -952,7 +1096,13 @@ impl Tool for ToolTaskAgentFinish {
                 let agents_active = agents_active(&board.cards);
                 let all_finished = agents_active == 0;
 
-                Ok((card_title, all_finished, Some(verifier_expected_state), None))
+                Ok((
+                    card_title,
+                    all_finished,
+                    Some(verifier_expected_state),
+                    None,
+                    success_clone,
+                ))
             })
             .await?;
 
@@ -983,7 +1133,7 @@ impl Tool for ToolTaskAgentFinish {
                     variant_label, card_title, report.markdown
                 )
             }
-        } else if success {
+        } else if card_success {
             if all_finished {
                 format!(
                     "✅ **Card Completed: {}**\n\n**Report:**\n{}\n\nAll agents have completed. Planner notified.",
@@ -991,7 +1141,7 @@ impl Tool for ToolTaskAgentFinish {
                 )
             } else {
                 format!(
-                    "✅ **Card Completed: {}**\n\n**Report:**\n{}\n\nPlanner notified. Other agents are still running.",
+                    "✅ **Room member finished: {}**\n\n**Report:**\n{}\n\nPlanner notified. Other room members are still working.",
                     card_title, report.markdown
                 )
             }
@@ -1003,7 +1153,7 @@ impl Tool for ToolTaskAgentFinish {
                 )
             } else {
                 format!(
-                    "❌ **Card Failed: {}**\n\n**Reason:**\n{}\n\nPlanner notified. Other agents are still running.",
+                    "❌ **Room member failed: {}**\n\n**Reason:**\n{}\n\nPlanner notified. The card will be failed once every room member has finished.",
                     card_title, report.markdown
                 )
             }
@@ -1033,7 +1183,7 @@ impl Tool for ToolTaskAgentFinish {
             );
         }
 
-        if success {
+        if card_success {
             if let Some(verifier_expected_state) = verifier_expected_state {
                 schedule_card_verifier_after_finish(
                     gcx.clone(),
@@ -1093,6 +1243,7 @@ mod tests {
     use super::*;
     use crate::tasks::types::{
         AbVariantInfo, AbVariants, BoardCard, TaskBoard, TaskMeta as StoredTaskMeta, TaskStatus,
+        TeamStatus,
     };
 
     fn run_git(cwd: &Path, args: &[&str]) -> String {
@@ -1789,5 +1940,126 @@ mod tests {
             subject.trim(),
             "Card T-2: Implement stable finish without subchat"
         );
+    }
+
+    fn room_member(role: &str, chat: &str, status: TeamStatus) -> crate::tasks::types::TeamMember {
+        crate::tasks::types::TeamMember {
+            role: role.to_string(),
+            agent_chat_id: Some(chat.to_string()),
+            agent_id: Some(format!("agent-{}", chat)),
+            member_status: Some(status),
+            ..Default::default()
+        }
+    }
+
+    fn room_card() -> BoardCard {
+        let mut card = test_card(None);
+        card.assignee = Some("agent-agent-coder-chat".to_string());
+        card.agent_chat_id = Some("agent-coder-chat".to_string());
+        card.team_members = vec![
+            room_member("coder", "agent-coder-chat", TeamStatus::Running),
+            room_member("reviewer", "agent-reviewer-chat", TeamStatus::Running),
+        ];
+        card
+    }
+
+    #[test]
+    fn is_room_finisher_accepts_owner_and_any_room_member() {
+        let card = room_card();
+
+        assert!(is_room_finisher(&card, "agent-coder-chat"), "scalar owner");
+        assert!(is_room_finisher(&card, "agent-reviewer-chat"), "room member");
+        assert!(!is_room_finisher(&card, "agent-stranger"), "stranger");
+    }
+
+    #[test]
+    fn mark_room_member_finished_records_only_that_member() {
+        let mut card = room_card();
+        let report = parsed_report("coder done", true);
+
+        mark_room_member_finished(&mut card, "agent-coder-chat", true, &report, "2026-01-01T01:00:00Z").unwrap();
+
+        assert_eq!(card.column, "doing", "one member finishing must not finish the card");
+        assert!(card.final_report.is_none());
+        assert!(card.completed_at.is_none());
+
+        let coder = card.team_member_by_chat_id("agent-coder-chat").unwrap();
+        assert_eq!(coder.typed_status(), TeamStatus::Done);
+        assert!(coder.report.is_some());
+
+        let reviewer = card.team_member_by_chat_id("agent-reviewer-chat").unwrap();
+        assert_eq!(reviewer.typed_status(), TeamStatus::Running, "peer is untouched");
+        assert!(reviewer.report.is_none());
+    }
+
+    #[test]
+    fn mark_room_member_finished_rejects_second_finish() {
+        let mut card = room_card();
+        let report = parsed_report("done", true);
+
+        mark_room_member_finished(&mut card, "agent-coder-chat", true, &report, "2026-01-01T01:00:00Z").unwrap();
+        let error = mark_room_member_finished(&mut card, "agent-coder-chat", true, &report, "2026-01-01T01:00:00Z").unwrap_err();
+
+        assert!(error.contains("already finished"), "{error}");
+    }
+
+    #[test]
+    fn mark_room_member_finished_rejects_unknown_chat() {
+        let mut card = room_card();
+        let report = parsed_report("done", true);
+
+        let error = mark_room_member_finished(&mut card, "agent-stranger", true, &report, "2026-01-01T01:00:00Z").unwrap_err();
+
+        assert!(error.contains("no room member"), "{error}");
+    }
+
+    #[test]
+    fn room_is_incomplete_while_a_member_is_running() {
+        let mut card = room_card();
+        let report = parsed_report("done", true);
+
+        mark_room_member_finished(&mut card, "agent-coder-chat", true, &report, "2026-01-01T01:00:00Z").unwrap();
+
+        let reports = crate::tasks::rooms::collect_room_reports(&card);
+        assert!(!reports.room_complete());
+        assert_eq!(reports.outstanding, vec!["reviewer".to_string()]);
+        assert_eq!(card.column, "doing", "card is not finalized while incomplete");
+    }
+
+    #[test]
+    fn finalize_room_card_is_done_when_every_member_succeeded() {
+        let mut card = room_card();
+        let report = parsed_report("done", true);
+
+        mark_room_member_finished(&mut card, "agent-coder-chat", true, &report, "2026-01-01T01:00:00Z").unwrap();
+        mark_room_member_finished(&mut card, "agent-reviewer-chat", true, &report, "2026-01-01T02:00:00Z").unwrap();
+
+        let reports = crate::tasks::rooms::collect_room_reports(&card);
+        assert!(reports.room_complete());
+        finalize_room_card(&mut card, &reports, Some("abc123"));
+
+        assert_eq!(card.column, "done");
+        assert!(card.completed_at.is_some());
+        let final_report = card.final_report.unwrap();
+        assert!(final_report.contains("Room Report"));
+        assert!(final_report.contains("team/agent-coder-chat"));
+        assert!(final_report.contains("team/agent-reviewer-chat"));
+    }
+
+    #[test]
+    fn finalize_room_card_is_failed_when_any_member_failed() {
+        let mut card = room_card();
+        let good = parsed_report("done", true);
+        let bad = parsed_report("broke", false);
+
+        mark_room_member_finished(&mut card, "agent-coder-chat", true, &good, "2026-01-01T01:00:00Z").unwrap();
+        mark_room_member_finished(&mut card, "agent-reviewer-chat", false, &bad, "2026-01-01T02:00:00Z").unwrap();
+
+        let reports = crate::tasks::rooms::collect_room_reports(&card);
+        assert!(reports.room_complete());
+        finalize_room_card(&mut card, &reports, None);
+
+        assert_eq!(card.column, "failed", "one failed member fails the whole room");
+        assert!(card.final_report.as_deref().unwrap().contains("reviewer"));
     }
 }

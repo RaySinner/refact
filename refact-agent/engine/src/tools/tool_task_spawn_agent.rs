@@ -572,6 +572,7 @@ pub(crate) fn claim_room_slot(
     agent_chat_id: &str,
     worktree_branch: Option<String>,
     worktree_path: Option<String>,
+    worktree_name: Option<String>,
     mandate: Option<String>,
     tools: Vec<String>,
 ) -> Result<(), String> {
@@ -629,8 +630,8 @@ pub(crate) fn claim_room_slot(
         role,
         agent_id,
         agent_chat_id,
-        worktree_branch,
-        worktree_path,
+        worktree_branch.clone(),
+        worktree_path.clone(),
         mandate,
         tools,
     );
@@ -639,7 +640,14 @@ pub(crate) fn claim_room_slot(
     } else {
         crate::tasks::types::TeamStatus::Pending
     });
-    mark_card_agent_started(card, agent_id, agent_chat_id, None, None, None);
+    mark_card_agent_started(
+        card,
+        agent_id,
+        agent_chat_id,
+        worktree_branch,
+        worktree_path,
+        worktree_name,
+    );
     card.team_members = vec![member];
     Ok(())
 }
@@ -1210,7 +1218,7 @@ impl Tool for ToolTaskSpawnAgent {
                 .to_string_lossy()
                 .to_string(),
         );
-        let _worktree_name = Some(prepared_worktree.worktree_name());
+        let worktree_name = Some(prepared_worktree.worktree_name());
         let base_branch_from_prep = prepared_worktree.meta.base_branch.clone();
         let base_commit_from_prep = prepared_worktree.meta.base_commit.clone();
 
@@ -1245,6 +1253,7 @@ impl Tool for ToolTaskSpawnAgent {
                     &agent_chat_id_clone,
                     worktree_branch.clone(),
                     worktree_path_str.clone(),
+                    worktree_name.clone(),
                     mandate_clone.clone(),
                     member_tools.clone(),
                 )
@@ -2608,6 +2617,7 @@ mod tests {
             Some("branch-1".into()),
             Some("/wt/1".into()),
             None,
+            None,
             vec!["cat".into()],
         )
         .unwrap();
@@ -2630,6 +2640,7 @@ mod tests {
             "agent-T-1-code",
             Some("branch-2".into()),
             Some("/wt/2".into()),
+            None,
             Some("write the parser".into()),
             vec!["cat".into(), "shell".into()],
         )
@@ -2691,6 +2702,7 @@ mod tests {
             Some("branch-2".into()),
             Some("/wt/2".into()),
             None,
+            None,
             vec!["cat".into()],
         )
         .unwrap_err();
@@ -2718,6 +2730,7 @@ mod tests {
             Some("branch-1".into()),
             Some("/wt/1".into()),
             None,
+            None,
             vec![],
         )
         .unwrap();
@@ -2732,6 +2745,7 @@ mod tests {
             "agent-T-1-rev",
             Some("branch-2".into()),
             Some("/wt/2".into()),
+            None,
             None,
             vec![],
         )
@@ -2759,6 +2773,7 @@ mod tests {
             "agent-T-1-1111",
             Some("branch-1".into()),
             Some("/wt/1".into()),
+            Some("wt-1".into()),
             None,
             vec!["cat".into()],
         )
@@ -2768,6 +2783,9 @@ mod tests {
         assert_eq!(card.column, "doing");
         assert_eq!(card.assignee.as_deref(), Some("agent-1"));
         assert_eq!(card.agent_chat_id.as_deref(), Some("agent-T-1-1111"));
+        assert_eq!(card.agent_branch.as_deref(), Some("branch-1"));
+        assert_eq!(card.agent_worktree.as_deref(), Some("/wt/1"));
+        assert_eq!(card.agent_worktree_name.as_deref(), Some("wt-1"));
         assert!(card.started_at.is_some());
         assert!(card
             .status_updates
@@ -2881,6 +2899,7 @@ mod tests {
                 ["coder", "reviewer", "designer"][index],
                 &format!("agent-{index}"),
                 &format!("agent-T-1-{index}"),
+                None,
                 None,
                 None,
                 None,

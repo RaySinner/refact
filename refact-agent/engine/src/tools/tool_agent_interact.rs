@@ -219,12 +219,44 @@ pub(crate) async fn resolve_room_peers(
     let card = board.get_card(caller_card_id)?;
     let author = crate::tasks::rooms::room_member_provenance(card, caller_chat_id)?;
     match to {
-        Some(chat_id) => {
-            if !crate::tasks::rooms::same_room(card, caller_chat_id, chat_id) {
-                return None;
-            }
+        Some(target) => {
+            let peer_member = card
+                .team()
+                .iter()
+                .filter(|member| {
+                    !member
+                        .agent_chat_id
+                        .as_deref()
+                        .is_some_and(|id| id == caller_chat_id)
+                })
+                .find(|member| {
+                    member.agent_chat_id.as_deref() == Some(target)
+                        || member.agent_id.as_deref() == Some(target)
+                })
+                .or_else(|| {
+                    card.team()
+                        .iter()
+                        .filter(|member| {
+                            !member
+                                .agent_chat_id
+                                .as_deref()
+                                .is_some_and(|id| id == caller_chat_id)
+                        })
+                        .find(|member| {
+                            member.role.trim().eq_ignore_ascii_case(target.trim())
+                                || crate::tasks::rooms::member_provenance(card, member)
+                                    .display_name
+                                    .trim()
+                                    .eq_ignore_ascii_case(target.trim())
+                        })
+                })?;
+            let peer_chat_id = peer_member
+                .agent_chat_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|id| !id.is_empty())?;
             Some(vec![RoomPeer {
-                chat_id: chat_id.to_string(),
+                chat_id: peer_chat_id.to_string(),
                 author,
             }])
         }
@@ -455,23 +487,17 @@ impl Tool for ToolAgentMessage {
         let reply_to = optional_string(args, "reply_to");
         let (app, chat_id, root_chat_id, caller_agent_id) = context(&ccx).await;
 
-        // A room member may address the whole room (no `to`, or `to="all"`) or one
-        // member by chat id. A name that is not on this card falls through to the
-        // registry path, which keeps the existing subagent contract and its error
-        // message intact.
-        let room_address: Option<Option<String>> = match to.as_deref() {
-            None | Some("all") if caller_agent_id.is_none() => Some(None),
-            Some(name) if caller_agent_id.is_none() => Some(Some(name.to_string())),
-            _ => None,
-        };
-        if let Some(address) = room_address {
-            if let Some((task_id, peer_card_id)) = room_card_id(&ccx).await {
+        if let Some((task_id, peer_card_id)) = room_card_id(&ccx).await {
+            let is_broadcast = to.is_none() || to.as_deref() == Some("all");
+            let is_parent = to.as_deref() == Some("parent");
+            if !is_parent {
+                let target = if is_broadcast { None } else { to.as_deref() };
                 if let Some(peers) = resolve_room_peers(
                     app.gcx.clone(),
                     &task_id,
                     &peer_card_id,
                     &chat_id,
-                    address.as_deref(),
+                    target,
                 )
                 .await
                 {
@@ -479,12 +505,11 @@ impl Tool for ToolAgentMessage {
                         tool_call_id,
                         deliver_room_message(app, peers, &peer_card_id, &chat_id, &text, push).await?,
                     ));
+                } else if is_broadcast {
+                    return Err(
+                        "No other room member to message on this card.".to_string(),
+                    );
                 }
-            }
-            if address.is_none() {
-                return Err(
-                    "No other room member to message on this card.".to_string(),
-                );
             }
         }
 
@@ -1209,7 +1234,7 @@ mod tests {
         .await
         .unwrap();
 
-        let (session, _) = room_session(&app, "agent-T-1-arch").await;
+        let (session, _) = room_session(&app, "agent-T-1-code").await;
         let ccx = room_context(&app, "agent-T-1-arch", "task-room", "T-1").await;
 
         let mut tool = ToolAgentMessage {
@@ -1547,6 +1572,168 @@ mod tests {
                 .iter()
                 .any(|message| message.content.content_text_only().contains("only you")),
             "an addressed message must not leak to the rest of the room"
+        );
+    }
+
+    #[tokio::test]
+    async fn room_member_with_agent_id_can_message_peer() {
+        let gcx = crate::global_context::tests::make_test_gcx().await;
+        let app = AppState::from_gcx(gcx.clone()).await;
+        let workspace = tempfile::tempdir().unwrap();
+        *gcx.documents_state.workspace_folders.lock().unwrap() = vec![workspace.path().to_path_buf()];
+
+        let board_card = room_board_card(&["agent-T-1-arch", "agent-T-1-code"]);
+        crate::tasks::storage::save_board(
+            gcx.clone(),
+            "task-room",
+            &crate::tasks::types::TaskBoard {
+                cards: vec![board_card],
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let (session, _) = room_session(&app, "agent-T-1-code").await;
+        let ccx = room_context(&app, "agent-T-1-arch", "task-room", "T-1").await;
+        ccx.lock().await.background_agent_id = Some("subagent-id-12345".to_string());
+
+        let mut tool = ToolAgentMessage {
+            config_path: String::new(),
+        };
+        let delivered = text(
+            tool.tool_execute(
+                ccx,
+                &"call".to_string(),
+                &args(&[
+                    ("to", json!("agent-T-1-code")),
+                    ("text", json!("parser is ready, please check")),
+                ]),
+            )
+            .await
+            .unwrap(),
+        );
+
+        assert!(delivered.contains("agent-T-1-code"), "{delivered}");
+        assert!(
+            session
+                .lock()
+                .await
+                .messages
+                .iter()
+                .any(|message| message
+                    .content
+                    .content_text_only()
+                    .contains("parser is ready, please check")),
+            "peer message must land in the peer's chat even when caller has background_agent_id"
+        );
+    }
+
+    #[tokio::test]
+    async fn room_member_can_message_peer_by_role() {
+        let gcx = crate::global_context::tests::make_test_gcx().await;
+        let app = AppState::from_gcx(gcx.clone()).await;
+        let workspace = tempfile::tempdir().unwrap();
+        *gcx.documents_state.workspace_folders.lock().unwrap() = vec![workspace.path().to_path_buf()];
+
+        let board_card = room_board_card(&["agent-T-1-arch", "agent-T-1-code"]);
+        crate::tasks::storage::save_board(
+            gcx.clone(),
+            "task-room",
+            &crate::tasks::types::TaskBoard {
+                cards: vec![board_card],
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let (session, _) = room_session(&app, "agent-T-1-code").await;
+        let ccx = room_context(&app, "agent-T-1-arch", "task-room", "T-1").await;
+        ccx.lock().await.background_agent_id = Some("agent-id-0".to_string());
+
+        let mut tool = ToolAgentMessage {
+            config_path: String::new(),
+        };
+        let delivered = text(
+            tool.tool_execute(
+                ccx,
+                &"call".to_string(),
+                &args(&[
+                    ("to", json!("coder")),
+                    ("text", json!("message sent by role")),
+                ]),
+            )
+            .await
+            .unwrap(),
+        );
+
+        assert!(delivered.contains("agent-T-1-code"), "{delivered}");
+        assert!(
+            session
+                .lock()
+                .await
+                .messages
+                .iter()
+                .any(|message| message
+                    .content
+                    .content_text_only()
+                    .contains("message sent by role")),
+            "peer message addressed by role must land in the peer's chat"
+        );
+    }
+
+    #[tokio::test]
+    async fn room_broadcast_works_when_caller_has_agent_id() {
+        let gcx = crate::global_context::tests::make_test_gcx().await;
+        let app = AppState::from_gcx(gcx.clone()).await;
+        let workspace = tempfile::tempdir().unwrap();
+        *gcx.documents_state.workspace_folders.lock().unwrap() = vec![workspace.path().to_path_buf()];
+
+        let board_card = room_board_card(&["agent-T-1-arch", "agent-T-1-code"]);
+        crate::tasks::storage::save_board(
+            gcx.clone(),
+            "task-room",
+            &crate::tasks::types::TaskBoard {
+                cards: vec![board_card],
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let (session, _) = room_session(&app, "agent-T-1-code").await;
+        let ccx = room_context(&app, "agent-T-1-arch", "task-room", "T-1").await;
+        ccx.lock().await.background_agent_id = Some("agent-id-0".to_string());
+
+        let mut tool = ToolAgentMessage {
+            config_path: String::new(),
+        };
+        let delivered = text(
+            tool.tool_execute(
+                ccx,
+                &"call".to_string(),
+                &args(&[
+                    ("to", json!("all")),
+                    ("text", json!("broadcast with agent id")),
+                ]),
+            )
+            .await
+            .unwrap(),
+        );
+
+        assert!(delivered.contains("agent-T-1-code"), "{delivered}");
+        assert!(
+            session
+                .lock()
+                .await
+                .messages
+                .iter()
+                .any(|message| message
+                    .content
+                    .content_text_only()
+                    .contains("broadcast with agent id")),
+            "broadcast message must land in the peer's chat even when caller has agent id"
         );
     }
 

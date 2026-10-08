@@ -424,7 +424,7 @@ pub fn member_provenance(card: &BoardCard, member: &TeamMember) -> MessageProven
 /// Provenance for whoever is speaking from `caller_chat_id` in `card`, if that is a room member.
 pub fn room_member_provenance(card: &BoardCard, caller_chat_id: &str) -> Option<MessageProvenance> {
     let provenance = member_provenance(card, card.team_member_by_chat_id(caller_chat_id)?);
-    provenance.chat_id.is_empty().then_some(provenance)
+    (!provenance.chat_id.is_empty()).then_some(provenance)
 }
 
 /// Members of the same room, as one line each, for a prompt or tool output.

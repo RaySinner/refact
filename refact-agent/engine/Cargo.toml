@@ -181,7 +181,7 @@ opt-level = 3
 
 [package]
 name = "refact-lsp"
-version = "8.7.1"
+version = "8.7.2"
 edition = "2021"
 build = "build.rs"
 

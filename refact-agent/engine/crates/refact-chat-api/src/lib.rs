@@ -454,6 +454,11 @@ pub struct ThreadParams {
     /// обычным текстом, не вызвав ни одного инструмента.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_nudge_enabled: Option<bool>,
+    /// Whether model reasoning/thinking is stripped from the prompt sent to the
+    /// LLM on subsequent turns. Reasoning stays visible in the chat UI. Defaults
+    /// to ON (true) when unset; an explicit persisted `false` is respected.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub strip_reasoning_from_prompt: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub frozen_request_prefix: Option<FrozenRequestPrefix>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -526,6 +531,13 @@ impl ThreadParams {
     pub fn agent_nudge_enabled_effective(&self) -> bool {
         self.agent_nudge_enabled.unwrap_or(false)
     }
+
+    /// Reasoning/thinking is stripped from the prompt by default, so the model
+    /// never re-consumes its own thoughts on later turns. An explicit `false`
+    /// keeps them in the wire copy.
+    pub fn strip_reasoning_from_prompt_effective(&self) -> bool {
+        self.strip_reasoning_from_prompt.unwrap_or(true)
+    }
 }
 
 impl Default for ThreadParams {
@@ -564,6 +576,7 @@ impl Default for ThreadParams {
             buddy_meta: None,
             auto_compact_enabled: None,
             agent_nudge_enabled: None,
+            strip_reasoning_from_prompt: None,
             frozen_request_prefix: None,
             claude_code_identity: None,
             reactive_compact_attempts: None,
@@ -1942,6 +1955,76 @@ mod tests {
 
         let default_json = serde_json::to_value(ThreadParams::default()).unwrap();
         assert!(default_json.get("agent_nudge_enabled").is_none());
+    }
+
+    #[test]
+    fn strip_reasoning_defaults_to_enabled() {
+        assert!(ThreadParams::default().strip_reasoning_from_prompt_effective());
+
+        let unset = ThreadParams {
+            strip_reasoning_from_prompt: None,
+            ..Default::default()
+        };
+        assert!(unset.strip_reasoning_from_prompt_effective());
+    }
+
+    #[test]
+    fn strip_reasoning_respects_explicit_false() {
+        let disabled = ThreadParams {
+            strip_reasoning_from_prompt: Some(false),
+            ..Default::default()
+        };
+        assert!(!disabled.strip_reasoning_from_prompt_effective());
+
+        let enabled = ThreadParams {
+            strip_reasoning_from_prompt: Some(true),
+            ..Default::default()
+        };
+        assert!(enabled.strip_reasoning_from_prompt_effective());
+    }
+
+    #[test]
+    fn strip_reasoning_missing_in_json_is_effectively_enabled() {
+        let json = r#"{
+            "id":"test",
+            "title":"Test",
+            "model":"gpt-4",
+            "mode":"agent",
+            "tool_use":"agent",
+            "include_project_info":true,
+            "checkpoints_enabled":true
+        }"#;
+
+        let params: ThreadParams = serde_json::from_str(json).unwrap();
+        assert!(params.strip_reasoning_from_prompt.is_none());
+        assert!(params.strip_reasoning_from_prompt_effective());
+
+        let default_json = serde_json::to_value(ThreadParams::default()).unwrap();
+        assert!(default_json.get("strip_reasoning_from_prompt").is_none());
+    }
+
+    #[test]
+    fn strip_reasoning_serde_roundtrip() {
+        let disabled = ThreadParams {
+            strip_reasoning_from_prompt: Some(false),
+            ..Default::default()
+        };
+        let json = serde_json::to_value(&disabled).unwrap();
+        assert_eq!(json["strip_reasoning_from_prompt"], false);
+
+        let roundtrip: ThreadParams = serde_json::from_value(json).unwrap();
+        assert_eq!(roundtrip.strip_reasoning_from_prompt, Some(false));
+        assert!(!roundtrip.strip_reasoning_from_prompt_effective());
+
+        let enabled = ThreadParams {
+            strip_reasoning_from_prompt: Some(true),
+            ..Default::default()
+        };
+        let json = serde_json::to_value(&enabled).unwrap();
+        assert_eq!(json["strip_reasoning_from_prompt"], true);
+        let roundtrip: ThreadParams = serde_json::from_value(json).unwrap();
+        assert_eq!(roundtrip.strip_reasoning_from_prompt, Some(true));
+        assert!(roundtrip.strip_reasoning_from_prompt_effective());
     }
 
     #[test]

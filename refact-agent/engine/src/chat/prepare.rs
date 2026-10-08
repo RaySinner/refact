@@ -471,6 +471,14 @@ pub async fn prepare_chat_passthrough(
     limited_adapted_msgs =
         apply_frozen_system_prompt(limited_adapted_msgs, options.frozen_request_prefix.as_ref());
 
+    // Strip the model's own reasoning/thinking from the wire copy when the chat
+    // opts in. This only affects what reaches the LLM (and `limited_messages`,
+    // the record of the prompt that was sent); the session transcript is intact.
+    limited_adapted_msgs = strip_reasoning_from_prompt_messages(
+        limited_adapted_msgs,
+        thread.strip_reasoning_from_prompt_effective(),
+    );
+
     // 10. Build LlmRequest
     // Enforce n=1 for chat - multi-choice not supported in streaming accumulation
     let common_params = CommonParams {
@@ -731,6 +739,27 @@ fn strip_thinking_blocks_if_disabled(
     } else {
         messages
     }
+}
+
+/// Return a copy of `messages` with model reasoning/thinking removed, when
+/// `strip` is enabled. Only the wire copy handed to the model is affected; the
+/// original messages (and the session transcript the GUI renders) are left
+/// untouched.
+pub fn strip_reasoning_from_prompt_messages(
+    messages: Vec<ChatMessage>,
+    strip: bool,
+) -> Vec<ChatMessage> {
+    if !strip {
+        return messages;
+    }
+    messages
+        .into_iter()
+        .map(|mut msg| {
+            msg.reasoning_content = None;
+            msg.thinking_blocks = None;
+            msg
+        })
+        .collect()
 }
 
 pub(crate) const TEXT_ONLY_IMAGE_PLACEHOLDER: &str =
@@ -1593,6 +1622,235 @@ mod tests {
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks[0]["provider"], "google_cloud_code");
         assert_eq!(blocks[0]["signature"], "sig-google");
+    }
+
+    fn assistant_msg_with_reasoning() -> ChatMessage {
+        ChatMessage {
+            role: "assistant".into(),
+            content: ChatContent::SimpleText("visible answer".into()),
+            reasoning_content: Some("model thought process".into()),
+            thinking_blocks: Some(vec![json!({ "type": "thinking", "thinking": "x" })]),
+            citations: vec![json!({ "url": "http://x" })],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn strip_reasoning_from_prompt_strips_when_enabled() {
+        let messages = vec![
+            assistant_msg_with_reasoning(),
+            ChatMessage::new("user".to_string(), "follow up".to_string()),
+        ];
+        let stripped = strip_reasoning_from_prompt_messages(messages, true);
+        assert_eq!(stripped[0].reasoning_content, None);
+        assert_eq!(stripped[0].thinking_blocks, None);
+        // Non-reasoning fields survive the strip.
+        assert_eq!(stripped[0].role, "assistant");
+        assert_eq!(stripped[0].content.content_text_only(), "visible answer");
+        assert_eq!(stripped[0].citations.len(), 1);
+    }
+
+    #[test]
+    fn strip_reasoning_from_prompt_preserves_when_disabled() {
+        let messages = vec![assistant_msg_with_reasoning()];
+        let kept = strip_reasoning_from_prompt_messages(messages, false);
+        assert_eq!(
+            kept[0].reasoning_content.as_deref(),
+            Some("model thought process")
+        );
+        assert_eq!(kept[0].thinking_blocks.as_ref().map(Vec::len), Some(1));
+    }
+
+    #[test]
+    fn strip_reasoning_from_prompt_does_not_mutate_input() {
+        let original = assistant_msg_with_reasoning();
+        let clone = original.clone();
+        let _ = strip_reasoning_from_prompt_messages(vec![original.clone()], true);
+        // The caller's copy is untouched: we cloned before consuming, so the
+        // function only ever sees its own argument.
+        assert_eq!(
+            clone.reasoning_content.as_deref(),
+            Some("model thought process")
+        );
+        assert_eq!(clone.thinking_blocks.as_ref().map(Vec::len), Some(1));
+    }
+
+    #[test]
+    fn strip_reasoning_from_prompt_noop_when_no_reasoning_present() {
+        let messages = vec![ChatMessage::new("user".to_string(), "hello".to_string())];
+        let stripped = strip_reasoning_from_prompt_messages(messages.clone(), true);
+        assert_eq!(stripped.len(), 1);
+        assert_eq!(stripped[0].content.content_text_only(), "hello");
+        assert_eq!(stripped[0].reasoning_content, None);
+        assert_eq!(stripped[0].thinking_blocks, None);
+    }
+
+    #[tokio::test]
+    async fn prepare_passthrough_strips_reasoning_when_flag_enabled_and_preserves_when_disabled() {
+        let model_id = "test/reasoning-model";
+        let mut caps = crate::caps::CodeAssistantCaps::default();
+        caps.chat_models = IndexMap::new();
+        caps.chat_models.insert(
+            model_id.to_string(),
+            Arc::new(ChatModelRecord {
+                base: crate::caps::BaseModelRecord {
+                    id: model_id.to_string(),
+                    name: model_id.to_string(),
+                    n_ctx: 8192,
+                    tokenizer: "fake".to_string(),
+                    ..Default::default()
+                },
+                supports_tools: true,
+                supports_thinking_budget: true,
+                ..Default::default()
+            }),
+        );
+        caps.defaults.chat_default_model = model_id.to_string();
+
+        let gcx = gcx_with_modes(vec![mode_config("agent", "Agent", "Do agent work")]).await;
+        {
+            let app = AppState::from_gcx(gcx.clone()).await;
+            let mut state = app.model.caps.write().await;
+            state.caps = Some(Arc::new(caps));
+            state.last_attempted_ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+        }
+
+        let app = AppState::from_gcx(gcx.clone()).await;
+        let tokenizer = crate::tokens::cached_tokenizer(
+            gcx.clone(),
+            &crate::caps::BaseModelRecord {
+                id: model_id.to_string(),
+                name: model_id.to_string(),
+                tokenizer: "fake".to_string(),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let t = HasTokenizerAndEot::new(tokenizer);
+
+        let make_messages = || vec![
+            assistant_msg_with_reasoning(),
+            ChatMessage::new("user".to_string(), "next question".to_string()),
+        ];
+
+        let meta = ChatMeta {
+            chat_id: "test-strip-chat".to_string(),
+            chat_mode: "agent".to_string(),
+            chat_remote: false,
+            current_config_file: String::new(),
+            context_tokens_cap: Some(8192),
+            include_project_info: false,
+            request_attempt_id: "attempt".to_string(),
+            worktree: None,
+        };
+
+        let options = ChatPrepareOptions {
+            prepend_system_prompt: false,
+            allow_at_commands: false,
+            allow_tool_prerun: false,
+            supports_tools: true,
+            ..Default::default()
+        };
+
+        // 1. When strip_reasoning_from_prompt is default (effective = true)
+        let thread_default = ThreadParams {
+            model: model_id.to_string(),
+            mode: "agent".to_string(),
+            ..Default::default()
+        };
+        assert!(thread_default.strip_reasoning_from_prompt_effective());
+
+        let ccx = AtCommandsContext::new_from_app(
+            app.clone(),
+            8192,
+            1,
+            false,
+            make_messages(),
+            "test-strip-chat".to_string(),
+            None,
+            model_id.to_string(),
+            None,
+            None,
+        )
+        .await;
+        let mut sampling = SamplingParameters {
+            max_new_tokens: 1024,
+            thinking_budget: Some(2048),
+            ..Default::default()
+        };
+
+        let prepared_default = prepare_chat_passthrough(
+            gcx.clone(),
+            Arc::new(AMutex::new(ccx)),
+            &t,
+            make_messages(),
+            &thread_default,
+            model_id,
+            "agent",
+            vec![],
+            &meta,
+            &mut sampling,
+            &options,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(prepared_default.llm_request.messages[0].reasoning_content, None);
+        assert_eq!(prepared_default.llm_request.messages[0].thinking_blocks, None);
+
+        // 2. When strip_reasoning_from_prompt is explicitly false
+        let thread_false = ThreadParams {
+            model: model_id.to_string(),
+            mode: "agent".to_string(),
+            strip_reasoning_from_prompt: Some(false),
+            ..Default::default()
+        };
+        assert!(!thread_false.strip_reasoning_from_prompt_effective());
+
+        let ccx_false = AtCommandsContext::new_from_app(
+            app.clone(),
+            8192,
+            1,
+            false,
+            make_messages(),
+            "test-strip-chat".to_string(),
+            None,
+            model_id.to_string(),
+            None,
+            None,
+        )
+        .await;
+        let mut sampling_false = SamplingParameters {
+            max_new_tokens: 1024,
+            thinking_budget: Some(2048),
+            ..Default::default()
+        };
+
+        let prepared_false = prepare_chat_passthrough(
+            gcx.clone(),
+            Arc::new(AMutex::new(ccx_false)),
+            &t,
+            make_messages(),
+            &thread_false,
+            model_id,
+            "agent",
+            vec![],
+            &meta,
+            &mut sampling_false,
+            &options,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            prepared_false.llm_request.messages[0].reasoning_content.as_deref(),
+            Some("model thought process")
+        );
+        assert!(prepared_false.llm_request.messages[0].thinking_blocks.is_some());
     }
 
     #[test]

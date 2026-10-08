@@ -3170,6 +3170,7 @@ async fn load_trajectory_candidate(
 
         auto_compact_enabled: t.get("auto_compact_enabled").and_then(|v| v.as_bool()),
         agent_nudge_enabled: t.get("agent_nudge_enabled").and_then(|v| v.as_bool()),
+        strip_reasoning_from_prompt: t.get("strip_reasoning_from_prompt").and_then(|v| v.as_bool()),
         frozen_request_prefix,
         claude_code_identity,
         // Runtime-only: saves strip this key and loads ignore injected values
@@ -18643,6 +18644,7 @@ mod tests {
                 buddy_meta: None,
                 auto_compact_enabled: None,
                 agent_nudge_enabled: None,
+                strip_reasoning_from_prompt: None,
                 frozen_request_prefix: None,
                 claude_code_identity: None,
                 reactive_compact_attempts: None,

@@ -191,6 +191,28 @@ fn coerce_value(
             }
         }
     }
+    // Models sometimes emit whole-number floats (e.g. 1.0) for integer params.
+    // value_matches_type already accepts them as "matching", so the coercion block above
+    // is skipped and the f64 representation is passed through to the tool, which then
+    // fails with n.as_u64() / n.as_i64() returning None.  Normalise here so the JSON
+    // value is a true integer before it reaches the tool.
+    if types.iter().any(|ty| ty == "integer") {
+        if let Value::Number(n) = value {
+            if n.is_f64() {
+                if let Some(f) = n.as_f64() {
+                    if f.fract() == 0.0
+                        && f.is_finite()
+                        && f >= i64::MIN as f64
+                        && f <= i64::MAX as f64
+                    {
+                        *value = Value::Number((f as i64).into());
+                        notes.push(format!("{path}: number(whole-float) -> integer"));
+                    }
+                }
+            }
+        }
+    }
+
 
     if types.is_empty() {
         for alt in alternative_schemas(schema) {
@@ -457,6 +479,39 @@ mod tests {
         coerce_args_to_schema(&mut args, &s);
         assert_eq!(args["flag"], json!(true));
         assert_eq!(args["count"], json!(7));
+    }
+
+    #[test]
+    fn whole_floats_for_integer_params_are_normalised_to_true_integers() {
+        let s = schema(json!({
+            "limit": {"type": "integer"},
+            "steps": {"type": "integer"},
+            "timeout_ms": {"type": "integer"}
+        }));
+        let mut args: Map<String, Value> =
+            json!({"limit": 1.0, "steps": 25.0, "timeout_ms": 3000.0})
+                .as_object()
+                .unwrap()
+                .clone();
+        let notes = coerce_args_to_schema(&mut args, &s);
+        // The stored JSON values must be true integers, not f64 representations of whole numbers
+        assert_eq!(args["limit"], json!(1));
+        assert!(args["limit"].is_number() && args["limit"].as_i64() == Some(1));
+        assert_eq!(args["steps"], json!(25));
+        assert!(args["steps"].as_i64() == Some(25));
+        assert_eq!(args["timeout_ms"], json!(3000));
+        assert!(args["timeout_ms"].as_i64() == Some(3000));
+        assert_eq!(notes.len(), 3, "expected 3 normalization notes, got: {notes:?}");
+    }
+
+    #[test]
+    fn fractional_floats_for_integer_params_are_left_untouched() {
+        // 1.5 is not a whole number — do not silently truncate
+        let s = schema(json!({"limit": {"type": "integer"}}));
+        let mut args: Map<String, Value> = json!({"limit": 1.5}).as_object().unwrap().clone();
+        let notes = coerce_args_to_schema(&mut args, &s);
+        assert_eq!(args["limit"], json!(1.5));
+        assert!(notes.is_empty());
     }
 
     #[test]

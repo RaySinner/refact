@@ -402,6 +402,95 @@ describe("DefaultModels — configuration scope", () => {
   });
 });
 
+describe("DefaultModels — Reasoning toggle regression", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("toggling Reasoning OFF clears boost_reasoning, reasoning_effort, and thinking_budget", async () => {
+    const { updateDefaults } = setupMocks({
+      defaults: {
+        ...baseDefaults,
+        chat: { model: "gpt-4", boost_reasoning: true, reasoning_effort: "high" },
+      },
+    });
+    (useGetCapsQuery as ReturnType<typeof vi.fn>).mockReturnValue({
+      data: {
+        ...baseCaps,
+        chat_models: {
+          "gpt-4": {
+            default_max_tokens: 4096,
+            max_output_tokens: 16384,
+            reasoning_effort_options: ["low", "medium", "high"],
+            supports_thinking_budget: false,
+          },
+        },
+      },
+      refetch: vi.fn(),
+    });
+
+    render(<DefaultModels {...defaultProps} embedded />);
+
+    const reasoningSwitch = screen.getByRole("switch", { name: "Reasoning" });
+    expect(reasoningSwitch).toBeChecked();
+
+    fireEvent.click(reasoningSwitch);
+
+    expect(
+      screen.getByRole("switch", { name: "Reasoning" }),
+    ).not.toBeChecked();
+    expect(screen.queryByText("Effort")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+    await waitFor(() => expect(updateDefaults).toHaveBeenCalledOnce());
+    const payload = updateDefaults.mock.calls[0][0] as Record<string, unknown>;
+    const chatSlot = payload.chat as Record<string, unknown>;
+    expect(chatSlot.boost_reasoning).toBeUndefined();
+    expect(chatSlot.reasoning_effort).toBeUndefined();
+    expect(chatSlot.thinking_budget).toBeUndefined();
+  });
+
+  it("toggling Reasoning ON still sets boost_reasoning: true", async () => {
+    const { updateDefaults } = setupMocks({
+      defaults: {
+        ...baseDefaults,
+        chat: { model: "gpt-4" },
+      },
+    });
+    (useGetCapsQuery as ReturnType<typeof vi.fn>).mockReturnValue({
+      data: {
+        ...baseCaps,
+        chat_models: {
+          "gpt-4": {
+            default_max_tokens: 4096,
+            max_output_tokens: 16384,
+            reasoning_effort_options: ["low", "medium", "high"],
+            supports_thinking_budget: false,
+          },
+        },
+      },
+      refetch: vi.fn(),
+    });
+
+    render(<DefaultModels {...defaultProps} embedded />);
+
+    const reasoningSwitch = screen.getByRole("switch", { name: "Reasoning" });
+    expect(reasoningSwitch).not.toBeChecked();
+
+    fireEvent.click(reasoningSwitch);
+
+    expect(
+      screen.getByRole("switch", { name: "Reasoning" }),
+    ).toBeChecked();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+    await waitFor(() => expect(updateDefaults).toHaveBeenCalledOnce());
+    const payload = updateDefaults.mock.calls[0][0] as Record<string, unknown>;
+    const chatSlot = payload.chat as Record<string, unknown>;
+    expect(chatSlot.boost_reasoning).toBe(true);
+  });
+});
+
 describe("DefaultModels — loading state", () => {
   it("shows spinner while loading defaults", () => {
     (useGetDefaultsQuery as ReturnType<typeof vi.fn>).mockReturnValue({

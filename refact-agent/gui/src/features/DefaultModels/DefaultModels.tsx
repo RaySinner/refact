@@ -136,16 +136,16 @@ const ModelTypeSection: React.FC<{
 
   const handleModelChange = useCallback(
     (model: string) => {
-      onChange(typeKey, { ...config, model });
+      onChange(typeKey, { model });
     },
-    [typeKey, config, onChange],
+    [typeKey, onChange],
   );
 
   const handleSamplingChange = useCallback(
     <K extends keyof SamplingValues>(field: K, value: SamplingValues[K]) => {
-      onChange(typeKey, { ...config, [field]: value });
+      onChange(typeKey, { [field]: value } as ModelTypeDefaults);
     },
-    [typeKey, config, onChange],
+    [typeKey, onChange],
   );
 
   const effectiveModel = config.model ?? capsDefault;
@@ -329,6 +329,19 @@ const ModelTypeSection: React.FC<{
   );
 };
 
+function mergeSlotPatch(
+  prev: ModelTypeDefaults | undefined,
+  patch: ModelTypeDefaults,
+): ModelTypeDefaults {
+  const merged: ModelTypeDefaults = { ...(prev ?? {}), ...patch };
+  for (const k of Object.keys(patch)) {
+    if (merged[k as keyof ModelTypeDefaults] === undefined) {
+      Reflect.deleteProperty(merged, k);
+    }
+  }
+  return merged;
+}
+
 function describeInheritedSlot(
   config: ModelTypeDefaults,
   capsDefault: string,
@@ -466,10 +479,10 @@ export const DefaultModels: React.FC<DefaultModelsProps> = ({
   }, [defaults, draft]);
 
   const handleModelTypeChange = useCallback(
-    (key: ModelTypeKey, config: ModelTypeDefaults) => {
+    (key: ModelTypeKey, patch: ModelTypeDefaults) => {
       setLocalDefaults((prev) => ({
         ...prev,
-        [key]: config,
+        [key]: mergeSlotPatch(prev[key], patch),
       }));
       setHasChanges(true);
       setSaveError(null);
@@ -478,10 +491,10 @@ export const DefaultModels: React.FC<DefaultModelsProps> = ({
   );
 
   const handleProjectTypeChange = useCallback(
-    (key: ModelTypeKey, config: ModelTypeDefaults) => {
+    (key: ModelTypeKey, patch: ModelTypeDefaults) => {
       setLocalProjectDefaults((prev) => ({
         ...prev,
-        [key]: config,
+        [key]: mergeSlotPatch(prev[key], patch),
       }));
       setHasProjectChanges(true);
       setSaveError(null);

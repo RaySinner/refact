@@ -72,6 +72,7 @@ export type ThreadParams = {
   previous_response_id?: string;
   auto_enrichment_enabled?: boolean | null;
   auto_compact_enabled?: boolean | null;
+  strip_reasoning_from_prompt?: boolean | null;
   reactive_compact_attempts?: number | null;
   worktree?: WorktreeMeta | null;
   parent_id?: string | null;

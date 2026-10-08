@@ -34,6 +34,7 @@ import {
   setChatModel,
   setAutoApproveEditingTools,
   setAutoApproveDangerousCommands,
+  setStripReasoningFromPrompt,
   setIncreaseMaxTokens,
   setMaxNewTokens,
   setAreFollowUpsEnabled,
@@ -1982,6 +1983,29 @@ startListening({
       await sendChatCommand(chatId, state.config, apiKey ?? undefined, {
         type: "set_params",
         patch: { auto_approve_dangerous_commands: action.payload.value },
+      });
+    } catch {
+      /* ignore */
+    }
+  },
+});
+
+startListening({
+  actionCreator: setStripReasoningFromPrompt,
+  effect: async (action, listenerApi) => {
+    const state = listenerApi.getState();
+    const apiKey = state.config.apiKey;
+    const chatId = action.payload.chatId;
+
+    if (!hasConfiguredEngineEndpoint(state) || !chatId) return;
+
+    try {
+      const { sendChatCommand } = await import(
+        "../services/refact/chatCommands"
+      );
+      await sendChatCommand(chatId, state.config, apiKey ?? undefined, {
+        type: "set_params",
+        patch: { strip_reasoning_from_prompt: action.payload.value },
       });
     } catch {
       /* ignore */

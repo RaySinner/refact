@@ -1657,6 +1657,17 @@ export const selectAutoCompactEnabledById = (
   chatId: string,
 ) => state.chat.threads[chatId]?.thread.auto_compact_enabled ?? true;
 
+export const selectStripReasoningFromPromptById = (
+  state: RootState,
+  chatId: string,
+): boolean =>
+  state.chat.threads[chatId]?.thread.strip_reasoning_from_prompt ?? true;
+
+export const selectStripReasoningFromPrompt = (
+  state: RootState,
+): boolean =>
+  selectStripReasoningFromPromptById(state, state.chat.current_thread_id);
+
 export const selectMemoryEnrichmentUserTouchedById = (
   state: RootState,
   chatId: string,

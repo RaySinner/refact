@@ -150,6 +150,7 @@ export type ChatThread = {
 
   auto_enrichment_enabled?: boolean;
   auto_compact_enabled?: boolean;
+  strip_reasoning_from_prompt?: boolean;
   worktree?: WorktreeMeta | null;
   goal?: GoalSnapshot | null;
 

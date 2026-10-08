@@ -74,6 +74,7 @@ import {
   setTaskGoalExpanded,
   setAutoEnrichmentEnabled,
   setAutoCompactEnabled,
+  setStripReasoningFromPrompt,
   markMemoryEnrichmentUserTouched,
   setManualPreviewItems,
   removeManualPreviewItem,
@@ -611,6 +612,10 @@ function applyRestoredThread(
       payload.auto_compact_enabled,
       existing.auto_compact_enabled,
     ),
+    strip_reasoning_from_prompt: valueOrExisting(
+      payload.strip_reasoning_from_prompt,
+      existing.strip_reasoning_from_prompt,
+    ),
     goal: valueOrExisting(payload.goal, existing.goal),
   };
   rt.streaming = false;
@@ -1023,6 +1028,11 @@ export const chatReducer = createReducer(initialState, (builder) => {
   builder.addCase(setAutoCompactEnabled, (state, action) => {
     const rt = getRuntime(state, action.payload.chatId);
     if (rt) rt.thread.auto_compact_enabled = action.payload.value;
+  });
+
+  builder.addCase(setStripReasoningFromPrompt, (state, action) => {
+    const rt = getRuntime(state, action.payload.chatId);
+    if (rt) rt.thread.strip_reasoning_from_prompt = action.payload.value;
   });
 
   builder.addCase(markMemoryEnrichmentUserTouched, (state, action) => {
@@ -1586,6 +1596,10 @@ export const chatReducer = createReducer(initialState, (builder) => {
             typeof event.thread.auto_compact_enabled === "boolean"
               ? event.thread.auto_compact_enabled
               : existing?.auto_compact_enabled,
+          strip_reasoning_from_prompt:
+            typeof event.thread.strip_reasoning_from_prompt === "boolean"
+              ? event.thread.strip_reasoning_from_prompt
+              : existing?.strip_reasoning_from_prompt,
           worktree:
             "worktree" in event.thread
               ? event.thread.worktree === null
@@ -1805,6 +1819,11 @@ export const chatReducer = createReducer(initialState, (builder) => {
           const rawCompact = params.auto_compact_enabled;
           rt.thread.auto_compact_enabled =
             rawCompact == null ? undefined : (rawCompact as boolean);
+        }
+        if ("strip_reasoning_from_prompt" in params) {
+          const rawStrip = params.strip_reasoning_from_prompt;
+          rt.thread.strip_reasoning_from_prompt =
+            rawStrip == null ? undefined : (rawStrip as boolean);
         }
         if ("worktree" in params) {
           const rawWorktree = params.worktree;

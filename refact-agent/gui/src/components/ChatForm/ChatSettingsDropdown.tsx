@@ -26,11 +26,13 @@ import {
   selectMaxTokensById,
   selectAutoCompressionCapById,
   selectContextTokensCapById,
+  selectStripReasoningFromPromptById,
   setReasoningEffort,
   setThinkingBudget,
   setTemperature,
   setMaxTokens,
   setAutoCompressionCap,
+  setStripReasoningFromPrompt,
   useThreadId,
 } from "../../features/Chat/Thread";
 import type { ReasoningEffort } from "../../features/Chat/Thread/types";
@@ -181,6 +183,9 @@ export const ChatSettingsDropdown: React.FC<ChatSettingsDropdownProps> = ({
   );
   const threadThinkingBudget = useAppSelector((state) =>
     selectThinkingBudgetById(state, chatId),
+  );
+  const stripReasoningFromPrompt = useAppSelector((state) =>
+    selectStripReasoningFromPromptById(state, chatId),
   );
 
   const caps = useCapsForToolUse();
@@ -480,6 +485,30 @@ export const ChatSettingsDropdown: React.FC<ChatSettingsDropdownProps> = ({
                     checked={isBoostReasoningEnabled}
                     onCheckedChange={handleThinkingToggle}
                     disabled={thinkingDisabled}
+                    className="rf-pressable"
+                  />
+                </div>
+
+                <div className={styles.settingsRow}>
+                  <div>
+                    <Text size="1" weight="medium">
+                      Filter thoughts from prompt
+                    </Text>
+                    <Text size="1" color="gray">
+                      Excludes reasoning tokens from LLM prompt
+                    </Text>
+                  </div>
+                  <Switch
+                    checked={stripReasoningFromPrompt}
+                    onCheckedChange={(checked) =>
+                      dispatch(
+                        setStripReasoningFromPrompt({
+                          chatId,
+                          value: checked,
+                        }),
+                      )
+                    }
+                    disabled={isInteractionDisabled}
                     className="rf-pressable"
                   />
                 </div>

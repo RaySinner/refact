@@ -589,6 +589,10 @@ export const setAutoCompactEnabled = createAction<PayloadWithChatAndBoolean>(
   "chatThread/setAutoCompactEnabled",
 );
 
+export const setStripReasoningFromPrompt = createAction<PayloadWithChatAndBoolean>(
+  "chatThread/setStripReasoningFromPrompt",
+);
+
 export const markMemoryEnrichmentUserTouched = createAction<{ chatId: string }>(
   "chatThread/markMemoryEnrichmentUserTouched",
 );

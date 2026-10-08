@@ -763,4 +763,186 @@ describe("MemoryInboxPanel", () => {
       expect(typeof request.cursor).toBe("string");
     });
   });
+
+  it("pin_failure_surfaces_backend_error_and_reverts_icon", async () => {
+    server.use(
+      http.get("*/v1/task/:taskId/memories", () =>
+        HttpResponse.json({
+          ...memoriesResponse,
+          memories: [{ ...memoriesResponse.memories[0], pinned: false }],
+        }),
+      ),
+      http.get("*/v1/task/:taskId/memories/facets", ({ params }) =>
+        HttpResponse.json({
+          task_id: String(params.taskId),
+          namespaces: ["task"],
+          tags: [],
+          kinds: ["decision"],
+          total_count: 1,
+          pinned_count: 0,
+        }),
+      ),
+      http.post(
+        "*/v1/task/:taskId/memories/:filename/pin",
+        () =>
+          HttpResponse.json({ error: "Memory not found: xyz" }, { status: 404 }),
+      ),
+    );
+
+    const { user } = render(<MemoryInboxPanel taskId="task-1" />, {
+      preloadedState: CONFIG_STATE,
+    });
+
+    await user.click(await screen.findByRole("button", { name: "Pin" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Action failed")).toBeInTheDocument();
+      expect(screen.getByText(/Pin failed/)).toBeInTheDocument();
+      expect(screen.getByText(/404/)).toBeInTheDocument();
+      expect(screen.getByText(/Memory not found: xyz/)).toBeInTheDocument();
+    });
+    // Optimistic pin flips to "Unpin", the rejected rollback reverts to "Pin".
+    expect(screen.getByRole("button", { name: "Pin" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Unpin" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("pin_failure_with_plain_text_500_body_surfaces_error", async () => {
+    server.use(
+      http.get("*/v1/task/:taskId/memories", () =>
+        HttpResponse.json({
+          ...memoriesResponse,
+          memories: [{ ...memoriesResponse.memories[0], pinned: false }],
+        }),
+      ),
+      http.get("*/v1/task/:taskId/memories/facets", ({ params }) =>
+        HttpResponse.json({
+          task_id: String(params.taskId),
+          namespaces: ["task"],
+          tags: [],
+          kinds: ["decision"],
+          total_count: 1,
+          pinned_count: 0,
+        }),
+      ),
+      http.post(
+        "*/v1/task/:taskId/memories/:filename/pin",
+        () =>
+          HttpResponse.json(
+            { error: "Memory not found: `xyz` in active task memories" },
+            { status: 500 },
+          ),
+      ),
+    );
+
+    const { user } = render(<MemoryInboxPanel taskId="task-1" />, {
+      preloadedState: CONFIG_STATE,
+    });
+
+    await user.click(await screen.findByRole("button", { name: "Pin" }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Pin failed/)).toBeInTheDocument();
+      expect(screen.getByText(/500/)).toBeInTheDocument();
+      expect(screen.getByText(/Memory not found/)).toBeInTheDocument();
+    });
+  });
+
+  it("pin_success_shows_no_action_error_and_clears_prior_error", async () => {
+    let isPinned = false;
+    let failFirstPin = true;
+    server.use(
+      http.get("*/v1/task/:taskId/memories", () =>
+        HttpResponse.json({
+          ...memoriesResponse,
+          memories: [{ ...memoriesResponse.memories[0], pinned: isPinned }],
+        }),
+      ),
+      http.get("*/v1/task/:taskId/memories/facets", ({ params }) =>
+        HttpResponse.json({
+          task_id: String(params.taskId),
+          namespaces: ["task"],
+          tags: [],
+          kinds: ["decision"],
+          total_count: 1,
+          pinned_count: isPinned ? 1 : 0,
+        }),
+      ),
+      http.post("*/v1/task/:taskId/memories/:filename/pin", () => {
+        if (failFirstPin) {
+          failFirstPin = false;
+          return HttpResponse.json(
+            { error: "temporary failure" },
+            { status: 500 },
+          );
+        }
+        isPinned = true;
+        isPinned = true;
+        return HttpResponse.json({
+          ok: true,
+          filename: "decision.md",
+          pinned: true,
+          changed: true,
+        });
+      }),
+    );
+
+    const { user } = render(<MemoryInboxPanel taskId="task-1" />, {
+      preloadedState: CONFIG_STATE,
+    });
+
+    // First attempt fails -> error shown
+    await user.click(await screen.findByRole("button", { name: "Pin" }));
+    await waitFor(() => {
+      expect(screen.getByText("Action failed")).toBeInTheDocument();
+      expect(screen.getByText(/temporary failure/)).toBeInTheDocument();
+    });
+
+    // Second attempt succeeds -> error cleared and pin reflected
+    await user.click(screen.getByRole("button", { name: "Pin" }));
+    await waitFor(() => {
+      expect(screen.queryByText("Action failed")).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Unpin" })).toBeInTheDocument();
+    });
+  });
+
+  it("archive_failure_surfaces_backend_error", async () => {
+    server.use(
+      http.get("*/v1/task/:taskId/memories", () =>
+        HttpResponse.json({
+          ...memoriesResponse,
+          memories: [{ ...memoriesResponse.memories[0], pinned: false }],
+        }),
+      ),
+      http.get("*/v1/task/:taskId/memories/facets", ({ params }) =>
+        HttpResponse.json({
+          task_id: String(params.taskId),
+          namespaces: ["task"],
+          tags: [],
+          kinds: ["decision"],
+          total_count: 1,
+          pinned_count: 0,
+        }),
+      ),
+      http.post(
+        "*/v1/task/:taskId/memories/:filename/archive",
+        () =>
+          HttpResponse.json({ error: "Memory not found: xyz" }, { status: 404 }),
+      ),
+    );
+
+    const { user } = render(<MemoryInboxPanel taskId="task-1" />, {
+      preloadedState: CONFIG_STATE,
+    });
+
+    await user.click(await screen.findByRole("button", { name: "Archive" }));
+    await user.click(await screen.findByRole("button", { name: "Confirm archive" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Action failed")).toBeInTheDocument();
+      expect(screen.getByText(/Archive failed/)).toBeInTheDocument();
+      expect(screen.getByText(/Memory not found: xyz/)).toBeInTheDocument();
+    });
+  });
 });

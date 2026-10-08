@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import * as Collapsible from "@radix-ui/react-collapsible";
 import classNames from "classnames";
-import { ChevronDown, Search } from "lucide-react";
+import { ChevronDown, Search, X } from "lucide-react";
 import {
   Button,
   ErrorState,
@@ -74,6 +74,45 @@ function optimisticKey(taskId: string, filename: string): string {
   return `${taskId}:${filename}`;
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function detailFromUnknown(value: unknown): string | null {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  const record = asRecord(value);
+  if (!record) return null;
+  for (const key of ["error", "detail", "message", "reason"]) {
+    const candidate = record[key];
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+  return null;
+}
+
+function describeMutationError(label: string, error: unknown): string {
+  const record = asRecord(error);
+  const status = record?.originalStatus ?? record?.status;
+  const statusText =
+    typeof status === "number" || typeof status === "string"
+      ? String(status)
+      : null;
+  const detail =
+    (record && detailFromUnknown(record.data)) ??
+    (record && detailFromUnknown(record.error)) ??
+    (error instanceof Error ? error.message : null);
+  if (detail) {
+    return statusText ? `${label} failed (HTTP ${statusText}): ${detail}` : `${label} failed: ${detail}`;
+  }
+  return statusText ? `${label} failed (HTTP ${statusText}).` : `${label} failed.`;
+}
+
 export const MemoryInboxPanel: React.FC<MemoryInboxPanelProps> = ({
   taskId,
 }) => {
@@ -92,6 +131,7 @@ export const MemoryInboxPanel: React.FC<MemoryInboxPanelProps> = ({
   const [pendingMemoryKeys, setPendingMemoryKeys] = useState<
     ReadonlySet<string>
   >(() => new Set());
+  const [actionError, setActionError] = useState<string | null>(null);
   const debouncedSearch = useDebouncedValue(search, 200);
 
   useEffect(() => {
@@ -99,6 +139,7 @@ export const MemoryInboxPanel: React.FC<MemoryInboxPanelProps> = ({
     setExpandedMemoryFilename(null);
     setTagCloudOpen(false);
     setTagSearch("");
+    setActionError(null);
   }, [taskId]);
 
   const serverSearch = debouncedSearch.trim();
@@ -186,8 +227,12 @@ export const MemoryInboxPanel: React.FC<MemoryInboxPanelProps> = ({
       setPendingMemoryKeys((previous) => new Set(previous).add(key));
       try {
         await pinMemory({ taskId, filename, pinned }).unwrap();
-      } catch {
-        // Rollback is handled by onQueryStarted in taskMemoriesApi
+        setActionError(null);
+      } catch (error) {
+        // Rollback is handled by onQueryStarted in taskMemoriesApi.
+        // eslint-disable-next-line no-console
+        console.error("Failed to pin task memory:", error);
+        setActionError(describeMutationError(pinned ? "Pin" : "Unpin", error));
       } finally {
         setPendingMemoryKeys((previous) => {
           const next = new Set(previous);
@@ -208,8 +253,12 @@ export const MemoryInboxPanel: React.FC<MemoryInboxPanelProps> = ({
       );
       try {
         await archiveMemory({ taskId, filename }).unwrap();
-      } catch {
-        // Rollback is handled by onQueryStarted in taskMemoriesApi
+        setActionError(null);
+      } catch (error) {
+        // Rollback is handled by onQueryStarted in taskMemoriesApi.
+        // eslint-disable-next-line no-console
+        console.error("Failed to archive task memory:", error);
+        setActionError(describeMutationError("Archive", error));
       } finally {
         setPendingMemoryKeys((previous) => {
           const next = new Set(previous);
@@ -267,6 +316,26 @@ export const MemoryInboxPanel: React.FC<MemoryInboxPanelProps> = ({
           Mark all triaged
         </Button>
       </Flex>
+
+      {actionError && (
+        <ErrorState
+          title="Action failed"
+          description={actionError}
+          variant="compact"
+          className={styles.actionError}
+          retry={
+            <Button
+              size="sm"
+              variant="plain"
+              rightIcon={X}
+              onClick={() => setActionError(null)}
+              aria-label="Dismiss error"
+            >
+              Dismiss
+            </Button>
+          }
+        />
+      )}
 
       <Surface
         animated="rise"

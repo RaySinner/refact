@@ -131,6 +131,11 @@
   flex-shrink: 0;
 }
 
+.actionError {
+  flex-shrink: 0;
+  align-self: stretch;
+}
+
 .list {
   composes: scrollbarThin from "../../../components/shared/scrollbar.module.css";
   flex: 1;

@@ -1409,6 +1409,71 @@ fn chat_exposes_finish_tool(catalog: Option<&ToolCatalogSnapshot>) -> bool {
     })
 }
 
+/// Heuristic for whether text produced right before a tool call is the model
+/// "thinking out loud" (internal monologue/planning) instead of a message
+/// addressed to a user.
+///
+/// Explicit monologue markers match in any chat mode. In agentic chats
+/// (task agents and the classic agent modes) the model is expected to act
+/// first, so anything preceding a tool call that does not start with an
+/// explicit user-facing greeting or a markdown header is treated as
+/// monologue and diverted into `reasoning_content`.
+fn is_pre_tool_monologue(text: &str, is_agent_chat: bool) -> bool {
+    let text = text.trim();
+    if text.is_empty() {
+        return false;
+    }
+    const MONOLOGUE_MARKERS: &[&str] = &[
+        "wait!",
+        "let's check",
+        "let me check",
+        "i will now",
+        "i'll inspect",
+        "looking at",
+        "thinking process:",
+        "let's search",
+        "first, i'll",
+        "first, let's",
+        "let me examine",
+        "now checking",
+        "next step:",
+    ];
+    let lowered = text.to_lowercase();
+    if MONOLOGUE_MARKERS
+        .iter()
+        .any(|marker| lowered.starts_with(marker) || lowered.contains(marker))
+    {
+        return true;
+    }
+    is_agent_chat
+        && !starts_with_user_greeting(&lowered)
+        && !text.starts_with('#')
+}
+
+/// Whether `lowered_text` starts with a word that reads as a greeting to a
+/// human reader (word boundary included, so "hidden" is not a greeting).
+fn starts_with_user_greeting(lowered_text: &str) -> bool {
+    const GREETINGS: &[&str] = &[
+        "hi",
+        "hello",
+        "hey",
+        "thanks",
+        "thank you",
+        "done",
+        "here is",
+        "here's",
+        "all set",
+    ];
+    GREETINGS.iter().any(|greeting| {
+        let Some(rest) = lowered_text.strip_prefix(greeting) else {
+            return false;
+        };
+        rest.chars()
+            .next()
+            .map_or(true, |next| !next.is_alphanumeric())
+    })
+}
+
 /// Pure decision for the silent-tail nudge: the instruction to insert, or `None`
 /// when this turn must keep going through its normal `break`.
 ///
@@ -1459,15 +1524,43 @@ async fn maybe_nudge_after_silent_tail(
 ) -> SilentTailNudge {
     let (messages, thread, catalog, last_response_text) = {
         let session = session_arc.lock().await;
+        // Reasoning models can finish a turn with empty visible content.
+        // Passing an empty string here would make `decide_silent_tail_nudge`
+        // report `NotApplicable` and the turn breaks out of `start_generation`
+        // silently. Fall back to the internal reasoning so the nudge path can
+        // ask the model to keep going (e.g. call `agent_finish`) instead of
+        // abandoning a turn that was thinking but said nothing visible.
+        let last_response_text = session
+            .messages
+            .last()
+            .map(|message| {
+                let content = message.content.content_text_only();
+                if !content.trim().is_empty() {
+                    content
+                } else if let Some(reasoning) = message
+                    .reasoning_content
+                    .as_deref()
+                    .filter(|reasoning| !reasoning.trim().is_empty())
+                {
+                    reasoning.to_string()
+                } else if message
+                    .thinking_blocks
+                    .as_ref()
+                    .is_some_and(|blocks| !blocks.is_empty())
+                {
+                    // Synthetic marker: `decide_silent_tail_nudge` only needs to
+                    // know the model actually spoke/reasoned this turn.
+                    "model performed internal reasoning".to_string()
+                } else {
+                    content
+                }
+            })
+            .unwrap_or_default();
         (
             session.messages.clone(),
             session.thread.clone(),
             session.tool_catalog.clone(),
-            session
-                .messages
-                .last()
-                .map(|message| message.content.content_text_only())
-                .unwrap_or_default(),
+            last_response_text,
         )
     };
     let model = (!thread.model.is_empty()).then_some(thread.model.as_str());
@@ -3392,8 +3485,26 @@ async fn run_streaming_generation(
 
     {
         let mut session = session_arc.lock().await;
+        // Whether this chat diverts pre-tool monologue aggressively (task
+        // agents and the classic agent modes act first, think less in the
+        // visible output).
+        let is_agent_for_monologue =
+            is_task_agent_chat(&session.thread) || is_agentic_mode_id(&mode);
         if let Some(ref mut draft) = session.draft_message {
-            draft.content = ChatContent::SimpleText(result.content);
+            // Divert pre-tool monologue ("thinking out loud" in `content`
+            // right before a tool call) into `reasoning_content`: the UI then
+            // shows it under "Thought for..." and strip_reasoning_from_prompt
+            // drops it from future prompts so the model is not confused by
+            // its own past thoughts.
+            let pre_tool_monologue =
+                (!result.tool_calls_raw.is_empty()
+                    && !result.content.trim().is_empty()
+                    && is_pre_tool_monologue(&result.content, is_agent_for_monologue))
+                .then(|| result.content.clone());
+            draft.content = match &pre_tool_monologue {
+                Some(_) => ChatContent::SimpleText(String::new()),
+                None => ChatContent::SimpleText(result.content),
+            };
 
             if !result.tool_calls_raw.is_empty() {
                 info!(
@@ -3413,6 +3524,18 @@ async fn run_streaming_generation(
 
             if !result.reasoning.is_empty() {
                 draft.reasoning_content = Some(result.reasoning);
+            }
+            if let Some(monologue) = pre_tool_monologue {
+                info!(
+                    "Diverted {} chars of pre-tool monologue into reasoning_content",
+                    monologue.len()
+                );
+                match draft.reasoning_content.as_mut() {
+                    Some(existing) if !existing.trim().is_empty() => {
+                        existing.push_str(&format!("\n{monologue}"));
+                    }
+                    _ => draft.reasoning_content = Some(monologue),
+                }
             }
             if !result.thinking_blocks.is_empty() {
                 draft.thinking_blocks = Some(result.thinking_blocks);
@@ -5167,6 +5290,157 @@ mod tests {
         messages.push(nudge_marker_msg());
         messages.push(make_assistant_msg("still just talking."));
         assert!(decide(&messages, true, true, true, "still just talking.").is_none());
+    }
+
+    #[test]
+    fn pre_tool_monologue_detects_explicit_markers_in_any_mode() {
+        for (agent, text) in [
+            (false, "Wait! let me look at this again"),
+            (false, "Let's check the file before editing it"),
+            (true, "Thinking process: step one done, now step two"),
+            (false, "Now checking the test suite"),
+            (true, "First, I'll read the config file"),
+            (false, "Next step: run the linter"),
+        ] {
+            assert!(
+                is_pre_tool_monologue(text, agent),
+                "expected monologue for agent={agent} text={text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn pre_tool_monologue_agent_mode_diverts_unmarked_planning_text() {
+        assert!(is_pre_tool_monologue(
+            "I need to read src/lib.rs before I can change the parser.",
+            true
+        ));
+    }
+
+    #[test]
+    fn pre_tool_monologue_keeps_user_greetings_and_headers_visible() {
+        // A message that starts with a user greeting or a markdown header is
+        // meant for a human reader and must stay in `content`.
+        assert!(!is_pre_tool_monologue("Hi! I'll open the file now.", true));
+        assert!(!is_pre_tool_monologue("## Summary of changes performed", true));
+        // Explicit markers still win over the greeting heuristic.
+        assert!(is_pre_tool_monologue("Hi, wait! let me re-check that", true));
+    }
+
+    #[test]
+    fn pre_tool_monologue_ignores_plain_chat_and_empty_text() {
+        // Without markers, non-agent chats keep the text in `content`.
+        assert!(!is_pre_tool_monologue(
+            "First, let me think about how to answer this.",
+            false
+        ));
+        assert!(!is_pre_tool_monologue("", true));
+        assert!(!is_pre_tool_monologue("   \n  ", true));
+    }
+
+    fn finish_tool_catalog() -> refact_runtime_api::ToolCatalogSnapshot {
+        let desc = refact_tool_api::ToolDesc {
+            name: SILENT_TAIL_FINISH_TOOL.to_string(),
+            display_name: SILENT_TAIL_FINISH_TOOL.to_string(),
+            source: refact_tool_api::ToolSource {
+                source_type: refact_tool_api::ToolSourceType::Builtin,
+                config_path: String::new(),
+            },
+            experimental: false,
+            allow_parallel: false,
+            description: "finish the task".to_string(),
+            input_schema: json!({"type": "object", "properties": {}}),
+            output_schema: None,
+            annotations: None,
+        };
+        refact_runtime_api::ToolCatalogSnapshot {
+            index: refact_runtime_api::ToolRegistryIndex {
+                tools: vec![desc],
+                mcp_lazy_mode: false,
+                mcp_total_count: 0,
+                mcp_tool_index: vec![],
+            },
+            policy: vec![],
+            aliases: refact_tool_api::ToolAliasRegistry::new(),
+        }
+    }
+
+    fn reasoning_only_tail_session(thinking_blocks: bool) -> ChatSession {
+        let mut session = ChatSession::new("silent-tail-reasoning".to_string());
+        session.messages = vec![
+            make_user_msg("do the card"),
+            ChatMessage {
+                role: "assistant".to_string(),
+                content: ChatContent::SimpleText(String::new()),
+                finish_reason: Some("stop".to_string()),
+                reasoning_content: (!thinking_blocks).then(|| {
+                    "I think the parser is wrong and I should fix it first".to_string()
+                }),
+                thinking_blocks: thinking_blocks.then(|| {
+                    vec![json!({"type": "thinking", "thinking": "working through it"})]
+                }),
+                ..Default::default()
+            },
+        ];
+        session.thread.mode = "task_agent".to_string();
+        session.thread.agent_nudge_enabled = Some(true);
+        session.thread.task_meta = Some(TaskMeta {
+            task_id: "task-1".to_string(),
+            role: "agents".to_string(),
+            ..Default::default()
+        });
+        session.tool_catalog = Some(Arc::new(finish_tool_catalog()));
+        session
+    }
+
+    #[tokio::test]
+    async fn silent_tail_nudge_fires_for_reasoning_only_tail() {
+        let gcx = crate::global_context::tests::make_test_gcx().await;
+        let app = AppState::from_gcx(gcx).await;
+        let session_arc = Arc::new(AMutex::new(reasoning_only_tail_session(false)));
+        assert!(matches!(
+            maybe_nudge_after_silent_tail(app, &session_arc).await,
+            SilentTailNudge::Nudged
+        ));
+        let session = session_arc.lock().await;
+        assert!(session
+            .messages
+            .last()
+            .is_some_and(|message| message.role == NUDGE_ROLE));
+    }
+
+    #[tokio::test]
+    async fn silent_tail_nudge_fires_for_thinking_blocks_only_tail() {
+        let gcx = crate::global_context::tests::make_test_gcx().await;
+        let app = AppState::from_gcx(gcx).await;
+        let session_arc = Arc::new(AMutex::new(reasoning_only_tail_session(true)));
+        assert!(matches!(
+            maybe_nudge_after_silent_tail(app, &session_arc).await,
+            SilentTailNudge::Nudged
+        ));
+    }
+
+    #[tokio::test]
+    async fn silent_tail_nudge_stays_quiet_for_truly_empty_tail() {
+        let gcx = crate::global_context::tests::make_test_gcx().await;
+        let app = AppState::from_gcx(gcx).await;
+        let mut session = reasoning_only_tail_session(false);
+        session
+            .messages
+            .last_mut()
+            .unwrap()
+            .reasoning_content = None;
+        let session_arc = Arc::new(AMutex::new(session));
+        assert!(matches!(
+            maybe_nudge_after_silent_tail(app, &session_arc).await,
+            SilentTailNudge::NotApplicable
+        ));
+        let session = session_arc.lock().await;
+        assert!(session
+            .messages
+            .last()
+            .filter(|message| message.role == NUDGE_ROLE)
+            .is_none());
     }
 
     #[test]

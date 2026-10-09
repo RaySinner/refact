@@ -58,8 +58,8 @@ function Write-TestFailure([string]$Label) {
 }
 
 $mixedTags = @(
-    "release/v8.7.3",
-    "engine/v8.7.3",
+    "release/v8.7.4",
+    "engine/v8.7.4",
     "release/v8.6.3",
     "engine/v8.6.3",
     "engine/v8.6.3-main-415-cbfca9ec",
@@ -71,13 +71,13 @@ foreach ($shape in @("enumerated", "single-array")) {
 
     $script:fixture = New-Releases $mixedTags
     $resolved = Get-LatestVersion
-    if ($resolved -eq "8.7.3") {
+    if ($resolved -eq "8.7.4") {
         Write-TestPass "$shape response resolves the newest engine release"
     } else {
-        Write-TestFailure "$shape response resolved '$resolved' instead of '8.7.3'"
+        Write-TestFailure "$shape response resolved '$resolved' instead of '8.7.4'"
     }
 
-    $script:fixture = New-Releases @("release/v8.7.3", "release/v8.6.3")
+    $script:fixture = New-Releases @("release/v8.7.4", "release/v8.6.3")
     try {
         $resolved = Get-LatestVersion
         Write-TestFailure "$shape response without engine releases resolved '$resolved' instead of failing"
@@ -91,11 +91,11 @@ foreach ($shape in @("enumerated", "single-array")) {
 }
 
 $normalizeCases = [ordered]@{
-    "engine/v8.7.3" = "8.7.3"
-    "engine/8.7.3" = "8.7.3"
-    "release/v8.7.3" = "8.7.3"
-    "v8.7.3" = "8.7.3"
-    "8.7.3" = "8.7.3"
+    "engine/v8.7.4" = "8.7.4"
+    "engine/8.7.4" = "8.7.4"
+    "release/v8.7.4" = "8.7.4"
+    "v8.7.4" = "8.7.4"
+    "8.7.4" = "8.7.4"
 }
 foreach ($case in $normalizeCases.GetEnumerator()) {
     $normalized = Normalize-Version $case.Key

@@ -1,4 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { XCircle } from "lucide-react";
 import classNames from "classnames";
 import type { BubblePosition, BuddyControl, Palette } from "./types";
 import type { BuddySpeechStyle } from "./buddySpeech";
@@ -26,6 +27,7 @@ export interface BuddySpeechBubbleProps {
   media?: React.ReactNode;
   controls?: BuddyControl[];
   onControlClick?: (control: BuddyControl) => void | Promise<void>;
+  onDismiss?: () => void | Promise<void>;
 }
 
 type BubbleVars = React.CSSProperties & {
@@ -67,8 +69,12 @@ export const BuddySpeechBubble: React.FC<BuddySpeechBubbleProps> = ({
   media,
   controls,
   onControlClick,
+  onDismiss,
 }) => {
   const hasControls = (controls?.length ?? 0) > 0;
+  const dismissControl = controls?.find(isDismissControl) ?? null;
+  const canDismiss = onDismiss !== undefined || dismissControl !== null;
+  const showCloseButton = visible && !closing && canDismiss;
   const [clickedId, setClickedId] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [controlError, setControlError] = useState<string | null>(null);
@@ -114,7 +120,7 @@ export const BuddySpeechBubble: React.FC<BuddySpeechBubbleProps> = ({
     maxWidth: `min(${maxWidth}, calc(100dvw - 16px))`,
     whiteSpace,
     overflowWrap: "break-word",
-    pointerEvents: hasControls && !closing ? "auto" : "none",
+    pointerEvents: (hasControls || canDismiss) && !closing ? "auto" : "none",
     visibility: visible ? "visible" : "hidden",
     opacity,
     "--bb-bg": "#FBF6EA",
@@ -166,6 +172,39 @@ export const BuddySpeechBubble: React.FC<BuddySpeechBubbleProps> = ({
           <div className={styles.alertRing} aria-hidden />
         ) : null}
         <div key={textKey} className={styles.content}>
+          {showCloseButton ? (
+            <button
+              type="button"
+              className={styles.closeButton}
+              aria-label="Close"
+              disabled={pendingId !== null}
+              onClick={(event) => {
+                event.stopPropagation();
+                if (pendingId !== null) return;
+                if (onDismiss) {
+                  setPendingId("__dismiss_close__");
+                  void Promise.resolve(onDismiss())
+                    .catch(() => {
+                      setPendingId(null);
+                      setControlError("Could not dismiss. Try again.");
+                    })
+                    .finally(() => setPendingId(null));
+                } else if (dismissControl) {
+                  setClickedId(dismissControl.id);
+                  setPendingId("__dismiss_close__");
+                  void Promise.resolve(onControlClick?.(dismissControl))
+                    .catch(() => {
+                      setClickedId(null);
+                      setPendingId(null);
+                      setControlError("Could not dismiss. Try again.");
+                    })
+                    .finally(() => setPendingId(null));
+                }
+              }}
+            >
+              <XCircle size={14} />
+            </button>
+          ) : null}
           {intent ? <span className={styles.intent}>{intent}</span> : null}
           <span>{text}</span>
           {media ? <div className={styles.media}>{media}</div> : null}

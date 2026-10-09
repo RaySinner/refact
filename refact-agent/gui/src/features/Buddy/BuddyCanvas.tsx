@@ -140,6 +140,7 @@ export const BuddyCanvas: React.FC<BuddyCanvasProps> = ({
   speechControls,
   speechIntent,
   onSpeechControlClick,
+  onSpeechDismiss,
   bubblePosition = "top",
   randomizeBubblePosition = false,
   compactBubble: compactBubbleOverride = false,
@@ -606,6 +607,22 @@ export const BuddyCanvas: React.FC<BuddyCanvasProps> = ({
     [onSpeechControlClick],
   );
 
+  const handleSpeechDismiss = useCallback(() => {
+    const anim = animRef.current;
+    controlExitRef.current = {
+      kind: "dismiss",
+      atMs: Date.now(),
+      consumed: false,
+    };
+    anim.beats.push(
+      { at: anim.frame + 1, kind: "squash", x: 0.96, y: 1.05 },
+      { at: anim.frame + 5, kind: "squash", x: 1, y: 1 },
+      { at: anim.frame + 2, kind: "eyes", eyeStyle: "shifty", frames: 50 },
+      { at: anim.frame + 3, kind: "dust", count: 2 },
+    );
+    onSpeechDismiss?.();
+  }, [onSpeechDismiss]);
+
   const scaleK = displaySize / CANVAS_SIZE;
   const [spriteHitW, spriteHitH] = STAGE_SIZES[state.progress.stage] ?? [
     28, 18,
@@ -694,6 +711,7 @@ export const BuddyCanvas: React.FC<BuddyCanvasProps> = ({
           onControlClick={
             onSpeechControlClick ? handleSpeechControlClick : undefined
           }
+          onDismiss={onSpeechDismiss ? handleSpeechDismiss : undefined}
         />
       )}
     </div>

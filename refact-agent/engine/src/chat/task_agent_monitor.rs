@@ -262,6 +262,7 @@ fn stall_planner_notifications(card: &BoardCard) -> (usize, Option<chrono::DateT
     stall_notifications_with_prefix(card, STALL_PLANNER_NOTIFY_STATUS_PREFIX)
 }
 
+#[cfg(test)]
 fn stall_agent_notifications(card: &BoardCard) -> (usize, Option<chrono::DateTime<Utc>>) {
     stall_notifications_with_prefix(card, STALL_AGENT_NOTIFY_STATUS_PREFIX)
 }
@@ -1116,21 +1117,14 @@ pub async fn handle_agent_streaming_error(
     let max_retries = crate::runtime_settings::current().task_agent_max_retries;
 
     let (should_retry, current_attempt) = {
-        // NOTE: this assignment is currently unreachable. The updater closure below is
-        // `move`, so it captures `retry_info` by value and mutates only its own copy;
-        // `should_retry` therefore stays `false` and the `retry_agent_session` branch
-        // below never runs. The persisted `retry_count` and `status_updates` pushes do
-        // take effect. Reported rather than fixed: repairing it would newly enable
-        // task-agent auto-retry, which is a behaviour change outside this cleanup.
-        #[allow(unused_assignments)]
-        let mut retry_info = (false, 0usize);
         let card_id_owned = card_id.clone();
         let error_msg = error_message.to_string();
-        let _ = storage::update_board_atomic(app.gcx.clone(), &task_meta.task_id, move |board| {
+        storage::update_board_atomic(app.gcx.clone(), &task_meta.task_id, move |board| {
+            let mut info = (false, 0usize);
             if let Some(card) = board.get_card_mut(&card_id_owned) {
                 if card.column == "doing" && card.retry_count < max_retries {
                     card.retry_count += 1;
-                    retry_info = (true, card.retry_count);
+                    info = (true, card.retry_count);
                     card.status_updates.push(StatusUpdate {
                         timestamp: Utc::now().to_rfc3339(),
                         message: format!(
@@ -1140,10 +1134,11 @@ pub async fn handle_agent_streaming_error(
                     });
                 }
             }
-            Ok(())
+            Ok(info)
         })
-        .await;
-        retry_info
+        .await
+        .map(|(_, info)| info)
+        .unwrap_or((false, 0))
     };
 
     if should_retry {

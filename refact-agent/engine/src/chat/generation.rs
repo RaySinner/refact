@@ -1448,7 +1448,7 @@ enum SilentTailNudge {
     Nudged,
     /// Attempts are spent; the branch falls through to its normal `break` and
     /// the stall monitor escalates.
-    Exhausted { attempts: u32 },
+    Exhausted,
     /// The nudge does not apply here at all.
     NotApplicable,
 }
@@ -1509,7 +1509,7 @@ async fn maybe_nudge_after_silent_tail(
                 chat_id,
                 model,
             );
-            return SilentTailNudge::Exhausted { attempts };
+            return SilentTailNudge::Exhausted;
         }
         return SilentTailNudge::NotApplicable;
     };
@@ -2285,7 +2285,7 @@ pub fn start_generation(
                     }
                     match maybe_nudge_after_silent_tail(app.clone(), &session_arc).await {
                         SilentTailNudge::Nudged => continue,
-                        SilentTailNudge::Exhausted { .. } | SilentTailNudge::NotApplicable => {}
+                        SilentTailNudge::Exhausted | SilentTailNudge::NotApplicable => {}
                     }
                     let should_continue = {
                         let session = session_arc.lock().await;

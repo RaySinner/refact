@@ -306,6 +306,53 @@
   background: var(--bb-border);
 }
 
+.closeButton {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-radius: 9999px;
+  background: transparent;
+  color: var(--bb-ink);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+  opacity: 0;
+  transition:
+    opacity 0.18s ease,
+    transform 0.12s ease,
+    background 0.12s ease;
+  z-index: 10;
+}
+
+.skin:hover .closeButton,
+.closeButton:focus-visible {
+  opacity: 0.5;
+}
+
+.closeButton:hover {
+  opacity: 1 !important;
+  background: var(--bb-accent-soft);
+  transform: scale(1.12);
+}
+
+.closeButton:active {
+  transform: scale(0.9);
+  transition-duration: 0.08s;
+}
+
+.closeButton:disabled {
+  opacity: 0.25;
+  cursor: default;
+  pointer-events: none;
+}
+
 .tailOuter,
 .tailInner {
   position: absolute;

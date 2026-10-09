@@ -645,12 +645,15 @@ impl SubchatProgressCollector {
             return;
         };
 
-        let raw = if !self.thinking_tail.trim().is_empty() {
-            &self.thinking_tail
-        } else if !self.reasoning_tail.trim().is_empty() {
-            &self.reasoning_tail
-        } else {
+        // Content takes priority: if the model has started producing the actual
+        // answer, preview it even if thinking/reasoning content is present.
+        // Otherwise the UI would be stuck showing only thoughts.
+        let raw = if !self.content_tail.trim().is_empty() {
             &self.content_tail
+        } else if !self.thinking_tail.trim().is_empty() {
+            &self.thinking_tail
+        } else {
+            &self.reasoning_tail
         };
 
         let mut progress = Self::normalize_preview(raw);
@@ -704,10 +707,9 @@ impl StreamCollector for SubchatProgressCollector {
                     }
                 }
                 crate::chat::types::DeltaOp::AppendContent { text } => {
-                    if self.thinking_tail.trim().is_empty() && self.reasoning_tail.trim().is_empty()
-                    {
-                        Self::append_tail(&mut self.content_tail, &text, 50_000);
-                    }
+                    // Content always takes over from thinking/reasoning: once the
+                    // model emits answer content, the preview must follow it too.
+                    Self::append_tail(&mut self.content_tail, &text, 50_000);
                 }
                 crate::chat::types::DeltaOp::SetThinkingBlocks { blocks } => {
                     if let Some(preview) = Self::extract_thinking_preview(&blocks) {
@@ -3404,7 +3406,11 @@ fn convert_results_to_messages(
             }
         };
 
-        if tool_calls.is_none() && result.content.trim().is_empty() {
+        // A thinking model may finish with only reasoning content and no answer
+        // text; that is still visible content and must not be discarded.
+        let has_reasoning =
+            !result.reasoning.trim().is_empty() || !result.thinking_blocks.is_empty();
+        if tool_calls.is_none() && result.content.trim().is_empty() && !has_reasoning {
             skipped_empty_finish_reason = Some(
                 result
                     .finish_reason

@@ -588,6 +588,8 @@ export interface BuddyCanvasProps {
   speechIntent?: string;
   /** Called when a speech bubble button is clicked */
   onSpeechControlClick?: (ctrl: BuddyControl) => void;
+  /** Called when the close (X) button on the speech bubble is clicked */
+  onSpeechDismiss?: () => void;
   /** Where to position the speech bubble relative to the buddy. Default: "top" */
   bubblePosition?: BubblePosition;
   /** If true, each new saying picks top, left, or right at random. */

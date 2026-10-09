@@ -1390,6 +1390,15 @@ export const BuddyChatCompanion: React.FC<Props> = ({ chatId }) => {
             onSpeechControlClick={
               leaving ? undefined : (ctrl) => void handleControl(ctrl)
             }
+            onSpeechDismiss={
+              leaving
+                ? undefined
+                : () => {
+                    if (!notification) return;
+                    completeBubbleInteraction();
+                    dismissNotification(notification.id, notification.contentKey);
+                  }
+            }
             bubblePosition="left"
             compactBubble
             chatCompanionBubble

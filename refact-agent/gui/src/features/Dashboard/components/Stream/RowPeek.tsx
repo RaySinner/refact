@@ -121,17 +121,15 @@ export const RowPeek: React.FC<RowPeekProps> = ({ item, onOpen, onDelete }) => {
         <Button variant="primary" size="sm" onClick={onOpen}>
           Open
         </Button>
-        {item.kind === "chat" && (
-          <DeletePopover
-            size="sm"
-            triggerClassName={styles.peekDelete}
-            itemName={item.title || "this item"}
-            deleteBy={item.id}
-            isDisabled={false}
-            isDeleting={false}
-            handleDelete={() => onDelete()}
-          />
-        )}
+        <DeletePopover
+          size="sm"
+          triggerClassName={styles.peekDelete}
+          itemName={item.title || "this item"}
+          deleteBy={item.id}
+          isDisabled={false}
+          isDeleting={false}
+          handleDelete={() => onDelete()}
+        />
       </div>
     </div>
   );

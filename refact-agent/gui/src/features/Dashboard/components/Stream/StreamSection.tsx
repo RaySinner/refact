@@ -4,6 +4,7 @@ import { Virtuoso } from "react-virtuoso";
 import { useAppSelector } from "../../../../hooks/useAppSelector";
 import { useLoadMoreHistory } from "../../../../hooks/useLoadMoreHistory";
 import { useDeleteTrajectoryMutation } from "../../../../services/refact/trajectories";
+import { useDeleteTaskMutation } from "../../../../services/refact/tasks";
 import { Button } from "../../../../components/ui";
 import type {
   StreamFilter,
@@ -50,6 +51,7 @@ export const StreamSection: React.FC<StreamSectionProps> = ({
   onOpenTask,
 }) => {
   const [deleteTrajectory] = useDeleteTrajectoryMutation();
+  const [deleteTask] = useDeleteTaskMutation();
   const { loadMore, retry, isLoading, hasMore, error } = useLoadMoreHistory();
   const groups = useAppSelector((state) => selectStreamGroups(state, filter));
 
@@ -140,6 +142,8 @@ export const StreamSection: React.FC<StreamSectionProps> = ({
                   onDelete={() => {
                     if (item.kind === "chat") {
                       void deleteTrajectory(item.id);
+                    } else {
+                      void deleteTask(item.id);
                     }
                     setPeekId(null);
                   }}
@@ -158,6 +162,7 @@ export const StreamSection: React.FC<StreamSectionProps> = ({
       handleOpen,
       onOpenChat,
       deleteTrajectory,
+      deleteTask,
     ],
   );
 

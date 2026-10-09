@@ -1,4 +1,5 @@
 import { http, HttpResponse } from "msw";
+import { QueryStatus } from "@reduxjs/toolkit/query";
 import { describe, expect, it, vi } from "vitest";
 import { server } from "../../../../utils/mockServer";
 import {
@@ -9,6 +10,8 @@ import {
 } from "../../../../utils/test-utils";
 import { StreamSection } from "./StreamSection";
 import type { ChatHistoryItem } from "../../../History/historySlice";
+import { tasksApi, type TaskMeta } from "../../../../services/refact/tasks";
+import type { RootState } from "../../../../app/store";
 
 const NOW = Date.now();
 
@@ -44,6 +47,74 @@ function preloadedStateWith(chats: ChatHistoryItem[]) {
         generation: 1,
       },
     },
+  };
+}
+
+function makeTask(
+  partial: Partial<TaskMeta> & { id: string },
+): TaskMeta {
+  return {
+    name: `task ${partial.id}`,
+    status: "completed",
+    created_at: new Date(NOW - 120_000).toISOString(),
+    updated_at: new Date(NOW - 60_000).toISOString(),
+    cards_total: 2,
+    cards_done: 2,
+    cards_failed: 0,
+    agents_active: 0,
+    ...partial,
+  } as TaskMeta;
+}
+
+function fulfilledTasksApiState(tasks: TaskMeta[]) {
+  return {
+    queries: {
+      "listTasks(undefined)": {
+        status: QueryStatus.fulfilled,
+        endpointName: "listTasks",
+        error: undefined,
+        originalArgs: undefined,
+        requestId: "test",
+        startedTimeStamp: NOW,
+        data: tasks,
+        fulfilledTimeStamp: NOW,
+      },
+    },
+    mutations: {},
+    provided: {
+      Tasks: {},
+      Board: {},
+      TaskTrajectories: {},
+    },
+    subscriptions: {},
+    config: {
+      online: true,
+      focused: true,
+      middlewareRegistered: true,
+      refetchOnFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMountOrArgChange: false,
+      keepUnusedDataFor: 60,
+      reducerPath: tasksApi.reducerPath,
+      invalidationBehavior: "delayed" as const,
+    },
+  } as unknown as RootState["tasksApi"];
+}
+
+function preloadedStateWithTasks(tasks: TaskMeta[]) {
+  return {
+    history: {
+      chats: {},
+      isLoading: false,
+      loadError: null,
+      pagination: {
+        cursor: null,
+        hasMore: false,
+        totalCount: 0,
+        generation: 1,
+      },
+    },
+    [tasksApi.reducerPath]: fulfilledTasksApiState(tasks),
   };
 }
 
@@ -163,6 +234,44 @@ describe("StreamSection", () => {
     expect(screen.getByText("Destructive action")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.getByTestId("stream-peek-a")).toBeInTheDocument();
+  });
+
+  it("gates task deletion behind the DeletePopover confirm", async () => {
+    const deleteRequests: string[] = [];
+    server.use(
+      http.delete("*/v1/tasks/:id", ({ request }) => {
+        deleteRequests.push(new URL(request.url).searchParams.get("force") ?? "");
+        return HttpResponse.json({ deleted: true });
+      }),
+    );
+
+    render(
+      <StreamSection
+        filter={ALL_FILTER}
+        onOpenChat={vi.fn()}
+        onOpenTask={vi.fn()}
+      />,
+      {
+        preloadedState: preloadedStateWithTasks([
+          makeTask({ id: "t-1" }),
+        ]),
+      },
+    );
+
+    fireEvent.click(screen.getByTestId("stream-expand-t-1"));
+    expect(screen.getByTestId("stream-peek-t-1")).toBeInTheDocument();
+
+    const deleteButton = screen.getByRole("button", {
+      name: "Delete task t-1",
+    });
+    fireEvent.click(deleteButton);
+    expect(screen.getByText("Destructive action")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => {
+      expect(deleteRequests).toEqual(["true"]);
+    });
+    expect(screen.queryByTestId("stream-peek-t-1")).toBeNull();
   });
 
   it("offers pagination when older chats are available", () => {

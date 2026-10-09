@@ -211,7 +211,9 @@ export const tasksApi = createApi({
       queryFn: async (taskId, api, _opts, baseQuery) => {
         const state = api.getState() as RootState;
         const result = await baseQuery({
-          url: buildApiUrlFromState(state, `/v1/tasks/${taskId}`),
+          url: buildApiUrlFromState(state, `/v1/tasks/${taskId}`, {
+            force: "true",
+          }),
           method: "DELETE",
         });
         if (result.error) return { error: result.error };

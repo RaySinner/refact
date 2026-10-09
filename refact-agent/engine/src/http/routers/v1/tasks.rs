@@ -15,6 +15,8 @@ use chrono::Utc;
 use crate::app_state::AppState;
 use crate::global_context::GlobalContext;
 use crate::custom_error::ScratchError;
+use crate::files_correction::get_project_dirs;
+use crate::worktrees::service::WorktreeService;
 use crate::tasks::comments::{self, CreateCardComment};
 use crate::tasks::types::{BoardCard, StatusUpdate, TaskBoard, TaskMeta, TaskStatus, TeamMember, TrajectoryInfo};
 use crate::chat::trajectories::TrajectoryEvent;
@@ -241,16 +243,148 @@ pub struct DeleteTaskQuery {
     pub force: bool,
 }
 
+async fn remove_task_sessions(
+    gcx: &GlobalContext,
+    task_id: &str,
+) -> Vec<(String, Arc<tokio::sync::Mutex<crate::chat::types::ChatSession>>)> {
+    let sessions = gcx.chat_sessions.clone();
+    let live_sessions = {
+        let read_guard = sessions.read().await;
+        read_guard
+            .iter()
+            .map(|(chat_id, session_arc)| (chat_id.clone(), session_arc.clone()))
+            .collect::<Vec<_>>()
+    };
+    let mut matching = Vec::new();
+    for (chat_id, session_arc) in live_sessions {
+        let task_meta = session_arc.lock().await.thread.task_meta.clone();
+        if task_meta.as_ref().map_or(false, |m| m.task_id == task_id) {
+            matching.push((chat_id, session_arc));
+        }
+    }
+    let mut write_guard = sessions.write().await;
+    let removed = matching
+        .into_iter()
+        .filter(|(chat_id, _)| write_guard.remove(chat_id).is_some())
+        .collect();
+    removed
+}
+
+async fn remove_trajectory_dir_entries(
+    coordinator: &crate::chat::trajectory_index::TrajectoryIndexCoordinator,
+    dir: &std::path::Path,
+) {
+    if !dir.exists() {
+        return;
+    }
+    if let Ok(mut entries) = tokio::fs::read_dir(dir).await {
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let path = entry.path();
+            if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+                continue;
+            }
+            let Some(chat_id) = path.file_stem().and_then(|s| s.to_str()).map(|s| s.to_string())
+            else {
+                continue;
+            };
+            if let Err(e) =
+                crate::chat::trajectory_index::remove_trajectory_index_entry_with_rollout(
+                    coordinator, dir, &chat_id,
+                )
+                .await
+            {
+                tracing::warn!(
+                    "Failed to remove trajectory index entry {} in {:?}: {}",
+                    chat_id,
+                    dir,
+                    e
+                );
+            }
+        }
+    }
+}
+
+async fn remove_task_trajectory_index_entries(app: &AppState, task_dir: &std::path::PathBuf) {
+    let coordinator = &app.chat.trajectory_index_coordinator;
+    let planner_dir = storage::get_task_trajectory_dir(task_dir, "planner", None);
+    remove_trajectory_dir_entries(coordinator, &planner_dir).await;
+    let agents_base = storage::get_task_trajectory_dir(task_dir, "agents", None);
+    if let Ok(mut agent_dirs) = tokio::fs::read_dir(&agents_base).await {
+        while let Ok(Some(agent_dir)) = agent_dirs.next_entry().await {
+            let is_dir = agent_dir.file_type().await.map(|t| t.is_dir()).unwrap_or(false);
+            if is_dir {
+                remove_trajectory_dir_entries(coordinator, &agent_dir.path()).await;
+            }
+        }
+    }
+}
+
+async fn delete_task_worktrees(
+    gcx: Arc<GlobalContext>,
+    task_id: &str,
+    card_worktrees: &HashSet<String>,
+) {
+    let project_dirs = get_project_dirs(gcx.clone()).await;
+    let Some(project_root) = project_dirs.into_iter().next() else {
+        return;
+    };
+    let service = match WorktreeService::new_async(gcx.cache_dir.clone(), project_root).await {
+        Ok(service) => service,
+        Err(e) => {
+            tracing::warn!(
+                "Failed to init worktree service for task deletion {}: {}",
+                task_id,
+                e
+            );
+            return;
+        }
+    };
+    let registry = match service.load_registry().await {
+        Ok(registry) => registry,
+        Err(e) => {
+            tracing::warn!(
+                "Failed to load worktree registry for task deletion {}: {}",
+                task_id,
+                e
+            );
+            return;
+        }
+    };
+    let matching_ids: Vec<String> = registry
+        .records
+        .iter()
+        .filter(|record| {
+            record.meta.task_id.as_deref() == Some(task_id)
+                || record
+                    .references
+                    .iter()
+                    .any(|r| r.task_id.as_deref() == Some(task_id))
+                || card_worktrees.contains(&record.meta.id)
+        })
+        .map(|record| record.meta.id.clone())
+        .collect();
+    for id in matching_ids {
+        if let Err(e) = service.delete_worktree(&id, true, true).await {
+            tracing::warn!("Failed to delete task worktree {}: {}", id, e);
+        }
+    }
+}
+
 pub async fn handle_delete_task(
     State(app): State<AppState>,
     Path(task_id): Path<String>,
     Query(query): Query<DeleteTaskQuery>,
 ) -> Result<Json<Value>, (StatusCode, String)> {
     let gcx = app.gcx.clone();
+    let task_dir = storage::find_task_dir(gcx.clone(), &task_id)
+        .await
+        .map_err(|e| (StatusCode::NOT_FOUND, e))?;
+
+    let board = storage::load_board(gcx.clone(), &task_id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+
     if !query.force {
-        let board = storage::load_board(gcx.clone(), &task_id)
-            .await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
         let active_card_ids: Vec<String> = board
             .cards
             .iter()
@@ -269,6 +403,32 @@ pub async fn handle_delete_task(
             ));
         }
     }
+
+    let card_worktrees: HashSet<String> = board
+        .cards
+        .iter()
+        .filter_map(|c| c.agent_worktree_name.clone())
+        .collect();
+
+    let removed_sessions = remove_task_sessions(&gcx, &task_id).await;
+    for (chat_id, session_arc) in removed_sessions {
+        match tokio::time::timeout(std::time::Duration::from_millis(500), session_arc.lock()).await
+        {
+            Ok(mut session) => {
+                session.abort_stream();
+                session.close_event_channel();
+                session.queue_notify.notify_waiters();
+            }
+            Err(_) => {
+                tracing::warn!("Timed out closing deleted task session {}", chat_id);
+            }
+        }
+    }
+
+    delete_task_worktrees(gcx.clone(), &task_id, &card_worktrees).await;
+
+    remove_task_trajectory_index_entries(&app, &task_dir).await;
+
     storage::delete_task(gcx, &task_id)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
@@ -2164,6 +2324,21 @@ mod tests {
         let (status_code, msg) = result.unwrap_err();
         assert_eq!(status_code, StatusCode::CONFLICT);
         assert!(msg.contains("card-wt"));
+    }
+
+    #[tokio::test]
+    async fn delete_task_returns_404_for_missing_task() {
+        let temp = tempfile::tempdir().unwrap();
+        let gcx = setup_task(temp.path(), "task-del-404").await;
+
+        let result = handle_delete_task(
+            State(app(gcx)),
+            Path("task-does-not-exist".to_string()),
+            Query(DeleteTaskQuery { force: true }),
+        )
+        .await;
+
+        assert_eq!(status(result), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]

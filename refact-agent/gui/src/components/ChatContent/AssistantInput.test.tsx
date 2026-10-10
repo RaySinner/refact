@@ -117,7 +117,7 @@ describe("AssistantInput", () => {
     expect(initializeConfig?.flowchart).toMatchObject({
       curve: "linear",
       defaultRenderer: "elk",
-      htmlLabels: false,
+      htmlLabels: true,
       nodeSpacing: 70,
       rankSpacing: 90,
       wrappingWidth: 240,

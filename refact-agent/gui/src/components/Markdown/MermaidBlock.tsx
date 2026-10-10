@@ -271,7 +271,7 @@ function initializeMermaid(
     flowchart: {
       defaultRenderer: flowchartRenderer,
       curve: "linear",
-      htmlLabels: false,
+      htmlLabels: true,
       nodeSpacing: 70,
       padding: 16,
       rankSpacing: 90,
@@ -345,6 +345,7 @@ const _MermaidBlock: React.FC<MermaidBlockProps> = ({ code, onCopyClick }) => {
 
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const renderSeqRef = useRef(0);
+  const [lastHeight, setLastHeight] = useState(0);
 
   const uniqueId = useId().replace(/:/g, "_");
   const { appearance } = useAppearance();
@@ -373,6 +374,7 @@ const _MermaidBlock: React.FC<MermaidBlockProps> = ({ code, onCopyClick }) => {
           setSvgMeta(meta);
           setError(null);
           setScale(1);
+          if (meta) setLastHeight(meta.height);
         }
       } catch (err) {
         // Mermaid can leave a temporary element with the render id in the
@@ -569,10 +571,16 @@ const _MermaidBlock: React.FC<MermaidBlockProps> = ({ code, onCopyClick }) => {
         ) : rawSvg ? (
           <div
             className={diagramStyles.diagram_fallback}
+            style={lastHeight > 0 ? { minHeight: lastHeight } : undefined}
             dangerouslySetInnerHTML={{ __html: rawSvg }}
           />
         ) : (
-          <div className={diagramStyles.diagram_loading}>Rendering…</div>
+          <div
+            className={diagramStyles.diagram_loading}
+            style={lastHeight > 0 ? { minHeight: lastHeight } : undefined}
+          >
+            Rendering…
+          </div>
         )}
       </div>
     </div>

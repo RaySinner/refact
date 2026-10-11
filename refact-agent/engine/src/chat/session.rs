@@ -23,6 +23,17 @@ pub use super::session_runtime::{
     try_restore_session_if_trajectory_exists,
 };
 
+fn stamp_created_at_ms(message: &mut ChatMessage) {
+    if message
+        .extra
+        .get("created_at_ms")
+        .and_then(|v| v.as_u64())
+        .is_none_or(|v| v == 0)
+    {
+        message.extra.insert("created_at_ms".into(), json!(epoch_ms_now()));
+    }
+}
+
 pub(super) fn has_displayable_assistant_content(message: &ChatMessage) -> bool {
     let has_text_content = match &message.content {
         ChatContent::SimpleText(s) => !s.trim().is_empty(),
@@ -1412,7 +1423,10 @@ impl ChatSession {
             })
     }
 
-    pub(crate) fn mirror_runner_messages(&mut self, messages: Vec<ChatMessage>) {
+    pub(crate) fn mirror_runner_messages(&mut self, mut messages: Vec<ChatMessage>) {
+        for message in &mut messages {
+            stamp_created_at_ms(message);
+        }
         self.messages = messages;
         self.rebuild_goal_projection_from_messages();
         self.touch();
@@ -1780,6 +1794,7 @@ impl ChatSession {
         if message.message_id.is_empty() {
             message.message_id = Uuid::new_v4().to_string();
         }
+        stamp_created_at_ms(&mut message);
         let affects_goal = message_affects_goal_projection(&message);
         if message.role == "tool"
             && self.goal.is_some()
@@ -2508,6 +2523,7 @@ impl ChatSession {
         if message.message_id.is_empty() {
             message.message_id = Uuid::new_v4().to_string();
         }
+        stamp_created_at_ms(&mut message);
         let affects_goal = message_affects_goal_projection(&message);
         let insert_idx = index.min(self.messages.len());
         self.messages.insert(insert_idx, message.clone());
@@ -2533,6 +2549,7 @@ impl ChatSession {
         if message.message_id.is_empty() {
             message.message_id = Uuid::new_v4().to_string();
         }
+        stamp_created_at_ms(&mut message);
         let (messages, origin) = refact_core::active_context::insert_active_message(
             &self.messages,
             active_index,
@@ -6377,6 +6394,60 @@ mod tests {
         };
         session.add_message(msg);
         assert_eq!(session.messages[0].message_id, "custom-id");
+    }
+
+    #[test]
+    fn test_add_message_stamps_created_at_ms() {
+        let mut session = make_session();
+        let msg = ChatMessage {
+            role: "user".into(),
+            content: ChatContent::SimpleText("hi".into()),
+            ..Default::default()
+        };
+        session.add_message(msg);
+        let created_at_ms = session
+            .messages[0]
+            .extra
+            .get("created_at_ms")
+            .and_then(|v| v.as_u64());
+        assert!(created_at_ms.is_some_and(|ms| ms > 0));
+    }
+
+    #[test]
+    fn test_add_message_preserves_existing_created_at_ms() {
+        let mut session = make_session();
+        let mut msg = ChatMessage {
+            role: "user".into(),
+            content: ChatContent::SimpleText("hi".into()),
+            ..Default::default()
+        };
+        msg.extra.insert("created_at_ms".into(), json!(42_000));
+        session.add_message(msg);
+        assert_eq!(
+            session
+                .messages[0]
+                .extra
+                .get("created_at_ms")
+                .and_then(|v| v.as_u64()),
+            Some(42_000)
+        );
+    }
+
+    #[test]
+    fn test_insert_message_stamps_created_at_ms() {
+        let mut session = make_session();
+        let msg = ChatMessage {
+            role: "user".into(),
+            content: ChatContent::SimpleText("hi".into()),
+            ..Default::default()
+        };
+        session.insert_message(0, msg);
+        assert!(session
+            .messages[0]
+            .extra
+            .get("created_at_ms")
+            .and_then(|v| v.as_u64())
+            .is_some_and(|ms| ms > 0));
     }
 
     #[test]

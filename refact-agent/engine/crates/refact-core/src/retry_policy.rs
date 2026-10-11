@@ -258,6 +258,12 @@ const STREAM_CORRUPTED_PATTERNS: &[&str] = &[
     "failed to decode",
     "stream ended unexpectedly",
     "ended unexpectedly",
+    "upstream stream closed before any chunk carried finish_reason",
+    "upstream stream closed",
+    "stream closed before completion",
+    "stream closed",
+    "unexpected stream termination",
+    "unexpected eof",
     "response.failed",
     "error event",
     "invalid provider output",
@@ -1450,6 +1456,30 @@ mod tests {
                 error
             );
         }
+    }
+
+    #[test]
+    fn upstream_stream_closed_without_finish_reason_classifies_as_stream_corrupted() {
+        for error in [
+            "upstream stream closed before any chunk carried finish_reason",
+            "upstream stream closed",
+            "stream closed before completion",
+            "unexpected stream termination",
+        ] {
+            assert_eq!(
+                classify_user_error(error),
+                UserErrorCategory::StreamCorrupted,
+                "must be StreamCorrupted: {error}"
+            );
+            assert!(
+                classify_llm_error_for_retry(error).is_retryable_transient(),
+                "must be retryable: {error}"
+            );
+        }
+        assert!(
+            classify_llm_error_for_retry("unexpected eof").is_retryable_transient(),
+            "unexpected eof must be retryable (NetworkFailure)"
+        );
     }
 
     #[test]

@@ -3325,6 +3325,8 @@ impl ChatSession {
         }
         self.draft_usage = None;
         self.stream_started_at = None;
+        self.task_agent_error = None;
+        self.runtime.error = None;
         self.set_runtime_state(SessionState::Idle, None);
         self.touch();
     }
@@ -5887,10 +5889,14 @@ mod tests {
         let mut session = make_session();
         install_turn_memory_state(&mut session);
         session.start_stream();
+        session.runtime.error = Some("stale error".to_string());
+        session.task_agent_error = Some("stale agent error".to_string());
 
         session.clear_stream_for_retry();
 
         assert_eq!(session.runtime.state, SessionState::Idle);
+        assert_eq!(session.runtime.error, None);
+        assert_eq!(session.task_agent_error, None);
         assert!(session.tool_catalog.is_some());
         assert!(session.turn_tool_pool.is_some());
         assert!(!session.last_prompt_messages.is_empty());

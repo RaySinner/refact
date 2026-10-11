@@ -2245,6 +2245,7 @@ pub fn start_generation(
                 )
                 .await;
 
+                turn_guard.release().await;
                 if let Some(task_meta) = task_meta_opt {
                     let error_msg = {
                         let session = session_arc.lock().await;

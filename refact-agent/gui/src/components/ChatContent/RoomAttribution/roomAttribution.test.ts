@@ -93,7 +93,7 @@ describe("displayItemExtra", () => {
 });
 
 describe("roomAttributionForItems", () => {
-  it("leaves an unattributed message alone", () => {
+  it("leaves an unattributed message alone when no resolveAuthor is provided", () => {
     const [attributed] = roomAttributionForItems(
       [item("plain", undefined)],
       (i) => i.key,
@@ -101,6 +101,22 @@ describe("roomAttributionForItems", () => {
       formatTime,
     );
     expect(attributed.attribution).toBeNull();
+  });
+
+  it("uses resolveAuthor fallback when extra has no provenance", () => {
+    const [attributed] = roomAttributionForItems(
+      [item("plain", { created_at_ms: 12345 })],
+      (i) => i.key,
+      (i) => (i as { message: { extra?: unknown } }).message.extra,
+      formatTime,
+      undefined,
+      () => ({ chatId: "", role: "user", displayName: "User" }),
+    );
+    expect(attributed.attribution).toEqual({
+      author: { chatId: "", role: "user", displayName: "User" },
+      timeLabel: "t12345",
+      divider: false,
+    });
   });
 
   it("puts a divider on the second agent's message only", () => {

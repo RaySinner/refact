@@ -12,12 +12,13 @@ export interface RoomRoleAccent {
   label: string;
 }
 
-const ACCENT_SLOTS = 8;
+const ACCENT_SLOTS = 11;
 
 /**
  * Named roles get a fixed slot so a role's colour never changes when other
  * roles appear on the card. The list mirrors the engine's `TeamRole` plus the
- * `planner` role of the orchestrator chat.
+ * `planner` role of the orchestrator chat and the plain-conversation roles
+ * `user`, `assistant`, and `event`, which every transcript renders.
  */
 const NAMED_ROLE_SLOTS: Record<string, number | undefined> = {
   architect: 1,
@@ -26,11 +27,14 @@ const NAMED_ROLE_SLOTS: Record<string, number | undefined> = {
   researcher: 4,
   specialist: 5,
   planner: 6,
+  user: 7,
+  assistant: 8,
+  event: 9,
 };
 
 /** First slot free for hash-assigned (unrecognised) roles. */
-const PLANNER_SLOT = 6;
-const HASH_SLOT_FIRST = PLANNER_SLOT + 1;
+const HASH_SLOT_FIRST =
+  Math.max(...Object.values(NAMED_ROLE_SLOTS).map((slot) => slot ?? 0)) + 1;
 
 /**
  * FNV-1a, 32-bit. Used only to give an unknown role a stable slot: the same
@@ -120,6 +124,8 @@ const ROLE_LABELS: Record<string, string | undefined> = {
   researcher: "researcher",
   specialist: "specialist",
   planner: "planner",
+  user: "user",
+  assistant: "assistant",
 };
 
 /** Short, human-readable role; unknown roles keep their raw text. */

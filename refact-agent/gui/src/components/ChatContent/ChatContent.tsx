@@ -383,6 +383,23 @@ export const ChatContent: React.FC<ChatContentProps> = ({
       displayItemExtra,
       (epochMs) => formatExactClockTime(epochMs, clientTimezone),
       (_extra, item) => firstSeenMsRef.current.get(item.key) ?? null,
+      (item) => {
+        if (item.type === "user") {
+          return { chatId: "", role: "user", displayName: "User" };
+        }
+        if (item.type === "assistant") {
+          return { chatId: "", role: "assistant", displayName: "Assistant" };
+        }
+        if (item.type === "event") {
+          const source = item.event.source;
+          return {
+            chatId: "",
+            role: "event",
+            displayName: source ? `Event (${source})` : "Event",
+          };
+        }
+        return null;
+      },
     );
   }, [displayItems, clientTimezone, renderChatId]);
 

@@ -171,4 +171,32 @@ describe("RoomAttributionFrame", () => {
     );
     expect(screen.getByText("the actual answer")).toBeInTheDocument();
   });
+
+  it("renders user and assistant roles with designated named slots", () => {
+    const { rerender } = render(
+      <RoomAttributionFrame
+        attribution={attribution({
+          author: { chatId: "", role: "user", displayName: "User" },
+        })}
+      >
+        <p>user message</p>
+      </RoomAttributionFrame>,
+    );
+    expect(
+      screen.getByTestId("room-attribution").getAttribute("style"),
+    ).toContain(`--room-stripe-${roleAccentSlot("user")}`);
+
+    rerender(
+      <RoomAttributionFrame
+        attribution={attribution({
+          author: { chatId: "", role: "assistant", displayName: "Assistant" },
+        })}
+      >
+        <p>assistant message</p>
+      </RoomAttributionFrame>,
+    );
+    expect(
+      screen.getByTestId("room-attribution").getAttribute("style"),
+    ).toContain(`--room-stripe-${roleAccentSlot("assistant")}`);
+  });
 });

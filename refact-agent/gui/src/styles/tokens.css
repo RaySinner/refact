@@ -61,6 +61,12 @@
   --room-label-7: #a8b8c9;
   --room-stripe-8: #d8736d;
   --room-label-8: #e2908b;
+  --room-stripe-9: #c9a0b8;
+  --room-label-9: #dab8cc;
+  --room-stripe-10: #a3c98f;
+  --room-label-10: #b8d7a6;
+  --room-stripe-11: #78a89f;
+  --room-label-11: #92b8b0;
   --rf-radius-chip: 6px;
   --rf-radius-ctl: 8px;
   --rf-radius-card: 10px;
@@ -308,6 +314,12 @@
   --room-label-7: #3d4d61;
   --room-stripe-8: #c13c33;
   --room-label-8: #a13029;
+  --room-stripe-9: #a04c78;
+  --room-label-9: #873c65;
+  --room-stripe-10: #5a8a45;
+  --room-label-10: #477036;
+  --room-stripe-11: #386d63;
+  --room-label-11: #29544c;
   --rf-elev-overlay: 0 14px 40px rgba(0, 0, 0, 0.16);
   --rf-elev-panel: 0 1px 2px rgba(0, 0, 0, 0.08);
 }

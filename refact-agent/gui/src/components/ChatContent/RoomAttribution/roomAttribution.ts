@@ -120,12 +120,21 @@ export function displayItemExtra(item: DisplayItem): unknown {
  * `formatTime` is injected so the pure logic here carries no locale and the component
  * decides how a clock is rendered.
  */
+/**
+ * Pair every rendered item with the attribution it deserves.
+ *
+ * `resolveAuthor` is the escape hatch for transcripts without a stamped
+ * `extra.provenance` — a plain user/assistant conversation. When the engine has
+ * not named an author, the caller supplies a role-derived byline so the message
+ * still gets a name and a clock. `null` keeps an item frame-less.
+ */
 export function roomAttributionForItems<T>(
   items: readonly T[],
   keyOf: (item: T) => string,
   extraOf: (item: T) => unknown,
   formatTime: (epochMs: number) => string,
   resolveTimestamp?: (extra: unknown, item: T) => number | null,
+  resolveAuthor?: (item: T, extra: unknown) => RoomAuthor | null,
 ): AttributedItem<T>[] {
   const attributed: AttributedItem<T>[] = [];
   let previousChatId: string | null = null;
@@ -134,7 +143,10 @@ export function roomAttributionForItems<T>(
     const key = keyOf(item);
     const extra = extraOf(item);
     const extraRecord = isRecord(extra) ? extra : null;
-    const author = messageAuthor(extraRecord ?? undefined);
+    const author =
+      messageAuthor(extraRecord ?? undefined) ??
+      resolveAuthor?.(item, extra) ??
+      null;
     if (author === null) {
       attributed.push({ key, item, attribution: null });
       continue;
@@ -142,7 +154,13 @@ export function roomAttributionForItems<T>(
 
     const stamped = messageTimestampMs(extraRecord ?? undefined);
     const epochMs = stamped ?? resolveTimestamp?.(extra, item) ?? null;
-    const divider = previousChatId !== null && previousChatId !== author.chatId;
+    // Only a real room author (non-empty chat id) can open a new turn. A
+    // role-derived byline for a plain conversation never draws a divider, so a
+    // one-to-one chat stays a quiet column of cards.
+    const divider =
+      author.chatId !== "" &&
+      previousChatId !== null &&
+      previousChatId !== author.chatId;
     if (author.chatId !== "") previousChatId = author.chatId;
 
     attributed.push({

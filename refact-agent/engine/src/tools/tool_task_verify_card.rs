@@ -53,7 +53,8 @@ impl Tool for ToolTaskVerifyCard {
                 "type": "object",
                 "properties": {
                     "card_id": {"type": "string", "description": "Card ID to verify"},
-                    "task_id": {"type": "string", "description": "Task ID (optional if in task context)"}
+                    "task_id": {"type": "string", "description": "Task ID (optional if in task context)"},
+                    "command": {"type": "string", "description": "Optional custom verification command to run in the card's worktree"}
                 },
                 "required": ["card_id"]
             }),
@@ -80,6 +81,12 @@ impl Tool for ToolTaskVerifyCard {
         drop(ccx_lock);
 
         let card_id = required_string(args, "card_id")?;
+        let command = args
+            .get("command")
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
         let task_id = require_bound_planner_task(&ccx, args)
             .await
             .map_err(verify_card_task_scope_error)?;
@@ -90,6 +97,7 @@ impl Tool for ToolTaskVerifyCard {
                 task_id,
                 card_id: card_id.clone(),
                 expected_state: None,
+                custom_command: command,
             },
         )
         .await?;
@@ -241,6 +249,112 @@ mod tests {
             .unwrap_err();
 
         assert!(err.contains("task planner"));
+    }
+
+    async fn write_task_with_card(root: &Path, worktree: &Path) -> Arc<GlobalContext> {
+        let gcx = crate::global_context::tests::make_test_gcx().await;
+        let task_dir = root.join(".refact").join("tasks").join("task-1");
+        tokio::fs::create_dir_all(&task_dir).await.unwrap();
+        *gcx.documents_state.workspace_folders.lock().unwrap() = vec![root.to_path_buf()];
+        storage::save_task_meta(gcx.clone(), "task-1", &task_meta())
+            .await
+            .unwrap();
+        let now = chrono::Utc::now().to_rfc3339();
+        let card = crate::tasks::types::BoardCard {
+            id: "T-1".to_string(),
+            title: "Test card".to_string(),
+            column: "done".to_string(),
+            priority: "P1".to_string(),
+            depends_on: Vec::new(),
+            instructions: String::new(),
+            assignee: None,
+            agent_chat_id: None,
+            retry_count: 0,
+            status_updates: Vec::new(),
+            comments: vec![],
+            final_report: Some("done".to_string()),
+            final_report_structured: None,
+            verifier_report: None,
+            created_at: now.clone(),
+            started_at: None,
+            last_heartbeat_at: None,
+            completed_at: Some(now),
+            agent_branch: None,
+            agent_worktree: Some(worktree.to_string_lossy().to_string()),
+            agent_worktree_name: None,
+            base_branch: Some("main".to_string()),
+            base_commit: None,
+            ab_variants: None,
+            team_members: vec![],
+            target_files: Vec::new(),
+            scope_guard_mode: crate::tasks::types::ScopeGuardMode::Off,
+        };
+        storage::save_board(
+            gcx.clone(),
+            "task-1",
+            &TaskBoard {
+                cards: vec![card],
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        gcx
+    }
+
+    fn init_git_repo(root: &Path) {
+        let git = std::process::Command::new("git").current_dir(root);
+        for args in [
+            &["init"],
+            &["checkout", "-b", "main"],
+            &["config", "user.email", "test@example.com"],
+            &["config", "user.name", "Test User"],
+        ] {
+            git.args(args)
+                .output()
+                .unwrap_or_else(|e| panic!("git {:?} failed: {e}", args));
+        }
+        std::fs::write(root.join("file.txt"), "hello\n").unwrap();
+        git.args(["add", "file.txt"]).output().unwrap();
+        git.args(["commit", "-m", "initial"]).output().unwrap();
+    }
+
+    #[tokio::test]
+    async fn task_verify_card_with_custom_command_includes_it_in_results() {
+        let temp = tempfile::tempdir().unwrap();
+        let worktree = temp.path().join("worktree");
+        std::fs::create_dir_all(&worktree).unwrap();
+        init_git_repo(&worktree);
+
+        let gcx = write_task_with_card(temp.path(), &worktree).await;
+        let ccx = task_ccx(gcx.clone(), Some(thread_task_meta("planner")), "planner-task-1-1").await;
+        let args = HashMap::from([
+            ("card_id".to_string(), json!("T-1")),
+            ("command".to_string(), json!("echo hello")),
+        ]);
+
+        let result = ToolTaskVerifyCard::new()
+            .tool_execute(ccx, &"call".to_string(), &args)
+            .await;
+
+        match result {
+            Ok(_) => {
+                let board = storage::load_board(gcx.clone(), "task-1").await.unwrap();
+                let card = board.get_card("T-1").unwrap();
+                let report = card
+                    .verifier_report
+                    .as_ref()
+                    .expect("verifier_report should be set after verification");
+                assert!(
+                    report.command_results.iter().any(|r| r.command == "echo hello"),
+                    "custom command 'echo hello' should appear in command_results, got: {:?}",
+                    report.command_results.iter().map(|r| &r.command).collect::<Vec<_>>()
+                );
+            }
+            Err(e) => {
+                panic!("task_verify_card with custom command should not fail with: {e}");
+            }
+        }
     }
 
     #[tokio::test]

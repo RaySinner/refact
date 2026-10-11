@@ -108,6 +108,7 @@ pub struct VerifyCardRequest {
     pub task_id: String,
     pub card_id: String,
     pub expected_state: Option<ExpectedCardState>,
+    pub custom_command: Option<String>,
 }
 
 #[async_trait]
@@ -274,6 +275,7 @@ pub async fn schedule_card_verifier_after_finish(
             task_id,
             card_id,
             expected_state: Some(expected_state),
+            custom_command: None,
         },
     )
     .await;
@@ -310,7 +312,10 @@ pub async fn verify_card(
         ));
     }
 
-    let commands = verification_commands(&card);
+    let mut commands = verification_commands(&card);
+    if let Some(ref custom) = request.custom_command {
+        commands.insert(0, custom.clone());
+    }
     let no_commands = commands.is_empty();
     let mut command_results = Vec::new();
     let mut concerns = Vec::new();

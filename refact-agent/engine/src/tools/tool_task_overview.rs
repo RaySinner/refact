@@ -894,6 +894,7 @@ mod tests {
             final_report: None,
             last_tool_name: None,
             change_seq: ts.timestamp() as u64,
+            room_members: Vec::new(),
         }
     }
 

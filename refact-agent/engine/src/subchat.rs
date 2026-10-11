@@ -2411,6 +2411,15 @@ async fn run_subchat_loop(
         drain_background_agent_inbox(&ccx, &mut messages).await;
         persist_subchat_progress(&ccx, config, progress, &messages).await;
 
+        if config.background_agent_id.is_some() {
+            let app = AppState::from_gcx(ccx.lock().await.global_context.clone()).await;
+            let chat_id = ccx.lock().await.chat_id.clone();
+            let sessions = app.chat.sessions.read().await;
+            if let Some(session) = sessions.get(&chat_id) {
+                session.lock().await.set_runtime_state(crate::chat::types::SessionState::Generating, None);
+            }
+        }
+
         let results = loop {
             match runner_model_turn(
                 ccx.clone(),
@@ -2476,6 +2485,15 @@ async fn run_subchat_loop(
 
         if has_final_answer(&messages) {
             break;
+        }
+
+        if config.background_agent_id.is_some() {
+            let app = AppState::from_gcx(ccx.lock().await.global_context.clone()).await;
+            let chat_id = ccx.lock().await.chat_id.clone();
+            let sessions = app.chat.sessions.read().await;
+            if let Some(session) = sessions.get(&chat_id) {
+                session.lock().await.set_runtime_state(crate::chat::types::SessionState::ExecutingTools, None);
+            }
         }
 
         messages = execute_pending_tool_calls(

@@ -1402,7 +1402,10 @@ impl ChatSession {
     }
 
     pub fn is_runner_owned_subagent_view(&self) -> bool {
-        self.runtime.state == SessionState::Generating
+        matches!(
+            self.runtime.state,
+            SessionState::Starting | SessionState::Generating | SessionState::ExecutingTools
+        )
             && self.thread.parent_id.is_some()
             && self.thread.link_type.as_deref().is_some_and(|link_type| {
                 !matches!(link_type, "handoff" | "mode_transition" | "branch")
@@ -7415,6 +7418,50 @@ mod tests {
             }
         }
         assert!(found_pause_required);
+    }
+
+    #[test]
+    fn test_is_runner_owned_subagent_view() {
+        let mut session = make_session();
+        session.thread.parent_id = Some("parent-1".to_string());
+        session.thread.link_type = Some("subagent".to_string());
+
+        for active_state in [
+            SessionState::Starting,
+            SessionState::Generating,
+            SessionState::ExecutingTools,
+        ] {
+            session.runtime.state = active_state;
+            assert!(
+                session.is_runner_owned_subagent_view(),
+                "state {active_state:?} should be runner owned"
+            );
+        }
+
+        for inactive_state in [
+            SessionState::Idle,
+            SessionState::Completed,
+            SessionState::Error,
+            SessionState::Paused,
+            SessionState::WaitingIde,
+            SessionState::WaitingUserInput,
+        ] {
+            session.runtime.state = inactive_state;
+            assert!(
+                !session.is_runner_owned_subagent_view(),
+                "state {inactive_state:?} should not be runner owned"
+            );
+        }
+
+        session.runtime.state = SessionState::Generating;
+        session.thread.parent_id = None;
+        assert!(!session.is_runner_owned_subagent_view());
+
+        session.thread.parent_id = Some("parent-1".to_string());
+        for excluded_link in ["handoff", "mode_transition", "branch"] {
+            session.thread.link_type = Some(excluded_link.to_string());
+            assert!(!session.is_runner_owned_subagent_view());
+        }
     }
 
     #[test]

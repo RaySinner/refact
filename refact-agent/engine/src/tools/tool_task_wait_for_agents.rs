@@ -242,6 +242,7 @@ mod tests {
             final_report: (column == "done").then(|| "done".to_string()),
             last_tool_name: None,
             change_seq: 0,
+            room_members: Vec::new(),
         }
     }
 

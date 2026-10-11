@@ -756,6 +756,16 @@ async fn registered_subagent_session_mirrors_runner_messages_while_generating() 
                     ));
                 }
 
+                // Also verify that mirroring works when state is explicitly Generating or ExecutingTools
+                live.lock().await.set_runtime_state(SessionState::Generating, None);
+                let mut generating_messages = committed.clone();
+                generating_messages.push(ChatMessage::new(
+                    "assistant".to_string(),
+                    "generating step".to_string(),
+                ));
+                mirror_subchat_messages_into_session(&app, &chat_id, &generating_messages).await;
+                assert_eq!(live.lock().await.messages.len(), seed_len + 3);
+
                 let mut final_messages = committed;
                 final_messages.push(ChatMessage::new(
                     "assistant".to_string(),
@@ -799,7 +809,15 @@ async fn registered_subagent_session_mirrors_runner_messages_while_generating() 
     assert_eq!(completed.status, BgAgentStatus::Completed);
     assert!(seed_len > 0);
     assert_eq!(live_len, seed_len + 2);
-    assert_eq!(live_state, SessionState::Generating);
+    assert!(
+                    matches!(
+                        live_state,
+                        SessionState::Starting
+                            | SessionState::Generating
+                            | SessionState::ExecutingTools
+                    ),
+                    "live runner state should be an active runner-owned state, got {live_state:?}"
+                );
     assert!(!live_dirty);
     assert_eq!(session.messages.len(), seed_len + 3);
     assert_eq!(

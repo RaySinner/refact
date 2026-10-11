@@ -431,20 +431,22 @@ fn classify_verifier_report(
     review_unavailable: bool,
     review_has_concerns: bool,
 ) -> VerifierReportClassification {
-    let command_verification_failed = no_commands
-        || command_results.iter().any(|result| {
-            matches!(
-                result.outcome,
-                VerificationOutcome::CommandFailed | VerificationOutcome::NoCommands
-            ) || (!result.passed && !outcome_is_infrastructure(&result.outcome))
-        });
-    if command_verification_failed || review_has_concerns {
+    let hard_command_failed = command_results.iter().any(|result| {
+        matches!(result.outcome, VerificationOutcome::CommandFailed)
+            || (!result.passed
+                && !outcome_is_infrastructure(&result.outcome)
+                && !matches!(result.outcome, VerificationOutcome::NoCommands))
+    });
+    if hard_command_failed {
         return VerifierReportClassification::VerificationFailed;
     }
-    let infrastructure_failed = command_results
-        .iter()
-        .any(|result| outcome_is_infrastructure(&result.outcome) || !result.passed);
-    if infrastructure_failed || review_unavailable {
+    let human_review_needed = no_commands
+        || review_has_concerns
+        || review_unavailable
+        || command_results
+            .iter()
+            .any(|result| outcome_is_infrastructure(&result.outcome) || !result.passed);
+    if human_review_needed {
         return VerifierReportClassification::HumanReview;
     }
     if !command_results.is_empty()
@@ -1009,7 +1011,7 @@ mod tests {
         );
         assert_eq!(
             classify_verifier_report(false, &[passed], false, true),
-            VerifierReportClassification::VerificationFailed
+            VerifierReportClassification::HumanReview
         );
     }
 
@@ -1017,7 +1019,7 @@ mod tests {
     fn typed_classification_requires_commands_and_real_success() {
         assert_eq!(
             classify_verifier_report(true, &[], false, false),
-            VerifierReportClassification::VerificationFailed
+            VerifierReportClassification::HumanReview
         );
         let result = VerificationResult {
             command: "cargo test".to_string(),
@@ -1028,6 +1030,23 @@ mod tests {
         assert_eq!(
             classify_verifier_report(false, &[result], false, false),
             VerifierReportClassification::VerificationFailed
+        );
+    }
+
+    #[test]
+    fn review_concerns_with_passing_commands_classify_as_human_review() {
+        let passed = command_result("cargo test", true, VerificationOutcome::Passed);
+        assert_eq!(
+            classify_verifier_report(false, &[passed], false, true),
+            VerifierReportClassification::HumanReview
+        );
+    }
+
+    #[test]
+    fn no_commands_with_passing_review_classify_as_human_review() {
+        assert_eq!(
+            classify_verifier_report(true, &[], false, false),
+            VerifierReportClassification::HumanReview
         );
     }
 

@@ -80,7 +80,7 @@ impl Tool for ToolTaskMarkCardDone {
 
         let gcx = ccx.lock().await.app.gcx.clone();
 
-        let card_title = {
+        let (card_title, already_done) = {
             let card_id_owned = card_id.to_string();
             let report_owned = report.to_string();
 
@@ -112,10 +112,11 @@ impl Tool for ToolTaskMarkCardDone {
                 .await?;
 
             storage::update_task_stats(gcx.clone(), &task_id).await?;
-            board
+            let title = board
                 .get_card(card_id)
                 .map(|c| c.title.clone())
-                .unwrap_or_default()
+                .unwrap_or_default();
+            (title, already_done)
         };
 
         let result = if already_done {

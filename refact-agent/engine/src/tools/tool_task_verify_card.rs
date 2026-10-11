@@ -303,20 +303,24 @@ mod tests {
     }
 
     fn init_git_repo(root: &Path) {
-        let git = std::process::Command::new("git").current_dir(root);
         for args in [
-            &["init"],
-            &["checkout", "-b", "main"],
-            &["config", "user.email", "test@example.com"],
-            &["config", "user.name", "Test User"],
+            vec!["init"],
+            vec!["checkout", "-b", "main"],
+            vec!["config", "user.email", "test@example.com"],
+            vec!["config", "user.name", "Test User"],
+            vec!["add", "file.txt"],
+            vec!["commit", "-m", "initial"],
         ] {
-            git.args(args)
+            if args[0] == "add" {
+                std::fs::write(root.join("file.txt"), "hello\n").unwrap();
+            }
+            let output = std::process::Command::new("git")
+                .current_dir(root)
+                .args(&args)
                 .output()
                 .unwrap_or_else(|e| panic!("git {:?} failed: {e}", args));
+            assert!(output.status.success(), "git {:?} failed: {}", args, String::from_utf8_lossy(&output.stderr));
         }
-        std::fs::write(root.join("file.txt"), "hello\n").unwrap();
-        git.args(["add", "file.txt"]).output().unwrap();
-        git.args(["commit", "-m", "initial"]).output().unwrap();
     }
 
     #[tokio::test]

@@ -6,17 +6,13 @@
   border: 1px solid
     color-mix(
       in srgb,
-      var(--room-stripe-fallback) 18%,
+      var(--room-stripe-fallback) 35%,
       var(--rf-border, rgba(255, 255, 255, 0.08))
     );
   border-radius: 8px;
-  background-color: color-mix(
-    in srgb,
-    var(--room-stripe-fallback) 6%,
-    transparent
-  );
+  background-color: transparent;
   /* Left padding clears the floating stripe; the rest keeps the bubble cozy. */
-  padding: 5px 8px 5px 12px;
+  padding: 6px 10px 6px 18px;
 }
 
 /* The accent bar, pinned to the card's inner left edge and inset from the top and

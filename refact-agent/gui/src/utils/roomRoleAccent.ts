@@ -28,7 +28,7 @@ const NAMED_ROLE_SLOTS: Record<string, number | undefined> = {
   specialist: 5,
   planner: 6,
   user: 7,
-  assistant: 8,
+  assistant: 1,
   event: 9,
 };
 

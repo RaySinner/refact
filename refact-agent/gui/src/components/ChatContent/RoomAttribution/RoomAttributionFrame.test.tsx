@@ -131,7 +131,12 @@ describe("RoomAttributionFrame", () => {
 
   it("omits the clock when no instant is known", () => {
     render(
-      <RoomAttributionFrame attribution={attribution({ timeLabel: "" })}>
+      <RoomAttributionFrame
+        attribution={attribution({
+          author: { chatId: "agent-1", role: "coder", displayName: "coder #1" },
+          timeLabel: "",
+        })}
+      >
         <p>body</p>
       </RoomAttributionFrame>,
     );
@@ -140,6 +145,44 @@ describe("RoomAttributionFrame", () => {
     ).not.toBeInTheDocument();
     // The byline survives: a nameless stripe would be worse than no time.
     expect(screen.getByTestId("room-attribution-name")).toBeInTheDocument();
+  });
+
+  it("deduplicates role badge and author name when they match or for standard roles", () => {
+    const { rerender } = render(
+      <RoomAttributionFrame
+        attribution={attribution({
+          author: { chatId: "agent-1", role: "coder", displayName: "coder" },
+        })}
+      >
+        <p>body</p>
+      </RoomAttributionFrame>,
+    );
+    expect(screen.getByText("coder")).toBeInTheDocument();
+    expect(screen.queryByTestId("room-attribution-name")).not.toBeInTheDocument();
+
+    rerender(
+      <RoomAttributionFrame
+        attribution={attribution({
+          author: { chatId: "", role: "user", displayName: "User" },
+        })}
+      >
+        <p>body</p>
+      </RoomAttributionFrame>,
+    );
+    expect(screen.getByText("user")).toBeInTheDocument();
+    expect(screen.queryByTestId("room-attribution-name")).not.toBeInTheDocument();
+
+    rerender(
+      <RoomAttributionFrame
+        attribution={attribution({
+          author: { chatId: "", role: "assistant", displayName: "Assistant" },
+        })}
+      >
+        <p>body</p>
+      </RoomAttributionFrame>,
+    );
+    expect(screen.getByText("assistant")).toBeInTheDocument();
+    expect(screen.queryByTestId("room-attribution-name")).not.toBeInTheDocument();
   });
 
   it("renders the time on every message it wraps", () => {
@@ -195,8 +238,9 @@ describe("RoomAttributionFrame", () => {
         <p>assistant message</p>
       </RoomAttributionFrame>,
     );
+    expect(roleAccentSlot("assistant")).toBe(1);
     expect(
       screen.getByTestId("room-attribution").getAttribute("style"),
-    ).toContain(`--room-stripe-${roleAccentSlot("assistant")}`);
+    ).toContain(`--room-stripe-1`);
   });
 });

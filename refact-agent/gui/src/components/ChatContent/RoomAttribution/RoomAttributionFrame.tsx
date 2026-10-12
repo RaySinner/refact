@@ -34,6 +34,12 @@ export const RoomAttributionFrame: React.FC<RoomAttributionFrameProps> = ({
   } as React.CSSProperties;
   const roleText = roleLabel(attribution.author.role);
 
+  const isStandardRole =
+    attribution.author.role === "user" || attribution.author.role === "assistant";
+  const showName =
+    !isStandardRole &&
+    attribution.author.displayName.trim().toLowerCase() !== roleText.trim().toLowerCase();
+
   return (
     <div
       className={styles.roomFrame}
@@ -60,9 +66,11 @@ export const RoomAttributionFrame: React.FC<RoomAttributionFrameProps> = ({
           <span aria-hidden="true" className={styles.rolePill}>
             {roleText}
           </span>
-          <span className={styles.name} data-testid="room-attribution-name">
-            {attribution.author.displayName}
-          </span>
+          {showName && (
+            <span className={styles.name} data-testid="room-attribution-name">
+              {attribution.author.displayName}
+            </span>
+          )}
           {attribution.timeLabel !== "" && (
             <span className={styles.time} data-testid="room-attribution-time">
               {attribution.timeLabel}

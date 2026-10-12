@@ -12,7 +12,7 @@ Axum (HTTP), tower-lsp (LSP), tree-sitter extraction, SQLite + FTS5 (CodeGraph),
 change — it costs tens of minutes (LTO + `opt-level = "z"` + `strip`) and it is the wrong
 tool for the job. To verify a change you want `check` mode.**
 
-Always go through the build script. It sets up the Windows toolchain (cargo, LLVM, Node,
+Always go through the build script. It sets up the Windows toolchain (cargo, Node,
 MSVC), honours `REFACT_SKIP_GUI_BUILD`, and exits with cargo's exit code:
 
 ```powershell

@@ -1,7 +1,7 @@
 # Полная сборка Refact (GUI + Rust-движок + VS Code расширение)
 
 > Документ для сборочного агента. Описывает полный конвейер сборки решения
-> **Refact** (v8.7.6) на **Windows x64** из чистого состояния:
+> **Refact** (v8.7.7) на **Windows x64** из чистого состояния:
 > 1. Графический компонент (React/TypeScript, `refact-agent/gui`)
 > 2. Rust-движок (`refact-agent/engine` → `refact.exe`)
 > 3. VS Code расширение (`plugins/vscode` → `.vsix`)
@@ -38,7 +38,6 @@ GUI (npm) ──┬──► Engine (cargo, встраивает GUI-ассет�
 | Инструмент | Версия | Где лежит |
 |---|---|---|
 | Rust (rustc/cargo) | 1.98.1 (`stable-x86_64-pc-windows-msvc`) | `C:\Users\raysi\.cargo\bin` |
-| LLVM (lld-link, libclang) | 18.1.8 | `C:\Program Files\LLVM\bin` |
 | MSVC BuildTools (link.exe) | VS 18, MSVC 14.51.36231 | `C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Tools\MSVC\14.51.36231\bin\Hostx64\x64` |
 | Node.js | v24.13.0 | в PATH |
 | npm | 11.6.2 | в PATH |
@@ -46,11 +45,11 @@ GUI (npm) ──┬──► Engine (cargo, встраивает GUI-ассет�
 
 ### 2.1. Обязательная инъекция PATH (Windows)
 
-Rust-линковка использует `lld-link.exe` (LLVM) и MSVC-инструменты. Если они не в PATH,
-сборка падает с `error: linker 'lld-link.exe' not found`. Перед `cargo build` выполнить:
+Rust-линковка использует MSVC-инструменты (`link.exe`). Если они не в PATH,
+сборка падает с `error: linker 'link.exe' not found`. Перед `cargo build` выполнить:
 
 ```powershell
-$env:PATH = "C:\Program Files\LLVM\bin;C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Tools\MSVC\14.51.36231\bin\Hostx64\x64;" + $env:PATH
+$env:PATH = "C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Tools\MSVC\14.51.36231\bin\Hostx64\x64;" + $env:PATH
 ```
 
 ### 2.2. Переменные окружения сборки
@@ -99,7 +98,7 @@ npm pack
 
 **Результат:**
 - `refact-agent/gui/dist/chat/` — собранный UI (используется движком).
-- `refact-agent/gui/refact-chat-js-8.7.6.tgz` — npm-пакет (используется расширением).
+- `refact-agent/gui/refact-chat-js-8.7.7.tgz` — npm-пакет (используется расширением).
   Размер ~33 МБ.
 
 > ⚠️ `npm ci` запускает `postinstall: patch-package` — это нормально, патчи из `patches/` применяются автоматически.
@@ -114,7 +113,7 @@ npm pack
 
 ```powershell
 # Инъекция PATH (см. §2.1) — ОБЯЗАТЕЛЬНО
-$env:PATH = "C:\Program Files\LLVM\bin;C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Tools\MSVC\14.51.36231\bin\Hostx64\x64;" + $env:PATH
+$env:PATH = "C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Tools\MSVC\14.51.36231\bin\Hostx64\x64;" + $env:PATH
 
 Set-Location C:\Raid\Repos\Rust\refact-main\refact-agent\engine
 
@@ -151,13 +150,13 @@ cargo build --bin refact --release
 ```
 Ожидаемый вывод (коммит = HEAD из шага 0):
 ```
-refact 8.7.6
-             version 8.7.6
+refact 8.7.7
+             version 8.7.7
               commit <HEAD-коммит>
             build_os windows-x86_64
         rust_version rustc 1.98.1 (...)
        cargo_version cargo 1.98.1 (...)
-    daemon_version 8.7.6
+    daemon_version 8.7.7
 ```
 **Проверить, что `commit` совпадает с HEAD из `git log`.** Если не совпадает — бинарник старый, пересобрать.
 
@@ -189,7 +188,7 @@ Set-Location C:\Raid\Repos\Rust\refact-main\plugins\vscode
 npm ci
 
 # 4.2. Установка GUI-тарбола (путь относительный от plugins/vscode)
-npm install ..\..\refact-agent\gui\refact-chat-js-8.7.6.tgz --save-exact
+npm install ..\..\refact-agent\gui\refact-chat-js-8.7.7.tgz --save-exact
 
 # 4.3. Компиляция TypeScript расширения
 npm run compile
@@ -198,7 +197,7 @@ npm run compile
 npx @vscode/vsce package --target win32-x64
 ```
 
-**Результат:** `plugins/vscode/codify-win32-x64-8.7.6.vsix` (~103 МБ).
+**Результат:** `plugins/vscode/codify-win32-x64-8.7.7.vsix` (~103 МБ).
 
 ### 7.1. ОБЯЗАТЕЛЬНО: откат временных изменений
 
@@ -210,7 +209,7 @@ git checkout -- plugins/vscode/package.json plugins/vscode/package-lock.json
 git status   # должен быть чистым (кроме .vsix и assets/refact.exe, если они не игнорируются)
 ```
 
-> ⚠️ Если забыть откатить — в git попадёт `file:../../refact-agent/gui/refact-chat-js-8.7.6.tgz`
+> ⚠️ Если забыть откатить — в git попадёт `file:../../refact-agent/gui/refact-chat-js-8.7.7.tgz`
 > вместо `file:../../refact-agent/gui`, что сломает CI-сборку.
 
 ---
@@ -231,7 +230,7 @@ git status   # должен быть чистым (кроме .vsix и assets/re
 
 | Проблема | Причина | Решение |
 |---|---|---|
-| `error: linker 'lld-link.exe' not found` | LLVM/MSVC не в PATH | Инъекция PATH из §2.1 перед cargo |
+| `error: linker 'link.exe' not found` | MSVC не в PATH | Инъекция PATH из §2.1 перед cargo |
 | `Copy-Item: process cannot access the file` | `refact.exe` занят (VS Code / запущенный движок) | Закрыть VS Code / убить процесс `refact.exe` |
 | В бинарнике старый GUI | `REFACT_SKIP_GUI_BUILD=1` при несвежих `engine/assets/chat/dist` | Собрать GUI заново и пересобрать движок БЕЗ флага (или скопировать `gui/dist/chat` → `engine/assets/chat/dist/chat` вручную) |
 | `npm ci` падает в GUI | Устаревший `node_modules` | `Remove-Item -Recurse -Force node_modules` и повторить `npm ci` |
@@ -247,7 +246,7 @@ git status   # должен быть чистым (кроме .vsix и assets/re
 Если менялся **только Rust-код** (как в случае с T-28 / `task_agent_monitor.rs`):
 
 ```powershell
-$env:PATH = "C:\Program Files\LLVM\bin;C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Tools\MSVC\14.51.36231\bin\Hostx64\x64;" + $env:PATH
+$env:PATH = "C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Tools\MSVC\14.51.36231\bin\Hostx64\x64;" + $env:PATH
 Set-Location C:\Raid\Repos\Rust\refact-main\refact-agent\engine
 cargo build --bin refact --release
 & .\target\release\refact.exe --version   # проверить commit
@@ -263,6 +262,6 @@ GUI и `.vsix` при этом **не пересобираются** (если �
 Он автоматизирует весь конвейер, **но** имеет отличия от проверенного ручного процесса:
 - собирает движок с `--no-default-features` (в ручном процессе используется обычный `cargo build --bin refact --release`);
 - сам мутирует `plugins/vscode/package.json` и откатывает его в конце (при сбое на середине откат не гарантирован);
-- не делает инъекцию PATH для LLVM/MSVC (нужно сделать вручную до запуска).
+- не делает инъекцию PATH для MSVC (нужно сделать вручную до запуска).
 
 **Рекомендация:** использовать ручной конвейер из §4–§7 (проверен на сборках 17–18.09.2026).

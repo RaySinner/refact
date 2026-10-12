@@ -28,7 +28,7 @@ if (-not (Test-Path (Join-Path $engineDir 'Cargo.toml'))) {
     exit 2
 }
 
-# PATH (cargo, LLVM, Node, MSVC), CARGO_INCREMENTAL=0 for sccache, NODE_OPTIONS.
+# PATH (cargo, Node, MSVC), CARGO_INCREMENTAL=0 for sccache, NODE_OPTIONS.
 . (Join-Path $PSScriptRoot 'build-env.ps1')
 
 # Bypass the global sccache rustc-wrapper.

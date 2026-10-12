@@ -140,14 +140,6 @@ jobs:
           cache: "npm"
           cache-dependency-path: refact-agent/gui/package-lock.json
 
-      - name: Install LLVM (Windows)
-        if: startsWith(matrix.os, 'windows')
-        run: choco install llvm -y
-
-      - name: Install LLVM (macOS)
-        if: startsWith(matrix.os, 'macos')
-        run: brew install llvm
-
       - name: Install build tools
         if: runner.os == 'Linux'
         run: |

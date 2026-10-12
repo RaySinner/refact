@@ -58,7 +58,7 @@ foreach ($required in @($guiDir, $engineDir, $vscodeDir, $buildEnvScript)) {
     }
 }
 
-# PATH (cargo, LLVM, Node, MSVC), CARGO_INCREMENTAL=0 for sccache, NODE_OPTIONS.
+# PATH (cargo, Node, MSVC), CARGO_INCREMENTAL=0 for sccache, NODE_OPTIONS.
 . $buildEnvScript
 
 # Bypass the global sccache rustc-wrapper.

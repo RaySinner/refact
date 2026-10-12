@@ -1,5 +1,4 @@
 import { Box, Container, Flex } from "@radix-ui/themes";
-import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import type { UserMessage } from "../../services/refact";
 import type { Checkpoint } from "../../features/Checkpoints/types";
@@ -9,7 +8,7 @@ import { Markdown } from "../Markdown";
 import { Button } from "../ui";
 import styles from "./ChatContent.module.css";
 import { Reveal } from "../Reveal";
-import { MessageFooter, MessageWrapper } from "./MessageFooter";
+import { MessageWrapper } from "./MessageFooter";
 
 export type UserInputProps = {
   children: UserMessage["content"];
@@ -26,37 +25,11 @@ const LONG_USER_MESSAGE_MIN_LINES = 12;
 
 const _UserInput: React.FC<UserInputProps> = ({
   messageIndex,
-  messageId,
-  checkpoints,
   children,
   onRetry,
-  onBranch,
-  onDelete,
 }) => {
-  const copyToClipboard = useCopyToClipboard();
-
   const [showTextArea, setShowTextArea] = useState(false);
   const [expanded, setExpanded] = useState(false);
-
-  const handleCopy = useCallback(() => {
-    const text =
-      typeof children === "string"
-        ? children
-        : children
-            .filter((c) => {
-              if ("type" in c && c.type === "text") return true;
-              if ("m_type" in c && c.m_type === "text") return true;
-              return false;
-            })
-            .map((c) => {
-              if ("text" in c) return c.text;
-              if ("m_content" in c) return String(c.m_content);
-              return "";
-            })
-            .filter(Boolean)
-            .join("\n");
-    copyToClipboard(text);
-  }, [children, copyToClipboard]);
 
   const handleSubmit = useCallback(
     (value: UserMessage["content"]) => {
@@ -121,8 +94,6 @@ const _UserInput: React.FC<UserInputProps> = ({
       return false;
     });
   }, [children]);
-
-  const checkpointsFromMessage = checkpoints ?? null;
 
   const isCompressed = useMemo(() => {
     if (typeof children !== "string") return false;
@@ -235,16 +206,6 @@ const _UserInput: React.FC<UserInputProps> = ({
               </>
             )}
           </Box>
-        </Flex>
-        <Flex justify="end">
-          <MessageFooter
-            messageId={messageId}
-            onCopy={handleCopy}
-            onBranch={onBranch}
-            onDelete={onDelete}
-            checkpoints={checkpointsFromMessage}
-            messageIndex={messageIndex}
-          />
         </Flex>
       </Container>
     </MessageWrapper>

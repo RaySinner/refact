@@ -89,10 +89,34 @@
   color: var(--room-label-fallback, var(--gray-11));
 }
 
+.bylineControls {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--rf-space-2, 8px);
+  margin-left: auto;
+  min-width: 0;
+}
+
+.bylineActions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--rf-space-1, 4px);
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity var(--rf-dur-fast, 120ms) var(--rf-ease-standard, ease),
+    visibility var(--rf-dur-fast, 120ms) var(--rf-ease-standard, ease);
+}
+
+.roomFrame:hover .bylineActions,
+.roomFrame:focus-within .bylineActions {
+  opacity: 1;
+  visibility: visible;
+}
+
 /* The clock, pushed to the right edge of the byline with tabular figures. */
 .time {
   flex: 0 0 auto;
-  margin-left: auto;
   font-variant-numeric: tabular-nums;
   color: var(--gray-11);
 }

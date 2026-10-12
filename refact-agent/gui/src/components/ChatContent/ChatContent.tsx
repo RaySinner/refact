@@ -75,6 +75,7 @@ import {
   roomAttributionForItems,
   type AttributedItem,
 } from "./RoomAttribution/roomAttribution";
+import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import { formatExactClockTime } from "../../utils/formatDateToHumanReadable";
 import type {
   CompressionPhase,
@@ -115,6 +116,7 @@ export const ChatContent: React.FC<ChatContentProps> = ({
   onRetryGeneration,
 }) => {
   const dispatch = useAppDispatch();
+  const copyToClipboard = useCopyToClipboard();
   const chatId = useThreadId();
   const [renderChatId, setRenderChatId] = useState(chatId);
 
@@ -478,11 +480,8 @@ export const ChatContent: React.FC<ChatContentProps> = ({
               serverContentBlocks={item.message.server_content_blocks}
               citations={item.message.citations}
               messageId={item.message.message_id}
-              onBranch={handleBranch}
-              onDelete={handleDelete}
               contextFilesByToolId={item.contextFilesByToolId}
               diffsByToolId={item.diffsByToolId}
-              usage={item.message.usage}
               isStreaming={item.isStreaming}
               threadId={renderChatId}
             />
@@ -493,10 +492,6 @@ export const ChatContent: React.FC<ChatContentProps> = ({
             <UserInput
               onRetry={onRetryWrapper}
               messageIndex={item.index}
-              messageId={item.message.message_id}
-              checkpoints={item.message.checkpoints}
-              onBranch={handleBranch}
-              onDelete={handleDelete}
             >
               {item.message.content}
             </UserInput>
@@ -575,8 +570,6 @@ export const ChatContent: React.FC<ChatContentProps> = ({
       }
     },
     [
-      handleBranch,
-      handleDelete,
       handleProcessCompletedClick,
       onRetryWrapper,
       collapsibleState,
@@ -591,13 +584,62 @@ export const ChatContent: React.FC<ChatContentProps> = ({
       // No provenance, no frame. A plain conversation and a lone agent card must keep
       // exactly the transcript they had before rooms existed.
       if (attribution === null) return rendered;
+
+      let messageId: string | undefined;
+      let onCopy: (() => void) | undefined;
+      let usage: import("../../services/refact").Usage | null | undefined;
+      let checkpoints: import("../../features/Checkpoints/types").Checkpoint[] | null | undefined;
+      let messageIndex: number | undefined;
+
+      if (item.type === "assistant") {
+        messageId = item.message.message_id;
+        usage = item.message.usage;
+        const msgContent = item.message.content;
+        if (msgContent) {
+          onCopy = () => copyToClipboard(msgContent);
+        }
+      } else if (item.type === "user") {
+        messageId = item.message.message_id;
+        checkpoints = item.message.checkpoints;
+        messageIndex = item.index;
+        const rawContent = item.message.content;
+        onCopy = () => {
+          const text =
+            typeof rawContent === "string"
+              ? rawContent
+              : rawContent
+                  .filter((c) => {
+                    if ("type" in c && c.type === "text") return true;
+                    if ("m_type" in c && c.m_type === "text") return true;
+                    return false;
+                  })
+                  .map((c) => {
+                    if ("text" in c) return c.text;
+                    if ("m_content" in c) return String(c.m_content);
+                    return "";
+                  })
+                  .filter(Boolean)
+                  .join("\n");
+          copyToClipboard(text);
+        };
+      }
+
       return (
-        <RoomAttributionFrame attribution={attribution}>
+        <RoomAttributionFrame
+          attribution={attribution}
+          messageId={messageId}
+          onCopy={onCopy}
+          onBranch={handleBranch}
+          onDelete={handleDelete}
+          usage={usage}
+          checkpoints={checkpoints}
+          messageIndex={messageIndex}
+        >
           {rendered}
         </RoomAttributionFrame>
       );
     },
-    [renderItemBody],
+    [renderItemBody, copyToClipboard, handleBranch, handleDelete],
   );
 
   if (showLoading) {

@@ -2,30 +2,36 @@ import React from "react";
 import { roleAccent, roleLabel } from "../../../utils/roomRoleAccent";
 import type { RoomAttribution } from "./roomAttribution";
 import styles from "./RoomAttributionFrame.module.css";
+import type { Usage } from "../../../services/refact";
+import {
+  MessageActionButtons,
+  MessageUsageDisplay,
+} from "../MessageFooter";
+import type { Checkpoint } from "../../../features/Checkpoints/types";
 
-type RoomAttributionFrameProps = {
+export type RoomAttributionFrameProps = {
   attribution: RoomAttribution;
   children: React.ReactNode;
+  messageId?: string;
+  onCopy?: () => void;
+  onBranch?: (messageId: string) => void;
+  onDelete?: (messageId: string) => void;
+  usage?: Usage | null;
+  checkpoints?: Checkpoint[] | null;
+  messageIndex?: number;
+  actions?: React.ReactNode;
 };
-
-/**
- * Wraps one message of a room transcript in a Continue-style card that keeps two
- * agents apart at a glance.
- *
- * The card is a softly-rounded bubble with a hairline border and a pastel left
- * stripe in the speaker's role accent. A byline bar crowns it: an uppercase role
- * pill, the agent's name in the role colour, a tabular timestamp, and — only when
- * the speaker changed — a hairline boundary marking the start of a new turn.
- *
- * The colours arrive as CSS *variable names* from `roleAccent`, so a theme swap
- * is a token change in `tokens.css` and not a re-derivation of every message. The
- * inline custom-property writes below are the only place the accent reaches the
- * DOM; the pill tint, card border and stripe all derive from those variables in
- * the stylesheet.
- */
 export const RoomAttributionFrame: React.FC<RoomAttributionFrameProps> = ({
   attribution,
   children,
+  messageId,
+  onCopy,
+  onBranch,
+  onDelete,
+  usage,
+  checkpoints,
+  messageIndex,
+  actions,
 }) => {
   const accent = roleAccent(attribution.author.role);
   const accentStyle = {
@@ -39,6 +45,17 @@ export const RoomAttributionFrame: React.FC<RoomAttributionFrameProps> = ({
   const showName =
     !isStandardRole &&
     attribution.author.displayName.trim().toLowerCase() !== roleText.trim().toLowerCase();
+
+  const renderedActions = actions ?? (
+    <MessageActionButtons
+      messageId={messageId}
+      onCopy={onCopy}
+      onBranch={onBranch}
+      onDelete={onDelete}
+      checkpoints={checkpoints}
+      messageIndex={messageIndex}
+    />
+  );
 
   return (
     <div
@@ -71,16 +88,24 @@ export const RoomAttributionFrame: React.FC<RoomAttributionFrameProps> = ({
               {attribution.author.displayName}
             </span>
           )}
-          {attribution.timeLabel !== "" && (
-            <span className={styles.time} data-testid="room-attribution-time">
-              {attribution.timeLabel}
-            </span>
-          )}
+          <div className={styles.bylineControls}>
+            <div
+              className={styles.bylineActions}
+              data-testid="room-attribution-actions"
+            >
+              {renderedActions}
+            </div>
+            {usage && <MessageUsageDisplay usage={usage} />}
+            {attribution.timeLabel !== "" && (
+              <span className={styles.time} data-testid="room-attribution-time">
+                {attribution.timeLabel}
+              </span>
+            )}
+          </div>
         </div>
         {children}
       </div>
     </div>
   );
 };
-
 RoomAttributionFrame.displayName = "RoomAttributionFrame";

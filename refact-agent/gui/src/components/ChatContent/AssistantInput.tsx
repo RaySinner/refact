@@ -10,13 +10,12 @@ import {
   DiffChunk,
   ThinkingBlock,
   ToolCall,
-  Usage,
   WebSearchCitation,
 } from "../../services/refact";
 import { ToolContent } from "./ToolsContent";
 import { fallbackCopying } from "../../utils/fallbackCopying";
 import { ReasoningContent } from "./ReasoningContent";
-import { MessageFooter, MessageWrapper } from "./MessageFooter";
+import { MessageWrapper } from "./MessageFooter";
 import { ServerContentBlocks } from "./ServerContentBlocks";
 import styles from "./ChatContent.module.css";
 
@@ -29,11 +28,8 @@ type ChatInputProps = {
   serverContentBlocks?: unknown[] | null;
   citations?: WebSearchCitation[] | null;
   messageId?: string;
-  onBranch?: (messageId: string) => void;
-  onDelete?: (messageId: string) => void;
   contextFilesByToolId?: Record<string, ChatContextFile[]>;
   diffsByToolId?: Record<string, DiffChunk[]>;
-  usage?: Usage | null;
   isStreaming?: boolean;
   threadId?: string;
 };
@@ -47,11 +43,8 @@ const _AssistantInput: React.FC<ChatInputProps> = ({
   serverContentBlocks,
   citations,
   messageId,
-  onBranch,
-  onDelete,
   contextFilesByToolId,
   diffsByToolId,
-  usage,
   isStreaming = false,
   threadId,
 }) => {
@@ -117,12 +110,6 @@ const _AssistantInput: React.FC<ChatInputProps> = ({
     }
     return null;
   }, [reasoningContent, thinkingBlocks]);
-
-  const handleCopyMessage = useCallback(() => {
-    if (message) {
-      handleCopy(message);
-    }
-  }, [message, handleCopy]);
 
   return (
     <MessageWrapper>
@@ -230,13 +217,6 @@ const _AssistantInput: React.FC<ChatInputProps> = ({
           threadId={threadId}
         />
       )}
-      <MessageFooter
-        messageId={messageId}
-        onCopy={message ? handleCopyMessage : undefined}
-        onBranch={onBranch}
-        onDelete={onDelete}
-        usage={usage}
-      />
     </MessageWrapper>
   );
 };

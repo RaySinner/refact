@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "../../../utils/test-utils";
 import { roleAccentSlot } from "../../../utils/roomRoleAccent";
 import { RoomAttributionFrame } from "./RoomAttributionFrame";
@@ -242,5 +242,33 @@ describe("RoomAttributionFrame", () => {
     expect(
       screen.getByTestId("room-attribution").getAttribute("style"),
     ).toContain(`--room-stripe-1`);
+  });
+
+  it("renders action buttons and usage controls inside the byline", () => {
+    const onCopy = vi.fn();
+    const onBranch = vi.fn();
+    const onDelete = vi.fn();
+
+    render(
+      <RoomAttributionFrame
+        attribution={attribution()}
+        messageId="msg-123"
+        onCopy={onCopy}
+        onBranch={onBranch}
+        onDelete={onDelete}
+        usage={{
+          prompt_tokens: 10,
+          completion_tokens: 20,
+          total_tokens: 30,
+        }}
+      >
+        <p>content</p>
+      </RoomAttributionFrame>,
+    );
+
+    expect(screen.getByTestId("room-attribution-actions")).toBeInTheDocument();
+    expect(screen.getByLabelText("Copy message")).toBeInTheDocument();
+    expect(screen.getByLabelText("Branch from here")).toBeInTheDocument();
+    expect(screen.getByLabelText("Delete message")).toBeInTheDocument();
   });
 });

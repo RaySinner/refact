@@ -16,7 +16,7 @@ import { Portal } from "../Portal";
 import { Icon, IconButton, Tooltip } from "../ui";
 import styles from "./MessageFooter.module.css";
 
-type MessageFooterProps = {
+export type MessageFooterProps = {
   messageId?: string;
   onCopy?: () => void;
   onBranch?: (messageId: string) => void;
@@ -50,27 +50,9 @@ const UsdDisplay: React.FC<{ label: string; value: number | undefined }> = ({
   </Flex>
 );
 
-export const MessageFooter: React.FC<MessageFooterProps> = ({
-  messageId,
-  onCopy,
-  onBranch,
-  onDelete,
+export const MessageUsageDisplay: React.FC<{ usage?: Usage | null }> = ({
   usage,
-  checkpoints,
-  messageIndex,
 }) => {
-  const handleBranch = useCallback(() => {
-    if (messageId && onBranch) {
-      onBranch(messageId);
-    }
-  }, [messageId, onBranch]);
-
-  const handleDelete = useCallback(() => {
-    if (messageId && onDelete) {
-      onDelete(messageId);
-    }
-  }, [messageId, onDelete]);
-
   const outputTokens = calculateUsageInputTokens({
     usage,
     keys: ["completion_tokens"],
@@ -91,181 +73,230 @@ export const MessageFooter: React.FC<MessageFooterProps> = ({
   const cacheCreationTokens = getCacheCreationTokens(usage);
   const hasUsageInfo = Boolean(usage && contextTokens > 0) || hasUsd;
 
+  if (!hasUsageInfo) return null;
+
+  return (
+    <HoverCard.Root openDelay={150} closeDelay={120}>
+      <HoverCard.Trigger asChild>
+        <button className={styles.usageTrigger} type="button">
+          {contextTokens > 0 && (
+            <span className={styles.footerItem}>
+              <Icon icon={BarChart3} size="sm" tone="muted" />
+              <span>{formatNumberToFixed(contextTokens)}</span>
+            </span>
+          )}
+          {hasUsd && (
+            <span className={styles.footerItem}>
+              <span>{formatUsd(meteringUsd.total_usd)}</span>
+            </span>
+          )}
+        </button>
+      </HoverCard.Trigger>
+      <HoverCard.Portal>
+        <Portal>
+          <HoverCard.Content
+            align="center"
+            className={`${styles.usageContent} rf-popover-motion`}
+            collisionPadding={12}
+            side="top"
+            sideOffset={8}
+          >
+            <Flex direction="column" gap="2">
+              <Text size="2" weight="bold" mb="1">
+                This Message
+              </Text>
+
+              {usage && (
+                <>
+                  <TokenDisplay
+                    label="Context size"
+                    value={contextTokens}
+                  />
+                  {cacheReadTokens > 0 && (
+                    <TokenDisplay
+                      label="Cache read"
+                      value={cacheReadTokens}
+                    />
+                  )}
+                  {cacheCreationTokens > 0 && (
+                    <TokenDisplay
+                      label="Cache creation"
+                      value={cacheCreationTokens}
+                    />
+                  )}
+                  <TokenDisplay
+                    label="Output tokens"
+                    value={outputTokens}
+                  />
+                  {usage.completion_tokens_details?.reasoning_tokens !=
+                    null &&
+                    usage.completion_tokens_details.reasoning_tokens >
+                      0 && (
+                      <TokenDisplay
+                        label="Reasoning tokens"
+                        value={
+                          usage.completion_tokens_details.reasoning_tokens
+                        }
+                      />
+                    )}
+                </>
+              )}
+
+              {hasUsd && (
+                <>
+                  <div className={styles.usageSeparator} />
+                  <Flex
+                    align="center"
+                    justify="between"
+                    width="100%"
+                    mb="1"
+                  >
+                    <Text size="2" weight="bold">
+                      Cost
+                    </Text>
+                    <Text size="2">
+                      {formatUsd(meteringUsd.total_usd)}
+                    </Text>
+                  </Flex>
+                  <UsdDisplay
+                    label="Prompt"
+                    value={meteringUsd.prompt_usd}
+                  />
+                  <UsdDisplay
+                    label="Completion"
+                    value={meteringUsd.generated_usd}
+                  />
+                  {meteringUsd.cache_read_usd !== undefined &&
+                    meteringUsd.cache_read_usd > 0 && (
+                      <UsdDisplay
+                        label="Cache read"
+                        value={meteringUsd.cache_read_usd}
+                      />
+                    )}
+                  {meteringUsd.cache_creation_usd !== undefined &&
+                    meteringUsd.cache_creation_usd > 0 && (
+                      <UsdDisplay
+                        label="Cache creation"
+                        value={meteringUsd.cache_creation_usd}
+                      />
+                    )}
+                </>
+              )}
+            </Flex>
+          </HoverCard.Content>
+        </Portal>
+      </HoverCard.Portal>
+    </HoverCard.Root>
+  );
+};
+
+export const MessageActionButtons: React.FC<
+  Omit<MessageFooterProps, "usage">
+> = ({ messageId, onCopy, onBranch, onDelete, checkpoints, messageIndex }) => {
+  const handleBranch = useCallback(() => {
+    if (messageId && onBranch) {
+      onBranch(messageId);
+    }
+  }, [messageId, onBranch]);
+
+  const handleDelete = useCallback(() => {
+    if (messageId && onDelete) {
+      onDelete(messageId);
+    }
+  }, [messageId, onDelete]);
+  const hasCheckpoints = Boolean(
+    checkpoints && checkpoints.length > 0 && messageIndex !== undefined,
+  );
+  const hasCopy = Boolean(onCopy);
+  const hasBranch = Boolean(onBranch && messageId);
+  const hasDelete = Boolean(onDelete && messageId);
+  const hasAnyAction = hasCheckpoints || hasCopy || hasBranch || hasDelete;
+  if (!hasAnyAction) return null;
+
+  return (
+    <>
+      {checkpoints &&
+        checkpoints.length > 0 &&
+        messageIndex !== undefined && (
+          <CheckpointButton
+            checkpoints={checkpoints}
+            messageIndex={messageIndex}
+          />
+        )}
+      {onCopy && (
+        <Tooltip delayDuration={150}>
+          <Tooltip.Trigger asChild>
+            <IconButton
+              aria-label="Copy message"
+              className={styles.footerButton}
+              icon={Copy}
+              onClick={onCopy}
+              size="sm"
+              variant="plain"
+            />
+          </Tooltip.Trigger>
+          <Tooltip.Content>Copy message</Tooltip.Content>
+        </Tooltip>
+      )}
+      {onBranch && messageId && (
+        <Tooltip delayDuration={150}>
+          <Tooltip.Trigger asChild>
+            <IconButton
+              aria-label="Branch from here"
+              className={styles.footerButton}
+              icon={GitBranch}
+              onClick={handleBranch}
+              size="sm"
+              variant="plain"
+            />
+          </Tooltip.Trigger>
+          <Tooltip.Content>Branch from here</Tooltip.Content>
+        </Tooltip>
+      )}
+      {onDelete && messageId && (
+        <Tooltip delayDuration={150}>
+          <Tooltip.Trigger asChild>
+            <IconButton
+              aria-label="Delete message"
+              className={styles.footerDangerButton}
+              icon={Trash2}
+              onClick={handleDelete}
+              size="sm"
+              variant="plain"
+            />
+          </Tooltip.Trigger>
+          <Tooltip.Content>Delete message</Tooltip.Content>
+        </Tooltip>
+      )}
+    </>
+  );
+};
+
+export const MessageFooter: React.FC<MessageFooterProps> = ({
+  messageId,
+  onCopy,
+  onBranch,
+  onDelete,
+  usage,
+  checkpoints,
+  messageIndex,
+}) => {
   return (
     <div className={styles.footerLane}>
       <div className={styles.footerContent}>
-        {checkpoints &&
-          checkpoints.length > 0 &&
-          messageIndex !== undefined && (
-            <CheckpointButton
-              checkpoints={checkpoints}
-              messageIndex={messageIndex}
-            />
-          )}
-        {onCopy && (
-          <Tooltip delayDuration={150}>
-            <Tooltip.Trigger asChild>
-              <IconButton
-                aria-label="Copy message"
-                className={styles.footerButton}
-                icon={Copy}
-                onClick={onCopy}
-                size="sm"
-                variant="plain"
-              />
-            </Tooltip.Trigger>
-            <Tooltip.Content>Copy message</Tooltip.Content>
-          </Tooltip>
-        )}
-        {onBranch && messageId && (
-          <Tooltip delayDuration={150}>
-            <Tooltip.Trigger asChild>
-              <IconButton
-                aria-label="Branch from here"
-                className={styles.footerButton}
-                icon={GitBranch}
-                onClick={handleBranch}
-                size="sm"
-                variant="plain"
-              />
-            </Tooltip.Trigger>
-            <Tooltip.Content>Branch from here</Tooltip.Content>
-          </Tooltip>
-        )}
-        {onDelete && messageId && (
-          <Tooltip delayDuration={150}>
-            <Tooltip.Trigger asChild>
-              <IconButton
-                aria-label="Delete message"
-                className={styles.footerDangerButton}
-                icon={Trash2}
-                onClick={handleDelete}
-                size="sm"
-                variant="plain"
-              />
-            </Tooltip.Trigger>
-            <Tooltip.Content>Delete message</Tooltip.Content>
-          </Tooltip>
-        )}
-
-        {hasUsageInfo && (
-          <HoverCard.Root openDelay={150} closeDelay={120}>
-            <HoverCard.Trigger asChild>
-              <button className={styles.usageTrigger} type="button">
-                {contextTokens > 0 && (
-                  <span className={styles.footerItem}>
-                    <Icon icon={BarChart3} size="sm" tone="muted" />
-                    <span>{formatNumberToFixed(contextTokens)}</span>
-                  </span>
-                )}
-                {hasUsd && (
-                  <span className={styles.footerItem}>
-                    <span>{formatUsd(meteringUsd.total_usd)}</span>
-                  </span>
-                )}
-              </button>
-            </HoverCard.Trigger>
-            <HoverCard.Portal>
-              <Portal>
-                <HoverCard.Content
-                  align="center"
-                  className={`${styles.usageContent} rf-popover-motion`}
-                  collisionPadding={12}
-                  side="top"
-                  sideOffset={8}
-                >
-                  <Flex direction="column" gap="2">
-                    <Text size="2" weight="bold" mb="1">
-                      This Message
-                    </Text>
-
-                    {usage && (
-                      <>
-                        <TokenDisplay
-                          label="Context size"
-                          value={contextTokens}
-                        />
-                        {cacheReadTokens > 0 && (
-                          <TokenDisplay
-                            label="Cache read"
-                            value={cacheReadTokens}
-                          />
-                        )}
-                        {cacheCreationTokens > 0 && (
-                          <TokenDisplay
-                            label="Cache creation"
-                            value={cacheCreationTokens}
-                          />
-                        )}
-                        <TokenDisplay
-                          label="Output tokens"
-                          value={outputTokens}
-                        />
-                        {usage.completion_tokens_details?.reasoning_tokens !=
-                          null &&
-                          usage.completion_tokens_details.reasoning_tokens >
-                            0 && (
-                            <TokenDisplay
-                              label="Reasoning tokens"
-                              value={
-                                usage.completion_tokens_details.reasoning_tokens
-                              }
-                            />
-                          )}
-                      </>
-                    )}
-
-                    {hasUsd && (
-                      <>
-                        <div className={styles.usageSeparator} />
-                        <Flex
-                          align="center"
-                          justify="between"
-                          width="100%"
-                          mb="1"
-                        >
-                          <Text size="2" weight="bold">
-                            Cost
-                          </Text>
-                          <Text size="2">
-                            {formatUsd(meteringUsd.total_usd)}
-                          </Text>
-                        </Flex>
-                        <UsdDisplay
-                          label="Prompt"
-                          value={meteringUsd.prompt_usd}
-                        />
-                        <UsdDisplay
-                          label="Completion"
-                          value={meteringUsd.generated_usd}
-                        />
-                        {meteringUsd.cache_read_usd !== undefined &&
-                          meteringUsd.cache_read_usd > 0 && (
-                            <UsdDisplay
-                              label="Cache read"
-                              value={meteringUsd.cache_read_usd}
-                            />
-                          )}
-                        {meteringUsd.cache_creation_usd !== undefined &&
-                          meteringUsd.cache_creation_usd > 0 && (
-                            <UsdDisplay
-                              label="Cache creation"
-                              value={meteringUsd.cache_creation_usd}
-                            />
-                          )}
-                      </>
-                    )}
-                  </Flex>
-                </HoverCard.Content>
-              </Portal>
-            </HoverCard.Portal>
-          </HoverCard.Root>
-        )}
+        <MessageActionButtons
+          messageId={messageId}
+          onCopy={onCopy}
+          onBranch={onBranch}
+          onDelete={onDelete}
+          checkpoints={checkpoints}
+          messageIndex={messageIndex}
+        />
+        <MessageUsageDisplay usage={usage} />
       </div>
     </div>
   );
 };
-
 export const MessageWrapper: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {

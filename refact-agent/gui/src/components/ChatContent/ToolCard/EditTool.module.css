@@ -21,8 +21,8 @@
 .hunkHeader {
   min-width: 0;
   padding: var(--rf-space-2xs) 0;
-  white-space: pre-wrap;
   user-select: none;
+  flex-wrap: wrap;
 }
 
 .hunkFileButton,
@@ -30,6 +30,9 @@
   all: unset;
   color: var(--rf-color-accent);
   font-family: var(--rf-font-mono);
+  word-break: break-all;
+  overflow-wrap: anywhere;
+  min-width: 0;
 }
 
 .hunkFileButton {
@@ -46,14 +49,15 @@
 .hunkTitle {
   color: inherit;
   font-family: var(--rf-font-mono);
-  flex: 0 1 auto;
-  min-width: 0;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .statsInline {
   font-family: var(--rf-font-mono);
   font-size: 12px;
-  flex: 1 1 auto;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .added {

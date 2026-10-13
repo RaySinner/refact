@@ -215,6 +215,50 @@ describe("RoomAttributionFrame", () => {
     expect(screen.getByText("the actual answer")).toBeInTheDocument();
   });
 
+  it("mirrors the user frame and not other roles", () => {
+    const { rerender } = render(
+      <RoomAttributionFrame
+        attribution={attribution({
+          author: { chatId: "", role: "user", displayName: "User" },
+        })}
+      >
+        <p>user message</p>
+      </RoomAttributionFrame>,
+    );
+    expect(screen.getByTestId("room-attribution")).toHaveAttribute(
+      "data-mirrored",
+      "true",
+    );
+
+    rerender(
+      <RoomAttributionFrame
+        attribution={attribution({
+          author: { chatId: "", role: "assistant", displayName: "Assistant" },
+        })}
+      >
+        <p>assistant message</p>
+      </RoomAttributionFrame>,
+    );
+    expect(screen.getByTestId("room-attribution")).toHaveAttribute(
+      "data-mirrored",
+      "false",
+    );
+
+    rerender(
+      <RoomAttributionFrame
+        attribution={attribution({
+          author: { chatId: "agent-1", role: "coder", displayName: "coder" },
+        })}
+      >
+        <p>agent message</p>
+      </RoomAttributionFrame>,
+    );
+    expect(screen.getByTestId("room-attribution")).toHaveAttribute(
+      "data-mirrored",
+      "false",
+    );
+  });
+
   it("renders user and assistant roles with designated named slots", () => {
     const { rerender } = render(
       <RoomAttributionFrame

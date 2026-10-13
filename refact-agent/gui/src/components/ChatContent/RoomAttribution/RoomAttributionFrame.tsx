@@ -39,6 +39,7 @@ export const RoomAttributionFrame: React.FC<RoomAttributionFrameProps> = ({
     "--room-label-fallback": accent.label,
   } as React.CSSProperties;
   const roleText = roleLabel(attribution.author.role);
+  const mirrored = attribution.author.role === "user";
 
   const isStandardRole =
     attribution.author.role === "user" || attribution.author.role === "assistant";
@@ -64,6 +65,7 @@ export const RoomAttributionFrame: React.FC<RoomAttributionFrameProps> = ({
       data-author-chat-id={attribution.author.chatId}
       data-author-role={attribution.author.role}
       data-divider={attribution.divider ? "true" : "false"}
+      data-mirrored={mirrored ? "true" : "false"}
       style={accentStyle}
     >
       <span

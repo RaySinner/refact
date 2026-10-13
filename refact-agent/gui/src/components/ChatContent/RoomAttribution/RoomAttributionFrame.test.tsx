@@ -215,7 +215,7 @@ describe("RoomAttributionFrame", () => {
     expect(screen.getByText("the actual answer")).toBeInTheDocument();
   });
 
-  it("mirrors the user frame and not other roles", () => {
+  it("keeps a uniform left-stripe frame for every role", () => {
     const { rerender } = render(
       <RoomAttributionFrame
         attribution={attribution({
@@ -225,9 +225,8 @@ describe("RoomAttributionFrame", () => {
         <p>user message</p>
       </RoomAttributionFrame>,
     );
-    expect(screen.getByTestId("room-attribution")).toHaveAttribute(
+    expect(screen.getByTestId("room-attribution")).not.toHaveAttribute(
       "data-mirrored",
-      "true",
     );
 
     rerender(
@@ -239,23 +238,8 @@ describe("RoomAttributionFrame", () => {
         <p>assistant message</p>
       </RoomAttributionFrame>,
     );
-    expect(screen.getByTestId("room-attribution")).toHaveAttribute(
+    expect(screen.getByTestId("room-attribution")).not.toHaveAttribute(
       "data-mirrored",
-      "false",
-    );
-
-    rerender(
-      <RoomAttributionFrame
-        attribution={attribution({
-          author: { chatId: "agent-1", role: "coder", displayName: "coder" },
-        })}
-      >
-        <p>agent message</p>
-      </RoomAttributionFrame>,
-    );
-    expect(screen.getByTestId("room-attribution")).toHaveAttribute(
-      "data-mirrored",
-      "false",
     );
   });
 

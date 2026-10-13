@@ -13,33 +13,6 @@
   background-color: transparent;
   /* Left padding clears the floating stripe; the rest keeps the bubble cozy. */
   padding: 6px 10px 6px 18px;
-  /* Gap on the side away from the stripe, splitting the conversation. */
-  margin-inline-end: var(--rf-space-6, 24px);
-}
-
-/* Mirrored (user-side) frame: the accent bar moves to the inner right edge,
-   so the right padding clears it and the bubble reads right-to-left. The
-   conversation gap flips to the far (left) side. */
-.roomFrame[data-mirrored="true"] {
-  padding: 6px 18px 6px 10px;
-  margin-inline-end: 0;
-  margin-inline-start: var(--rf-space-6, 24px);
-}
-
-.roomFrame[data-mirrored="true"] .stripe {
-  left: auto;
-  right: 4px;
-}
-
-/* The byline mirrors: badge and name sit at the far right, controls and clock
-   flow out to its left. */
-.roomFrame[data-mirrored="true"] .byline {
-  flex-direction: row-reverse;
-}
-
-.roomFrame[data-mirrored="true"] .bylineControls {
-  margin-left: 0;
-  margin-right: auto;
 }
 
 /* The accent bar, pinned to the card's inner left edge and inset from the top and

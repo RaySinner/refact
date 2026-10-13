@@ -47,3 +47,40 @@ body {
 .hljs > code {
   background-color: transparent;
 }
+
+[data-host="vscode"] {
+  --rf-bg: var(--vscode-editor-background, var(--vscode-sideBar-background));
+  --rf-color-fg: var(--vscode-editor-foreground, var(--vscode-sideBar-foreground));
+  --rf-color-muted: var(--vscode-descriptionForeground);
+  --rf-color-faint: color-mix(
+    in srgb,
+    var(--vscode-descriptionForeground) 60%,
+    transparent
+  );
+  --rf-surface-glass: var(--vscode-editor-background);
+  --rf-surface-overlay: var(
+    --vscode-editorWidget-background,
+    var(--vscode-menu-background)
+  );
+  --rf-surface-1: var(--vscode-list-hoverBackground, rgba(255, 255, 255, 0.04));
+  --rf-surface-2: var(
+    --vscode-list-activeSelectionBackground,
+    rgba(255, 255, 255, 0.08)
+  );
+  --rf-border: var(
+    --vscode-widget-border,
+    var(--vscode-panel-border, var(--vscode-sideBar-border, rgba(255, 255, 255, 0.12)))
+  );
+  --rf-border-strong: var(--vscode-focusBorder, var(--vscode-widget-border));
+  --rf-color-accent: var(
+    --vscode-focusBorder,
+    var(
+      --vscode-activityBar-activeBorder,
+      var(--vscode-button-background, #7f93d8)
+    )
+  );
+  --room-stripe-1: var(--rf-color-accent);
+  --room-label-1: var(--rf-color-fg);
+  --room-stripe-7: var(--vscode-descriptionForeground);
+  --room-label-7: var(--vscode-descriptionForeground);
+}

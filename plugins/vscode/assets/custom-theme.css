@@ -83,4 +83,9 @@ body {
   --room-label-1: var(--rf-color-fg);
   --room-stripe-7: var(--vscode-descriptionForeground);
   --room-label-7: var(--vscode-descriptionForeground);
+  --rf-selection-bg: var(
+    --vscode-editor-selectionBackground,
+    color-mix(in srgb, var(--rf-color-accent, #006adc) 25%, rgba(0, 0, 0, 0.12))
+  );
+  --rf-selection-fg: inherit;
 }

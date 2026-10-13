@@ -73,3 +73,17 @@
 .radix-themes .rt-Text[data-accent-color="gray"] {
   color: var(--rf-color-muted);
 }
+/*
+ * Text selection: the UA default blue is too light on white backgrounds in
+ * light mode. Use a tinted accent so selection stays visible on both themes.
+ */
+::selection {
+  background-color: var(
+    --rf-selection-bg,
+    var(
+      --vscode-editor-selectionBackground,
+      color-mix(in srgb, var(--rf-color-accent, #006adc) 28%, rgba(0, 0, 0, 0.12))
+    )
+  );
+  color: var(--rf-selection-fg, inherit);
+}

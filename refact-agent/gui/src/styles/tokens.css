@@ -25,6 +25,8 @@
   --rf-selected-bg: rgba(127, 147, 216, 0.14);
   --rf-selected-border: rgba(127, 147, 216, 0.6);
   --rf-selected-fg: #c2cdf2;
+  --rf-selection-bg: color-mix(in srgb, var(--rf-color-accent, #7f93d8) 35%, transparent);
+  --rf-selection-fg: inherit;
   --rf-color-success: #5fae8b;
   --rf-color-warning: #cda04e;
   --rf-color-danger: #d8736d;
@@ -285,6 +287,8 @@
   --rf-selected-bg: rgba(0, 106, 220, 0.1);
   --rf-selected-border: rgba(0, 106, 220, 0.7);
   --rf-selected-fg: #10457f;
+  --rf-selection-bg: color-mix(in srgb, var(--rf-color-accent, #006adc) 25%, rgba(0, 0, 0, 0.12));
+  --rf-selection-fg: inherit;
   --rf-focus-ring: rgba(0, 106, 220, 0.5);
   --rf-chart-1: #5566c4;
   --rf-chart-2: #2f9e74;
@@ -394,6 +398,11 @@
   --room-label-1: var(--rf-color-fg);
   --room-stripe-7: var(--vscode-descriptionForeground);
   --room-label-7: var(--vscode-descriptionForeground);
+  --rf-selection-bg: var(
+    --vscode-editor-selectionBackground,
+    color-mix(in srgb, var(--rf-color-accent, #006adc) 25%, rgba(0, 0, 0, 0.12))
+  );
+  --rf-selection-fg: inherit;
 }
 
 @media (prefers-reduced-transparency: reduce) {

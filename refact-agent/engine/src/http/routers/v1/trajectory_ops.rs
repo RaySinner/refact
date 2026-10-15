@@ -505,30 +505,38 @@ pub async fn handle_transform_apply(
     let stats = {
         let mut session = session_arc.lock().await;
 
-        if session.runtime.state != SessionState::Idle
-            && session.runtime.state != SessionState::Error
+        if req
+            .expected_trajectory_version
+            .is_some_and(|v| v != session.trajectory_version)
         {
             return Err(ScratchError::new(
                 StatusCode::CONFLICT,
-                format!(
-                    "Session is not idle or error, current state: {:?}",
-                    session.runtime.state
-                ),
+                "Trajectory changed".to_string(),
             ));
         }
 
-        if compression_attempt_active(&session)
-            || req
-                .expected_trajectory_version
-                .is_some_and(|v| v != session.trajectory_version)
-        {
-            return Err(ScratchError::new(
-                StatusCode::CONFLICT,
-                "Trajectory changed or compression is active".to_string(),
-            ));
+        if matches!(
+            session.runtime.state,
+            SessionState::Generating | SessionState::ExecutingTools
+        ) {
+            session.abort_stream();
+            session.clear_pending_tool_calls_for_interruption();
         }
+
+        if compression_attempt_active(&session) {
+            session.reset_compaction_runtime_state();
+        }
+
         let stats = compress_in_place(&mut session.messages, &req.options)
             .map_err(|e| ScratchError::new(StatusCode::INTERNAL_SERVER_ERROR, e))?;
+
+        session.set_runtime_state(SessionState::Idle, None);
+        session.thread.previous_response_id = None;
+        session.thread.frozen_request_prefix = None;
+        session.thread.claude_code_identity = None;
+        session.openai_codex_websocket = Default::default();
+        session.reset_cache_guard_snapshot();
+        session.provider_usage_stale = true;
 
         session.increment_version();
         let snapshot = session.snapshot();
@@ -1301,6 +1309,99 @@ mod tests {
             serde_json::from_value(json!({"options": {}, "expected_trajectory_version": 42}))
                 .unwrap();
         assert_eq!(req.expected_trajectory_version, Some(42));
+    }
+
+    async fn make_transform_test_gcx(chat_id: &str, state: SessionState) -> Arc<GlobalContext> {
+        let gcx = crate::global_context::tests::make_test_gcx().await;
+        let mut session = crate::chat::types::ChatSession::new(chat_id.to_string());
+        session.add_message(ChatMessage::new("user".to_string(), "hello".to_string()));
+        session.add_message(ChatMessage::new("assistant".to_string(), "world".to_string()));
+        session.runtime.state = state;
+        session.trajectory_version = 1;
+        gcx.chat_sessions
+            .write()
+            .await
+            .insert(chat_id.to_string(), Arc::new(tokio::sync::Mutex::new(session)));
+        gcx
+    }
+
+    async fn call_transform_apply(
+        gcx: Arc<GlobalContext>,
+        chat_id: &str,
+    ) -> Result<Response<Body>, ScratchError> {
+        let app = AppState::from_gcx(gcx).await;
+        let body = hyper::body::Bytes::from_static(br#"{"options":{"drop_all_context":true}}"#);
+        handle_transform_apply(State(app), Path(chat_id.to_string()), body).await
+    }
+
+    #[tokio::test]
+    async fn transform_apply_succeeds_when_session_is_completed() {
+        let gcx = make_transform_test_gcx("completed-chat", SessionState::Completed).await;
+        let result = call_transform_apply(gcx.clone(), "completed-chat").await;
+        assert!(result.is_ok(), "transform apply should succeed for Completed state");
+        let session = gcx
+            .chat_sessions
+            .read()
+            .await
+            .get("completed-chat")
+            .cloned()
+            .unwrap();
+        let session = session.lock().await;
+        assert_eq!(session.runtime.state, SessionState::Idle);
+        assert!(session.thread.previous_response_id.is_none());
+        assert!(session.thread.frozen_request_prefix.is_none());
+        assert!(session.thread.claude_code_identity.is_none());
+        assert!(session.provider_usage_stale);
+    }
+
+    #[tokio::test]
+    async fn transform_apply_succeeds_when_session_is_waiting_user_input() {
+        let gcx = make_transform_test_gcx("waiting-chat", SessionState::WaitingUserInput).await;
+        let result = call_transform_apply(gcx.clone(), "waiting-chat").await;
+        assert!(result.is_ok(), "transform apply should succeed for WaitingUserInput state");
+        let session = gcx
+            .chat_sessions
+            .read()
+            .await
+            .get("waiting-chat")
+            .cloned()
+            .unwrap();
+        let session = session.lock().await;
+        assert_eq!(session.runtime.state, SessionState::Idle);
+    }
+
+    #[tokio::test]
+    async fn transform_apply_aborts_generating_session_and_succeeds() {
+        let gcx = make_transform_test_gcx("generating-chat", SessionState::Generating).await;
+        let result = call_transform_apply(gcx.clone(), "generating-chat").await;
+        assert!(result.is_ok(), "transform apply should succeed for Generating state");
+        let session = gcx
+            .chat_sessions
+            .read()
+            .await
+            .get("generating-chat")
+            .cloned()
+            .unwrap();
+        let session = session.lock().await;
+        assert_eq!(session.runtime.state, SessionState::Idle);
+        assert!(session.abort_flag.load(std::sync::atomic::Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn transform_apply_aborts_executing_tools_session_and_succeeds() {
+        let gcx = make_transform_test_gcx("tools-chat", SessionState::ExecutingTools).await;
+        let result = call_transform_apply(gcx.clone(), "tools-chat").await;
+        assert!(result.is_ok(), "transform apply should succeed for ExecutingTools state");
+        let session = gcx
+            .chat_sessions
+            .read()
+            .await
+            .get("tools-chat")
+            .cloned()
+            .unwrap();
+        let session = session.lock().await;
+        assert_eq!(session.runtime.state, SessionState::Idle);
+        assert!(session.abort_flag.load(std::sync::atomic::Ordering::SeqCst));
     }
 
     #[test]

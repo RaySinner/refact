@@ -1,0 +1,38 @@
+﻿cargo :    Compiling refact-lsp v8.7.7 (C:\Users\raymond\.cache\refact\worktrees\8a0bca400273025f\d9e860d8-53da-49d6-ad
+11-67f0ce2c53f8\refact-agent\engine)
+строка:1 знак:68
++ ... ld-env.ps1; cargo --config C:\Users\raymond\AppData\Local\Temp\refact ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (   Compiling re...t-agent\engine):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 34m 56s
+     Running unittests src\lib.rs (target\debug\deps\refact_lsp-7de381553d8fdc29.exe)
+
+running 23 tests
+test http::routers::v1::trajectory_ops::tests::failed_destination_persistence_leaves_source_goal_unchanged ... ok
+test http::routers::v1::trajectory_ops::tests::generic_mode_transition_rejects_task_planner_target_before_session_lookup ... ok
+test http::routers::v1::trajectory_ops::tests::http_mode_transition_goal_transfer_deactivates_source_and_preserves_progress ... ok
+test http::routers::v1::trajectory_ops::tests::http_mode_transition_goal_transfer_no_goal_is_noop ... ok
+test http::routers::v1::trajectory_ops::tests::http_mode_transition_goal_transfer_only_active_goals_transfer ... ok
+test http::routers::v1::trajectory_ops::tests::http_mode_transition_goal_transfer_respects_live_stop_over_pinned_meta ... ok
+test http::routers::v1::trajectory_ops::tests::llm_compress_request_blank_model_uses_automatic_resolution ... ok
+test http::routers::v1::trajectory_ops::tests::llm_compress_request_parse_error_is_redacted ... ok
+test http::routers::v1::trajectory_ops::tests::mode_transition_response_serializes_optional_planner_metadata ... ok
+test http::routers::v1::trajectory_ops::tests::planner_from_transition_rejects_non_planner_target_before_task_lookup ... ok
+test http::routers::v1::trajectory_ops::tests::report_transfer_preserves_archive_and_ledger_stop_wins ... ok
+test http::routers::v1::trajectory_ops::tests::reservation_rejects_concurrent_rebuild_and_settings_change ... ok
+test http::routers::v1::trajectory_ops::tests::save_transition_snapshot_preserves_worktree_metadata ... ok
+test http::routers::v1::trajectory_ops::tests::staged_commit_under_source_lock_saves_single_owner_and_archive ... ok
+test http::routers::v1::trajectory_ops::tests::staged_destination_is_goal_free_when_source_save_fails ... ok
+test http::routers::v1::trajectory_ops::tests::static_transform_request_accepts_expected_version ... ok
+test http::routers::v1::trajectory_ops::tests::trajectory_ops_mode_transition_snapshot_does_not_copy_source_identity ... ok
+test http::routers::v1::trajectory_ops::tests::transform_apply_aborts_executing_tools_session_and_succeeds ... ok
+test http::routers::v1::trajectory_ops::tests::transform_apply_aborts_generating_session_and_succeeds ... ok
+test http::routers::v1::trajectory_ops::tests::transform_apply_succeeds_when_session_is_completed ... ok
+test http::routers::v1::trajectory_ops::tests::transform_apply_succeeds_when_session_is_waiting_user_input ... ok
+test http::routers::v1::trajectory_ops::tests::transition_commit_rejects_stale_source_before_destination_save ... ok
+test http::routers::v1::trajectory_ops::tests::transition_initial_plan_document_failure_is_non_blocking ... ok
+
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 5470 filtered out; finished in 0.82s
+

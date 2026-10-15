@@ -1391,6 +1391,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn agent_wait_unblocks_when_agent_completes_concurrently() {
+        let (_temp, app, ccx) = test_context(PARENT).await;
+        let record = create_agent(&app, PARENT, BgAgentKind::Subagent, "Concurrent finish").await;
+        app.agents
+            .mark_running(&record.agent_id, "subchat-concurrent".to_string())
+            .await
+            .unwrap();
+        let agent_id = record.agent_id.clone();
+        let registry = app.agents.clone();
+        tokio::spawn(async move {
+            registry
+                .mark_completed(&agent_id, completion("done concurrently"))
+                .await
+                .unwrap();
+        });
+
+        let output = output_text(
+            ToolAgentWait {
+                config_path: String::new(),
+            }
+            .tool_execute(
+                ccx,
+                &"call".to_string(),
+                &args(&[
+                    ("agent_id", json!(record.agent_id)),
+                    ("timeout_ms", json!(5000)),
+                ]),
+            )
+            .await
+            .unwrap(),
+        );
+
+        assert!(output.contains("# Agent Result: Concurrent finish"));
+        assert!(output.contains("done concurrently"));
+    }
+    #[tokio::test]
     async fn agent_result_reports_not_finished_for_running_agent() {
         let (_temp, app, ccx) = test_context(PARENT).await;
         let record = create_agent(&app, PARENT, BgAgentKind::Subagent, "Still running").await;

@@ -368,7 +368,7 @@ impl BackgroundAgentRegistry {
             updated
         };
         if let Some(notify) = self.notify_for(agent_id).await {
-            notify.notify_waiters();
+            notify.notify_one();
         }
         self.retire_runtime(agent_id).await;
         Ok(updated)
@@ -406,7 +406,7 @@ impl BackgroundAgentRegistry {
             updated
         };
         if let Some(notify) = self.notify_for(agent_id).await {
-            notify.notify_waiters();
+            notify.notify_one();
         }
         self.retire_runtime(agent_id).await;
         Ok(updated)
@@ -447,7 +447,7 @@ impl BackgroundAgentRegistry {
             updated
         };
         if let Some(notify) = self.notify_for(agent_id).await {
-            notify.notify_waiters();
+            notify.notify_one();
         }
         self.retire_runtime(agent_id).await;
         Ok(updated)
@@ -481,7 +481,7 @@ impl BackgroundAgentRegistry {
             updated
         };
         if let Some(notify) = self.notify_for(agent_id).await {
-            notify.notify_waiters();
+            notify.notify_one();
         }
         self.retire_runtime(agent_id).await;
         Ok(updated)
@@ -540,7 +540,7 @@ impl BackgroundAgentRegistry {
             self.flush_records(snapshot).await?;
         }
         if let Some(notify) = self.notify_for(agent_id).await {
-            notify.notify_waiters();
+            notify.notify_one();
         }
         Ok(())
     }
@@ -1126,7 +1126,7 @@ impl BackgroundAgentRegistry {
             updated
         };
         if let Some(notify) = self.notify_for(agent_id).await {
-            notify.notify_waiters();
+            notify.notify_one();
         }
         Ok(updated)
     }
@@ -1161,7 +1161,7 @@ impl BackgroundAgentRegistry {
             updated
         };
         if let Some(notify) = self.notify_for(agent_id).await {
-            notify.notify_waiters();
+            notify.notify_one();
         }
         Ok(updated)
     }

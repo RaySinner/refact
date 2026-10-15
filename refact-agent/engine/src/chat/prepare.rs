@@ -451,13 +451,20 @@ pub async fn prepare_chat_passthrough(
         strip_thinking_blocks_if_disabled(limited_msgs, sampling_parameters, &model_record);
     limited_adapted_msgs = replace_images_for_text_only_model(limited_adapted_msgs, &model_record);
 
+    // When strip_reasoning_from_prompt is active with a stateful Responses API,
+    // skip the tail optimization: the server-side context still contains reasoning
+    // tokens from prior turns, so we must resubmit the full history without them.
+    let strip_reasoning_active = thread.strip_reasoning_from_prompt_effective();
+
     // OpenAI Responses API stateful multi-turn: when we chain with previous_response_id,
     // we should send only the new tail items (tool outputs and/or new user message).
+    // Skipped when strip_reasoning is active (see above).
     if model_record.base.wire_format == WireFormat::OpenaiResponses
         && thread
             .previous_response_id
             .as_ref()
             .is_some_and(|s| !s.is_empty())
+        && !strip_reasoning_active
     {
         let tail = responses_stateful_tail(limited_adapted_msgs.clone());
         let mut stitched = Vec::new();
@@ -512,7 +519,9 @@ pub async fn prepare_chat_passthrough(
         )
         .with_cache_control(options.cache_control);
 
-    if model_record.base.wire_format == WireFormat::OpenaiResponses {
+    if model_record.base.wire_format == WireFormat::OpenaiResponses
+        && !strip_reasoning_active
+    {
         llm_request = llm_request.with_previous_response_id(thread.previous_response_id.clone());
     }
 
@@ -1756,13 +1765,13 @@ mod tests {
             ..Default::default()
         };
 
-        // 1. When strip_reasoning_from_prompt is default (effective = true)
+        // 1. When strip_reasoning_from_prompt is default (effective = false)
         let thread_default = ThreadParams {
             model: model_id.to_string(),
             mode: "agent".to_string(),
             ..Default::default()
         };
-        assert!(thread_default.strip_reasoning_from_prompt_effective());
+        assert!(!thread_default.strip_reasoning_from_prompt_effective());
 
         let ccx = AtCommandsContext::new_from_app(
             app.clone(),
@@ -1799,19 +1808,22 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(prepared_default.llm_request.messages[0].reasoning_content, None);
-        assert_eq!(prepared_default.llm_request.messages[0].thinking_blocks, None);
+        assert_eq!(
+            prepared_default.llm_request.messages[0].reasoning_content.as_deref(),
+            Some("model thought process")
+        );
+        assert!(prepared_default.llm_request.messages[0].thinking_blocks.is_some());
 
-        // 2. When strip_reasoning_from_prompt is explicitly false
-        let thread_false = ThreadParams {
+        // 2. When strip_reasoning_from_prompt is explicitly true
+        let thread_true = ThreadParams {
             model: model_id.to_string(),
             mode: "agent".to_string(),
-            strip_reasoning_from_prompt: Some(false),
+            strip_reasoning_from_prompt: Some(true),
             ..Default::default()
         };
-        assert!(!thread_false.strip_reasoning_from_prompt_effective());
+        assert!(thread_true.strip_reasoning_from_prompt_effective());
 
-        let ccx_false = AtCommandsContext::new_from_app(
+        let ccx_true = AtCommandsContext::new_from_app(
             app.clone(),
             8192,
             1,
@@ -1824,33 +1836,156 @@ mod tests {
             None,
         )
         .await;
-        let mut sampling_false = SamplingParameters {
+        let mut sampling_true = SamplingParameters {
             max_new_tokens: 1024,
             thinking_budget: Some(2048),
             ..Default::default()
         };
 
-        let prepared_false = prepare_chat_passthrough(
+        let prepared_true = prepare_chat_passthrough(
             gcx.clone(),
-            Arc::new(AMutex::new(ccx_false)),
+            Arc::new(AMutex::new(ccx_true)),
             &t,
             make_messages(),
-            &thread_false,
+            &thread_true,
             model_id,
             "agent",
             vec![],
             &meta,
-            &mut sampling_false,
+            &mut sampling_true,
+            &options,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(prepared_true.llm_request.messages[0].reasoning_content, None);
+        assert_eq!(prepared_true.llm_request.messages[0].thinking_blocks, None);
+    }
+
+    #[tokio::test]
+    async fn prepare_strip_reasoning_stateful_api_invalidates_response_id() {
+        let model_id = "test/openai-responses-model";
+        let mut caps = crate::caps::CodeAssistantCaps::default();
+        caps.chat_models = IndexMap::new();
+        caps.chat_models.insert(
+            model_id.to_string(),
+            Arc::new(ChatModelRecord {
+                base: crate::caps::BaseModelRecord {
+                    id: model_id.to_string(),
+                    name: model_id.to_string(),
+                    n_ctx: 8192,
+                    tokenizer: "fake".to_string(),
+                    wire_format: WireFormat::OpenaiResponses,
+                    ..Default::default()
+                },
+                supports_tools: true,
+                supports_thinking_budget: true,
+                ..Default::default()
+            }),
+        );
+        caps.defaults.chat_default_model = model_id.to_string();
+
+        let gcx = gcx_with_modes(vec![mode_config("agent", "Agent", "Do agent work")]).await;
+        {
+            let app = AppState::from_gcx(gcx.clone()).await;
+            let mut state = app.model.caps.write().await;
+            state.caps = Some(Arc::new(caps));
+            state.last_attempted_ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+        }
+
+        let app = AppState::from_gcx(gcx.clone()).await;
+        let tokenizer = crate::tokens::cached_tokenizer(
+            gcx.clone(),
+            &crate::caps::BaseModelRecord {
+                id: model_id.to_string(),
+                name: model_id.to_string(),
+                tokenizer: "fake".to_string(),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let t = HasTokenizerAndEot::new(tokenizer);
+
+        let make_messages = || vec![
+            assistant_msg_with_reasoning(),
+            ChatMessage::new("user".to_string(), "next question".to_string()),
+        ];
+
+        let meta = ChatMeta {
+            chat_id: "test-strip-stateful-chat".to_string(),
+            chat_mode: "agent".to_string(),
+            chat_remote: false,
+            current_config_file: String::new(),
+            context_tokens_cap: Some(8192),
+            include_project_info: false,
+            request_attempt_id: "attempt".to_string(),
+            worktree: None,
+        };
+
+        let options = ChatPrepareOptions {
+            prepend_system_prompt: false,
+            allow_at_commands: false,
+            allow_tool_prerun: false,
+            supports_tools: true,
+            ..Default::default()
+        };
+
+        let thread = ThreadParams {
+            model: model_id.to_string(),
+            mode: "agent".to_string(),
+            strip_reasoning_from_prompt: Some(true),
+            previous_response_id: Some("resp_abc123".to_string()),
+            ..Default::default()
+        };
+
+        let ccx = AtCommandsContext::new_from_app(
+            app.clone(),
+            8192,
+            1,
+            false,
+            make_messages(),
+            "test-strip-stateful-chat".to_string(),
+            None,
+            model_id.to_string(),
+            None,
+            None,
+        )
+        .await;
+        let mut sampling = SamplingParameters {
+            max_new_tokens: 1024,
+            thinking_budget: Some(2048),
+            ..Default::default()
+        };
+
+        let prepared = prepare_chat_passthrough(
+            gcx,
+            Arc::new(AMutex::new(ccx)),
+            &t,
+            make_messages(),
+            &thread,
+            model_id,
+            "agent",
+            vec![],
+            &meta,
+            &mut sampling,
             &options,
         )
         .await
         .unwrap();
 
         assert_eq!(
-            prepared_false.llm_request.messages[0].reasoning_content.as_deref(),
-            Some("model thought process")
+            prepared.llm_request.previous_response_id, None,
+            "previous_response_id must be cleared when strip_reasoning is active with stateful API"
         );
-        assert!(prepared_false.llm_request.messages[0].thinking_blocks.is_some());
+        assert_eq!(
+            prepared.llm_request.messages[0].reasoning_content, None,
+            "reasoning must be stripped from all messages on full resubmission"
+        );
+        assert_eq!(prepared.llm_request.messages.len(), 2);
     }
 
     #[test]

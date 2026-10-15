@@ -456,7 +456,7 @@ pub struct ThreadParams {
     pub agent_nudge_enabled: Option<bool>,
     /// Whether model reasoning/thinking is stripped from the prompt sent to the
     /// LLM on subsequent turns. Reasoning stays visible in the chat UI. Defaults
-    /// to ON (true) when unset; an explicit persisted `false` is respected.
+    /// to OFF (false) when unset; an explicit persisted `true` opts in.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub strip_reasoning_from_prompt: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -532,11 +532,11 @@ impl ThreadParams {
         self.agent_nudge_enabled.unwrap_or(false)
     }
 
-    /// Reasoning/thinking is stripped from the prompt by default, so the model
-    /// never re-consumes its own thoughts on later turns. An explicit `false`
-    /// keeps them in the wire copy.
+    /// Reasoning/thinking is stripped from the prompt when opted in, so the model
+    /// does not re-consume its own thoughts on later turns. An explicit `true`
+    /// enables the strip; `false` or unset keeps them in the wire copy.
     pub fn strip_reasoning_from_prompt_effective(&self) -> bool {
-        self.strip_reasoning_from_prompt.unwrap_or(true)
+        self.strip_reasoning_from_prompt.unwrap_or(false)
     }
 }
 
@@ -1958,14 +1958,14 @@ mod tests {
     }
 
     #[test]
-    fn strip_reasoning_defaults_to_enabled() {
-        assert!(ThreadParams::default().strip_reasoning_from_prompt_effective());
+    fn strip_reasoning_defaults_to_disabled() {
+        assert!(!ThreadParams::default().strip_reasoning_from_prompt_effective());
 
         let unset = ThreadParams {
             strip_reasoning_from_prompt: None,
             ..Default::default()
         };
-        assert!(unset.strip_reasoning_from_prompt_effective());
+        assert!(!unset.strip_reasoning_from_prompt_effective());
     }
 
     #[test]
@@ -1984,7 +1984,7 @@ mod tests {
     }
 
     #[test]
-    fn strip_reasoning_missing_in_json_is_effectively_enabled() {
+    fn strip_reasoning_missing_in_json_is_effectively_disabled() {
         let json = r#"{
             "id":"test",
             "title":"Test",
@@ -1997,7 +1997,7 @@ mod tests {
 
         let params: ThreadParams = serde_json::from_str(json).unwrap();
         assert!(params.strip_reasoning_from_prompt.is_none());
-        assert!(params.strip_reasoning_from_prompt_effective());
+        assert!(!params.strip_reasoning_from_prompt_effective());
 
         let default_json = serde_json::to_value(ThreadParams::default()).unwrap();
         assert!(default_json.get("strip_reasoning_from_prompt").is_none());

@@ -492,7 +492,7 @@ export const ChatSettingsDropdown: React.FC<ChatSettingsDropdownProps> = ({
                 <div className={styles.settingsRow}>
                   <div>
                     <Text size="1" weight="medium">
-                      Resoning filter
+                      Reasoning filter
                     </Text>
                     <Text size="1" color="gray">
                       Excludes reasoning

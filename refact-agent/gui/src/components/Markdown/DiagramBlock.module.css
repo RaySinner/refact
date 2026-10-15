@@ -89,6 +89,10 @@
   height: 100%;
 }
 
+.diagram_render :global(foreignObject) {
+  overflow: visible;
+}
+
 /* Non-interactive fallback when SVG metadata cannot be derived. */
 .diagram_fallback {
   width: fit-content;

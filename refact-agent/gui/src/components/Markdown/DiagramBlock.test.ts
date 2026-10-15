@@ -49,4 +49,12 @@ describe("DiagramBlock sizing", () => {
       "var(--rf-focus-ring-w)",
     );
   });
+
+  test("allows foreignObject text to overflow node boundaries", () => {
+    const foreignObject = readCssRule(
+      stylesheet,
+      ".diagram_render :global(foreignObject)",
+    );
+    expect(foreignObject).toContain("overflow: visible");
+  });
 });

@@ -273,7 +273,7 @@ function initializeMermaid(
       curve: "linear",
       htmlLabels: true,
       nodeSpacing: 70,
-      padding: 16,
+      padding: 24,
       rankSpacing: 90,
       wrappingWidth: 240,
     },
@@ -357,6 +357,9 @@ const _MermaidBlock: React.FC<MermaidBlockProps> = ({ code, onCopyClick }) => {
 
     const renderDiagram = async () => {
       try {
+        if (typeof document !== "undefined") {
+          await document.fonts.ready;
+        }
         const { svg } = await enqueueMermaidRender(
           theme,
           renderId,

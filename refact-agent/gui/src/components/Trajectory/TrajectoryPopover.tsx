@@ -31,6 +31,7 @@ export const TrajectoryPopoverContent: React.FC<
     transformOptions,
     llmCompressOptions,
     transformPreview,
+    transformError,
     llmCompressPreview,
     llmCompressError,
     isPreviewingTransform,
@@ -183,6 +184,12 @@ export const TrajectoryPopoverContent: React.FC<
                   ))}
                 </ul>
               )}
+            </Box>
+          )}
+
+          {transformError && (
+            <Box className={styles.errorCallout} role="alert">
+              <Text size="2">{transformError}</Text>
             </Box>
           )}
 

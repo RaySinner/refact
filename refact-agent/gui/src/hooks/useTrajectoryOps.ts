@@ -40,12 +40,14 @@ export function useTrajectoryOps(
   const [llmCompressPreview, setLlmCompressPreview] =
     useState<LlmCompressPreviewResponse | null>(null);
   const [llmCompressError, setLlmCompressError] = useState<string | null>(null);
+  const [transformError, setTransformError] = useState<string | null>(null);
   const llmPreviewRequestId = useRef(0);
   const llmPreviewChatId = useRef(chatId);
   llmPreviewChatId.current = chatId;
 
   useEffect(() => {
     llmPreviewRequestId.current += 1;
+    setTransformError(null);
     setLlmCompressPreview(null);
     setLlmCompressError(null);
   }, [chatId]);
@@ -140,12 +142,18 @@ export function useTrajectoryOps(
 
   const handleApplyTransform = useCallback(async () => {
     if (!chatId) return false;
+    setTransformError(null);
     try {
       await applyTransform({ chatId, options: transformOptions }).unwrap();
       setTransformPreview(null);
       dispatch(requestSseRefresh({ chatId }));
       return true;
-    } catch {
+    } catch (error: unknown) {
+      const err = error as { data?: { message?: string }; message?: string };
+      setTransformError(
+        "Unable to apply compression. " +
+          (err.data?.message ?? err.message ?? "Please try again."),
+      );
       return false;
     }
   }, [chatId, transformOptions, applyTransform, dispatch]);
@@ -153,6 +161,7 @@ export function useTrajectoryOps(
   const clearPreviews = useCallback(() => {
     llmPreviewRequestId.current += 1;
     setTransformPreview(null);
+    setTransformError(null);
     setLlmCompressPreview(null);
     setLlmCompressError(null);
   }, []);
@@ -179,6 +188,7 @@ export function useTrajectoryOps(
     transformOptions,
     llmCompressOptions,
     transformPreview,
+    transformError,
     llmCompressPreview,
     llmCompressError,
     isPreviewingTransform,

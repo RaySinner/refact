@@ -6,11 +6,15 @@
   border: 1px solid
     color-mix(
       in srgb,
-      var(--room-stripe-fallback) 35%,
+      var(--room-stripe-fallback) 45%,
       var(--rf-border, rgba(255, 255, 255, 0.08))
     );
   border-radius: 8px;
-  background-color: transparent;
+  background-color: color-mix(
+    in srgb,
+    var(--room-stripe-fallback) 12%,
+    transparent
+  );
   /* Left padding clears the floating stripe; the rest keeps the bubble cozy. */
   padding: 6px 10px 6px 18px;
 }

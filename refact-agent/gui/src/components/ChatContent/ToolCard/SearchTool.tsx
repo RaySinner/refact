@@ -132,7 +132,8 @@ export const SearchTool: React.FC<SearchToolProps> = ({
         const pattern = getString(patternArgs.pattern, "pattern");
         return (
           <>
-            Search <span className={styles.query}>{pattern}</span>
+            <span className={styles.commandName}>Search</span>{" "}
+            <span className={styles.query}>{pattern}</span>
             {matchCount !== null && (
               <span className={styles.count}> → {matchCount} matches</span>
             )}
@@ -144,7 +145,8 @@ export const SearchTool: React.FC<SearchToolProps> = ({
         const query = getString(semanticArgs.queries, "query");
         return (
           <>
-            Search <span className={styles.query}>&quot;{query}&quot;</span>
+            <span className={styles.commandName}>Search</span>{" "}
+            <span className={styles.query}>&quot;{query}&quot;</span>
             {matchCount !== null && (
               <span className={styles.count}> → {matchCount} results</span>
             )}
@@ -156,7 +158,8 @@ export const SearchTool: React.FC<SearchToolProps> = ({
         const symbols = getString(symbolArgs.symbols, "symbol");
         return (
           <>
-            Find <span className={styles.query}>{symbols}</span>
+            <span className={styles.commandName}>Find</span>{" "}
+            <span className={styles.query}>{symbols}</span>
             {matchCount !== null && (
               <span className={styles.count}> → {matchCount} found</span>
             )}
@@ -168,7 +171,8 @@ export const SearchTool: React.FC<SearchToolProps> = ({
         const pattern = getString(globArgs.pattern, "pattern");
         return (
           <>
-            Find files <span className={styles.query}>{pattern}</span>
+            <span className={styles.commandName}>Find files</span>{" "}
+            <span className={styles.query}>{pattern}</span>
             {matchCount !== null && (
               <span className={styles.count}> → {matchCount} files</span>
             )}

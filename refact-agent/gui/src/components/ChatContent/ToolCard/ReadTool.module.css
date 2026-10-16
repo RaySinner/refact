@@ -1,7 +1,11 @@
+.commandName {
+  color: var(--rf-color-accent);
+}
+
 .filename {
   font-family: var(--rf-font-mono);
   font-size: inherit;
-  color: var(--rf-color-accent);
+  color: var(--rf-color-muted);
   cursor: pointer;
   vertical-align: baseline;
 }

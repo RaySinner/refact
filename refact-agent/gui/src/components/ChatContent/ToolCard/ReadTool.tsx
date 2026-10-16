@@ -81,7 +81,7 @@ export const ReadTool: React.FC<ReadToolProps> = ({
     if (paths.length === 1) {
       return (
         <>
-          Read{" "}
+          <span className={styles.commandName}>Read</span>{" "}
           <span
             className={canOpen ? styles.filename : styles.filenamePlain}
             onClick={canOpen ? (e) => handleFileClick(e, paths[0]) : undefined}
@@ -93,7 +93,7 @@ export const ReadTool: React.FC<ReadToolProps> = ({
     }
     return (
       <>
-        Read{" "}
+        <span className={styles.commandName}>Read</span>{" "}
         {paths.map((p, i) => (
           <React.Fragment key={`${p}:${i}`}>
             {i > 0 && ", "}

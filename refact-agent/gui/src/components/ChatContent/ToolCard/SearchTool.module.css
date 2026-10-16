@@ -1,3 +1,7 @@
+.commandName {
+  color: var(--rf-color-accent);
+}
+
 .query {
   font-family: var(--rf-font-mono);
   font-size: var(--rf-text-2);

@@ -151,7 +151,7 @@ export const FileOpTool: React.FC<FileOpToolProps> = ({
         icon: <MoveRight />,
         summary: (
           <>
-            Move{" "}
+            <span className={styles.commandName}>Move</span>{" "}
             <span
               className={canOpen ? styles.filename : styles.filenamePlain}
               onClick={canOpen ? (e) => handleFileClick(e, src) : undefined}
@@ -177,7 +177,7 @@ export const FileOpTool: React.FC<FileOpToolProps> = ({
         icon: <CirclePlus />,
         summary: (
           <>
-            Add workspace{" "}
+            <span className={styles.commandName}>Add workspace</span>{" "}
             <span className={styles.filename}>{basename(path)}</span>
           </>
         ),
@@ -196,7 +196,8 @@ export const FileOpTool: React.FC<FileOpToolProps> = ({
       icon: <Trash2 />,
       summary: (
         <>
-          Delete <span className={styles.filename}>{basename(path)}</span>
+          <span className={styles.commandName}>Delete</span>{" "}
+          <span className={styles.filename}>{basename(path)}</span>
           {isDir && <span className={styles.meta}> (recursive)</span>}
           {linesRemoved > 0 && (
             <span className={styles.removed}> −{linesRemoved}</span>

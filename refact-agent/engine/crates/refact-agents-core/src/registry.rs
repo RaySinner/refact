@@ -758,7 +758,7 @@ impl BackgroundAgentRegistry {
                 return Ok(record);
             }
             let Some(runtime) = self.runtime.read().await.get(agent_id).cloned() else {
-                return Ok(record);
+                return self.get(parent_chat_id, agent_id).await;
             };
             let notified = runtime.notify.notified();
             let record = self.get(parent_chat_id, agent_id).await?;
@@ -948,8 +948,7 @@ impl BackgroundAgentRegistry {
         })
         .await?;
         if !cancel && push == Some(PushMode::Preempt) {
-            if let Some(notify) = self.interrupt_notify(agent_id).await {
-                notify.notify_one();
+            if let Some(notify) = self.interrupt_notify(agent_id).await {                notify.notify_one();
             }
         }
         Ok(())

@@ -70,7 +70,7 @@ function HealthContent({
             <dl className={styles.factGrid}>
               <Fact
                 label="Files analyzed"
-                value={data.aggregate.file_count.toLocaleString()}
+                value={data.aggregate.file_count.toLocaleString("en-US")}
               />
               <Fact label="Grade" value={data.aggregate.grade} />
               <Fact

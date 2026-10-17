@@ -82,7 +82,7 @@ function tokenLabelFor(
   estimate: number,
   isSegmentCompressionReport: boolean,
 ): string {
-  const formatted = `~${estimate.toLocaleString()} tokens`;
+  const formatted = `~${estimate.toLocaleString("en-US")} tokens`;
   if (isSegmentCompressionReport) return `${formatted} saved`;
   switch (tier) {
     case "tier1_llm":
@@ -99,7 +99,7 @@ type StatCell = { label: string; value: string };
 
 function parseNumberStat(value: unknown, suffix = ""): string | null {
   if (typeof value !== "number" || !Number.isFinite(value)) return null;
-  return `${value.toLocaleString()}${suffix}`;
+  return `${value.toLocaleString("en-US")}${suffix}`;
 }
 
 function sourceMessageCountFromReport(
@@ -141,7 +141,9 @@ function statsFromCompressionReportMetadata(
   const stats: StatCell[] = [
     ...statCell(
       sourcePreserving ? "Messages summarized" : "Messages compressed",
-      sourceMessageCount !== null ? sourceMessageCount.toLocaleString() : null,
+      sourceMessageCount !== null
+        ? sourceMessageCount.toLocaleString("en-US")
+        : null,
     ),
     ...statCell("Tokens saved", parseNumberStat(report.estimated_tokens_saved)),
     ...statCell("Reduction", parseNumberStat(report.reduction_percent, "%")),

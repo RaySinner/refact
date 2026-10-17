@@ -3,11 +3,7 @@ import { render, screen } from "../../utils/test-utils";
 import { SummarizationMessage } from "./SummarizationMessage";
 import { syntheticCompressionReportMessage } from "../../services/refact/types";
 
-// Production renders token counts through `toLocaleString`, so the grouping
-// separator follows the host locale (comma, NBSP, period, ...). Matchers only
-// normalize whitespace in the element text, never in the expectation, so fold
-// the expectation's own grouping whitespace to a plain space too.
-const grouped = (value: number) => value.toLocaleString().replace(/\s+/g, " ");
+const grouped = (value: number) => value.toLocaleString("en-US");
 describe("reconstructed history disclosure", () => {
   it("retains flattened metadata and renders payload inside a collapsed report", async () => {
     const message = syntheticCompressionReportMessage({

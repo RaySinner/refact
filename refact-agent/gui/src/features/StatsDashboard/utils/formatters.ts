@@ -47,7 +47,7 @@ export function formatDate(iso: string): string {
 }
 
 export function formatNumber(n: number): string {
-  return n.toLocaleString(undefined, { maximumFractionDigits: 0 });
+  return n.toLocaleString("en-US", { maximumFractionDigits: 0 });
 }
 
 /** Compact count, e.g. 1.4K, 3.0M. */

@@ -46,7 +46,9 @@ type CapturedThunk = (
 type TestDispatch = (action: unknown) => unknown;
 
 function readGuiSource(path: string): Promise<string> {
-  return readFile(resolve(process.cwd(), "src", path), "utf8");
+  return readFile(resolve(process.cwd(), "src", path), "utf8").then((source) =>
+    source.replace(/\r\n/g, "\n"),
+  );
 }
 
 function isSetupModeCreateAction(action: unknown): boolean {

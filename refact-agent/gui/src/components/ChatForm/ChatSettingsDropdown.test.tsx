@@ -67,7 +67,7 @@ describe("ChatSettingsDropdown", () => {
     });
 
     await user.click(await screen.findByRole("button", { name: /openai\/o1/ }));
-    await user.click(await screen.findByRole("switch"));
+    await user.click((await screen.findAllByRole("switch"))[0]);
 
     const thread =
       store.getState().chat.threads[store.getState().chat.current_thread_id]
@@ -85,7 +85,7 @@ describe("ChatSettingsDropdown", () => {
     });
 
     await user.click(await screen.findByRole("button", { name: /openai\/o1/ }));
-    await user.click(await screen.findByRole("switch"));
+    await user.click((await screen.findAllByRole("switch"))[0]);
 
     const thread =
       store.getState().chat.threads[store.getState().chat.current_thread_id]

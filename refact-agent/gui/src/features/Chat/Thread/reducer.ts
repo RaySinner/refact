@@ -138,12 +138,17 @@ function syncThreadContextLimitToModelMax(
 ): void {
   const previousStoredModelMaxContextTokens = thread.modelMaximumContextTokens;
   const currentCap = thread.context_tokens_cap;
-  const modelChanged = previousModelMaxContextTokens !== modelMaxContextTokens;
+  const modelChanged =
+    previousModelMaxContextTokens !== undefined &&
+    previousModelMaxContextTokens !== modelMaxContextTokens;
 
   thread.modelMaximumContextTokens = modelMaxContextTokens;
   thread.currentMaximumContextTokens = modelMaxContextTokens;
 
-  if (modelChanged) {
+  if (
+    modelChanged &&
+    thread.auto_compression_cap === previousModelMaxContextTokens
+  ) {
     thread.auto_compression_cap = undefined;
   }
 

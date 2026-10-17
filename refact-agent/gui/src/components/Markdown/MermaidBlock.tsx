@@ -357,8 +357,9 @@ const _MermaidBlock: React.FC<MermaidBlockProps> = ({ code, onCopyClick }) => {
 
     const renderDiagram = async () => {
       try {
-        if (typeof document !== "undefined") {
-          await document.fonts.ready;
+        const fonts = (document as { fonts?: FontFaceSet }).fonts;
+        if (fonts?.ready) {
+          await fonts.ready;
         }
         const { svg } = await enqueueMermaidRender(
           theme,

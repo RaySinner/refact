@@ -242,6 +242,8 @@
    descriptionForeground; lift them to full-contrast fg. */
 [data-host="vscode"]
   :is(
+    .topControlsRow,
+    .topStatusControls,
     .bottomModelControl,
     .bottomModeControl,
     .bottomWorkspaceControl,
@@ -253,6 +255,8 @@
 
 [data-host="vscode"]
   :is(
+    .topControlsRow,
+    .topStatusControls,
     .bottomModelControl,
     .bottomModeControl,
     .bottomWorkspaceControl,

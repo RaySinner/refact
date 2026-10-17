@@ -75,7 +75,7 @@ export const ListTool: React.FC<ListToolProps> = ({
     const path = args.path ?? "project";
     return (
       <>
-        List{" "}
+        <span className={styles.commandName}>List</span>{" "}
         <span
           className={canOpen ? styles.path : styles.pathPlain}
           onClick={canOpen ? handlePathClick : undefined}

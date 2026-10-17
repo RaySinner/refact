@@ -1,7 +1,11 @@
+.commandName {
+  color: var(--rf-color-accent);
+}
+
 .path {
   font-family: var(--rf-font-mono);
   font-size: var(--rf-text-2);
-  color: var(--rf-color-accent);
+  color: var(--rf-color-muted);
   cursor: pointer;
 }
 
@@ -12,6 +16,7 @@
 .pathPlain {
   font-family: var(--rf-font-mono);
   font-size: var(--rf-text-2);
+  color: var(--rf-color-muted);
 }
 
 .resultContent {

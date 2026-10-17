@@ -388,10 +388,13 @@
   );
   --rf-border-strong: var(--vscode-focusBorder, var(--vscode-widget-border));
   --rf-color-accent: var(
-    --vscode-focusBorder,
+    --vscode-textLink-foreground,
     var(
-      --vscode-activityBar-activeBorder,
-      var(--vscode-button-background, #7f93d8)
+      --vscode-terminal-ansiBrightBlue,
+      var(
+        --vscode-activityBarBadge-background,
+        #7aa2f7
+      )
     )
   );
   --room-stripe-1: var(--rf-color-accent);

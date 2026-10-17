@@ -24,6 +24,7 @@
 .filenamePlain {
   font-family: var(--rf-font-mono);
   font-size: inherit;
+  color: var(--rf-color-muted);
   vertical-align: baseline;
 }
 

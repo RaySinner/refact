@@ -5,7 +5,7 @@
 .filename {
   font-family: var(--rf-font-mono);
   font-size: inherit;
-  color: var(--rf-color-muted);
+  color: var(--rf-color-accent);
   cursor: pointer;
 }
 

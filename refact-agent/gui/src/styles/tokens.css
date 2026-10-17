@@ -366,10 +366,10 @@
 [data-host="vscode"] {
   --rf-bg: var(--vscode-editor-background, var(--vscode-sideBar-background));
   --rf-color-fg: var(--vscode-editor-foreground, var(--vscode-sideBar-foreground));
-  --rf-color-muted: var(--vscode-descriptionForeground);
+  --rf-color-muted: var(--vscode-descriptionForeground, #7982a9);
   --rf-color-faint: color-mix(
     in srgb,
-    var(--vscode-descriptionForeground) 60%,
+    var(--vscode-descriptionForeground, #7982a9) 85%,
     transparent
   );
   --rf-surface-glass: var(--vscode-editor-background);
@@ -384,7 +384,7 @@
   );
   --rf-border: var(
     --vscode-widget-border,
-    var(--vscode-panel-border, var(--vscode-sideBar-border, rgba(255, 255, 255, 0.12)))
+    var(--vscode-panel-border, var(--vscode-sideBar-border, #4a5580))
   );
   --rf-border-strong: var(--vscode-focusBorder, var(--vscode-widget-border));
   --rf-color-accent: var(

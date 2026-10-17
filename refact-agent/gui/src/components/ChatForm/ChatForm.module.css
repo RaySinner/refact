@@ -240,31 +240,15 @@
 
 /* VS Code dark: composer icon buttons rest too faint when bridged from
    descriptionForeground; lift them to full-contrast fg. */
-[data-host="vscode"]
-  :is(
-    .topControlsRow,
-    .topStatusControls,
-    .bottomModelControl,
-    .bottomModeControl,
-    .bottomWorkspaceControl,
-    .expandedActionsSet
-  )
-  button {
+[data-host="vscode"] .composerRoot button,
+[data-host="vscode"] .composerRoot button svg {
   color: var(--rf-color-fg);
+  opacity: 0.92;
 }
 
-[data-host="vscode"]
-  :is(
-    .topControlsRow,
-    .topStatusControls,
-    .bottomModelControl,
-    .bottomModeControl,
-    .bottomWorkspaceControl,
-    .expandedActionsSet
-  )
-  button
-  svg {
-  color: var(--rf-color-fg);
+[data-host="vscode"] .composerRoot button:disabled,
+[data-host="vscode"] .composerRoot button:disabled svg {
+  opacity: 0.35;
 }
 
 .removeFileButton {

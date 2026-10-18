@@ -1077,6 +1077,8 @@ pub enum ChatCommand {
         suppress_auto_enrichment: bool,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         client_message_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        push: Option<PushMode>,
     },
     RetryFromIndex {
         index: usize,

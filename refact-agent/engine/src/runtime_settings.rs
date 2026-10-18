@@ -49,6 +49,10 @@ const REVIEW_MAX_DIFF_PATCH_BYTES_DEFAULT: usize = 4_194_304;
 const TASK_AGENT_MAX_RETRIES_DEFAULT: usize = 3;
 const TOOL_LOOP_GUARD_ENABLED_DEFAULT: bool = true;
 const TOOL_LOOP_GUARD_THRESHOLD_DEFAULT: usize = 3;
+const MAX_INVESTIGATION_TOOL_CALLS_PER_TURN_DEFAULT: usize = 12;
+const TOOL_LOOP_HARD_STOP_ON_BLOCK_DEFAULT: bool = true;
+const TOOL_LOOP_STAGNATION_DETECTOR_ENABLED_DEFAULT: bool = true;
+const TOOL_LOOP_STAGNATION_THRESHOLD_DEFAULT: usize = 8;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(default, deny_unknown_fields)]
@@ -104,6 +108,10 @@ pub struct TrajectoryRuntimeSettings {
     pub task_agent_max_retries: usize,
     pub tool_loop_guard_enabled: bool,
     pub tool_loop_guard_threshold: usize,
+    pub max_investigation_tool_calls_per_turn: usize,
+    pub tool_loop_hard_stop_on_block: bool,
+    pub tool_loop_stagnation_detector_enabled: bool,
+    pub tool_loop_stagnation_threshold: usize,
 }
 
 impl Default for TrajectoryRuntimeSettings {
@@ -162,6 +170,10 @@ impl Default for TrajectoryRuntimeSettings {
             task_agent_max_retries: TASK_AGENT_MAX_RETRIES_DEFAULT,
             tool_loop_guard_enabled: TOOL_LOOP_GUARD_ENABLED_DEFAULT,
             tool_loop_guard_threshold: TOOL_LOOP_GUARD_THRESHOLD_DEFAULT,
+            max_investigation_tool_calls_per_turn: MAX_INVESTIGATION_TOOL_CALLS_PER_TURN_DEFAULT,
+            tool_loop_hard_stop_on_block: TOOL_LOOP_HARD_STOP_ON_BLOCK_DEFAULT,
+            tool_loop_stagnation_detector_enabled: TOOL_LOOP_STAGNATION_DETECTOR_ENABLED_DEFAULT,
+            tool_loop_stagnation_threshold: TOOL_LOOP_STAGNATION_THRESHOLD_DEFAULT,
         }
     }
 }
@@ -538,6 +550,18 @@ pub fn validate(settings: &TrajectoryRuntimeSettings) -> Result<(), String> {
         settings.tool_loop_guard_threshold,
         1,
         100,
+    )?;
+    validate_usize(
+        "max_investigation_tool_calls_per_turn",
+        settings.max_investigation_tool_calls_per_turn,
+        1,
+        100,
+    )?;
+    validate_usize(
+        "tool_loop_stagnation_threshold",
+        settings.tool_loop_stagnation_threshold,
+        2,
+        50,
     )
 }
 

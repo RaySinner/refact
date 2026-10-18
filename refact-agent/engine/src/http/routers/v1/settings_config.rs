@@ -506,6 +506,10 @@ fn trajectory_settings_fields() -> Vec<TrajectorySettingField> {
         live_usize("task_agent_max_retries", 0, 10),
         live_bool("tool_loop_guard_enabled"),
         live_usize("tool_loop_guard_threshold", 1, 100),
+        live_usize("max_investigation_tool_calls_per_turn", 1, 100),
+        live_bool("tool_loop_hard_stop_on_block"),
+        live_bool("tool_loop_stagnation_detector_enabled"),
+        live_usize("tool_loop_stagnation_threshold", 2, 50),
     ]
 }
 
@@ -657,7 +661,7 @@ mod tests {
             initial.config,
             crate::runtime_settings::TrajectoryRuntimeSettings::default()
         );
-        assert_eq!(initial.fields.len(), 51);
+        assert_eq!(initial.fields.len(), 55);
         assert!(initial
             .fields
             .iter()

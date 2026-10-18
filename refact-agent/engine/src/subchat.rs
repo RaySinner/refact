@@ -206,22 +206,23 @@ pub(crate) async fn drain_background_agent_inbox(
             }
             Err(error) => warn!(%agent_id, %error, "Failed to drain runner deliveries"),
         }
-    }
-    crate::agents::delivery::publish_runner_queue(&app, &agent_id).await;
-    for message in app.agents.drain_inbox(&agent_id).await {
-        let sender = match message.from.as_str() {
+    }    crate::agents::delivery::publish_runner_queue(&app, &agent_id).await;
+    let inboxes = app.agents.drain_inbox(&agent_id).await;
+    let has_inboxes = !inboxes.is_empty();
+    for message in inboxes {        let sender = match message.from.as_str() {
             "user" => "[message from user]".to_string(),
             "parent" => "[message from parent]".to_string(),
             from => format!("[notice from sibling {from}]"),
-        };
-        messages.push(event(
+        };        messages.push(event(
             EventSubkind::SystemNotice,
             "agents.inbox",
             json!({ "from": message.from, "queued_at": message.queued_at }),
             format!("{sender}\n{}", message.text),
         ));
     }
-}
+    if has_inboxes {
+        mirror_subchat_messages_into_session(&app, &chat_id, messages).await;
+    }}
 
 async fn emit_parent_compaction_diagnostics(
     config: &SubchatConfig,
@@ -2354,13 +2355,18 @@ async fn runner_model_turn(
             } else {
                 Some(generation.await)
             }
-        };
-        if let Some(result) = result {
+        };        if let Some(result) = result {
             let projected_len = refact_core::active_context::active_context(messages)
                 .map_err(|e| e.to_string())?
                 .messages
                 .len();
-            return result.map(|choices| {
+            
+            // Mirror any messages generated so far into the session (especially if we received an empty finish)
+            let result_ref = result.as_ref();
+            if result_ref.is_ok() {
+                mirror_subchat_messages_into_session(&app, &chat_id, messages).await;
+            }
+                        return result.map(|choices| {
                 choices
                     .into_iter()
                     .map(|choice| {

@@ -305,14 +305,37 @@ pub async fn handle_v1_chat_command(
             .unwrap());
     }
 
-    // Delivery edits must bypass the command processor: it awaits the running
-    // turn, precisely when a user needs to reprioritize or cancel a delivery.
-    if matches!(
+    let is_interactive_user_message = match &request.command {
+        ChatCommand::UserMessage { .. } => session.is_runner_owned_subagent_view(),
+        _ => false,
+    };
+
+    if is_interactive_user_message || matches!(
         &request.command,
         ChatCommand::DeliverMessages { .. } | ChatCommand::UpdatePendingDelivery { .. }
     ) {
         drop(session);
-        let result = match request.command {
+        let result = match request.command {            ChatCommand::UserMessage { content, attachments, context_files, suppress_auto_enrichment, client_message_id, push } => {                let parsed_content = super::queue::parse_content_with_attachments(&content, &attachments);
+                let message = super::queue::user_message_with_client_message_id(
+                    parsed_content,
+                    Vec::new(), // We don't have checkpoints for interactive subchat messages yet
+                    client_message_id,
+                );
+                
+                // Route as a delivery
+                let push_mode = push.unwrap_or(PushMode::Append);
+                let delivery = PendingDelivery::with_id(
+                    uuid::Uuid::new_v4().to_string(),
+                    vec![message],
+                    push_mode,
+                    "user",
+                    true, // wake
+                );
+                
+                super::delivery::deliver_to_chat(app.clone(), &chat_id, delivery)
+                    .await
+                    .map(|outcome| serde_json::json!({"delivery_outcome": outcome}))
+            }
             ChatCommand::DeliverMessages { delivery } => {
                 super::delivery::deliver_to_chat(app.clone(), &chat_id, delivery)
                     .await

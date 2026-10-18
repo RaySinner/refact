@@ -22,6 +22,9 @@ use refact_runtime_api::SessionState;
 use sha2::{Digest, Sha256};
 
 const TOOL_OUTPUT_TRUNCATE_LIMIT: usize = 200;
+/// Minimum plain-text length (chars) for a turn to be reduced by the
+/// deterministic recovery sweep. Keeps tiny chats a no-op.
+const RECOVERY_PLAIN_TEXT_FLOOR: usize = 1024;
 const MAX_PER_MESSAGE_ENTRIES: usize = 200;
 const MAX_CONTEXT_ENTRIES: usize = 200;
 const MAX_TOOL_OUTPUT_ENTRIES: usize = 200;
@@ -61,6 +64,7 @@ pub(crate) struct CompressChatApplyStats {
     project_info_dropped: usize,
     dedup_count: usize,
     non_text_stripped: usize,
+    plain_text_reduced: usize,
 }
 
 impl CompressChatApplyStats {
@@ -80,6 +84,7 @@ impl CompressChatApplyStats {
             || self.project_info_dropped > 0
             || self.dedup_count > 0
             || self.non_text_stripped > 0
+            || self.plain_text_reduced > 0
     }
 }
 
@@ -95,6 +100,7 @@ pub(crate) struct CompressChatApplyRequest<'a> {
     dedup_context_files: bool,
     drop_project_information: bool,
     strip_images: bool,
+    reduce_plain_text: bool,
     strength: &'a str,
     preserve_last_turns: Option<usize>,
     target_tokens: Option<usize>,
@@ -384,6 +390,34 @@ pub(crate) fn compress_chat_apply_head_output(
         }
     }
 
+    if request.reduce_plain_text {
+        // Last-resort, model-free reduction: a conversation that outgrew the
+        // summarizer's input budget (no context files or tool outputs to drop)
+        // is saved by lossily shrinking plain-text turns above a size floor,
+        // so a compression report can be produced and generation can proceed.
+        // Tiny turns (below the floor) are left untouched, which keeps a
+        // genuinely empty/near-empty chat a no-op. The modifiable head is the
+        // already-expired part of the conversation: after this sweep the user
+        // re-prompts, so every oversized plain-text turn is safe to shrink,
+        // including the last one.
+        for msg in head_messages.iter_mut() {
+            if msg.role != "user" && msg.role != "assistant" {
+                continue;
+            }
+            let ChatContent::SimpleText(text) = &mut msg.content else {
+                continue;
+            };
+            let original_len = text.len();
+            if original_len <= RECOVERY_PLAIN_TEXT_FLOOR {
+                continue;
+            }
+            *text = format!(
+                "[compressed by deterministic recovery sweep: {original_len} characters of original conversation text removed]"
+            );
+            stats.plain_text_reduced += 1;
+        }
+    }
+
     let mut cleanup_tail = Vec::with_capacity(preserved_tail.len() + immutable_tail.len());
     cleanup_tail.extend_from_slice(&preserved_tail);
     cleanup_tail.extend_from_slice(immutable_tail);
@@ -425,6 +459,7 @@ pub(crate) fn compress_chat_apply_head_output(
             "drop_all_memories": request.drop_all_memories,
             "dedup_context_files": request.dedup_context_files,
             "drop_project_information": request.drop_project_information,
+            "reduce_plain_text": request.reduce_plain_text,
             "strength": request.strength,
             "preserve_last_turns": request.preserve_last_turns,
             "target_tokens": request.target_tokens,
@@ -478,6 +513,7 @@ pub(crate) fn build_maximal_full_sweep_request<'a>(
         dedup_context_files: true,
         drop_project_information: true,
         strip_images: true,
+        reduce_plain_text: true,
         strength: "aggressive",
         preserve_last_turns: None,
         target_tokens: None,
@@ -640,6 +676,7 @@ mod tests {
             dedup_context_files: false,
             drop_project_information: false,
             strip_images: false,
+            reduce_plain_text: false,
             strength: "conservative",
             preserve_last_turns: Some(1),
             target_tokens: None,
@@ -2318,6 +2355,7 @@ impl Tool for ToolCompressChatApply {
             dedup_context_files,
             drop_project_information,
             strip_images: false,
+            reduce_plain_text: false,
             strength: &strength,
             preserve_last_turns,
             target_tokens,

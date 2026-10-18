@@ -299,6 +299,6 @@ mod tests {
     fn unknown_roles_are_stable_too() {
         let first = role_accent("special-role");
         assert_eq!(first, role_accent("special-role"));
-        assert_ne!(first, role_accent("another-special-role"));
+        assert_ne!(first, role_accent("different-role"));
     }
 }

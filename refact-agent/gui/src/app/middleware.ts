@@ -2174,10 +2174,12 @@ startListening({
       const prevMax =
         action.payload.previousModelMaxContextTokens ??
         originalState.chat.threads[chatId]?.thread.modelMaximumContextTokens;
-      const wasAutoSet = originalCap != null && originalCap === prevMax;
-      patch.context_tokens_cap = wasAutoSet
+      const wasNotCustom =
+        originalCap == null ||
+        (prevMax !== undefined && originalCap === prevMax);
+      patch.context_tokens_cap = wasNotCustom
         ? action.payload.modelMaxContextTokens
-        : originalCap ?? null;
+        : originalCap;
     }
 
     try {

@@ -834,6 +834,42 @@ describe("Chat Thread Reducer - Core Functionality", () => {
       );
     });
 
+    test("model_switch_updates_auto_context_cap_when_cap_was_undefined", () => {
+      const existingRuntime = requireThread(initialState, chatId);
+      const stateWithUndefinedCap: Chat = {
+        ...initialState,
+        threads: {
+          ...initialState.threads,
+          [chatId]: {
+            ...existingRuntime,
+            thread: {
+              ...existingRuntime.thread,
+              model: "old-model",
+              context_tokens_cap: undefined,
+              currentMaximumContextTokens: undefined,
+              modelMaximumContextTokens: undefined,
+            },
+          },
+        },
+      };
+
+      const switchedModel = chatReducer(
+        stateWithUndefinedCap,
+        setChatModel({
+          model: "new-model",
+          modelMaxContextTokens: 128000,
+          previousModelMaxContextTokens: 8192,
+        }),
+      );
+
+      expect(
+        switchedModel.threads[chatId]?.thread.modelMaximumContextTokens,
+      ).toBe(128000);
+      expect(switchedModel.threads[chatId]?.thread.context_tokens_cap).toBe(
+        128000,
+      );
+    });
+
     test("model_switch_updates_auto_context_cap_with_stale_previous_limit", () => {
       const withOldModelLimit = chatReducer(
         initialState,

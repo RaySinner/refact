@@ -2190,9 +2190,6 @@ pub fn start_generation(
                         .applied()
                     {
                         continue;
-                    }                        .applied()
-                    {
-                        continue;
                     }
                     if thread.auto_compact_enabled_effective()
                         && crate::chat::context_rebuild::apply_deterministic_compaction_for_recovery(
@@ -2205,10 +2202,6 @@ pub fn start_generation(
                         continue;
                     }
                     error.message = context_limit_final_error_message(&original_error);
-                    {
-                        let mut session = session_arc.lock().await;
-                        crate::chat::goal_monitor::mark_goal_blocked_on_context_limit(&mut session);
-                    }error.message = context_limit_final_error_message(&original_error);
                     {
                         let mut session = session_arc.lock().await;
                         crate::chat::goal_monitor::mark_goal_blocked_on_context_limit(&mut session);

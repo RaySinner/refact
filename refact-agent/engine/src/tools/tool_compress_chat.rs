@@ -52,7 +52,7 @@ fn preserve_cutoff_for(messages: &[ChatMessage], preserve_last_turns: Option<usi
 }
 
 #[derive(Default)]
-struct CompressChatApplyStats {
+pub(crate) struct CompressChatApplyStats {
     context_files_dropped: usize,
     context_messages_dropped: usize,
     memory_dropped: usize,
@@ -83,7 +83,7 @@ impl CompressChatApplyStats {
     }
 }
 
-struct CompressChatApplyRequest<'a> {
+pub(crate) struct CompressChatApplyRequest<'a> {
     drop_context_files: &'a HashSet<String>,
     drop_all_context_files: bool,
     drop_memories: &'a HashSet<String>,

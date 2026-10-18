@@ -16,6 +16,7 @@ use refact_core::active_context::{
     active_context, legacy_rebuild_input, requires_explicit_rebuild, make_reconstruction_report,
     ReconstructionMetadata,
 };
+use crate::tools::tool_compress_chat::CompressChatApplyOutput;
 
 #[derive(Clone, Debug)]
 pub struct PendingContextRebuild {
@@ -968,6 +969,94 @@ pub async fn apply_context_rebuild_with_reason(
     }
 }
 
+/// Last-resort, model-free recovery: run one maximal deterministic compression
+/// sweep over the whole active context so a conversation that outgrew the
+/// summarizer's input budget can still be saved and generation can proceed.
+pub async fn apply_deterministic_compaction_for_recovery(
+    gcx: Arc<GlobalContext>,
+    session: &Arc<Mutex<ChatSession>>,
+) -> bool {
+    let stored = session.lock().await.messages.clone();
+    let projection = match refact_core::active_context::active_context(&stored) {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::warn!("deterministic recovery skipped: active context unavailable: {e}");
+            return false;
+        }
+    };
+    let tool_call_names: std::collections::HashMap<String, String> = stored
+        .iter()
+        .filter_map(|m| m.tool_calls.as_ref())
+        .flatten()
+        .map(|tc| (tc.id.clone(), tc.function.name.clone()))
+        .collect();
+    let drop_context_files = std::collections::HashSet::new();
+    let drop_memories = std::collections::HashSet::new();
+    let truncate_tool_outputs = std::collections::HashSet::new();
+    let drop_tool_outputs = std::collections::HashSet::new();
+    let drop_context_messages = std::collections::HashSet::new();
+    let request = crate::tools::tool_compress_chat::build_maximal_full_sweep_request(
+        &drop_context_files,
+        &drop_memories,
+        &truncate_tool_outputs,
+        &drop_tool_outputs,
+        &drop_context_messages,
+        &tool_call_names,
+    );
+    let CompressChatApplyOutput {
+        messages: head_messages,
+        report,
+        affected_boundary,
+        modifiable_len,
+        ..
+    } = crate::tools::tool_compress_chat::compress_chat_apply_head_output(
+        projection.messages.clone(),
+        &[],
+        &request,
+    );
+    if head_messages.len() == projection.messages.len() && report.is_none() {
+        return false;
+    }
+    let mut head_messages = head_messages;
+    crate::tools::tool_compress_chat::insert_current_compression_report(
+        &mut head_messages,
+        report,
+        affected_boundary,
+        modifiable_len,
+    );
+    let updated = match refact_core::active_context::writeback_active_context(
+        &stored,
+        &projection,
+        &head_messages,
+    ) {
+        Ok(updated) => updated,
+        Err(e) => {
+            tracing::warn!("deterministic recovery skipped: writeback failed: {e}");
+            return false;
+        }
+    };
+    let mut s = session.lock().await;
+    if compression_attempt_active(&s) || !idle(&s) {
+        return false;
+    }
+    s.replace_messages(updated);
+    s.thread.previous_response_id = None;
+    s.thread.frozen_request_prefix = None;
+    s.thread.claude_code_identity = None;
+    s.openai_codex_websocket = Default::default();
+    s.reset_cache_guard_snapshot();
+    s.provider_usage_stale = true;
+    status(&mut s, CompressionPhase::Applied, None);
+    drop(s);
+    crate::chat::trajectories::maybe_save_trajectory_with_intent(
+        crate::app_state::AppState::from_gcx(gcx).await,
+        session.clone(),
+        TrajectoryCommitIntent::Required,
+    )
+    .await;
+    true
+}
+
 /// Drain only after every sibling tool result and post-tool side effect landed.
 pub async fn drain_pending(
     gcx: Arc<GlobalContext>,
@@ -1587,6 +1676,49 @@ mod tests {
         )
         .is_err());
     }
+    #[tokio::test]
+    async fn deterministic_recovery_sweeps_high_context_without_model_call() {
+        let gcx = crate::global_context::tests::make_test_gcx().await;
+        let mut s = ChatSession::new("det-recovery".into());
+        s.add_message(ChatMessage::new("system".into(), "system prompt".into()));
+        s.add_message(ChatMessage::new("user".into(), "big conversation ".repeat(2000)));
+        let before = s.messages.len();
+        let before_tokens = estimated_tokens(&s.messages, None, false);
+        let session = Arc::new(Mutex::new(s));
+        let applied =
+            apply_deterministic_compaction_for_recovery(gcx, &session).await;
+        assert!(applied, "deterministic sweep must apply");
+        let s = &*session.lock().await;
+        assert!(s.messages.len() >= before, "raw history stays append-only");
+        let active = active_context(&s.messages).unwrap().messages;
+        let after_tokens = estimated_tokens(&active, None, false);
+        assert!(
+            after_tokens < before_tokens,
+            "active context must shrink: before={before_tokens} after={after_tokens}"
+        );
+        assert!(
+            active.iter().any(|m| m.role == "compression_report"),
+            "sweep must insert a compression_report"
+        );
+        assert!(s.thread.previous_response_id.is_none());
+        assert!(!compression_attempt_active(s));
+        assert_eq!(s.compression_phase, Some(CompressionPhase::Applied));
+    }
+
+    #[tokio::test]
+    async fn deterministic_recovery_is_noop_when_nothing_is_compressible() {
+        let gcx = crate::global_context::tests::make_test_gcx().await;
+        let mut s = ChatSession::new("det-noop".into());
+        s.add_message(ChatMessage::new("user".into(), "tiny".into()));
+        let session = Arc::new(Mutex::new(s));
+        let applied =
+            apply_deterministic_compaction_for_recovery(gcx, &session).await;
+        assert!(!applied, "tiny chat has nothing to sweep");
+        let s = &*session.lock().await;
+        assert_eq!(s.messages.len(), 1);
+        assert!(s.compression_phase.is_none());
+    }
+
     #[test]
     fn idle_excludes_live_draft_and_tool_execution() {
         let mut s = ChatSession::new("rebuild-test".into());

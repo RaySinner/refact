@@ -2002,7 +2002,16 @@ pub fn start_generation(
                 .await,
                 crate::chat::context_rebuild::CompactionOutcome::LlmUnavailable
             ) {
-                break;
+                if crate::chat::context_rebuild::apply_deterministic_compaction_for_recovery(
+                    gcx.clone(),
+                    &session_arc,
+                )
+                .await
+                {
+                    warn!("Auto-compaction LLM unavailable; deterministic full sweep applied, continuing");
+                } else {
+                    break;
+                }
             }
 
             thread = {
@@ -2181,8 +2190,25 @@ pub fn start_generation(
                         .applied()
                     {
                         continue;
+                    }                        .applied()
+                    {
+                        continue;
+                    }
+                    if thread.auto_compact_enabled_effective()
+                        && crate::chat::context_rebuild::apply_deterministic_compaction_for_recovery(
+                            gcx.clone(),
+                            &session_arc,
+                        )
+                        .await
+                    {
+                        warn!("Context limit reached and model reconstruction unavailable; deterministic full sweep applied, retrying");
+                        continue;
                     }
                     error.message = context_limit_final_error_message(&original_error);
+                    {
+                        let mut session = session_arc.lock().await;
+                        crate::chat::goal_monitor::mark_goal_blocked_on_context_limit(&mut session);
+                    }error.message = context_limit_final_error_message(&original_error);
                     {
                         let mut session = session_arc.lock().await;
                         crate::chat::goal_monitor::mark_goal_blocked_on_context_limit(&mut session);

@@ -85,9 +85,11 @@ impl CompressChatApplyStats {
 
 struct CompressChatApplyRequest<'a> {
     drop_context_files: &'a HashSet<String>,
+    drop_all_context_files: bool,
     drop_memories: &'a HashSet<String>,
     drop_all_memories: bool,
     truncate_tool_outputs: &'a HashSet<String>,
+    truncate_all_tool_outputs: bool,
     drop_tool_outputs: &'a HashSet<String>,
     drop_context_messages: &'a HashSet<String>,
     dedup_context_files: bool,
@@ -99,16 +101,16 @@ struct CompressChatApplyRequest<'a> {
     tool_call_names: &'a HashMap<String, String>,
 }
 
-struct CompressChatApplyOutput {
-    messages: Vec<ChatMessage>,
-    stats: CompressChatApplyStats,
+pub(crate) struct CompressChatApplyOutput {
+    pub(crate) messages: Vec<ChatMessage>,
+    pub(crate) stats: CompressChatApplyStats,
     before_tokens: usize,
-    report: Option<ChatMessage>,
-    affected_boundary: Option<usize>,
+    pub(crate) report: Option<ChatMessage>,
+    pub(crate) affected_boundary: Option<usize>,
     /// Length of the mutated modifiable prefix inside `messages`; everything at
     /// or past this index (the `preserve_last_turns` tail) must stay
     /// byte-identical, including during report deduplication.
-    modifiable_len: usize,
+    pub(crate) modifiable_len: usize,
 }
 
 fn first_changed_boundary(before: &[ChatMessage], after: &[ChatMessage]) -> Option<usize> {
@@ -121,7 +123,7 @@ fn first_changed_boundary(before: &[ChatMessage], after: &[ChatMessage]) -> Opti
     (before.len() != after.len()).then_some(common_len)
 }
 
-fn insert_current_compression_report(
+pub(crate) fn insert_current_compression_report(
     messages: &mut Vec<ChatMessage>,
     report: Option<ChatMessage>,
     affected_boundary: Option<usize>,
@@ -242,7 +244,7 @@ fn remove_invalid_tool_calls_and_tool_calls_results_before(
     before != serde_json::to_value(&*modifiable_prefix).ok()
 }
 
-fn compress_chat_apply_head_output(
+pub(crate) fn compress_chat_apply_head_output(
     mut head_messages: Vec<ChatMessage>,
     immutable_tail: &[ChatMessage],
     request: &CompressChatApplyRequest,
@@ -308,6 +310,10 @@ fn compress_chat_apply_head_output(
                 stats.memory_dropped += 1;
                 continue;
             }
+            if request.drop_all_context_files {
+                stats.context_files_dropped += 1;
+                continue;
+            }
             remaining.push(cf);
         }
 
@@ -354,7 +360,7 @@ fn compress_chat_apply_head_output(
             continue;
         }
         if let Some(name) = request.tool_call_names.get(&msg.tool_call_id) {
-            if should_preserve_tool(name) {
+            if should_preserve_tool(name) && !request.truncate_all_tool_outputs {
                 continue;
             }
         }
@@ -364,7 +370,9 @@ fn compress_chat_apply_head_output(
             stats.tool_dropped += 1;
             continue;
         }
-        if request.truncate_tool_outputs.contains(&msg.tool_call_id) {
+        if request.truncate_all_tool_outputs
+            || request.truncate_tool_outputs.contains(&msg.tool_call_id)
+        {
             let content = msg.content.content_text_only();
             if content.len() > TOOL_OUTPUT_TRUNCATE_LIMIT {
                 let redacted = redact_sensitive(&content);
@@ -408,9 +416,11 @@ fn compress_chat_apply_head_output(
         let fingerprint_payload = json!({
             "op": "ctx_apply",
             "drop_context_files": sorted(request.drop_context_files),
+            "drop_all_context_files": request.drop_all_context_files,
             "drop_context_messages": sorted(request.drop_context_messages),
             "drop_tool_outputs": sorted(request.drop_tool_outputs),
             "truncate_tool_outputs": sorted(request.truncate_tool_outputs),
+            "truncate_all_tool_outputs": request.truncate_all_tool_outputs,
             "drop_memories": sorted(request.drop_memories),
             "drop_all_memories": request.drop_all_memories,
             "dedup_context_files": request.dedup_context_files,
@@ -445,6 +455,33 @@ fn compress_chat_apply_head_output(
         report,
         affected_boundary,
         modifiable_len,
+    }
+}
+
+pub(crate) fn build_maximal_full_sweep_request<'a>(
+    drop_context_files: &'a HashSet<String>,
+    drop_memories: &'a HashSet<String>,
+    truncate_tool_outputs: &'a HashSet<String>,
+    drop_tool_outputs: &'a HashSet<String>,
+    drop_context_messages: &'a HashSet<String>,
+    tool_call_names: &'a HashMap<String, String>,
+) -> CompressChatApplyRequest<'a> {
+    CompressChatApplyRequest {
+        drop_context_files,
+        drop_all_context_files: true,
+        drop_memories,
+        drop_all_memories: true,
+        truncate_tool_outputs,
+        truncate_all_tool_outputs: true,
+        drop_tool_outputs,
+        drop_context_messages,
+        dedup_context_files: true,
+        drop_project_information: true,
+        strip_images: true,
+        strength: "aggressive",
+        preserve_last_turns: None,
+        target_tokens: None,
+        tool_call_names,
     }
 }
 
@@ -593,9 +630,11 @@ mod tests {
     ) -> CompressChatApplyRequest<'a> {
         CompressChatApplyRequest {
             drop_context_files,
+            drop_all_context_files: false,
             drop_memories,
             drop_all_memories: false,
             truncate_tool_outputs,
+            truncate_all_tool_outputs: false,
             drop_tool_outputs,
             drop_context_messages,
             dedup_context_files: false,
@@ -2269,9 +2308,11 @@ impl Tool for ToolCompressChatApply {
 
         let request = CompressChatApplyRequest {
             drop_context_files: &drop_context_files,
+            drop_all_context_files: false,
             drop_memories: &drop_memories,
             drop_all_memories,
             truncate_tool_outputs: &truncate_tool_outputs,
+            truncate_all_tool_outputs: false,
             drop_tool_outputs: &drop_tool_outputs,
             drop_context_messages: &drop_context_messages,
             dedup_context_files,

@@ -119,6 +119,21 @@ const CONTEXT_LIMIT_PATTERNS: &[&str] = &[
     "request cap",
     "output reserve",
     "no useful completed context",
+    // Context reconstruction / compaction failures (chat/context_rebuild.rs,
+    // agentic/mode_transition.rs): classify as context pressure, not "unknown".
+    "context rebuild failed",
+    "context reconstruction",
+    "reconstruction input",
+    "reconstruction produced",
+    "reconstruction must",
+    "reconstruction analysis",
+    "mandatory reconstruction",
+    "exceed resolved analyzer context",
+    "context compression failed",
+    "must be smaller and fit request cap",
+    "conversation is too long",
+    "too long to be automatically summarized",
+    "legacy context requires an explicit rebuild",
 ];
 
 const AUTHENTICATION_PATTERNS: &[&str] = &[
@@ -1428,6 +1443,37 @@ mod tests {
             user_error_info(UserErrorCategory::ContextTooLarge).suggested_action,
             "compact"
         );
+    }
+
+    #[test]
+    fn context_rebuild_and_compaction_failures_classify_as_context_too_large() {
+        let phrases = [
+            "Mandatory reconstruction input and instructions exceed resolved analyzer context",
+            "Context rebuild failed: Mandatory system/tools and output reserve exceed request cap",
+            "Context reconstruction timed out after 600s",
+            "Reconstruction produced no useful completed context",
+            "Reconstruction must be smaller and fit request cap (before=500, after=520, cap=400)",
+            "Legacy context requires an explicit rebuild",
+            "No reconstruction analysis answer generated",
+            "Context compression failed: deterministic sweep produced no savings",
+        ];
+        for phrase in phrases {
+            assert_eq!(
+                classify_user_error(phrase),
+                UserErrorCategory::ContextTooLarge,
+                "must be ContextTooLarge: {phrase}"
+            );
+            assert_eq!(
+                classify_llm_error_for_retry(phrase),
+                RetryDecision::ContextLimit {
+                    reason: "context_limit"
+                },
+                "must be ContextLimit: {phrase}"
+            );
+        }
+        let info = user_error_info(UserErrorCategory::ContextTooLarge);
+        assert_ne!(info.title, "Unknown error");
+        assert_eq!(info.suggested_action, "compact");
     }
 
     #[test]

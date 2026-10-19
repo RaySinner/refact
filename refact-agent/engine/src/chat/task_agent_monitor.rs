@@ -1080,6 +1080,7 @@ async fn retry_agent_session(app: &AppState, session_arc: &Arc<AMutex<ChatSessio
             context_files: vec![],
             suppress_auto_enrichment: false,
             client_message_id: None,
+            push: None,
         },
     };
     session.enqueue_priority_command(request);

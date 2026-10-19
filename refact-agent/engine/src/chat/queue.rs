@@ -113,7 +113,7 @@ fn apply_manual_context_files(
     }
 }
 
-fn user_message_with_client_message_id(
+pub(crate) fn user_message_with_client_message_id(
     content: ChatContent,
     checkpoints: Vec<crate::git::checkpoints::Checkpoint>,
     client_message_id: Option<String>,
@@ -206,6 +206,7 @@ pub async fn inject_priority_messages_if_any(
             context_files,
             suppress_auto_enrichment,
             client_message_id,
+            push: _,
         } = request.command
         {
             let (session_id, project_dir) = {
@@ -1639,6 +1640,7 @@ async fn process_command_queue_inner(
                 context_files,
                 suppress_auto_enrichment,
                 client_message_id,
+                push: _,
             } => {
                 // Keep preparation's stack temporaries out of the generation poll frame.
                 let prepared = Box::pin(async {
@@ -1965,6 +1967,7 @@ async fn process_command_queue_inner(
                                 context_files: add_ctx_files,
                                 suppress_auto_enrichment: _,
                                 client_message_id: add_client_message_id,
+                                push: _,
                             } = additional.command
                             {
                                 if !add_ctx_files.is_empty() {
@@ -3547,6 +3550,7 @@ mod tests {
             context_files: vec![],
             suppress_auto_enrichment: false,
             client_message_id: client_message_id.map(str::to_string),
+            push: None,
         }
     }
 
@@ -3852,6 +3856,7 @@ mod tests {
                     context_files: vec![],
                     suppress_auto_enrichment: false,
                     client_message_id: None,
+                    push: None,
                 },
             },
             CommandRequest {
@@ -4170,6 +4175,7 @@ mod tests {
             context_files: vec![],
             suppress_auto_enrichment: false,
             client_message_id: None,
+            push: None,
         }));
         queue.push_back(make_request(ChatCommand::SetParams {
             patch: json!({"model": "gpt-4"}),
@@ -4186,6 +4192,7 @@ mod tests {
             context_files: vec![],
             suppress_auto_enrichment: false,
             client_message_id: None,
+            push: None,
         }));
         queue.push_back(make_request(ChatCommand::ToolDecision {
             tool_call_id: "tc1".into(),
@@ -4215,6 +4222,7 @@ mod tests {
             context_files: vec![],
             suppress_auto_enrichment: false,
             client_message_id: None,
+            push: None,
         }));
         queue.push_back(make_request(ChatCommand::UserMessage {
             content: json!("another"),
@@ -4222,6 +4230,7 @@ mod tests {
             context_files: vec![],
             suppress_auto_enrichment: false,
             client_message_id: None,
+            push: None,
         }));
         queue.push_back(make_request(ChatCommand::Abort {}));
         assert_eq!(find_allowed_command_while_paused(&queue), Some(2));
@@ -4854,6 +4863,7 @@ mod tests {
             context_files: vec![],
             suppress_auto_enrichment: false,
             client_message_id: None,
+            push: None,
         }));
         queue.push_back(make_request(ChatCommand::ToolDecision {
             tool_call_id: "tc1".into(),
@@ -4871,6 +4881,7 @@ mod tests {
             context_files: vec![],
             suppress_auto_enrichment: false,
             client_message_id: None,
+            push: None,
         }));
         queue.push_back(make_request(ChatCommand::IdeToolResult {
             tool_call_id: "tc1".into(),
@@ -4889,6 +4900,7 @@ mod tests {
             context_files: vec![],
             suppress_auto_enrichment: false,
             client_message_id: None,
+            push: None,
         }));
         queue.push_back(make_request(ChatCommand::Abort {}));
         assert_eq!(find_allowed_command_while_waiting_ide(&queue), Some(1));
@@ -4918,6 +4930,7 @@ mod tests {
                 context_files: vec![],
                 suppress_auto_enrichment: false,
                 client_message_id: None,
+                push: None,
             },
         });
         queue.push_back(CommandRequest {
@@ -4929,6 +4942,7 @@ mod tests {
                 context_files: vec![],
                 suppress_auto_enrichment: false,
                 client_message_id: None,
+                push: None,
             },
         });
         let priority_req = CommandRequest {
@@ -4940,6 +4954,7 @@ mod tests {
                 context_files: vec![],
                 suppress_auto_enrichment: false,
                 client_message_id: None,
+                push: None,
             },
         };
         let insert_pos = queue
@@ -4964,6 +4979,7 @@ mod tests {
                 context_files: vec![],
                 suppress_auto_enrichment: false,
                 client_message_id: None,
+                push: None,
             },
         });
         queue.push_back(CommandRequest {
@@ -4975,6 +4991,7 @@ mod tests {
                 context_files: vec![],
                 suppress_auto_enrichment: false,
                 client_message_id: None,
+                push: None,
             },
         });
         let priority_req = CommandRequest {
@@ -4986,6 +5003,7 @@ mod tests {
                 context_files: vec![],
                 suppress_auto_enrichment: false,
                 client_message_id: None,
+                push: None,
             },
         };
         let insert_pos = queue
@@ -5049,6 +5067,7 @@ mod tests {
                 context_files: vec![],
                 suppress_auto_enrichment: false,
                 client_message_id: None,
+                push: None,
             },
         });
         queue.push_back(CommandRequest {
@@ -5060,6 +5079,7 @@ mod tests {
                 context_files: vec![],
                 suppress_auto_enrichment: false,
                 client_message_id: None,
+                push: None,
             },
         });
         queue.push_back(CommandRequest {
@@ -5071,6 +5091,7 @@ mod tests {
                 context_files: vec![],
                 suppress_auto_enrichment: false,
                 client_message_id: None,
+                push: None,
             },
         });
         queue.push_back(CommandRequest {
@@ -5107,6 +5128,7 @@ mod tests {
                     context_files: vec![],
                     suppress_auto_enrichment: false,
                     client_message_id: None,
+                    push: None,
                 },
             });
         }
@@ -5247,6 +5269,7 @@ mod tests {
                     context_files: vec![],
                     suppress_auto_enrichment: true,
                     client_message_id: None,
+                    push: None,
                 },
             });
         }
@@ -5287,6 +5310,7 @@ mod tests {
                     context_files: vec![],
                     suppress_auto_enrichment: false,
                     client_message_id: None,
+                    push: None,
                 },
             });
             assert!(session.reprioritize_queued_command("multimodal-user", true));
@@ -5321,6 +5345,7 @@ mod tests {
                 context_files: vec![],
                 suppress_auto_enrichment: false,
                 client_message_id: None,
+                push: None,
             },
         });
         queue.push_back(CommandRequest {
@@ -5332,6 +5357,7 @@ mod tests {
                 context_files: vec![],
                 suppress_auto_enrichment: false,
                 client_message_id: None,
+                push: None,
             },
         });
         queue.push_back(CommandRequest {
@@ -5343,6 +5369,7 @@ mod tests {
                 context_files: vec![],
                 suppress_auto_enrichment: false,
                 client_message_id: None,
+                push: None,
             },
         });
         queue.push_back(CommandRequest {
@@ -5354,6 +5381,7 @@ mod tests {
                 context_files: vec![],
                 suppress_auto_enrichment: false,
                 client_message_id: None,
+                push: None,
             },
         });
 

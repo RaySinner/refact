@@ -4318,6 +4318,7 @@ mod tests {
                 context_files: context_files.clone(),
                 suppress_auto_enrichment: true,
                 client_message_id: None,
+                push: None,
             },
         });
 
@@ -7003,6 +7004,7 @@ mod tests {
                 context_files: vec![],
                 suppress_auto_enrichment: false,
                 client_message_id: None,
+                push: None,
             },
         });
 
@@ -7838,6 +7840,7 @@ mod tests {
                 context_files: vec![],
                 suppress_auto_enrichment: false,
                 client_message_id: None,
+                push: None,
             },
         });
         session.command_queue.push_back(CommandRequest {
@@ -7893,6 +7896,7 @@ mod tests {
                 context_files: vec![],
                 suppress_auto_enrichment: false,
                 client_message_id: None,
+                push: None,
             },
         });
         let snap = session.snapshot();

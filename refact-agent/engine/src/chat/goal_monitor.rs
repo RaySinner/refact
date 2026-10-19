@@ -881,6 +881,7 @@ mod tests {
                 context_files: vec![],
                 suppress_auto_enrichment: false,
                 client_message_id: None,
+                push: None,
             },
         });
 

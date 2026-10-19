@@ -14,10 +14,12 @@ use super::perf_diagnostics::{self, PerfComponent, PerfOutcome};
 use super::types::*;
 use super::queue::{
     add_mode_switch_event_and_plan_if_changed, resolve_worktree_setparams_update,
-    worktree_activation_message, worktree_disabled_message,
+    user_message_with_client_message_id, worktree_activation_message, worktree_disabled_message,
 };
 use super::session::{get_or_create_session_with_trajectory, snapshot_with_agents};
-use super::content::{validate_content_with_attachments, validate_context_files};
+use super::content::{
+    parse_content_with_attachments, validate_content_with_attachments, validate_context_files,
+};
 use super::queue::process_command_queue;
 use super::trajectory_ops::sanitize_messages_for_model_switch;
 use super::trajectories::validate_trajectory_id;
@@ -315,13 +317,22 @@ pub async fn handle_v1_chat_command(
         ChatCommand::DeliverMessages { .. } | ChatCommand::UpdatePendingDelivery { .. }
     ) {
         drop(session);
-        let result = match request.command {            ChatCommand::UserMessage { content, attachments, context_files, suppress_auto_enrichment, client_message_id, push } => {                let parsed_content = super::queue::parse_content_with_attachments(&content, &attachments);
-                let message = super::queue::user_message_with_client_message_id(
+        let result = match request.command {
+            ChatCommand::UserMessage {
+                content,
+                attachments,
+                context_files: _,
+                suppress_auto_enrichment: _,
+                client_message_id,
+                push,
+            } => {
+                let parsed_content = parse_content_with_attachments(&content, &attachments);
+                let message = user_message_with_client_message_id(
                     parsed_content,
                     Vec::new(), // We don't have checkpoints for interactive subchat messages yet
                     client_message_id,
                 );
-                
+
                 // Route as a delivery
                 let push_mode = push.unwrap_or(PushMode::Append);
                 let delivery = PendingDelivery::with_id(
@@ -331,7 +342,7 @@ pub async fn handle_v1_chat_command(
                     "user",
                     true, // wake
                 );
-                
+
                 super::delivery::deliver_to_chat(app.clone(), &chat_id, delivery)
                     .await
                     .map(|outcome| serde_json::json!({"delivery_outcome": outcome}))
@@ -605,6 +616,7 @@ pub async fn handle_v1_chat_command(
             context_files,
             client_message_id,
             suppress_auto_enrichment: _,
+            push: _,
         } => validate_content_with_attachments(content, attachments)
             .err()
             .or_else(|| validate_context_files(context_files).err())
@@ -1057,6 +1069,7 @@ mod tests {
                     ],
                     suppress_auto_enrichment: true,
                     client_message_id: None,
+                    push: None,
                 },
             });
             session
@@ -1188,6 +1201,7 @@ mod tests {
                 client_message_id: Some(
                     "a".repeat(refact_chat_api::MAX_CLIENT_MESSAGE_ID_CHARS + 1),
                 ),
+                push: None,
             },
         };
 

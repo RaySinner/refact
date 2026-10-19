@@ -2194,6 +2194,7 @@ mod tests {
                 context_files,
                 client_message_id,
                 suppress_auto_enrichment: _,
+                push: _,
             } => {
                 assert_eq!(content, json!("hello"));
                 assert!(attachments.is_empty());

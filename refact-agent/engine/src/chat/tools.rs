@@ -3176,9 +3176,9 @@ async fn loop_guard_apply_to_result(
     // A result message marked `tool_failed` did not succeed, so it made no progress
     // and must not advance the counter.
     let success = !msgs.iter().any(|message| message.tool_failed == Some(true));
-    let verdict = {
+    let (verdict, tracker_block_reason) = {
         let mut session = session_arc.lock().await;
-        loop_guard_next(
+        let verdict = loop_guard_next(
             &mut session.tool_loop_guard,
             settings.tool_loop_guard_enabled,
             &canonical_name,
@@ -3186,8 +3186,49 @@ async fn loop_guard_apply_to_result(
             digest,
             settings.tool_loop_guard_threshold,
             success,
-        )
+        );
+        if settings.tool_loop_hard_stop_on_block
+            && matches!(
+                verdict,
+                Some(crate::tools::tool_call_loop_guard::LoopVerdict::Block { .. })
+            )
+        {
+            session.turn_investigation_tracker.force_block();
+        }
+        let tracker_block_reason = if success {
+            session.turn_investigation_tracker.record(
+                &canonical_name,
+                &identity_key,
+                settings.max_investigation_tool_calls_per_turn,
+                settings.tool_loop_stagnation_detector_enabled,
+                settings.tool_loop_stagnation_threshold,
+            )
+        } else {
+            None
+        };
+        (verdict, tracker_block_reason)
     };
+
+    if let Some(reason) = tracker_block_reason {
+        use crate::tools::tool_call_loop_guard::{
+            stagnation_blocked_text, BlockReason, INVESTIGATION_BUDGET_EXHAUSTED_TEXT,
+        };
+        let text = match reason {
+            BlockReason::BudgetExhausted => INVESTIGATION_BUDGET_EXHAUSTED_TEXT.to_string(),
+            BlockReason::Stagnation { consecutive } => {
+                stagnation_blocked_text(&canonical_name, consecutive as usize)
+            }
+        };
+        let blocked = ChatMessage {
+            message_id: Uuid::new_v4().to_string(),
+            role: "tool".to_string(),
+            content: ChatContent::SimpleText(text),
+            tool_call_id: tool_call.id.to_string(),
+            tool_failed: Some(true),
+            ..Default::default()
+        };
+        return (true, vec![blocked], Vec::new());
+    }
 
     apply_loop_guard(
         verdict,
@@ -3508,6 +3549,12 @@ async fn execute_tools_inner(
     let serial_registry = Arc::new(serial_registry);
     let max_parallel_tools = refact_chat_history::config::limits().max_parallel_tools;
 
+    let session_arc_opt: Option<Arc<AMutex<super::types::ChatSession>>> = {
+        let cgcx = ccx.lock().await;
+        let sessions = app.chat.sessions.read().await;
+        sessions.get(&cgcx.chat_id).cloned()
+    };
+
     let mut all_results: Vec<(usize, bool, Vec<ChatMessage>, Vec<ContextFile>)> = Vec::new();
     let mut current_parallel_batch: Vec<(usize, ChatToolCall)> = Vec::new();
     let mut prepared_parallel_slots: std::collections::HashMap<String, usize> =
@@ -3520,6 +3567,45 @@ async fn execute_tools_inner(
         };
         if is_aborted {
             break;
+        }
+
+        let resolved_name_pre = crate::llm::adapters::claude_code_compat::cc_resolve_tool_name(
+            &tool_call.function.name,
+        );
+        if let Some(session_arc) = session_arc_opt.as_ref() {
+            let (tracker_blocked, hard_stopped) = {
+                let session = session_arc.lock().await;
+                (
+                    session.turn_investigation_tracker.is_blocked(),
+                    session.turn_investigation_tracker.is_hard_stopped(),
+                )
+            };
+            if hard_stopped
+                || (tracker_blocked
+                    && crate::tools::tool_call_loop_guard::is_investigation_tool(
+                        &resolved_name_pre,
+                    ))
+            {
+                let text = if hard_stopped {
+                    "Repetitive tool calls blocked by the loop guard. Do not repeat the same calls — synthesize what you already have and complete or change your approach now.".to_string()
+                } else {
+                    crate::tools::tool_call_loop_guard::INVESTIGATION_BUDGET_EXHAUSTED_TEXT.to_string()
+                };
+                all_results.push((
+                    idx,
+                    true,
+                    vec![ChatMessage {
+                        message_id: Uuid::new_v4().to_string(),
+                        role: "tool".to_string(),
+                        content: ChatContent::SimpleText(text),
+                        tool_call_id: tool_call.id.clone(),
+                        tool_failed: Some(true),
+                        ..Default::default()
+                    }],
+                    vec![],
+                ));
+                continue;
+            }
         }
 
         let options_allowed_tools = &options.allowed_tools;
@@ -4499,5 +4585,158 @@ mod loop_guard_tests {
         assert_eq!(blocked.1[0].tool_call_id, "call-42");
         assert_eq!(blocked.1[0].role, "tool");
         assert!(blocked.2.is_empty());
+    }
+}
+
+/// Tests for the turn-investigation tracker as wired into the tool-execution path.
+#[cfg(test)]
+mod investigation_tracker_tests {
+    use crate::tools::tool_call_loop_guard::{
+        is_investigation_tool, is_state_mutation_tool, BlockReason, TurnInvestigationTracker,
+    };
+
+    const BUDGET: usize = 3;
+    const STAGNATION_THRESHOLD: usize = 5;
+
+    fn tracker() -> TurnInvestigationTracker {
+        TurnInvestigationTracker::new()
+    }
+
+    fn record(
+        t: &mut TurnInvestigationTracker,
+        name: &str,
+        key: &str,
+    ) -> Option<BlockReason> {
+        t.record(
+            name,
+            key,
+            BUDGET,
+            true,
+            STAGNATION_THRESHOLD,
+        )
+    }
+
+    #[test]
+    fn investigation_tools_are_counted_and_mutation_tools_reset() {
+        let mut t = tracker();
+        assert!(is_investigation_tool("cat"));
+        assert!(is_investigation_tool("search_pattern"));
+        assert!(!is_investigation_tool("shell"));
+
+        assert!(is_state_mutation_tool("shell"));
+        assert!(is_state_mutation_tool("apply_patch"));
+        assert!(!is_state_mutation_tool("cat"));
+
+        assert_eq!(record(&mut t, "cat", "cat\u{1}a"), None);
+        assert_eq!(record(&mut t, "search_pattern", "sp\u{1}k"), None);
+        assert_eq!(t.consecutive_investigation(), 2);
+        // A mutating tool resets the counter.
+        assert_eq!(record(&mut t, "shell", "sh\u{1}cmd"), None);
+        assert_eq!(t.consecutive_investigation(), 0);
+    }
+
+    #[test]
+    fn budget_exhausts_after_max_consecutive_investigation_calls() {
+        let mut t = tracker();
+        assert_eq!(record(&mut t, "cat", "cat\u{1}a"), None);
+        assert_eq!(record(&mut t, "tree", "tree\u{1}src"), None);
+        assert_eq!(
+            record(&mut t, "glob", "glob\u{1}*.rs"),
+            Some(BlockReason::BudgetExhausted)
+        );
+        assert!(t.is_blocked());
+    }
+
+    #[test]
+    fn blocked_tracker_stays_blocked_for_subsequent_read_calls() {
+        let mut t = tracker();
+        // Exhaust the budget.
+        record(&mut t, "cat", "cat\u{1}a");
+        record(&mut t, "tree", "tree\u{1}src");
+        assert_eq!(
+            record(&mut t, "glob", "glob\u{1}*.rs"),
+            Some(BlockReason::BudgetExhausted)
+        );
+        // Every further investigation call is blocked.
+        assert_eq!(
+            record(&mut t, "cat", "cat\u{1}b"),
+            Some(BlockReason::BudgetExhausted)
+        );
+        // A mutating tool does not unblock a budget-exhausted tracker within the turn.
+        record(&mut t, "shell", "sh\u{1}cmd");
+        assert_eq!(
+            record(&mut t, "cat", "cat\u{1}c"),
+            Some(BlockReason::BudgetExhausted)
+        );
+    }
+
+    #[test]
+    fn stagnation_fires_when_same_target_exceeds_threshold_without_mutation() {
+        let mut t = TurnInvestigationTracker::new();
+        // Use a smaller stagnation threshold so it fires before the budget.
+        let stagnation_threshold = 2;
+        let budget = 100;
+        assert_eq!(
+            t.record("cat", "cat\u{1}a", budget, true, stagnation_threshold),
+            None
+        );
+        assert_eq!(
+            t.record("cat", "cat\u{1}a", budget, true, stagnation_threshold),
+            None
+        );
+        assert_eq!(
+            t.record("cat", "cat\u{1}a", budget, true, stagnation_threshold),
+            Some(BlockReason::Stagnation { consecutive: 3 })
+        );
+        assert!(t.is_blocked());
+    }
+
+    #[test]
+    fn distinct_targets_do_not_trigger_stagnation_within_window() {
+        let mut t = TurnInvestigationTracker::new();
+        let stagnation_threshold = 2;
+        let budget = 100;
+        // Three distinct targets, none repeated more than twice in the window.
+        assert_eq!(
+            t.record("cat", "cat\u{1}a", budget, true, stagnation_threshold),
+            None
+        );
+        assert_eq!(
+            t.record("cat", "cat\u{1}b", budget, true, stagnation_threshold),
+            None
+        );
+        assert_eq!(
+            t.record("cat", "cat\u{1}c", budget, true, stagnation_threshold),
+            None
+        );
+        assert!(!t.is_blocked());
+    }
+
+    #[test]
+    fn mutation_resets_the_stagnation_window() {
+        let mut t = TurnInvestigationTracker::new();
+        let stagnation_threshold = 2;
+        let budget = 100;
+        t.record("cat", "cat\u{1}a", budget, true, stagnation_threshold);
+        t.record("cat", "cat\u{1}a", budget, true, stagnation_threshold);
+        // A state mutation is real progress: it clears the stagnation window, so
+        // the same target is fresh again ("no state mutation" is the precondition).
+        t.record("apply_patch", "patch\u{1}x", budget, true, stagnation_threshold);
+        assert_eq!(
+            t.record("cat", "cat\u{1}a", budget, true, stagnation_threshold),
+            None,
+            "a mutation must clear the stagnation window"
+        );
+        assert!(!t.is_blocked());
+    }
+
+    #[test]
+    fn non_investigation_non_mutation_tools_are_ignored_by_tracker() {
+        let mut t = tracker();
+        assert_eq!(record(&mut t, "cat", "cat\u{1}a"), None);
+        assert_eq!(t.consecutive_investigation(), 1);
+        // A neutral tool leaves the count unchanged.
+        assert_eq!(record(&mut t, "process_read", "pr\u{1}1"), None);
+        assert_eq!(t.consecutive_investigation(), 1);
     }
 }

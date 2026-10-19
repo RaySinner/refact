@@ -359,6 +359,147 @@ arguments, use a different tool, or continue with the task."
     )
 }
 
+// ── Investigation budget & stagnation ────────────────────────────────────────
+
+const INVESTIGATION_TOOL_PREFIXES: &[&str] = &["search_", "codegraph_"];
+
+const INVESTIGATION_TOOL_EXACT: &[&str] = &[
+    "cat", "tree", "glob", "locate_files", "code_map", "git_risk", "web", "web_search", "knowledge",
+];
+
+const STATE_MUTATION_TOOL_PREFIXES: &[&str] = &["board_", "doc_", "task_mem_", "spawn_agent"];
+
+const STATE_MUTATION_TOOL_EXACT: &[&str] = &[
+    "update_textdoc",
+    "create_textdoc",
+    "apply_patch",
+    "shell",
+    "ask_questions",
+    "agent_finish",
+    "task_done",
+];
+
+pub fn is_investigation_tool(canonical_name: &str) -> bool {
+    INVESTIGATION_TOOL_EXACT.contains(&canonical_name)
+        || INVESTIGATION_TOOL_PREFIXES.iter().any(|p| canonical_name.starts_with(p))
+}
+
+pub fn is_state_mutation_tool(canonical_name: &str) -> bool {
+    STATE_MUTATION_TOOL_EXACT.contains(&canonical_name)
+        || STATE_MUTATION_TOOL_PREFIXES.iter().any(|p| canonical_name.starts_with(p))
+}
+
+pub const INVESTIGATION_BUDGET_EXHAUSTED_TEXT: &str =
+    "Investigation tool budget exhausted for this turn. Synthesize findings and proceed \
+     with action or final response now.";
+
+pub fn stagnation_blocked_text(tool: &str, threshold: usize) -> String {
+    format!(
+        "Stagnation detected: `{tool}` was called {threshold}+ times on similar targets \
+         with no state change in between. Block further read calls in this turn — \
+         synthesize what you already have and take action."
+    )
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlockReason {
+    BudgetExhausted,
+    Stagnation { consecutive: u8 },
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct TurnInvestigationTracker {
+    consecutive_investigation: usize,
+    recent_keys: Vec<String>,
+    blocked: bool,
+    hard_stop: bool,
+}
+
+impl TurnInvestigationTracker {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn reset(&mut self) {
+        self.consecutive_investigation = 0;
+        self.recent_keys.clear();
+        self.blocked = false;
+        self.hard_stop = false;
+    }
+
+    pub fn is_blocked(&self) -> bool {
+        self.blocked
+    }
+
+    /// True when the loop guard issued a `Block` (or repeated `Warn`) and the
+    /// remaining tools in the batch/turn must be aborted regardless of kind.
+    pub fn is_hard_stopped(&self) -> bool {
+        self.hard_stop
+    }
+
+    /// Abort the entire batch: blocks reads AND marks a hard stop.
+    pub fn force_block(&mut self) {
+        self.blocked = true;
+        self.hard_stop = true;
+    }
+
+    pub fn consecutive_investigation(&self) -> usize {
+        self.consecutive_investigation
+    }
+
+    pub fn record(
+        &mut self,
+        canonical_name: &str,
+        identity_key: &str,
+        budget: usize,
+        stagnation_enabled: bool,
+        stagnation_threshold: usize,
+    ) -> Option<BlockReason> {
+        if is_state_mutation_tool(canonical_name) {
+            // A state change is real progress: it breaks the investigation streak
+            // AND clears the stagnation window, since "no state mutation" is the
+            // precondition for a stagnation block.
+            self.consecutive_investigation = 0;
+            self.recent_keys.clear();
+            return None;
+        }
+        if !is_investigation_tool(canonical_name) {
+            return None;
+        }
+        if self.blocked {
+            return Some(BlockReason::BudgetExhausted);
+        }
+        if self.hard_stop {
+            return Some(BlockReason::BudgetExhausted);
+        }
+        if stagnation_enabled && stagnation_threshold >= 2 {
+            let hits = self
+                .recent_keys
+                .iter()
+                .filter(|k| k.as_str() == identity_key)
+                .count();
+            if hits + 1 > stagnation_threshold {
+                self.blocked = true;
+                return Some(BlockReason::Stagnation {
+                    consecutive: (hits + 1) as u8,
+                });
+            }
+        }
+        self.consecutive_investigation += 1;
+        self.recent_keys.push(identity_key.to_string());
+        let window = stagnation_threshold.max(budget).max(2);
+        if self.recent_keys.len() > window {
+            self.recent_keys.remove(0);
+        }
+        if budget > 0 && self.consecutive_investigation >= budget {
+            self.blocked = true;
+            Some(BlockReason::BudgetExhausted)
+        } else {
+            None
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -635,5 +776,222 @@ mod tests {
             identity_key_for("probe_tool", r#"{"p":"x","junk":"y"}"#),
             call_identity_key("probe_tool", r#"{"p":"x","junk":"y"}"#)
         );
+        set_identity_override("probe_tool", None);
+        assert_eq!(
+            identity_key_for("probe_tool", r#"{"p":"x","junk":"y"}"#),
+            call_identity_key("probe_tool", r#"{"p":"x","junk":"y"}"#)
+        );
+    }
+
+    // ── TurnInvestigationTracker tests ─────────────────────────────────────────
+
+    #[test]
+    fn tracker_classifies_investigation_tools() {
+        assert!(is_investigation_tool("cat"));
+        assert!(is_investigation_tool("tree"));
+        assert!(is_investigation_tool("glob"));
+        assert!(is_investigation_tool("locate_files"));
+        assert!(is_investigation_tool("code_map"));
+        assert!(is_investigation_tool("git_risk"));
+        assert!(is_investigation_tool("web"));
+        assert!(is_investigation_tool("web_search"));
+        assert!(is_investigation_tool("knowledge"));
+        assert!(is_investigation_tool("search_pattern"));
+        assert!(is_investigation_tool("search_symbol_definition"));
+        assert!(is_investigation_tool("codegraph_overview"));
+        assert!(!is_investigation_tool("shell"));
+        assert!(!is_investigation_tool("apply_patch"));
+        assert!(!is_investigation_tool("process_read"));
+    }
+
+    #[test]
+    fn tracker_classifies_mutation_tools() {
+        assert!(is_state_mutation_tool("update_textdoc"));
+        assert!(is_state_mutation_tool("create_textdoc"));
+        assert!(is_state_mutation_tool("apply_patch"));
+        assert!(is_state_mutation_tool("shell"));
+        assert!(is_state_mutation_tool("ask_questions"));
+        assert!(is_state_mutation_tool("agent_finish"));
+        assert!(is_state_mutation_tool("task_done"));
+        assert!(is_state_mutation_tool("board_add"));
+        assert!(is_state_mutation_tool("doc_save"));
+        assert!(is_state_mutation_tool("task_mem_save"));
+        assert!(is_state_mutation_tool("spawn_agent"));
+        assert!(!is_state_mutation_tool("cat"));
+        assert!(!is_state_mutation_tool("search_pattern"));
+    }
+
+    #[test]
+    fn tracker_budget_exhausts_after_n_consecutive_investigation_calls() {
+        let mut t = TurnInvestigationTracker::new();
+        let budget = 3;
+        let stagnation = (true, 10);
+        assert_eq!(
+            t.record("cat", "cat\u{1}a.rs", budget, stagnation.0, stagnation.1),
+            None
+        );
+        assert_eq!(
+            t.record("tree", "tree\u{1}src", budget, stagnation.0, stagnation.1),
+            None
+        );
+        assert_eq!(
+            t.record("glob", "glob\u{1}*.rs", budget, stagnation.0, stagnation.1),
+            Some(BlockReason::BudgetExhausted)
+        );
+        assert!(t.is_blocked());
+        assert_eq!(t.consecutive_investigation(), 3);
+    }
+
+    #[test]
+    fn tracker_mutation_tool_resets_investigation_counter() {
+        let mut t = TurnInvestigationTracker::new();
+        let budget = 3;
+        t.record("cat", "cat\u{1}a.rs", budget, true, 10);
+        t.record("tree", "tree\u{1}src", budget, true, 10);
+        assert_eq!(t.consecutive_investigation(), 2);
+        // Mutating tool resets the counter.
+        assert_eq!(
+            t.record("shell", "shell\u{1}cmd", budget, true, 10),
+            None
+        );
+        assert_eq!(t.consecutive_investigation(), 0);
+        assert!(!t.is_blocked());
+        // Counter starts fresh.
+        assert_eq!(
+            t.record("cat", "cat\u{1}b.rs", budget, true, 10),
+            None
+        );
+        assert_eq!(t.consecutive_investigation(), 1);
+    }
+
+    #[test]
+    fn tracker_non_investigation_non_mutation_tool_is_ignored() {
+        let mut t = TurnInvestigationTracker::new();
+        let budget = 2;
+        t.record("cat", "cat\u{1}a.rs", budget, true, 10);
+        assert_eq!(t.consecutive_investigation(), 1);
+        // A neutral tool (neither investigation nor mutation) does not change the count.
+        assert_eq!(
+            t.record("process_read", "pr\u{1}1", budget, true, 10),
+            None
+        );
+        assert_eq!(t.consecutive_investigation(), 1);
+        // Next investigation call increments from 1.
+        assert_eq!(
+            t.record("tree", "tree\u{1}src", budget, true, 10),
+            Some(BlockReason::BudgetExhausted)
+        );
+        assert!(t.is_blocked());
+    }
+
+    #[test]
+    fn tracker_stagnation_blocks_repeated_same_target() {
+        let mut t = TurnInvestigationTracker::new();
+        let budget = 100;
+        let threshold = 3;
+        // 3 calls with the same identity key.
+        assert_eq!(
+            t.record("cat", "cat\u{1}a.rs", budget, true, threshold),
+            None
+        );
+        assert_eq!(
+            t.record("cat", "cat\u{1}a.rs", budget, true, threshold),
+            None
+        );
+        // The 4th call on the same target exceeds the threshold: 4 repeats > 3.
+        assert_eq!(
+            t.record("cat", "cat\u{1}a.rs", budget, true, threshold),
+            None
+        );
+        assert_eq!(
+            t.record("cat", "cat\u{1}a.rs", budget, true, threshold),
+            Some(BlockReason::Stagnation { consecutive: 4 })
+        );
+        assert!(t.is_blocked());
+    }
+
+    #[test]
+    fn tracker_stagnation_disabled_by_default_flag() {
+        let mut t = TurnInvestigationTracker::new();
+        let budget = 100;
+        let threshold = 2;
+        // Stagnation disabled: no block even with repeated target.
+        for _ in 0..5 {
+            assert_eq!(
+                t.record("cat", "cat\u{1}a.rs", budget, false, threshold),
+                None
+            );
+        }
+        assert!(!t.is_blocked());
+    }
+
+    #[test]
+    fn tracker_stagnation_resets_on_mutation() {
+        let mut t = TurnInvestigationTracker::new();
+        let budget = 100;
+        let threshold = 2;
+        t.record("cat", "cat\u{1}a.rs", budget, true, threshold);
+        t.record("cat", "cat\u{1}a.rs", budget, true, threshold);
+        // Mutating tool resets; now the same target is fresh.
+        t.record("apply_patch", "patch\u{1}x", budget, true, threshold);
+        assert_eq!(
+            t.record("cat", "cat\u{1}a.rs", budget, true, threshold),
+            None,
+            "mutation should have reset the window"
+        );
+        assert!(!t.is_blocked());
+    }
+
+    #[test]
+    fn tracker_reset_clears_all_state() {
+        let mut t = TurnInvestigationTracker::new();
+        let budget = 2;
+        t.record("cat", "cat\u{1}a.rs", budget, true, 10);
+        t.record("tree", "tree\u{1}src", budget, true, 10);
+        assert!(t.is_blocked());
+        t.reset();
+        assert!(!t.is_blocked());
+        assert_eq!(t.consecutive_investigation(), 0);
+        assert_eq!(
+            t.record("cat", "cat\u{1}b.rs", budget, true, 10),
+            None
+        );
+    }
+
+    #[test]
+    fn tracker_blocked_persists_for_subsequent_read_calls() {
+        let mut t = TurnInvestigationTracker::new();
+        let budget = 1;
+        assert_eq!(
+            t.record("cat", "cat\u{1}a.rs", budget, true, 10),
+            Some(BlockReason::BudgetExhausted)
+        );
+        // Any subsequent investigation call is also blocked.
+        assert_eq!(
+            t.record("tree", "tree\u{1}src", budget, true, 10),
+            Some(BlockReason::BudgetExhausted)
+        );
+        assert!(t.is_blocked());
+    }
+
+    #[test]
+    fn tracker_force_block_blocks_subsequent_read_calls() {
+        let mut t = TurnInvestigationTracker::new();
+        t.force_block();
+        assert!(t.is_hard_stopped());
+        assert_eq!(
+            t.record("cat", "cat\u{1}a.rs", 100, true, 10),
+            Some(BlockReason::BudgetExhausted)
+        );
+        // A mutating tool resets the streak, but the hard stop persists.
+        t.record("shell", "sh\u{1}x", 100, true, 10);
+        assert_eq!(
+            t.record("cat", "cat\u{1}b.rs", 100, true, 10),
+            Some(BlockReason::BudgetExhausted)
+        );
+        // reset() clears the hard stop (this happens on the turn boundary).
+        t.reset();
+        assert!(!t.is_hard_stopped());
+        assert_eq!(t.record("cat", "cat\u{1}c.rs", 100, true, 10), None);
     }
 }

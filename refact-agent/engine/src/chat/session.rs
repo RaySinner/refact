@@ -543,6 +543,8 @@ impl ChatSession {
             chat_id: chat_id.clone(),
             derived_privacy_zones: crate::privacy::records::new_derived_privacy_zones(),
             tool_loop_guard: crate::tools::tool_call_loop_guard::ToolCallLoopGuard::new(),
+            turn_investigation_tracker:
+                crate::tools::tool_call_loop_guard::TurnInvestigationTracker::new(),
             thread: ThreadParams {
                 id: chat_id,
                 ..Default::default()
@@ -678,6 +680,8 @@ impl ChatSession {
             chat_id,
             derived_privacy_zones: crate::privacy::records::new_derived_privacy_zones(),
             tool_loop_guard: crate::tools::tool_call_loop_guard::ToolCallLoopGuard::new(),
+            turn_investigation_tracker:
+                crate::tools::tool_call_loop_guard::TurnInvestigationTracker::new(),
             thread,
             messages,
             runtime,
@@ -1459,10 +1463,14 @@ impl ChatSession {
         self.post_turn_task_handles.push(handle);
     }
 
+    /// Turn-scoped memory release: drops everything a completed/aborted turn owns.
+    /// The per-turn investigation tracker resets here so every new turn starts with
+    /// a fresh budget and an empty stagnation window.
     pub(crate) fn release_turn_only_state(&mut self) {
         self.last_prompt_messages = Vec::new();
         self.tool_catalog = None;
         self.turn_tool_pool = None;
+        self.turn_investigation_tracker.reset();
         self.post_turn_task_handles
             .retain(|task| !task.is_finished());
     }

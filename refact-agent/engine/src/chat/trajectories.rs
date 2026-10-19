@@ -18610,6 +18610,8 @@ mod tests {
             wait_interrupt_flag: Arc::new(AtomicBool::new(false)),
             derived_privacy_zones: crate::privacy::records::new_derived_privacy_zones(),
             tool_loop_guard: crate::tools::tool_call_loop_guard::ToolCallLoopGuard::new(),
+            turn_investigation_tracker:
+                crate::tools::tool_call_loop_guard::TurnInvestigationTracker::new(),
             thread: ThreadParams {
                 id: "test-123".to_string(),
                 title: "Test Thread".to_string(),
@@ -18772,6 +18774,8 @@ mod tests {
             wait_interrupt_flag: Arc::new(AtomicBool::new(false)),
             derived_privacy_zones: crate::privacy::records::new_derived_privacy_zones(),
             tool_loop_guard: crate::tools::tool_call_loop_guard::ToolCallLoopGuard::new(),
+            turn_investigation_tracker:
+                crate::tools::tool_call_loop_guard::TurnInvestigationTracker::new(),
             thread: ThreadParams {
                 id: "skill-test".to_string(),
                 active_skill: Some("my-skill".to_string()),

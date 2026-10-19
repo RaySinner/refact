@@ -248,6 +248,94 @@ const NEW_BOOLEAN_FIELDS: {
   },
 ];
 
+const LOOP_LIMIT_FIELDS: {
+  name: string;
+  group: string;
+  value: number;
+  label: string;
+}[] = [
+  {
+    name: "tool_loop_guard_threshold",
+    group: "Tool loop & investigation limits",
+    value: 6,
+    label: "Tool loop guard threshold",
+  },
+  {
+    name: "max_investigation_tool_calls_per_turn",
+    group: "Tool loop & investigation limits",
+    value: 12,
+    label: "Max investigation tool calls per turn",
+  },
+  {
+    name: "tool_loop_stagnation_threshold",
+    group: "Tool loop & investigation limits",
+    value: 8,
+    label: "Tool loop stagnation threshold",
+  },
+];
+
+const LOOP_LIMIT_BOOLEAN_FIELDS: {
+  name: string;
+  group: string;
+  value: boolean;
+  label: string;
+}[] = [
+  {
+    name: "tool_loop_guard_enabled",
+    group: "Tool loop & investigation limits",
+    value: true,
+    label: "Tool loop guard enabled",
+  },
+  {
+    name: "tool_loop_hard_stop_on_block",
+    group: "Tool loop & investigation limits",
+    value: true,
+    label: "Tool loop hard stop on block",
+  },
+  {
+    name: "tool_loop_stagnation_detector_enabled",
+    group: "Tool loop & investigation limits",
+    value: true,
+    label: "Tool loop stagnation detector enabled",
+  },
+];
+
+function settingsResponseWithLoopLimits(): TrajectorySettingsResponse {
+  const base = settingsResponse();
+  const entries: [string, TrajectorySettingValue][] = [
+    ...LOOP_LIMIT_FIELDS.map((field): [string, TrajectorySettingValue] => [
+      field.name,
+      field.value,
+    ]),
+    ...LOOP_LIMIT_BOOLEAN_FIELDS.map(
+      (field): [string, TrajectorySettingValue] => [field.name, field.value],
+    ),
+  ];
+  const extra: TrajectorySettingsConfig = Object.fromEntries(entries);
+  const config = { ...base.config, ...extra };
+  return {
+    ...base,
+    config,
+    current: config,
+    defaults: { ...base.defaults, ...extra },
+    fields: [
+      ...base.fields,
+      ...LOOP_LIMIT_FIELDS.map((field) => ({
+        name: field.name,
+        value_type: "integer" as const,
+        minimum: 1,
+        maximum: 100,
+        apply_mode: "live" as const,
+      })),
+      ...LOOP_LIMIT_BOOLEAN_FIELDS.map((field) => ({
+        name: field.name,
+        value_type: "boolean" as const,
+        apply_mode: "live" as const,
+      })),
+    ],
+  };
+}
+
 function settingsResponseWithNewLimits(): TrajectorySettingsResponse {
   const base = settingsResponse();
   const entries: [string, TrajectorySettingValue][] = [
@@ -528,5 +616,69 @@ describe("TrajectorySettingsPanel", () => {
       name: "Some future engine setting",
     });
     expect(input.closest("section")).toHaveTextContent("Additional settings");
+  });
+
+  it("renders the tool loop & investigation limits group with its fields", async () => {
+    server.use(
+      http.get("*/v1/trajectory-settings", () =>
+        HttpResponse.json(settingsResponseWithLoopLimits()),
+      ),
+    );
+
+    renderPanel();
+
+    expect(
+      await screen.findByText("Tool loop & investigation limits"),
+    ).toBeInTheDocument();
+
+    for (const field of LOOP_LIMIT_FIELDS) {
+      const input = screen.getByRole("spinbutton", { name: field.label });
+      expect(input).toHaveValue(field.value);
+      const section = input.closest("section");
+      expect(section, `no section for "${field.name}"`).not.toBeNull();
+      expect(section).toHaveTextContent(field.group);
+    }
+
+    for (const field of LOOP_LIMIT_BOOLEAN_FIELDS) {
+      const toggle = screen.getByRole("switch", { name: field.label });
+      expect(toggle).toBeChecked();
+      const section = toggle.closest("section");
+      expect(section, `no section for "${field.name}"`).not.toBeNull();
+      expect(section).toHaveTextContent(field.group);
+    }
+  });
+
+  it("saves the edited tool loop & investigation limits", async () => {
+    let savedBody: unknown = null;
+    const response = settingsResponseWithLoopLimits();
+    server.use(
+      http.get("*/v1/trajectory-settings", () => HttpResponse.json(response)),
+      http.post("*/v1/trajectory-settings", async ({ request }) => {
+        savedBody = await request.json();
+        return HttpResponse.json(response);
+      }),
+    );
+    const { user } = renderPanel();
+
+    const input = await screen.findByRole("spinbutton", {
+      name: "Max investigation tool calls per turn",
+    });
+    await user.clear(input);
+    await user.type(input, "20");
+    await user.click(screen.getByRole("button", { name: "Save settings" }));
+
+    await waitFor(() =>
+      expect(savedBody).toMatchObject({
+        max_investigation_tool_calls_per_turn: 20,
+        tool_loop_guard_enabled: true,
+        tool_loop_guard_threshold: 6,
+        tool_loop_hard_stop_on_block: true,
+        tool_loop_stagnation_detector_enabled: true,
+        tool_loop_stagnation_threshold: 8,
+      }),
+    );
+    expect(
+      await screen.findByText("Trajectory settings saved."),
+    ).toBeInTheDocument();
   });
 });

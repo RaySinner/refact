@@ -62,6 +62,19 @@ const SETTINGS_GROUPS: SettingsGroup[] = [
     ],
   },
   {
+    title: "Tool loop & investigation limits",
+    description:
+      "Controls for loop detection, stagnation prevention, and per-turn read-only investigation limits across all models and modes.",
+    names: [
+      "tool_loop_guard_enabled",
+      "tool_loop_guard_threshold",
+      "max_investigation_tool_calls_per_turn",
+      "tool_loop_hard_stop_on_block",
+      "tool_loop_stagnation_detector_enabled",
+      "tool_loop_stagnation_threshold",
+    ],
+  },
+  {
     title: "Enrichment caps",
     names: [
       "auto_enrichment_total_token_cap",

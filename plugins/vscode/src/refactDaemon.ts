@@ -719,7 +719,7 @@ export function daemonSpawnCommand(binPath: string, port?: number): { command: s
     return { command: binPath, args };
 }
 
-function defaultIsProcessRunning(pid: number): boolean {
+export function defaultIsProcessRunning(pid: number): boolean {
     if (!Number.isFinite(pid) || pid <= 0) {
         return false;
     }
@@ -814,7 +814,7 @@ function daemonStartupFailureMessage(reason: string, options: DaemonClientOption
     return `${reason}\nNo daemon log output found at ${logPath}.`;
 }
 
-function readFileTail(filePath: string, maxBytes: number): string {
+export function readFileTail(filePath: string, maxBytes: number): string {
     let fd: number | undefined;
     try {
         fd = fs.openSync(filePath, "r");

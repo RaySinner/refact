@@ -25,7 +25,10 @@
   --rf-selected-bg: rgba(127, 147, 216, 0.14);
   --rf-selected-border: rgba(127, 147, 216, 0.6);
   --rf-selected-fg: #c2cdf2;
-  --rf-selection-bg: color-mix(in srgb, var(--rf-color-accent, #7f93d8) 35%, transparent);
+  /* Base value must resolve on engines without color-mix() (JetBrains JCEF,
+     Chromium < 111): an invalid-at-computed-value-time mix resets the
+     ::selection background to transparent. The guarded mix lives in @supports. */
+  --rf-selection-bg: var(--rf-selected-bg, var(--rf-color-accent-soft));
   --rf-selection-fg: inherit;
   --rf-color-success: #5fae8b;
   --rf-color-warning: #cda04e;
@@ -199,6 +202,11 @@
       var(--rf-color-accent) 55%,
       transparent
     );
+    --rf-selection-bg: color-mix(
+      in srgb,
+      var(--rf-color-accent) 35%,
+      transparent
+    );
   }
 }
 
@@ -287,7 +295,7 @@
   --rf-selected-bg: rgba(0, 106, 220, 0.1);
   --rf-selected-border: rgba(0, 106, 220, 0.7);
   --rf-selected-fg: #10457f;
-  --rf-selection-bg: color-mix(in srgb, var(--rf-color-accent, #006adc) 25%, rgba(0, 0, 0, 0.12));
+  --rf-selection-bg: var(--rf-selected-bg, var(--rf-color-accent-soft));
   --rf-selection-fg: inherit;
   --rf-focus-ring: rgba(0, 106, 220, 0.5);
   --rf-chart-1: #5566c4;
@@ -341,6 +349,11 @@
       var(--rf-color-accent) 50%,
       transparent
     );
+    --rf-selection-bg: color-mix(
+      in srgb,
+      var(--rf-color-accent) 25%,
+      transparent
+    );
   }
 }
 
@@ -365,7 +378,10 @@
    system so the entire chat surface follows the active editor colour palette. */
 [data-host="vscode"] {
   --rf-bg: var(--vscode-editor-background, var(--vscode-sideBar-background));
-  --rf-color-fg: var(--vscode-editor-foreground, var(--vscode-sideBar-foreground));
+  --rf-color-fg: var(
+    --vscode-editor-foreground,
+    var(--vscode-sideBar-foreground)
+  );
   --rf-color-muted: var(--vscode-descriptionForeground, #7982a9);
   --rf-color-faint: color-mix(
     in srgb,
@@ -391,19 +407,18 @@
     --vscode-textLink-foreground,
     var(
       --vscode-terminal-ansiBrightBlue,
-      var(
-        --vscode-activityBarBadge-background,
-        #7aa2f7
-      )
+      var(--vscode-activityBarBadge-background, #7aa2f7)
     )
   );
   --room-stripe-1: var(--rf-color-accent);
   --room-label-1: var(--rf-color-fg);
   --room-stripe-7: var(--vscode-descriptionForeground);
   --room-label-7: var(--vscode-descriptionForeground);
+  /* Fallback resolves on any engine: color-mix() would defeat the chain on
+     Chromium < 111. */
   --rf-selection-bg: var(
     --vscode-editor-selectionBackground,
-    color-mix(in srgb, var(--rf-color-accent, #006adc) 25%, rgba(0, 0, 0, 0.12))
+    var(--rf-selected-bg, var(--rf-color-accent-soft))
   );
   --rf-selection-fg: inherit;
 }

@@ -82,7 +82,7 @@
     --rf-selection-bg,
     var(
       --vscode-editor-selectionBackground,
-      color-mix(in srgb, var(--rf-color-accent, #006adc) 28%, rgba(0, 0, 0, 0.12))
+      var(--rf-selected-bg, var(--rf-color-accent-soft))
     )
   );
   color: var(--rf-selection-fg, inherit);

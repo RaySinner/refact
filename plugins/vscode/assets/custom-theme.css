@@ -86,9 +86,11 @@ body {
   --room-label-1: var(--rf-color-fg);
   --room-stripe-7: var(--vscode-descriptionForeground);
   --room-label-7: var(--vscode-descriptionForeground);
+  /* Fallback resolves on any engine: color-mix() would defeat the chain on
+     Chromium < 111. */
   --rf-selection-bg: var(
     --vscode-editor-selectionBackground,
-    color-mix(in srgb, var(--rf-color-accent, #006adc) 25%, rgba(0, 0, 0, 0.12))
+    var(--rf-selected-bg, var(--rf-color-accent-soft))
   );
   --rf-selection-fg: inherit;
 }

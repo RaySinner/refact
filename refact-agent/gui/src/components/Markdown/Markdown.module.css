@@ -162,7 +162,7 @@
 .code_block ::selection {
   background-color: var(
     --refact-chat-code-selection-color,
-    var(--rf-color-accent-soft)
+    var(--rf-selection-bg, var(--rf-color-accent-soft))
   );
 }
 

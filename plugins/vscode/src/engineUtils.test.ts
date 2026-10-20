@@ -17,13 +17,13 @@ import {
     shouldReadCapsForCompletion,
 } from "./backendStatus";
 import {
-    attachStateForDaemonOpenProject,
+    attachStateForEngineLaunch,
     browserUrlForBackendStatus,
     lspSocketCloseAction,
     shouldRunLifecycleGeneration,
 } from "./launchRustLifecycle";
 
-export async function runRefactDaemonTests() {
+export async function runEngineUtilsTests() {
     assert.strictEqual(configuredBrowserHost(undefined), undefined);
     assert.strictEqual(configuredBrowserHost(""), undefined);
     assert.strictEqual(configuredBrowserHost(" 0.0.0.0 "), undefined);
@@ -74,7 +74,7 @@ function runBackendStatusTests() {
 }
 
 function runLaunchRustLifecycleTests() {
-    assert.strictEqual(attachStateForDaemonOpenProject(), "starting");
+    assert.strictEqual(attachStateForEngineLaunch(), "starting");
     assert.strictEqual(browserUrlForBackendStatus({
         status: "connecting",
         debug: false,
@@ -161,7 +161,7 @@ function runSharedRefactPathMatchingTests() {
     assert.strictEqual(isSharedRefactBinaryPath("C:\\other\\refact.exe", winHome, "win32"), false);
 }
 
-runRefactDaemonTests().catch(error => {
+runEngineUtilsTests().catch(error => {
     console.error(error);
     process.exitCode = 1;
 });

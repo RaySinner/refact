@@ -27,7 +27,7 @@ export function lspSocketCloseAction(params: {
     return "disconnect";
 }
 
-export function attachStateForDaemonOpenProject(): RefactBackendConnectionStatus {
+export function attachStateForEngineLaunch(): RefactBackendConnectionStatus {
     return "starting";
 }
 

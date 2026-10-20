@@ -17,7 +17,7 @@ import {
     lspClientStopTimeoutMs,
     lspSocketCloseAction,
     lspSocketConnectTimeoutMs,
-    attachStateForDaemonOpenProject,
+    attachStateForEngineLaunch,
     browserUrlForBackendStatus,
     shouldRunLifecycleGeneration,
 } from './launchRustLifecycle';
@@ -317,7 +317,7 @@ export class RustBinaryBlob {
             return;
         }
         this.maybe_register_shared_refact_path(resolved.binPath);
-        this.set_attach_state(attachStateForDaemonOpenProject());
+        this.set_attach_state(attachStateForEngineLaunch());
 
         // Kill prior engine before launching new one
         await this.reset_engine_state();

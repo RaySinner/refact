@@ -84,6 +84,37 @@ impl WorkspaceLeaseInfo {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkspaceBusyReport {
+    pub workspace_busy: bool,
+    pub holder_pid: Option<u32>,
+    pub holder_http_port: Option<u16>,
+    pub holder_lsp_port: Option<u16>,
+    pub root: String,
+}
+
+impl WorkspaceBusyReport {
+    pub fn from_conflict(conflict: &WorkspaceLeaseConflict) -> Self {
+        let holder = conflict.holder.as_ref();
+        Self {
+            workspace_busy: true,
+            holder_pid: holder.map(|h| h.pid).filter(|pid| *pid != 0),
+            holder_http_port: holder.map(|h| h.http_port).filter(|port| *port != 0),
+            holder_lsp_port: holder.map(|h| h.lsp_port).filter(|port| *port != 0),
+            root: conflict.root.to_string_lossy().into_owned(),
+        }
+    }
+
+    pub fn to_single_line_json(&self) -> String {
+        serde_json::to_string(self).unwrap_or_else(|_| {
+            format!(
+                "{{\"workspace_busy\": true, \"root\": {}}}",
+                serde_json::to_string(&self.root).unwrap_or_else(|_| "\"\"".to_string())
+            )
+        })
+    }
+}
+
 pub fn describe_workspace_lease_holder(holder: Option<&WorkspaceLeaseInfo>) -> String {
     match holder {
         Some(info) => info.describe(),
@@ -472,6 +503,76 @@ mod tests {
         assert_eq!(holder.http_port, 8001);
         assert!(conflict.to_string().contains(WORKSPACE_BUSY_MARKER));
         assert!(conflict.holder_description().contains("http port 8001"));
+    }
+
+    #[test]
+    fn workspace_lease_info_json_roundtrip_includes_lsp_port() {
+        let info = WorkspaceLeaseInfo::for_current_process(8001, 8002, "refact-lsp");
+        let json = serde_json::to_string(&info).unwrap();
+        let decoded: WorkspaceLeaseInfo = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded, info);
+        assert_eq!(decoded.lsp_port, 8002);
+    }
+
+    #[test]
+    fn workspace_lease_info_deserializes_old_records_without_lsp_port() {
+        let legacy = serde_json::json!({
+            "pid": 1234,
+            "http_port": 8001,
+            "version": "8.7.0",
+            "started_at_ms": 42,
+            "command": "refact-lsp"
+        });
+        let decoded: WorkspaceLeaseInfo = serde_json::from_value(legacy).unwrap();
+        assert_eq!(decoded.pid, 1234);
+        assert_eq!(decoded.http_port, 8001);
+        assert_eq!(decoded.lsp_port, 0);
+    }
+
+    #[test]
+    fn workspace_busy_report_serializes_from_conflict_fixture() {
+        let conflict = WorkspaceLeaseConflict {
+            root: std::path::PathBuf::from("/tmp/project"),
+            path: std::path::PathBuf::from("/locks/x.lock"),
+            holder: Some(WorkspaceLeaseInfo::for_current_process(8001, 8002, "refact-lsp")),
+        };
+        let report = WorkspaceBusyReport::from_conflict(&conflict);
+        let json = report.to_single_line_json();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(value["workspace_busy"], true);
+        assert!(value["holder_pid"].as_u64().is_some());
+        assert_eq!(value["holder_http_port"], 8001);
+        assert_eq!(value["holder_lsp_port"], 8002);
+        assert_eq!(value["root"], "/tmp/project");
+        assert!(value.get("path").is_none());
+    }
+
+    #[test]
+    fn workspace_busy_report_uses_nulls_for_unknown_holder() {
+        let conflict = WorkspaceLeaseConflict {
+            root: std::path::PathBuf::from("/tmp/project"),
+            path: std::path::PathBuf::from("/locks/x.lock"),
+            holder: None,
+        };
+        let report = WorkspaceBusyReport::from_conflict(&conflict);
+        let value: serde_json::Value = serde_json::from_str(&report.to_single_line_json()).unwrap();
+        assert_eq!(value["workspace_busy"], true);
+        assert!(value["holder_pid"].is_null());
+        assert!(value["holder_http_port"].is_null());
+        assert!(value["holder_lsp_port"].is_null());
+        assert_eq!(value["root"], "/tmp/project");
+    }
+
+    #[test]
+    fn workspace_busy_report_is_single_line() {
+        let conflict = WorkspaceLeaseConflict {
+            root: std::path::PathBuf::from("/tmp/project"),
+            path: std::path::PathBuf::from("/locks/x.lock"),
+            holder: Some(WorkspaceLeaseInfo::for_current_process(1, 2, "refact-lsp")),
+        };
+        let json = WorkspaceBusyReport::from_conflict(&conflict).to_single_line_json();
+        assert!(!json.contains('\n'));
+        assert!(json.starts_with('{') && json.ends_with('}'));
     }
 
     #[test]

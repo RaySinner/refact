@@ -218,6 +218,12 @@ pub struct CommandLine {
     pub daemon_auth_token: Option<String>,
     #[structopt(
         long,
+        help = "Watch stdin and shut down gracefully when it reaches EOF. For IDE plugins that spawn the engine as an attached child process, so the engine exits when the parent dies. Incompatible with --lsp-stdin-stdout, which owns stdin; the flag is ignored there."
+    )]
+    pub watch_parent_stdin: bool,
+
+    #[structopt(
+        long,
         default_value = "",
         help = "Daemon project id for managed workers."
     )]
@@ -1177,6 +1183,7 @@ pub mod tests {
             no_scheduler: false,
             daemon_endpoint: String::new(),
             daemon_auth_token: None,
+            watch_parent_stdin: false,
             project_id: String::new(),
         };
 

@@ -66,6 +66,7 @@ pub mod indexing_utils;
 pub mod json_utils;
 pub mod knowledge;
 pub mod nicer_logs;
+pub mod parent_stdin;
 pub mod version;
 pub mod yaml_configs;
 
@@ -168,6 +169,17 @@ fn acquire_startup_workspace_leases(
                 "refusing to start a second engine for the same workspace; stop the other engine \
                  or pass --allow-shared-workspace to override"
             );
+            if let daemon::lock::WorkspaceLeaseError::Busy(conflict) = &error {
+                if !cmdline.project_id.is_empty() {
+                    println!(
+                        "{}",
+                        daemon::lock::WorkspaceBusyReport::from_conflict(conflict)
+                            .to_single_line_json()
+                    );
+                    use std::io::Write;
+                    let _ = std::io::stdout().flush();
+                }
+            }
             let code = if cmdline.project_id.is_empty() {
                 1
             } else {
@@ -219,6 +231,7 @@ pub async fn run_with_cmdline(cmdline: global_context::CommandLine) {
     )
     .await;
     *gcx.workspace_leases.lock().unwrap() = workspace_leases;
+    let _parent_stdin_watch = parent_stdin::spawn_parent_stdin_watch_if_requested(gcx.clone());
     let mut writer_is_stderr = false;
     let (logs_writer, _guard) = if cmdline.logs_stderr {
         writer_is_stderr = true;

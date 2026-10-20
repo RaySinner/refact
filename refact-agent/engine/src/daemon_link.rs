@@ -235,12 +235,31 @@ fn current_timestamp_ms() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::AtomicBool;
     use crate::chat::types::ChatSession;
     use crate::exec::{ExecMode, ExecProcessMeta, ExecStatus};
     use axum::routing::post;
     use axum::{Json, Router};
     use serde_json::json;
     use tokio::sync::Mutex as AMutex;
+
+    #[tokio::test]
+    async fn daemon_link_task_returns_immediately_without_endpoint() {
+        let gcx = crate::global_context::tests::make_test_gcx().await;
+        let completed = Arc::new(AtomicBool::new(false));
+        let check = completed.clone();
+        let task = tokio::spawn({
+            let gcx = gcx.clone();
+            async move {
+                daemon_link_task(gcx).await;
+                check.store(true, Ordering::SeqCst);
+            }
+        });
+        let _ = tokio::time::timeout(Duration::from_secs(2), task)
+            .await
+            .expect("daemon_link_task must return immediately when daemon endpoint is empty");
+        assert!(completed.load(Ordering::SeqCst));
+    }
 
     #[test]
     fn self_terminate_threshold_is_six_failures() {

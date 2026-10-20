@@ -277,6 +277,11 @@ export function activate(context: vscode.ExtensionContext)
         fileURLToPath(vscode.Uri.joinPath(context.extensionUri, "assets").toString()),
         context.globalStorageUri.fsPath,
     );
+    context.subscriptions.push(new vscode.Disposable(() => {
+        if (global.rust_binary_blob) {
+            void global.rust_binary_blob.terminate();
+        }
+    }));
     global.rust_binary_blob
         .settings_changed() // async function will finish later
         .then(() => fetchAPI.maybe_show_rag_status());
@@ -336,7 +341,6 @@ export function activate(context: vscode.ExtensionContext)
             e.affectsConfiguration("refactai.vecdbFileLimit") ||
             e.affectsConfiguration("refactai.codegraph") ||
             e.affectsConfiguration("refactai.codegraphFileLimit") ||
-            e.affectsConfiguration("refactai.daemonPort") ||
             e.affectsConfiguration("refactai.binaryPath") ||
             e.affectsConfiguration("refactai.xperimental")
         ) {
@@ -380,7 +384,7 @@ export function activate(context: vscode.ExtensionContext)
             e.affectsConfiguration("refactai.codegraph") ||
             e.affectsConfiguration("refactai.codegraphFileLimit")
         ) {
-            vscode.window.showInformationMessage("Refact indexing setting changes are sent to the daemon. Existing workers may need `refact restart <project>` to apply them.");
+            vscode.window.showInformationMessage("Refact indexing settings changes will apply when the engine restarts.");
         }
     }));
 

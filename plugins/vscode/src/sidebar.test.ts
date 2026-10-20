@@ -38,8 +38,8 @@ export function runSidebarPathBoundaryTests() {
 }
 
 function runWebviewEndpointConfigTests() {
-    const lspUrl = "http://127.0.0.1:8488/p/PID/";
-    const browserUrl = "http://machine.local:8488/p/PID/";
+    const lspUrl = "http://127.0.0.1:8488/";
+    const browserUrl = "http://machine.local:8488/";
 
     assert.deepStrictEqual(webviewEndpointConfig(true, lspUrl, browserUrl), { browserUrl, lspUrl });
 

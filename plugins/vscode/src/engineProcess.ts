@@ -5,7 +5,183 @@ import * as fs from "fs";
 import * as http from "http";
 import * as net from "net";
 import * as path from "path";
-import { compareVersions, configuredBrowserHost, defaultIsProcessRunning } from "./refactDaemon";
+export function compareVersions(left: string | undefined, right: string | undefined): number {
+    const leftParts = parseVersion(left);
+    const rightParts = parseVersion(right);
+    for (let i = 0; i < 3; i++) {
+        const diff = leftParts.core[i] - rightParts.core[i];
+        if (diff !== 0) {
+            return diff > 0 ? 1 : -1;
+        }
+    }
+    return comparePrerelease(leftParts.prerelease, rightParts.prerelease);
+}
+
+type ParsedVersion = {
+    core: [number, number, number];
+    prerelease?: string[];
+};
+
+function parseVersion(version: string | undefined): ParsedVersion {
+    const trimmed = (version ?? "").trim();
+    const withoutPrefix = trimmed.startsWith("v") ? trimmed.slice(1) : trimmed;
+    const match = /(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?/.exec(withoutPrefix);
+    if (!match) {
+        return { core: [0, 0, 0] };
+    }
+    return {
+        core: [toVersionNumber(match[1]), toVersionNumber(match[2]), toVersionNumber(match[3])],
+        prerelease: parsePrerelease(match[4]),
+    };
+}
+
+function toVersionNumber(part: string | undefined): number {
+    return Number.parseInt(part ?? "0", 10) || 0;
+}
+
+function parsePrerelease(prerelease: string | undefined): string[] | undefined {
+    const parts = prerelease?.split(".").filter(part => part.length > 0);
+    return parts && parts.length > 0 ? parts : undefined;
+}
+
+function comparePrerelease(left: string[] | undefined, right: string[] | undefined): number {
+    if (!left && !right) {
+        return 0;
+    }
+    if (!left) {
+        return 1;
+    }
+    if (!right) {
+        return -1;
+    }
+    const length = Math.max(left.length, right.length);
+    for (let i = 0; i < length; i++) {
+        const leftPart = left[i];
+        const rightPart = right[i];
+        if (leftPart === undefined) {
+            return -1;
+        }
+        if (rightPart === undefined) {
+            return 1;
+        }
+        const diff = comparePrereleaseIdentifier(leftPart, rightPart);
+        if (diff !== 0) {
+            return diff;
+        }
+    }
+    return 0;
+}
+
+function comparePrereleaseIdentifier(left: string, right: string): number {
+    const leftNumeric = /^\d+$/.test(left);
+    const rightNumeric = /^\d+$/.test(right);
+    if (leftNumeric && rightNumeric) {
+        const diff = Number.parseInt(left, 10) - Number.parseInt(right, 10);
+        return diff === 0 ? 0 : diff > 0 ? 1 : -1;
+    }
+    if (leftNumeric) {
+        return -1;
+    }
+    if (rightNumeric) {
+        return 1;
+    }
+    return left === right ? 0 : left > right ? 1 : -1;
+}
+
+export function configuredBrowserHost(configuredHost?: string | null): string | undefined {
+    const host = configuredHost?.trim();
+    return host && host !== "0.0.0.0" ? host : undefined;
+}
+
+export function defaultIsProcessRunning(pid: number): boolean {
+    if (!Number.isFinite(pid) || pid <= 0) {
+        return false;
+    }
+    try {
+        process.kill(pid, 0);
+        return true;
+    } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        return code === "EPERM";
+    }
+}
+
+export type PrimaryWorkspaceRootSelection = {
+    primary?: string;
+    ignored: string[];
+    warning?: string;
+};
+
+export function selectPrimaryWorkspaceRoot(roots: string[]): PrimaryWorkspaceRootSelection {
+    const primary = roots[0];
+    const ignored = roots.slice(1);
+    if (!primary || ignored.length === 0) {
+        return { primary, ignored };
+    }
+    const suffix = ignored.length === 1 ? "folder" : "folders";
+    return {
+        primary,
+        ignored,
+        warning: `Refact serves only the primary VS Code workspace folder (${primary}); ignoring ${ignored.length} additional file workspace ${suffix}.`,
+    };
+}
+
+export function missingBundledRefactError(assetPath: string): string {
+    return `refact binary not found in ${assetPath} — reinstall the extension`;
+}
+
+function bundledRefactName(): string {
+    return process.platform === "win32" ? "refact.exe" : "refact";
+}
+
+export function resolveBundledRefactPath(assetPath: string): string {
+    return path.join(assetPath, bundledRefactName());
+}
+
+export function ensureBundledRefactPath(assetPath: string): string {
+    const binPath = resolveBundledRefactPath(assetPath);
+    if (!fs.existsSync(binPath)) {
+        throw new Error(missingBundledRefactError(assetPath));
+    }
+    return binPath;
+}
+
+type Sha256CacheEntry = {
+    size: number;
+    mtimeMs: number;
+    sha256: string;
+};
+
+const sha256Cache = new Map<string, Sha256CacheEntry>();
+
+export async function sha256OfFile(filePath: string): Promise<string | undefined> {
+    const absolutePath = path.resolve(filePath);
+    try {
+        const stat = await fs.promises.stat(absolutePath);
+        if (!stat.isFile()) {
+            return undefined;
+        }
+        const cached = sha256Cache.get(absolutePath);
+        if (cached && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs) {
+            return cached.sha256;
+        }
+        const sha256 = await sha256File(absolutePath);
+        sha256Cache.set(absolutePath, { size: stat.size, mtimeMs: stat.mtimeMs, sha256 });
+        return sha256;
+    } catch {
+        return undefined;
+    }
+}
+
+function sha256File(filePath: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+        const hash = crypto.createHash("sha256");
+        const stream = fs.createReadStream(filePath);
+        stream.on("data", chunk => hash.update(chunk));
+        stream.once("error", reject);
+        stream.once("end", () => resolve(hash.digest("hex")));
+    });
+}
 
 export type EngineHandle = { httpPort: number; lspPort: number; owned: boolean; pid?: number };
 export type EngineSpawnOptions = {

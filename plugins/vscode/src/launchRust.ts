@@ -9,7 +9,7 @@ import { register_commands } from './rconsoleCommands';
 import { QuickActionProvider } from './quickProvider';
 import * as os from 'os';
 import * as refactBinary from './refactBinaryResolver';
-import * as refactDaemon from './refactDaemon';
+import * as engineProcess from './engineProcess';
 import { registerSharedRefactPath } from './refactPathRegistration';
 import { backendReadyForStatus, type RefactBackendConnectionStatus } from './backendStatus';
 import {
@@ -30,18 +30,12 @@ type ProjectProxyRequestInit = Omit<Partial<fetchH2.RequestInit>, "headers"> & {
     headers?: Record<string, string>;
 };
 
-type OpenPrimaryProjectResult = {
-    response: refactDaemon.OpenProjectResponse;
-    lspPort: number;
-};
-
 export class RustBinaryBlob {
     public asset_path: string;
     public binary_cache_path: string;
     public port: number = 0;
-    public project_id: string = "";
     public lsp_port: number = 0;
-    private daemon_auth_token: string = "";
+    public owned_engine: engineProcess.EngineHandle | undefined = undefined;
     public lsp_disposable: vscode.Disposable | undefined = undefined;
     public lsp_client: lspClient.LanguageClient | undefined = undefined;
     public lsp_socket: net.Socket | undefined = undefined;
@@ -51,7 +45,6 @@ export class RustBinaryBlob {
     private reconnectGeneration: number | undefined = undefined;
     private reconnectTimer: NodeJS.Timeout | undefined = undefined;
     private reconnectAttempts: number = 0;
-    private openedProjects: Map<string, refactDaemon.OpenProjectResponse> = new Map();
     private attachState: RefactBackendConnectionStatus = "connecting";
     private workerHealthProbe: WorkerHealthProbe;
     private warned_engine_fallbacks: Set<string> = new Set();
@@ -91,10 +84,10 @@ export class RustBinaryBlob {
         if (this.x_debug()) {
             return `http2://127.0.0.1:${DEBUG_HTTP_PORT}/`;
         }
-        if (!this.port || !this.project_id) {
+        if (!this.port) {
             return "";
         }
-        return refactDaemon.projectProxyBaseUrl(this.port, this.project_id);
+        return `http://127.0.0.1:${this.port}/`;
     }
 
     public backend_status(): RefactBackendConnectionStatus {
@@ -174,7 +167,7 @@ export class RustBinaryBlob {
     }
 
     private async probe_attached_worker(): Promise<boolean> {
-        if (this.x_debug() || this.attachState !== "ready" || !this.port || !this.project_id) {
+        if (this.x_debug() || this.attachState !== "ready" || !this.port) {
             return true;
         }
         try {
@@ -199,7 +192,7 @@ export class RustBinaryBlob {
         if (this.x_debug() || !this.is_current_generation(this.lifecycleGeneration)) {
             return;
         }
-        console.log("RUST worker health failed repeatedly; scheduling daemon reconnect");
+        console.log("RUST worker health failed repeatedly; scheduling engine reconnect");
         this.mark_worker_unhealthy();
         this.reconnectGeneration = this.lifecycleGeneration;
         this.schedule_lsp_reconnect(this.lifecycleGeneration);
@@ -212,9 +205,7 @@ export class RustBinaryBlob {
             debug: Boolean(this.x_debug()),
             debugHttpPort: DEBUG_HTTP_PORT,
             port: this.port,
-            projectId: this.project_id,
             configuredHost,
-            authToken: this.daemon_auth_token,
         });
     }
 
@@ -222,10 +213,10 @@ export class RustBinaryBlob {
         if (this.x_debug()) {
             return `debug rust binary on ports ${DEBUG_HTTP_PORT} and ${DEBUG_LSP_PORT}`;
         }
-        if (this.project_id) {
-            return `Refact daemon project ${this.project_id} on port ${this.daemon_port()}`;
+        if (this.port) {
+            return `Refact engine on port ${this.port}`;
         }
-        return `Refact daemon on port ${this.daemon_port()}`;
+        return `Refact engine`;
     }
 
     public async settings_changed() {
@@ -252,7 +243,7 @@ export class RustBinaryBlob {
             if (this.x_debug()) {
                 await this.attach_debug_serialized(generation);
             } else {
-                await this.attach_daemon_serialized(generation);
+                await this.attach_engine_serialized(generation);
             }
         } catch (error) {
             if (!this.is_current_generation(generation)) {
@@ -260,7 +251,7 @@ export class RustBinaryBlob {
             }
             console.log(["Refact attach failed", error]);
             global.have_caps = false;
-            this.reset_daemon_state();
+            await this.reset_engine_state();
             this.set_attach_state("failed");
             global.status_bar.set_socket_error(true, error instanceof Error ? error.message : String(error));
         } finally {
@@ -284,98 +275,74 @@ export class RustBinaryBlob {
         if (!this.is_current_generation(generation)) {
             return;
         }
+        await this.reset_engine_state();
         this.port = DEBUG_HTTP_PORT;
         this.lsp_port = DEBUG_LSP_PORT;
-        this.project_id = "";
-        this.daemon_auth_token = "";
-        this.openedProjects.clear();
         console.log(`RUST debug is set, don't start the rust binary. Will attempt HTTP port ${DEBUG_HTTP_PORT}, LSP port ${DEBUG_LSP_PORT}`);
         console.log("Also, will try to read caps. If that fails, things like lists of available models will be empty.");
         await this.start_lsp_socket(generation);
     }
 
-    private async attach_daemon_serialized(generation: number) {
+    private async attach_engine_serialized(generation: number) {
         this.clearReconnectTimer();
         await this.stop_lsp(generation);
         if (!this.is_current_generation(generation)) {
             return;
         }
 
-        const daemonPort = this.daemon_port();
-        const explicitDaemonPort = this.explicit_daemon_port();
         const roots = this.workspace_roots();
-        const rootSelection = refactDaemon.selectPrimaryWorkspaceRoot(roots);
+        const rootSelection = engineProcess.selectPrimaryWorkspaceRoot(roots);
         if (!rootSelection.primary) {
-            this.reset_daemon_state();
+            await this.reset_engine_state();
             throw new Error("Open a workspace folder before starting Refact.");
         }
         this.warn_about_ignored_roots(rootSelection);
 
         const pluginVersion = this.plugin_version();
-        const localResolved = await refactBinary.resolveLocalRefactBinaryDetailedOrNull({
-            explicitPath: vscode.workspace.getConfiguration().get<string>("refactai.binaryPath")?.trim(),
+        const configuredBinary = vscode.workspace.getConfiguration().get<string>("refactai.binaryPath")?.trim();
+        const resolved = await refactBinary.resolveRefactBinaryDetailed({
+            explicitPath: configuredBinary,
             bundledDir: this.asset_path,
             minVersion: pluginVersion,
             pinnedVersion: pluginVersion,
             cacheDir: this.binary_cache_path,
+            onDownloadStart: () => {
+                if (this.is_current_generation(generation)) {
+                    this.set_attach_state("installing");
+                }
+            },
+            onFallbackVersion: (pinned, chosen) => this.warn_engine_version_fallback(pinned, chosen),
         });
-        const expectedExecutableSha256 = localResolved ? await refactDaemon.sha256OfFile(localResolved.binPath) : undefined;
-        const expectedEngineVersion = localResolved?.version ?? pluginVersion;
-        let daemon = await refactDaemon.findExistingDaemon({ port: daemonPort, pluginVersion: expectedEngineVersion, expectedExecutableSha256 });
         if (!this.is_current_generation(generation)) {
             return;
         }
+        this.maybe_register_shared_refact_path(resolved.binPath);
         this.set_attach_state(attachStateForDaemonOpenProject());
-        if (daemon) {
-            const sharedResolved = await refactBinary.resolveCompatibleSharedRefactBinaryOrNull(os.homedir(), pluginVersion);
-            if (sharedResolved) {
-                this.maybe_register_shared_refact_path(sharedResolved.binPath);
-            }
-        }
-        if (!daemon) {
-            const configuredBinary = vscode.workspace.getConfiguration().get<string>("refactai.binaryPath")?.trim();
-            const resolved = await refactBinary.resolveRefactBinaryDetailed({
-                explicitPath: configuredBinary,
-                bundledDir: this.asset_path,
-                minVersion: pluginVersion,
-                pinnedVersion: pluginVersion,
-                cacheDir: this.binary_cache_path,
-                onDownloadStart: () => {
-                    if (this.is_current_generation(generation)) {
-                        this.set_attach_state("installing");
-                    }
-                },
-                onFallbackVersion: (pinned, chosen) => this.warn_engine_version_fallback(pinned, chosen),
-            });
-            if (!this.is_current_generation(generation)) {
-                return;
-            }
-            this.maybe_register_shared_refact_path(resolved.binPath);
-            daemon = await refactDaemon.ensureDaemon(resolved.binPath, {
-                port: daemonPort,
-                pluginVersion: resolved.version ?? pluginVersion,
-            }, explicitDaemonPort);
-        }
+
+        // Kill prior engine before launching new one
+        await this.reset_engine_state();
+
+        const logDir = path.join(global.global_context?.globalStorageUri?.fsPath ?? this.binary_cache_path, "logs");
+        const settings = this.engine_settings();
+        const root = rootSelection.primary;
+        const projectId = path.basename(root);
+
+        const handle = await engineProcess.launchEngine({
+            binPath: resolved.binPath,
+            root,
+            logDir,
+            settings,
+            projectId,
+        });
+
         if (!this.is_current_generation(generation)) {
+            await engineProcess.killEngine(handle);
             return;
         }
 
-        const daemonPortForGeneration = daemon.port;
-        const daemonAuthTokenForGeneration = this.auth_token_for_port(daemonPortForGeneration, daemon.authToken);
-        const projectResponse = await this.open_primary_project_response(
-            rootSelection.primary,
-            daemonPortForGeneration,
-            daemonAuthTokenForGeneration,
-        );
-        if (!this.is_current_generation(generation)) {
-            return;
-        }
-        this.port = daemonPortForGeneration;
-        this.daemon_auth_token = this.auth_token_for_port(daemonPortForGeneration, daemonAuthTokenForGeneration);
-        this.openedProjects.clear();
-        this.openedProjects.set(rootSelection.primary, projectResponse.response);
-        this.project_id = projectResponse.response.project_id;
-        this.lsp_port = projectResponse.lspPort;
+        this.port = handle.httpPort;
+        this.lsp_port = handle.lspPort;
+        this.owned_engine = handle;
         await this.start_lsp_socket(generation);
     }
 
@@ -426,11 +393,10 @@ export class RustBinaryBlob {
         this.reconnectGeneration = undefined;
         this.clearReconnectTimer();
         await this.stop_lsp(this.lifecycleGeneration);
-        await refactDaemon.detach();
+        await this.reset_engine_state();
         await fetchH2.disconnectAll();
         global.have_caps = false;
         global.status_bar.choose_color();
-        this.reset_daemon_state();
         this.set_attach_state("connecting");
     }
 
@@ -439,20 +405,14 @@ export class RustBinaryBlob {
         init: ProjectProxyRequestInit,
         fetchInit?: Partial<fetchH2.FetchInit>,
     ): Promise<fetchH2.Response> {
-        if (this.x_debug()) {
-            return this.fetch_project_proxy_once(addthis, init, fetchInit);
-        }
-        return refactDaemon.projectProxyFetchWithRetry(
-            () => this.fetch_project_proxy_once(addthis, init, fetchInit),
-            async () => {
-                console.log(["project proxy unavailable, reopening project", addthis]);
-                await this.reopen_primary_project();
-            },
-            response => response.status,
-        );
+        return this.fetch_project_proxy_once(addthis, init, fetchInit);
     }
 
     public project_proxy_url(addthis: string): string {
+        return this.engine_url(addthis);
+    }
+
+    public engine_url(addthis: string): string {
         let url = this.rust_url();
         if (!url) {
             return "";
@@ -469,63 +429,18 @@ export class RustBinaryBlob {
         init: ProjectProxyRequestInit,
         fetchInit?: Partial<fetchH2.FetchInit>,
     ): Promise<fetchH2.Response> {
-        const url = this.project_proxy_url(addthis);
+        const url = this.engine_url(addthis);
         if (!url) {
             return Promise.reject("No rust binary working");
         }
         const request = new fetchH2.Request(url, {
             ...init,
-            headers: refactDaemon.daemonRequestHeaders(this.x_debug() ? "" : this.daemon_auth_token, init.headers),
+            headers: init.headers,
         });
         return fetchH2.fetch(request, fetchInit);
     }
 
-    private async reopen_primary_project(): Promise<void> {
-        const rootSelection = refactDaemon.selectPrimaryWorkspaceRoot(this.workspace_roots());
-        if (!rootSelection.primary) {
-            this.reset_daemon_state();
-            throw new Error("Open a workspace folder before starting Refact.");
-        }
-        this.warn_about_ignored_roots(rootSelection);
-        await this.open_primary_project(rootSelection.primary);
-    }
-
-    private async open_primary_project_response(
-        root: string,
-        port: number,
-        authToken: string,
-    ): Promise<OpenPrimaryProjectResult> {
-        const response = await refactDaemon.openProject(root, {
-            port,
-            authToken,
-            clientKind: "vscode",
-            settings: this.project_settings(),
-        });
-        const lspPort = response.worker?.lsp_port;
-        if (!lspPort) {
-            throw new Error(`Refact daemon opened project ${response.project_id} without an LSP port.`);
-        }
-        return { response, lspPort };
-    }
-
-    private async open_primary_project(root: string): Promise<void> {
-        if (!this.port) {
-            throw new Error("Refact daemon port is not available.");
-        }
-        const projectResponse = await this.open_primary_project_response(root, this.port, this.daemon_auth_token);
-        this.daemon_auth_token = this.auth_token_for_port(this.port, this.daemon_auth_token);
-        this.openedProjects.clear();
-        this.openedProjects.set(root, projectResponse.response);
-        this.project_id = projectResponse.response.project_id;
-        this.lsp_port = projectResponse.lspPort;
-    }
-
-    private auth_token_for_port(port: number, fallback?: string | null): string {
-        const endpoint = refactDaemon.daemonEndpoints({ port }).find(candidate => candidate.port === port && candidate.authToken);
-        return endpoint?.authToken ?? fallback ?? "";
-    }
-
-    private warn_about_ignored_roots(selection: refactDaemon.PrimaryWorkspaceRootSelection): void {
+    private warn_about_ignored_roots(selection: { primary?: string; ignored: string[]; warning?: string }): void {
         if (!selection.warning) {
             return;
         }
@@ -533,12 +448,14 @@ export class RustBinaryBlob {
         void vscode.window.showWarningMessage(selection.warning);
     }
 
-    private reset_daemon_state(): void {
-        this.project_id = "";
+    private async reset_engine_state(): Promise<void> {
+        const handle = this.owned_engine;
+        this.owned_engine = undefined;
         this.lsp_port = 0;
         this.port = 0;
-        this.daemon_auth_token = "";
-        this.openedProjects.clear();
+        if (handle) {
+            await engineProcess.killEngine(handle);
+        }
     }
 
     public async read_caps() {
@@ -794,7 +711,7 @@ export class RustBinaryBlob {
             console.log([
                 "fetch_toolbox_config: Error fetching toolbox config",
                 response.status,
-                this.project_proxy_url("/v1/customization"),
+                this.engine_url("/v1/customization"),
             ]);
             return Promise.reject(
                 `Error fetching toolbox config: [status: ${response.status}] [statusText: ${response.statusText}]`
@@ -814,13 +731,13 @@ export class RustBinaryBlob {
             return;
         }
         const delay = Math.min(30000, 1000 * Math.pow(2, this.reconnectAttempts++));
-        console.log(`RUST scheduling daemon LSP reconnect in ${delay}ms`);
+        console.log(`RUST scheduling engine reconnect in ${delay}ms`);
         this.reconnectTimer = setTimeout(() => {
             this.reconnectTimer = undefined;
             if (!this.is_current_generation(generation) || this.reconnectGeneration !== generation) {
                 return;
             }
-            this.enqueueLifecycle(async (nextGeneration) => this.attach_daemon_serialized(nextGeneration));
+            this.enqueueLifecycle(async (nextGeneration) => this.attach_engine_serialized(nextGeneration));
         }, delay);
     }
 
@@ -831,28 +748,7 @@ export class RustBinaryBlob {
         }
     }
 
-    private daemon_port(): number {
-        const port = vscode.workspace.getConfiguration().get<number>("refactai.daemonPort");
-        return Number.isFinite(port) && port !== undefined && port > 0
-            ? Math.trunc(port)
-            : refactDaemon.DEFAULT_DAEMON_PORT;
-    }
-
-    private explicit_daemon_port(): number | undefined {
-        const configuration = vscode.workspace.getConfiguration();
-        const inspected = configuration.inspect<number>("refactai.daemonPort");
-        if (!inspected || (inspected.globalValue === undefined
-            && inspected.workspaceValue === undefined
-            && inspected.workspaceFolderValue === undefined)) {
-            return undefined;
-        }
-        return refactDaemon.normalizeDaemonSpawnPort(configuration.get<number>("refactai.daemonPort"));
-    }
-
     private maybe_register_shared_refact_path(binPath: string): void {
-        // Only register the canonical IDE-managed / shared binary
-        // (~/.refact/bin/refact[.exe]). Never register explicit, bundled, or
-        // arbitrary PATH binaries. Failures must never abort attach.
         const homeDir = os.homedir();
         if (!refactBinary.isSharedRefactBinaryPath(binPath, homeDir)) {
             return;
@@ -889,15 +785,13 @@ export class RustBinaryBlob {
             .map(folder => folder.uri.fsPath);
     }
 
-    private project_settings(): refactDaemon.ProjectSettings {
+    private engine_settings(): { ast: boolean; astMaxFiles: number; vecdb: boolean; vecdbMaxFiles: number } {
         const config = vscode.workspace.getConfiguration();
         return {
             ast: config.get<boolean>("refactai.ast") ?? true,
             vecdb: config.get<boolean>("refactai.vecdb") ?? true,
-            codegraph: config.get<boolean>("refactai.codegraph") ?? true,
-            ast_max_files: config.get<number>("refactai.astFileLimit") ?? 35000,
-            vecdb_max_files: config.get<number>("refactai.vecdbFileLimit") ?? 15000,
-            codegraph_max_files: config.get<number>("refactai.codegraphFileLimit") ?? 35000,
+            astMaxFiles: config.get<number>("refactai.astFileLimit") ?? 35000,
+            vecdbMaxFiles: config.get<number>("refactai.vecdbFileLimit") ?? 15000,
         };
     }
 }

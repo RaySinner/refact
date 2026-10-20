@@ -1,5 +1,5 @@
 import { backendReadyForStatus, type RefactBackendConnectionStatus } from "./backendStatus";
-import * as refactDaemon from "./refactDaemon";
+import { configuredBrowserHost } from "./engineProcess";
 
 export const lspSocketConnectTimeoutMs = 10000;
 export const lspClientReadyTimeoutMs = 20000;
@@ -36,24 +36,17 @@ export function browserUrlForBackendStatus(params: {
     debug: boolean;
     debugHttpPort: number;
     port: number;
-    projectId: string;
     configuredHost?: string;
-    authToken?: string;
 }): string {
     if (!backendReadyForStatus(params.status)) {
         return "";
     }
+    const host = configuredBrowserHost(params.configuredHost) ?? "127.0.0.1";
     if (params.debug) {
-        const host = refactDaemon.configuredBrowserHost(params.configuredHost) ?? refactDaemon.DEFAULT_BROWSER_HOST;
         return `http://${host}:${params.debugHttpPort}/`;
     }
-    if (!params.port || !params.projectId) {
+    if (!params.port) {
         return "";
     }
-    return refactDaemon.browserProjectUrlForConfiguredHost(
-        params.configuredHost,
-        params.port,
-        params.projectId,
-        params.authToken,
-    );
+    return `http://${host}:${params.port}/`;
 }

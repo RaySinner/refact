@@ -28,8 +28,8 @@ export type FetchFailure = {
 
 export type FetchResult<T> = { ok: true; data: T } | { ok: false; error: FetchFailure };
 
-type ProjectProxyFetcher = {
-    project_proxy_url?: (addthis: string) => string;
+type EngineFetcher = {
+    engine_url?: (addthis: string) => string;
     fetch_project_proxy?: (
         addthis: string,
         init: ProjectProxyRequestInit,
@@ -298,11 +298,10 @@ export function rust_url(addthis: string)
     if (!global.rust_binary_blob) {
         return "";
     }
-    const proxy = global.rust_binary_blob as ProjectProxyFetcher;
-    if (proxy.project_proxy_url) {
-        return proxy.project_proxy_url(addthis);
-    }
     let url = global.rust_binary_blob.rust_url();
+    if (!url) {
+        return "";
+    }
     while (url.endsWith("/")) {
         url = url.slice(0, -1);
     }
@@ -328,9 +327,9 @@ export async function fetch_project_proxy(
     init: ProjectProxyRequestInit,
     fetchInit?: Partial<fetchH2.FetchInit>,
 ): Promise<fetchH2.Response> {
-    const proxy = global.rust_binary_blob as ProjectProxyFetcher | undefined;
-    if (proxy?.fetch_project_proxy) {
-        return proxy.fetch_project_proxy(addthis, init, fetchInit);
+    const fetcher = global.rust_binary_blob as EngineFetcher | undefined;
+    if (fetcher?.fetch_project_proxy) {
+        return fetcher.fetch_project_proxy(addthis, init, fetchInit);
     }
     const url = rust_url(addthis);
     if (!url) {

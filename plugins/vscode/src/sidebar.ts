@@ -153,7 +153,6 @@ export class PanelWebview implements vscode.WebviewViewProvider {
                 event.affectsConfiguration("refactai.codegraph") ||
                 event.affectsConfiguration("refactai.submitChatWithShiftEnter") ||
                 event.affectsConfiguration("refactai.xperimental") ||
-                event.affectsConfiguration("refactai.daemonPort") ||
                 event.affectsConfiguration("refactai.browserHost")
             ) {
                 this.handleSettingsChange();

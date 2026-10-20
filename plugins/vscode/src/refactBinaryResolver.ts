@@ -6,7 +6,7 @@ import * as https from "https";
 import * as os from "os";
 import * as path from "path";
 import * as zlib from "zlib";
-import { compareVersions, resolveBundledRefactPath } from "./refactDaemon";
+import { compareVersions, resolveBundledRefactPath } from "./engineProcess";
 
 export const REFACT_RELEASE_BASE_URL = "https://github.com/JegernOUTT/refact/releases/download";
 export const REFACT_RELEASES_API_URL = "https://api.github.com/repos/JegernOUTT/refact/releases?per_page=100";

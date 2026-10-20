@@ -509,7 +509,9 @@ open class LSPProcessHolder(val project: Project) : Disposable {
             logger.warn("LSP engine attach failed: " + e.message, e)
             clearAttachedProjectState(preserveConfig = true, detach = true)
             setBackendConnectionStatus(LSPBackendConnectionStatus.FAILED)
-            deferHealthRetry()
+            if (binaryResolutionFailure == null) {
+                deferHealthRetry()
+            }
         } finally {
             startupInProgress = false
         }

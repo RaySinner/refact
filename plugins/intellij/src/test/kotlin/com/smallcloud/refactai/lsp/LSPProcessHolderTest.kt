@@ -39,6 +39,7 @@ class LSPProcessHolderTest : BasePlatformTestCase() {
         val killCalls = AtomicInteger(0)
         val killOrders = Collections.synchronizedList(mutableListOf<String>())
         val spawnedRoots = Collections.synchronizedList(mutableListOf<String>())
+        val spawnedBinPaths = Collections.synchronizedList(mutableListOf<String>())
         var spawnHandle = EngineHandle(httpPort = 18081, lspPort = 18082, owned = true, pid = null)
         var spawnError: RuntimeException? = null
 
@@ -52,6 +53,7 @@ class LSPProcessHolderTest : BasePlatformTestCase() {
         ): EngineHandle {
             spawnCalls.incrementAndGet()
             spawnedRoots.add(root)
+            spawnedBinPaths.add(binPath)
             spawnError?.let { throw it }
             return spawnHandle
         }
@@ -141,7 +143,6 @@ class LSPProcessHolderTest : BasePlatformTestCase() {
             clearFailureForTest()
             registerSharedBinaryPathForTerminal(bin)
 
-            fakeEngineClient.spawnError?.let { throw it }
             val handle = fakeEngineClient.spawn(bin, root, "test", config, "ping") { EngineSpawnAttemptResult.RETRY }
             setEngineHandleForTest(handle)
         }
@@ -561,7 +562,7 @@ class LSPProcessHolderTest : BasePlatformTestCase() {
     fun testBinaryResolutionPublishesInstallingThenFailureAndSettingsResetRecovers() {
         val root = createTempDir().canonicalPath
         val publisher = RecordingStatusPublisher()
-        val fake = FakeEngineClient().apply { spawnError = RuntimeException("engine missing") }
+        val fake = FakeEngineClient()
         val holder = TestLspProcessHolder(mockProject(root, publisher), fake).apply {
             blockBinaryResolution = true
             signalDownloadStartDuringResolution = true
@@ -591,7 +592,7 @@ class LSPProcessHolderTest : BasePlatformTestCase() {
             assertEquals(LSPBackendConnectionStatus.READY, holder.backendConnectionStatus())
             assertFalse(holder.hasBinaryResolutionFailureForTest())
             assertEquals(2, holder.binaryResolutionCalls.get())
-            assertEquals(listOf("/tmp/refact-after-reset"), fake.spawnedRoots)
+            assertEquals(listOf("/tmp/refact-after-reset"), fake.spawnedBinPaths)
         } finally {
             holder.releaseBinaryResolution.countDown()
             holder.dispose()
@@ -699,7 +700,7 @@ class LSPProcessHolderTest : BasePlatformTestCase() {
     @Test
     fun testBinaryResolutionFailureBacksOffAndSettingsResetAllowsRetry() {
         val root = createTempDir().canonicalPath
-        val fake = FakeEngineClient().apply { spawnError = RuntimeException("engine missing") }
+        val fake = FakeEngineClient()
         val holder = TestLspProcessHolder(mockProject(root), fake).apply {
             setBinaryResolutionResults(null, "/tmp/refact-after-reset")
         }
@@ -727,7 +728,7 @@ class LSPProcessHolderTest : BasePlatformTestCase() {
             assertEquals(LSPBackendConnectionStatus.READY, holder.backendConnectionStatus())
             assertFalse(holder.hasBinaryResolutionFailureForTest())
             assertEquals(2, holder.binaryResolutionCalls.get())
-            assertEquals(listOf("/tmp/refact-after-reset"), fake.spawnedRoots)
+            assertEquals(listOf("/tmp/refact-after-reset"), fake.spawnedBinPaths)
         } finally {
             holder.dispose()
         }
@@ -736,7 +737,7 @@ class LSPProcessHolderTest : BasePlatformTestCase() {
     @Test
     fun testBinaryResolutionFailureRetriesAfterBackoffAndSuccessClearsCache() {
         val root = createTempDir().canonicalPath
-        val fake = FakeEngineClient().apply { spawnError = RuntimeException("engine missing") }
+        val fake = FakeEngineClient()
         val holder = TestLspProcessHolder(mockProject(root), fake).apply {
             setBinaryResolutionResults(null, "/tmp/refact-after-backoff")
         }
@@ -756,12 +757,11 @@ class LSPProcessHolderTest : BasePlatformTestCase() {
             holder.advanceHealthClock(1)
             holder.runHealthCheckOnceForTest()
             waitForLifecycle(holder)
-            holder.advanceHealthClock(60_000)
 
             assertEquals(LSPBackendConnectionStatus.READY, holder.backendConnectionStatus())
             assertFalse(holder.hasBinaryResolutionFailureForTest())
             assertEquals(2, holder.binaryResolutionCalls.get())
-            assertEquals(listOf("/tmp/refact-after-backoff"), fake.spawnedRoots)
+            assertEquals(listOf("/tmp/refact-after-backoff"), fake.spawnedBinPaths)
         } finally {
             holder.dispose()
         }

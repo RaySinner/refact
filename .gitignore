@@ -383,3 +383,7 @@ refact-agent/engine/lock_err.txt
 # The logs are the only record of a 50-minute build, so they are kept out of git
 # but never deleted by the script.
 /.build-logs/
+.tmp-jdk/
+plugins/intellij/compile_out.txt
+plugins/intellij/compile_err.txt
+plugins/intellij/compile_out2.txt

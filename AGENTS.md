@@ -53,7 +53,11 @@ test-only, before-launch, shipping) is tabulated in
 checks go through `tools/dev/engine-build.ps1` (`check` default, plus
 `check-all` / `check-tests`); a full local GUI → engine → VSIX chain uses
 `tools/dev/build-all.ps1`, which defaults to the fast (no-LTO) profile and only
-needs `-Profile release` for a shippable VSIX.
+needs `-Profile release` for a shippable VSIX. On Windows, add Defender
+exclusions for the build hot paths (run once, elevated) with
+[`tools/dev/windows-defender-exclusions.ps1`](tools/dev/windows-defender-exclusions.ps1)
+(`-WhatIf` lists, `-Remove` undoes) — see
+[`docs/dev/build-velocity.md`](docs/dev/build-velocity.md#windows-defender).
 
 ⚠️ **First build compiles ~85 crates + 7 tree-sitter parsers + SQLite. Expect 10-20 minutes cold.** Incremental builds are much faster. CI runs `cargo test --release` on 7 platform targets.
 

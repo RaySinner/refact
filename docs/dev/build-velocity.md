@@ -81,3 +81,25 @@ refused by the engine; between 90 and 120 it warns. Unset, the default
 `tools/dev/engine-build.ps1 -Mode cache-status` prints the current repo-root
 length, the predicted argv length, and whether the root is on the cached path.
 
+## Windows Defender
+
+Real-time scanning of `target/` dirs, `node_modules`, and the cargo/sccache
+caches routinely costs 2-3x on link-heavy Rust builds (this repo links one
+very large binary). One command adds narrowly scoped exclusions for exactly the
+hot paths:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\dev\windows-defender-exclusions.ps1 -WhatIf   # list only
+Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','<repo>\tools\dev\windows-defender-exclusions.ps1'   # apply (elevated)
+```
+
+It excludes: repo `refact-agent\engine\target`, GUI/VSCode `node_modules`,
+`plugins\intellij\build`, the worktrees root (`REFACT_WORKTREE_ROOT`, default
+`%USERPROFILE%\.cache\refact\worktrees`), `%USERPROFILE%\.cargo`, and the
+sccache cache dir. It is idempotent, removes its own exclusions with
+`-Remove`, and never excludes drive roots, `%USERPROFILE%`, or `%TEMP%` as a
+whole.
+
+**Measure the effect yourself:** time one warm `engine-build.ps1` (check mode)
+before applying, then again after, and compare. Defenders gains vary per
+machine; the numbers are yours, not the script's.

@@ -1,20 +1,32 @@
 # Single entry point for building the Refact engine on Windows.
 #
-#   .\tools\dev\engine-build.ps1                 # check   (default) - verify a change compiles
-#   .\tools\dev\engine-build.ps1 -Mode fast      # optimized binary, no LTO
-#   .\tools\dev\engine-build.ps1 -Mode release   # shipping artifact ONLY (slow)
-#   .\tools\dev\engine-build.ps1 -Mode test      # cargo test --lib
-#   .\tools\dev\engine-build.ps1 -Mode clean     # drop target/fast-release
+#   .\tools\dev\engine-build.ps1                        # check       (default) - verify a refact-lsp change compiles
+#   .\tools\dev\engine-build.ps1 -Mode check-all        # whole workspace incl. test targets (workspace crate change)
+#   .\tools\dev\engine-build.ps1 -Mode check-tests      # type-check tests without linking (test-only change)
+#   .\tools\dev\engine-build.ps1 -Mode fast             # optimized binary, no LTO
+#   .\tools\dev\engine-build.ps1 -Mode release          # shipping artifact ONLY (slow)
+#   .\tools\dev\engine-build.ps1 -Mode test             # cargo test --lib
+#   .\tools\dev\engine-build.ps1 -Mode clean            # drop target/fast-release
 #
-# Verification is `check`. A release build takes tens of minutes (LTO +
-# opt-level="z" + strip) and is never the right way to find out whether code
-# compiles - it is only for producing an artifact you package or ship.
+# Mode selection:
+#   check       - "does my refact-lsp change compile?" - still type-checks the whole
+#                 dependency graph but skips every other crate's test targets.
+#   check-all    - you touched a workspace crate (crates/*) or code used by tests
+#                 of other crates: cargo check --workspace --all-targets.
+#   check-tests - you only edited tests: cargo check --profile test --all-targets
+#                 type-checks test code without linking test binaries.
+#   fast        - you need a runnable binary now (no LTO, incremental).
+#   release     - you are shipping. Only this.
+#
+# Verification is `check`, never `release`. A release build takes tens of
+# minutes (LTO + opt-level="z" + strip) and is never the right way to find out
+# whether code compiles - it is only for producing an artifact you ship.
 #
 # ASCII only on purpose: Windows PowerShell 5.1 reads .ps1 files as ANSI when
 # there is no BOM, so non-ASCII characters here would be mangled.
 [CmdletBinding()]
 param(
-    [ValidateSet('check', 'fast', 'release', 'test', 'clean')]
+    [ValidateSet('check', 'check-all', 'check-tests', 'fast', 'release', 'test', 'clean')]
     [string]$Mode = 'check'
 )
 
@@ -66,10 +78,20 @@ $exitCode = 0
 
 switch ($Mode) {
     'check' {
-        Write-Banner 'mode check (cargo check --workspace --all-targets) - verifying a change compiles'
+        Write-Banner 'mode check (cargo check -p refact-lsp --lib) - verifying a refact-lsp change compiles'
         # A Rust-side check must never drag the frontend build in with it.
         $env:REFACT_SKIP_GUI_BUILD = '1'
+        $exitCode = Invoke-Cargo @('check', '-p', 'refact-lsp', '--lib')
+    }
+    'check-all' {
+        Write-Banner 'mode check-all (cargo check --workspace --all-targets) - whole workspace incl. test targets'
+        $env:REFACT_SKIP_GUI_BUILD = '1'
         $exitCode = Invoke-Cargo @('check', '--workspace', '--all-targets')
+    }
+    'check-tests' {
+        Write-Banner 'mode check-tests (cargo check --profile test --all-targets) - type-check tests without linking'
+        $env:REFACT_SKIP_GUI_BUILD = '1'
+        $exitCode = Invoke-Cargo @('check', '--profile', 'test', '--all-targets')
     }
     'fast' {
         Write-Banner 'mode fast (cargo build --profile fast-release --bin refact-lsp) - runnable binary, no LTO'

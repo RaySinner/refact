@@ -1,12 +1,16 @@
 # Build the whole product into a single VS Code .vsix.
 #
-#   .\tools\dev\build-all.ps1              # full build: GUI + engine in parallel, then .vsix
-#   .\tools\dev\build-all.ps1 -Check       # cargo check instead of a release build (stops after the build stage)
-#   .\tools\dev\build-all.ps1 -SkipEngine  # reuse an existing refact.exe
-#   .\tools\dev\build-all.ps1 -SkipGui     # reuse an existing refact-chat-js-<version>.tgz
+#   .\tools\dev\build-all.ps1                # fast profile: GUI + engine in parallel, then .vsix (local testing)
+#   .\tools\dev\build-all.ps1 -Profile release  # release engine (LTO, shippable VSIX) - slow
+#   .\tools\dev\build-all.ps1 -Check         # cargo check instead of a build (stops after the build stage)
+#   .\tools\dev\build-all.ps1 -SkipEngine    # reuse an existing refact.exe
+#   .\tools\dev\build-all.ps1 -SkipGui       # reuse an existing refact-chat-js-<version>.tgz
 #
-# Nothing needs to be passed for the normal case. A release engine build takes
-# 40-50 minutes cold, so -Check is the cheap way to see whether a change compiles.
+# Nothing needs to be passed for the normal case. -Profile defaults to fast:
+# cargo build --profile fast-release (no LTO), which is what local testing
+# wants. A release engine build takes 40-50 minutes cold and buys nothing for
+# local testing, so reserve it for shipping. -Check is the cheap way to see
+# whether a change compiles.
 #
 # Concurrency: the GUI and engine parts are separate powershell.exe processes
 # started with Start-Process BEFORE either is waited on, so they genuinely
@@ -21,6 +25,8 @@
 # there is no BOM, so non-ASCII characters here would be mangled.
 [CmdletBinding()]
 param(
+    [ValidateSet('fast', 'release')]
+    [string]$Profile = 'fast',
     [switch]$SkipEngine,
     [switch]$SkipGui,
     [switch]$Check
@@ -94,7 +100,12 @@ function Write-Banner {
 $guiVersion = (Get-Content (Join-Path $guiDir 'package.json') -Raw | ConvertFrom-Json).version
 $tgzName = "refact-chat-js-$guiVersion.tgz"
 $tgzPath = Join-Path $guiDir $tgzName
-$engineExe = Join-Path $engineDir 'target\release\refact.exe'
+if ($Profile -eq 'fast') {
+    $engineExe = Join-Path $engineDir 'target\fast-release\refact.exe'
+}
+else {
+    $engineExe = Join-Path $engineDir 'target\release\refact.exe'
+}
 $assetExe = Join-Path $vscodeDir 'assets\refact.exe'
 
 Write-Banner "version $guiVersion"
@@ -166,6 +177,8 @@ param(
     # "1" or "0", not a [switch]: passing `-CheckMode False` to a switch parameter
     # is ambiguous in PowerShell 5.1, where the value can bind either way.
     [string]$CheckMode = '0',
+    [ValidateSet('fast', 'release')]
+    [string]$Profile = 'fast',
     [int]$GuiProcId = 0
 )
 
@@ -209,6 +222,7 @@ try {
 
     $cargoArgs = @('--config', $SccacheBypass)
     if ($CheckMode -eq '1') { $cargoArgs += @('check', '--workspace', '--all-targets') }
+    elseif ($Profile -eq 'fast') { $cargoArgs += @('build', '--profile', 'fast-release', '--bin', 'refact') }
     else { $cargoArgs += @('build', '--release', '--bin', 'refact') }
 
     $proc = Start-Process -FilePath 'cargo' -ArgumentList $cargoArgs `
@@ -271,7 +285,7 @@ else {
     # sentinel wait must not run at all.
     $guiProcIdArg = if ($guiProc) { $guiProc.Id } else { 0 }
     $engineProc = Start-BuildPart -Script $enginePartScript `
-        -ScriptArgs @('-EngineDir', $engineDir, '-BuildEnvScript', $buildEnvScript, '-Sentinel', $guiSentinel, '-SccacheBypass', $sccacheBypass, '-CheckMode', $checkModeArg, '-GuiProcId', "$guiProcIdArg") `
+        -ScriptArgs @('-EngineDir', $engineDir, '-BuildEnvScript', $buildEnvScript, '-Sentinel', $guiSentinel, '-SccacheBypass', $sccacheBypass, '-CheckMode', $checkModeArg, '-Profile', $Profile, '-GuiProcId', "$guiProcIdArg") `
         -StdOut $engineLog -StdErr $engineErrLog
 }
 
@@ -349,7 +363,7 @@ if ($missing.Count -gt 0) {
 }
 Write-Host "gui dist        : $(Join-Path $guiDir 'dist\chat')"
 Write-Host "gui tarball     : $tgzPath"
-if (-not $SkipEngine -and -not $Check) { Write-Host "engine binary   : $engineExe" }
+if (-not $SkipEngine -and -not $Check) { Write-Host "engine binary   : $engineExe (profile: $Profile)" }
 
 if ($Check) {
     $stopwatch.Stop()
@@ -444,6 +458,13 @@ if (-not $vsix) {
 
 $stopwatch.Stop()
 Write-Banner ("done in {0:N1} min" -f $stopwatch.Elapsed.TotalMinutes)
+if ($Profile -eq 'fast') {
+    Write-Host "engine profile  : fast (fast-release, no LTO) - VSIX is for LOCAL TESTING, not shipping" -ForegroundColor Yellow
+}
+else {
+    Write-Host "engine profile  : release (LTO) - VSIX is shippable" -ForegroundColor Green
+}
+Write-Host "engine binary   : $engineExe"
 foreach ($artifact in @($tgzPath, $engineExe, $vsix.FullName)) {
     $item = Get-Item $artifact
     Write-Host ("  {0,10:N1} MB  {1}" -f ($item.Length / 1MB), $item.FullName)

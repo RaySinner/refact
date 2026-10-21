@@ -31,7 +31,9 @@ MSVC), honours `REFACT_SKIP_GUI_BUILD`, and exits with cargo's exit code:
 
 | Mode | Command | Use |
 |---|---|---|
-| `check` (default) | `cargo check --workspace --all-targets` | **verifying a change compiles** |
+| `check` (default) | `cargo check -p refact-lsp --lib` | **verifying an engine (`src/`) change compiles** |
+| `check-all` | `cargo check --workspace --all-targets` | workspace crate change, or code used by other crates' tests |
+| `check-tests` | `cargo check --profile test --all-targets` | test-only edit, type-checked without linking |
 | `fast` | `cargo build --profile fast-release --bin refact-lsp` | a runnable binary, no LTO |
 | `release` | `cargo build --release --bin refact-lsp` | packaging / shipping only |
 | `test` | `cargo test --lib` | unit tests |
@@ -41,13 +43,24 @@ Rule of thumb: if you just want to know "does it compile", you are running `chec
 find yourself typing `cargo build --release` to find that out, stop — use check mode. The
 only reason to build `release` is to produce an artifact you are shipping or packaging.
 
+### Build velocity
+
+Never build a runnable artifact to answer a compile question. The cheapest
+sufficient check per change type is tabulated in
+[`docs/dev/build-velocity.md`](../../docs/dev/build-velocity.md): engine
+source change → `engine-build.ps1` (check); workspace crate or cross-crate test
+impact → `check-all`; test-only edit → `check-tests`; before launching the
+extension locally → `build-all.ps1` (fast profile default); shipping →
+`build-all.ps1 -Profile release`, once.
+
 `tools/dev/build-env.ps1` is the lower-level environment helper (PATH, `CARGO_INCREMENTAL=0`
 for sccache, `NODE_OPTIONS`); `tools/dev/engine-build.ps1` dot-sources it and adds the mode
 handling. The other tracked dev scripts (`check.sh`, `perf.sh`, `compile_bench.sh`) sit
 alongside them in `tools/dev/`.
 
 Measured on this Windows box (2026-10-02, worktree with no `target/`):
-`check` = **1396 s (23 min) cold**; `cargo check -p refact-lsp --lib` on a warm
+`check-all` (the old `check --workspace --all-targets`) = **1396 s (23 min) cold**;
+`cargo check -p refact-lsp --lib` on a warm
 `target/` = **1004 s (17 min)**. Incremental no-op re-runs are seconds. A release build
 costs far more, which is why it is not the verification path.
 

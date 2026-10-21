@@ -39,10 +39,21 @@ cargo check
 # Unit + doc tests (~3-8 min first build, ~1-3 min incremental)
 cargo test --lib && cargo test --doc
 
-# Full release build (~10-20 min cold, ~2-5 min incremental)
+# Full release build - shipping/packaging artifact ONLY, never a verification step
 # LTO + opt-level=z + strip — very slow from scratch
 cargo build --release
 ```
+
+### Build velocity
+
+Never build a runnable artifact to answer a compile question. The cheapest
+sufficient check per change type (plugin-only, engine, workspace crate,
+test-only, before-launch, shipping) is tabulated in
+[`docs/dev/build-velocity.md`](docs/dev/build-velocity.md). On Windows, engine
+checks go through `tools/dev/engine-build.ps1` (`check` default, plus
+`check-all` / `check-tests`); a full local GUI → engine → VSIX chain uses
+`tools/dev/build-all.ps1`, which defaults to the fast (no-LTO) profile and only
+needs `-Profile release` for a shippable VSIX.
 
 ⚠️ **First build compiles ~85 crates + 7 tree-sitter parsers + SQLite. Expect 10-20 minutes cold.** Incremental builds are much faster. CI runs `cargo test --release` on 7 platform targets.
 

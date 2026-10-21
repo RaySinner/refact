@@ -392,7 +392,8 @@ fn validate_fallback_worktree_path(
 ) -> Result<PathBuf, String> {
     let worktree = canonical_existing_path(worktree)?;
     let cache_dir = canonical_existing_path(&gcx.cache_dir)?;
-    let cache_root = gcx.cache_dir.join("worktrees");
+    let cache_root = refact_worktrees::service::worktrees_base_dir(&gcx.cache_dir)
+        .unwrap_or_else(|_| gcx.cache_dir.join("worktrees"));
     let cache_root = if cache_root.exists() {
         canonical_existing_path(&cache_root)?
     } else {

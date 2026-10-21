@@ -250,7 +250,8 @@ fn validated_cache_root(gcx: &GlobalContext) -> Result<PathBuf, String> {
             )
         })?;
     }
-    let cache_root = gcx.cache_dir.join("worktrees");
+    let cache_root = refact_worktrees::service::worktrees_base_dir(&gcx.cache_dir)
+        .unwrap_or_else(|_| gcx.cache_dir.join("worktrees"));
     if !cache_root.exists() {
         std::fs::create_dir_all(&cache_root).map_err(|e| {
             format!(

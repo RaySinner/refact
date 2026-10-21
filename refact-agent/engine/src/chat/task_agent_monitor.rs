@@ -1,4 +1,4 @@
-﻿// Task agent failure detection and automatic cleanup
+// Task agent failure detection and automatic cleanup
 //
 // This module monitors task agents and automatically marks them as failed when:
 // - Streaming errors occur (network, model, timeout)
@@ -301,7 +301,9 @@ fn card_accepts_agent_chat_id(card: &BoardCard, chat_id: &str) -> bool {
     if card.agent_chat_id.as_deref() == Some(chat_id) {
         return true;
     }
-    card.team().iter().any(|m| m.agent_chat_id.as_deref() == Some(chat_id))
+    card.team()
+        .iter()
+        .any(|m| m.agent_chat_id.as_deref() == Some(chat_id))
 }
 
 fn linked_agent_session_matches(session: &ChatSession, task_id: &str, card: &BoardCard) -> bool {
@@ -672,7 +674,11 @@ fn build_stalled_agent_planner_message(
 }
 
 /// The concrete next action, so the agent does not merely learn that it stalled.
-fn build_stalled_agent_self_message(card: &BoardCard, kind: StallKind, stalled_for: Duration) -> String {
+fn build_stalled_agent_self_message(
+    card: &BoardCard,
+    kind: StallKind,
+    stalled_for: Duration,
+) -> String {
     let state = match kind {
         StallKind::IdleNoFinish => format!(
             "Your last turn ended without calling any tool, and you have been idle for {}.",
@@ -832,7 +838,10 @@ async fn record_stall_escalation(
     detail: &str,
 ) {
     let card_id_owned = card_id.to_string();
-    let message = format!("{} {} ({})", STALL_ESCALATION_STATUS_PREFIX, agent_chat_id, detail);
+    let message = format!(
+        "{} {} ({})",
+        STALL_ESCALATION_STATUS_PREFIX, agent_chat_id, detail
+    );
     let _ = storage::update_board_atomic(app.gcx.clone(), task_id, move |board| {
         if let Some(card) = board.get_card_mut(&card_id_owned) {
             card.status_updates.push(StatusUpdate {
@@ -872,7 +881,10 @@ async fn notify_planner_about_stalled_agent(
             task_id,
             card_id,
             agent_chat_id,
-            &format!("{}; planner chat id unknown, escalation not delivered", short_reason),
+            &format!(
+                "{}; planner chat id unknown, escalation not delivered",
+                short_reason
+            ),
         )
         .await;
         return Ok(false);
@@ -1161,10 +1173,7 @@ pub async fn handle_agent_streaming_error(
                     if let Some(session_arc) = session_arc {
                         retry_agent_session(&app, &session_arc).await;
                     } else {
-                        tracing::warn!(
-                            "Cannot retry agent {}: session not found",
-                            agent_chat_id
-                        );
+                        tracing::warn!("Cannot retry agent {}: session not found", agent_chat_id);
                     }
                 }
             }
@@ -1662,7 +1671,8 @@ fn validate_agent_worktree_path_for_cleanup(
 ) -> Result<PathBuf, String> {
     let worktree = canonical_existing_path(worktree)?;
     let cache_dir = canonical_existing_path(cache_dir)?;
-    let cache_root = cache_dir.join("worktrees");
+    let cache_root = refact_worktrees::service::worktrees_base_dir(&cache_dir)
+        .unwrap_or_else(|_| cache_dir.join("worktrees"));
     let cache_root = if cache_root.exists() {
         canonical_existing_path(&cache_root)?
     } else {
@@ -2431,14 +2441,12 @@ async fn check_for_stuck_agents(app: AppState) -> Result<(), String> {
                 };
                 let member_session = member_session_arc.lock().await;
                 let member_elapsed = member_session.last_activity.elapsed();
-                let member_is_stalled =
-                    matches!(
-                        member_session.runtime.state,
-                        SessionState::Idle | SessionState::Completed
-                    )
-                        && member_session.command_queue.is_empty()
-                        && member_session.pending_deliveries.is_empty()
-                        && member_elapsed > AGENT_STUCK_TIMEOUT;
+                let member_is_stalled = matches!(
+                    member_session.runtime.state,
+                    SessionState::Idle | SessionState::Completed
+                ) && member_session.command_queue.is_empty()
+                    && member_session.pending_deliveries.is_empty()
+                    && member_elapsed > AGENT_STUCK_TIMEOUT;
                 if member_is_stalled {
                     drop(member_session);
                     tracing::warn!(
@@ -2678,8 +2686,13 @@ mod tests {
 
     #[tokio::test]
     async fn agent_in_error_state_retries_without_premature_failure() {
-        let (_temp, app, task_id, _agent_chat_id, agent_arc, _planner_arc) =
-            setup_monitor_case("doing", SessionState::Error, Duration::from_secs(10), vec![]).await;
+        let (_temp, app, task_id, _agent_chat_id, agent_arc, _planner_arc) = setup_monitor_case(
+            "doing",
+            SessionState::Error,
+            Duration::from_secs(10),
+            vec![],
+        )
+        .await;
         {
             let mut session = agent_arc.lock().await;
             session.runtime.error = Some("Stream error test".to_string());
@@ -2692,9 +2705,15 @@ mod tests {
             .await
             .unwrap();
         let card = board.get_card("T-1").unwrap();
-        assert_eq!(card.column, "doing", "card should stay in doing on first error retry");
+        assert_eq!(
+            card.column, "doing",
+            "card should stay in doing on first error retry"
+        );
         assert_eq!(card.retry_count, 1);
-        assert!(card.status_updates.iter().any(|u| u.message.contains("Retrying agent after streaming error")));
+        assert!(card
+            .status_updates
+            .iter()
+            .any(|u| u.message.contains("Retrying agent after streaming error")));
 
         let session = agent_arc.lock().await;
         assert_eq!(session.runtime.state, SessionState::Idle);
@@ -2942,8 +2961,7 @@ mod tests {
     #[tokio::test]
     async fn agent_is_notified_when_silent_without_finish() {
         let (_temp, app, task_id, agent_chat_id, agent_arc, _planner_arc) =
-            setup_monitor_case("doing", SessionState::Idle, Duration::from_secs(90), vec![])
-                .await;
+            setup_monitor_case("doing", SessionState::Idle, Duration::from_secs(90), vec![]).await;
 
         check_for_stuck_agents(app.clone()).await.unwrap();
 
@@ -3005,7 +3023,10 @@ mod tests {
             PushMode::WhenIdle,
             "Append could land inside an open assistant/tool window"
         );
-        assert!(delivery.wake, "an idle agent must be woken, not just queued");
+        assert!(
+            delivery.wake,
+            "an idle agent must be woken, not just queued"
+        );
     }
 
     /// An idle agent's turn is over, so the nudge lands at once; an agent still
@@ -3014,17 +3035,20 @@ mod tests {
     #[tokio::test]
     async fn agent_notification_waits_for_the_whole_turn() {
         let (_temp, app, _task_id, _agent_chat_id, agent_arc, _planner_arc) =
-            setup_monitor_case("doing", SessionState::Idle, Duration::from_secs(90), vec![])
-                .await;
+            setup_monitor_case("doing", SessionState::Idle, Duration::from_secs(90), vec![]).await;
         check_for_stuck_agents(app.clone()).await.unwrap();
         assert!(
             agent_arc.lock().await.messages.len() == 1,
             "an idle agent has no draft or tool window, so the nudge lands now"
         );
 
-        let (_temp, app, _task_id, _agent_chat_id, agent_arc, _planner_arc) =
-            setup_monitor_case("doing", SessionState::Generating, Duration::from_secs(600), vec![])
-                .await;
+        let (_temp, app, _task_id, _agent_chat_id, agent_arc, _planner_arc) = setup_monitor_case(
+            "doing",
+            SessionState::Generating,
+            Duration::from_secs(600),
+            vec![],
+        )
+        .await;
         check_for_stuck_agents(app.clone()).await.unwrap();
         let agent = agent_arc.lock().await;
         assert_eq!(
@@ -3041,22 +3065,19 @@ mod tests {
     #[tokio::test]
     async fn escalation_is_recorded_on_card_when_planner_missing() {
         let (_temp, app, task_id, agent_chat_id, _agent_arc, _planner_arc) =
-            setup_monitor_case("doing", SessionState::Idle, Duration::from_secs(90), vec![])
-                .await;
+            setup_monitor_case("doing", SessionState::Idle, Duration::from_secs(90), vec![]).await;
 
-        assert!(
-            !notify_planner_about_stalled_agent(
-                app.clone(),
-                &task_id,
-                &board_card(&app, &task_id).await,
-                &agent_chat_id,
-                None,
-                StallKind::IdleNoFinish,
-                Duration::from_secs(90),
-            )
-            .await
-            .unwrap()
-        );
+        assert!(!notify_planner_about_stalled_agent(
+            app.clone(),
+            &task_id,
+            &board_card(&app, &task_id).await,
+            &agent_chat_id,
+            None,
+            StallKind::IdleNoFinish,
+            Duration::from_secs(90),
+        )
+        .await
+        .unwrap());
 
         let board = storage::load_board(app.gcx.clone(), &task_id)
             .await
@@ -3064,18 +3085,16 @@ mod tests {
         let card = board.get_card("T-1").unwrap();
         assert!(
             card.status_updates.iter().any(|update| {
-                update
-                    .message
-                    .starts_with(STALL_ESCALATION_STATUS_PREFIX)
+                update.message.starts_with(STALL_ESCALATION_STATUS_PREFIX)
                     && update.message.contains("planner chat id unknown")
             }),
             "a missing planner must be recorded, not swallowed; got {:?}",
             card.status_updates
         );
         assert!(
-            card.status_updates
-                .iter()
-                .all(|update| !update.message.starts_with(STALL_PLANNER_NOTIFY_STATUS_PREFIX)),
+            card.status_updates.iter().all(|update| !update
+                .message
+                .starts_with(STALL_PLANNER_NOTIFY_STATUS_PREFIX)),
             "nothing was delivered, so no success record may be written"
         );
     }
@@ -3085,37 +3104,36 @@ mod tests {
     #[tokio::test]
     async fn escalation_delivery_failure_is_distinguishable() {
         let (_temp, app, task_id, agent_chat_id, _agent_arc, planner_arc) =
-            setup_monitor_case("doing", SessionState::Idle, Duration::from_secs(90), vec![])
-                .await;
+            setup_monitor_case("doing", SessionState::Idle, Duration::from_secs(90), vec![]).await;
         // A real destination that cannot accept the batch: the planner chat
         // exists and is a valid planner, but its delivery queue is saturated.
         {
             let mut planner = planner_arc.lock().await;
             for n in 0..crate::chat::types::max_queue_size() {
-                planner.pending_deliveries.push_back(PendingDelivery::with_id(
-                    format!("filler-{n}"),
-                    vec![ChatMessage::new("user".into(), "filler".into())],
-                    PushMode::Append,
-                    "test",
-                    false,
-                ));
+                planner
+                    .pending_deliveries
+                    .push_back(PendingDelivery::with_id(
+                        format!("filler-{n}"),
+                        vec![ChatMessage::new("user".into(), "filler".into())],
+                        PushMode::Append,
+                        "test",
+                        false,
+                    ));
             }
         }
 
         let card = board_card(&app, &task_id).await;
-        assert!(
-            !notify_planner_about_stalled_agent(
-                app.clone(),
-                &task_id,
-                &card,
-                &agent_chat_id,
-                Some("planner-test"),
-                StallKind::IdleNoFinish,
-                Duration::from_secs(90),
-            )
-            .await
-            .unwrap()
-        );
+        assert!(!notify_planner_about_stalled_agent(
+            app.clone(),
+            &task_id,
+            &card,
+            &agent_chat_id,
+            Some("planner-test"),
+            StallKind::IdleNoFinish,
+            Duration::from_secs(90),
+        )
+        .await
+        .unwrap());
 
         let board = storage::load_board(app.gcx.clone(), &task_id)
             .await
@@ -3753,9 +3771,13 @@ mod tests {
 
     #[tokio::test]
     async fn room_member_idle_stall_triggers_notification() {
-        let (_temp, app, task_id, _agent_chat_id, _agent_arc, _planner_arc) =
-            setup_monitor_case("doing", SessionState::Generating, Duration::from_secs(1), vec![])
-                .await;
+        let (_temp, app, task_id, _agent_chat_id, _agent_arc, _planner_arc) = setup_monitor_case(
+            "doing",
+            SessionState::Generating,
+            Duration::from_secs(1),
+            vec![],
+        )
+        .await;
         let room_member_chat_id = "agent-T-1-reviewer".to_string();
         {
             storage::update_board_atomic(app.gcx.clone(), &task_id, |board| {

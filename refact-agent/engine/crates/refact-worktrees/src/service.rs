@@ -2,6 +2,70 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
 use std::sync::OnceLock;
 
+pub const WORKTREE_ROOT_ENV: &str = "REFACT_WORKTREE_ROOT";
+
+static ROOT_LENGTH_WARNING_SHOWN: OnceLock<()> = OnceLock::new();
+
+pub fn validate_worktree_root_override(value: &str) -> Result<(), String> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Err("REFACT_WORKTREE_ROOT must not be empty".to_string());
+    }
+    let length = value.chars().count();
+    if length > 120 {
+        return Err(format!(
+            "REFACT_WORKTREE_ROOT '{}' is {} characters long, which would overflow the \
+             Windows 32767-char rustc command line once sccache wraps it (the refact-lsp argv \
+             grows ~176 chars per character of repo-root length). Use a short root such as \
+             C:\\wt so sccache can share cache entries across worktrees.",
+            value, length
+        ));
+    }
+    if length > 90 && ROOT_LENGTH_WARNING_SHOWN.set(()).is_ok() {
+        eprintln!(
+            "warning: REFACT_WORKTREE_ROOT '{}' is {} characters long; above ~90 characters \
+             sccache starts failing with os error 206 on Windows. A short root such as C:\\wt \
+             is recommended.",
+            value, length
+        );
+    }
+    Ok(())
+}
+
+pub fn worktrees_base_dir(cache_dir: &Path) -> Result<PathBuf, String> {
+    worktrees_base_dir_impl(std::env::var(WORKTREE_ROOT_ENV).ok().as_deref(), cache_dir)
+}
+
+pub fn worktrees_base_dir_impl(
+    override_root: Option<&str>,
+    cache_dir: &Path,
+) -> Result<PathBuf, String> {
+    match override_root {
+        Some(value) => {
+            validate_worktree_root_override(value)?;
+            let root = PathBuf::from(value.trim());
+            std::fs::create_dir_all(&root).map_err(|e| {
+                format!(
+                    "Failed to create REFACT_WORKTREE_ROOT '{}': {}",
+                    root.display(),
+                    e
+                )
+            })?;
+            let probe = root.join(".refact-worktree-root-probe");
+            std::fs::write(&probe, b"").map_err(|e| {
+                format!(
+                    "REFACT_WORKTREE_ROOT '{}' is not writable: {}",
+                    root.display(),
+                    e
+                )
+            })?;
+            let _ = std::fs::remove_file(&probe);
+            Ok(root)
+        }
+        None => Ok(cache_dir.join("worktrees")),
+    }
+}
+
 use chrono::Utc;
 use sha2::{Digest, Sha256};
 use tokio::sync::Mutex as AMutex;
@@ -33,7 +97,7 @@ pub fn worktree_merge_lock() -> &'static AMutex<()> {
 
 #[derive(Debug, Clone)]
 pub struct WorktreeService {
-    cache_dir: PathBuf,
+    worktrees_base: PathBuf,
     source_workspace_root: PathBuf,
     project_hash: String,
 }
@@ -42,10 +106,8 @@ impl WorktreeService {
     pub fn new(cache_dir: PathBuf, source_workspace_root: PathBuf) -> Result<Self, String> {
         let cache_dir = normalize_existing_or_parent(&cache_dir);
         let source_workspace_root = canonicalize_existing_dir(&source_workspace_root)?;
-        Ok(Self::from_normalized_paths(
-            cache_dir,
-            source_workspace_root,
-        ))
+        let worktrees_base = worktrees_base_dir(&cache_dir)?;
+        Ok(Self::from_normalized_paths(source_workspace_root, worktrees_base))
     }
 
     pub async fn new_async(
@@ -54,19 +116,32 @@ impl WorktreeService {
     ) -> Result<Self, String> {
         let cache_dir = normalize_existing_or_parent_async(&cache_dir).await;
         let source_workspace_root = canonicalize_existing_dir_async(&source_workspace_root).await?;
-        Ok(Self::from_normalized_paths(
-            cache_dir,
-            source_workspace_root,
-        ))
+        let worktrees_base = worktrees_base_dir(&cache_dir)?;
+        Ok(Self::from_normalized_paths(source_workspace_root, worktrees_base))
     }
 
-    fn from_normalized_paths(cache_dir: PathBuf, source_workspace_root: PathBuf) -> Self {
+    fn from_normalized_paths(
+        source_workspace_root: PathBuf,
+        worktrees_base: PathBuf,
+    ) -> Self {
         let project_hash = project_hash_for_path(&source_workspace_root);
         Self {
-            cache_dir,
+            worktrees_base,
             source_workspace_root,
             project_hash,
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn new_with_worktree_root_override(
+        cache_dir: PathBuf,
+        source_workspace_root: PathBuf,
+        override_root: Option<&str>,
+    ) -> Result<Self, String> {
+        let cache_dir = normalize_existing_or_parent(&cache_dir);
+        let source_workspace_root = canonicalize_existing_dir(&source_workspace_root)?;
+        let worktrees_base = worktrees_base_dir_impl(override_root, &cache_dir)?;
+        Ok(Self::from_normalized_paths(source_workspace_root, worktrees_base))
     }
 
     pub fn source_workspace_root(&self) -> &Path {
@@ -78,7 +153,11 @@ impl WorktreeService {
     }
 
     pub fn registry_dir(&self) -> PathBuf {
-        self.cache_dir.join("worktrees").join(&self.project_hash)
+        self.worktrees_base.join(&self.project_hash)
+    }
+
+    pub fn worktrees_base(&self) -> &Path {
+        &self.worktrees_base
     }
 
     pub fn registry_path(&self) -> PathBuf {
@@ -2418,6 +2497,111 @@ mod worktree_registry_tests {
             references: Vec::new(),
             last_known_status: None,
         }
+    }
+
+    #[tokio::test]
+    async fn worktree_registry_default_base_without_env_override() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("source");
+        let cache = temp.path().join("cache");
+        std::fs::create_dir_all(&source).unwrap();
+        let service =
+            WorktreeService::new_with_worktree_root_override(cache.clone(), source, None).unwrap();
+        assert_eq!(
+            service.registry_dir(),
+            cache.join("worktrees").join(service.project_hash())
+        );
+        assert_eq!(
+            service.worktree_path_for_id("wt_1").unwrap(),
+            service.registry_dir().join("wt_1")
+        );
+    }
+
+    #[tokio::test]
+    async fn worktree_registry_env_override_moves_registry_and_creates_root() {
+        let temp = tempfile::tempdir().unwrap();
+        let override_root = temp.path().join("short-wt");
+        let source = temp.path().join("source");
+        let cache = temp.path().join("cache");
+        std::fs::create_dir_all(&source).unwrap();
+        assert!(!override_root.exists());
+        let service = WorktreeService::new_with_worktree_root_override(
+            cache,
+            source,
+            Some(override_root.to_str().unwrap()),
+        )
+        .unwrap();
+        assert!(override_root.is_dir());
+        assert_eq!(
+            service.registry_dir(),
+            override_root.join(service.project_hash())
+        );
+        assert_eq!(
+            service.worktree_path_for_id("wt_1").unwrap(),
+            override_root.join(service.project_hash()).join("wt_1")
+        );
+    }
+
+    #[tokio::test]
+    async fn worktree_registry_env_override_creates_usable_worktree_with_same_project_hash() {
+        let temp = tempfile::tempdir().unwrap();
+        let override_root = temp.path().join("short-wt");
+        let source = temp.path().join("repo");
+        let cache = temp.path().join("cache");
+        std::fs::create_dir_all(&source).unwrap();
+        init_repo(&source);
+        let service = WorktreeService::new_with_worktree_root_override(
+            cache,
+            source,
+            Some(override_root.to_str().unwrap()),
+        )
+        .unwrap();
+        let created = service
+            .create_worktree(CreateWorktreeRequest {
+                branch: Some("refact/chat/env-override".to_string()),
+                chat_id: Some("chat-1".to_string()),
+                kind: Some("chat".to_string()),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        let root = created.worktree.meta.root.clone();
+        let id = created.worktree.meta.id.clone();
+        assert!(root.starts_with(&override_root));
+        let registry = service.load_registry().await.unwrap();
+        assert_eq!(registry.project_hash, service.project_hash());
+        assert!(service.get_worktree(&id).await.is_ok());
+        assert!(
+            service
+                .delete_worktree(&id, true, true)
+                .await
+                .unwrap()
+                .deleted
+        );
+    }
+
+    #[tokio::test]
+    async fn worktree_registry_env_override_rejects_too_long_root() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("source");
+        let cache = temp.path().join("cache");
+        std::fs::create_dir_all(&source).unwrap();
+        let error = WorktreeService::new_with_worktree_root_override(
+            cache,
+            source,
+            Some(&"a".repeat(121)),
+        )
+        .unwrap_err();
+        assert!(error.contains("32767"), "{error}");
+        assert!(error.contains("sccache"), "{error}");
+    }
+
+    #[test]
+    fn validate_worktree_root_override_boundaries() {
+        assert!(validate_worktree_root_override("C:\\wt").is_ok());
+        assert!(validate_worktree_root_override(&"a".repeat(90)).is_ok());
+        assert!(validate_worktree_root_override(&"a".repeat(121)).is_err());
+        assert!(worktrees_base_dir_impl(Some("  "), Path::new("c:/cache")).is_err());
     }
 
     #[tokio::test]

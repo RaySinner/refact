@@ -94,6 +94,8 @@ Dev profile keeps workspace crates debuggable but optimizes CodeGraph's parser a
 
 ### Worktree delivery
 
+By default agent worktrees live under `~/.cache/refact/worktrees/<sha256(source_root)>/<uuid>` (~94 chars on Windows), which overflows the 32 767-char rustc command line once sccache wraps `refact-lsp` (~176 argv chars per char of repo-root length) and kills cross-worktree cache hits with `os error 206`. Set the env override `REFACT_WORKTREE_ROOT` (recommended: `C:\wt`) so worktrees and their registry are created under `<REFACT_WORKTREE_ROOT>/<sha256(source_root)>/<uuid>` instead; the project-hash keying, registry, `inspect_worktrees`, cleanup, merge and `at_commands` all follow the new base, so nothing gets orphaned. The engine refuses roots longer than 120 chars (warns above 90). Unset, the behaviour is byte-identical to the default. `tools/dev/engine-build.ps1 -Mode cache-status` prints the current repo-root length and whether it is on the sccache-cached path.
+
 ## Architecture
 
 `GlobalContext` (`Arc<ARwLock<GlobalContext>>`) is the central shared state. HTTP server (Axum) and LSP server (tower-lsp) both hold a reference. Background tasks (workspace file watcher, CodeGraph indexer, VecDB memory-plane vectorizer, git shadow cleanup, knowledge graph, trajectory memos, agent monitor, OAuth refresh) are spawned via `start_background_tasks()` (~18 tokio tasks). Workspace indexing is routed through `indexing_routing.rs`: memory-plane files go to VecDB, while source-code files go to CodeGraph.

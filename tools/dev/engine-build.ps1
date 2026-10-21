@@ -233,7 +233,16 @@ switch ($Mode) {
     'cache-status' {
         Write-Banner 'mode cache-status (sccache stats and detected build mode)'
         Set-SccacheBaseDirs
-        Write-Host "repo root: $repoRoot"
+        $predicted = Get-PredictedArgvLength
+        $cachedPath = $predicted -le 31000
+        Write-Host ("repo root: {0} ({1} chars)" -f $repoRoot, $repoRoot.Length)
+        Write-Host ("predicted refact-lsp rustc argv: {0} chars (Windows limit 32767, sccache skipped above 31000)" -f $predicted)
+        if ($cachedPath) {
+            Write-Host 'cached path: YES - repo root length is within the sccache-safe range, sccache can wrap this build' -ForegroundColor Green
+        }
+        else {
+            Write-Host 'cached path: NO - repo root is too long for sccache (os error 206). Keep worktree roots short; agent worktrees can set REFACT_WORKTREE_ROOT=C:\wt' -ForegroundColor Yellow
+        }
         Write-Host "SCCACHE_BASEDIRS: $env:SCCACHE_BASEDIRS"
         if (Get-Command sccache -ErrorAction SilentlyContinue) {
             Write-Host 'sccache: installed - engine-build.ps1 uses it first, falls back to the wrapper bypass on os error 206.'

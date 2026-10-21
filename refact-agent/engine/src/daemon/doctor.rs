@@ -230,8 +230,10 @@ async fn disk_cache_usage_check(cache_root: PathBuf) -> Option<Finding> {
 fn cache_usage(cache_root: &Path) -> DiskUsage {
     let mut remaining_entries = DISK_SCAN_ENTRY_CAP;
     let mut remaining_bytes = DISK_SCAN_BYTE_CAP;
+    let worktrees_root = refact_worktrees::service::worktrees_base_dir(cache_root)
+        .unwrap_or_else(|_| cache_root.join("worktrees"));
     let (worktrees, worktrees_capped) = directory_size(
-        &cache_root.join("worktrees"),
+        &worktrees_root,
         &mut remaining_entries,
         &mut remaining_bytes,
     );

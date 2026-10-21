@@ -89,7 +89,9 @@ pub fn registered_worktree_path_mappings(cache_dir: &Path) -> WorktreePathMappin
 fn registered_worktree_path_mappings_uncached(
     cache_dir: &Path,
 ) -> Vec<RegisteredWorktreePathMapping> {
-    let worktrees_root = canonicalize_normalized_path(cache_dir.join("worktrees"));
+    let worktrees_base = refact_worktrees::service::worktrees_base_dir(cache_dir)
+        .unwrap_or_else(|_| cache_dir.join("worktrees"));
+    let worktrees_root = canonicalize_normalized_path(worktrees_base);
     let Ok(project_dirs) = std::fs::read_dir(&worktrees_root) else {
         return Vec::new();
     };
@@ -543,7 +545,9 @@ pub async fn check_if_its_inside_a_workspace_worktree_or_config(
         Err(error) => error,
     };
     let path = canonicalize_normalized_path(path.to_path_buf());
-    let worktrees_root = canonicalize_normalized_path(gcx.cache_dir.join("worktrees"));
+    let worktrees_base = refact_worktrees::service::worktrees_base_dir(&gcx.cache_dir)
+        .unwrap_or_else(|_| gcx.cache_dir.join("worktrees"));
+    let worktrees_root = canonicalize_normalized_path(worktrees_base);
     if registered_worktree_roots(gcx.cache_dir.as_path())
         .into_iter()
         .map(canonicalize_normalized_path)

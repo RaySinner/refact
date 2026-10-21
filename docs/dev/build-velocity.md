@@ -54,4 +54,30 @@ See the header of `tools/dev/engine-build.ps1` for the full table:
 - `fast` — `cargo build --profile fast-release --bin refact-lsp`; a runnable binary without LTO.
 - `release` — shipping artifact only. Never a verification step.
 - `test` — `cargo test --lib`.
-- `clean` — drop `target/fast-release`.
+- `clean` — drop `target/fast-release`.- `clean` — drop `target/fast-release`.
+- `cache-status` — sccache stats, repo-root length, and whether the root is on the sccache-cached path.
+
+## sccache and worktree root length (Windows)
+
+The `refact-lsp` rustc command line grows **~176 characters per character of
+repo-root length** (143 `--extern` + 34 `-L native` paths add a fixed ~16k).
+Windows caps a command line at 32 767, so roots above ~90 characters overflow
+(`os error 206`) once sccache wraps rustc, silently costing every worktree
+build a full recompile.
+
+Default agent worktree roots (`~\.cache\refact\worktrees\<hash>\<uuid>` ≈ 94
+chars) are too long. Set the env override:
+
+```
+REFACT_WORKTREE_ROOT=C:\wt
+```
+
+Worktrees and their registry then live under `C:\wt\<sha256(source_root)>\<uuid>`
+— short enough for sccache, and `SCCACHE_BASEDIRS` makes builds in different
+worktrees hit the same cache entries. Roots longer than 120 characters are
+refused by the engine; between 90 and 120 it warns. Unset, the default
+`~/.cache/refact` location is used unchanged.
+
+`tools/dev/engine-build.ps1 -Mode cache-status` prints the current repo-root
+length, the predicted argv length, and whether the root is on the cached path.
+

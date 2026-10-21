@@ -333,6 +333,7 @@ export class RustBinaryBlob {
             logDir,
             settings,
             projectId,
+            pluginVersion,
         });
 
         if (!this.is_current_generation(generation)) {

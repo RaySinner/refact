@@ -190,6 +190,7 @@ export type EngineSpawnOptions = {
     logDir: string;
     settings: { ast: boolean; astMaxFiles: number; vecdb: boolean; vecdbMaxFiles: number };
     projectId: string;
+    pluginVersion: string;
     spawnTimeoutMs?: number;
     debug?: { httpPort: number; lspPort: number };
     argsPrefix?: string[];
@@ -203,7 +204,6 @@ const ENGINE_EXIT_WAIT_MS = 10000;
 const ENGINE_KILL_WAIT_MS = 5000;
 const ENGINE_TAIL_BYTES = 12000;
 const ENGINE_BUSY_EXIT_CODE = 75;
-const ENGINE_MIN_COMPATIBLE_VERSION = "8.0.0";
 
 const portBusyExitCodes = new Set([48, 98, 10048]);
 const engineProcesses = new Map<string, ChildProcess>();
@@ -257,25 +257,31 @@ export async function killEngine(handle: EngineHandle): Promise<void> {
     const key = engineKey(handle);
     const child = engineProcesses.get(key);
     engineProcesses.delete(key);
-    if (!child || child.exitCode !== null || child.signalCode !== null) {
+    if (child && (child.exitCode !== null || child.signalCode !== null)) {
         return;
     }
+    const pid = handle.pid ?? child?.pid;
     try {
         await engineRequest(handle.httpPort, "/v1/graceful-shutdown", "POST", ENGINE_GRACEFUL_TIMEOUT_MS);
     } catch {
-        return;
+        // The engine did not answer: that is exactly when the forced kill is needed.
     }
-    if (await waitForExit(child, ENGINE_EXIT_WAIT_MS)) {
-        return;
+    if (child) {
+        if (await waitForExit(child, ENGINE_EXIT_WAIT_MS)) {
+            return;
+        }
+        child.kill();
+        if (await waitForExit(child, ENGINE_KILL_WAIT_MS)) {
+            return;
+        }
     }
-    child.kill();
-    if (await waitForExit(child, ENGINE_KILL_WAIT_MS)) {
-        return;
+    if (pid && process.platform === "win32") {
+        await windowsTaskKill(pid);
+        if (child && (await waitForExit(child, ENGINE_KILL_WAIT_MS))) {
+            return;
+        }
     }
-    if (handle.pid && process.platform === "win32") {
-        await windowsTaskKill(handle.pid);
-        await waitForExit(child, ENGINE_KILL_WAIT_MS);
-    }
+    console.log(`Refact engine (pid ${pid ?? "unknown"}) survived the kill ladder`);
 }
 
 export function disposeNow(handle: EngineHandle): void {
@@ -373,6 +379,7 @@ function spawnAndWaitReady(
         let stdoutTail = "";
         let stderrTail = "";
         let pollTimer: NodeJS.Timeout | undefined;
+        let child: ChildProcess | undefined;
         const finish = (attempt: SpawnAttempt) => {
             if (settled) {
                 return;
@@ -381,12 +388,16 @@ function spawnAndWaitReady(
             if (pollTimer) {
                 clearInterval(pollTimer);
             }
-            resolve(attempt);
+            if (attempt.outcome === "ready" || !child) {
+                resolve(attempt);
+                return;
+            }
+            void discardChild(child).then(() => resolve(attempt));
         };
-        let child: ChildProcess;
+        let spawned: ChildProcess;
         try {
             fs.mkdirSync(options.logDir, { recursive: true });
-            child = spawn(options.binPath, engineArgs(options, httpPort, lspPort, nonce), {
+            spawned = spawn(options.binPath, engineArgs(options, httpPort, lspPort, nonce), {
                 cwd: options.root,
                 detached: false,
                 windowsHide: true,
@@ -396,6 +407,7 @@ function spawnAndWaitReady(
             resolve({ outcome: "failed", error: errorMessage(error) });
             return;
         }
+        child = spawned;
         child.stdout?.on("data", (chunk: Buffer) => {
             stdoutTail = appendTail(stdoutTail, chunk);
         });
@@ -428,13 +440,27 @@ function spawnAndWaitReady(
             engineRequest(httpPort, "/v1/ping", "GET", ENGINE_POLL_MS)
                 .then(body => {
                     if (body.trim() === nonce) {
-                        engineProcesses.set(engineKey({ httpPort, lspPort, owned: true }), child);
-                        finish({ outcome: "ready", handle: { httpPort, lspPort, owned: true, pid: child.pid ?? undefined } });
+                        engineProcesses.set(engineKey({ httpPort, lspPort, owned: true }), spawned);
+                        finish({ outcome: "ready", handle: { httpPort, lspPort, owned: true, pid: spawned.pid ?? undefined } });
                     }
                 })
                 .catch(() => undefined);
         }, ENGINE_POLL_MS);
     });
+}
+
+async function discardChild(child: ChildProcess): Promise<void> {
+    if (!child.pid || child.exitCode !== null || child.signalCode !== null) {
+        return;
+    }
+    child.kill();
+    if (await waitForExit(child, ENGINE_KILL_WAIT_MS)) {
+        return;
+    }
+    if (child.pid && process.platform === "win32") {
+        await windowsTaskKill(child.pid);
+        await waitForExit(child, ENGINE_KILL_WAIT_MS);
+    }
 }
 
 type BusyReport = {
@@ -458,18 +484,17 @@ async function resolveBusy(options: EngineSpawnOptions, report: BusyReport): Pro
     if (!httpPort) {
         return { outcome: "error", message: busyHolderError(pid, undefined, lspPort, "http port unknown") };
     }
-    let version: string | undefined;
-    try {
-        const info = await engineRequest(httpPort, "/v1/build_info", "GET", 2000);
-        version = JSON.parse(info).version;
-    } catch {
-        version = undefined;
+    const version = await holderVersion(httpPort);
+    if (!version) {
+        return { outcome: "retry" };
     }
-    if (!version || compareVersions(version, ENGINE_MIN_COMPATIBLE_VERSION) < 0) {
-        return { outcome: "error", message: busyHolderError(pid, httpPort, lspPort, `incompatible engine version ${version ?? "unknown"}`) };
+    if (compareVersions(version, options.pluginVersion) < 0) {
+        return { outcome: "error", message: busyHolderError(pid, httpPort, lspPort, `incompatible engine version ${version}, this extension needs ${options.pluginVersion} or newer`) };
     }
-    void options;
-    return { outcome: "adopted", handle: { httpPort, lspPort: lspPort ?? 0, owned: false, pid } };
+    if (!lspPort) {
+        return { outcome: "error", message: busyHolderError(pid, httpPort, undefined, "holder LSP port is unknown; restart the window that holds this workspace") };
+    }
+    return { outcome: "adopted", handle: { httpPort, lspPort, owned: false, pid } };
 }
 
 function busyHolderError(pid: number, httpPort: number | undefined, lspPort: number | undefined, reason: string): string {
@@ -477,8 +502,14 @@ function busyHolderError(pid: number, httpPort: number | undefined, lspPort: num
     return `workspace is held by another engine (pid ${pid}, ${ports}): ${reason}`;
 }
 
-function isCompatibleEngine(version: string): boolean {
-    return compareVersions(version, ENGINE_MIN_COMPATIBLE_VERSION) >= 0;
+async function holderVersion(httpPort: number): Promise<string | undefined> {
+    try {
+        const info = await engineRequest(httpPort, "/v1/build_info", "GET", 2000);
+        const version = (JSON.parse(info) as { version?: unknown }).version;
+        return typeof version === "string" && version.trim().length > 0 ? version.trim() : undefined;
+    } catch {
+        return undefined;
+    }
 }
 
 function normalizeId(value: number | null | undefined): number | undefined {

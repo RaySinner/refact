@@ -194,6 +194,7 @@ Cargo.lock
 /.review-target/
 **/.cargo-target*/
 /**/review-target/
+/**/target-review-mech/
 # Keep cargo build output out even if a scratch target dir uses another name.
 # These only match dirs that actually hold a cargo build layout, so real source
 # dirs named debug/ or release/ are not shadowed.

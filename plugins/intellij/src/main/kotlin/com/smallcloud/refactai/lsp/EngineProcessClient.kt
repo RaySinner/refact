@@ -86,6 +86,7 @@ data class EngineSpawnArgs(
         if (watchParentStdin) {
             args.add("--watch-parent-stdin")
         }
+        args.add("--no-mdns")
         return args
     }
 }

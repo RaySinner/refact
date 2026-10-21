@@ -36,6 +36,7 @@ function writeFakeEngine(dir: string, behavior: FakeBehavior): string {
         `const behavior = ${JSON.stringify(behavior)};`,
         "const args = process.argv.slice(2);",
         "function argValue(name) { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; }",
+        "if (!args.includes('--no-mdns')) { console.error('missing --no-mdns'); process.exit(97); }",
         "const httpPort = Number(argValue('--http-port'));",
         "const pingMessage = argValue('--ping-message');",
         "function logEvent(text) { if (behavior.eventLog) { fs.appendFileSync(behavior.eventLog, text + '\\n'); } }",

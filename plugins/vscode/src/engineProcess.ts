@@ -383,6 +383,7 @@ function engineArgs(options: EngineSpawnOptions, httpPort: number, lspPort: numb
         "--project-id", options.projectId,
         "--logs-to-file", path.join(options.logDir, "engine.log"),
         "--watch-parent-stdin",
+        "--no-mdns",
     ];
     if (options.settings.ast) {
         args.push("--ast", "--ast-max-files", String(options.settings.astMaxFiles));

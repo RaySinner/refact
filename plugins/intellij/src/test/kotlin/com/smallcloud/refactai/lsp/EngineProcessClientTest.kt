@@ -62,6 +62,7 @@ class EngineProcessClientTest {
         assertTrue(args.contains("--vecdb-max-files"))
         assertTrue(args.contains("4321"))
         assertTrue(args.contains("--watch-parent-stdin"))
+        assertTrue(args.contains("--no-mdns"))
         assertFalse(args.contains("setsid"))
         assertFalse(args.contains("nohup"))
     }

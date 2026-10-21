@@ -15,7 +15,7 @@ class SharedChatPaneReadyTest {
         assertEquals(ChatStartupMode.BOOTSTRAP, selectChatStartupMode(null))
         assertEquals(
             ChatStartupMode.DAEMON_GUI,
-            selectChatStartupMode("http://127.0.0.1:8488/p/project-123/")
+            selectChatStartupMode("http://127.0.0.1:8001/")
         )
     }
 
@@ -24,13 +24,13 @@ class SharedChatPaneReadyTest {
         assertTrue(
             shouldNavigateToDaemonGui(
                 "http://refactai/index.html",
-                "http://127.0.0.1:8488/p/project-123/"
+                "http://127.0.0.1:8001/"
             )
         )
         assertFalse(
             shouldNavigateToDaemonGui(
-                "http://127.0.0.1:8488/p/project-123/",
-                "http://127.0.0.1:8488/p/project-123/"
+                "http://127.0.0.1:8001/",
+                "http://127.0.0.1:8001/"
             )
         )
     }

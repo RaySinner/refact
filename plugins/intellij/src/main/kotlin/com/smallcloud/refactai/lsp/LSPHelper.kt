@@ -78,7 +78,6 @@ fun lspProjectInitialize(lsp: LSPProcessHolder, project: Project) {
 internal fun isRecoverableHttpStatus(error: Throwable?): Boolean {
     val statusCode = when (error) {
         is HttpStatusException -> error.statusCode
-        is DaemonHttpStatusException -> error.statusCode
         else -> null
     }
     if (statusCode != null) return statusCode in 500..599

@@ -76,11 +76,12 @@ internal fun canonicalizeDaemonGuiUrl(rawUrl: String?): String? {
     val port = uri.port
     if (port <= 0) return null
 
-    val path = uri.rawPath ?: return null
+    val path = uri.rawPath ?: "/"
     val segments = path.split("/").filter { it.isNotEmpty() }
-    if (segments.size != 2 || segments[0] != "p" || segments[1].isEmpty()) return null
+    // Engine-root URLs only: reject /p/{id} URLs
+    if (segments.isNotEmpty() && segments[0] == "p") return null
 
-    val normalizedPath = if (path.endsWith("/")) path else "$path/"
+    val normalizedPath = if (path.isEmpty() || path == "/") "/" else if (path.endsWith("/")) path else "$path/"
     val query = uri.rawQuery?.takeIf { it.isNotEmpty() }
     val canonicalHost = if (host == "::1" || host == "[::1]") "[::1]" else host
 

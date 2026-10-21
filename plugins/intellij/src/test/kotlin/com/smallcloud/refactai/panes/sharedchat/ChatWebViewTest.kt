@@ -176,22 +176,22 @@ class ChatWebViewTest: LightPlatform4TestCase() {
     @Test
     fun acceptsLoopbackProjectScopedUrls() {
         Assert.assertEquals(
-            "http://127.0.0.1:8488/p/project-123/",
-            canonicalizeDaemonGuiUrl("http://127.0.0.1:8488/p/project-123/")
+            "http://127.0.0.1:8001/",
+            canonicalizeDaemonGuiUrl("http://127.0.0.1:8001/")
         )
         Assert.assertEquals(
-            "http://127.0.0.1:8488/p/project-123/",
-            canonicalizeDaemonGuiUrl("http://127.0.0.1:8488/p/project-123")
+            "http://127.0.0.1:8001/",
+            canonicalizeDaemonGuiUrl("http://127.0.0.1:8001")
         )
         Assert.assertEquals(
-            "http://localhost:8488/p/abc/?daemon_token=xyz",
-            canonicalizeDaemonGuiUrl("http://localhost:8488/p/abc/?daemon_token=xyz")
+            "http://localhost:8001/?test=1",
+            canonicalizeDaemonGuiUrl("http://localhost:8001/?test=1")
         )
         Assert.assertEquals(
-            "https://127.0.0.1:1234/p/id/",
-            canonicalizeDaemonGuiUrl("https://127.0.0.1:1234/p/id")
+            "https://127.0.0.1:1234/",
+            canonicalizeDaemonGuiUrl("https://127.0.0.1:1234")
         )
-        Assert.assertTrue(isDaemonGuiUrl("http://127.0.0.1:8488/p/project-123/"))
+        Assert.assertTrue(isDaemonGuiUrl("http://127.0.0.1:8001/"))
     }
 
     @Test
@@ -201,17 +201,15 @@ class ChatWebViewTest: LightPlatform4TestCase() {
             "",
             "   ",
             "http://refactai/index.html",
-            "http://192.168.1.10:8488/p/project-123/",
-            "http://example.com:8488/p/project-123/",
-            "ftp://127.0.0.1:8488/p/project-123/",
-            "http://127.0.0.1/p/project-123/",
-            "http://127.0.0.1:0/p/project-123/",
-            "http://127.0.0.1:8488/",
+            "http://192.168.1.10:8488/",
+            "http://example.com:8488/",
+            "ftp://127.0.0.1:8488/",
+            "http://127.0.0.1/",
+            "http://127.0.0.1:0/",
+            "http://127.0.0.1:8488/p/project-123/",
             "http://127.0.0.1:8488/p/",
-            "http://127.0.0.1:8488/x/project-123/",
-            "http://127.0.0.1:8488/p/project-123/v1/",
-            "http://user@127.0.0.1:8488/p/project-123/",
-            "http://127.0.0.1:8488/p/project-123/#fragment",
+            "http://user@127.0.0.1:8488/",
+            "http://127.0.0.1:8488/#fragment",
             "not a url"
         )
         rejected.forEach { url ->
@@ -224,36 +222,36 @@ class ChatWebViewTest: LightPlatform4TestCase() {
     fun selectsStartupModeFromUrl() {
         Assert.assertEquals(
             ChatStartupMode.DAEMON_GUI,
-            selectChatStartupMode("http://127.0.0.1:8488/p/project-123/")
+            selectChatStartupMode("http://127.0.0.1:8001/")
         )
         Assert.assertEquals(ChatStartupMode.BOOTSTRAP, selectChatStartupMode(null))
         Assert.assertEquals(ChatStartupMode.BOOTSTRAP, selectChatStartupMode("http://refactai/index.html"))
-        Assert.assertEquals(ChatStartupMode.BOOTSTRAP, selectChatStartupMode("http://example.com/p/x/"))
+        Assert.assertEquals(ChatStartupMode.BOOTSTRAP, selectChatStartupMode("http://example.com/"))
     }
 
     @Test
     fun avoidsReloadWhenAlreadyAtCanonicalUrl() {
         Assert.assertFalse(
             shouldNavigateToDaemonGui(
-                "http://127.0.0.1:8488/p/project-123/",
-                "http://127.0.0.1:8488/p/project-123/?daemon_token=rotated"
+                "http://127.0.0.1:8001/",
+                "http://127.0.0.1:8001/?token=rotated"
             )
         )
         Assert.assertTrue(
             shouldNavigateToDaemonGui(
                 "http://refactai/index.html",
-                "http://127.0.0.1:8488/p/project-123/"
+                "http://127.0.0.1:8001/"
             )
         )
         Assert.assertTrue(
             shouldNavigateToDaemonGui(
-                "http://127.0.0.1:8488/p/old/",
-                "http://127.0.0.1:8488/p/new/"
+                "http://127.0.0.1:8001/",
+                "http://127.0.0.1:8002/"
             )
         )
         Assert.assertFalse(
             shouldNavigateToDaemonGui(
-                "http://127.0.0.1:8488/p/project-123/",
+                "http://127.0.0.1:8001/",
                 "http://refactai/index.html"
             )
         )

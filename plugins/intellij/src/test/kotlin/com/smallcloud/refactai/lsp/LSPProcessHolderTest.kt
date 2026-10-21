@@ -991,11 +991,7 @@ class LSPProcessHolderTest : BasePlatformTestCase() {
     @Test
     fun testHttp504IsRecoverable() {
         assertTrue(isRecoverableHttpStatus(HttpStatusException(504, "timeout", URI("http://127.0.0.1"))))
-        assertTrue(
-            isRecoverableHttpStatus(
-                DaemonHttpStatusException(504, "timeout", URI("http://127.0.0.1"), "POST")
-            )
-        )
+        assertTrue(isRecoverableHttpStatus(HttpStatusException(500, "internal error", URI("http://127.0.0.1"))))
         assertFalse(isRecoverableHttpStatus(HttpStatusException(499, "client closed", URI("http://127.0.0.1"))))
     }
 

@@ -364,7 +364,7 @@ open class LSPProcessHolder(val project: Project) : Disposable {
                 }
 
                 override fun xDebugLSPPortChanged(newPort: Int?) {
-                    settingsChanged("daemon-port-changed")
+                    settingsChanged("engine-port-changed")
                 }
 
                 override fun insecureSSLChanged(newValue: Boolean) {

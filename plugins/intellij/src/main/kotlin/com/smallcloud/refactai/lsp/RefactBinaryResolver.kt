@@ -175,6 +175,11 @@ internal fun compareRefactVersions(left: String?, right: String?): Int {
     return comparePrerelease(leftParts.prerelease, rightParts.prerelease)
 }
 
+fun versionIsOlder(current: String, mine: String): Boolean {
+    if (current.isBlank() || mine.isBlank()) return false
+    return compareRefactVersions(current, mine) < 0
+}
+
 private data class ParsedVersion(
     val core: List<Int>,
     val prerelease: List<String>,

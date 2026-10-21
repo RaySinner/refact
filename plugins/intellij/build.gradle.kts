@@ -141,8 +141,6 @@ tasks {
         compilerOptions.jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.fromTarget(javaCompilerVersion))
     }
 
-    // Isolate tests from the developer's real daemon home so they never register
-    // /tmp/unitTest_* projects in ~/.cache/refact/daemon/projects.json.
     withType<Test> {
         val isolatedDaemonHome = layout.buildDirectory.dir("test-daemon-home").get().asFile
         systemProperty("refact.daemon.dir", isolatedDaemonHome.absolutePath)

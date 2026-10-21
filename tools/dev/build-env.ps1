@@ -17,8 +17,9 @@ foreach ($p in $paths) {
     }
 }
 
-# sccache requires incremental off to produce reusable cache entries.
-$env:CARGO_INCREMENTAL = "0"
+# sccache cache size; applied when the sccache server (re)starts. CARGO_INCREMENTAL
+# is NOT set here: engine-build.ps1 sets it per invocation - 0 while sccache is
+# active (required for cache hits), 1 when the wrapper is bypassed.
 $env:SCCACHE_CACHE_SIZE = "50G"
 $env:NODE_OPTIONS = "--max-old-space-size=8192"
 

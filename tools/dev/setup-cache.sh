@@ -11,6 +11,11 @@
 # Usage:
 #   tools/dev/setup-cache.sh           # configure + verify
 #   tools/dev/setup-cache.sh --status  # just show current cache state
+#
+# Windows: use tools/dev/engine-build.ps1 instead - it enables sccache itself,
+# sets SCCACHE_BASEDIRS so different worktrees share hits, falls back to
+# rustc-wrapper="" when the command line would exceed the 32 767-char limit,
+# and reports state with: engine-build.ps1 -Mode cache-status
 set -euo pipefail
 
 CARGO_CONFIG="${CARGO_HOME:-$HOME/.cargo}/config.toml"
@@ -21,7 +26,7 @@ show_status() {
   echo "=== Build cache status ==="
   if command -v sccache >/dev/null 2>&1; then
     echo "sccache: $(sccache --version)"
-    sccache --show-stats 2>/dev/null | grep -iE "cache location|max cache size|cache hits rate|compile requests$" || true
+    sccache --show-stats 2>/dev/null | grep -iE "cache location|max cache size|cache hits rate|compile requests$|base directories" || true
   else
     echo "sccache: NOT installed"
   fi

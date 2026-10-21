@@ -34,44 +34,53 @@ MSVC), honours `REFACT_SKIP_GUI_BUILD`, and exits with cargo's exit code:
 | `check` (default) | `cargo check -p refact-lsp --lib` | **verifying an engine (`src/`) change compiles** |
 | `check-all` | `cargo check --workspace --all-targets` | workspace crate change, or code used by other crates' tests |
 | `check-tests` | `cargo check --profile test --all-targets` | test-only edit, type-checked without linking |
+| `cache-status` | prints sccache stats + the detected mode | diagnosing a slow build |
 | `fast` | `cargo build --profile fast-release --bin refact-lsp` | a runnable binary, no LTO |
 | `release` | `cargo build --release --bin refact-lsp` | packaging / shipping only |
 | `test` | `cargo test --lib` | unit tests |
 | `clean` | removes `target/fast-release` | reclaiming the fast-build cache |
+| `cache-status` | `sccache --show-stats` + resolved `SCCACHE_BASEDIRS` | checking cache hit rate |
 
 Rule of thumb: if you just want to know "does it compile", you are running `check`. If you
 find yourself typing `cargo build --release` to find that out, stop — use check mode. The
 only reason to build `release` is to produce an artifact you are shipping or packaging.
 
-### Build velocity
-
-Never build a runnable artifact to answer a compile question. The cheapest
-sufficient check per change type is tabulated in
-[`docs/dev/build-velocity.md`](../../docs/dev/build-velocity.md): engine
-source change → `engine-build.ps1` (check); workspace crate or cross-crate test
-impact → `check-all`; test-only edit → `check-tests`; before launching the
-extension locally → `build-all.ps1` (fast profile default); shipping →
-`build-all.ps1 -Profile release`, once.
-
-`tools/dev/build-env.ps1` is the lower-level environment helper (PATH, `CARGO_INCREMENTAL=0`
-for sccache, `NODE_OPTIONS`); `tools/dev/engine-build.ps1` dot-sources it and adds the mode
-handling. The other tracked dev scripts (`check.sh`, `perf.sh`, `compile_bench.sh`) sit
-alongside them in `tools/dev/`.
+`tools/dev/build-env.ps1` is the lower-level environment helper (PATH, `SCCACHE_CACHE_SIZE`,
+`NODE_OPTIONS`); `tools/dev/engine-build.ps1` dot-sources it and adds the mode handling plus
+the per-invocation `CARGO_INCREMENTAL` / sccache policy. The other tracked dev scripts
+(`check.sh`, `perf.sh`, `compile_bench.sh`) sit alongside them in `tools/dev/`.
 
 Measured on this Windows box (2026-10-02, worktree with no `target/`):
-`check-all` (the old `check --workspace --all-targets`) = **1396 s (23 min) cold**;
-`cargo check -p refact-lsp --lib` on a warm
+`check` = **1396 s (23 min) cold**; `cargo check -p refact-lsp --lib` on a warm
 `target/` = **1004 s (17 min)**. Incremental no-op re-runs are seconds. A release build
 costs far more, which is why it is not the verification path.
 
-### sccache is bypassed on purpose
+### sccache: used first, bypassed only on command-line overflow
 The user-wide `~/.cargo/config.toml` sets `rustc-wrapper = "sccache"`. sccache re-spawns
-rustc with the full argument list, and `refact-lsp` alone carries ~150 `--extern` paths
-under a long worktree directory, which overruns the Windows 32 767-character command-line
-limit. sccache then fails with `os error 206` and **rustc never runs**, which also hides
-real type errors behind an opaque spawn failure. `engine-build.ps1` passes
-`--config <file>` with `rustc-wrapper = ""` to bypass it. Do not "fix" a build that reports
-os error 206 by reinstalling sccache - it is the wrapper, not the cache.
+rustc with the full argument list, and `refact-lsp` carries **143 `--extern` paths + 34
+`-L native` paths**, so the argv grows by ~176 characters per character of repo-root length:
+
+| repo root | length | `refact-lsp` rustc argv |
+|---|---|---|
+| `C:\wt\b1` | 17 | 19 022 chars |
+| `~\.cache\refact\worktrees\<project>\<uuid>` | 94 | ~32 574 chars |
+
+The Windows command line dies at 32 767, so a 94-character worktree root leaves ~190
+characters of headroom and tips over once the wrapper adds its own arguments; rustc then
+never runs and the failure surfaces as `os error 206`, hiding real type errors.
+
+`engine-build.ps1` therefore tries sccache **first** and retries **once** with
+`rustc-wrapper = ""` when it sees the overflow signature (`os error 206`, `failed to spawn`,
+`filename or extension is too long`). `CARGO_INCREMENTAL` follows the chosen mode: `0` while
+sccache is active (sccache cannot cache incremental artifacts), `1` under the bypass.
+`SCCACHE_BASEDIRS` lists the worktree root, the main checkout, and anything in
+`REFACT_SCCACHE_BASEDIRS`, so the same crate built at different roots hits the same cache
+entry; because sccache reads it at **server start**, the script restarts the server when the
+current root is not listed (do not run two engine builds in parallel on one machine).
+
+Keep worktree roots short (<= ~90 characters) to stay on the cached path. Do not "fix" a
+build that reports os error 206 by reinstalling sccache - it is the wrapper's command line,
+not the cache.
 
 Release profile: `opt-level = "z"`, `lto = true`, `strip = true`. It does not configure
 `codegen-units`; the separate `ci-release` profile inherits release settings, then overrides

@@ -518,7 +518,7 @@ open class LSPProcessHolder(val project: Project) : Disposable {
         clearBinaryResolutionFailure()
         registerSharedBinaryPathForTerminal(bin)
         logger.debug("LSP engine spawn $bin ${config.toSafeLogString()}")
-        val projectId = root.hashCode().toUInt().toString()
+        val projectId = projectIdForRoot(root)
         val handle = engineClient.spawn(
             binPath = bin,
             root = root,
@@ -554,6 +554,12 @@ open class LSPProcessHolder(val project: Project) : Disposable {
         val handle = EngineHandle(httpPort = httpPort, lspPort = 0, owned = false, pid = null)
         val buildInfo = engineClient.buildInfo(handle)
             ?: throw IllegalStateException("no refact engine listening on http port $httpPort (xDebugLSPPort)")
+        if (!engineBuildInfoMatches(buildInfo, requiredDaemonVersion())) {
+            throw IllegalStateException(
+                "engine on http port $httpPort (xDebugLSPPort) is not a compatible refact engine " +
+                    "(build_info: ${buildInfo.take(200)}; required version ${requiredDaemonVersion()})",
+            )
+        }
         logger.warn("Attached to external refact engine on http port $httpPort: $buildInfo")
         engineHandle = handle
     }

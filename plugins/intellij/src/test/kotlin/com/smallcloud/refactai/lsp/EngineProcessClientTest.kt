@@ -11,6 +11,9 @@ import org.junit.Test
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import okhttp3.Protocol
+import java.io.File
+import java.security.MessageDigest
+import java.nio.file.Files
 import java.util.concurrent.TimeUnit
 
 class EngineProcessClientTest {
@@ -65,6 +68,22 @@ class EngineProcessClientTest {
         assertTrue(args.contains("--no-mdns"))
         assertFalse(args.contains("setsid"))
         assertFalse(args.contains("nohup"))
+    }
+
+    @Test
+    fun projectIdIsSha256HexOfCanonicalRoot() {
+        val tmp = Files.createTempDirectory("refact-project-id").toFile()
+        val id = projectIdForRoot(tmp.absolutePath)
+
+        assertTrue("expected 64 lowercase hex chars, got: $id", id.matches(Regex("^[0-9a-f]{64}$")))
+        assertEquals(id, projectIdForRoot(tmp.canonicalPath))
+        assertEquals(id, projectIdForRoot(File(tmp, "child/..").canonicalPath))
+        assertNotEquals(id, projectIdForRoot(tmp.parentFile.absolutePath))
+
+        val expected = MessageDigest.getInstance("SHA-256")
+            .digest(tmp.canonicalPath.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+        assertEquals(expected, id)
     }
 
     @Test
@@ -181,6 +200,16 @@ class EngineProcessClientTest {
 
         val noPort = EngineBusyReport(true, ProcessHandle.current().pid(), null, null, "/tmp")
         assertEquals(EngineSpawnAttemptResult.RETRY, engineAdoptionDecision(noPort, null, "8.1.0") { null })
+    }
+
+    @Test
+    fun adoptionDecisionFailsClosedOnUnknownHolderLspPort() {
+        val pid = ProcessHandle.current().pid()
+        val noLspPort = EngineBusyReport(true, pid, 8001, null, "/tmp")
+        assertEquals(EngineSpawnAttemptResult.FAIL, engineAdoptionDecision(noLspPort, null, "8.1.0") { """{"version":"8.1.0"}""" })
+
+        val zeroLspPort = EngineBusyReport(true, pid, 8001, 0, "/tmp")
+        assertEquals(EngineSpawnAttemptResult.FAIL, engineAdoptionDecision(zeroLspPort, null, "8.1.0") { """{"version":"8.1.0"}""" })
     }
 
     @Test

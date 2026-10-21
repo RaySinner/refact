@@ -379,7 +379,7 @@ class LSPProcessHolderTest : BasePlatformTestCase() {
                     workspaceBusy = true,
                     holderPid = ProcessHandle.current().pid(),
                     holderHttpPort = server.port,
-                    holderLspPort = 0,
+                    holderLspPort = 18082,
                     root = root,
                 )
 

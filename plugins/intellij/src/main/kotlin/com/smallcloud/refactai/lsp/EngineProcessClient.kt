@@ -9,6 +9,7 @@ import java.net.HttpURLConnection
 import java.net.ServerSocket
 import java.net.URI
 import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
@@ -21,6 +22,9 @@ const val ENGINE_SHUTDOWN_REQUEST_TIMEOUT_SECONDS = 5L
 const val ENGINE_SHUTDOWN_DESTROY_TIMEOUT_SECONDS = 10L
 private const val ENGINE_HTTP_GET_TIMEOUT_MS = 5_000
 private const val ENGINE_PROCESS_EXIT_LOG_WAIT_MS = 500L
+private const val ENGINE_OUTPUT_DRAIN_WAIT_MS = 500L
+const val HOLDER_LSP_PORT_UNKNOWN_MESSAGE =
+    "holder LSP port is unknown; restart the window that holds the workspace"
 
 /**
  * The engine worker process is spawned directly as an attached child of the IDE
@@ -110,6 +114,12 @@ fun parsePortsFromArgs(argv: List<String>): Pair<Int, Int>? {
     return http to lsp
 }
 
+fun projectIdForRoot(root: String): String {
+    val canonical = runCatching { File(root).canonicalPath }.getOrElse { root }
+    val digest = MessageDigest.getInstance("SHA-256").digest(canonical.toByteArray(StandardCharsets.UTF_8))
+    return digest.joinToString("") { "%02x".format(it) }
+}
+
 fun engineBusyReportFromJson(json: String): EngineBusyReport? {
     if (json.isBlank()) return null
     val obj = runCatching { Gson().fromJson(json, Map::class.java) }.getOrNull() ?: return null
@@ -153,9 +163,11 @@ internal fun engineAdoptionDecision(
 ): EngineSpawnAttemptResult {
     val pid = report.holderPid ?: return EngineSpawnAttemptResult.RETRY
     val httpPort = report.holderHttpPort ?: return EngineSpawnAttemptResult.RETRY
+    val lspPort = report.holderLspPort
+    if (lspPort == null || lspPort <= 0) return EngineSpawnAttemptResult.FAIL
     if (!engineProcessAlive(pid)) return EngineSpawnAttemptResult.RETRY
     if (pid == lastAdoptedPid) return EngineSpawnAttemptResult.FAIL
-    val handle = EngineHandle(httpPort, report.holderLspPort ?: 0, owned = false, pid = pid)
+    val handle = EngineHandle(httpPort, lspPort, owned = false, pid = pid)
     return if (engineBuildInfoMatches(buildInfoFor(handle), requiredVersion)) {
         EngineSpawnAttemptResult.ADOPT
     } else {
@@ -308,10 +320,11 @@ open class EngineProcessClient(
                         EngineSpawnAttemptResult.ADOPT -> {
                             val pid = busy.holderPid
                             val http = busy.holderHttpPort
-                            if (pid != null && http != null) {
+                            val lsp = busy.holderLspPort
+                            if (pid != null && http != null && lsp != null && lsp > 0) {
                                 return EngineHandle(
                                     httpPort = http,
-                                    lspPort = busy.holderLspPort ?: 0,
+                                    lspPort = lsp,
                                     owned = false,
                                     pid = pid,
                                 )
@@ -326,11 +339,16 @@ open class EngineProcessClient(
                             return@repeat
                         }
                         EngineSpawnAttemptResult.FAIL -> {
+                            val reason = if ((busy.holderLspPort ?: 0) <= 0) {
+                                HOLDER_LSP_PORT_UNKNOWN_MESSAGE
+                            } else {
+                                "build_info missing/incompatible or already adopted once"
+                            }
                             throw EngineSpawnFailedException(
                                 e.exitCode,
                                 e.outputTail,
-                                "incompatible existing holder pid=${busy.holderPid} " +
-                                    "http_port=${busy.holderHttpPort} for $root",
+                                "existing holder pid=${busy.holderPid} " +
+                                    "http_port=${busy.holderHttpPort} for $root cannot be adopted: $reason",
                             )
                         }
                     }
@@ -380,9 +398,10 @@ open class EngineProcessClient(
         runCatching { process.outputStream.flush() }
 
         val outputTail = OutputTailCollector()
-        pipeProcessOutput(process, outputTail)
+        val outputPumps = pipeProcessOutput(process, outputTail)
 
         if (!waitReady(process, httpPort, pingMessage, deadline)) {
+            drainOutputPumps(outputPumps)
             val exitCode = pollExitCode(process)
             val busyLine = outputTail.busyLine()
             val busyReport = busyLine?.let { engineBusyReportFromJson(it) }
@@ -482,27 +501,33 @@ open class EngineProcessClient(
         Thread.sleep(ENGINE_READY_POLL_INTERVAL_MS)
     }
 
-    private fun pipeProcessOutput(process: Process, tail: OutputTailCollector) {
-        thread(start = true, isDaemon = true, name = "refact-engine-stdout") {
-            runCatching {
-                process.inputStream.bufferedReader(StandardCharsets.UTF_8).useLines { lines ->
-                    lines.forEach { line ->
-                        tail.add(line)
-                        logger.info("refact engine stdout: $line")
+    private fun pipeProcessOutput(process: Process, tail: OutputTailCollector): List<Thread> {
+        return listOf(
+            thread(start = true, isDaemon = true, name = "refact-engine-stdout") {
+                runCatching {
+                    process.inputStream.bufferedReader(StandardCharsets.UTF_8).useLines { lines ->
+                        lines.forEach { line ->
+                            tail.add(line)
+                            logger.info("refact engine stdout: $line")
+                        }
                     }
                 }
-            }
-        }
-        thread(start = true, isDaemon = true, name = "refact-engine-stderr") {
-            runCatching {
-                process.errorStream.bufferedReader(StandardCharsets.UTF_8).useLines { lines ->
-                    lines.forEach { line ->
-                        tail.add(line)
-                        logger.info("refact engine stderr: $line")
+            },
+            thread(start = true, isDaemon = true, name = "refact-engine-stderr") {
+                runCatching {
+                    process.errorStream.bufferedReader(StandardCharsets.UTF_8).useLines { lines ->
+                        lines.forEach { line ->
+                            tail.add(line)
+                            logger.info("refact engine stderr: $line")
+                        }
                     }
                 }
-            }
-        }
+            },
+        )
+    }
+
+    private fun drainOutputPumps(pumps: List<Thread>) {
+        pumps.forEach { pump -> runCatching { pump.join(ENGINE_OUTPUT_DRAIN_WAIT_MS) } }
     }
 
     private class OutputTailCollector {

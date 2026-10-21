@@ -227,6 +227,7 @@ const ENGINE_PORT_BUSY_ATTEMPTS = 3;
 const ENGINE_BUSY_RETRY_DELAYS_MS = [1000, 2000];
 const ENGINE_GRACEFUL_TIMEOUT_MS = 5000;
 const ENGINE_EXIT_WAIT_MS = 10000;
+const ENGINE_EXIT_REFUSED_WAIT_MS = 2000;
 const ENGINE_KILL_WAIT_MS = 5000;
 const ENGINE_TAIL_BYTES = 12000;
 const ENGINE_BUSY_EXIT_CODE = 75;
@@ -300,13 +301,16 @@ export async function killEngine(handle: EngineHandle): Promise<void> {
         return;
     }
     const pid = handle.pid ?? child?.pid;
+    let shutdownAccepted = false;
     try {
         await engineRequest(handle.httpPort, "/v1/graceful-shutdown", "POST", ENGINE_GRACEFUL_TIMEOUT_MS);
+        shutdownAccepted = true;
     } catch {
         // The engine did not answer: that is exactly when the forced kill is needed.
     }
+    const exitWaitMs = shutdownAccepted ? ENGINE_EXIT_WAIT_MS : ENGINE_EXIT_REFUSED_WAIT_MS;
     if (child) {
-        if (await waitForExit(child, ENGINE_EXIT_WAIT_MS)) {
+        if (await waitForExit(child, exitWaitMs)) {
             return;
         }
         child.kill();

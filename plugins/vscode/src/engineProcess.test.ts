@@ -185,7 +185,10 @@ async function runGracefulFailureKillsChildTest() {
         const engine = writeFakeEngine(dir, { graceful: "fail", pidFile });
         const handle = await launchEngine(launchOptions(engine, dir));
         assert.ok(isEngineRunning(handle));
+        const killStartedAt = Date.now();
         await killEngine(handle);
+        const killDuration = Date.now() - killStartedAt;
+        assert.ok(killDuration < 7000, `a refused graceful shutdown must use the short exit wait, kill took ${killDuration}ms`);
         const pid = await waitForFile(pidFile, 5000);
         assert.ok(await waitForProcessExit(pid, 5000), "engine that refuses graceful shutdown must be force killed");
         assert.ok(!isEngineRunning(handle));

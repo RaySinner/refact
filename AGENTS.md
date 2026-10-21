@@ -10,7 +10,7 @@ AI coding assistant: Rust engine (LSP/HTTP server) + React chat UI + IDE plugins
 | Engine CodeGraph crates | `refact-agent/engine/crates/refact-codegraph*`, `refact-codehealth`, `refact-codewiki`, `refact-git-intel` | Rust 2021 | ✅ `refact-agent/engine/AGENTS.md` |
 | Agent GUI | `refact-agent/gui/` | TypeScript/React 18 | ✅ `refact-agent/gui/AGENTS.md` |
 | VSCode Extension | `plugins/vscode/` | TypeScript | — |
-| JetBrains Plugin | `plugins/intellij/` | Kotlin, Gradle | — |
+| JetBrains Plugin | `plugins/intellij/` | Kotlin, Gradle | verification status + manual smoke checklist in `plugins/intellij/VERIFICATION.md` |
 | Documentation | `docs/` | Astro (static site) | — |
 | IDE metadata | `.idea/` | IntelliJ project config | keep local/editor files out of commits; `.idea/workspace.xml` is ignored by `.gitignore` |
 | Agent notes | `.agents/` | onboarding notes | checked for repo-specific guidance when present |

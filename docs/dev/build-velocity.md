@@ -54,8 +54,17 @@ See the header of `tools/dev/engine-build.ps1` for the full table:
 - `fast` — `cargo build --profile fast-release --bin refact-lsp`; a runnable binary without LTO.
 - `release` — shipping artifact only. Never a verification step.
 - `test` — `cargo test --lib`.
-- `clean` — drop `target/fast-release`.- `clean` — drop `target/fast-release`.
+- `clean` — drop `target/fast-release`.
 - `cache-status` — sccache stats, repo-root length, and whether the root is on the sccache-cached path.
+- `cache-reset` — restart the sccache server with the current `SCCACHE_BASEDIRS`.
+
+The sccache server is NOT restarted per build. `SCCACHE_BASEDIRS` is a stable
+superset (main checkout, `~/.cache/refact/worktrees`, `C:\wt`, current repo
+root, plus `REFACT_SCCACHE_BASEDIRS`), so a server started by any build already
+covers every root. A restart happens only via `-Mode cache-reset`, or when
+`REFACT_SCCACHE_BASEDIRS` changes since the server started. If a run degrades
+to local compilation despite sccache, the build ends with one prominent
+`WARNING: sccache degraded to local compilation this run` line.
 
 ## sccache and worktree root length (Windows)
 

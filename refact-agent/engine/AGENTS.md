@@ -73,10 +73,15 @@ never runs and the failure surfaces as `os error 206`, hiding real type errors.
 `rustc-wrapper = ""` when it sees the overflow signature (`os error 206`, `failed to spawn`,
 `filename or extension is too long`). `CARGO_INCREMENTAL` follows the chosen mode: `0` while
 sccache is active (sccache cannot cache incremental artifacts), `1` under the bypass.
-`SCCACHE_BASEDIRS` lists the worktree root, the main checkout, and anything in
-`REFACT_SCCACHE_BASEDIRS`, so the same crate built at different roots hits the same cache
-entry; because sccache reads it at **server start**, the script restarts the server when the
-current root is not listed (do not run two engine builds in parallel on one machine).
+`SCCACHE_BASEDIRS` is a stable superset (the main checkout, the default worktree parent,
+`C:\wt` when present, the current repo root, plus `REFACT_SCCACHE_BASEDIRS`), so the same
+crate built at different roots hits the same cache entry and the list never depends on the
+current directory. sccache reads it at **server start**; the script does **not** restart the
+server per build - it starts one only if it is down or the list changed (`-Mode cache-reset`
+forces a restart), and a run where sccache degraded to local compilation ends with one
+prominent `WARNING: sccache degraded ...` line. Any *other* sccache client on the machine
+started with a different `SCCACHE_BASEDIRS` still kills the shared server, so avoid mixing
+old scripts (pre-restart heuristics) with new ones while builds run.
 
 Keep worktree roots short (<= ~90 characters) to stay on the cached path. Do not "fix" a
 build that reports os error 206 by reinstalling sccache - it is the wrapper's command line,

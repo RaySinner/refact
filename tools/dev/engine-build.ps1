@@ -8,6 +8,7 @@
 #   .\tools\dev\engine-build.ps1 -Mode test           # cargo test --lib (links the test binary)
 #   .\tools\dev\engine-build.ps1 -Mode clean          # drop target/fast-release
 #   .\tools\dev\engine-build.ps1 -Mode cache-status   # sccache stats + detected mode
+#   .\tools\dev\engine-build.ps1 -Mode cache-reset    # restart sccache with current BASEDIRS
 #
 # Which check to run:
 #   check       - 90% of cases: you edited files under refact-agent/engine/src
@@ -32,14 +33,17 @@
 #
 # SCCACHE_BASEDIRS makes sccache hash paths relative to the listed roots, so
 # the same crate built in different worktrees (or in the main checkout) hits
-# the same cache entry. Defaults: this worktree's repo root + the main repo
-# root; extend with more paths in REFACT_SCCACHE_BASEDIRS (semicolon-separated).
+# the same cache entry. The list is a STABLE SUPERSET (main checkout root, the
+# default worktree parent, C:\wt, this repo root, plus REFACT_SCCACHE_BASEDIRS
+# semicolon-separated), so it never depends on the current directory and the
+# server is not restarted per build; restart only via -Mode cache-reset or
+# when REFACT_SCCACHE_BASEDIRS changes.
 #
 # ASCII only on purpose: Windows PowerShell 5.1 reads .ps1 files as ANSI when
 # there is no BOM, so non-ASCII characters here would be mangled.
 [CmdletBinding()]
 param(
-    [ValidateSet('check', 'check-all', 'check-tests', 'fast', 'release', 'test', 'clean', 'cache-status')]
+    [ValidateSet('check', 'check-all', 'check-tests', 'fast', 'release', 'test', 'clean', 'cache-status', 'cache-reset')]
     [string]$Mode = 'check'
 )
 
@@ -86,10 +90,17 @@ function Get-MainRepoRoot {
 }
 
 function Set-SccacheBaseDirs {
+    # Stable superset, independent of the current directory, so a server
+    # started by any build already covers every root used on this machine.
     $dirs = New-Object System.Collections.Generic.List[string]
     $main = Get-MainRepoRoot
     if ($main -and (Test-Path $main)) { $dirs.Add($main) }
     if (-not $dirs.Contains($repoRoot)) { $dirs.Add($repoRoot) }
+    $defaultWorktrees = Join-Path $env:USERPROFILE '.cache\refact\worktrees'
+    if ((Test-Path $defaultWorktrees) -and -not $dirs.Contains($defaultWorktrees)) {
+        $dirs.Add($defaultWorktrees)
+    }
+    if ((Test-Path 'C:\wt') -and -not $dirs.Contains('C:\wt')) { $dirs.Add('C:\wt') }
     if ($env:REFACT_SCCACHE_BASEDIRS) {
         foreach ($extra in $env:REFACT_SCCACHE_BASEDIRS.Split(';')) {
             $extra = $extra.Trim()
@@ -101,18 +112,26 @@ function Set-SccacheBaseDirs {
     $env:SCCACHE_BASEDIRS = ($dirs -join ';')
 }
 
-function Ensure-SccacheBaseDirs {
+function Ensure-SccacheServer {
     # sccache reads SCCACHE_BASEDIRS when the SERVER starts, not per request.
-    # If the server is already running with a different base dir list, restart
-    # it so the current worktree actually shares cache entries. Do not run
-    # engine builds in parallel on this machine while this restarts the server.
-    $stats = (& sccache --show-stats 2>$null) -join "`n"
-    $repoKey = $repoRoot.Replace('\', '/').TrimEnd('/').ToLowerInvariant()
-    $covered = $stats -match [regex]::Escape($repoKey)
-    if (-not $covered) {
-        Write-Host 'engine-build: restarting sccache server to pick up SCCACHE_BASEDIRS'
-        & sccache --stop-server 2>$null
-        & sccache --start-server 2>$null
+    # The list is now a stable superset, so the normal case is "already right".
+    # Restart only when the server is down or the wanted list changed since it
+    # started (tracked in a marker file), never per build, never mid-build.
+    $marker = Join-Path $env:TEMP 'refact-engine-build-sccache-basedirs.txt'
+    $wanted = $env:SCCACHE_BASEDIRS
+    $started = $false
+    if (Test-Path $marker) {
+        $saved = [IO.File]::ReadAllText($marker)
+        if ($saved -eq $wanted) { $started = $true }
+    }
+    if (-not $started) {
+        $stats = (& sccache --show-stats 2>$null) -join "`n"
+        if ($stats -match 'Compile requests') {
+            Write-Host 'engine-build: sccache server has stale SCCACHE_BASEDIRS; restarting it'
+            & sccache --stop-server 2>&1 | Out-Null
+        }
+        & sccache --start-server 2>&1 | Out-Null
+        [IO.File]::WriteAllText($marker, $wanted)
     }
 }
 
@@ -154,11 +173,17 @@ function Invoke-Cargo {
             }
             else {
                 Set-SccacheBaseDirs
-                Ensure-SccacheBaseDirs
+                Ensure-SccacheServer
                 $env:CARGO_INCREMENTAL = '0'
                 Write-Host "engine-build: using sccache (CARGO_INCREMENTAL=0, SCCACHE_BASEDIRS=$env:SCCACHE_BASEDIRS)"
                 $out = @(& cargo @('--config', $sccacheEnable) @CargoArgs 2>&1)
                 $out | ForEach-Object { Write-Host $_ }
+                $outText = $out | Out-String
+                if ($outText -match 'sccache: warning' -or
+                    $outText -match 'compiling locally instead' -or
+                    $outText -match 'shut down unexpectedly') {
+                    $script:sccacheDegraded = $true
+                }
                 $exitCode = $LASTEXITCODE
                 if ($exitCode -eq 0) { return 0 }
                 if (-not (Test-SpawnFailure ($out | Out-String))) { return $exitCode }
@@ -187,6 +212,7 @@ function Write-Banner {
 
 $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 $exitCode = 0
+$script:sccacheDegraded = $false
 
 switch ($Mode) {
     'check' {
@@ -253,9 +279,27 @@ switch ($Mode) {
             Write-Host 'install with: cargo install sccache'
         }
     }
+    'cache-reset' {
+        Write-Banner 'mode cache-reset (restart sccache server with the current SCCACHE_BASEDIRS)'
+        Set-SccacheBaseDirs
+        & sccache --stop-server 2>&1 | Out-Null
+        & sccache --start-server 2>&1 | Out-Null
+        $marker = Join-Path $env:TEMP 'refact-engine-build-sccache-basedirs.txt'
+        [IO.File]::WriteAllText($marker, $env:SCCACHE_BASEDIRS)
+        Write-Host "sccache server restarted with SCCACHE_BASEDIRS=$env:SCCACHE_BASEDIRS"
+    }
 }
 
 $stopwatch.Stop()
+if ($script:sccacheDegraded) {
+    Write-Host ''
+    Write-Host 'WARNING: sccache degraded to local compilation this run - the build was not cached (see -Mode cache-status)' -ForegroundColor Yellow
+}
+if ($exitCode -isnot [int]) {
+    Write-Host "engine-build: exit code is not an int: $($exitCode -join ', ') - coercing to the last value"
+    $last = $exitCode | Select-Object -Last 1
+    if ($last -is [int]) { $exitCode = $last } else { $exitCode = 1 }
+}
 Write-Host ''
 Write-Host ("=== engine-build: {0} finished in {1:N1}s, exit {2} ===" -f $Mode, $stopwatch.Elapsed.TotalSeconds, $exitCode) -ForegroundColor Cyan
 exit $exitCode

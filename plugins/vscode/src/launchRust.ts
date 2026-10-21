@@ -303,8 +303,8 @@ export class RustBinaryBlob {
         const resolved = await refactBinary.resolveRefactBinaryDetailed({
             explicitPath: configuredBinary,
             bundledDir: this.asset_path,
-            minVersion: pluginVersion,
-            pinnedVersion: pluginVersion,
+            minVersion: pluginVersion ?? "0.0.0",
+            pinnedVersion: pluginVersion ?? "0.0.0",
             cacheDir: this.binary_cache_path,
             onDownloadStart: () => {
                 if (this.is_current_generation(generation)) {
@@ -403,6 +403,7 @@ export class RustBinaryBlob {
 
     public terminate_now(): void {
         const handle = this.owned_engine;
+        this.owned_engine = undefined;
         void this.terminate();
         if (handle) {
             engineProcess.disposeNow(handle);
@@ -769,8 +770,9 @@ export class RustBinaryBlob {
             });
     }
 
-    private plugin_version(): string {
-        return vscode.extensions.getExtension("smallcloud.codify")?.packageJSON?.version ?? "0.0.0";
+    private plugin_version(): string | undefined {
+        const version = vscode.extensions.getExtension("smallcloud.codify")?.packageJSON?.version;
+        return typeof version === "string" && version.trim().length > 0 ? version.trim() : undefined;
     }
 
     private warn_engine_version_fallback(pinned: string, chosen: string): void {

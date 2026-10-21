@@ -190,7 +190,7 @@ export type EngineSpawnOptions = {
     logDir: string;
     settings: { ast: boolean; astMaxFiles: number; vecdb: boolean; vecdbMaxFiles: number };
     projectId: string;
-    pluginVersion: string;
+    pluginVersion: string | undefined;
     spawnTimeoutMs?: number;
     debug?: { httpPort: number; lspPort: number };
     argsPrefix?: string[];
@@ -276,6 +276,19 @@ export async function launchEngine(options: EngineSpawnOptions): Promise<EngineH
     throw new Error(lastError);
 }
 
+export function noteEngineReady(
+    registry: Map<string, ChildProcess>,
+    settled: () => boolean,
+    handle: EngineHandle,
+    child: ChildProcess,
+): boolean {
+    if (settled()) {
+        return false;
+    }
+    registry.set(engineKey(handle), child);
+    return true;
+}
+
 export async function killEngine(handle: EngineHandle): Promise<void> {
     if (!handle.owned) {
         return;
@@ -300,14 +313,27 @@ export async function killEngine(handle: EngineHandle): Promise<void> {
         if (await waitForExit(child, ENGINE_KILL_WAIT_MS)) {
             return;
         }
-    }
-    if (pid && process.platform === "win32") {
-        await windowsTaskKill(pid);
-        if (child && (await waitForExit(child, ENGINE_KILL_WAIT_MS))) {
-            return;
+        if (pid && process.platform === "win32") {
+            await windowsTaskKill(pid);
+            if (await waitForExit(child, ENGINE_KILL_WAIT_MS)) {
+                return;
+            }
         }
+        console.log(`Refact engine (pid ${pid ?? "unknown"}) survived the kill ladder`);
+        return;
     }
-    console.log(`Refact engine (pid ${pid ?? "unknown"}) survived the kill ladder`);
+    if (!pid) {
+        return;
+    }
+    if (process.platform === "win32") {
+        await windowsTaskKill(pid);
+        return;
+    }
+    try {
+        process.kill(pid, "SIGKILL");
+    } catch {
+        // The engine is already gone; nothing left to clean up.
+    }
 }
 
 export function disposeNow(handle: EngineHandle): void {
@@ -467,8 +493,9 @@ function spawnAndWaitReady(
             engineRequest(httpPort, "/v1/ping", "GET", ENGINE_POLL_MS)
                 .then(body => {
                     if (body.trim() === nonce) {
-                        engineProcesses.set(engineKey({ httpPort, lspPort, owned: true }), spawned);
-                        finish({ outcome: "ready", handle: { httpPort, lspPort, owned: true, pid: spawned.pid ?? undefined } });
+                        if (noteEngineReady(engineProcesses, () => settled, { httpPort, lspPort, owned: true }, spawned)) {
+                            finish({ outcome: "ready", handle: { httpPort, lspPort, owned: true, pid: spawned.pid ?? undefined } });
+                        }
                     }
                 })
                 .catch(() => undefined);
@@ -510,6 +537,9 @@ async function resolveBusy(options: EngineSpawnOptions, report: BusyReport): Pro
     }
     if (!httpPort) {
         return { outcome: "error", message: busyHolderError(pid, undefined, lspPort, "http port unknown") };
+    }
+    if (!options.pluginVersion) {
+        return { outcome: "error", message: busyHolderError(pid, httpPort, lspPort, "extension version is unknown; cannot verify engine compatibility, not adopting") };
     }
     const version = await holderVersion(httpPort);
     if (!version) {

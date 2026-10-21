@@ -1,5 +1,5 @@
 import * as assert from "assert";
-import { spawn } from "child_process";
+import { spawn, type ChildProcess } from "child_process";
 import * as fs from "fs";
 import * as http from "http";
 import * as net from "net";
@@ -13,6 +13,7 @@ import {
     isEngineRunning,
     killEngine,
     launchEngine,
+    noteEngineReady,
     type EngineSpawnOptions,
 } from "./engineProcess";
 
@@ -320,6 +321,39 @@ async function runPortRetryTest(dir: string) {
     await assert.rejects(() => launchEngine(launchOptions(engine, dir)), /ports stayed busy/);
 }
 
+function runLatePingDoesNotRegisterTest() {
+    const registry = new Map<string, ChildProcess>();
+    const child = { pid: 4242 } as unknown as ChildProcess;
+    const handle = { httpPort: 11111, lspPort: 11112, owned: true };
+    let settled = false;
+    assert.strictEqual(noteEngineReady(registry, () => settled, handle, child), true);
+    assert.strictEqual(registry.size, 1);
+    registry.clear();
+    settled = true;
+    assert.strictEqual(noteEngineReady(registry, () => settled, handle, child), false);
+    assert.strictEqual(registry.size, 0, "a late ping after a discarded attempt must not register a handle");
+}
+
+async function runUnknownPluginVersionNotAdoptedTest(dir: string) {
+    const holder = await startHolder(PLUGIN_VERSION);
+    try {
+        const engine = writeBusyEngine(dir, {
+            ["workspace_busy"]: true,
+            ["holder_pid"]: process.pid,
+            ["holder_http_port"]: holder.port,
+            ["holder_lsp_port"]: 65536,
+        });
+        const options = launchOptions(engine, dir);
+        options.pluginVersion = undefined;
+        await assert.rejects(
+            () => launchEngine(options),
+            /extension version is unknown; cannot verify engine compatibility, not adopting/,
+        );
+    } finally {
+        await holder.close();
+    }
+}
+
 async function runMalformedBusyTest(dir: string) {
     const engine = writeFakeEngine(dir, { busy: true, busyReport: "{not-json" });
     await assert.rejects(() => launchEngine(launchOptions(engine, dir)), /failed|exited|busy|no output/);
@@ -339,12 +373,14 @@ async function runAll() {
         await runDyingHolderRetriesTest(dir);
         await runPortRetryTest(dir);
         await runMalformedBusyTest(dir);
+        await runUnknownPluginVersionNotAdoptedTest(dir);
     } finally {
         try {
             fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
         } catch {
         }
     }
+    runLatePingDoesNotRegisterTest();
     disposeNow({ httpPort: 0, lspPort: 0, owned: false });
 }
 

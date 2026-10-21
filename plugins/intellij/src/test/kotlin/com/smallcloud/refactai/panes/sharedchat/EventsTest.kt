@@ -49,12 +49,12 @@ class EventsTest {
             Events.Config.ThemeProps("light"),
             8001,
             Events.Config.KeyBindings("foo"),
-            "http://127.0.0.1:8488/p/project-123/",
-            browserUrl = "http://host.local:8488/p/project-123/"
+            "http://127.0.0.1:8488/",
+            browserUrl = "http://host.local:8488/"
         )
         val message = Events.Config.Update(payload)
         val result = Events.stringify(message)
-        val expected = """{"type":"config/update","payload":{"features":{"ast":true,"vecdb":false,"codegraph":true,"images":true,"statistics":true,"knowledge":false},"themeProps":{"appearance":"light","hasBackground":false,"scale":"90%","accentColor":"gray"},"lspPort":8001,"keyBindings":{"completeManual":"foo"},"lspUrl":"http://127.0.0.1:8488/p/project-123/","backendReady":true,"connectionStatus":"ready","browserUrl":"http://host.local:8488/p/project-123/","tabbed":false,"host":"jetbrains"}}"""
+        val expected = """{"type":"config/update","payload":{"features":{"ast":true,"vecdb":false,"codegraph":true,"images":true,"statistics":true,"knowledge":false},"themeProps":{"appearance":"light","hasBackground":false,"scale":"90%","accentColor":"gray"},"lspPort":8001,"keyBindings":{"completeManual":"foo"},"lspUrl":"http://127.0.0.1:8488/","backendReady":true,"connectionStatus":"ready","browserUrl":"http://host.local:8488/","tabbed":false,"host":"jetbrains"}}"""
         assertEquals(expected, result)
     }
 
@@ -62,20 +62,20 @@ class EventsTest {
     fun backendConfigUrlsUseLoopbackForWebviewAndBrowserUrlForExternalBrowser() {
         val urls = backendConfigUrls(
             true,
-            URI("http://127.0.0.1:8488/p/project-123/"),
-            URI("http://host.local:8488/p/project-123/"),
+            URI("http://127.0.0.1:8488/"),
+            URI("http://host.local:8488/"),
         )
 
-        assertEquals("http://127.0.0.1:8488/p/project-123/", urls.lspUrl)
-        assertEquals("http://host.local:8488/p/project-123/", urls.browserUrl)
+        assertEquals("http://127.0.0.1:8488/", urls.lspUrl)
+        assertEquals("http://host.local:8488/", urls.browserUrl)
     }
 
     @Test
     fun backendConfigUrlsAreNullUntilBackendReady() {
         val urls = backendConfigUrls(
             false,
-            URI("http://127.0.0.1:8488/p/project-123/"),
-            URI("http://host.local:8488/p/project-123/"),
+            URI("http://127.0.0.1:8488/"),
+            URI("http://host.local:8488/"),
         )
 
         assertNull(urls.lspUrl)

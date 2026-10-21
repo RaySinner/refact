@@ -1,3 +1,5 @@
+@file:OptIn(okhttp3.ExperimentalOkHttpApi::class)
+
 package com.smallcloud.refactai.lsp
 
 import org.junit.Assert.assertEquals
@@ -6,6 +8,9 @@ import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import mockwebserver3.MockResponse
+import mockwebserver3.MockWebServer
+import okhttp3.Protocol
 import java.util.concurrent.TimeUnit
 
 class EngineProcessClientTest {
@@ -228,48 +233,43 @@ class EngineProcessClientTest {
     }
 
     @Test
-    fun killAdoptedHandleIsNoOp() {
-        val fake = RecordingKillClient()
-        val handle = EngineHandle(httpPort = 12345, lspPort = 12346, owned = false, pid = 9999)
-        fake.kill(handle)
-        assertEquals(listOf("shutdown-requested"), fake.calls)
-    }
+    fun killAdoptedHandleSendsNoShutdownRequestAndKeepsProcess() {
+        withShutdownServer { server ->
+            val process = startSleeper()
+            val client = EngineProcessClient(shutdownDestroyTimeoutSeconds = 0)
+            client.engineProcesses[server.port] = process
+            try {
+                client.kill(EngineHandle(httpPort = server.port, lspPort = 0, owned = false, pid = process.pid()))
 
-    @Test
-    fun killOwnedHandleRequestsGracefulShutdown() {
-        val fake = RecordingKillClient()
-        val handle = EngineHandle(httpPort = 12345, lspPort = 12346, owned = true, pid = null)
-        fake.kill(handle)
-        assertEquals(listOf("shutdown-requested"), fake.calls)
-    }
-
-    @Test
-    fun killOwnedHandleDestroysTrackedProcessAndClearsMap() {
-        val process = startSleeper()
-        val client = EngineProcessClient(shutdownDestroyTimeoutSeconds = 0)
-        client.engineProcesses[12345] = process
-        try {
-            client.kill(EngineHandle(httpPort = 12345, lspPort = 12346, owned = true, pid = process.pid()))
-
-            assertTrue("engine process must be destroyed", process.waitFor(10, TimeUnit.SECONDS))
-            assertFalse(client.engineProcesses.containsKey(12345))
-        } finally {
-            process.destroyForcibly()
+                assertEquals(0, server.requestCount)
+                assertTrue("adopted engine must not be killed", process.isAlive)
+                assertTrue(client.engineProcesses.containsKey(server.port))
+            } finally {
+                process.destroyForcibly()
+            }
         }
     }
 
     @Test
-    fun killAdoptedHandleLeavesTrackedProcessAlive() {
-        val process = startSleeper()
-        val client = EngineProcessClient(shutdownDestroyTimeoutSeconds = 0)
-        client.engineProcesses[12345] = process
-        try {
-            client.kill(EngineHandle(httpPort = 12345, lspPort = 12346, owned = false, pid = process.pid()))
+    fun killOwnedHandlePostsGracefulShutdownThenKillsProcess() {
+        withShutdownServer { server ->
+            server.enqueue(MockResponse.Builder().code(200).body("{}").build())
+            val process = startSleeper()
+            val client = EngineProcessClient(shutdownDestroyTimeoutSeconds = 0)
+            client.engineProcesses[server.port] = process
+            try {
+                client.kill(EngineHandle(httpPort = server.port, lspPort = 0, owned = true, pid = process.pid()))
 
-            assertTrue(process.isAlive)
-            assertTrue(client.engineProcesses.containsKey(12345))
-        } finally {
-            process.destroyForcibly()
+                val request = server.takeRequest()
+                assertEquals("POST", request.method)
+                assertEquals("/v1/graceful-shutdown", request.path)
+                assertEquals(1, server.requestCount)
+                assertTrue("engine process must be killed", process.waitFor(10, TimeUnit.SECONDS))
+                assertFalse(process.isAlive)
+                assertFalse(client.engineProcesses.containsKey(server.port))
+            } finally {
+                process.destroyForcibly()
+            }
         }
     }
 
@@ -300,12 +300,15 @@ class EngineProcessClientTest {
         }
         return ProcessBuilder(command).redirectErrorStream(true).start()
     }
-}
 
-private class RecordingKillClient : EngineProcessClient() {
-    val calls = mutableListOf<String>()
-
-    override fun kill(handle: EngineHandle) {
-        calls.add("shutdown-requested")
+    private fun withShutdownServer(block: (MockWebServer) -> Unit) {
+        val server = MockWebServer()
+        server.protocols = listOf(Protocol.HTTP_1_1)
+        server.start()
+        try {
+            block(server)
+        } finally {
+            server.shutdown()
+        }
     }
 }

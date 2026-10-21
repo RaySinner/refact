@@ -44,7 +44,7 @@ class SharedChatPaneReadyTest {
                 themeProps = Events.Config.ThemeProps("dark"),
                 lspPort = 8488,
                 keyBindings = Events.Config.KeyBindings(""),
-                lspUrl = "http://127.0.0.1:8488/p/project-123/",
+                lspUrl = "http://127.0.0.1:8488/",
                 backendReady = true,
                 connectionStatus = "ready",
             )
@@ -67,7 +67,7 @@ class SharedChatPaneReadyTest {
         assertEquals(
             true,
             Events.stringify(sentConfig!!).contains(
-                "\"lspUrl\":\"http://127.0.0.1:8488/p/project-123/\""
+                "\"lspUrl\":\"http://127.0.0.1:8488/\""
             )
         )
     }

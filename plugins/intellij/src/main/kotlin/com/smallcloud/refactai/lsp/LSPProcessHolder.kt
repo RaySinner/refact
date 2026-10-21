@@ -119,22 +119,6 @@ open class LSPProcessHolder(val project: Project) : Disposable {
         return backendConnectionStatus() == LSPBackendConnectionStatus.READY
     }
 
-    protected fun setBackendConnectionStatusPublic(status: LSPBackendConnectionStatus) {
-        setBackendConnectionStatus(status)
-    }
-
-    protected fun recordBinaryResolutionFailureForTest(message: String) {
-        recordBinaryResolutionFailure(message)
-    }
-
-    protected fun clearBinaryResolutionFailureForTest() {
-        clearBinaryResolutionFailure()
-    }
-
-    protected fun setEngineHandleForTest(handle: EngineHandle?) {
-        engineHandle = handle
-    }
-
     private fun setBackendConnectionStatus(newStatus: LSPBackendConnectionStatus) {
         if (backendConnectionStatus == newStatus) return
         backendConnectionStatus = newStatus

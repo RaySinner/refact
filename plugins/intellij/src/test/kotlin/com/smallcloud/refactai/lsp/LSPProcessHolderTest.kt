@@ -40,8 +40,10 @@ class LSPProcessHolderTest : BasePlatformTestCase() {
         val killOrders = Collections.synchronizedList(mutableListOf<String>())
         val spawnedRoots = Collections.synchronizedList(mutableListOf<String>())
         val spawnedBinPaths = Collections.synchronizedList(mutableListOf<String>())
+        val onBusyDecisions = Collections.synchronizedList(mutableListOf<EngineSpawnAttemptResult>())
         var spawnHandle = EngineHandle(httpPort = 18081, lspPort = 18082, owned = true, pid = null)
         var spawnError: RuntimeException? = null
+        var busyReport: EngineBusyReport? = null
 
         override fun spawn(
             binPath: String,
@@ -55,7 +57,22 @@ class LSPProcessHolderTest : BasePlatformTestCase() {
             spawnedRoots.add(root)
             spawnedBinPaths.add(binPath)
             spawnError?.let { throw it }
-            return spawnHandle
+            val report = busyReport ?: return spawnHandle
+            val decision = onBusy(report)
+            onBusyDecisions.add(decision)
+            return when (decision) {
+                EngineSpawnAttemptResult.ADOPT -> EngineHandle(
+                    httpPort = report.holderHttpPort ?: 0,
+                    lspPort = report.holderLspPort ?: 0,
+                    owned = false,
+                    pid = report.holderPid,
+                )
+                EngineSpawnAttemptResult.RETRY, EngineSpawnAttemptResult.FAIL -> throw EngineSpawnFailedException(
+                    ENGINE_BUSY_EXIT_CODES_FILED,
+                    "workspace busy",
+                    "workspace busy",
+                ).also { it.busyReport = report }
+            }
         }
 
         override fun kill(handle: EngineHandle) {
@@ -131,22 +148,6 @@ class LSPProcessHolderTest : BasePlatformTestCase() {
         override val engineClient: EngineProcessClient
             get() = fakeEngineClient
 
-        override fun attachEngineHandle(root: String, config: LSPConfig) {
-            val bin = resolveBinaryPathForDaemon {
-                if (signalDownloadStartDuringResolution) {
-                    signalDownloadStart()
-                }
-            } ?: run {
-                recordFailureForTest(binaryFailureMessage)
-                throw IllegalStateException(binaryFailureMessage)
-            }
-            clearFailureForTest()
-            registerSharedBinaryPathForTerminal(bin)
-
-            val handle = fakeEngineClient.spawn(bin, root, "test", config, "ping") { EngineSpawnAttemptResult.RETRY }
-            setEngineHandleForTest(handle)
-        }
-
         override fun resolveBinaryPathForDaemon(onDownloadStart: () -> Unit): String? {
             binaryResolutionCalls.incrementAndGet()
             if (signalDownloadStartDuringResolution) {
@@ -166,18 +167,6 @@ class LSPProcessHolderTest : BasePlatformTestCase() {
 
         override fun binaryResolutionFailureMessage(): String {
             return binaryFailureMessage
-        }
-
-        fun signalDownloadStart() {
-            setBackendConnectionStatusPublic(LSPBackendConnectionStatus.INSTALLING)
-        }
-
-        fun recordFailureForTest(message: String) {
-            recordBinaryResolutionFailureForTest(message)
-        }
-
-        fun clearFailureForTest() {
-            clearBinaryResolutionFailureForTest()
         }
 
         fun simulateRaceConditionWithScheduledTask(makeProjectDisposed: () -> Unit): AlreadyDisposedException? {
@@ -282,6 +271,17 @@ class LSPProcessHolderTest : BasePlatformTestCase() {
         }
     }
 
+    private fun withHttpServer(block: (MockWebServer) -> Unit) {
+        val server = MockWebServer()
+        try {
+            server.protocols = listOf(Protocol.HTTP_1_1)
+            server.start()
+            block(server)
+        } finally {
+            server.shutdown()
+        }
+    }
+
     private fun waitForLifecycle(holder: TestLspProcessHolder) {
         val deadline = System.currentTimeMillis() + 3000
         while (holder.hasPendingLifecycleWork() && System.currentTimeMillis() < deadline) {
@@ -358,6 +358,42 @@ class LSPProcessHolderTest : BasePlatformTestCase() {
         } finally {
             holder.dispose()
         }
+    }
+
+    @Test
+    fun testAttachAdoptsCompatibleHolderThroughProductionOnBusy() {
+        val root = createTempDir().canonicalPath
+        val fake = FakeEngineClient()
+        val holder = TestLspProcessHolder(mockProject(root), fake)
+        LSPProcessHolder.BIN_PATH = "/tmp/refact"
+        try {
+            withHttpServer { server ->
+                server.enqueue(
+                    MockResponse.Builder()
+                        .code(200)
+                        .addHeader("Content-Type", "application/json")
+                        .body("""{"version":"8.1.0"}""")
+                        .build()
+                )
+                fake.busyReport = EngineBusyReport(
+                    workspaceBusy = true,
+                    holderPid = ProcessHandle.current().pid(),
+                    holderHttpPort = server.port,
+                    holderLspPort = 0,
+                    root = root,
+                )
+
+                runOffEdt { holder.ensureStartedBlockingForTest("adopt-busy-holder") }
+
+                assertEquals("/v1/build_info", server.takeRequest().path)
+                assertEquals(URI("http://127.0.0.1:" + server.port + "/"), holder.baseUrlOrNull())
+                assertEquals(LSPBackendConnectionStatus.READY, holder.backendConnectionStatus())
+            }
+        } finally {
+            holder.dispose()
+        }
+        assertEquals(listOf("adopted"), fake.killOrders)
+        assertEquals(listOf(EngineSpawnAttemptResult.ADOPT), fake.onBusyDecisions)
     }
 
     @Test

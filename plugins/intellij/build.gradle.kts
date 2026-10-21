@@ -141,13 +141,6 @@ tasks {
         compilerOptions.jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.fromTarget(javaCompilerVersion))
     }
 
-    withType<Test> {
-        val isolatedDaemonHome = layout.buildDirectory.dir("test-daemon-home").get().asFile
-        systemProperty("refact.daemon.dir", isolatedDaemonHome.absolutePath)
-        environment("REFACT_DAEMON_DIR", isolatedDaemonHome.absolutePath)
-        doFirst { isolatedDaemonHome.mkdirs() }
-    }
-
     // Bundled engine binaries must be loose files in the plugin directory (refact/bin/...),
     // not resources inside the jar, so RefactBinaryResolver can execute them directly.
     processResources {

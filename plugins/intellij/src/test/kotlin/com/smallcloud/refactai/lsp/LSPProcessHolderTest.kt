@@ -233,6 +233,16 @@ class LSPProcessHolderTest : BasePlatformTestCase() {
         }
     }
 
+    @Test
+    fun testAttemptingToReachWithoutEngineDoesNotReportPortZero() {
+        val holder = TestLspProcessHolder(mockProject(createTempDir().canonicalPath), FakeEngineClient())
+        try {
+            assertEquals("Refact engine (starting)", holder.attempingToReach())
+        } finally {
+            holder.dispose()
+        }
+    }
+
     private fun mockProject(root: String? = null): Project {
         return mockProject(root, mock(LSPProcessHolderChangedNotifier::class.java))
     }

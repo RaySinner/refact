@@ -92,6 +92,8 @@ open class LSPProcessHolder(val project: Project) : Disposable {
     private var backendConnectionStatus: LSPBackendConnectionStatus = LSPBackendConnectionStatus.CONNECTING
     @Volatile
     private var engineHandle: EngineHandle? = null
+    @Volatile
+    private var lastAdoptedHolderPid: Long? = null
     protected open val engineClient: EngineProcessClient = EngineProcessClient()
 
     private val exitThread: Thread = Thread {
@@ -518,6 +520,11 @@ open class LSPProcessHolder(val project: Project) : Disposable {
     }
 
     protected open fun attachEngineHandle(root: String, config: LSPConfig) {
+        val debugPort = InferenceGlobalContext.xDebugLSPPort
+        if (debugPort != null && debugPort > 0) {
+            attachDebugEngine(debugPort)
+            return
+        }
         val bin = resolveBinaryPathForDaemon {
             setBackendConnectionStatus(LSPBackendConnectionStatus.INSTALLING)
         } ?: run {
@@ -535,21 +542,35 @@ open class LSPProcessHolder(val project: Project) : Disposable {
             settings = config,
             pingMessage = "refact-" + java.util.UUID.randomUUID().toString(),
         ) { report ->
-            if (report.holderPid != null && report.holderHttpPort != null &&
-                engineProcessAlive(report.holderPid)
-            ) {
-                val buildInfo = engineClient.buildInfo(
-                    EngineHandle(report.holderHttpPort, report.holderLspPort ?: 0, owned = false, pid = report.holderPid),
+            val decision = engineAdoptionDecision(
+                report = report,
+                lastAdoptedPid = lastAdoptedHolderPid,
+                requiredVersion = requiredDaemonVersion(),
+                buildInfoFor = { engineClient.buildInfo(it) },
+            )
+            if (decision == EngineSpawnAttemptResult.FAIL) {
+                logger.error(
+                    "Refact engine holder pid=${report.holderPid} http_port=${report.holderHttpPort} " +
+                        "cannot be adopted (already adopted once or build_info missing/incompatible); " +
+                        "refusing to re-adopt instead of looping",
                 )
-                if (engineBuildInfoMatches(buildInfo, requiredDaemonVersion())) {
-                    EngineSpawnAttemptResult.ADOPT
-                } else {
-                    EngineSpawnAttemptResult.FAIL
-                }
-            } else {
-                EngineSpawnAttemptResult.RETRY
             }
+            decision
         }
+        lastAdoptedHolderPid = if (handle.owned) null else handle.pid
+        engineHandle = handle
+    }
+
+    /**
+     * `xDebugLSPPort` pins the engine to a fixed http port so a debugger can attach to it.
+     * When set, the IDE attaches to the already running engine on that port instead of
+     * spawning a fresh ephemeral-port worker.
+     */
+    private fun attachDebugEngine(httpPort: Int) {
+        val handle = EngineHandle(httpPort = httpPort, lspPort = 0, owned = false, pid = null)
+        val buildInfo = engineClient.buildInfo(handle)
+            ?: throw IllegalStateException("no refact engine listening on http port $httpPort (xDebugLSPPort)")
+        logger.warn("Attached to external refact engine on http port $httpPort: $buildInfo")
         engineHandle = handle
     }
 
@@ -765,6 +786,7 @@ open class LSPProcessHolder(val project: Project) : Disposable {
     }
 
     protected fun resetBinaryResolutionFailureForSettingsChange() {
+        lastAdoptedHolderPid = null
         clearBinaryResolutionFailure()
         resetWorkerHealthFailures()
         nextHealthCheckAtMs = 0L
@@ -864,11 +886,8 @@ open class LSPProcessHolder(val project: Project) : Disposable {
     }
 
     fun attempingToReach(): String {
-        val handle = engineHandle
-        if (handle != null) {
-            return "Refact engine on port " + handle.httpPort
-        }
-        return "Refact engine on port " + (InferenceGlobalContext.xDebugLSPPort ?: 0)
+        val handle = engineHandle ?: return "Refact engine (starting)"
+        return "Refact engine on port " + handle.httpPort
     }
 
     companion object {

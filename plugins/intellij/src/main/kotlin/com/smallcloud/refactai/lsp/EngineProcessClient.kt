@@ -9,6 +9,7 @@ import java.net.HttpURLConnection
 import java.net.ServerSocket
 import java.net.URI
 import java.nio.charset.StandardCharsets
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
@@ -18,9 +19,6 @@ const val ENGINE_SPAWN_MAX_ATTEMPTS = 3
 const val ENGINE_BUSY_EXIT_CODES_FILED = 75
 const val ENGINE_SHUTDOWN_REQUEST_TIMEOUT_SECONDS = 5L
 const val ENGINE_SHUTDOWN_DESTROY_TIMEOUT_SECONDS = 10L
-const val ENGINE_LSP_PING_MESSAGE = "refact-lsp-ping"
-const val ENGINE_DEFAULT_WORKER_HTTP_PORT = 8001
-const val ENGINE_DEFAULT_WORKER_LSP_PORT = 8002
 private const val ENGINE_HTTP_GET_TIMEOUT_MS = 5_000
 private const val ENGINE_PROCESS_EXIT_LOG_WAIT_MS = 500L
 
@@ -29,15 +27,11 @@ private const val ENGINE_PROCESS_EXIT_LOG_WAIT_MS = 500L
  * (no setsid/nohup wrappers, stdin is held open by the IDE so the engine's
  * --watch-parent-stdin watchdog only sees EOF when the IDE dies).
  *
- * Windows console suppression: JVM child processes started through
- * ProcessBuilder/GeneralCommandLine do not get a new console window when the
- * launching JVM itself is windowed (the IDE), because no conhost is attached
- * unless the child was linked as a console subsystem binary that requires one.
- * The `refact` engine is a console-subsystem binary, so on Windows we hide the
- * console window of the freshly created child via JNA (CreateProcessW with
- * CREATE_NO_WINDOW is not reachable through GeneralCommandLine, but the window
- * can be found and hidden right after spawn). This is best-effort: if JNA is
- * unavailable the child is still functional, only the console flash remains.
+ * Windows console suppression is best-effort and targeted: the child's console window is
+ * located by pid (EnumWindows + GetWindowThreadProcessId) and hidden right after spawn.
+ * The foreground window is never touched, so the IDE window cannot be hidden by accident.
+ * CREATE_NO_WINDOW is not reachable through GeneralCommandLine, and a JNA CreateProcessW
+ * wrapper would mean owning stdin/stdout wiring ourselves, so post-spawn hiding is used.
  */
 data class EngineHandle(
     val httpPort: Int,
@@ -115,17 +109,6 @@ fun parsePortsFromArgs(argv: List<String>): Pair<Int, Int>? {
     return http to lsp
 }
 
-fun buildEngineWorkerArgs(settings: LSPConfig): Map<String, Any> {
-    return mapOf(
-        "ast" to settings.ast,
-        "ast_max_files" to (settings.astFileLimit ?: LSPConfig.DEFAULT_AST_MAX_FILES),
-        "vecdb" to settings.vecdb,
-        "vecdb_max_files" to (settings.vecdbFileLimit ?: LSPConfig.DEFAULT_VECDB_MAX_FILES),
-        "codegraph" to settings.codegraph,
-        "codegraph_max_files" to (settings.codegraphFileLimit ?: LSPConfig.DEFAULT_CODEGRAPH_MAX_FILES),
-    )
-}
-
 fun engineBusyReportFromJson(json: String): EngineBusyReport? {
     if (json.isBlank()) return null
     val obj = runCatching { Gson().fromJson(json, Map::class.java) }.getOrNull() ?: return null
@@ -141,20 +124,42 @@ fun engineBusyReportFromJson(json: String): EngineBusyReport? {
     )
 }
 
+internal fun isWindows(): Boolean {
+    return System.getProperty("os.name").lowercase().contains("win")
+}
+
 internal fun engineProcessAlive(pid: Long?): Boolean {
     if (pid == null || pid <= 0) return false
     return runCatching { ProcessHandle.of(pid).orElse(null)?.isAlive == true }.getOrDefault(false)
 }
 
 internal fun engineBuildInfoMatches(buildInfoJson: String?, pluginVersion: String): Boolean {
-    val raw = buildInfoJson?.trim().takeUnless { it.isNullOrEmpty() } ?: return true
+    val raw = buildInfoJson?.trim().takeUnless { it.isNullOrEmpty() } ?: return false
     val version = runCatching {
         val obj = Gson().fromJson(raw, Map::class.java)
         @Suppress("UNCHECKED_CAST")
-        (obj as? Map<String, Any?>)?.get("version") as? String
-    }.getOrNull()?.trim().orEmpty()
-    if (version.isEmpty()) return true
+        ((obj as? Map<String, Any?>)?.get("version") as? String)?.trim()
+    }.getOrNull().orEmpty()
+    if (version.isEmpty()) return false
     return !versionIsOlder(version, pluginVersion)
+}
+
+internal fun engineAdoptionDecision(
+    report: EngineBusyReport,
+    lastAdoptedPid: Long?,
+    requiredVersion: String,
+    buildInfoFor: (EngineHandle) -> String?,
+): EngineSpawnAttemptResult {
+    val pid = report.holderPid ?: return EngineSpawnAttemptResult.RETRY
+    val httpPort = report.holderHttpPort ?: return EngineSpawnAttemptResult.RETRY
+    if (!engineProcessAlive(pid)) return EngineSpawnAttemptResult.RETRY
+    if (pid == lastAdoptedPid) return EngineSpawnAttemptResult.FAIL
+    val handle = EngineHandle(httpPort, report.holderLspPort ?: 0, owned = false, pid = pid)
+    return if (engineBuildInfoMatches(buildInfoFor(handle), requiredVersion)) {
+        EngineSpawnAttemptResult.ADOPT
+    } else {
+        EngineSpawnAttemptResult.FAIL
+    }
 }
 
 internal fun engineBusyExitCode(exitCode: Int): Boolean {
@@ -193,22 +198,56 @@ internal fun engineHttpBody(url: URI, timeoutMs: Int = ENGINE_HTTP_GET_TIMEOUT_M
     }.getOrNull()
 }
 
+/**
+ * Hides only the console window owned by [process]; other windows (including whatever
+ * window currently has focus) are left alone. See the class-level comment for why this is
+ * done after spawn instead of through CREATE_NO_WINDOW. JNA is used reflectively because
+ * the plugin does not compile against it; when it is unavailable the engine still runs.
+ */
 internal fun hideWindowsConsoleWindow(process: Process) {
-    if (!System.getProperty("os.name").lowercase().contains("win")) return
+    if (!isWindows()) return
+    val pid = process.pid()
     runCatching {
-        val windowClass = Class.forName("com.sun.jna.platform.win32.User32")
-        val jnaNative = Class.forName("com.sun.jna.Native").getMethod(
+        val user32Class = Class.forName("com.sun.jna.platform.win32.User32")
+        val user32 = Class.forName("com.sun.jna.Native").getMethod(
             "load",
             String::class.java,
             Class::class.java,
-        )
-        val user32 = jnaNative.invoke(null, "user32", windowClass)
-        val getForegroundWindow = windowClass.methods.first { it.name == "GetForegroundWindow" }
-        val hwnd = getForegroundWindow.invoke(user32)
-        if (hwnd != null) {
-            val showWindow = windowClass.methods.first { it.name == "ShowWindow" }
-            showWindow.invoke(user32, hwnd, 0)
+        ).invoke(null, "user32", user32Class)
+        val hwndClass = Class.forName("com.sun.jna.platform.win32.WinDef\$HWND")
+        val lparamClass = Class.forName("com.sun.jna.platform.win32.WinDef\$LPARAM")
+        val intByReferenceClass = Class.forName("com.sun.jna.ptr.IntByReference")
+        val enumProcClass = Class.forName("com.sun.jna.platform.win32.WinUser\$WNDENUMPROC")
+        val enumWindows = user32Class.getMethod("EnumWindows", enumProcClass, lparamClass)
+        val getWindowThreadProcessId =
+            user32Class.getMethod("GetWindowThreadProcessId", hwndClass, intByReferenceClass)
+        val showWindow = user32Class.getMethod("ShowWindow", hwndClass, java.lang.Integer.TYPE)
+        val getValue = intByReferenceClass.getMethod("getValue")
+
+        val childWindows = mutableListOf<Any>()
+        val callback = java.lang.reflect.Proxy.newProxyInstance(
+            enumProcClass.classLoader,
+            arrayOf(enumProcClass),
+        ) { proxy, method, args ->
+            when (method.name) {
+                "callback" -> {
+                    val hwnd = args!![0]
+                    val ownerPid = intByReferenceClass.getConstructor().newInstance()
+                    getWindowThreadProcessId.invoke(user32, hwnd, ownerPid)
+                    if ((getValue.invoke(ownerPid) as Int).toLong() == pid) {
+                        childWindows.add(hwnd)
+                    }
+                    true
+                }
+                "equals" -> proxy === args?.getOrNull(0)
+                "hashCode" -> System.identityHashCode(proxy)
+                "toString" -> "refact-engine-window-filter"
+                else -> null
+            }
         }
+        val noParam = lparamClass.getConstructor(java.lang.Long.TYPE).newInstance(0L)
+        enumWindows.invoke(user32, callback, noParam)
+        childWindows.forEach { showWindow.invoke(user32, it, 0) }
     }
 }
 
@@ -227,8 +266,10 @@ open class EngineProcessClient(
         val safeRoot = root.hashCode().toUInt().toString()
         File(dir, "engine-$safeRoot.log").absolutePath
     },
+    private val shutdownDestroyTimeoutSeconds: Long = ENGINE_SHUTDOWN_DESTROY_TIMEOUT_SECONDS,
 ) {
     private val logger = Logger.getInstance(EngineProcessClient::class.java)
+    internal val engineProcesses = ConcurrentHashMap<Int, Process>()
 
     fun workerLogPath(root: String): String = logPathProvider(root)
 
@@ -240,6 +281,7 @@ open class EngineProcessClient(
         pingMessage: String,
         onBusy: (EngineBusyReport) -> EngineSpawnAttemptResult,
     ): EngineHandle {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(ENGINE_READY_TIMEOUT_SECONDS)
         var lastBusy: EngineBusyReport? = null
         var lastError: Exception? = null
         repeat(ENGINE_SPAWN_MAX_ATTEMPTS) { attempt ->
@@ -252,24 +294,23 @@ open class EngineProcessClient(
             try {
                 return spawnOnce(
                     binPath, root, projectId, settings, pingMessage,
-                    httpPort, lspPort, onBusy,
+                    httpPort, lspPort, deadline,
                 )
             } catch (e: EngineSpawnFailedException) {
                 if (e.exitCode != null && enginePortBusyExitCode(e.exitCode)) {
                     logger.info("Engine port conflict (exit ${e.exitCode}) on attempt $attempt; retrying")
                     return@repeat
                 }
-                if (e.exitCode != null && engineBusyExitCode(e.exitCode) && e.busyReport != null) {
-                    when (onBusy(e.busyReport!!)) {
+                val busy = e.busyReport
+                if (busy != null) {
+                    when (onBusy(busy)) {
                         EngineSpawnAttemptResult.ADOPT -> {
-                            val report = e.busyReport!!
-                            val pid = report.holderPid
-                            val http = report.holderHttpPort
-                            val lsp = report.holderLspPort
+                            val pid = busy.holderPid
+                            val http = busy.holderHttpPort
                             if (pid != null && http != null) {
                                 return EngineHandle(
                                     httpPort = http,
-                                    lspPort = lsp ?: ENGINE_DEFAULT_WORKER_LSP_PORT,
+                                    lspPort = busy.holderLspPort ?: 0,
                                     owned = false,
                                     pid = pid,
                                 )
@@ -280,15 +321,15 @@ open class EngineProcessClient(
                             return@repeat
                         }
                         EngineSpawnAttemptResult.RETRY -> {
-                            lastBusy = e.busyReport
+                            lastBusy = busy
                             return@repeat
                         }
                         EngineSpawnAttemptResult.FAIL -> {
                             throw EngineSpawnFailedException(
                                 e.exitCode,
                                 e.outputTail,
-                                "incompatible existing holder pid=${e.busyReport?.holderPid} " +
-                                    "http_port=${e.busyReport?.holderHttpPort} for $root",
+                                "incompatible existing holder pid=${busy.holderPid} " +
+                                    "http_port=${busy.holderHttpPort} for $root",
                             )
                         }
                     }
@@ -315,7 +356,7 @@ open class EngineProcessClient(
         pingMessage: String,
         httpPort: Int,
         lspPort: Int,
-        onBusy: (EngineBusyReport) -> EngineSpawnAttemptResult,
+        deadline: Long,
     ): EngineHandle {
         val logPath = workerLogPath(root)
         val args = EngineSpawnArgs(
@@ -334,29 +375,23 @@ open class EngineProcessClient(
         val commandLine = GeneralCommandLine(args).withWorkDirectory(File(root))
         val process = commandLine.createProcess()
         hideWindowsConsoleWindow(process)
+        engineProcesses[httpPort] = process
         runCatching { process.outputStream.flush() }
 
         val outputTail = OutputTailCollector()
         pipeProcessOutput(process, outputTail)
 
-        if (!waitReady(httpPort, pingMessage)) {
+        if (!waitReady(process, httpPort, pingMessage, deadline)) {
             val exitCode = pollExitCode(process)
-            if (exitCode != null && engineBusyExitCode(exitCode)) {
-                val busyLine = outputTail.busyLine()
-                val report = busyLine?.let { engineBusyReportFromJson(it) }
-                if (report != null) {
-                    throw EngineSpawnFailedException(
-                        exitCode,
-                        outputTail.tail(),
-                        "workspace busy: $busyLine",
-                    ).also { it.busyReport = report }
-                }
-            }
-            runCatching {
-                process.destroy()
-                if (!process.waitFor(3, TimeUnit.SECONDS)) {
-                    process.destroyForcibly()
-                }
+            val busyLine = outputTail.busyLine()
+            val busyReport = busyLine?.let { engineBusyReportFromJson(it) }
+            discardProcess(process, httpPort)
+            if (busyReport != null) {
+                throw EngineSpawnFailedException(
+                    exitCode,
+                    outputTail.tail(),
+                    "workspace busy: $busyLine",
+                ).also { it.busyReport = busyReport }
             }
             throw EngineSpawnFailedException(
                 exitCode,
@@ -368,9 +403,9 @@ open class EngineProcessClient(
         return EngineHandle(httpPort, lspPort, owned = true, pid = process.pid().toLong())
     }
 
-    fun waitReady(httpPort: Int, pingMessage: String): Boolean {
-        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(ENGINE_READY_TIMEOUT_SECONDS)
+    internal fun waitReady(process: Process, httpPort: Int, pingMessage: String, deadline: Long): Boolean {
         while (System.nanoTime() < deadline) {
+            if (!process.isAlive) return false
             val body = engineHttpBody(enginePingUrl(httpPort))
             if (body != null && body.trim() == pingMessage) return true
             sleepPoll()
@@ -387,21 +422,48 @@ open class EngineProcessClient(
             logger.info("Skip killing adopted engine pid=" + handle.pid + " on port " + handle.httpPort)
             return
         }
+        val process = engineProcesses.remove(handle.httpPort)
         runCatching {
             engineHttpPost(engineShutdownUrl(handle.httpPort), "{}")
         }
-        val pid = handle.pid
-        if (pid != null && engineProcessAlive(pid)) {
+        if (process != null) {
+            if (awaitExit(process)) return
+            process.destroy()
+            if (awaitExit(process)) return
+            process.destroyForcibly()
+            if (awaitExit(process)) return
+        }
+        val pid = handle.pid ?: return
+        if (!engineProcessAlive(pid)) return
+        if (isWindows()) {
             windowsForceKill(pid)
+        } else {
+            runCatching { ProcessHandle.of(pid).ifPresent { it.destroyForcibly() } }
         }
     }
 
     internal fun windowsForceKill(pid: Long) {
-        if (!System.getProperty("os.name").lowercase().contains("win")) return
+        if (!isWindows()) return
         runCatching {
             val process = ProcessBuilder("taskkill", "/T", "/F", "/PID", pid.toString())
                 .start()
             process.waitFor(5, TimeUnit.SECONDS)
+        }
+    }
+
+    private fun awaitExit(process: Process): Boolean {
+        return runCatching {
+            process.waitFor(shutdownDestroyTimeoutSeconds, TimeUnit.SECONDS)
+        }.getOrDefault(false)
+    }
+
+    private fun discardProcess(process: Process, httpPort: Int) {
+        engineProcesses.remove(httpPort)
+        runCatching {
+            process.destroy()
+            if (!process.waitFor(3, TimeUnit.SECONDS)) {
+                process.destroyForcibly()
+            }
         }
     }
 

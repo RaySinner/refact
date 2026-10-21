@@ -6,6 +6,7 @@ import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.TimeUnit
 
 class EngineProcessClientTest {
 
@@ -151,12 +152,62 @@ class EngineProcessClientTest {
 
     @Test
     fun buildInfoMatcherAcceptsCompatibleVersions() {
-        assertTrue(engineBuildInfoMatches(null, "8.1.0"))
-        assertTrue(engineBuildInfoMatches("", "8.1.0"))
-        assertTrue(engineBuildInfoMatches("not-json", "8.1.0"))
         assertTrue(engineBuildInfoMatches("""{"version":"8.2.0"}""", "8.1.0"))
         assertTrue(engineBuildInfoMatches("""{"version":"8.1.0"}""", "8.1.0"))
         assertFalse(engineBuildInfoMatches("""{"version":"8.0.0"}""", "8.1.0"))
+    }
+
+    @Test
+    fun buildInfoMatcherFailsClosedOnUnverifiableHolder() {
+        assertFalse(engineBuildInfoMatches(null, "8.1.0"))
+        assertFalse(engineBuildInfoMatches("", "8.1.0"))
+        assertFalse(engineBuildInfoMatches("   ", "8.1.0"))
+        assertFalse(engineBuildInfoMatches("not-json", "8.1.0"))
+        assertFalse(engineBuildInfoMatches("""{"version":""}""", "8.1.0"))
+        assertFalse(engineBuildInfoMatches("""{"version":null}""", "8.1.0"))
+        assertFalse(engineBuildInfoMatches("""{"build":"abc"}""", "8.1.0"))
+    }
+
+    @Test
+    fun adoptionDecisionRetriesWithoutHolderIdentity() {
+        val noPid = EngineBusyReport(true, null, 8001, 8002, "/tmp")
+        assertEquals(EngineSpawnAttemptResult.RETRY, engineAdoptionDecision(noPid, null, "8.1.0") { null })
+
+        val noPort = EngineBusyReport(true, ProcessHandle.current().pid(), null, null, "/tmp")
+        assertEquals(EngineSpawnAttemptResult.RETRY, engineAdoptionDecision(noPort, null, "8.1.0") { null })
+    }
+
+    @Test
+    fun adoptionDecisionAdoptsCompatibleHolder() {
+        val report = EngineBusyReport(true, ProcessHandle.current().pid(), 8001, 8002, "/tmp")
+        val result = engineAdoptionDecision(report, null, "8.1.0") { handle ->
+            assertEquals(8001, handle.httpPort)
+            assertEquals(8002, handle.lspPort)
+            assertFalse(handle.owned)
+            """{"version":"8.1.0"}"""
+        }
+        assertEquals(EngineSpawnAttemptResult.ADOPT, result)
+    }
+
+    @Test
+    fun adoptionDecisionFailsClosedOnMissingOrOldBuildInfo() {
+        val report = EngineBusyReport(true, ProcessHandle.current().pid(), 8001, 8002, "/tmp")
+        assertEquals(EngineSpawnAttemptResult.FAIL, engineAdoptionDecision(report, null, "8.1.0") { null })
+        assertEquals(EngineSpawnAttemptResult.FAIL, engineAdoptionDecision(report, null, "8.1.0") { "" })
+        assertEquals(
+            EngineSpawnAttemptResult.FAIL,
+            engineAdoptionDecision(report, null, "8.1.0") { """{"version":"8.0.0"}""" },
+        )
+    }
+
+    @Test
+    fun adoptionDecisionRefusesToReAdoptSameHolder() {
+        val pid = ProcessHandle.current().pid()
+        val report = EngineBusyReport(true, pid, 8001, 8002, "/tmp")
+        assertEquals(
+            EngineSpawnAttemptResult.FAIL,
+            engineAdoptionDecision(report, pid, "8.1.0") { """{"version":"8.1.0"}""" },
+        )
     }
 
     @Test
@@ -190,6 +241,64 @@ class EngineProcessClientTest {
         val handle = EngineHandle(httpPort = 12345, lspPort = 12346, owned = true, pid = null)
         fake.kill(handle)
         assertEquals(listOf("shutdown-requested"), fake.calls)
+    }
+
+    @Test
+    fun killOwnedHandleDestroysTrackedProcessAndClearsMap() {
+        val process = startSleeper()
+        val client = EngineProcessClient(shutdownDestroyTimeoutSeconds = 0)
+        client.engineProcesses[12345] = process
+        try {
+            client.kill(EngineHandle(httpPort = 12345, lspPort = 12346, owned = true, pid = process.pid()))
+
+            assertTrue("engine process must be destroyed", process.waitFor(10, TimeUnit.SECONDS))
+            assertFalse(client.engineProcesses.containsKey(12345))
+        } finally {
+            process.destroyForcibly()
+        }
+    }
+
+    @Test
+    fun killAdoptedHandleLeavesTrackedProcessAlive() {
+        val process = startSleeper()
+        val client = EngineProcessClient(shutdownDestroyTimeoutSeconds = 0)
+        client.engineProcesses[12345] = process
+        try {
+            client.kill(EngineHandle(httpPort = 12345, lspPort = 12346, owned = false, pid = process.pid()))
+
+            assertTrue(process.isAlive)
+            assertTrue(client.engineProcesses.containsKey(12345))
+        } finally {
+            process.destroyForcibly()
+        }
+    }
+
+    @Test
+    fun waitReadyFailsFastWhenChildExited() {
+        val process = startSleeper()
+        process.destroyForcibly()
+        assertTrue(process.waitFor(10, TimeUnit.SECONDS))
+        val client = EngineProcessClient()
+        val startedAt = System.nanoTime()
+
+        val ready = client.waitReady(
+            process,
+            1,
+            "never",
+            System.nanoTime() + TimeUnit.SECONDS.toNanos(ENGINE_READY_TIMEOUT_SECONDS),
+        )
+
+        assertFalse(ready)
+        assertTrue(TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - startedAt) < 5)
+    }
+
+    private fun startSleeper(): Process {
+        val command = if (System.getProperty("os.name").lowercase().contains("win")) {
+            listOf("cmd", "/c", "ping", "-n", "60", "127.0.0.1")
+        } else {
+            listOf("sleep", "60")
+        }
+        return ProcessBuilder(command).redirectErrorStream(true).start()
     }
 }
 

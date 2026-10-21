@@ -195,6 +195,32 @@ export type EngineSpawnOptions = {
     debug?: { httpPort: number; lspPort: number };
     argsPrefix?: string[];
 };
+
+export function projectIdForRoot(root: string): string {
+    return crypto.createHash("sha256").update(canonicalRootForProjectId(root), "utf8").digest("hex");
+}
+
+export function canonicalRootForProjectId(root: string): string {
+    const resolved = path.resolve(root);
+    let canonical = resolved;
+    try {
+        canonical = fs.realpathSync.native(resolved);
+    } catch {
+        canonical = resolved;
+    }
+    return stripWindowsNamespacePrefix(canonical);
+}
+
+function stripWindowsNamespacePrefix(value: string): string {
+    if (value.startsWith("\\\\?\\UNC\\")) {
+        return `\\\\${value.slice(8)}`;
+    }
+    if (value.startsWith("\\\\?\\")) {
+        return value.slice(4);
+    }
+    return value;
+}
+
 const ENGINE_READY_TIMEOUT_MS = 120000;
 const ENGINE_POLL_MS = 250;
 const ENGINE_PORT_BUSY_ATTEMPTS = 3;

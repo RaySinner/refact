@@ -278,9 +278,7 @@ export function activate(context: vscode.ExtensionContext)
         context.globalStorageUri.fsPath,
     );
     context.subscriptions.push(new vscode.Disposable(() => {
-        if (global.rust_binary_blob) {
-            void global.rust_binary_blob.terminate();
-        }
+        global.rust_binary_blob?.terminate_now();
     }));
     global.rust_binary_blob
         .settings_changed() // async function will finish later

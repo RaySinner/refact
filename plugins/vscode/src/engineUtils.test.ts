@@ -1,9 +1,13 @@
 import * as assert from "assert";
+import * as crypto from "crypto";
+import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import {
+    canonicalRootForProjectId,
     compareVersions,
     configuredBrowserHost,
+    projectIdForRoot,
     selectPrimaryWorkspaceRoot,
 } from "./engineProcess";
 import {
@@ -54,7 +58,37 @@ export async function runEngineUtilsTests() {
 
     runBackendStatusTests();
     runLaunchRustLifecycleTests();
+    runProjectIdTests();
     runSharedRefactPathMatchingTests();
+}
+
+function runProjectIdTests() {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), "refact-project-id-"));
+    try {
+        const alpha = path.join(base, "alpha");
+        const nestedAlpha = path.join(base, "beta", "alpha");
+        fs.mkdirSync(alpha, { recursive: true });
+        fs.mkdirSync(nestedAlpha, { recursive: true });
+
+        const idAlpha = projectIdForRoot(alpha);
+        assert.match(idAlpha, /^[0-9a-f]{64}$/);
+
+        const canonicalAlpha = fs.realpathSync.native(alpha);
+        assert.strictEqual(canonicalRootForProjectId(alpha), canonicalAlpha);
+        assert.strictEqual(
+            idAlpha,
+            crypto.createHash("sha256").update(canonicalAlpha, "utf8").digest("hex"),
+        );
+
+        assert.strictEqual(projectIdForRoot(path.join(alpha, "..", "alpha")), idAlpha);
+        assert.notStrictEqual(projectIdForRoot(nestedAlpha), idAlpha);
+
+        if (process.platform === "win32") {
+            assert.strictEqual(projectIdForRoot(`\\\\?\\${alpha}`), idAlpha);
+        }
+    } finally {
+        fs.rmSync(base, { recursive: true, force: true });
+    }
 }
 
 function runBackendStatusTests() {

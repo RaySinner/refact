@@ -29,7 +29,6 @@ export type FetchFailure = {
 export type FetchResult<T> = { ok: true; data: T } | { ok: false; error: FetchFailure };
 
 type EngineFetcher = {
-    engine_url?: (addthis: string) => string;
     fetch_project_proxy?: (
         addthis: string,
         init: ProjectProxyRequestInit,

@@ -325,7 +325,7 @@ export class RustBinaryBlob {
         const logDir = path.join(global.global_context?.globalStorageUri?.fsPath ?? this.binary_cache_path, "logs");
         const settings = this.engine_settings();
         const root = rootSelection.primary;
-        const projectId = path.basename(root);
+        const projectId = engineProcess.projectIdForRoot(root);
 
         const handle = await engineProcess.launchEngine({
             binPath: resolved.binPath,
@@ -401,16 +401,20 @@ export class RustBinaryBlob {
         this.set_attach_state("connecting");
     }
 
+    public terminate_now(): void {
+        const handle = this.owned_engine;
+        void this.terminate();
+        if (handle) {
+            engineProcess.disposeNow(handle);
+        }
+    }
+
     public async fetch_project_proxy(
         addthis: string,
         init: ProjectProxyRequestInit,
         fetchInit?: Partial<fetchH2.FetchInit>,
     ): Promise<fetchH2.Response> {
         return this.fetch_project_proxy_once(addthis, init, fetchInit);
-    }
-
-    public project_proxy_url(addthis: string): string {
-        return this.engine_url(addthis);
     }
 
     public engine_url(addthis: string): string {

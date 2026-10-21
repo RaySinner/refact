@@ -169,7 +169,7 @@ impl MdnsRegistration {
 }
 
 pub(crate) fn should_advertise_mdns(cmdline: &crate::global_context::CommandLine) -> bool {
-    cmdline.daemon_endpoint.is_empty()
+    !cmdline.no_mdns && cmdline.daemon_endpoint.is_empty() && cmdline.project_id.is_empty()
 }
 
 fn start_mdns_advertisement(port: u16, app_searchable_id: String) -> Option<MdnsRegistration> {
@@ -342,6 +342,22 @@ mod tests {
         let gcx = crate::global_context::tests::make_test_gcx().await;
         let mut cmdline = gcx.cmdline.clone();
         cmdline.daemon_endpoint = "http://127.0.0.1:8488".to_string();
+        assert!(!should_advertise_mdns(&cmdline));
+    }
+
+    #[tokio::test]
+    async fn mdns_skips_when_explicitly_disabled() {
+        let gcx = crate::global_context::tests::make_test_gcx().await;
+        let mut cmdline = gcx.cmdline.clone();
+        cmdline.no_mdns = true;
+        assert!(!should_advertise_mdns(&cmdline));
+    }
+
+    #[tokio::test]
+    async fn mdns_skips_for_ide_spawned_worker() {
+        let gcx = crate::global_context::tests::make_test_gcx().await;
+        let mut cmdline = gcx.cmdline.clone();
+        cmdline.project_id = "0123456789abcdef".to_string();
         assert!(!should_advertise_mdns(&cmdline));
     }
 }

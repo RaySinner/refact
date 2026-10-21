@@ -171,12 +171,14 @@ fn acquire_startup_workspace_leases(
             );
             if let daemon::lock::WorkspaceLeaseError::Busy(conflict) = &error {
                 if !cmdline.project_id.is_empty() {
+                    // Only IDE-spawned workers consume this line: they own the child's stdout pipe
+                    // and parse the JSON when it exits 75. Daemon-spawned workers write logs to
+                    // worker-<slug>.log and the daemon re-derives the conflict from the lease file.
                     println!(
                         "{}",
                         daemon::lock::WorkspaceBusyReport::from_conflict(conflict)
                             .to_single_line_json()
                     );
-                    use std::io::Write;
                     let _ = std::io::stdout().flush();
                 }
             }

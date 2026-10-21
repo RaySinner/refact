@@ -4,10 +4,8 @@ use tokio::io::AsyncRead;
 
 use crate::global_context::GlobalContext;
 
-pub async fn watch_parent_stdin_for_eof<R>(
-    mut reader: R,
-    on_eof: Arc<dyn Fn() + Send + Sync>,
-) where
+pub async fn watch_parent_stdin_for_eof<R>(mut reader: R, on_eof: Arc<dyn Fn() + Send + Sync>)
+where
     R: AsyncRead + Unpin,
 {
     use tokio::io::AsyncReadExt;
@@ -34,7 +32,11 @@ pub async fn run_parent_stdin_watch(gcx: Arc<GlobalContext>) {
     watch_parent_stdin_for_eof(
         tokio::io::stdin(),
         Arc::new(move || {
-            if let Err(error) = on_eof_sender.lock().unwrap().send("parent stdin EOF".to_string()) {
+            if let Err(error) = on_eof_sender
+                .lock()
+                .unwrap()
+                .send("parent stdin EOF".to_string())
+            {
                 tracing::debug!("failed to request shutdown after parent stdin EOF: {error}");
             }
         }),
@@ -42,12 +44,14 @@ pub async fn run_parent_stdin_watch(gcx: Arc<GlobalContext>) {
     .await;
 }
 
-pub fn spawn_parent_stdin_watch_if_requested(gcx: Arc<GlobalContext>) -> Option<tokio::task::JoinHandle<()>> {
+pub fn spawn_parent_stdin_watch_if_requested(
+    gcx: Arc<GlobalContext>,
+) -> Option<tokio::task::JoinHandle<()>> {
     if !gcx.cmdline.watch_parent_stdin {
         return None;
     }
     if gcx.cmdline.lsp_stdin_stdout != 0 {
-        tracing::warn!("--watch-parent-stdin ignored because --lsp-stdin-stdout owns stdin");
+        eprintln!("--watch-parent-stdin ignored because --lsp-stdin-stdout owns stdin");
         return None;
     }
     Some(tokio::spawn(run_parent_stdin_watch(gcx)))
@@ -89,7 +93,10 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         server.write_all(b"hello").await.unwrap();
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        assert!(!fired.load(Ordering::SeqCst), "EOF must not fire while the parent holds the pipe open");
+        assert!(
+            !fired.load(Ordering::SeqCst),
+            "EOF must not fire while the parent holds the pipe open"
+        );
         drop(server);
         reader_task.await.unwrap();
         assert!(fired.load(Ordering::SeqCst));

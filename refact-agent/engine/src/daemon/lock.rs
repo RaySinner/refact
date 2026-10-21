@@ -534,7 +534,11 @@ mod tests {
         let conflict = WorkspaceLeaseConflict {
             root: std::path::PathBuf::from("/tmp/project"),
             path: std::path::PathBuf::from("/locks/x.lock"),
-            holder: Some(WorkspaceLeaseInfo::for_current_process(8001, 8002, "refact-lsp")),
+            holder: Some(WorkspaceLeaseInfo::for_current_process(
+                8001,
+                8002,
+                "refact-lsp",
+            )),
         };
         let report = WorkspaceBusyReport::from_conflict(&conflict);
         let json = report.to_single_line_json();

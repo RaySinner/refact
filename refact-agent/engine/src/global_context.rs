@@ -221,6 +221,11 @@ pub struct CommandLine {
         help = "Watch stdin and shut down gracefully when it reaches EOF. For IDE plugins that spawn the engine as an attached child process, so the engine exits when the parent dies. Incompatible with --lsp-stdin-stdout, which owns stdin; the flag is ignored there."
     )]
     pub watch_parent_stdin: bool,
+    #[structopt(
+        long,
+        help = "Do not advertise the HTTP server over mDNS. IDE plugins that spawn one engine per window pass this, otherwise every window publishes a conflicting _refact-lsp._tcp record."
+    )]
+    pub no_mdns: bool,
 
     #[structopt(
         long,
@@ -1184,6 +1189,7 @@ pub mod tests {
             daemon_endpoint: String::new(),
             daemon_auth_token: None,
             watch_parent_stdin: false,
+            no_mdns: false,
             project_id: String::new(),
         };
 

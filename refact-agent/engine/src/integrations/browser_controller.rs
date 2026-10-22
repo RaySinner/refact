@@ -497,17 +497,6 @@ mod tests {
             .contains("relaunched and retried"));
     }
 
-    fn navigate_step(url: &str) -> BrowserStep {
-        BrowserStep::Navigate {
-            url: url.to_string(),
-            timeout_ms: None,
-        }
-    }
-
-    fn screenshot_step() -> BrowserStep {
-        serde_json::from_value(serde_json::json!({"action": "screenshot"})).unwrap()
-    }
-
     #[test]
     fn unexecuted_steps_are_marked_skipped_instead_of_vanishing() {
         let mut results = vec![

@@ -6,6 +6,7 @@ use serde_json::json;
 use tokio::fs;
 use tokio::sync::{Mutex as AMutex, Notify};
 use tracing::{info, warn};
+use crate::chat::types::TrajectorySourceIdentitySessionExt;
 
 use crate::app_state::AppState;
 use crate::call_validation::ChatMessage;
@@ -37,8 +38,8 @@ use super::writer::{
     atomic_write_json_with_tmp_path, trajectory_writer_rollout_enabled, unique_trajectory_tmp_path,
 };
 
-const TRAJECTORY_FLUSH_TIMEOUT: Duration = Duration::from_secs(5);
-const TRAJECTORY_COMMIT_STALL_TIMEOUT: Duration = Duration::from_secs(60);
+pub(super) const TRAJECTORY_FLUSH_TIMEOUT: Duration = Duration::from_secs(5);
+pub(super) const TRAJECTORY_COMMIT_STALL_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub async fn save_trajectory_snapshot(
     gcx: Arc<GlobalContext>,
@@ -68,51 +69,51 @@ pub async fn save_trajectory_snapshot(
     result
 }
 
-struct DetachedTrajectoryWriterState {
-    pending: Option<(u64, TrajectorySnapshot)>,
-    requested_version: u64,
-    committed_version: u64,
-    in_flight: bool,
-    error: Option<String>,
-    error_version: u64,
-    notify: Arc<Notify>,
-    write_cache: Arc<AMutex<DetachedTrajectoryWriteCache>>,
+pub(super) struct DetachedTrajectoryWriterState {
+    pub(super) pending: Option<(u64, TrajectorySnapshot)>,
+    pub(super) requested_version: u64,
+    pub(super) committed_version: u64,
+    pub(super) in_flight: bool,
+    pub(super) error: Option<String>,
+    pub(super) error_version: u64,
+    pub(super) notify: Arc<Notify>,
+    pub(super) write_cache: Arc<AMutex<DetachedTrajectoryWriteCache>>,
 }
 
 #[derive(Default)]
-struct DetachedTrajectoryWriteCache {
-    backing_path: Option<PathBuf>,
-    existing_metadata: Option<serde_json::Map<String, serde_json::Value>>,
-    source: Option<TrajectorySourceIdentity>,
-    backing_stamp: Option<TrajectoryFileStamp>,
+pub(super) struct DetachedTrajectoryWriteCache {
+    pub(super) backing_path: Option<PathBuf>,
+    pub(super) existing_metadata: Option<serde_json::Map<String, serde_json::Value>>,
+    pub(super) source: Option<TrajectorySourceIdentity>,
+    pub(super) backing_stamp: Option<TrajectoryFileStamp>,
 }
 
 #[derive(Clone, PartialEq, Eq)]
-struct TrajectoryFileStamp {
-    len: u64,
-    modified_unix_ms: i64,
+pub(super) struct TrajectoryFileStamp {
+    pub(super) len: u64,
+    pub(super) modified_unix_ms: i64,
 }
 
 #[derive(Clone)]
-struct TrajectoryMetadataCacheEntry {
-    chat_id: String,
-    metadata: serde_json::Map<String, serde_json::Value>,
-    stamp: TrajectoryFileStamp,
-    last_access: u64,
+pub(super) struct TrajectoryMetadataCacheEntry {
+    pub(super) chat_id: String,
+    pub(super) metadata: serde_json::Map<String, serde_json::Value>,
+    pub(super) stamp: TrajectoryFileStamp,
+    pub(super) last_access: u64,
 }
 
-const MAX_CACHED_TRAJECTORY_METADATA: usize = 256;
+pub(super) const MAX_CACHED_TRAJECTORY_METADATA: usize = 256;
 
-static TRAJECTORY_METADATA_CACHE_ACCESS_COUNTER: OnceLock<std::sync::atomic::AtomicU64> =
+pub(super) static TRAJECTORY_METADATA_CACHE_ACCESS_COUNTER: OnceLock<std::sync::atomic::AtomicU64> =
     OnceLock::new();
 
-fn next_trajectory_metadata_cache_access_stamp() -> u64 {
+pub(super) fn next_trajectory_metadata_cache_access_stamp() -> u64 {
     TRAJECTORY_METADATA_CACHE_ACCESS_COUNTER
         .get_or_init(|| std::sync::atomic::AtomicU64::new(1))
         .fetch_add(1, Ordering::Relaxed)
 }
 
-fn trajectory_metadata_cache(
+pub(super) fn trajectory_metadata_cache(
 ) -> &'static StdMutex<std::collections::HashMap<PathBuf, TrajectoryMetadataCacheEntry>> {
     static CACHE: OnceLock<
         StdMutex<std::collections::HashMap<PathBuf, TrajectoryMetadataCacheEntry>>,
@@ -120,11 +121,11 @@ fn trajectory_metadata_cache(
     CACHE.get_or_init(|| StdMutex::new(std::collections::HashMap::new()))
 }
 
-fn trajectory_metadata_cache_key(path: &Path) -> PathBuf {
+pub(super) fn trajectory_metadata_cache_key(path: &Path) -> PathBuf {
     crate::files_correction::canonicalize_normalized_path(path.to_path_buf())
 }
 
-fn preservable_trajectory_metadata(
+pub(super) fn preservable_trajectory_metadata(
     source: &serde_json::Map<String, serde_json::Value>,
 ) -> serde_json::Map<String, serde_json::Value> {
     source
@@ -138,7 +139,7 @@ fn preservable_trajectory_metadata(
         .collect()
 }
 
-fn store_trajectory_metadata_cache_entry(path: &Path, entry: TrajectoryMetadataCacheEntry) {
+pub(super) fn store_trajectory_metadata_cache_entry(path: &Path, entry: TrajectoryMetadataCacheEntry) {
     let path = trajectory_metadata_cache_key(path);
     let mut cache = trajectory_metadata_cache()
         .lock()
@@ -160,7 +161,7 @@ fn store_trajectory_metadata_cache_entry(path: &Path, entry: TrajectoryMetadataC
     cache.insert(path, entry);
 }
 
-async fn trajectory_file_stamp(path: &Path) -> Option<TrajectoryFileStamp> {
+pub(super) async fn trajectory_file_stamp(path: &Path) -> Option<TrajectoryFileStamp> {
     let metadata = fs::symlink_metadata(path).await.ok()?;
     if metadata.file_type().is_symlink() || !metadata.is_file() {
         return None;
@@ -178,11 +179,11 @@ async fn trajectory_file_stamp(path: &Path) -> Option<TrajectoryFileStamp> {
     })
 }
 
-async fn trajectory_stamp_matches(path: &Path, expected: &TrajectoryFileStamp) -> bool {
+pub(super) async fn trajectory_stamp_matches(path: &Path, expected: &TrajectoryFileStamp) -> bool {
     trajectory_file_stamp(path).await.as_ref() == Some(expected)
 }
 
-async fn cached_existing_trajectory_object(
+pub(super) async fn cached_existing_trajectory_object(
     path: &Path,
     chat_id: &str,
 ) -> Result<Option<serde_json::Map<String, serde_json::Value>>, String> {
@@ -228,7 +229,7 @@ async fn cached_existing_trajectory_object(
     Ok(metadata)
 }
 
-async fn cache_written_trajectory_metadata(
+pub(super) async fn cache_written_trajectory_metadata(
     path: &Path,
     chat_id: &str,
     trajectory: &serde_json::Value,
@@ -263,23 +264,23 @@ impl Default for DetachedTrajectoryWriterState {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-struct DetachedTrajectoryWriterKey {
-    workspace_folders: Vec<PathBuf>,
-    source: TrajectorySourceIdentity,
-    chat_id: String,
+pub(super) struct DetachedTrajectoryWriterKey {
+    pub(super) workspace_folders: Vec<PathBuf>,
+    pub(super) source: TrajectorySourceIdentity,
+    pub(super) chat_id: String,
 }
 
-type DetachedTrajectoryWriterRegistry = std::collections::HashMap<
+pub(super) type DetachedTrajectoryWriterRegistry = std::collections::HashMap<
     DetachedTrajectoryWriterKey,
     Weak<AMutex<DetachedTrajectoryWriterState>>,
 >;
 
-fn detached_trajectory_writers() -> &'static StdMutex<DetachedTrajectoryWriterRegistry> {
+pub(super) fn detached_trajectory_writers() -> &'static StdMutex<DetachedTrajectoryWriterRegistry> {
     static WRITERS: OnceLock<StdMutex<DetachedTrajectoryWriterRegistry>> = OnceLock::new();
     WRITERS.get_or_init(|| StdMutex::new(std::collections::HashMap::new()))
 }
 
-fn detached_trajectory_writer_key(
+pub(super) fn detached_trajectory_writer_key(
     gcx: &Arc<GlobalContext>,
     snapshot: &TrajectorySnapshot,
 ) -> DetachedTrajectoryWriterKey {
@@ -303,7 +304,7 @@ fn detached_trajectory_writer_key(
     }
 }
 
-fn detached_trajectory_writer(
+pub(super) fn detached_trajectory_writer(
     gcx: &Arc<GlobalContext>,
     snapshot: &TrajectorySnapshot,
 ) -> Arc<AMutex<DetachedTrajectoryWriterState>> {
@@ -320,14 +321,14 @@ fn detached_trajectory_writer(
     writer
 }
 
-fn prune_detached_trajectory_writers() {
+pub(super) fn prune_detached_trajectory_writers() {
     detached_trajectory_writers()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .retain(|_, writer| writer.strong_count() > 0);
 }
 
-async fn flush_detached_trajectory_writers() -> Result<(), Vec<String>> {
+pub(super) async fn flush_detached_trajectory_writers() -> Result<(), Vec<String>> {
     let errors = {
         let writers = {
             let mut writers = detached_trajectory_writers()
@@ -372,7 +373,7 @@ pub(crate) async fn persist_trajectory_snapshot_with_intent(
     }
 }
 
-async fn schedule_detached_trajectory_writer(
+pub(super) async fn schedule_detached_trajectory_writer(
     gcx: Arc<GlobalContext>,
     snapshot: TrajectorySnapshot,
     intent: TrajectoryCommitIntent,
@@ -400,7 +401,7 @@ async fn schedule_detached_trajectory_writer(
     Ok(())
 }
 
-async fn run_detached_trajectory_writer(
+pub(super) async fn run_detached_trajectory_writer(
     gcx: Arc<GlobalContext>,
     writer: Arc<AMutex<DetachedTrajectoryWriterState>>,
 ) {
@@ -453,7 +454,7 @@ async fn run_detached_trajectory_writer(
     }
 }
 
-async fn wait_for_detached_trajectory_commit(
+pub(super) async fn wait_for_detached_trajectory_commit(
     writer: Arc<AMutex<DetachedTrajectoryWriterState>>,
     target_version: u64,
 ) -> Result<(), String> {
@@ -518,12 +519,12 @@ async fn wait_for_detached_trajectory_commit(
 }
 
 #[cfg(test)]
-static TEST_MESSAGE_SERIALIZATION_FAILURE_ID: std::sync::OnceLock<
+pub(super) static TEST_MESSAGE_SERIALIZATION_FAILURE_ID: std::sync::OnceLock<
     std::sync::Mutex<Option<String>>,
 > = std::sync::OnceLock::new();
 
 #[cfg(test)]
-fn test_message_serialization_should_fail(message: &ChatMessage) -> bool {
+pub(super) fn test_message_serialization_should_fail(message: &ChatMessage) -> bool {
     TEST_MESSAGE_SERIALIZATION_FAILURE_ID
         .get_or_init(|| std::sync::Mutex::new(None))
         .lock()
@@ -534,7 +535,7 @@ fn test_message_serialization_should_fail(message: &ChatMessage) -> bool {
 }
 
 #[cfg(test)]
-fn set_test_message_serialization_failure(message_id: Option<String>) {
+pub(super) fn set_test_message_serialization_failure(message_id: Option<String>) {
     *TEST_MESSAGE_SERIALIZATION_FAILURE_ID
         .get_or_init(|| std::sync::Mutex::new(None))
         .lock()
@@ -542,12 +543,12 @@ fn set_test_message_serialization_failure(message_id: Option<String>) {
 }
 
 #[cfg(test)]
-static TEST_DETACHED_TRAJECTORY_WRITER_FAILURE_HOOK: std::sync::OnceLock<
+pub(super) static TEST_DETACHED_TRAJECTORY_WRITER_FAILURE_HOOK: std::sync::OnceLock<
     std::sync::Mutex<Option<(String, Arc<Notify>, Arc<Notify>)>>,
 > = std::sync::OnceLock::new();
 
 #[cfg(test)]
-fn set_test_detached_trajectory_writer_failure_hook(
+pub(super) fn set_test_detached_trajectory_writer_failure_hook(
     hook: Option<(String, Arc<Notify>, Arc<Notify>)>,
 ) {
     *TEST_DETACHED_TRAJECTORY_WRITER_FAILURE_HOOK
@@ -557,7 +558,7 @@ fn set_test_detached_trajectory_writer_failure_hook(
 }
 
 #[cfg(test)]
-async fn wait_for_test_detached_trajectory_writer_failure(chat_id: &str) {
+pub(super) async fn wait_for_test_detached_trajectory_writer_failure(chat_id: &str) {
     let hook = TEST_DETACHED_TRAJECTORY_WRITER_FAILURE_HOOK
         .get_or_init(|| std::sync::Mutex::new(None))
         .lock()
@@ -572,7 +573,7 @@ async fn wait_for_test_detached_trajectory_writer_failure(chat_id: &str) {
     }
 }
 
-async fn save_trajectory_snapshot_inner(
+pub(super) async fn save_trajectory_snapshot_inner(
     gcx: Arc<GlobalContext>,
     mut snapshot: TrajectorySnapshot,
     write_cache: Option<Arc<AMutex<DetachedTrajectoryWriteCache>>>,
@@ -1162,7 +1163,7 @@ pub async fn try_save_trajectory_with_intent(
     Ok(!session.trajectory_dirty)
 }
 
-async fn try_save_trajectory_legacy_with_intent(
+pub(super) async fn try_save_trajectory_legacy_with_intent(
     app: AppState,
     session_arc: Arc<AMutex<ChatSession>>,
     intent: TrajectoryCommitIntent,
@@ -1179,13 +1180,13 @@ async fn try_save_trajectory_legacy_with_intent(
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SessionTrajectoryCommitOutcome {
+pub(super) enum SessionTrajectoryCommitOutcome {
     Committed,
     SkippedStale,
     SkippedEphemeral,
 }
 
-async fn commit_trajectory_snapshot_for_session(
+pub(super) async fn commit_trajectory_snapshot_for_session(
     gcx: Arc<GlobalContext>,
     session_arc: Arc<AMutex<ChatSession>>,
     snapshot: TrajectorySnapshot,
@@ -1248,7 +1249,7 @@ async fn commit_trajectory_snapshot_for_session(
     }
 }
 
-async fn schedule_trajectory_writer(
+pub(super) async fn schedule_trajectory_writer(
     app: AppState,
     session_arc: Arc<AMutex<ChatSession>>,
     intent: TrajectoryCommitIntent,
@@ -1329,7 +1330,7 @@ async fn schedule_trajectory_writer(
     Ok(should_spawn)
 }
 
-async fn wait_for_trajectory_commit(
+pub(super) async fn wait_for_trajectory_commit(
     session_arc: Arc<AMutex<ChatSession>>,
     target_version: u64,
 ) -> Result<(), String> {
@@ -1389,7 +1390,7 @@ pub async fn flush_all_trajectories(app: AppState) -> Result<(), Vec<String>> {
     flush_all_trajectories_with_timeout(app, TRAJECTORY_FLUSH_TIMEOUT).await
 }
 
-async fn flush_all_trajectories_with_timeout(
+pub(super) async fn flush_all_trajectories_with_timeout(
     app: AppState,
     timeout: Duration,
 ) -> Result<(), Vec<String>> {

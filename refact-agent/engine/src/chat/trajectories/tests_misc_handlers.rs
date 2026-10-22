@@ -1890,5 +1890,3 @@ use super::test_support::*;
             .unwrap_err();
         assert_eq!(err.status_code, StatusCode::NOT_FOUND);
     }
-}
-

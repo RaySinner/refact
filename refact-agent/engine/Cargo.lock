@@ -4012,6 +4012,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "tempfile",
+ "tokio",
  "tracing",
  "tungstenite 0.28.0",
  "url",

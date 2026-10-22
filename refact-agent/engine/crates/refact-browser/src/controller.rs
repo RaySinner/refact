@@ -3756,6 +3756,12 @@ pub fn execute_steps_with_runtime(
     }
 }
 
+fn step_hit_dead_transport(step: &StepResult) -> bool {
+    step.error
+        .as_deref()
+        .is_some_and(refact_browser::is_transport_dead_error)
+}
+
 fn is_non_fatal_step(step: &BrowserStep) -> bool {
     matches!(
         step,

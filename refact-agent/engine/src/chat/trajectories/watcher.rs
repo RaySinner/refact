@@ -5,11 +5,12 @@ use std::time::Instant;
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use tokio::fs;
 use tracing::{debug, info, warn};
+use crate::chat::types::TrajectorySourceIdentitySessionExt;
 
 use crate::app_state::AppState;
 use crate::chat::config::timeouts;
 use crate::chat::trajectory_index;
-use crate::chat::types::TrajectorySourceIdentity;
+use crate::chat::types::{ExternalReloadPending, TrajectorySourceIdentity};
 use crate::global_context::GlobalContext;
 
 use super::load::{load_generic_trajectory_for_chat, load_generic_trajectory_for_chat_matching_source};
@@ -26,14 +27,13 @@ use super::queries::{
 use super::reload::{
     apply_external_delete_with_revalidation, apply_loaded_external_update_with_repair,
     can_apply_external_reload, persist_loaded_trajectory_repair, ExternalDeleteRevalidationOutcome,
-    ExternalReloadPending,
 };
 use super::writer::{
     consume_trajectory_self_write, trajectory_watcher_self_write_rollout_enabled,
     TrajectorySelfWriteScope,
 };
 
-async fn refresh_trajectory_index_entry_for_path(
+pub(super) async fn refresh_trajectory_index_entry_for_path(
     gcx: Arc<GlobalContext>,
     path: &Path,
     source_hint: Option<TrajectorySourceIdentity>,
@@ -68,7 +68,7 @@ async fn refresh_trajectory_index_entry_for_path(
     .await
 }
 
-async fn remove_stale_trajectory_index_entries(gcx: Arc<GlobalContext>, chat_id: &str) {
+pub(super) async fn remove_stale_trajectory_index_entries(gcx: Arc<GlobalContext>, chat_id: &str) {
     let app = AppState::from_gcx(gcx.clone()).await;
     let dirs = match find_trajectory_file(gcx.clone(), chat_id).await {
         Some(candidate) => index_dir_for_trajectory_file(gcx.clone(), &candidate.path)
@@ -132,7 +132,7 @@ pub(crate) async fn process_trajectory_change(
     process_trajectory_change_for_source(gcx, chat_id, is_remove, None).await;
 }
 
-async fn process_trajectory_change_for_source(
+pub(super) async fn process_trajectory_change_for_source(
     gcx: Arc<GlobalContext>,
     chat_id: &str,
     is_remove: bool,
@@ -395,7 +395,7 @@ pub(super) fn trajectory_source_identity_from_path(
         .unwrap_or(TrajectorySourceIdentity::Normal)
 }
 
-async fn collect_task_trajectory_sources_under_path(
+pub(super) async fn collect_task_trajectory_sources_under_path(
     path: &Path,
     task_roots: &[PathBuf],
 ) -> Vec<(String, TrajectorySourceIdentity, PathBuf)> {
@@ -431,7 +431,7 @@ async fn collect_task_trajectory_sources_under_path(
     sources
 }
 
-async fn collect_trajectory_sources_under_path(
+pub(super) async fn collect_trajectory_sources_under_path(
     path: &Path,
     task_roots: &[PathBuf],
 ) -> Vec<(String, TrajectorySourceIdentity, PathBuf)> {
@@ -462,7 +462,7 @@ async fn collect_trajectory_sources_under_path(
     sources
 }
 
-fn schedule_trajectory_watcher_overflow_recovery(
+pub(super) fn schedule_trajectory_watcher_overflow_recovery(
     pending_scans: &mut std::collections::HashMap<PathBuf, Instant>,
     dropped_events: &AtomicUsize,
     watched_roots: &[PathBuf],
@@ -481,18 +481,18 @@ fn schedule_trajectory_watcher_overflow_recovery(
     }
 }
 
-type TrajectoryPendingKey = (String, TrajectorySourceIdentity);
+pub(super) type TrajectoryPendingKey = (String, TrajectorySourceIdentity);
 
-struct TrajectoryPendingChange {
-    last_event_at: Instant,
-    is_remove: bool,
-    path: PathBuf,
+pub(super) struct TrajectoryPendingChange {
+    pub(super) last_event_at: Instant,
+    pub(super) is_remove: bool,
+    pub(super) path: PathBuf,
 }
 
-type TrajectoryPendingMap =
+pub(super) type TrajectoryPendingMap =
     std::collections::HashMap<TrajectoryPendingKey, TrajectoryPendingChange>;
 
-fn insert_pending_trajectory_change(
+pub(super) fn insert_pending_trajectory_change(
     pending: &mut TrajectoryPendingMap,
     chat_id: String,
     is_remove: bool,
@@ -510,7 +510,7 @@ fn insert_pending_trajectory_change(
     );
 }
 
-enum TrajectoryWatcherMessage {
+pub(super) enum TrajectoryWatcherMessage {
     Trajectory {
         chat_id: String,
         is_remove: bool,
@@ -541,7 +541,7 @@ pub(super) fn trajectory_watcher_message_for_path(
         .then_some(TrajectoryWatcherMessage::ScanPath(path))
 }
 
-async fn process_trajectory_watcher_change(
+pub(super) async fn process_trajectory_watcher_change(
     gcx: Arc<GlobalContext>,
     chat_id: String,
     is_remove: bool,

@@ -3,6 +3,7 @@ use std::sync::Arc;
 use serde_json::json;
 use tokio::sync::Mutex as AMutex;
 use tracing::{info, warn};
+use crate::chat::types::TrajectorySourceIdentitySessionExt;
 
 use crate::app_state::AppState;
 use crate::call_validation::{ChatContent, ChatMessage};
@@ -26,22 +27,22 @@ use super::paths::{
 use super::watcher::trajectory_source_identity_from_path;
 use super::writer::{atomic_write_json_with_tmp_path, unique_trajectory_tmp_path};
 
-fn normalize_system_prompt(system_prompt: Option<String>) -> Option<String> {
+pub(super) fn normalize_system_prompt(system_prompt: Option<String>) -> Option<String> {
     system_prompt.filter(|text| !text.trim().is_empty())
 }
 
-fn frozen_prefix_has_system_prompt(prefix: &FrozenRequestPrefix) -> bool {
+pub(super) fn frozen_prefix_has_system_prompt(prefix: &FrozenRequestPrefix) -> bool {
     prefix
         .system_prompt
         .as_ref()
         .is_some_and(|text| !text.trim().is_empty())
 }
 
-fn frozen_prefix_has_tools(prefix: &FrozenRequestPrefix) -> bool {
+pub(super) fn frozen_prefix_has_tools(prefix: &FrozenRequestPrefix) -> bool {
     prefix.tools_canonical.is_some()
 }
 
-fn is_mode_transition_or_handoff(link_type: Option<&str>) -> bool {
+pub(super) fn is_mode_transition_or_handoff(link_type: Option<&str>) -> bool {
     matches!(link_type, Some("mode_transition" | "handoff"))
 }
 
@@ -74,7 +75,7 @@ pub(super) fn raw_frozen_prefix_has_tools(value: Option<&serde_json::Value>) -> 
         .is_some_and(|value| !value.is_null())
 }
 
-fn legacy_incomplete_prefix_from_messages(messages: &[ChatMessage]) -> Option<FrozenRequestPrefix> {
+pub(super) fn legacy_incomplete_prefix_from_messages(messages: &[ChatMessage]) -> Option<FrozenRequestPrefix> {
     first_system_prompt(messages)
         .map(|system_prompt| new_legacy_incomplete_frozen_request_prefix(Some(system_prompt)))
 }
@@ -427,7 +428,7 @@ pub(super) fn loaded_trajectory_source(
     }
 }
 
-fn external_delete_matches_session(
+pub(super) fn external_delete_matches_session(
     deleted_source: Option<&TrajectorySourceIdentity>,
     session: &ChatSession,
 ) -> bool {
@@ -447,7 +448,7 @@ pub(super) fn can_apply_external_reload(session: &ChatSession) -> bool {
         && session.runner_pending_deliveries.is_empty()
 }
 
-fn pending_reload_source_matches_session(
+pub(super) fn pending_reload_source_matches_session(
     pending: &ExternalReloadPending,
     session: &ChatSession,
 ) -> bool {
@@ -458,11 +459,11 @@ fn pending_reload_source_matches_session(
     }
 }
 
-fn is_active_buddy_session(session: &ChatSession) -> bool {
+pub(super) fn is_active_buddy_session(session: &ChatSession) -> bool {
     session.thread.buddy_meta.is_some()
 }
 
-fn apply_external_delete_to_session(session: &mut ChatSession, chat_id: &str) {
+pub(super) fn apply_external_delete_to_session(session: &mut ChatSession, chat_id: &str) {
     session.release_turn_only_state();
     session.messages.clear();
     session.thread = ThreadParams {
@@ -481,7 +482,7 @@ fn apply_external_delete_to_session(session: &mut ChatSession, chat_id: &str) {
     session.emit(snapshot);
 }
 
-fn apply_loaded_external_update_to_session(
+pub(super) fn apply_loaded_external_update_to_session(
     session: &mut ChatSession,
     loaded: LoadedTrajectory,
     transition_identity_repaired: bool,
@@ -505,7 +506,7 @@ fn apply_loaded_external_update_to_session(
     session.emit(snapshot);
     transition_identity_repaired.then_some(session.trajectory_version)
 }
-fn session_is_passive_child_view(session: &ChatSession) -> bool {
+pub(super) fn session_is_passive_child_view(session: &ChatSession) -> bool {
     session.thread.buddy_meta.is_some()
         || (session.thread.parent_id.is_some()
             && session.thread.link_type.as_deref().map_or(true, |lt| {

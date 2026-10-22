@@ -10,13 +10,13 @@ use serde_json::json;
 use tokio::fs;
 use tokio::sync::{Mutex as AMutex, broadcast};
 use tracing::{info, warn};
+use crate::chat::types::TrajectorySourceIdentitySessionExt;
 
 use refact_chat_history::trajectory_event::TrajectoryEvent;
 use crate::app_state::AppState;
 use crate::call_validation::{ChatContent, ChatMessage};
-use crate::chat::session::ChatSession;
 use crate::chat::trajectory_index;
-use crate::chat::types::{TrajectoryCommitIntent, TrajectorySourceIdentity};
+use crate::chat::types::{ChatSession, TrajectoryCommitIntent, TrajectorySourceIdentity};
 use crate::custom_error::ScratchError;
 use crate::global_context::GlobalContext;
 use crate::subchat::run_subchat_once;
@@ -59,7 +59,7 @@ pub(super) fn is_placeholder_title(title: &str) -> bool {
     normalized.is_empty() || normalized == "new chat" || normalized == "untitled"
 }
 
-fn is_placeholder_task_name(name: &str) -> bool {
+pub(super) fn is_placeholder_task_name(name: &str) -> bool {
     let normalized = name.trim().to_lowercase();
     normalized.is_empty() || normalized == "new task" || normalized == "untitled"
 }
@@ -76,7 +76,7 @@ pub(super) fn count_user_messages(messages: &[serde_json::Value]) -> usize {
         .count()
 }
 
-fn json_message_is_ui_only(msg: &serde_json::Value) -> bool {
+pub(super) fn json_message_is_ui_only(msg: &serde_json::Value) -> bool {
     msg.get("_ui_only").and_then(|v| v.as_bool()) == Some(true)
         || msg
             .get("extra")
@@ -85,7 +85,7 @@ fn json_message_is_ui_only(msg: &serde_json::Value) -> bool {
             == Some(true)
 }
 
-fn extract_first_user_message(messages: &[serde_json::Value]) -> Option<String> {
+pub(super) fn extract_first_user_message(messages: &[serde_json::Value]) -> Option<String> {
     for msg in messages {
         if json_message_is_ui_only(msg) {
             continue;
@@ -137,7 +137,7 @@ pub fn extract_text_with_image_placeholders_from_json(
     None
 }
 
-fn build_title_generation_context(messages: &[serde_json::Value]) -> String {
+pub(super) fn build_title_generation_context(messages: &[serde_json::Value]) -> String {
     let mut context = String::new();
     let max_messages = 6;
     let max_chars_per_message = 500;
@@ -181,7 +181,7 @@ fn build_title_generation_context(messages: &[serde_json::Value]) -> String {
     context
 }
 
-fn truncate_text_chars(text: &str, max_chars: usize) -> String {
+pub(super) fn truncate_text_chars(text: &str, max_chars: usize) -> String {
     if text.chars().count() <= max_chars {
         return text.to_string();
     }
@@ -191,7 +191,7 @@ fn truncate_text_chars(text: &str, max_chars: usize) -> String {
     text.chars().take(max_chars - 3).collect::<String>() + "..."
 }
 
-fn clean_generated_title(raw_title: &str) -> String {
+pub(super) fn clean_generated_title(raw_title: &str) -> String {
     let cleaned = raw_title
         .trim()
         .trim_matches('"')
@@ -230,7 +230,7 @@ pub(crate) fn task_context_from_task_meta(
         .unwrap_or((None, None, None, None))
 }
 
-async fn generate_title_llm(
+pub(super) async fn generate_title_llm(
     gcx: Arc<GlobalContext>,
     messages: &[serde_json::Value],
     parent_chat_id: Option<&str>,
@@ -966,7 +966,7 @@ pub(super) fn decode_cursor(cursor: &str) -> Option<(String, String)> {
     }
 }
 
-async fn trajectory_data_to_meta_validated(app: AppState, data: &TrajectoryData) -> TrajectoryMeta {
+pub(super) async fn trajectory_data_to_meta_validated(app: AppState, data: &TrajectoryData) -> TrajectoryMeta {
     let mut meta = trajectory_data_to_meta(data);
     if let Some(worktree) = trajectory_worktree_from_extra(&data.extra) {
         meta.worktree = validate_loaded_worktree_strict(app, &data.id, worktree).await;
@@ -1115,7 +1115,7 @@ pub(super) fn updated_trajectory_event_from_meta_with_worktree(
     }
 }
 
-fn apply_task_trajectory_context(path: &Path, task_roots: &[PathBuf], meta: &mut TrajectoryMeta) {
+pub(super) fn apply_task_trajectory_context(path: &Path, task_roots: &[PathBuf], meta: &mut TrajectoryMeta) {
     if let Some((task_id, role, agent_id)) = task_trajectory_context_from_path(path, task_roots) {
         meta.source = effective_trajectory_source_for_path(meta.source.clone(), path, task_roots);
         if meta.task_id.is_none() {
@@ -1130,7 +1130,7 @@ fn apply_task_trajectory_context(path: &Path, task_roots: &[PathBuf], meta: &mut
     }
 }
 
-fn trajectory_list_candidate_matches_hydrated_data(
+pub(super) fn trajectory_list_candidate_matches_hydrated_data(
     candidate: &TrajectoryListCandidate,
     data: &TrajectoryData,
 ) -> bool {

@@ -8,6 +8,7 @@ use serde::de::{Deserializer as _, IgnoredAny, MapAccess, Visitor};
 use tokio::fs;
 use tokio::sync::mpsc;
 use tracing::{info, warn};
+use crate::chat::types::TrajectorySourceIdentitySessionExt;
 
 use crate::app_state::AppState;
 use crate::call_validation::ChatMessage;
@@ -37,21 +38,21 @@ pub async fn get_global_trajectories_dir(gcx: Arc<GlobalContext>) -> PathBuf {
 
 pub const INTERNAL_TRACE_LINK_PREFIX: &str = "internal:";
 pub const UNATTRIBUTED_TRACES_DIR: &str = "internal";
-const PRUNE_THROTTLE_MAX_ENTRIES: usize = 256;
+pub(super) const PRUNE_THROTTLE_MAX_ENTRIES: usize = 256;
 
 #[derive(Default)]
-struct PruneThrottle {
-    entries: std::collections::HashMap<PathBuf, PruneThrottleEntry>,
-    next_access: u64,
+pub(super) struct PruneThrottle {
+    pub(super) entries: std::collections::HashMap<PathBuf, PruneThrottleEntry>,
+    pub(super) next_access: u64,
 }
 
-struct PruneThrottleEntry {
-    last_pruned_unix_secs: u64,
-    last_access: u64,
+pub(super) struct PruneThrottleEntry {
+    pub(super) last_pruned_unix_secs: u64,
+    pub(super) last_access: u64,
 }
 
 impl PruneThrottle {
-    fn claim(&mut self, dir: &Path, now: u64, interval_secs: u64) -> bool {
+    pub(super) fn claim(&mut self, dir: &Path, now: u64, interval_secs: u64) -> bool {
         self.next_access = self.next_access.saturating_add(1);
         if let Some(entry) = self.entries.get_mut(dir) {
             if now.saturating_sub(entry.last_pruned_unix_secs) < interval_secs {
@@ -93,7 +94,7 @@ impl PruneThrottle {
     }
 }
 
-fn claim_prune_throttle(
+pub(super) fn claim_prune_throttle(
     throttle: &StdMutex<PruneThrottle>,
     dir: &Path,
     now: u64,
@@ -106,7 +107,7 @@ fn claim_prune_throttle(
     Ok(throttle.claim(dir, now, interval_secs))
 }
 
-fn release_prune_throttle(
+pub(super) fn release_prune_throttle(
     throttle: &StdMutex<PruneThrottle>,
     dir: &Path,
     claimed_at_unix_secs: u64,
@@ -116,14 +117,14 @@ fn release_prune_throttle(
     }
 }
 
-fn internal_trace_prune_throttle() -> &'static StdMutex<PruneThrottle> {
+pub(super) fn internal_trace_prune_throttle() -> &'static StdMutex<PruneThrottle> {
     static LAST_PRUNE_BY_DIR: OnceLock<StdMutex<PruneThrottle>> = OnceLock::new();
     LAST_PRUNE_BY_DIR.get_or_init(|| StdMutex::new(PruneThrottle::default()))
 }
 
-const STALE_ENTRY_CLEANUP_INTERVAL_SECS: u64 = 60;
+pub(super) const STALE_ENTRY_CLEANUP_INTERVAL_SECS: u64 = 60;
 
-fn stale_entry_cleanup_throttle() -> &'static StdMutex<PruneThrottle> {
+pub(super) fn stale_entry_cleanup_throttle() -> &'static StdMutex<PruneThrottle> {
     static LAST_CLEANUP_BY_CHAT: OnceLock<StdMutex<PruneThrottle>> = OnceLock::new();
     LAST_CLEANUP_BY_CHAT.get_or_init(|| StdMutex::new(PruneThrottle::default()))
 }
@@ -143,7 +144,7 @@ pub(super) fn stale_entry_cleanup_allowed(chat_id: &str) -> bool {
     .unwrap_or(true)
 }
 
-struct TopLevelInternalTraceVisitor;
+pub(super) struct TopLevelInternalTraceVisitor;
 
 impl<'de> Visitor<'de> for TopLevelInternalTraceVisitor {
     type Value = bool;
@@ -186,7 +187,7 @@ impl<'de> Visitor<'de> for TopLevelInternalTraceVisitor {
     }
 }
 
-fn top_level_link_type_is_internal_from_reader<R: std::io::Read>(reader: R) -> bool {
+pub(super) fn top_level_link_type_is_internal_from_reader<R: std::io::Read>(reader: R) -> bool {
     // `serde_json`'s `IoRead` pulls the document through `Read::bytes()`, i.e. one `read()`
     // syscall per byte consumed. Buffering is what makes scanning a multi-megabyte trajectory
     // affordable; without it a single 144 MB folder costs ~144 million syscalls per scan.
@@ -197,7 +198,7 @@ fn top_level_link_type_is_internal_from_reader<R: std::io::Read>(reader: R) -> b
         .unwrap_or(false)
 }
 
-fn parsed_top_level_link_type_is_internal(path: PathBuf) -> bool {
+pub(super) fn parsed_top_level_link_type_is_internal(path: PathBuf) -> bool {
     match std::fs::symlink_metadata(&path) {
         Ok(metadata) if metadata.is_file() && !metadata.file_type().is_symlink() => {}
         _ => return false,
@@ -220,7 +221,7 @@ pub(super) fn should_vectorize_trajectory(
     !matches!(source, TrajectorySourceIdentity::Buddy) && !is_internal_trace_link_type(link_type)
 }
 
-const TRAJECTORY_VECTORIZATION_QUEUE_CAPACITY: usize = 64;
+pub(super) const TRAJECTORY_VECTORIZATION_QUEUE_CAPACITY: usize = 64;
 
 #[derive(Default)]
 pub struct TrajectoryVectorizationQueue {
@@ -228,7 +229,7 @@ pub struct TrajectoryVectorizationQueue {
     worker: Option<tokio::task::JoinHandle<()>>,
 }
 
-async fn wait_for_trajectory_vectorization_shutdown(
+pub(super) async fn wait_for_trajectory_vectorization_shutdown(
     shutdown_flag: Arc<std::sync::atomic::AtomicBool>,
 ) {
     while !shutdown_flag.load(Ordering::Relaxed) {
@@ -281,7 +282,7 @@ pub(super) async fn enqueue_trajectory_vectorization(gcx: Arc<GlobalContext>, fi
     }
 }
 
-async fn run_trajectory_vectorization_queue(
+pub(super) async fn run_trajectory_vectorization_queue(
     gcx_weak: Weak<GlobalContext>,
     mut receiver: mpsc::Receiver<PathBuf>,
 ) {
@@ -329,7 +330,7 @@ pub fn internal_trace_link_type(feature: &str) -> String {
     format!("{INTERNAL_TRACE_LINK_PREFIX}{feature}")
 }
 
-async fn prune_internal_traces_in_folder(dir: &Path, keep: usize) -> Result<usize, String> {
+pub(super) async fn prune_internal_traces_in_folder(dir: &Path, keep: usize) -> Result<usize, String> {
     let mut entries = match fs::read_dir(dir).await {
         Ok(entries) => entries,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
@@ -444,7 +445,7 @@ pub(crate) async fn index_dir_for_trajectory_file(
     Some(parent.to_path_buf())
 }
 
-const TRAJECTORY_ID_MISMATCH_PREFIX: &str = "Existing trajectory file id mismatch";
+pub(super) const TRAJECTORY_ID_MISMATCH_PREFIX: &str = "Existing trajectory file id mismatch";
 
 pub(crate) fn trajectory_id_mismatch_error(path: &Path) -> String {
     format!("{TRAJECTORY_ID_MISMATCH_PREFIX} for {}", path.display())
@@ -498,7 +499,7 @@ pub async fn get_all_trajectories_dirs(gcx: Arc<GlobalContext>) -> Vec<PathBuf> 
     dirs
 }
 
-fn task_root_candidates(
+pub(super) fn task_root_candidates(
     gcx: Arc<GlobalContext>,
 ) -> impl std::future::Future<Output = Vec<PathBuf>> {
     async move {
@@ -523,7 +524,7 @@ pub(super) async fn get_all_task_roots(gcx: Arc<GlobalContext>) -> Vec<PathBuf> 
     dirs
 }
 
-async fn get_or_create_all_task_roots(gcx: Arc<GlobalContext>) -> Vec<PathBuf> {
+pub(super) async fn get_or_create_all_task_roots(gcx: Arc<GlobalContext>) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     for dir in task_root_candidates(gcx).await {
         if ensure_real_dir_tree(&dir).await.is_ok() {
@@ -560,7 +561,7 @@ pub(crate) async fn list_task_trajectory_dirs(gcx: &Arc<GlobalContext>) -> Vec<P
     dirs
 }
 
-async fn collect_existing_dirs(root: PathBuf, dirs: &mut Vec<PathBuf>) {
+pub(super) async fn collect_existing_dirs(root: PathBuf, dirs: &mut Vec<PathBuf>) {
     let mut pending = vec![root];
     while let Some(dir) = pending.pop() {
         if !is_real_dir(&dir).await {
@@ -613,7 +614,7 @@ pub(super) async fn get_or_create_buddy_conversations_dir(
     Ok(dir)
 }
 
-fn buddy_conversation_prune_throttle() -> &'static StdMutex<PruneThrottle> {
+pub(super) fn buddy_conversation_prune_throttle() -> &'static StdMutex<PruneThrottle> {
     static LAST_PRUNE_BY_DIR: OnceLock<StdMutex<PruneThrottle>> = OnceLock::new();
     LAST_PRUNE_BY_DIR.get_or_init(|| StdMutex::new(PruneThrottle::default()))
 }
@@ -671,7 +672,7 @@ pub(crate) async fn prune_buddy_conversations_in_dir(
     .await
 }
 
-async fn prune_buddy_conversations_in_dir_with_coordinator(
+pub(super) async fn prune_buddy_conversations_in_dir_with_coordinator(
     dir: &Path,
     keep: usize,
     min_age_secs: u64,
@@ -788,7 +789,7 @@ pub(super) fn fix_tool_call_indexes(messages: &mut [ChatMessage]) {
     }
 }
 
-fn extend_unique_paths(
+pub(super) fn extend_unique_paths(
     target: &mut Vec<PathBuf>,
     seen: &mut std::collections::HashSet<PathBuf>,
     paths: Vec<PathBuf>,
@@ -800,7 +801,7 @@ fn extend_unique_paths(
     }
 }
 
-async fn indexed_candidate_paths_in_dirs(
+pub(super) async fn indexed_candidate_paths_in_dirs(
     gcx: &Arc<GlobalContext>,
     dirs: &[PathBuf],
     chat_id: &str,
@@ -882,7 +883,7 @@ pub(super) async fn trajectory_candidate_paths(
     candidates
 }
 
-async fn nested_chat_folder_candidate_paths(
+pub(super) async fn nested_chat_folder_candidate_paths(
     gcx: Arc<GlobalContext>,
     chat_id: &str,
 ) -> Vec<PathBuf> {
@@ -952,7 +953,7 @@ pub(super) async fn read_valid_trajectory_candidate(
     })
 }
 
-async fn first_valid_trajectory_candidate(
+pub(super) async fn first_valid_trajectory_candidate(
     paths: Vec<PathBuf>,
     chat_id: &str,
 ) -> Option<ValidTrajectoryCandidate> {
@@ -1050,7 +1051,7 @@ pub async fn find_trajectory_or_buddy_path(
         .await
         .map(|candidate| candidate.path)
 }
-async fn find_validated_trajectory_path_in_dirs(
+pub(super) async fn find_validated_trajectory_path_in_dirs(
     chat_id: &str,
     dirs: Vec<PathBuf>,
 ) -> Option<PathBuf> {
@@ -1068,7 +1069,7 @@ async fn find_validated_trajectory_path_in_dirs(
     None
 }
 
-async fn find_validated_trajectory_path_for_source(
+pub(super) async fn find_validated_trajectory_path_for_source(
     gcx: Arc<GlobalContext>,
     chat_id: &str,
     source: &TrajectorySourceIdentity,
@@ -1211,14 +1212,14 @@ pub(super) async fn read_existing_trajectory_object(
 /// counter instead, since every test already uses a unique chat id, so concurrently running tests
 /// can no longer inflate one another's deltas.
 #[cfg(test)]
-fn trajectory_metadata_disk_reads_by_chat(
+pub(super) fn trajectory_metadata_disk_reads_by_chat(
 ) -> &'static StdMutex<std::collections::HashMap<String, usize>> {
     static READS: OnceLock<StdMutex<std::collections::HashMap<String, usize>>> = OnceLock::new();
     READS.get_or_init(|| StdMutex::new(std::collections::HashMap::new()))
 }
 
 #[cfg(test)]
-fn record_trajectory_metadata_disk_read(chat_id: &str) {
+pub(super) fn record_trajectory_metadata_disk_read(chat_id: &str) {
     *trajectory_metadata_disk_reads_by_chat()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -1227,7 +1228,7 @@ fn record_trajectory_metadata_disk_read(chat_id: &str) {
 }
 
 #[cfg(test)]
-fn trajectory_metadata_disk_reads_for_chat(chat_id: &str) -> usize {
+pub(super) fn trajectory_metadata_disk_reads_for_chat(chat_id: &str) -> usize {
     trajectory_metadata_disk_reads_by_chat()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())

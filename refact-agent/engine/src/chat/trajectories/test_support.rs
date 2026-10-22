@@ -17,14 +17,14 @@ use super::*;
     use std::path::{Path, PathBuf};
     use std::process::Command;
     use std::sync::Mutex as StdMutex;
-    struct BlockingRecordingVecdb {
-        enqueued: Arc<StdMutex<Vec<String>>>,
-        enqueue_started: Arc<Notify>,
-        release_enqueue: Arc<Notify>,
+    pub(super) struct BlockingRecordingVecdb {
+        pub(super) enqueued: Arc<StdMutex<Vec<String>>>,
+        pub(super) enqueue_started: Arc<Notify>,
+        pub(super) release_enqueue: Arc<Notify>,
     }
 
-    struct PanickingVecdb {
-        enqueue_started: Arc<Notify>,
+    pub(super) struct PanickingVecdb {
+        pub(super) enqueue_started: Arc<Notify>,
     }
 
     #[async_trait]
@@ -188,12 +188,12 @@ use super::*;
         }
     }
 
-    fn normalized_test_path(path: &Path) -> PathBuf {
+    pub(super) fn normalized_test_path(path: &Path) -> PathBuf {
         crate::files_correction::canonicalize_normalized_path(path.to_path_buf())
     }
 
-    struct TestPerfClock {
-        now: AtomicU64,
+    pub(super) struct TestPerfClock {
+        pub(super) now: AtomicU64,
     }
 
     impl TestPerfClock {
@@ -210,7 +210,7 @@ use super::*;
         }
     }
 
-    fn install_perf_recorder() -> (
+    pub(super) fn install_perf_recorder() -> (
         perf_diagnostics::TestRecorderGuard,
         Arc<MemoryPerfSink>,
         Arc<PerfRecorder>,
@@ -228,23 +228,23 @@ use super::*;
         )
     }
 
-    fn serial_test_guard() -> std::sync::MutexGuard<'static, ()> {
+    pub(super) fn serial_test_guard() -> std::sync::MutexGuard<'static, ()> {
         perf_diagnostics::PERF_RECORDER_TEST_LOCK.lock().unwrap()
     }
 
-    fn assert_same_path(left: &Path, right: &Path) {
+    pub(super) fn assert_same_path(left: &Path, right: &Path) {
         assert_eq!(normalized_test_path(left), normalized_test_path(right));
     }
 
-    fn assert_same_optional_path(left: Option<PathBuf>, right: &Path) {
+    pub(super) fn assert_same_optional_path(left: Option<PathBuf>, right: &Path) {
         assert_same_path(&left.expect("path should exist"), right);
     }
 
-    fn assert_same_path_str(left: &str, right: &Path) {
+    pub(super) fn assert_same_path_str(left: &str, right: &Path) {
         assert_same_path(Path::new(left), right);
     }
 
-    async fn write_conversation_file(dir: &Path, id: &str, age_secs: u64) -> PathBuf {
+    pub(super) async fn write_conversation_file(dir: &Path, id: &str, age_secs: u64) -> PathBuf {
         let path = dir.join(format!("{id}.json"));
         tokio::fs::write(
             &path,
@@ -265,7 +265,7 @@ use super::*;
         path
     }
 
-    fn run_git(cwd: &Path, args: &[&str]) {
+    pub(super) fn run_git(cwd: &Path, args: &[&str]) {
         let output = Command::new("git")
             .args(args)
             .current_dir(cwd)
@@ -279,7 +279,7 @@ use super::*;
         );
     }
 
-    fn init_repo(root: &Path) {
+    pub(super) fn init_repo(root: &Path) {
         run_git(root, &["init"]);
         run_git(root, &["checkout", "-b", "main"]);
         run_git(root, &["config", "core.autocrlf", "false"]);
@@ -290,7 +290,7 @@ use super::*;
         run_git(root, &["commit", "-m", "initial"]);
     }
 
-    async fn make_app_with_workspace(root: &Path) -> (Arc<GlobalContext>, AppState) {
+    pub(super) async fn make_app_with_workspace(root: &Path) -> (Arc<GlobalContext>, AppState) {
         let gcx = crate::global_context::tests::make_test_gcx().await;
         let app = AppState::from_gcx(gcx.clone()).await;
         *app.workspace
@@ -301,7 +301,7 @@ use super::*;
         (gcx, app)
     }
 
-    fn sample_trajectory(id: &str, title: &str, updated_at: &str) -> serde_json::Value {
+    pub(super) fn sample_trajectory(id: &str, title: &str, updated_at: &str) -> serde_json::Value {
         json!({
             "id": id,
             "title": title,
@@ -316,7 +316,7 @@ use super::*;
         })
     }
 
-    async fn write_trajectory_file(path: &Path, id: &str, title: &str, updated_at: &str) {
+    pub(super) async fn write_trajectory_file(path: &Path, id: &str, title: &str, updated_at: &str) {
         tokio::fs::create_dir_all(path.parent().unwrap())
             .await
             .unwrap();
@@ -328,7 +328,7 @@ use super::*;
         .unwrap();
     }
 
-    async fn write_trajectory_file_with_user_message(
+    pub(super) async fn write_trajectory_file_with_user_message(
         path: &Path,
         id: &str,
         title: &str,
@@ -344,7 +344,7 @@ use super::*;
             .unwrap();
     }
 
-    async fn write_trajectory_file_with_metadata(
+    pub(super) async fn write_trajectory_file_with_metadata(
         path: &Path,
         id: &str,
         title: &str,
@@ -367,7 +367,7 @@ use super::*;
             .unwrap();
     }
 
-    async fn write_schema_incomplete_trajectory_file(path: &Path, id: &str) {
+    pub(super) async fn write_schema_incomplete_trajectory_file(path: &Path, id: &str) {
         tokio::fs::create_dir_all(path.parent().unwrap())
             .await
             .unwrap();
@@ -376,7 +376,7 @@ use super::*;
             .unwrap();
     }
 
-    async fn write_buddy_conversation_file(path: &Path, id: &str, title: &str) {
+    pub(super) async fn write_buddy_conversation_file(path: &Path, id: &str, title: &str) {
         tokio::fs::create_dir_all(path.parent().unwrap())
             .await
             .unwrap();
@@ -402,7 +402,7 @@ use super::*;
         .unwrap();
     }
 
-    fn task_meta(
+    pub(super) fn task_meta(
         task_id: &str,
         role: &str,
         agent_id: Option<&str>,
@@ -418,7 +418,7 @@ use super::*;
         }
     }
 
-    async fn write_task_trajectory_file_with_user_message(
+    pub(super) async fn write_task_trajectory_file_with_user_message(
         path: &Path,
         id: &str,
         title: &str,
@@ -436,7 +436,7 @@ use super::*;
             .unwrap();
     }
 
-    fn buddy_thread_meta() -> BuddyThreadMeta {
+    pub(super) fn buddy_thread_meta() -> BuddyThreadMeta {
         BuddyThreadMeta {
             is_buddy_chat: true,
             buddy_chat_kind: "investigation".to_string(),
@@ -444,11 +444,11 @@ use super::*;
         }
     }
 
-    async fn wait_for_watcher_start() {
+    pub(super) async fn wait_for_watcher_start() {
         tokio::time::sleep(std::time::Duration::from_millis(400)).await;
     }
 
-    fn nested_trajectory_path(
+    pub(super) fn nested_trajectory_path(
         workspace: &std::path::Path,
         folder: &str,
         chat_id: &str,
@@ -460,13 +460,13 @@ use super::*;
             .join(format!("{chat_id}.json"))
     }
 
-    fn write_temp_json(dir: &tempfile::TempDir, name: &str, contents: &str) -> PathBuf {
+    pub(super) fn write_temp_json(dir: &tempfile::TempDir, name: &str, contents: &str) -> PathBuf {
         let path = dir.path().join(name);
         std::fs::write(&path, contents).unwrap();
         path
     }
 
-    fn assert_prune_throttle_is_bounded_and_isolates_directories() {
+    pub(super) fn assert_prune_throttle_is_bounded_and_isolates_directories() {
         let mut throttle = PruneThrottle::default();
         let left = PathBuf::from("/tmp/left");
         let right = PathBuf::from("/tmp/right");
@@ -483,7 +483,7 @@ use super::*;
         assert!(throttle.claim(&right, 3601, 3600));
     }
 
-    fn test_snapshot(chat_id: &str, title: &str, messages: Vec<ChatMessage>) -> TrajectorySnapshot {
+    pub(super) fn test_snapshot(chat_id: &str, title: &str, messages: Vec<ChatMessage>) -> TrajectorySnapshot {
         TrajectorySnapshot {
             goal: None,
             goal_ledger: Vec::new(),
@@ -531,7 +531,7 @@ use super::*;
         }
     }
 
-    async fn wait_for_trajectory_event(
+    pub(super) async fn wait_for_trajectory_event(
         rx: &mut broadcast::Receiver<TrajectoryEvent>,
         id: &str,
     ) -> TrajectoryEvent {
@@ -552,7 +552,7 @@ use super::*;
         .unwrap_or_else(|_| panic!("timed out waiting for trajectory event {id}"))
     }
 
-    async fn drain_trajectory_events(rx: &mut broadcast::Receiver<TrajectoryEvent>) {
+    pub(super) async fn drain_trajectory_events(rx: &mut broadcast::Receiver<TrajectoryEvent>) {
         loop {
             match tokio::time::timeout(std::time::Duration::from_millis(50), rx.recv()).await {
                 Ok(Ok(_)) | Ok(Err(broadcast::error::RecvError::Lagged(_))) => continue,
@@ -561,7 +561,7 @@ use super::*;
         }
     }
 
-    async fn assert_no_trajectory_event_for(
+    pub(super) async fn assert_no_trajectory_event_for(
         rx: &mut broadcast::Receiver<TrajectoryEvent>,
         duration: std::time::Duration,
     ) {
@@ -574,7 +574,7 @@ use super::*;
         }
     }
 
-    async fn assert_no_chat_event_for(
+    pub(super) async fn assert_no_chat_event_for(
         rx: &mut broadcast::Receiver<Arc<String>>,
         duration: std::time::Duration,
     ) {
@@ -587,7 +587,7 @@ use super::*;
         }
     }
 
-    async fn wait_for_file_title(path: &Path, expected_title: &str) {
+    pub(super) async fn wait_for_file_title(path: &Path, expected_title: &str) {
         let mut last_title = None;
         tokio::time::timeout(std::time::Duration::from_secs(5), async {
             loop {
@@ -618,7 +618,7 @@ use super::*;
         });
     }
 
-    async fn wait_for_session_title(session_arc: &Arc<AMutex<ChatSession>>, expected_title: &str) {
+    pub(super) async fn wait_for_session_title(session_arc: &Arc<AMutex<ChatSession>>, expected_title: &str) {
         let mut last_title = None;
         tokio::time::timeout(std::time::Duration::from_secs(5), async {
             loop {
@@ -641,11 +641,11 @@ use super::*;
         });
     }
 
-    fn trajectory_worktree_sample() -> WorktreeMeta {
+    pub(super) fn trajectory_worktree_sample() -> WorktreeMeta {
         trajectory_worktree_sample_with_id("wt-1")
     }
 
-    fn trajectory_worktree_sample_with_id(id: &str) -> WorktreeMeta {
+    pub(super) fn trajectory_worktree_sample_with_id(id: &str) -> WorktreeMeta {
         WorktreeMeta {
             id: id.to_string(),
             kind: "task_agent".to_string(),
@@ -662,7 +662,7 @@ use super::*;
         }
     }
 
-    fn mark_active_compression(session: &mut ChatSession, phase: CompressionPhase) {
+    pub(super) fn mark_active_compression(session: &mut ChatSession, phase: CompressionPhase) {
         session.is_compressing = true;
         session.runtime.is_compressing = true;
         session.compression_phase = Some(phase);
@@ -673,7 +673,7 @@ use super::*;
         session.active_compression_attempt = Some(9);
     }
 
-    async fn assert_external_remove_clears_active_compression(phase: CompressionPhase) {
+    pub(super) async fn assert_external_remove_clears_active_compression(phase: CompressionPhase) {
         let dir = tempfile::tempdir().unwrap();
         let (gcx, app) = make_app_with_workspace(dir.path()).await;
         let chat_id = format!("external-remove-{:?}", phase).to_lowercase();

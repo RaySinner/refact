@@ -48,7 +48,7 @@ pub(super) fn unique_trajectory_tmp_path(file_path: &Path) -> PathBuf {
     file_path.with_extension(format!("json.tmp.{}", &random[..8]))
 }
 
-async fn atomic_write_json_with_tmp_path(
+pub(super) async fn atomic_write_json_with_tmp_path(
     path: &Path,
     tmp_path: &Path,
     json_result: Result<String, String>,
@@ -87,7 +87,7 @@ async fn atomic_write_json_with_tmp_path(
 pub const TRAJECTORY_WRITER_ENV: &str = "REFACT_TRAJECTORY_WRITER";
 pub const TRAJECTORY_WATCHER_SELF_WRITE_ENV: &str = "REFACT_TRAJECTORY_WATCHER_SELF_WRITE";
 
-static TRAJECTORY_WRITER_ROLLOUT: OnceLock<bool> = OnceLock::new();
+pub(super) static TRAJECTORY_WRITER_ROLLOUT: OnceLock<bool> = OnceLock::new();
 
 pub(super) fn rollout_switch_enabled<F>(cache: &OnceLock<bool>, read: F) -> bool
 where
@@ -129,7 +129,7 @@ pub(crate) fn trajectory_writer_rollout_enabled_for(value: Option<&str>) -> bool
 }
 
 #[cfg(any(test, feature = "bench"))]
-fn trajectory_writer_rollout_override() -> &'static StdMutex<Option<bool>> {
+pub(super) fn trajectory_writer_rollout_override() -> &'static StdMutex<Option<bool>> {
     static OVERRIDE: OnceLock<StdMutex<Option<bool>>> = OnceLock::new();
     OVERRIDE.get_or_init(|| StdMutex::new(None))
 }
@@ -181,40 +181,40 @@ pub(crate) fn trajectory_watcher_self_write_rollout_enabled_for(value: Option<&s
     })
 }
 
-const TRAJECTORY_SELF_WRITE_TTL: Duration = Duration::from_secs(10);
-const TRAJECTORY_SELF_WRITE_MAX_RECORDS: usize = 512;
+pub(super) const TRAJECTORY_SELF_WRITE_TTL: Duration = Duration::from_secs(10);
+pub(super) const TRAJECTORY_SELF_WRITE_MAX_RECORDS: usize = 512;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct TrajectoryWriteFingerprint {
-    file_len: u64,
-    file_modified_unix_ms: i64,
-    content_hash: [u8; 16],
+pub(super) struct TrajectoryWriteFingerprint {
+    pub(super) file_len: u64,
+    pub(super) file_modified_unix_ms: i64,
+    pub(super) content_hash: [u8; 16],
 }
 
 #[derive(Clone)]
-struct TrajectorySelfWriteHandle {
-    key: (PathBuf, TrajectorySourceIdentity),
-    nonce: Uuid,
+pub(super) struct TrajectorySelfWriteHandle {
+    pub(super) key: (PathBuf, TrajectorySourceIdentity),
+    pub(super) nonce: Uuid,
 }
 
-struct TrajectorySelfWriteRecord {
-    nonce: Uuid,
-    created_at: Instant,
-    expected_content_hash: [u8; 16],
-    fingerprint: Option<TrajectoryWriteFingerprint>,
+pub(super) struct TrajectorySelfWriteRecord {
+    pub(super) nonce: Uuid,
+    pub(super) created_at: Instant,
+    pub(super) expected_content_hash: [u8; 16],
+    pub(super) fingerprint: Option<TrajectoryWriteFingerprint>,
 }
 
-type TrajectorySelfWriteRegistry = std::collections::HashMap<
+pub(super) type TrajectorySelfWriteRegistry = std::collections::HashMap<
     (PathBuf, TrajectorySourceIdentity),
     std::collections::VecDeque<TrajectorySelfWriteRecord>,
 >;
 
-fn trajectory_self_writes() -> &'static StdMutex<TrajectorySelfWriteRegistry> {
+pub(super) fn trajectory_self_writes() -> &'static StdMutex<TrajectorySelfWriteRegistry> {
     static WRITES: OnceLock<StdMutex<TrajectorySelfWriteRegistry>> = OnceLock::new();
     WRITES.get_or_init(|| StdMutex::new(std::collections::HashMap::new()))
 }
 
-fn watcher_trajectory_source(source: &TrajectorySourceIdentity) -> TrajectorySourceIdentity {
+pub(super) fn watcher_trajectory_source(source: &TrajectorySourceIdentity) -> TrajectorySourceIdentity {
     match source {
         TrajectorySourceIdentity::Task {
             task_id,
@@ -232,7 +232,7 @@ fn watcher_trajectory_source(source: &TrajectorySourceIdentity) -> TrajectorySou
     }
 }
 
-fn prune_trajectory_self_writes(registry: &mut TrajectorySelfWriteRegistry, now: Instant) {
+pub(super) fn prune_trajectory_self_writes(registry: &mut TrajectorySelfWriteRegistry, now: Instant) {
     registry.retain(|_, records| {
         records.retain(|record| now.duration_since(record.created_at) < TRAJECTORY_SELF_WRITE_TTL);
         !records.is_empty()
@@ -263,14 +263,14 @@ fn prune_trajectory_self_writes(registry: &mut TrajectorySelfWriteRegistry, now:
     }
 }
 
-async fn canonical_trajectory_write_path(path: &Path) -> Option<PathBuf> {
+pub(super) async fn canonical_trajectory_write_path(path: &Path) -> Option<PathBuf> {
     let parent = path.parent()?;
     let file_name = path.file_name()?;
     let parent = fs::canonicalize(parent).await.ok()?;
     Some(dunce::simplified(&parent).join(file_name))
 }
 
-async fn trajectory_write_fingerprint(path: &Path) -> Option<TrajectoryWriteFingerprint> {
+pub(super) async fn trajectory_write_fingerprint(path: &Path) -> Option<TrajectoryWriteFingerprint> {
     let before = fs::symlink_metadata(path).await.ok()?;
     if before.file_type().is_symlink() || !before.is_file() {
         return None;
@@ -304,7 +304,7 @@ async fn trajectory_write_fingerprint(path: &Path) -> Option<TrajectoryWriteFing
     })
 }
 
-async fn trajectory_fingerprint_matches(
+pub(super) async fn trajectory_fingerprint_matches(
     path: &Path,
     expected: &TrajectoryWriteFingerprint,
 ) -> bool {
@@ -346,7 +346,7 @@ async fn trajectory_fingerprint_matches(
         && content.len() as u64 == after.len()
 }
 
-async fn register_trajectory_self_write(
+pub(super) async fn register_trajectory_self_write(
     path: &Path,
     source: TrajectorySourceIdentity,
     content: &str,
@@ -373,7 +373,7 @@ async fn register_trajectory_self_write(
     Some(TrajectorySelfWriteHandle { key, nonce })
 }
 
-fn discard_trajectory_self_write(handle: Option<TrajectorySelfWriteHandle>) {
+pub(super) fn discard_trajectory_self_write(handle: Option<TrajectorySelfWriteHandle>) {
     let Some(handle) = handle else {
         return;
     };
@@ -388,7 +388,7 @@ fn discard_trajectory_self_write(handle: Option<TrajectorySelfWriteHandle>) {
     }
 }
 
-async fn complete_trajectory_self_write(handle: Option<TrajectorySelfWriteHandle>) {
+pub(super) async fn complete_trajectory_self_write(handle: Option<TrajectorySelfWriteHandle>) {
     let Some(handle) = handle else {
         return;
     };
@@ -474,7 +474,7 @@ pub(super) async fn consume_trajectory_self_write(
     }
 }
 
-fn clear_trajectory_self_writes(watched_roots: &[PathBuf]) {
+pub(super) fn clear_trajectory_self_writes(watched_roots: &[PathBuf]) {
     let mut registry = trajectory_self_writes()
         .lock()
         .expect("trajectory self-write registry poisoned");

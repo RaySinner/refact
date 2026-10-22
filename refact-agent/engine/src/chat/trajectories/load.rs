@@ -104,21 +104,21 @@ pub(super) fn preserve_existing_trajectory_metadata(
     }
 }
 
-fn validate_task_trajectory_role(role: &str) -> Result<(), String> {
+pub(super) fn validate_task_trajectory_role(role: &str) -> Result<(), String> {
     match role {
         "planner" | "agents" | "subchats" => Ok(()),
         _ => Err(format!("Invalid task trajectory role: {role}")),
     }
 }
 
-fn validate_task_agent_id(agent_id: Option<&str>) -> Result<(), String> {
+pub(super) fn validate_task_agent_id(agent_id: Option<&str>) -> Result<(), String> {
     if let Some(agent_id) = agent_id {
         validate_trajectory_id(agent_id).map_err(|e| e.message)?;
     }
     Ok(())
 }
 
-async fn safe_task_dir(gcx: Arc<GlobalContext>, task_id: &str) -> Result<PathBuf, String> {
+pub(super) async fn safe_task_dir(gcx: Arc<GlobalContext>, task_id: &str) -> Result<PathBuf, String> {
     crate::tasks::storage::validate_task_id(task_id)?;
     for tasks_dir in get_all_task_roots(gcx).await {
         let candidate = tasks_dir.join(task_id);
@@ -129,7 +129,7 @@ async fn safe_task_dir(gcx: Arc<GlobalContext>, task_id: &str) -> Result<PathBuf
     Err(format!("Task not found: {task_id}"))
 }
 
-async fn safe_task_trajectory_dir(
+pub(super) async fn safe_task_trajectory_dir(
     gcx: Arc<GlobalContext>,
     task_meta: &crate::chat::types::TaskMeta,
 ) -> Result<PathBuf, String> {
@@ -162,7 +162,7 @@ pub(super) async fn safe_new_buddy_trajectory_file(
     safe_new_trajectory_file_in_dir(&buddy_dir, chat_id).await
 }
 
-async fn ensure_legacy_flat_slot_is_safe(
+pub(super) async fn ensure_legacy_flat_slot_is_safe(
     gcx: Arc<GlobalContext>,
     chat_id: &str,
 ) -> Result<(), String> {
@@ -214,7 +214,7 @@ pub(super) async fn trajectory_source_path_is_allowed(
     false
 }
 
-async fn resolve_trajectory_data_save_path(
+pub(super) async fn resolve_trajectory_data_save_path(
     gcx: Arc<GlobalContext>,
     id: &str,
     data: &TrajectoryData,
@@ -317,7 +317,7 @@ pub(super) async fn title_generation_backing_file_matches(
     true
 }
 
-fn repaired_created_at(raw_created_at: Option<&str>, transition_identity_repaired: bool) -> String {
+pub(super) fn repaired_created_at(raw_created_at: Option<&str>, transition_identity_repaired: bool) -> String {
     if transition_identity_repaired {
         if let Some(created_at) = raw_created_at {
             if parsed_rfc3339_utc(created_at).is_some() {
@@ -332,7 +332,7 @@ fn repaired_created_at(raw_created_at: Option<&str>, transition_identity_repaire
         .unwrap_or_else(|| chrono::Utc::now().to_rfc3339())
 }
 
-fn parse_worktree_meta(value: &serde_json::Value) -> Option<WorktreeMeta> {
+pub(super) fn parse_worktree_meta(value: &serde_json::Value) -> Option<WorktreeMeta> {
     if value.is_null() {
         return None;
     }
@@ -365,7 +365,7 @@ pub(super) fn sanitize_worktree_extra(
     }
 }
 
-async fn worktree_service_from_gcx(
+pub(super) async fn worktree_service_from_gcx(
     app: AppState,
     requested_source_root: Option<&Path>,
 ) -> Result<WorktreeService, String> {
@@ -433,7 +433,7 @@ pub(super) async fn validate_loaded_worktree_strict(
     }
 }
 
-async fn validate_loaded_legacy_task_agent_worktree(
+pub(super) async fn validate_loaded_legacy_task_agent_worktree(
     app: AppState,
     chat_id: &str,
     worktree: WorktreeMeta,
@@ -464,7 +464,7 @@ async fn validate_loaded_legacy_task_agent_worktree(
     }
 }
 
-async fn synthesize_legacy_task_agent_worktree(
+pub(super) async fn synthesize_legacy_task_agent_worktree(
     gcx: Arc<GlobalContext>,
     chat_id: &str,
     task_meta: Option<&crate::chat::types::TaskMeta>,
@@ -1014,7 +1014,7 @@ pub async fn load_generic_trajectory_for_chat(
     load_trajectory_candidate(gcx, chat_id, candidate).await
 }
 
-fn task_meta_is_planner_for_task(task_meta: Option<&TaskMeta>, task_id: &str) -> bool {
+pub(super) fn task_meta_is_planner_for_task(task_meta: Option<&TaskMeta>, task_id: &str) -> bool {
     task_meta.is_some_and(|meta| meta.role == "planner" && meta.task_id == task_id)
 }
 

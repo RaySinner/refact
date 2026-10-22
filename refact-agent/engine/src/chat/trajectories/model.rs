@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
@@ -142,7 +143,7 @@ pub(crate) struct TrajectoryListCandidate {
     pub(crate) indexed_file_modified_unix_ms: Option<i64>,
 }
 
-fn trajectory_list_main_link_type(link_type: Option<&str>) -> bool {
+pub(super) fn trajectory_list_main_link_type(link_type: Option<&str>) -> bool {
     matches!(link_type, Some("handoff" | "mode_transition" | "branch"))
 }
 
@@ -226,8 +227,6 @@ impl LoadedTrajectory {
     }
 }
 
-pub use refact_chat_history::trajectory_snapshot::TrajectorySnapshot;
-
 pub(crate) fn trajectory_snapshot_from_session(session: &ChatSession) -> TrajectorySnapshot {
     let span = perf_diagnostics::span(
         PerfComponent::TrajectorySnapshot,
@@ -299,7 +298,7 @@ pub(super) fn clamp_goal_snapshot_for_load(mut goal: GoalSnapshot) -> GoalSnapsh
     goal
 }
 
-fn goal_budget_has_hard_limits_for_load(budget: &refact_chat_api::GoalBudget) -> bool {
+pub(super) fn goal_budget_has_hard_limits_for_load(budget: &refact_chat_api::GoalBudget) -> bool {
     budget.max_turns.is_some_and(|limit| limit > 0)
         || budget.max_minutes.is_some_and(|limit| limit > 0)
         || budget.max_tokens.is_some_and(|limit| limit > 0)

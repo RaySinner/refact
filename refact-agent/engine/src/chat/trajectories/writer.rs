@@ -89,7 +89,7 @@ pub const TRAJECTORY_WATCHER_SELF_WRITE_ENV: &str = "REFACT_TRAJECTORY_WATCHER_S
 
 static TRAJECTORY_WRITER_ROLLOUT: OnceLock<bool> = OnceLock::new();
 
-fn rollout_switch_enabled<F>(cache: &OnceLock<bool>, read: F) -> bool
+pub(super) fn rollout_switch_enabled<F>(cache: &OnceLock<bool>, read: F) -> bool
 where
     F: FnOnce() -> bool,
 {

@@ -22,7 +22,6 @@ use super::load::{
     trajectory_root_id_matches, trajectory_source_matches_hint,
 };
 use super::{ensure_real_dir_tree, is_real_dir, safe_trajectory_file_in_dir};
-use super::TRAJECTORY_WATCHER_TASK;
 
 pub async fn get_trajectories_dir(gcx: Arc<GlobalContext>) -> Result<PathBuf, String> {
     let project_dirs = get_project_dirs(gcx).await;
@@ -129,7 +128,7 @@ fn stale_entry_cleanup_throttle() -> &'static StdMutex<PruneThrottle> {
     LAST_CLEANUP_BY_CHAT.get_or_init(|| StdMutex::new(PruneThrottle::default()))
 }
 
-fn stale_entry_cleanup_allowed(chat_id: &str) -> bool {
+pub(super) fn stale_entry_cleanup_allowed(chat_id: &str) -> bool {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|elapsed| elapsed.as_secs())
@@ -1236,16 +1235,7 @@ fn trajectory_metadata_disk_reads_for_chat(chat_id: &str) -> usize {
         .copied()
         .unwrap_or(0)
 }
-#[cfg(test)]
-pub(super) fn reset_test_trajectory_watcher_task() {
-    let mut guard = TRAJECTORY_WATCHER_TASK
-        .get_or_init(|| StdMutex::new(None))
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    if let Some(handle) = guard.take() {
-        handle.abort();
-    }
-}
+
 
 pub fn validate_trajectory_id(id: &str) -> Result<(), ScratchError> {
     if id.is_empty() || id.len() > 128 {

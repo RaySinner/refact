@@ -36,12 +36,14 @@ pub(crate) fn resolve_verifier_diff_base(
 }
 
 async fn run_git(worktree: &Path, args: &[&str]) -> Result<String, String> {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(worktree)
-        .output()
-        .await
-        .map_err(|e| format!("failed to run git {:?}: {}", args, e))?;
+    let mut command = Command::new("git");
+    command.args(args).current_dir(worktree);
+    let output = crate::worktrees::git::run_git_command(
+        command,
+        &format!("{:?}", args),
+        crate::worktrees::git::GIT_COMMAND_TIMEOUT,
+    )
+    .await?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         return Err(format!(

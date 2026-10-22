@@ -532,6 +532,8 @@ async fn run_git(worktree: &Path, args: &[&str], timeout: Duration) -> Result<St
     let mut child = tokio::process::Command::new("git")
         .args(args)
         .current_dir(worktree)
+        .stdin(Stdio::null())
+        .kill_on_drop(true)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()

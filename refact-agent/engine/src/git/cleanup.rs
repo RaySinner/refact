@@ -280,13 +280,18 @@ fn prune_old_refact_branches(repo_dir: &Path) -> Result<usize, String> {
 }
 
 async fn run_git_gc(repo_dir: &Path) -> Result<(), String> {
-    let output = tokio::process::Command::new("git")
+    let mut command = tokio::process::Command::new("git");
+    command
         .arg("-C")
         .arg(repo_dir)
-        .args(["gc", "--prune=now", "--quiet"])
-        .output()
-        .await
-        .map_err_to_string()?;
+        .args(["gc", "--prune=now", "--quiet"]);
+    let output = crate::worktrees::git::run_git_command(
+        command,
+        "gc --prune=now",
+        std::time::Duration::from_secs(600),
+    )
+    .await
+    .map_err_to_string()?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!(

@@ -220,19 +220,15 @@ async fn git_output_checked(
     args: &[&str],
     action: &str,
 ) -> Result<std::process::Output, String> {
-    let output = tokio::process::Command::new("git")
-        .args(args)
-        .current_dir(worktree_path)
-        .output()
-        .await
-        .map_err(|e| {
-            format!(
-                "Failed to run git {} in worktree '{}': {}",
-                action,
-                worktree_path.display(),
-                e
-            )
-        })?;
+    let mut command = tokio::process::Command::new("git");
+    command.args(args).current_dir(worktree_path);
+    let output = crate::worktrees::git::run_git_command(
+        command,
+        action,
+        crate::worktrees::git::GIT_COMMAND_TIMEOUT,
+    )
+    .await
+    .map_err(|e| format!("{} (worktree '{}')", e, worktree_path.display()))?;
 
     if !output.status.success() {
         return Err(format!(
@@ -260,18 +256,17 @@ async fn validate_git_worktree(worktree_path: &Path) -> Result<(), String> {
         ));
     }
 
-    let output = tokio::process::Command::new("git")
+    let mut command = tokio::process::Command::new("git");
+    command
         .args(["rev-parse", "--is-inside-work-tree"])
-        .current_dir(worktree_path)
-        .output()
-        .await
-        .map_err(|e| {
-            format!(
-                "Failed to validate git worktree '{}': {}",
-                worktree_path.display(),
-                e
-            )
-        })?;
+        .current_dir(worktree_path);
+    let output = crate::worktrees::git::run_git_command(
+        command,
+        "rev-parse --is-inside-work-tree",
+        crate::worktrees::git::GIT_COMMAND_TIMEOUT,
+    )
+    .await
+    .map_err(|e| format!("Failed to validate git worktree '{}': {}", worktree_path.display(), e))?;
 
     if !output.status.success() {
         return Err(format!(
@@ -802,19 +797,25 @@ async fn auto_commit_worktree_with_message(
         .filter(|msg| !msg.is_empty())
         .unwrap_or_else(|| deterministic_agent_commit_message(card_id, card_title));
 
-    let commit_output = tokio::process::Command::new("git")
-        .args([
-            "-c",
-            "user.name=Refact Agent",
-            "-c",
-            "user.email=agent@refact.ai",
+    let commit_output = {
+        let mut command = tokio::process::Command::new("git");
+        command
+            .args([
+                "-c",
+                "user.name=Refact Agent",
+                "-c",
+                "user.email=agent@refact.ai",
+                "commit",
+                "-m",
+                &commit_msg,
+                "--no-gpg-sign",
+            ])
+            .current_dir(worktree_path);
+        crate::worktrees::git::run_git_command(
+            command,
             "commit",
-            "-m",
-            &commit_msg,
-            "--no-gpg-sign",
-        ])
-        .current_dir(worktree_path)
-        .output()
+            crate::worktrees::git::GIT_COMMAND_TIMEOUT,
+        )
         .await
         .map_err(|e| {
             format!(
@@ -822,7 +823,8 @@ async fn auto_commit_worktree_with_message(
                 worktree_path.display(),
                 e
             )
-        })?;
+        })?
+    };
 
     if !commit_output.status.success() {
         let stderr = String::from_utf8_lossy(&commit_output.stderr);

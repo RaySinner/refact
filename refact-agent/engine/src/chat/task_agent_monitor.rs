@@ -1859,33 +1859,18 @@ pub(crate) async fn capture_failed_agent_diff(
     let mut diff_report = String::new();
 
     if worktree_path.exists() {
-        let uncommitted_diff = Command::new("git")
-            .args(["diff", "HEAD"])
-            .current_dir(worktree_path)
-            .output()
-            .ok()
-            .filter(|o| o.status.success())
-            .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
-            .unwrap_or_default();
+        let uncommitted_diff = run_git_stdout(worktree_path, &["diff", "HEAD"]).unwrap_or_default();
 
-        let committed_diff = Command::new("git")
-            .args(["log", "--patch", "--reverse", "HEAD@{upstream}..HEAD"])
-            .current_dir(worktree_path)
-            .output()
-            .ok()
-            .filter(|o| o.status.success())
-            .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
-            .unwrap_or_default();
+        let committed_diff =
+            run_git_stdout(worktree_path, &["log", "--patch", "--reverse", "HEAD@{upstream}..HEAD"])
+                .unwrap_or_default();
 
         let committed_diff = if committed_diff.is_empty() {
-            Command::new("git")
-                .args(["diff", &format!("{}~1..HEAD", agent_branch)])
-                .current_dir(worktree_path)
-                .output()
-                .ok()
-                .filter(|o| o.status.success())
-                .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
-                .unwrap_or_default()
+            run_git_stdout(
+                worktree_path,
+                &["diff", &format!("{}~1..HEAD", agent_branch)],
+            )
+            .unwrap_or_default()
         } else {
             committed_diff
         };
@@ -1934,12 +1919,21 @@ pub async fn update_card_heartbeat(
     .map(|_| ())
 }
 
+fn run_git_output(cwd: &Path, args: &[&str]) -> std::io::Result<std::process::Output> {
+    let mut command = Command::new("git");
+    crate::worktrees::git::harden_git_command(command.args(args).current_dir(cwd)).output()
+}
+
+fn run_git_stdout(cwd: &Path, args: &[&str]) -> Option<String> {
+    run_git_output(cwd, args)
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| String::from_utf8_lossy(&output.stdout).to_string())
+}
+
 pub fn git_diff_name_only(worktree_path: &Path, base_ref: &str, head_ref: &str) -> Vec<String> {
     let range = format!("{}..{}", base_ref, head_ref);
-    let output = Command::new("git")
-        .args(["diff", "--name-only", &range])
-        .current_dir(worktree_path)
-        .output();
+    let output = run_git_output(worktree_path, &["diff", "--name-only", &range]);
     match output {
         Ok(output) if output.status.success() => String::from_utf8_lossy(&output.stdout)
             .lines()

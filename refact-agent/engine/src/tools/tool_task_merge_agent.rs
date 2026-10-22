@@ -974,12 +974,14 @@ impl ToolTaskMergeAgent {
 }
 
 async fn run_git_in(cwd: &std::path::Path, args: &[&str]) -> Result<String, String> {
-    let output = tokio::process::Command::new("git")
-        .args(args)
-        .current_dir(cwd)
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run git: {}", e))?;
+    let mut command = tokio::process::Command::new("git");
+    command.args(args).current_dir(cwd);
+    let output = crate::worktrees::git::run_git_command(
+        command,
+        &format!("{:?}", args),
+        crate::worktrees::git::GIT_COMMAND_TIMEOUT,
+    )
+    .await?;
 
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
@@ -1050,13 +1052,20 @@ impl Tool for ToolTaskMergeAgent {
         let project_dirs = crate::files_correction::get_project_dirs(gcx.clone()).await;
         let workspace_root = project_dirs.first().ok_or("No workspace folder found")?;
 
-        let is_git_repo = tokio::process::Command::new("git")
-            .args(["rev-parse", "--is-inside-work-tree"])
-            .current_dir(workspace_root)
-            .output()
+        let is_git_repo = {
+            let mut command = tokio::process::Command::new("git");
+            command
+                .args(["rev-parse", "--is-inside-work-tree"])
+                .current_dir(workspace_root);
+            crate::worktrees::git::run_git_command(
+                command,
+                "rev-parse --is-inside-work-tree",
+                crate::worktrees::git::GIT_COMMAND_TIMEOUT,
+            )
             .await
             .map(|o| o.status.success())
-            .unwrap_or(false);
+            .unwrap_or(false)
+        };
         if !is_git_repo {
             return Err("Workspace is not a git repository".to_string());
         }
@@ -1223,14 +1232,17 @@ Then call `merge_agent` again."#,
 
         if commits_ahead == 0 {
             let worktree_status = if let Some(wt) = card.agent_worktree.as_ref() {
-                tokio::process::Command::new("git")
-                    .args(["status", "--porcelain"])
-                    .current_dir(wt)
-                    .output()
-                    .await
-                    .ok()
-                    .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-                    .unwrap_or_default()
+                let mut command = tokio::process::Command::new("git");
+                command.args(["status", "--porcelain"]).current_dir(wt);
+                crate::worktrees::git::run_git_command(
+                    command,
+                    "status --porcelain",
+                    crate::worktrees::git::GIT_COMMAND_TIMEOUT,
+                )
+                .await
+                .ok()
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                .unwrap_or_default()
             } else {
                 String::new()
             };
@@ -1495,11 +1507,16 @@ Use `cat <file>` to see conflict markers in each file."#,
         };
 
         let agent_worktree_dirty = if agent_branch != base_branch {
-            match tokio::process::Command::new("git")
+            let mut status_command = tokio::process::Command::new("git");
+            status_command
                 .args(["status", "--porcelain"])
-                .current_dir(agent_worktree)
-                .output()
-                .await
+                .current_dir(agent_worktree);
+            match crate::worktrees::git::run_git_command(
+                status_command,
+                "status --porcelain",
+                crate::worktrees::git::GIT_COMMAND_TIMEOUT,
+            )
+            .await
             {
                 Ok(output) if output.status.success() => {
                     !String::from_utf8_lossy(&output.stdout).trim().is_empty()

@@ -8,6 +8,64 @@ use uuid::Uuid;
 
 use crate::types::{WorktreeDiffFile, WorktreeDiffStats, WorktreeStatus};
 
+/// Default bound for a git subprocess started by the engine.
+pub const GIT_COMMAND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(180);
+
+/// Make a git child safe to run from the engine: no inherited stdin, killed on
+/// drop, never interactive.
+///
+/// The engine is spawned by the IDE with a live stdin pipe (`--watch-parent-stdin`).
+/// A git child that inherits that pipe can end up blocked in the kernel forever,
+/// which used to hang `agent_finish`/`merge_agent` with no tool result.
+pub fn harden_git_command(command: &mut std::process::Command) -> &mut std::process::Command {
+    command
+        .stdin(std::process::Stdio::null())
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GCM_INTERACTIVE", "never");
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    command
+}
+
+pub fn harden_git_tokio_command(
+    command: &mut tokio::process::Command,
+) -> &mut tokio::process::Command {
+    command
+        .stdin(std::process::Stdio::null())
+        .kill_on_drop(true)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GCM_INTERACTIVE", "never");
+    #[cfg(windows)]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    command
+}
+
+/// Run an already prepared git command with a bounded wait so a stuck git can
+/// never wedge the caller (and the agent turn) forever.
+pub async fn run_git_command(
+    mut command: tokio::process::Command,
+    what: &str,
+    timeout: std::time::Duration,
+) -> Result<std::process::Output, String> {
+    harden_git_tokio_command(&mut command);
+    match tokio::time::timeout(timeout, command.output()).await {
+        Ok(Ok(output)) => Ok(output),
+        Ok(Err(error)) => Err(format!("Failed to run git {}: {}", what, error)),
+        Err(_) => Err(format!(
+            "git {} did not finish within {}s and was stopped",
+            what,
+            timeout.as_secs()
+        )),
+    }
+}
+
 pub struct WorktreeCreateResult {
     pub branch_was_created: bool,
     pub repo_root: PathBuf,
@@ -227,13 +285,16 @@ fn add_worktree_with_git(
     worktree_path: &Path,
     branch_name: &str,
 ) -> Result<(), String> {
-    let output = Command::new("git")
-        .args(["worktree", "add"])
-        .arg(worktree_path)
-        .arg(branch_name)
-        .current_dir(source_root)
-        .output()
-        .map_err(|e| format!("Failed to run git worktree add: {}", e))?;
+    let mut command = Command::new("git");
+    let output = harden_git_command(
+        command
+            .args(["worktree", "add"])
+            .arg(worktree_path)
+            .arg(branch_name)
+            .current_dir(source_root),
+    )
+    .output()
+    .map_err(|e| format!("Failed to run git worktree add: {}", e))?;
     if output.status.success() {
         Ok(())
     } else {
@@ -368,9 +429,8 @@ pub fn status_for_path(path: &Path) -> WorktreeStatus {
 }
 
 pub fn run_git(path: &Path, args: &[&str]) -> Result<String, String> {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(path)
+    let mut command = Command::new("git");
+    let output = harden_git_command(command.args(args).current_dir(path))
         .output()
         .map_err(|e| format!("Failed to run git {:?}: {}", args, e))?;
     if output.status.success() {
@@ -1258,6 +1318,19 @@ mod tests {
 
     fn run(root: &Path, args: &[&str]) {
         run_git(root, args).unwrap_or_else(|e| panic!("git {:?} failed: {}", args, e));
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn run_git_command_returns_error_instead_of_hanging() {
+        let mut command = tokio::process::Command::new("cmd");
+        command.args(["/c", "ping", "-n", "30", "127.0.0.1"]);
+        let started = std::time::Instant::now();
+        let error = run_git_command(command, "slow command", std::time::Duration::from_millis(300))
+            .await
+            .expect_err("a command that outlives the timeout must not hang the caller");
+        assert!(error.contains("did not finish"), "unexpected error: {error}");
+        assert!(started.elapsed() < std::time::Duration::from_secs(10));
     }
 
     #[test]

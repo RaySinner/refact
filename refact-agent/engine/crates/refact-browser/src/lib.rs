@@ -1,3 +1,9 @@
+extern crate self as refact_browser;
+
+pub mod controller;
+pub mod help;
+pub mod settings;
+
 mod actionability;
 pub mod artifacts;
 pub mod assertions;

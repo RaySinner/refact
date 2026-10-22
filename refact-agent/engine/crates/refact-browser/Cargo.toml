@@ -16,6 +16,7 @@ reqwest = { version = "0.13", default-features = false, features = ["blocking", 
 serde.workspace = true
 serde_json.workspace = true
 serde_yaml = "0.9.31"
+tokio.workspace = true
 tracing.workspace = true
 tungstenite = { version = "0.28", features = ["rustls-tls-native-roots"] }
 url = "2"

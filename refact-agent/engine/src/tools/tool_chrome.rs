@@ -136,9 +136,7 @@ pub struct ToolChrome {
 
 const MAX_CACHED_LOG_LINES: usize = 1000;
 
-const CHROME_HELP: &str = include_str!("chrome_help.md");
-
-const CHROME_HELP_TOPICS: &str = "overview, locators, navigation, input, forms, waits, network, routes, websockets, har, tabs, frames, dialogs, uploads, downloads, emulation, devices, clock, screenshots, artifacts, screencast, assertions, readouts, handlers, cdp, authenticators, reset, troubleshooting";
+pub use refact_browser::help::{CHROME_HELP, CHROME_HELP_TOPICS, chrome_help_text};
 
 const CHROME_DESCRIPTION: &str = concat!(
     "Text-first batched browser automation. You read pages as text, not as pictures. Prefer the typed `request`: ONE call can carry many steps, unlike one-action-per-call servers. ",
@@ -154,38 +152,6 @@ const CHROME_DESCRIPTION: &str = concat!(
     "`page_context` picks the page-changed context: `snapshot` (the default) attaches the ref-annotated ARIA snapshot and NO image, `screenshot` attaches a policy-sized image instead, `both` attaches each, `none` attaches only the page header. `attach_screenshot` is the tri-state override and wins over `page_context`: true = always attach, false = never attach, omitted = follow `page_context`. `network` controls per-request report volume: `summary` (the default) emits one `method url status bytes ms` line per request, `full` keeps headers, `none` drops per-request entries.\n",
     "Click, hover, fill, clear, check, and uncheck auto-wait for actionability. Never use `wait_seconds` for readiness; use `wait_for_response`, `wait_for_load_state`, `wait_for_selector`, or `wait_for_function`."
 );
-
-pub fn chrome_help_text(topic: Option<&str>) -> String {
-    let sections = chrome_help_sections();
-    let index = format!(
-        "chrome help topics: {}\nCall {{\"action\":\"help\",\"topic\":\"<name>\"}} for one section.",
-        CHROME_HELP_TOPICS
-    );
-    let Some(topic) = topic.map(str::trim).filter(|topic| !topic.is_empty()) else {
-        let overview = sections
-            .iter()
-            .find(|(name, _)| name == "overview")
-            .map(|(_, body)| body.as_str())
-            .unwrap_or_default();
-        return format!("{index}\n\n## overview\n{overview}");
-    };
-    match sections
-        .iter()
-        .find(|(name, _)| name.eq_ignore_ascii_case(topic))
-    {
-        Some((name, body)) => format!("## {name}\n{body}"),
-        None => format!("Unknown help topic {topic:?}.\n\n{index}"),
-    }
-}
-
-fn chrome_help_sections() -> Vec<(String, String)> {
-    let mut sections = Vec::new();
-    for chunk in CHROME_HELP.split("\n## ").skip(1) {
-        let (name, body) = chunk.split_once('\n').unwrap_or((chunk, ""));
-        sections.push((name.trim().to_string(), body.trim().to_string()));
-    }
-    sections
-}
 
 pub fn help_only_request(request_value: &Value) -> bool {
     request_value

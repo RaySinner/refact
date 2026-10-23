@@ -209,15 +209,17 @@ fn string_list(value: Option<&Value>, index: usize, key: &str) -> Result<Vec<Str
             "agents[{index}].{key} must be an array of file paths"
         ));
     };
-    items
-        .iter()
-        .enumerate()
-        .map(|(position, item)| {
-            item.as_str()
-                .map(str::to_string)
-                .ok_or_else(|| format!("agents[{index}].{key}[{position}] must be a string"))
-        })
-        .collect()
+    let mut paths: Vec<String> = Vec::new();
+    for (position, item) in items.iter().enumerate() {
+        let path = item
+            .as_str()
+            .ok_or_else(|| format!("agents[{index}].{key}[{position}] must be a string"))?
+            .trim();
+        if !paths.iter().any(|seen| seen == path) {
+            paths.push(path.to_string());
+        }
+    }
+    Ok(paths)
 }
 
 async fn planner_room_context(

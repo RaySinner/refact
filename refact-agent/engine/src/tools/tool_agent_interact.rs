@@ -180,7 +180,34 @@ async fn can_message_agent(
             return Ok(target);
         }
     }
-    Err("You may only message your direct children or descendants.".to_string())
+    Err(OUT_OF_REACH.to_string())
+}
+
+/// The rejection every out-of-reach target gets, whether it was excluded by the
+/// agent tree or by the room it belongs to.
+const OUT_OF_REACH: &str = "You may only message your direct children or descendants.";
+
+/// True when `to` names a member of a *different* card of the same task.
+///
+/// Such a peer exists, so "agent not found" would be misleading: the room
+/// scope, not the agent tree, is what makes it unreachable.
+async fn target_is_foreign_room_member(
+    gcx: Arc<GlobalContext>,
+    task_id: &str,
+    caller_card_id: &str,
+    to: &str,
+) -> bool {
+    let Ok(board) = crate::tasks::storage::load_board(gcx, task_id).await else {
+        return false;
+    };
+    board
+        .cards
+        .iter()
+        .filter(|card| card.id != caller_card_id)
+        .flat_map(|card| card.team())
+        .any(|member| {
+            member.agent_chat_id.as_deref() == Some(to) || member.agent_id.as_deref() == Some(to)
+        })
 }
 
 /// The `(task_id, card_id)` the calling chat works on, if it is a task agent bound to a card.
@@ -509,6 +536,17 @@ impl Tool for ToolAgentMessage {
                     return Err(
                         "No other room member to message on this card.".to_string(),
                     );
+                } else if let Some(target) = target {
+                    if target_is_foreign_room_member(
+                        app.gcx.clone(),
+                        &task_id,
+                        &peer_card_id,
+                        target,
+                    )
+                    .await
+                    {
+                        return Err(OUT_OF_REACH.to_string());
+                    }
                 }
             }
         }
@@ -1219,7 +1257,7 @@ mod tests {
     async fn room_members_can_message_each_other() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
         let app = AppState::from_gcx(gcx.clone()).await;
-        let workspace = tempfile::tempdir().unwrap();
+        let workspace = room_workspace();
         *gcx.documents_state.workspace_folders.lock().unwrap() = vec![workspace.path().to_path_buf()];
 
         let board_card = room_board_card(&["agent-T-1-arch", "agent-T-1-code"]);
@@ -1272,7 +1310,7 @@ mod tests {
     async fn agents_on_different_cards_still_cannot_message() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
         let app = AppState::from_gcx(gcx.clone()).await;
-        let workspace = tempfile::tempdir().unwrap();
+        let workspace = room_workspace();
         *gcx.documents_state.workspace_folders.lock().unwrap() = vec![workspace.path().to_path_buf()];
 
         crate::tasks::storage::save_board(
@@ -1313,7 +1351,7 @@ mod tests {
     async fn room_message_carries_author_chat_id() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
         let app = AppState::from_gcx(gcx.clone()).await;
-        let workspace = tempfile::tempdir().unwrap();
+        let workspace = room_workspace();
         *gcx.documents_state.workspace_folders.lock().unwrap() =
             vec![workspace.path().to_path_buf()];
 
@@ -1353,7 +1391,7 @@ mod tests {
     async fn room_message_carries_role_for_accent() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
         let app = AppState::from_gcx(gcx.clone()).await;
-        let workspace = tempfile::tempdir().unwrap();
+        let workspace = room_workspace();
         *gcx.documents_state.workspace_folders.lock().unwrap() =
             vec![workspace.path().to_path_buf()];
 
@@ -1398,7 +1436,7 @@ mod tests {
     async fn provenance_survives_trajectory_roundtrip() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
         let app = AppState::from_gcx(gcx.clone()).await;
-        let workspace = tempfile::tempdir().unwrap();
+        let workspace = room_workspace();
         *gcx.documents_state.workspace_folders.lock().unwrap() =
             vec![workspace.path().to_path_buf()];
 
@@ -1455,7 +1493,7 @@ mod tests {
     async fn room_message_defaults_to_all_members() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
         let app = AppState::from_gcx(gcx.clone()).await;
-        let workspace = tempfile::tempdir().unwrap();
+        let workspace = room_workspace();
         *gcx.documents_state.workspace_folders.lock().unwrap() = vec![workspace.path().to_path_buf()];
 
         crate::tasks::storage::save_board(
@@ -1521,7 +1559,7 @@ mod tests {
     async fn room_message_can_target_single_member() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
         let app = AppState::from_gcx(gcx.clone()).await;
-        let workspace = tempfile::tempdir().unwrap();
+        let workspace = room_workspace();
         *gcx.documents_state.workspace_folders.lock().unwrap() = vec![workspace.path().to_path_buf()];
 
         crate::tasks::storage::save_board(
@@ -1579,7 +1617,7 @@ mod tests {
     async fn room_member_with_agent_id_can_message_peer() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
         let app = AppState::from_gcx(gcx.clone()).await;
-        let workspace = tempfile::tempdir().unwrap();
+        let workspace = room_workspace();
         *gcx.documents_state.workspace_folders.lock().unwrap() = vec![workspace.path().to_path_buf()];
 
         let board_card = room_board_card(&["agent-T-1-arch", "agent-T-1-code"]);
@@ -1633,7 +1671,7 @@ mod tests {
     async fn room_member_can_message_peer_by_role() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
         let app = AppState::from_gcx(gcx.clone()).await;
-        let workspace = tempfile::tempdir().unwrap();
+        let workspace = room_workspace();
         *gcx.documents_state.workspace_folders.lock().unwrap() = vec![workspace.path().to_path_buf()];
 
         let board_card = room_board_card(&["agent-T-1-arch", "agent-T-1-code"]);
@@ -1687,7 +1725,7 @@ mod tests {
     async fn room_broadcast_works_when_caller_has_agent_id() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
         let app = AppState::from_gcx(gcx.clone()).await;
-        let workspace = tempfile::tempdir().unwrap();
+        let workspace = room_workspace();
         *gcx.documents_state.workspace_folders.lock().unwrap() = vec![workspace.path().to_path_buf()];
 
         let board_card = room_board_card(&["agent-T-1-arch", "agent-T-1-code"]);
@@ -1741,7 +1779,7 @@ mod tests {
     async fn foreign_card_members_cannot_receive_message() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
         let app = AppState::from_gcx(gcx.clone()).await;
-        let workspace = tempfile::tempdir().unwrap();
+        let workspace = room_workspace();
         *gcx.documents_state.workspace_folders.lock().unwrap() = vec![workspace.path().to_path_buf()];
 
         crate::tasks::storage::save_board(
@@ -1798,7 +1836,7 @@ mod tests {
         // the two sessions were merged, the whole context-isolation story is gone.
         let gcx = crate::global_context::tests::make_test_gcx().await;
         let app = AppState::from_gcx(gcx.clone()).await;
-        let workspace = tempfile::tempdir().unwrap();
+        let workspace = room_workspace();
         *gcx.documents_state.workspace_folders.lock().unwrap() = vec![workspace.path().to_path_buf()];
 
         crate::tasks::storage::save_board(
@@ -1926,11 +1964,28 @@ mod tests {
         }
     }
 
-    async fn room_session(app: &AppState, chat_id: &str) -> (Arc<AMutex<ChatSession>>, tempfile::TempDir) {
+    /// A workspace that already holds the `task-room` task directory the board
+    /// fixtures write into: `save_board` refuses to invent a task.
+    fn room_workspace() -> tempfile::TempDir {
         let workspace = tempfile::tempdir().unwrap();
-        *app.gcx.documents_state.workspace_folders.lock().unwrap() =
-            vec![workspace.path().to_path_buf()];
-        (room_session_only(app, chat_id).await, workspace)
+        std::fs::create_dir_all(
+            workspace
+                .path()
+                .join(".refact")
+                .join("tasks")
+                .join("task-room"),
+        )
+        .unwrap();
+        workspace
+    }
+
+    /// A member session. The workspace belongs to the caller: installing a
+    /// fresh tempdir here would discard the board the test has just saved.
+    async fn room_session(app: &AppState, chat_id: &str) -> (Arc<AMutex<ChatSession>>, tempfile::TempDir) {
+        (
+            room_session_only(app, chat_id).await,
+            tempfile::tempdir().unwrap(),
+        )
     }
 
     /// A second (or third) member's session, *without* touching the workspace.

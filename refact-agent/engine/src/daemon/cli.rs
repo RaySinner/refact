@@ -2445,13 +2445,7 @@ mod tests {
         }
 
         fn set(cache: &Path, config: &Path) -> Option<Self> {
-            if std::process::Command::new("python3")
-                .arg("--version")
-                .output()
-                .is_err()
-            {
-                return None;
-            }
+            let python = crate::daemon::fake_worker_python()?;
             let guard = Self {
                 cache: std::env::var("REFACT_DAEMON_CACHE_DIR").ok(),
                 config: std::env::var("REFACT_DAEMON_CONFIG_DIR").ok(),
@@ -2466,7 +2460,7 @@ mod tests {
             std::env::set_var("REFACT_DAEMON_CONFIG_DIR", config);
             std::env::set_var(
                 "REFACT_DAEMON_WORKER_CMD",
-                shell_words::join(["python3", script.to_string_lossy().as_ref()]),
+                shell_words::join([python.as_str(), script.to_string_lossy().as_ref()]),
             );
             std::env::set_var("REFACT_DAEMON_SUPERVISOR_BACKOFF_MS", "1");
             std::env::remove_var("FAKE_WORKER_CRASH");

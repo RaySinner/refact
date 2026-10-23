@@ -1402,6 +1402,7 @@ mod tests {
         assert!(err.contains("outside knowledge") || err.contains("outside knowledge directories"));
     }
 
+    #[cfg_attr(windows, ignore = "needs symlink privileges Windows does not grant by default")]
     #[tokio::test]
     async fn buddy_memory_archive_rejects_symlink() {
         let dir = tempfile::tempdir().unwrap();

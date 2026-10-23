@@ -517,14 +517,7 @@ mod tests {
 
     impl EnvGuard {
         fn fake_worker() -> Option<Self> {
-            let python = "python3";
-            if std::process::Command::new(python)
-                .arg("--version")
-                .output()
-                .is_err()
-            {
-                return None;
-            }
+            let python = crate::daemon::fake_worker_python()?;
             let script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join("tests")
                 .join("fake_worker.py");
@@ -541,7 +534,7 @@ mod tests {
             ];
             std::env::set_var(
                 "REFACT_DAEMON_WORKER_CMD",
-                shell_words::join([python, script.to_string_lossy().as_ref()]),
+                shell_words::join([python.as_str(), script.to_string_lossy().as_ref()]),
             );
             std::env::set_var("REFACT_DAEMON_SUPERVISOR_BACKOFF_MS", "1");
             std::env::remove_var("FAKE_WORKER_CRASH");

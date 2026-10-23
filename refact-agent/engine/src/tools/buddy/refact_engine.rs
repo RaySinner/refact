@@ -548,6 +548,7 @@ mod tests {
         assert!(cache.join("main").join("README.md").is_file());
     }
 
+    #[cfg_attr(windows, ignore = "needs symlink privileges Windows does not grant by default")]
     #[test]
     fn refact_engine_cat_rejects_path_outside_mirror() {
         let dir = tempfile::tempdir().unwrap();

@@ -33,6 +33,26 @@ pub mod state;
 pub mod supervisor;
 pub mod web;
 
+/// Interpreter that can actually run `tests/fake_worker.py`.
+///
+/// A bare `python3` is not enough on Windows: the Microsoft Store alias is a
+/// stub that spawns successfully and then exits 9009, so a guard that only
+/// checks `output().is_err()` lets a dead worker through and every daemon test
+/// that needs it fails for the wrong reason. Probe for a runnable interpreter.
+#[cfg(test)]
+pub(crate) fn fake_worker_python() -> Option<String> {
+    std::env::var("PYTHON3")
+        .ok()
+        .into_iter()
+        .chain(["python3".to_string(), "python".to_string()])
+        .find(|candidate| {
+            std::process::Command::new(candidate)
+                .arg("--version")
+                .output()
+                .is_ok_and(|output| output.status.success())
+        })
+}
+
 #[cfg(not(test))]
 const DAEMON_SHUTDOWN_DRAIN: Duration = Duration::from_secs(10);
 #[cfg(test)]

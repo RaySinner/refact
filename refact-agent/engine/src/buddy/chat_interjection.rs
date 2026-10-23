@@ -56,8 +56,11 @@ pub const INTERJECTION_SOURCE: &str = "buddy.chat_interjection";
 pub const INTERJECTION_MIN_IDLE: std::time::Duration = std::time::Duration::from_secs(120);
 
 /// Ceiling on the delivered text. The agent pays a turn to read it, so it is
-/// kept short; the truncation is character-safe.
-const MAX_TEXT_CHARS: usize = 280;
+/// kept short; the truncation is character-safe. It has to stay above the
+/// longest message `build_interjection_text` can produce (a room member with a
+/// full-length card title), otherwise the last instruction is cut off and the
+/// nudge loses its point.
+const MAX_TEXT_CHARS: usize = 512;
 
 /// Why an interjection was not delivered. Distinct reasons are what make a
 /// dropped nudge debuggable instead of merely silent.
@@ -663,9 +666,11 @@ mod tests {
         // stronger than `WhenIdle`. A source-level assertion is the only check
         // that survives someone adding a `Preempt` branch later.
         let source = include_str!("chat_interjection.rs");
+        // The literal is assembled so this assertion does not match itself.
+        let forbidden = ["PushMode::", "Preempt"].concat();
         assert!(
-            !source.contains("PushMode::Preempt"),
-            "chat_interjection must never construct PushMode::Preempt"
+            !source.contains(&forbidden),
+            "chat_interjection must never construct a preempting push mode"
         );
         assert!(source.contains("PushMode::WhenIdle"));
     }

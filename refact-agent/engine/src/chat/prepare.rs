@@ -1744,6 +1744,7 @@ mod tests {
         let t = HasTokenizerAndEot::new(tokenizer);
 
         let make_messages = || vec![
+            ChatMessage::new("user".to_string(), "earlier question".to_string()),
             assistant_msg_with_reasoning(),
             ChatMessage::new("user".to_string(), "next question".to_string()),
         ];
@@ -1811,10 +1812,14 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            prepared_default.llm_request.messages[0].reasoning_content.as_deref(),
+            prepared_default.llm_request.messages[1]
+                .reasoning_content
+                .as_deref(),
             Some("model thought process")
         );
-        assert!(prepared_default.llm_request.messages[0].thinking_blocks.is_some());
+        assert!(prepared_default.llm_request.messages[1]
+            .thinking_blocks
+            .is_some());
 
         // 2. When strip_reasoning_from_prompt is explicitly true
         let thread_true = ThreadParams {
@@ -1860,8 +1865,8 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(prepared_true.llm_request.messages[0].reasoning_content, None);
-        assert_eq!(prepared_true.llm_request.messages[0].thinking_blocks, None);
+        assert_eq!(prepared_true.llm_request.messages[1].reasoning_content, None);
+        assert_eq!(prepared_true.llm_request.messages[1].thinking_blocks, None);
     }
 
     #[tokio::test]
@@ -1913,6 +1918,7 @@ mod tests {
         let t = HasTokenizerAndEot::new(tokenizer);
 
         let make_messages = || vec![
+            ChatMessage::new("user".to_string(), "earlier question".to_string()),
             assistant_msg_with_reasoning(),
             ChatMessage::new("user".to_string(), "next question".to_string()),
         ];
@@ -1984,10 +1990,10 @@ mod tests {
             "previous_response_id must be cleared when strip_reasoning is active with stateful API"
         );
         assert_eq!(
-            prepared.llm_request.messages[0].reasoning_content, None,
+            prepared.llm_request.messages[1].reasoning_content, None,
             "reasoning must be stripped from all messages on full resubmission"
         );
-        assert_eq!(prepared.llm_request.messages.len(), 2);
+        assert_eq!(prepared.llm_request.messages.len(), 3);
     }
 
     #[test]

@@ -376,14 +376,7 @@ mod tests {
 
     impl EnvGuard {
         fn fake_worker() -> Option<Self> {
-            let python = std::env::var("PYTHON3").unwrap_or_else(|_| "python3".to_string());
-            if std::process::Command::new(&python)
-                .arg("--version")
-                .output()
-                .is_err()
-            {
-                return None;
-            }
+            let python = crate::daemon::fake_worker_python()?;
             let script = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join("tests")
                 .join("fake_worker.py");

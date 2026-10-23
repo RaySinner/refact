@@ -551,6 +551,10 @@ mod tests {
         }
     }
 
+    #[cfg_attr(
+        windows,
+        ignore = "the hook command is `sleep 60`, which is not a Windows command"
+    )]
     #[tokio::test]
     async fn test_run_single_hook_timeout() {
         let mut config = make_hook_config(HookEvent::SessionStart, None, "sleep 60");

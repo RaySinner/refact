@@ -636,7 +636,9 @@ mod tests {
                 }
             }
             // Just outside the boundaries is rejected with exactly these bounds.
-            for rejected in [minimum - 1, maximum + 1] {
+            // A zero minimum has no representable value below it.
+            let below = minimum.checked_sub(1);
+            for rejected in below.into_iter().chain([maximum + 1]) {
                 let error = with_value(rejected).unwrap_err();
                 assert_eq!(
                     error,

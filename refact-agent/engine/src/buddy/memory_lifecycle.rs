@@ -3757,6 +3757,7 @@ mod tests {
         assert!(op.evidence.len() <= MEMORY_OP_EVIDENCE_MAX_CHARS);
     }
 
+    #[cfg_attr(windows, ignore = "needs symlink privileges Windows does not grant by default")]
     #[tokio::test(flavor = "multi_thread")]
     async fn symlinked_knowledge_root_scan_is_skipped() {
         let dir = tempfile::tempdir().unwrap();
@@ -3779,6 +3780,7 @@ mod tests {
         assert!(docs.is_empty());
     }
 
+    #[cfg_attr(windows, ignore = "needs symlink privileges Windows does not grant by default")]
     #[tokio::test(flavor = "multi_thread")]
     async fn popped_symlink_directory_is_skipped() {
         let dir = tempfile::tempdir().unwrap();
@@ -4080,6 +4082,7 @@ mod tests {
         assert_eq!(stale_body, "Stale body");
     }
 
+    #[cfg_attr(windows, ignore = "needs symlink privileges Windows does not grant by default")]
     #[tokio::test(flavor = "multi_thread")]
     async fn invalid_path_traversal_and_symlink_escape_are_rejected() {
         let dir = tempfile::tempdir().unwrap();

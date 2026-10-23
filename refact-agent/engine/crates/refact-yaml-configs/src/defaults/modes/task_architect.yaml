@@ -220,7 +220,6 @@ tools:
   - resume_agent
   - spawn_agents_batch
   - merge_ready_in_order
-  - restart_agent- merge_ready_in_order
   - restart_agent
   - agent_finish
 

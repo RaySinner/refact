@@ -7,8 +7,8 @@
 #   .\tools\dev\engine-build.ps1 -Mode release        # shipping artifact ONLY (slow)
 #   .\tools\dev\engine-build.ps1 -Mode test           # cargo test --lib (links the test binary)
 #   .\tools\dev\engine-build.ps1 -Mode clean          # drop target/fast-release
-#   .\tools\dev\engine-build.ps1 -Mode cache-status   # sccache stats + detected mode
-#   .\tools\dev\engine-build.ps1 -Mode cache-reset    # restart sccache with current BASEDIRS
+#   .\tools\dev\engine-build.ps1 -Mode cache-status   # sccache server health, stats, detected mode
+#   .\tools\dev\engine-build.ps1 -Mode cache-reset    # force a server restart (builds never need it)
 #
 # Which check to run:
 #   check       - 90% of cases: you edited files under refact-agent/engine/src
@@ -33,11 +33,23 @@
 #
 # SCCACHE_BASEDIRS makes sccache hash paths relative to the listed roots, so
 # the same crate built in different worktrees (or in the main checkout) hits
-# the same cache entry. The list is a STABLE SUPERSET (main checkout root, the
-# default worktree parent, C:\wt, this repo root, plus REFACT_SCCACHE_BASEDIRS
-# semicolon-separated), so it never depends on the current directory and the
-# server is not restarted per build; restart only via -Mode cache-reset or
-# when REFACT_SCCACHE_BASEDIRS changes.
+# the same cache entry. The list (main checkout root, the default worktree
+# parent, C:\wt, this repo root, plus REFACT_SCCACHE_BASEDIRS semicolon-
+# separated) is applied PER COMPILE REQUEST: the client sends its own
+# environment, so the server keeps working when the list changes and does not
+# need a restart for it (observed: the server PID stays the same while
+# different clients report different base dirs).
+#
+# The server is one per user and is shared by every concurrent build (other
+# agents, the IDE, rust-analyzer). This script therefore NEVER stops it: a
+# healthy server is reused as-is, one is started only when none responds. An
+# earlier version stopped the server whenever the basedirs marker of the last
+# run differed, which - because the list contains the current worktree root -
+# happened on every run from a different worktree. That killed the server
+# another build was using; that build then printed "the server looks like it
+# shut down unexpectedly" and compiled locally, which is the degradation that
+# inflated every measurement. Explicit restarts stay available via
+# -Mode cache-reset.
 #
 # ASCII only on purpose: Windows PowerShell 5.1 reads .ps1 files as ANSI when
 # there is no BOM, so non-ASCII characters here would be mangled.
@@ -112,28 +124,168 @@ function Set-SccacheBaseDirs {
     $env:SCCACHE_BASEDIRS = ($dirs -join ';')
 }
 
-function Ensure-SccacheServer {
-    # sccache reads SCCACHE_BASEDIRS when the SERVER starts, not per request.
-    # The list is now a stable superset, so the normal case is "already right".
-    # Restart only when the server is down or the wanted list changed since it
-    # started (tracked in a marker file), never per build, never mid-build.
-    $marker = Join-Path $env:TEMP 'refact-engine-build-sccache-basedirs.txt'
-    $wanted = $env:SCCACHE_BASEDIRS
-    $started = $false
-    if (Test-Path $marker) {
-        $saved = [IO.File]::ReadAllText($marker)
-        if ($saved -eq $wanted) { $started = $true }
+function Get-SccacheStats {
+    # --show-stats talks to the shared server; a dead or missing server makes it
+    # fail, which is exactly the "is one running?" probe used below.
+    $ErrorActionPreference = 'Continue'
+    try {
+        return ((& sccache --show-stats 2>&1) -join "`n")
     }
-    if (-not $started) {
-        $stats = (& sccache --show-stats 2>$null) -join "`n"
-        if ($stats -match 'Compile requests') {
-            Write-Host 'engine-build: sccache server has stale SCCACHE_BASEDIRS; restarting it'
-            & sccache --stop-server 2>&1 | Out-Null
-        }
-        & sccache --start-server 2>&1 | Out-Null
-        [IO.File]::WriteAllText($marker, $wanted)
+    finally {
+        $ErrorActionPreference = 'Stop'
     }
 }
+
+function Test-SccacheServerRunning {
+    # --show-stats is NOT a liveness probe: with no server running it still
+    # exits 0 and prints a zeroed table (Max cache size 10 GiB, Base directories
+    # (none)), which is how an earlier version of this script convinced itself a
+    # dead server was healthy and compiled for 27 minutes without caching.
+    # The server is the sccache.exe process with no compiler on its command
+    # line; clients are "sccache.exe <rustc> ...".
+    $procs = @(Get-CimInstance Win32_Process -Filter "Name='sccache.exe'" -ErrorAction SilentlyContinue)
+    foreach ($p in $procs) {
+        if (-not $p.CommandLine) { continue }
+        if ($p.CommandLine -notmatch 'rustc') { return $true }
+    }
+    return $false
+}
+
+function Test-SccachePortOpen {
+    param([int]$Port)
+    $client = New-Object System.Net.Sockets.TcpClient
+    try {
+        $connect = $client.BeginConnect('127.0.0.1', $Port, $null, $null)
+        if (-not $connect.AsyncWaitHandle.WaitOne(250)) { return $false }
+        $client.EndConnect($connect)
+        return $true
+    }
+    catch { return $false }
+    finally { $client.Close() }
+}
+
+function Wait-SccacheServerReady {
+    # --start-server returns once the port is bound, but the very first client
+    # can still lose the race: cargo calls `rustc -vV` through the wrapper
+    # immediately, and a refused connection makes sccache print "the server
+    # looks like it shut down unexpectedly, compiling locally instead" and skip
+    # caching for the whole build. Wait for the port to accept a connection.
+    $port = 4226
+    if ($env:SCCACHE_SERVER_PORT -match '^\d+$') { $port = [int]$env:SCCACHE_SERVER_PORT }
+    for ($i = 0; $i -lt 50; $i++) {
+        if (Test-SccachePortOpen $port) { return $true }
+        Start-Sleep -Milliseconds 100
+    }
+    return $false
+}
+
+function Get-SccacheCounter {
+    param([string]$Stats, [string]$Name)
+    if ($Stats -match ('(?m)^' + [regex]::Escape($Name) + '\s+(\d+)\s*$')) {
+        return [int]$Matches[1]
+    }
+    return $null
+}
+
+function Get-SccacheStatePath {
+    return (Join-Path $env:TEMP 'refact-engine-build-sccache-state.txt')
+}
+
+function Read-SccacheState {
+    # Counters are cumulative since the server started, so a counter that went
+    # backwards means the server was restarted by somebody else between runs.
+    $path = Get-SccacheStatePath
+    if (-not (Test-Path $path)) { return $null }
+    $state = @{}
+    foreach ($line in [IO.File]::ReadAllLines($path)) {
+        if ($line -match '^([a-z_]+)=(\d+)$') { $state[$Matches[1]] = [int]$Matches[2] }
+    }
+    if ($state.Count -eq 0) { return $null }
+    return $state
+}
+
+function Save-SccacheState {
+    param([string]$Stats)
+    $requests = Get-SccacheCounter $Stats 'Compile requests'
+    if ($null -eq $requests) { return }
+    $hits = Get-SccacheCounter $Stats 'Cache hits'
+    if ($null -eq $hits) { $hits = 0 }
+    [IO.File]::WriteAllText((Get-SccacheStatePath), ("compile_requests={0}`r`ncache_hits={1}`r`n" -f $requests, $hits))
+}
+
+function Write-SccacheServerState {
+    param([string]$Stats)
+    if (-not (Test-SccacheServerRunning)) {
+        Write-Host 'sccache: server is NOT running - nothing is being cached until one starts' -ForegroundColor Yellow
+        return $false
+    }
+    $previous = Read-SccacheState
+    $requests = Get-SccacheCounter $Stats 'Compile requests'
+    $hits = Get-SccacheCounter $Stats 'Cache hits'
+    if ($null -eq $requests) { $requests = 0 }
+    if ($null -eq $hits) { $hits = 0 }
+    Write-Host ("sccache: server up - compile requests {0}, cache hits {1}" -f $requests, $hits)
+    $restarted = $false
+    if ($previous -and $previous.ContainsKey('compile_requests') -and $requests -lt $previous['compile_requests']) {
+        $restarted = $true
+        Write-Host ("WARNING: sccache server was restarted since the previous run (compile requests {0} -> {1}), so the previous run's cache accounting was lost. Something outside this script stopped it - see docs/dev/build-velocity.md#sccache-degraded" -f $previous['compile_requests'], $requests) -ForegroundColor Yellow
+    }
+    Save-SccacheState $Stats
+    return $restarted
+}
+
+function Ensure-SccacheServer {
+    # The server is shared with every other build on the machine, so only ever
+    # start a missing one. SCCACHE_BASEDIRS is sent by the client with each
+    # compile request, so a running server serves this worktree correctly no
+    # matter which client started it.
+    if (Test-SccacheServerRunning) {
+        Write-Host 'engine-build: sccache server is up - reusing it (never stopped by this script)'
+    }
+    else {
+        $out = ((& sccache --start-server 2>&1) -join ' ').Trim()
+        $code = $LASTEXITCODE
+        if ($code -ne 0 -and $out -notmatch 'Address in use') {
+            Write-Host "WARNING: sccache server could not be started ($out) - this build compiles locally" -ForegroundColor Yellow
+            return
+        }
+        Write-Host 'engine-build: sccache server was down - started it'
+    }
+    if (-not (Wait-SccacheServerReady)) {
+        Write-Host 'WARNING: sccache server is not accepting connections - this build may compile locally' -ForegroundColor Yellow
+    }
+}
+
+function Write-SccacheRunDelta {
+    # Per-run cache accounting. Counters are shared with every other build on the
+    # machine, so the delta is "this run plus whoever else was compiling".
+    param($BeforeRequests, $BeforeHits)
+    $afterStats = Get-SccacheStats
+    $afterRequests = Get-SccacheCounter $afterStats 'Compile requests'
+    $afterHits = Get-SccacheCounter $afterStats 'Cache hits'
+    if ($null -eq $BeforeRequests -or $null -eq $afterRequests) {
+        Write-Host 'engine-build: sccache counters unavailable after the build'
+        return
+    }
+    $requests = $afterRequests - $BeforeRequests
+    $hits = 0
+    if ($null -ne $BeforeHits -and $null -ne $afterHits) { $hits = $afterHits - $BeforeHits }
+    if ($requests -lt 0 -or $hits -lt 0) {
+        Write-Host 'WARNING: sccache counters went backwards during the build - the server was restarted mid-run (see docs/dev/build-velocity.md#sccache-degraded)' -ForegroundColor Yellow
+        $script:sccacheDegraded = $true
+    }
+    elseif ($requests -eq 0) {
+        # A warm tree makes cargo a no-op: nothing was compiled, so there is
+        # nothing to cache and a stray sccache warning means nothing here.
+        Write-Host 'engine-build: sccache this run - nothing recompiled, nothing to cache'
+        $script:sccacheDegraded = $false
+    }
+    else {
+        Write-Host ("engine-build: sccache this run - {0} compile request(s), {1} cache hit(s), {2} miss(es)" -f $requests, $hits, ($requests - $hits))
+    }
+    Save-SccacheState $afterStats
+}
+
 
 function Test-SpawnFailure {
     param([string]$Output)
@@ -176,7 +328,11 @@ function Invoke-Cargo {
                 Ensure-SccacheServer
                 $env:CARGO_INCREMENTAL = '0'
                 Write-Host "engine-build: using sccache (CARGO_INCREMENTAL=0, SCCACHE_BASEDIRS=$env:SCCACHE_BASEDIRS)"
+                $beforeStats = Get-SccacheStats
+                $beforeRequests = Get-SccacheCounter $beforeStats 'Compile requests'
+                $beforeHits = Get-SccacheCounter $beforeStats 'Cache hits'
                 $out = @(& cargo @('--config', $sccacheEnable) @CargoArgs 2>&1)
+                $exitCode = $LASTEXITCODE
                 $out | ForEach-Object { Write-Host $_ }
                 $outText = $out | Out-String
                 if ($outText -match 'sccache: warning' -or
@@ -184,7 +340,7 @@ function Invoke-Cargo {
                     $outText -match 'shut down unexpectedly') {
                     $script:sccacheDegraded = $true
                 }
-                $exitCode = $LASTEXITCODE
+                Write-SccacheRunDelta $beforeRequests $beforeHits
                 if ($exitCode -eq 0) { return 0 }
                 if (-not (Test-SpawnFailure ($out | Out-String))) { return $exitCode }
                 Write-Warning 'sccache run failed with the command-line overflow signature; retrying once with the rustc wrapper bypassed.'
@@ -272,7 +428,36 @@ switch ($Mode) {
         Write-Host "SCCACHE_BASEDIRS: $env:SCCACHE_BASEDIRS"
         if (Get-Command sccache -ErrorAction SilentlyContinue) {
             Write-Host 'sccache: installed - engine-build.ps1 uses it first, falls back to the wrapper bypass on os error 206.'
-            & sccache --show-stats
+            Write-Host ("sccache client version: {0}" -f ((& sccache --version 2>&1) -join ' '))
+            $stats = Get-SccacheStats
+            if (Test-SccacheServerRunning) {
+                Write-Host 'sccache: server is running - this script only starts a missing server, it never stops a healthy one'
+                $cacheDir = Join-Path $env:LOCALAPPDATA 'Mozilla\sccache\cache'
+                if (Test-Path $cacheDir) {
+                    $sum = (Get-ChildItem $cacheDir -Recurse -File -ErrorAction SilentlyContinue |
+                        Measure-Object Length -Sum)
+                    Write-Host ("sccache: cache dir {0} - {1} files, {2:N1} GiB on disk (SCCACHE_CACHE_SIZE={3})" -f
+                        $cacheDir, $sum.Count, ($sum.Sum / 1GB), $env:SCCACHE_CACHE_SIZE)
+                }
+                else {
+                    Write-Host "sccache: cache dir not found yet: $cacheDir"
+                }
+                Write-SccacheServerState $stats | Out-Null
+                $requests = Get-SccacheCounter $stats 'Compile requests'
+                $hits = Get-SccacheCounter $stats 'Cache hits'
+                if ($requests -gt 0 -and $hits -eq 0) {
+                    Write-Host 'WARNING: sccache has served compile requests but recorded no cache hits since the server started - the cache is not being reused (see docs/dev/build-velocity.md#sccache-degraded)' -ForegroundColor Yellow
+                }
+                $ra = Get-Process -Name 'rust-analyzer' -ErrorAction SilentlyContinue
+                if ($ra) {
+                    Write-Host ("sccache: note - {0} rust-analyzer process(es) are also sccache clients; they share this server and are harmless (basedirs are per request)" -f @($ra).Count)
+                }
+            }
+            else {
+                Write-Host 'WARNING: sccache server is NOT running - the next build will start one; until then nothing is cached' -ForegroundColor Yellow
+            }
+            Write-Host ''
+            $stats | Write-Host
         }
         else {
             Write-Host 'sccache: NOT installed - engine-build.ps1 always uses the bypass (CARGO_INCREMENTAL=1).'
@@ -284,16 +469,15 @@ switch ($Mode) {
         Set-SccacheBaseDirs
         & sccache --stop-server 2>&1 | Out-Null
         & sccache --start-server 2>&1 | Out-Null
-        $marker = Join-Path $env:TEMP 'refact-engine-build-sccache-basedirs.txt'
-        [IO.File]::WriteAllText($marker, $env:SCCACHE_BASEDIRS)
         Write-Host "sccache server restarted with SCCACHE_BASEDIRS=$env:SCCACHE_BASEDIRS"
+        Write-Host 'note: builds do not need this - SCCACHE_BASEDIRS is applied per compile request and this script never stops a healthy server.'
     }
 }
 
 $stopwatch.Stop()
 if ($script:sccacheDegraded) {
     Write-Host ''
-    Write-Host 'WARNING: sccache degraded to local compilation this run - the build was not cached (see -Mode cache-status)' -ForegroundColor Yellow
+    Write-Host 'WARNING: sccache degraded to local compilation this run - the build was not cached (see -Mode cache-status and docs/dev/build-velocity.md#sccache-degraded)' -ForegroundColor Yellow
 }
 if ($exitCode -isnot [int]) {
     Write-Host "engine-build: exit code is not an int: $($exitCode -join ', ') - coercing to the last value"

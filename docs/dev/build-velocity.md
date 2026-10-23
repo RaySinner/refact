@@ -58,13 +58,105 @@ See the header of `tools/dev/engine-build.ps1` for the full table:
 - `cache-status` — sccache stats, repo-root length, and whether the root is on the sccache-cached path.
 - `cache-reset` — restart the sccache server with the current `SCCACHE_BASEDIRS`.
 
-The sccache server is NOT restarted per build. `SCCACHE_BASEDIRS` is a stable
-superset (main checkout, `~/.cache/refact/worktrees`, `C:\wt`, current repo
-root, plus `REFACT_SCCACHE_BASEDIRS`), so a server started by any build already
-covers every root. A restart happens only via `-Mode cache-reset`, or when
-`REFACT_SCCACHE_BASEDIRS` changes since the server started. If a run degrades
-to local compilation despite sccache, the build ends with one prominent
-`WARNING: sccache degraded to local compilation this run` line.
+The sccache server is one per user and is shared by every build on the machine
+(other agents, the IDE, rust-analyzer). `engine-build.ps1` therefore never stops
+it: a running server is reused, one is started only when none responds.
+`SCCACHE_BASEDIRS` (main checkout, `~/.cache/refact/worktrees`, `C:\wt`, the
+current repo root, plus `REFACT_SCCACHE_BASEDIRS`) is applied per compile
+request - the client sends its environment - so the list can differ between
+worktrees without any restart. An explicit restart stays available via
+`-Mode cache-reset`.
+
+Every build ends with a per-run line:
+
+```
+engine-build: sccache this run - 812 compile request(s), 640 cache hit(s), 172 miss(es)
+```
+
+Counters live in the shared server, so the delta also covers whatever else was
+compiling at the same time. If a run degrades to local compilation it ends with
+one prominent `WARNING: sccache degraded to local compilation this run` line
+instead.
+
+## If sccache degraded - what to look at
+
+Symptom: a run prints `sccache: warning: ...` / `The server looks like it shut
+down unexpectedly` / `WARNING: sccache degraded to local compilation this run`,
+and the build costs a full recompile.
+
+Start with `tools/dev/engine-build.ps1 -Mode cache-status`. It prints the server
+state (up/down), the counters, the client version, the cache directory and its
+size on disk, `SCCACHE_CACHE_SIZE`, `SCCACHE_BASEDIRS`, and whether the root is
+short enough for sccache to wrap rustc. It also warns when the compile-request
+counter went *backwards* since the previous run, which means the server was
+restarted by something else between runs.
+
+sccache 0.18 facts that cost real time to rediscover:
+
+- **`--show-stats` is not a liveness probe.** With no server running it still
+  exits 0 and prints a zeroed table (`Max cache size 10 GiB`, the *client's*
+  `SCCACHE_BASEDIRS`). Code that greps its output for `Compile requests` to
+  decide "is a server up?" concludes "yes" for a dead server. The server is the
+  `sccache.exe` process whose command line has no `rustc` in it; clients are
+  `sccache.exe <rustc> ...`.
+- **No server means silent local compilation.** Clients do not resurrect a
+  missing server; they just run the compiler. If the server dies *while* a
+  client is connected, that client prints `The server looks like it shut down
+  unexpectedly, compiling locally instead`.
+- **`SCCACHE_BASEDIRS` is per compile request**, sent by the client. The server
+  PID does not change when the list changes, so restarting the server to pick
+  up new base dirs is useless - and harmful (see below).
+- **`-o <file>` makes a call non-cacheable** (`Non-cacheable reasons: -o`).
+  Cargo uses `--out-dir`, so `cargo check` units are cacheable; hand-written
+  probes with `-o` are not.
+- **`include!`-ed files are part of the key** (via dep-info). Identical content
+  hits, changed content misses.
+
+Checklist, in the order the causes were actually observed:
+
+1. **The server was stopped by another client.** The server is one per user and
+   shared by every build. Any client running `sccache --stop-server` kills it
+   for everybody. `engine-build.ps1` never does that any more (it only starts a
+   missing server and waits for the port to accept connections); an older copy
+   of the script did it on every run from a different worktree, because the
+   basedirs marker it compared contained the current worktree root. If the
+   warning reappears, look for a script or a person stopping the server.
+   rust-analyzer and other IDEs are *not* a cause: basedirs are per request, so
+   a foreign client cannot invalidate the server.
+2. **Nothing was compiled.** A warm tree makes cargo a no-op: zero compile
+   requests, so zero hits, and any stray sccache warning is noise. The run ends
+   with `sccache this run - nothing recompiled, nothing to cache`.
+3. **Cache too small / evicting.** `SCCACHE_CACHE_SIZE` is 50G
+   (`tools/dev/build-env.ps1`), the cache dir is
+   `%LOCALAPPDATA%\Mozilla\sccache\cache`. A cache sitting at the limit shows a
+   `Cache hits rate` near zero with a healthy number of `Compilations` - raise
+   the size instead of clearing it.
+4. **Command line too long for a crate.** `os error 206` / `failed to spawn` /
+   `filename or extension is too long`: the repo root is too long for the
+   ~176-chars-per-root-char rustc argv. `-Mode cache-status` prints the
+   predicted length; keep worktree roots short (`REFACT_WORKTREE_ROOT=C:\wt`).
+5. **Defender scanning the cache.** Real-time scanning of the cache and
+   `target/` dirs slows every hit; see the Defender section below.
+6. **Nothing else helps:** `-Mode cache-reset`, then compare the
+   `sccache this run` lines of two runs that actually recompile something.
+
+### What sccache can and cannot save on this crate graph
+
+Measured on a cold worktree (`cargo check -p refact-lsp --lib`, 2026-10-23):
+
+```
+engine-build: sccache this run - 884 compile request(s), 503 cache hit(s), 381 miss(es)
+```
+
+So roughly half the units of a cold check come straight out of the cache -
+dependency crates that other worktrees already built.
+
+The one unit that can never hit is `refact-lsp` itself: its build script runs
+`shadow_rs::ShadowBuilder::builder().build()`, which writes `BUILD_TIME` (the
+wall-clock time of that build) into `OUT_DIR/shadow.rs`, and sccache hashes
+`include!`-ed files. Every build therefore has a different key, and the biggest
+crate in the graph is always a full local compile (about 27 minutes here). That
+is the dominant cost of a cold worktree build, and it is not an sccache problem.
 
 ## sccache and worktree root length (Windows)
 

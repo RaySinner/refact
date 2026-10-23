@@ -16,8 +16,9 @@ use tracing::{error, info};
 use crate::agents::registry::BackgroundAgentRegistry;
 use crate::app_state::{
     AppActivitySink, AppBuddyEventSink, AppState, AppToolRegistry, BuddyServices, CapsState,
-    ChatServices, EngineCapsProvider, EngineChatSessionFacade, EngineHookRunner,
-    EngineModeConfigProvider, EngineProjectTreeProvider, EngineSubchatLauncher, IntegrationServices,
+    ChatServices, EngineCapsProvider, EngineChatSessionFacade, EngineChatToolExecutor,
+    EngineHookRunner, EngineModeConfigProvider, EngineProjectTreeProvider, EnginePromptAssembler,
+    EngineSubchatLauncher, EngineTrajectoryStore, IntegrationServices,
     ModelServices, PathServices, RuntimeServices, TokenizerState, ToolCatalogCache,
     WorkspaceServices,
 };
@@ -517,7 +518,10 @@ impl GlobalContext {
             project_tree: Arc::new(EngineProjectTreeProvider::new(gcx.clone())),
             hooks: Arc::new(EngineHookRunner::new(gcx.clone())),
             mode_config: Arc::new(EngineModeConfigProvider::new(gcx.clone())),
-            caps: Arc::new(EngineCapsProvider::new(gcx)),
+            caps: Arc::new(EngineCapsProvider::new(gcx.clone())),
+            trajectories: Arc::new(EngineTrajectoryStore::new(gcx.clone())),
+            prompts: Arc::new(EnginePromptAssembler::new(gcx.clone())),
+            tool_executor: Arc::new(EngineChatToolExecutor::new(gcx)),
         }
     }
 

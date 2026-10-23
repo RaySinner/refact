@@ -16,13 +16,11 @@ use refact_chat_api::FrozenRequestPrefix;
 use refact_chat_history::trajectory_ops::COMPRESSION_REPORT_ROLE;
 use refact_tool_api::{build_registry_from_names, ToolAliasRegistry, ToolDesc};
 use super::ctx::ChatCtx;
-use super::tools::execute_tools;
 use super::types::ThreadParams;
 
 use super::diagnostics::filter_ui_only_messages;
 use super::history_limit::fix_and_limit_messages_history;
 use super::linearize::apply_summarization_linearize;
-use super::prompts::prepend_the_right_system_prompt_and_maybe_more_initial_messages;
 use super::config::tokens;
 
 pub struct CanonicalOpenAiTools {
@@ -341,16 +339,17 @@ pub async fn prepare_chat_passthrough(
     };
     let task_meta = ccx.lock().await.task_meta.clone();
     let messages = if options.prepend_system_prompt {
-        let (msgs, _) = prepend_the_right_system_prompt_and_maybe_more_initial_messages(
-            ctx.clone(),
-            messages,
-            meta,
-            &task_meta,
-            &mut has_rag_results,
-            prompt_tool_names,
-            mode_id,
-            model_id,
-        )
+        let (msgs, _) = ctx
+            .prompts
+            .prepend_system_prompt(
+                messages,
+                meta,
+                &task_meta,
+                &mut has_rag_results,
+                prompt_tool_names,
+                mode_id,
+                model_id,
+            )
         .await;
         msgs
     } else {
@@ -406,16 +405,17 @@ pub async fn prepare_chat_passthrough(
                         let mut prerun_thread = thread.clone();
                         prerun_thread.context_tokens_cap = Some(effective_n_ctx);
                         prerun_thread.model = model_id.to_string();
-                        let (tool_results, _) = execute_tools(
-                            ctx.clone(),
-                            &unanswered_calls,
-                            &messages,
-                            &prerun_thread,
-                            "agent",
-                            Some(&prerun_thread.model),
-                            super::tools::ExecuteToolsOptions::default(),
-                        )
-                        .await;
+                        let (tool_results, _) = ctx
+                            .tool_executor
+                            .execute_tools(
+                                &unanswered_calls,
+                                &messages,
+                                &prerun_thread,
+                                "agent",
+                                Some(&prerun_thread.model),
+                                super::tools::ExecuteToolsOptions::default(),
+                            )
+                            .await;
                         messages.extend(tool_results);
                     }
                 }
@@ -802,6 +802,7 @@ fn replace_images_for_text_only_model(
 mod tests {
     use super::*;
     use crate::app_state::AppState;
+    use crate::global_context::GlobalContext;
     use crate::llm::adapter::{AdapterSettings, LlmWireAdapter};
     use crate::llm::adapters::openai_chat::OpenAiChatAdapter;
     use crate::yaml_configs::customization_types::{ModeConfig, ProjectRegistry};

@@ -205,7 +205,7 @@ pub struct LoadedTrajectory {
 }
 
 #[derive(Clone)]
-pub(crate) struct TrajectoryRepairPatch {
+pub struct TrajectoryRepairPatch {
     pub chat_id: String,
     pub source_path: PathBuf,
     pub created_at: String,

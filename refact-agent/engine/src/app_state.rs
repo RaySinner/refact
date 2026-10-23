@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex as StdMutex, RwLock as StdRwLock};
@@ -22,11 +22,12 @@ use crate::buddy::actor::BuddyService;
 use crate::buddy::events::BuddyEvent;
 use crate::buddy::user_activity::UserActivityRing;
 use crate::chat::ctx::{
-    CapsProvider, ChatCtx, HookRunner, ModeConfigProvider, ProjectTreeProvider, SubchatLauncher,
+    CapsProvider, ChatCtx, ChatToolExecutor, HookRunner, ModeConfigProvider, ProjectTreeProvider,
+    PromptAssembler, SubchatLauncher, TrajectoryStore,
 };
 use crate::chat::perf_diagnostics::{self, PerfComponent, PerfOutcome};
 use crate::chat::trajectory_index::TrajectoryIndexCoordinator;
-use crate::chat::types::EnqueueCommandOutcome;
+use crate::chat::types::{ChatSession, EnqueueCommandOutcome, ThreadParams, TrajectoryCommitIntent};
 use crate::chat::trajectories::{self, TrajectoryEvent};
 use crate::chat::{self, process_command_queue, SessionsMap};
 use crate::completion_cache::CompletionCache;
@@ -460,6 +461,171 @@ impl CapsProvider for EngineCapsProvider {
         crate::global_context::try_load_caps_quickly_if_not_present(
             self.gcx.clone(),
             max_age_seconds,
+        )
+        .await
+    }
+}
+
+pub struct EngineTrajectoryStore {
+    gcx: SharedGlobalContext,
+}
+
+impl EngineTrajectoryStore {
+    pub fn new(gcx: SharedGlobalContext) -> Self {
+        Self { gcx }
+    }
+}
+
+#[async_trait]
+impl TrajectoryStore for EngineTrajectoryStore {
+    async fn load_trajectory_for_chat(
+        &self,
+        chat_id: &str,
+    ) -> Option<trajectories::LoadedTrajectory> {
+        trajectories::load_trajectory_for_chat(self.gcx.clone(), chat_id).await
+    }
+
+    async fn refresh_session_from_trajectory_if_stale(
+        &self,
+        chat_id: &str,
+        allow_replacing_messages: bool,
+    ) -> bool {
+        trajectories::refresh_session_from_trajectory_if_stale(
+            AppState::from_gcx(self.gcx.clone()).await,
+            chat_id,
+            allow_replacing_messages,
+        )
+        .await
+    }
+
+    async fn apply_mode_defaults_to_thread(
+        &self,
+        thread: &mut ThreadParams,
+        auto_approve_editing_present: bool,
+        auto_approve_dangerous_present: bool,
+    ) {
+        trajectories::apply_mode_defaults_to_thread(
+            self.gcx.clone(),
+            thread,
+            auto_approve_editing_present,
+            auto_approve_dangerous_present,
+        )
+        .await
+    }
+
+    async fn persist_loaded_trajectory_repair_raw(
+        &self,
+        repair: &trajectories::TrajectoryRepairPatch,
+    ) -> Result<String, String> {
+        trajectories::persist_loaded_trajectory_repair_raw(self.gcx.clone(), repair).await
+    }
+
+    async fn maybe_save_trajectory_with_intent(
+        &self,
+        session_arc: Arc<AMutex<ChatSession>>,
+        intent: TrajectoryCommitIntent,
+    ) {
+        trajectories::maybe_save_trajectory_with_intent(
+            AppState::from_gcx(self.gcx.clone()).await,
+            session_arc,
+            intent,
+        )
+        .await
+    }
+
+    async fn try_save_trajectory_with_intent(
+        &self,
+        session_arc: Arc<AMutex<ChatSession>>,
+        intent: TrajectoryCommitIntent,
+    ) -> Result<bool, String> {
+        trajectories::try_save_trajectory_with_intent(
+            AppState::from_gcx(self.gcx.clone()).await,
+            session_arc,
+            intent,
+        )
+        .await
+    }
+
+    async fn flush_trajectory_for_session(
+        &self,
+        session_arc: Arc<AMutex<ChatSession>>,
+    ) -> Result<(), String> {
+        trajectories::flush_trajectory_for_session(
+            AppState::from_gcx(self.gcx.clone()).await,
+            session_arc,
+        )
+        .await
+    }
+}
+
+pub struct EnginePromptAssembler {
+    gcx: SharedGlobalContext,
+}
+
+impl EnginePromptAssembler {
+    pub fn new(gcx: SharedGlobalContext) -> Self {
+        Self { gcx }
+    }
+}
+
+#[async_trait]
+impl PromptAssembler for EnginePromptAssembler {
+    async fn prepend_system_prompt(
+        &self,
+        messages: Vec<ChatMessage>,
+        chat_meta: &crate::call_validation::ChatMeta,
+        task_meta: &Option<crate::chat::types::TaskMeta>,
+        stream_back_to_user: &mut crate::scratchpads::scratchpad_utils::HasRagResults,
+        tool_names: HashSet<String>,
+        mode_id: &str,
+        model_id: &str,
+    ) -> (
+        Vec<ChatMessage>,
+        crate::ext::skills_context::SkillsTrackingInfo,
+    ) {
+        crate::chat::prompts::prepend_the_right_system_prompt_and_maybe_more_initial_messages(
+            AppState::from_gcx(self.gcx.clone()).await,
+            messages,
+            chat_meta,
+            task_meta,
+            stream_back_to_user,
+            tool_names,
+            mode_id,
+            model_id,
+        )
+        .await
+    }
+}
+
+pub struct EngineChatToolExecutor {
+    gcx: SharedGlobalContext,
+}
+
+impl EngineChatToolExecutor {
+    pub fn new(gcx: SharedGlobalContext) -> Self {
+        Self { gcx }
+    }
+}
+
+#[async_trait]
+impl ChatToolExecutor for EngineChatToolExecutor {
+    async fn execute_tools(
+        &self,
+        tool_calls: &[crate::call_validation::ChatToolCall],
+        messages: &[ChatMessage],
+        thread: &ThreadParams,
+        mode_id: &str,
+        model_id: Option<&str>,
+        options: crate::chat::tools::ExecuteToolsOptions,
+    ) -> (Vec<ChatMessage>, bool) {
+        crate::chat::tools::execute_tools(
+            AppState::from_gcx(self.gcx.clone()).await,
+            tool_calls,
+            messages,
+            thread,
+            mode_id,
+            model_id,
+            options,
         )
         .await
     }

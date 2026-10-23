@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex as StdMutex, RwLock as StdRwLock};
 
@@ -14,13 +14,18 @@ use crate::app_state::{
     RuntimeServices, ToolCatalogGenerations,
 };
 use crate::caps::CodeAssistantCaps;
-use crate::chat::trajectories::TrajectoryVectorizationQueue;
+use crate::call_validation::{ChatMeta, ChatToolCall};
+use crate::chat::tools::ExecuteToolsOptions;
+use crate::chat::trajectories::{LoadedTrajectory, TrajectoryRepairPatch, TrajectoryVectorizationQueue};
+use crate::chat::types::{ChatSession, ThreadParams, TrajectoryCommitIntent};
 use crate::custom_error::ScratchError;
 use crate::ext::hooks::HookEvent;
 use crate::ext::hooks_runner::{HookPayload, HookResult};
+use crate::ext::skills_context::SkillsTrackingInfo;
 use crate::integrations::browser_runtime::BrowserRuntime;
 use crate::knowledge_index::KnowledgeIndex;
 use crate::privacy::PrivacySettings;
+use crate::scratchpads::scratchpad_utils::HasRagResults;
 use crate::subchat::{SubchatConfig, SubchatResult};
 use crate::yaml_configs::customization_registry::RegistryCacheManager;
 use crate::yaml_configs::customization_types::{ModeConfig, ProjectRegistry};
@@ -74,6 +79,67 @@ pub trait CapsProvider: Send + Sync {
     ) -> Result<Arc<CodeAssistantCaps>, ScratchError>;
 }
 
+#[async_trait]
+pub trait TrajectoryStore: Send + Sync {
+    async fn load_trajectory_for_chat(&self, chat_id: &str) -> Option<LoadedTrajectory>;
+    async fn refresh_session_from_trajectory_if_stale(
+        &self,
+        chat_id: &str,
+        allow_replacing_messages: bool,
+    ) -> bool;
+    async fn apply_mode_defaults_to_thread(
+        &self,
+        thread: &mut ThreadParams,
+        auto_approve_editing_present: bool,
+        auto_approve_dangerous_present: bool,
+    );
+    async fn persist_loaded_trajectory_repair_raw(
+        &self,
+        repair: &TrajectoryRepairPatch,
+    ) -> Result<String, String>;
+    async fn maybe_save_trajectory_with_intent(
+        &self,
+        session_arc: Arc<AMutex<ChatSession>>,
+        intent: TrajectoryCommitIntent,
+    );
+    async fn try_save_trajectory_with_intent(
+        &self,
+        session_arc: Arc<AMutex<ChatSession>>,
+        intent: TrajectoryCommitIntent,
+    ) -> Result<bool, String>;
+    async fn flush_trajectory_for_session(
+        &self,
+        session_arc: Arc<AMutex<ChatSession>>,
+    ) -> Result<(), String>;
+}
+
+#[async_trait]
+pub trait PromptAssembler: Send + Sync {
+    async fn prepend_system_prompt(
+        &self,
+        messages: Vec<ChatMessage>,
+        chat_meta: &ChatMeta,
+        task_meta: &Option<crate::chat::types::TaskMeta>,
+        stream_back_to_user: &mut HasRagResults,
+        tool_names: HashSet<String>,
+        mode_id: &str,
+        model_id: &str,
+    ) -> (Vec<ChatMessage>, SkillsTrackingInfo);
+}
+
+#[async_trait]
+pub trait ChatToolExecutor: Send + Sync {
+    async fn execute_tools(
+        &self,
+        tool_calls: &[ChatToolCall],
+        messages: &[ChatMessage],
+        thread: &ThreadParams,
+        mode_id: &str,
+        model_id: Option<&str>,
+        options: ExecuteToolsOptions,
+    ) -> (Vec<ChatMessage>, bool);
+}
+
 #[derive(Clone)]
 pub struct ChatCtx {
     pub runtime: RuntimeServices,
@@ -97,4 +163,7 @@ pub struct ChatCtx {
     pub hooks: Arc<dyn HookRunner>,
     pub mode_config: Arc<dyn ModeConfigProvider>,
     pub caps: Arc<dyn CapsProvider>,
+    pub trajectories: Arc<dyn TrajectoryStore>,
+    pub prompts: Arc<dyn PromptAssembler>,
+    pub tool_executor: Arc<dyn ChatToolExecutor>,
 }

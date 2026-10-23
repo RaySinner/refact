@@ -114,12 +114,9 @@ async fn migrate_legacy_frozen_prefix_on_open(
         }
     };
     if installed {
-        super::trajectories::maybe_save_trajectory_with_intent(
-            ctx,
-            session_arc,
-            TrajectoryCommitIntent::Required,
-        )
-        .await;
+        ctx.trajectories
+            .maybe_save_trajectory_with_intent(session_arc, TrajectoryCommitIntent::Required)
+            .await;
     }
 }
 
@@ -139,12 +136,9 @@ pub async fn get_or_create_session_with_trajectory(
             session.closed
         };
         if !is_closed {
-            super::trajectories::refresh_session_from_trajectory_if_stale(
-                ctx.clone(),
-                chat_id,
-                false,
-            )
-            .await;
+            ctx.trajectories
+                .refresh_session_from_trajectory_if_stale(chat_id, false)
+                .await;
             return session_arc;
         }
         let mut sessions_write = sessions.write().await;
@@ -158,20 +152,20 @@ pub async fn get_or_create_session_with_trajectory(
     let trajectory_events_tx = ctx.chat.trajectory_events_tx.clone();
 
     let (mut session, is_new, transition_repair_patch) = if let Some(mut loaded) =
-        super::trajectories::load_trajectory_for_chat(ctx.clone(), chat_id).await
+        ctx.trajectories.load_trajectory_for_chat(chat_id).await
     {
         info!(
             "Loaded trajectory for chat {} with {} messages",
             chat_id,
             loaded.messages.len()
         );
-        super::trajectories::apply_mode_defaults_to_thread(
-            ctx.clone(),
-            &mut loaded.thread,
-            loaded.auto_approve_editing_tools_present,
-            loaded.auto_approve_dangerous_commands_present,
-        )
-        .await;
+        ctx.trajectories
+            .apply_mode_defaults_to_thread(
+                &mut loaded.thread,
+                loaded.auto_approve_editing_tools_present,
+                loaded.auto_approve_dangerous_commands_present,
+            )
+            .await;
         let transition_identity_repaired = loaded.transition_identity_repaired;
         let transition_repair_patch = transition_identity_repaired.then(|| loaded.repair_patch());
         let mut session = ChatSession::new_with_trajectory(
@@ -277,11 +271,10 @@ pub async fn get_or_create_session_with_trajectory(
                 let session = session_arc.lock().await;
                 session.trajectory_version
             };
-            if let Err(e) = super::trajectories::persist_loaded_trajectory_repair_raw(
-                ctx.clone(),
-                &repair_patch,
-            )
-            .await
+            if let Err(e) = ctx
+                .trajectories
+                .persist_loaded_trajectory_repair_raw(&repair_patch)
+                .await
             {
                 warn!(
                     "Failed to persist repaired trajectory for {}: {}",
@@ -320,7 +313,7 @@ pub async fn try_restore_session_if_trajectory_exists(
         }
     }
 
-    if super::trajectories::load_trajectory_for_chat(ctx.clone(), chat_id)
+    if ctx.trajectories.load_trajectory_for_chat(chat_id)
         .await
         .is_none()
     {
@@ -338,7 +331,7 @@ pub async fn close_all_chat_sessions(ctx: ChatCtx) {
         sessions_read.values().cloned().collect()
     };
     let flushes = futures::future::join_all(session_arcs.iter().cloned().map(|session_arc| {
-        super::trajectories::flush_trajectory_for_session(ctx.clone(), session_arc)
+        ctx.trajectories.flush_trajectory_for_session(session_arc)
     }));
     match tokio::time::timeout(std::time::Duration::from_secs(5), flushes).await {
         Ok(results) => {
@@ -391,12 +384,10 @@ async fn save_idle_session_for_cleanup(
     ctx: ChatCtx,
     session_arc: Arc<AMutex<ChatSession>>,
 ) -> bool {
-    match super::trajectories::try_save_trajectory_with_intent(
-        ctx,
-        session_arc,
-        TrajectoryCommitIntent::Required,
-    )
-    .await
+    match ctx
+        .trajectories
+        .try_save_trajectory_with_intent(session_arc, TrajectoryCommitIntent::Required)
+        .await
     {
         Ok(saved) => saved,
         Err(error) => {
@@ -662,7 +653,9 @@ mod tests {
 
         assert!(app.chat.sessions.read().await.get(chat_id).is_none());
         assert!(
-            super::super::trajectories::load_trajectory_for_chat(app.chat_ctx(), chat_id)
+            app.chat_ctx()
+                .trajectories
+                .load_trajectory_for_chat(chat_id)
                 .await
                 .is_some()
         );
@@ -748,12 +741,10 @@ mod tests {
             .await
             .insert(chat_id.to_string(), session_arc.clone());
 
-        super::super::trajectories::maybe_save_trajectory_with_intent(
-            app.chat_ctx(),
-            session_arc.clone(),
-            TrajectoryCommitIntent::Required,
-        )
-        .await;
+        app.chat_ctx()
+            .trajectories
+            .maybe_save_trajectory_with_intent(session_arc.clone(), TrajectoryCommitIntent::Required)
+            .await;
         let process_id = app
             .runtime
             .exec_registry
@@ -824,7 +815,10 @@ mod tests {
             .await
             .insert(chat_id.into(), session_arc.clone());
         assert!(cleanup_idle_session(app.chat_ctx(), &app.chat.sessions, chat_id, session_arc).await);
-        let loaded = super::super::trajectories::load_trajectory_for_chat(app.chat_ctx(), chat_id)
+        let loaded = app
+            .chat_ctx()
+            .trajectories
+            .load_trajectory_for_chat(chat_id)
             .await
             .unwrap();
         assert_eq!(loaded.pending_deliveries, vec![delivery.clone()]);

@@ -129,11 +129,11 @@ use writer::rollout_switch_enabled;
 // Re-exports from model
 pub use model::{
     apply_mode_defaults_to_thread, get_session_state_for_chat, trajectory_event_is_displayable_chat,
-    LoadedTrajectory, TrajectoryData, TrajectoryMeta,
+    LoadedTrajectory, TrajectoryData, TrajectoryMeta, TrajectoryRepairPatch,
 };
 pub(crate) use model::{
     trajectory_list_data_is_displayable_chat, trajectory_snapshot_from_session,
-    TrajectoryListCandidate, TrajectoryListData, TrajectoryRepairPatch,
+    TrajectoryListCandidate, TrajectoryListData,
 };
 use model::{
     clamp_goal_snapshot_for_load, epoch_ms_now, get_session_runtime_for_trajectory_source,

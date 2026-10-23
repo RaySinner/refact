@@ -175,7 +175,7 @@ async fn persist_live_source_goal_transfer(
             session.emit_goal_status();
         }
         crate::chat::trajectories::try_save_trajectory_with_intent(
-            AppState::from_gcx(gcx.clone()).await.chat_ctx(),
+            AppState::from_gcx(gcx.clone()).await,
             session_arc,
             crate::chat::types::TrajectoryCommitIntent::Required,
         )
@@ -373,7 +373,7 @@ pub async fn handle_llm_compress_apply(
     .await;
     if result.applied {
         let _ = crate::chat::trajectories::try_save_trajectory_with_intent(
-            AppState::from_gcx(gcx).await.chat_ctx(),
+            AppState::from_gcx(gcx).await,
             session_arc,
             crate::chat::types::TrajectoryCommitIntent::Required,
         )
@@ -546,7 +546,7 @@ pub async fn handle_transform_apply(
     };
 
     crate::chat::trajectories::maybe_save_trajectory_with_intent(
-        AppState::from_gcx(gcx.clone()).await.chat_ctx(),
+        AppState::from_gcx(gcx.clone()).await,
         session_arc,
         crate::chat::types::TrajectoryCommitIntent::Required,
     )

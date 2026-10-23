@@ -11,6 +11,7 @@ use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use crate::app_state::AppState;
 use crate::call_validation::ChatUsage;
 use crate::caps::BaseModelRecord;
+use crate::chat::ctx::ChatCtx;
 use crate::chat::diagnostics::safe_provider_error_diagnostic;
 use crate::chat::perf_diagnostics::{self, PerfComponent, PerfOutcome};
 use crate::llm::{LlmRequest, LlmStreamDelta, WireFormat, get_adapter, safe_truncate};
@@ -497,7 +498,7 @@ fn set_bearer_authorization_header(
 }
 
 async fn force_refresh_openai_codex_for_retry(
-    app: AppState,
+    ctx: ChatCtx,
     http_client: &reqwest::Client,
     provider_instance_id: &str,
     status: reqwest::StatusCode,
@@ -506,7 +507,7 @@ async fn force_refresh_openai_codex_for_retry(
     let _guard = crate::providers::openai_codex::OpenAICodexProvider::lock_refresh_guard().await?;
 
     let (config_dir, provider) = {
-        let registry = app.model.providers.read().await;
+        let registry = ctx.model.providers.read().await;
         let provider = registry
             .get(provider_instance_id)
             .and_then(|p| {
@@ -514,7 +515,7 @@ async fn force_refresh_openai_codex_for_retry(
                     .downcast_ref::<crate::providers::openai_codex::OpenAICodexProvider>()
             })
             .cloned();
-        let config_dir = app.paths.config_dir.clone();
+        let config_dir = ctx.paths.config_dir.clone();
         (config_dir, provider)
     };
 
@@ -560,7 +561,7 @@ async fn force_refresh_openai_codex_for_retry(
 
     if !provider.auth_state_matches(&previous_tokens, &previous_session_id) {
         let changed = {
-            let mut registry = app.model.providers.write().await;
+            let mut registry = ctx.model.providers.write().await;
             registry
                 .get_mut(provider_instance_id)
                 .and_then(|p| {
@@ -578,10 +579,10 @@ async fn force_refresh_openai_codex_for_retry(
         };
 
         if changed {
-            let mut caps = app.model.caps.write().await;
+            let mut caps = ctx.model.caps.write().await;
             caps.caps = None;
             caps.last_attempted_ts = 0;
-            app.gcx.tool_catalog_generations.advance_capabilities();
+            ctx.tool_catalog_generations.advance_capabilities();
         }
     }
 
@@ -1988,7 +1989,7 @@ async fn run_llm_websocket_request<C: StreamCollector>(
 }
 
 async fn refresh_openai_codex_after_websocket_auth_rejection(
-    app: AppState,
+    ctx: ChatCtx,
     http_client: &reqwest::Client,
     model_rec: &BaseModelRecord,
     status: reqwest::StatusCode,
@@ -1998,7 +1999,7 @@ async fn refresh_openai_codex_after_websocket_auth_rejection(
     let provider_instance_id = openai_codex_instance_id(model_rec).unwrap_or("openai_codex");
     tokio::select! {
         res = force_refresh_openai_codex_for_retry(
-            app,
+            ctx,
             http_client,
             provider_instance_id,
             status,
@@ -2531,7 +2532,7 @@ pub(crate) async fn run_llm_stream_with_prepare_started<C: StreamCollector>(
                     Err((error, returned_session)) => {
                         if let Some(status) = openai_codex_websocket_auth_rejection_status(&error) {
                             match refresh_openai_codex_after_websocket_auth_rejection(
-                                app.clone(),
+                                app.chat_ctx(),
                                 &client,
                                 &params.model_rec,
                                 status,
@@ -2770,7 +2771,7 @@ pub(crate) async fn run_llm_stream_with_prepare_started<C: StreamCollector>(
             openai_codex_instance_id(&params.model_rec).unwrap_or("openai_codex");
         let refresh_outcome = tokio::select! {
             res = force_refresh_openai_codex_for_retry(
-                app.clone(),
+                app.chat_ctx(),
                 &client,
                 provider_instance_id,
                 status,

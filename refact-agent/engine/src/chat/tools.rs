@@ -3849,7 +3849,7 @@ async fn execute_parallel_batch(
     let futures: Vec<_> = batch
         .iter()
         .map(|(idx, tool_call)| {
-            let gcx = app.clone();
+            let app = app.clone();
             let ccx = ccx.clone();
             let serial_registry = serial_registry.clone();
             let catalog = catalog.clone();
@@ -3862,7 +3862,7 @@ async fn execute_parallel_batch(
 
             async move {
                 execute_single_tool(
-                    gcx,
+                    app,
                     ccx,
                     idx,
                     tool_call,

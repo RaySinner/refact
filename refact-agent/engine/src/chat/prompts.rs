@@ -69,7 +69,7 @@ pub async fn render_mode_plan_template(
 
     if rendered.contains("%PROJECT_TREE%") {
         if include_project_info {
-            match system_context::generate_compact_project_tree(app.gcx.clone(), 1).await {
+            match app.ctx.project_tree.generate_compact_project_tree(1).await {
                 Ok(tree) if !tree.is_empty() => {
                     let first_level = tree
                         .lines()
@@ -354,8 +354,8 @@ fn models_info_snapshot_from(
 }
 
 pub(crate) async fn models_info_snapshot(app: &AppState) -> String {
-    let caps = app.gcx.caps_state.read().await.caps.clone();
-    let policy_load = app.gcx.privacy_policy_load.read().unwrap().clone();
+    let caps = app.model.caps.read().await.caps.clone();
+    let policy_load = app.ctx.privacy_policy_load.read().unwrap().clone();
     models_info_snapshot_from(
         caps.as_deref(),
         &policy_load.policy,
@@ -459,7 +459,12 @@ pub async fn system_prompt_add_extra_instructions(
         if include_project_info && config.sections.project_tree.enabled {
             let max_depth = config.sections.project_tree.max_depth.unwrap_or(4);
             let max_chars = config.sections.project_tree.max_chars.unwrap_or(16000);
-            match system_context::generate_compact_project_tree(app.gcx.clone(), max_depth).await {
+            match app
+                .ctx
+                .project_tree
+                .generate_compact_project_tree(max_depth)
+                .await
+            {
                 Ok(tree) if !tree.is_empty() => {
                     let tree_content = truncate_to_chars(&tree, max_chars);
                     let tree_section = format!("## Project Structure\n```\n{}```", tree_content);
@@ -2552,7 +2557,7 @@ async fn run_task_briefing_subchat(
                     step_progress: None,
                     trace_parent: crate::subchat::TraceParent::unattributed(),
                 };
-                let result = crate::subchat::run_subchat(app.gcx.clone(), messages, config).await?;
+                let result = app.ctx.subchat.run_subchat(messages, config).await?;
                 let briefing = result
                     .messages
                     .iter()

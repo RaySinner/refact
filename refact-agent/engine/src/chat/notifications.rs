@@ -11,12 +11,12 @@ use tokio::task::JoinHandle;
 use refact_core::chat_types::{DeliveryOutcome, PendingDelivery, PushMode};
 
 use crate::call_validation::ChatMessage;
+use crate::chat::ctx::ChatCtx;
 use crate::chat::internal_roles::{event, EventSubkind};
 use crate::chat::types::ChatEvent;
 #[cfg(test)]
 use crate::chat::types::ChatSession;
 use crate::exec::{ExecStatus, ProcessCompletionEvent, ProcessSpawnEvent};
-use crate::global_context::SharedGlobalContext;
 
 /// Stable, restart-safe dedupe key for a process completion notice. The exec
 /// process id is unique per process, so one completion can only land once even
@@ -25,22 +25,22 @@ pub(crate) fn process_completion_delivery_id(event: &ProcessCompletionEvent) -> 
     format!("process-completed-{}", event.process_id)
 }
 
-pub fn spawn_notification_subscriber(gcx: SharedGlobalContext) -> JoinHandle<()> {
-    let mut completion_rx = gcx.exec_registry.subscribe_completion();
-    let mut spawn_rx = gcx.exec_registry.subscribe_spawn();
+pub fn spawn_notification_subscriber(ctx: ChatCtx) -> JoinHandle<()> {
+    let mut completion_rx = ctx.runtime.exec_registry.subscribe_completion();
+    let mut spawn_rx = ctx.runtime.exec_registry.subscribe_spawn();
     tokio::spawn(async move {
         loop {
             tokio::select! {
-                _ = wait_for_shutdown(gcx.clone()) => break,
+                _ = wait_for_shutdown(ctx.clone()) => break,
                 event = completion_rx.recv() => match event {
-                    Ok(event) => handle_process_completion(gcx.clone(), event).await,
+                    Ok(event) => handle_process_completion(ctx.clone(), event).await,
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(count)) => {
                         tracing::warn!("process completion notification subscriber lagged by {count} event(s)");
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                 },
                 event = spawn_rx.recv() => match event {
-                    Ok(event) => handle_process_spawn(gcx.clone(), event).await,
+                    Ok(event) => handle_process_spawn(ctx.clone(), event).await,
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(count)) => {
                         tracing::warn!("process spawn notification subscriber lagged by {count} event(s)");
                     }
@@ -51,15 +51,15 @@ pub fn spawn_notification_subscriber(gcx: SharedGlobalContext) -> JoinHandle<()>
     })
 }
 
-async fn wait_for_shutdown(gcx: SharedGlobalContext) {
-    while !gcx.shutdown_flag.load(Ordering::Relaxed) {
+async fn wait_for_shutdown(ctx: ChatCtx) {
+    while !ctx.runtime.shutdown_flag.load(Ordering::Relaxed) {
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
 }
 
-pub(crate) async fn handle_process_spawn(gcx: SharedGlobalContext, event: ProcessSpawnEvent) {
+pub(crate) async fn handle_process_spawn(ctx: ChatCtx, event: ProcessSpawnEvent) {
     let session_arc = {
-        let sessions = gcx.chat_sessions.read().await;
+        let sessions = ctx.chat.sessions.read().await;
         sessions.get(&event.chat_id).cloned()
     };
     let Some(session_arc) = session_arc else {
@@ -91,12 +91,8 @@ pub(crate) async fn handle_process_spawn(gcx: SharedGlobalContext, event: Proces
 /// The hub owns restoring an unloaded session, runner-owned routing, dedupe and
 /// waking the queue, so this function only builds the delivery and reports
 /// failures honestly instead of dropping them.
-pub(crate) async fn handle_process_completion(
-    gcx: SharedGlobalContext,
-    event: ProcessCompletionEvent,
-) {
-    let app = crate::app_state::AppState::from_gcx(gcx).await;
-    if let Err(error) = deliver_process_completion(app, &event).await {
+pub(crate) async fn handle_process_completion(ctx: ChatCtx, event: ProcessCompletionEvent) {
+    if let Err(error) = deliver_process_completion(ctx, &event).await {
         tracing::warn!(
             process_id = %event.process_id,
             chat_id = %event.chat_id,
@@ -106,11 +102,14 @@ pub(crate) async fn handle_process_completion(
 }
 
 pub(crate) async fn deliver_process_completion(
-    app: crate::app_state::AppState,
+    ctx: ChatCtx,
     event: &ProcessCompletionEvent,
 ) -> Result<DeliveryOutcome, String> {
     let chat_id = event.chat_id.clone();
-    crate::chat::delivery::deliver_to_chat(app, &chat_id, process_completion_delivery(event)).await
+    ctx.chat
+        .facade
+        .deliver_messages(&chat_id, process_completion_delivery(event))
+        .await
 }
 
 pub(crate) fn process_completion_delivery(event: &ProcessCompletionEvent) -> PendingDelivery {
@@ -191,6 +190,7 @@ mod tests {
     use super::*;
     use crate::exec::{ExecMode, ExecOwnerMeta, ExecProcessId, ExecRegistry, ExecSpawnRequest};
     use crate::chat::trajectories::{save_trajectory_snapshot, TrajectorySnapshot};
+    use crate::global_context::SharedGlobalContext;
 
     async fn test_gcx_with_workspace() -> (SharedGlobalContext, tempfile::TempDir) {
         let gcx = crate::global_context::tests::make_test_gcx().await;
@@ -397,13 +397,13 @@ mod tests {
             .unwrap();
         let event = completion_event("exec_runner_notice", "runner-completion", PushMode::Append);
         assert_eq!(
-            deliver_process_completion(app.clone(), &event)
+            deliver_process_completion(app.chat_ctx(), &event)
                 .await
                 .unwrap(),
             DeliveryOutcome::Queued
         );
         assert_eq!(
-            deliver_process_completion(app.clone(), &event)
+            deliver_process_completion(app.chat_ctx(), &event)
                 .await
                 .unwrap(),
             DeliveryOutcome::Duplicate
@@ -425,7 +425,7 @@ mod tests {
     #[tokio::test]
     async fn background_process_exit_injects_event() {
         let (gcx, _workspace) = test_gcx_with_workspace().await;
-        let subscriber = spawn_notification_subscriber(gcx.clone());
+        let subscriber = spawn_notification_subscriber(gcx.chat_ctx(gcx.clone()));
         let chat_id = "background-process-exit-injects-event";
         let session = test_session(&gcx, chat_id).await;
 
@@ -452,7 +452,7 @@ mod tests {
     #[tokio::test]
     async fn service_process_exit_injects_event() {
         let (gcx, _workspace) = test_gcx_with_workspace().await;
-        let subscriber = spawn_notification_subscriber(gcx.clone());
+        let subscriber = spawn_notification_subscriber(gcx.chat_ctx(gcx.clone()));
         let chat_id = "service-process-exit-injects-event";
         let session = test_session(&gcx, chat_id).await;
 
@@ -480,7 +480,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (gcx, _workspace) = test_gcx_with_workspace().await;
         *gcx.documents_state.workspace_folders.lock().unwrap() = vec![dir.path().to_path_buf()];
-        let subscriber = spawn_notification_subscriber(gcx.clone());
+        let subscriber = spawn_notification_subscriber(gcx.chat_ctx(gcx.clone()));
         let chat_id = "process-completion-restores-unloaded-session";
         save_trajectory_snapshot(gcx.clone(), notification_test_snapshot(chat_id))
             .await
@@ -516,7 +516,7 @@ mod tests {
     #[tokio::test]
     async fn foreground_process_no_injection() {
         let (gcx, _workspace) = test_gcx_with_workspace().await;
-        let subscriber = spawn_notification_subscriber(gcx.clone());
+        let subscriber = spawn_notification_subscriber(gcx.chat_ctx(gcx.clone()));
         let chat_id = "foreground-process-no-injection";
         let session = test_session(&gcx, chat_id).await;
 
@@ -538,7 +538,7 @@ mod tests {
     #[tokio::test]
     async fn chat_owned_process_spawn_emits_sse_event() {
         let (gcx, _workspace) = test_gcx_with_workspace().await;
-        let subscriber = spawn_notification_subscriber(gcx.clone());
+        let subscriber = spawn_notification_subscriber(gcx.chat_ctx(gcx.clone()));
         let chat_id = "chat-owned-process-spawn";
         let session = test_session(&gcx, chat_id).await;
         let mut events = session.lock().await.subscribe();
@@ -588,7 +588,7 @@ mod tests {
     #[tokio::test]
     async fn chatless_process_spawn_does_not_emit_sse_event() {
         let (gcx, _workspace) = test_gcx_with_workspace().await;
-        let subscriber = spawn_notification_subscriber(gcx.clone());
+        let subscriber = spawn_notification_subscriber(gcx.chat_ctx(gcx.clone()));
         let session = test_session(&gcx, "chatless-process-spawn").await;
         let mut events = session.lock().await.subscribe();
         tokio::task::yield_now().await;
@@ -628,7 +628,7 @@ mod tests {
         }
 
         let outcome = deliver_process_completion(
-            app,
+            app.chat_ctx(),
             &completion_event("exec_append_stream", chat_id, PushMode::Append),
         )
         .await
@@ -661,7 +661,7 @@ mod tests {
         }
 
         let outcome = deliver_process_completion(
-            app,
+            app.chat_ctx(),
             &completion_event("exec_preempt", chat_id, PushMode::Preempt),
         )
         .await
@@ -691,7 +691,7 @@ mod tests {
         }
 
         let outcome = deliver_process_completion(
-            app.clone(),
+            app.chat_ctx(),
             &completion_event("exec_when_idle", chat_id, PushMode::WhenIdle),
         )
         .await
@@ -726,10 +726,12 @@ mod tests {
         let session = test_session(&gcx, chat_id).await;
         let event = completion_event("exec_duplicate_completion", chat_id, PushMode::Append);
 
-        let first = deliver_process_completion(app.clone(), &event)
+        let first = deliver_process_completion(app.chat_ctx(), &event)
             .await
             .unwrap();
-        let second = deliver_process_completion(app, &event).await.unwrap();
+        let second = deliver_process_completion(app.chat_ctx(), &event)
+            .await
+            .unwrap();
 
         assert_eq!(first, DeliveryOutcome::Delivered);
         assert_eq!(second, DeliveryOutcome::Duplicate);
@@ -754,7 +756,7 @@ mod tests {
         session.lock().await.closed = true;
 
         let error = deliver_process_completion(
-            app,
+            app.chat_ctx(),
             &completion_event("exec_closed_chat", chat_id, PushMode::Append),
         )
         .await
@@ -771,7 +773,7 @@ mod tests {
         let session = test_session(&gcx, chat_id).await;
 
         let outcome = deliver_process_completion(
-            app,
+            app.chat_ctx(),
             &completion_event("exec_ordinary", chat_id, PushMode::Append),
         )
         .await
@@ -792,7 +794,7 @@ mod tests {
     #[tokio::test]
     async fn closed_chat_drops_cleanly() {
         let (gcx, _workspace) = test_gcx_with_workspace().await;
-        let subscriber = spawn_notification_subscriber(gcx.clone());
+        let subscriber = spawn_notification_subscriber(gcx.chat_ctx(gcx.clone()));
         let chat_id = "closed-chat-drops-cleanly";
         let session = test_session(&gcx, chat_id).await;
         {

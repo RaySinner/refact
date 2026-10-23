@@ -775,7 +775,7 @@ mod tests {
             .await
             .unwrap();
         let completion = completion_rx.recv().await.unwrap();
-        crate::chat::notifications::handle_process_completion(app.gcx.clone(), completion).await;
+        crate::chat::notifications::handle_process_completion(app.chat_ctx(), completion).await;
 
         assert!(
             !cleanup_idle_session(

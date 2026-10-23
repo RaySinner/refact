@@ -40,16 +40,24 @@
 # need a restart for it (observed: the server PID stays the same while
 # different clients report different base dirs).
 #
-# The server is one per user and is shared by every concurrent build (other
-# agents, the IDE, rust-analyzer). This script therefore NEVER stops it: a
-# healthy server is reused as-is, one is started only when none responds. An
-# earlier version stopped the server whenever the basedirs marker of the last
-# run differed, which - because the list contains the current worktree root -
-# happened on every run from a different worktree. That killed the server
-# another build was using; that build then printed "the server looks like it
-# shut down unexpectedly" and compiled locally, which is the degradation that
-# inflated every measurement. Explicit restarts stay available via
-# -Mode cache-reset.
+# Server isolation: the DEFAULT sccache port (4226) is a single per-user server
+# shared by every cargo invocation on the machine - rust-analyzer, other
+# worktrees, hand-run builds - because ~/.cargo/config.toml sets
+# rustc-wrapper = "sccache" globally. Any one of those clients running
+# `sccache --stop-server` (an older copy of this script did it on every run from
+# a different worktree; -Mode cache-reset used to do it too) kills the server
+# for everybody, and every build connected at that moment prints "the server
+# looks like it shut down unexpectedly, compiling locally instead" and pays a
+# silent full recompile (~25 min for refact-lsp).
+#
+# This script therefore runs its OWN server on $script:sccachePort (4227) and
+# never stops a healthy one. A foreign client on the default port cannot reach
+# that server, so a restart on 4226 no longer degrades this build. The cache
+# DIRECTORY stays the shared one: entries are content-addressed, so the warm
+# cache built by earlier runs (and by the default-port server) keeps producing
+# hits - isolation is about the control plane (who may stop the server), not
+# about throwing the cache away. Explicit restarts stay available via
+# -Mode cache-reset, and now only touch this script's own server.
 #
 # ASCII only on purpose: Windows PowerShell 5.1 reads .ps1 files as ANSI when
 # there is no BOM, so non-ASCII characters here would be mangled.
@@ -72,6 +80,52 @@ if (-not (Test-Path (Join-Path $engineDir 'Cargo.toml'))) {
 # PATH (cargo, Node, MSVC), NODE_OPTIONS. CARGO_INCREMENTAL is set per
 # invocation below, not here - see the sccache policy comment above.
 . (Join-Path $PSScriptRoot 'build-env.ps1')
+
+# Dedicated server port for engine builds. 4226 is the sccache default and is
+# owned by the shared per-user server; 4227 belongs to this script only.
+# REFACT_SCCACHE_PORT overrides it for a second concurrent engine build.
+$script:sccachePort = 4227
+if ($env:REFACT_SCCACHE_PORT -match '^\d+$') { $script:sccachePort = [int]$env:REFACT_SCCACHE_PORT }
+
+# sccache's own default on Windows. Set explicitly so the isolated server and
+# the shared one read the same cache, and so cache-status can print it.
+$script:sccacheCacheDir = $env:SCCACHE_DIR
+if (-not $script:sccacheCacheDir) {
+    $script:sccacheCacheDir = Join-Path $env:LOCALAPPDATA 'Mozilla\sccache\cache'
+}
+
+# sccache shuts its server down after 600 seconds without a new request
+# (DEFAULT_IDLE_TIMEOUT in sccache/src/server.rs) and waits only ~10 s for
+# in-flight work. One long unit outlives that timer - refact-lsp alone takes
+# 13-25 minutes - so the server disappears mid-build, the connected client
+# prints "The server looks like it shut down unexpectedly, compiling locally
+# instead", and the build finishes locally. 0 disables idle shutdown.
+$script:sccacheIdleTimeout = '0'
+
+function Set-SccacheIsolation {
+    # Own server (control plane), shared cache directory (data plane).
+    $env:SCCACHE_SERVER_PORT = [string]$script:sccachePort
+    $env:SCCACHE_DIR = $script:sccacheCacheDir
+    $env:SCCACHE_IDLE_TIMEOUT = $script:sccacheIdleTimeout
+}
+
+function Get-SccacheServerMarkerPath {
+    return (Join-Path $env:TEMP 'refact-engine-build-sccache-server.txt')
+}
+
+function Test-SccacheServerIdleDisabled {
+    # The idle timeout is read by the SERVER at startup, so a server started
+    # before this script set SCCACHE_IDLE_TIMEOUT=0 still dies after 600 s. The
+    # marker records how the running isolated server was started.
+    $path = Get-SccacheServerMarkerPath
+    if (-not (Test-Path $path)) { return $false }
+    $expected = "port={0};idle_timeout={1}" -f $script:sccachePort, $script:sccacheIdleTimeout
+    return (([IO.File]::ReadAllText($path)).Trim() -eq $expected)
+}
+
+function Save-SccacheServerMarker {
+    [IO.File]::WriteAllText((Get-SccacheServerMarkerPath), ("port={0};idle_timeout={1}" -f $script:sccachePort, $script:sccacheIdleTimeout))
+}
 
 # Wrapper-bypass config for the os error 206 fallback.
 #
@@ -137,22 +191,29 @@ function Get-SccacheStats {
 }
 
 function Test-SccacheServerRunning {
+    # Liveness is per PORT. This script talks to its own server on
+    # $script:sccachePort; the shared per-user server lives on the default 4226
+    # and is somebody else's business. A foreign `sccache --stop-server` on 4226
+    # cannot make this probe fail.
+    #
     # --show-stats is NOT a liveness probe: with no server running it still
     # exits 0 and prints a zeroed table (Max cache size 10 GiB, Base directories
     # (none)), which is how an earlier version of this script convinced itself a
     # dead server was healthy and compiled for 27 minutes without caching.
-    # The server is the sccache.exe process with no compiler on its command
-    # line; clients are "sccache.exe <rustc> ...".
-    $procs = @(Get-CimInstance Win32_Process -Filter "Name='sccache.exe'" -ErrorAction SilentlyContinue)
-    foreach ($p in $procs) {
-        if (-not $p.CommandLine) { continue }
-        if ($p.CommandLine -notmatch 'rustc') { return $true }
-    }
-    return $false
+    return (Test-SccachePortOpen $script:sccachePort)
+}
+
+function Get-SccacheServerPid {
+    # Only used for reporting (cache-status, warnings); the liveness probe above
+    # is cheaper.
+    $conn = Get-NetTCPConnection -State Listen -LocalPort $script:sccachePort -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if (-not $conn) { return $null }
+    return [int]$conn.OwningProcess
 }
 
 function Test-SccachePortOpen {
-    param([int]$Port)
+    param([int]$Port = $script:sccachePort)
     $client = New-Object System.Net.Sockets.TcpClient
     try {
         $connect = $client.BeginConnect('127.0.0.1', $Port, $null, $null)
@@ -170,8 +231,7 @@ function Wait-SccacheServerReady {
     # immediately, and a refused connection makes sccache print "the server
     # looks like it shut down unexpectedly, compiling locally instead" and skip
     # caching for the whole build. Wait for the port to accept a connection.
-    $port = 4226
-    if ($env:SCCACHE_SERVER_PORT -match '^\d+$') { $port = [int]$env:SCCACHE_SERVER_PORT }
+    $port = $script:sccachePort
     for ($i = 0; $i -lt 50; $i++) {
         if (Test-SccachePortOpen $port) { return $true }
         Start-Sleep -Milliseconds 100
@@ -210,49 +270,64 @@ function Save-SccacheState {
     if ($null -eq $requests) { return }
     $hits = Get-SccacheCounter $Stats 'Cache hits'
     if ($null -eq $hits) { $hits = 0 }
-    [IO.File]::WriteAllText((Get-SccacheStatePath), ("compile_requests={0}`r`ncache_hits={1}`r`n" -f $requests, $hits))
+    [IO.File]::WriteAllText((Get-SccacheStatePath), ("port={0}`r`ncompile_requests={1}`r`ncache_hits={2}`r`n" -f $script:sccachePort, $requests, $hits))
 }
 
 function Write-SccacheServerState {
     param([string]$Stats)
     if (-not (Test-SccacheServerRunning)) {
-        Write-Host 'sccache: server is NOT running - nothing is being cached until one starts' -ForegroundColor Yellow
+        Write-Host ("sccache: isolated server on port {0} is NOT running - nothing is being cached until one starts" -f $script:sccachePort) -ForegroundColor Yellow
         return $false
     }
     $previous = Read-SccacheState
+    # A state file written against a different server port says nothing about
+    # this one (it predates isolation), so drop it instead of reporting a
+    # phantom restart on the first run after the switch.
+    if ($previous -and (-not $previous.ContainsKey('port') -or $previous['port'] -ne $script:sccachePort)) { $previous = $null }
     $requests = Get-SccacheCounter $Stats 'Compile requests'
     $hits = Get-SccacheCounter $Stats 'Cache hits'
     if ($null -eq $requests) { $requests = 0 }
     if ($null -eq $hits) { $hits = 0 }
-    Write-Host ("sccache: server up - compile requests {0}, cache hits {1}" -f $requests, $hits)
+    Write-Host ("sccache: isolated server on port {0} is up - compile requests {1}, cache hits {2}" -f $script:sccachePort, $requests, $hits)
     $restarted = $false
     if ($previous -and $previous.ContainsKey('compile_requests') -and $requests -lt $previous['compile_requests']) {
         $restarted = $true
-        Write-Host ("WARNING: sccache server was restarted since the previous run (compile requests {0} -> {1}), so the previous run's cache accounting was lost. Something outside this script stopped it - see docs/dev/build-velocity.md#sccache-degraded" -f $previous['compile_requests'], $requests) -ForegroundColor Yellow
+        Write-Host ("WARNING: the isolated sccache server on port {0} was restarted since the previous run (compile requests {1} -> {2}), so the previous run's cache accounting was lost. Something killed the server process - see docs/dev/build-velocity.md#sccache-degraded" -f $script:sccachePort, $previous['compile_requests'], $requests) -ForegroundColor Yellow
     }
     Save-SccacheState $Stats
     return $restarted
 }
 
 function Ensure-SccacheServer {
-    # The server is shared with every other build on the machine, so only ever
-    # start a missing one. SCCACHE_BASEDIRS is sent by the client with each
-    # compile request, so a running server serves this worktree correctly no
-    # matter which client started it.
-    if (Test-SccacheServerRunning) {
-        Write-Host 'engine-build: sccache server is up - reusing it (never stopped by this script)'
+    # Own server on $script:sccachePort, so a foreign client stopping the shared
+    # default-port server cannot degrade this build. Only ever start a missing
+    # one. SCCACHE_BASEDIRS is sent by the client with each compile request, so
+    # the server serves this worktree correctly no matter which client started it.
+    Set-SccacheIsolation
+    if ((Test-SccacheServerRunning) -and (Test-SccacheServerIdleDisabled)) {
+        Write-Host ("engine-build: isolated sccache server on port {0} is up - reusing it (never stopped by this script)" -f $script:sccachePort)
     }
     else {
+        if (Test-SccacheServerRunning) {
+            # A server started before SCCACHE_IDLE_TIMEOUT=0 (or by hand) still
+            # shuts down after 600 s and would kill the build during the long
+            # refact-lsp compile. This port belongs to engine builds only, so a
+            # restart here cannot disturb anything else.
+            Write-Host ("engine-build: isolated sccache server on port {0} runs with the 600 s idle shutdown - restarting it with SCCACHE_IDLE_TIMEOUT=0" -f $script:sccachePort)
+            & sccache --stop-server 2>&1 | Out-Null
+            Start-Sleep -Milliseconds 500
+        }
         $out = ((& sccache --start-server 2>&1) -join ' ').Trim()
         $code = $LASTEXITCODE
         if ($code -ne 0 -and $out -notmatch 'Address in use') {
-            Write-Host "WARNING: sccache server could not be started ($out) - this build compiles locally" -ForegroundColor Yellow
+            Write-Host "WARNING: the isolated sccache server could not be started ($out) - this build compiles locally" -ForegroundColor Yellow
             return
         }
-        Write-Host 'engine-build: sccache server was down - started it'
+        Save-SccacheServerMarker
+        Write-Host ("engine-build: isolated sccache server was down - started it on port {0}" -f $script:sccachePort)
     }
     if (-not (Wait-SccacheServerReady)) {
-        Write-Host 'WARNING: sccache server is not accepting connections - this build may compile locally' -ForegroundColor Yellow
+        Write-Host ("WARNING: the isolated sccache server on port {0} is not accepting connections - this build may compile locally" -f $script:sccachePort) -ForegroundColor Yellow
     }
 }
 
@@ -271,14 +346,14 @@ function Write-SccacheRunDelta {
     $hits = 0
     if ($null -ne $BeforeHits -and $null -ne $afterHits) { $hits = $afterHits - $BeforeHits }
     if ($requests -lt 0 -or $hits -lt 0) {
-        Write-Host 'WARNING: sccache counters went backwards during the build - the server was restarted mid-run (see docs/dev/build-velocity.md#sccache-degraded)' -ForegroundColor Yellow
+        Write-Host ("WARNING: sccache counters went backwards during the build - the isolated server on port {0} died or was killed mid-run (see docs/dev/build-velocity.md#sccache-degraded)" -f $script:sccachePort) -ForegroundColor Yellow
         $script:sccacheDegraded = $true
     }
     elseif ($requests -eq 0) {
         # A warm tree makes cargo a no-op: nothing was compiled, so there is
-        # nothing to cache and a stray sccache warning means nothing here.
+        # nothing to cache. The caller still probes server liveness, which is
+        # what tells "no-op" apart from "the server died mid-run".
         Write-Host 'engine-build: sccache this run - nothing recompiled, nothing to cache'
-        $script:sccacheDegraded = $false
     }
     else {
         Write-Host ("engine-build: sccache this run - {0} compile request(s), {1} cache hit(s), {2} miss(es)" -f $requests, $hits, ($requests - $hits))
@@ -325,9 +400,10 @@ function Invoke-Cargo {
             }
             else {
                 Set-SccacheBaseDirs
+                Set-SccacheIsolation
                 Ensure-SccacheServer
                 $env:CARGO_INCREMENTAL = '0'
-                Write-Host "engine-build: using sccache (CARGO_INCREMENTAL=0, SCCACHE_BASEDIRS=$env:SCCACHE_BASEDIRS)"
+                Write-Host ("engine-build: using sccache (CARGO_INCREMENTAL=0, SCCACHE_SERVER_PORT=$env:SCCACHE_SERVER_PORT, SCCACHE_BASEDIRS=$env:SCCACHE_BASEDIRS)")
                 $beforeStats = Get-SccacheStats
                 $beforeRequests = Get-SccacheCounter $beforeStats 'Compile requests'
                 $beforeHits = Get-SccacheCounter $beforeStats 'Cache hits'
@@ -341,6 +417,10 @@ function Invoke-Cargo {
                     $script:sccacheDegraded = $true
                 }
                 Write-SccacheRunDelta $beforeRequests $beforeHits
+                if (-not (Test-SccacheServerRunning)) {
+                    Write-Host ("WARNING: the isolated sccache server on port {0} is gone after the build - it shut down mid-run, so whatever was still pending compiled locally (see docs/dev/build-velocity.md#sccache-degraded)" -f $script:sccachePort) -ForegroundColor Yellow
+                    $script:sccacheDegraded = $true
+                }
                 if ($exitCode -eq 0) { return 0 }
                 if (-not (Test-SpawnFailure ($out | Out-String))) { return $exitCode }
                 Write-Warning 'sccache run failed with the command-line overflow signature; retrying once with the rustc wrapper bypassed.'
@@ -415,6 +495,7 @@ switch ($Mode) {
     'cache-status' {
         Write-Banner 'mode cache-status (sccache stats and detected build mode)'
         Set-SccacheBaseDirs
+        Set-SccacheIsolation
         $predicted = Get-PredictedArgvLength
         $cachedPath = $predicted -le 31000
         Write-Host ("repo root: {0} ({1} chars)" -f $repoRoot, $repoRoot.Length)
@@ -425,14 +506,24 @@ switch ($Mode) {
         else {
             Write-Host 'cached path: NO - repo root is too long for sccache (os error 206). Keep worktree roots short; agent worktrees can set REFACT_WORKTREE_ROOT=C:\wt' -ForegroundColor Yellow
         }
+        Write-Host ("sccache server: ISOLATED - port {0} (engine builds only), default port 4226 is the shared per-user server" -f $script:sccachePort)
+        Write-Host ("SCCACHE_DIR: {0}" -f $script:sccacheCacheDir)
         Write-Host "SCCACHE_BASEDIRS: $env:SCCACHE_BASEDIRS"
         if (Get-Command sccache -ErrorAction SilentlyContinue) {
-            Write-Host 'sccache: installed - engine-build.ps1 uses it first, falls back to the wrapper bypass on os error 206.'
+            Write-Host 'sccache: installed - engine-build.ps1 uses it first (own server), falls back to the wrapper bypass on os error 206.'
             Write-Host ("sccache client version: {0}" -f ((& sccache --version 2>&1) -join ' '))
             $stats = Get-SccacheStats
             if (Test-SccacheServerRunning) {
-                Write-Host 'sccache: server is running - this script only starts a missing server, it never stops a healthy one'
-                $cacheDir = Join-Path $env:LOCALAPPDATA 'Mozilla\sccache\cache'
+                $serverPid = Get-SccacheServerPid
+                Write-Host ("sccache: isolated server is running - PID {0}, port {1}, SCCACHE_DIR {2}" -f $serverPid, $script:sccachePort, $script:sccacheCacheDir) -ForegroundColor Green
+                Write-Host 'sccache: this script only starts a missing server, it never stops a healthy one'
+                if (Test-SccacheServerIdleDisabled) {
+                    Write-Host ("sccache: idle shutdown is disabled for this server (SCCACHE_IDLE_TIMEOUT={0}) - a 25-minute compile cannot outlive it" -f $script:sccacheIdleTimeout)
+                }
+                else {
+                    Write-Host 'WARNING: this server was not started with SCCACHE_IDLE_TIMEOUT=0 - it will shut down after 600 s without a new request, which kills a long compile; the next build restarts it correctly' -ForegroundColor Yellow
+                }
+                $cacheDir = $script:sccacheCacheDir
                 if (Test-Path $cacheDir) {
                     $sum = (Get-ChildItem $cacheDir -Recurse -File -ErrorAction SilentlyContinue |
                         Measure-Object Length -Sum)
@@ -448,13 +539,16 @@ switch ($Mode) {
                 if ($requests -gt 0 -and $hits -eq 0) {
                     Write-Host 'WARNING: sccache has served compile requests but recorded no cache hits since the server started - the cache is not being reused (see docs/dev/build-velocity.md#sccache-degraded)' -ForegroundColor Yellow
                 }
-                $ra = Get-Process -Name 'rust-analyzer' -ErrorAction SilentlyContinue
-                if ($ra) {
-                    Write-Host ("sccache: note - {0} rust-analyzer process(es) are also sccache clients; they share this server and are harmless (basedirs are per request)" -f @($ra).Count)
-                }
             }
             else {
-                Write-Host 'WARNING: sccache server is NOT running - the next build will start one; until then nothing is cached' -ForegroundColor Yellow
+                Write-Host ("WARNING: the isolated sccache server on port {0} is NOT running - the next build will start one; until then nothing is cached" -f $script:sccachePort) -ForegroundColor Yellow
+            }
+            $ra = Get-Process -Name 'rust-analyzer' -ErrorAction SilentlyContinue
+            if ($ra) {
+                Write-Host ("sccache: note - {0} rust-analyzer process(es) are sccache clients on the shared default port 4226; they cannot stop this script's server (basedirs are per request)" -f @($ra).Count)
+            }
+            if (Test-SccachePortOpen 4226) {
+                Write-Host 'sccache: the shared per-user server on port 4226 is also up (other builds/IDE) - separate process, separate counters'
             }
             Write-Host ''
             $stats | Write-Host
@@ -465,19 +559,25 @@ switch ($Mode) {
         }
     }
     'cache-reset' {
-        Write-Banner 'mode cache-reset (restart sccache server with the current SCCACHE_BASEDIRS)'
+        Write-Banner 'mode cache-reset (restart the isolated sccache server with the current SCCACHE_BASEDIRS)'
         Set-SccacheBaseDirs
+        Set-SccacheIsolation
         & sccache --stop-server 2>&1 | Out-Null
         & sccache --start-server 2>&1 | Out-Null
-        Write-Host "sccache server restarted with SCCACHE_BASEDIRS=$env:SCCACHE_BASEDIRS"
+        Save-SccacheServerMarker
+        Write-Host ("isolated sccache server restarted - port {0}, SCCACHE_DIR={1}, SCCACHE_BASEDIRS={2}" -f $script:sccachePort, $script:sccacheCacheDir, $env:SCCACHE_BASEDIRS)
         Write-Host 'note: builds do not need this - SCCACHE_BASEDIRS is applied per compile request and this script never stops a healthy server.'
+        Write-Host 'note: only the engine-build server on the isolated port is restarted; the shared per-user server on 4226 is left alone.'
     }
 }
 
 $stopwatch.Stop()
 if ($script:sccacheDegraded) {
     Write-Host ''
-    Write-Host 'WARNING: sccache degraded to local compilation this run - the build was not cached (see -Mode cache-status and docs/dev/build-velocity.md#sccache-degraded)' -ForegroundColor Yellow
+    Write-Host ("WARNING: sccache degraded to local compilation this run - the build was not cached (isolated server port {0}, see -Mode cache-status and docs/dev/build-velocity.md#sccache-degraded)" -f $script:sccachePort) -ForegroundColor Yellow
+    if (-not (Test-SccacheServerRunning)) {
+        Write-Host ("WARNING: the isolated sccache server on port {0} is gone now - it was killed while this build was running, so this run compiled locally" -f $script:sccachePort) -ForegroundColor Yellow
+    }
 }
 if ($exitCode -isnot [int]) {
     Write-Host "engine-build: exit code is not an int: $($exitCode -join ', ') - coercing to the last value"

@@ -56,16 +56,68 @@ See the header of `tools/dev/engine-build.ps1` for the full table:
 - `test` — `cargo test --lib`.
 - `clean` — drop `target/fast-release`.
 - `cache-status` — sccache stats, repo-root length, and whether the root is on the sccache-cached path.
-- `cache-reset` — restart the sccache server with the current `SCCACHE_BASEDIRS`.
+- `cache-reset` — restart the isolated sccache server (port 4227) with the current `SCCACHE_BASEDIRS`.
 
-The sccache server is one per user and is shared by every build on the machine
-(other agents, the IDE, rust-analyzer). `engine-build.ps1` therefore never stops
-it: a running server is reused, one is started only when none responds.
+## sccache server lifetime and isolation
+
+Two independent things kill the sccache server in the middle of an engine build,
+and both end the same way: the client prints `The server looks like it shut down
+unexpectedly, compiling locally instead` and the build quietly pays a full local
+compile (~25 minutes for `refact-lsp`).
+
+1. **Its own 600-second idle shutdown.** sccache exits a server after
+   `DEFAULT_IDLE_TIMEOUT = 600` seconds without a new request and waits only
+   ~10 s for in-flight work (`sccache/src/server.rs`, mozilla/sccache#204). A
+   cold `refact-lsp` check compiles hundreds of small crates first - constant
+   requests - and then a single unit (`refact-lsp`, 13-25 minutes) during which
+   no new request arrives. The idle timer fires, the server exits, the connected
+   client falls back to the local compiler. Measured on this box
+   (2026-10-23): a server started with the default environment was gone after
+   10 minutes idle, while one started with `SCCACHE_IDLE_TIMEOUT=0` was still
+   listening 11 minutes later.
+2. **Any other client on the same port.** `~/.cargo/config.toml` sets
+   `rustc-wrapper = "sccache"` globally, so rust-analyzer, other worktrees and
+   hand-run builds are all clients of the same per-user server on the default
+   port 4226. One `sccache --stop-server` from any of them (an older copy of
+   this script did it on every run from a different worktree, and
+   `-Mode cache-reset` used to do it too) kills it for everybody.
+
+`engine-build.ps1` handles both:
+
+- it runs **its own server** on port 4227 (`REFACT_SCCACHE_PORT` overrides it,
+  e.g. for a second concurrent engine build) and never stops a healthy one, so
+  a foreign client on 4226 cannot reach it;
+- it starts that server with `SCCACHE_IDLE_TIMEOUT=0`, so a single long compile
+  can no longer outlive the server. The timeout is read by the server at
+  startup, so a marker file in `%TEMP%`
+  (`refact-engine-build-sccache-server.txt`) records how the running server was
+  started; a server started without it is restarted once, which is safe because
+  the port belongs to engine builds only;
+- the cache directory stays the shared one
+  (`%LOCALAPPDATA%\Mozilla\sccache\cache`): entries are content-addressed, so
+  the warm cache built by earlier runs - and by the default-port server - still
+  produces hits. The isolation is about the control plane (who may stop the
+  server), not about throwing the cache away.
+
+What that means in practice:
+
+- A foreign `sccache --stop-server` on 4226 (an old script copy, a person, the
+  IDE) no longer degrades an engine build. Measured: the 4226 server
+  disappears while the 4227 server keeps its PID and keeps serving.
+- A 25-minute `refact-lsp` unit no longer takes the server down with it: the
+  server started by this script has no idle shutdown.
+- `-Mode cache-reset` restarts only the isolated server.
+- `-Mode cache-status` prints which server is used (isolated port, PID), whether
+  it was started with the idle shutdown disabled, `SCCACHE_DIR`,
+  `SCCACHE_BASEDIRS`, the counters, and the cache size on disk.
+- If the isolated server dies anyway, the run ends with an explicit
+  `WARNING: the isolated sccache server on port 4227 is gone after the build`
+  line instead of silently compiling locally.
+
 `SCCACHE_BASEDIRS` (main checkout, `~/.cache/refact/worktrees`, `C:\wt`, the
 current repo root, plus `REFACT_SCCACHE_BASEDIRS`) is applied per compile
 request - the client sends its environment - so the list can differ between
-worktrees without any restart. An explicit restart stays available via
-`-Mode cache-reset`.
+worktrees without any restart.
 
 Every build ends with a per-run line:
 
@@ -78,6 +130,8 @@ compiling at the same time. If a run degrades to local compilation it ends with
 one prominent `WARNING: sccache degraded to local compilation this run` line
 instead.
 
+<a name="sccache-degraded"></a>
+
 ## If sccache degraded - what to look at
 
 Symptom: a run prints `sccache: warning: ...` / `The server looks like it shut
@@ -85,20 +139,24 @@ down unexpectedly` / `WARNING: sccache degraded to local compilation this run`,
 and the build costs a full recompile.
 
 Start with `tools/dev/engine-build.ps1 -Mode cache-status`. It prints the server
-state (up/down), the counters, the client version, the cache directory and its
-size on disk, `SCCACHE_CACHE_SIZE`, `SCCACHE_BASEDIRS`, and whether the root is
-short enough for sccache to wrap rustc. It also warns when the compile-request
-counter went *backwards* since the previous run, which means the server was
-restarted by something else between runs.
+state (up/down), whether the running server was started with the idle shutdown
+disabled, the counters, the client version, the cache directory and its size on
+disk, `SCCACHE_CACHE_SIZE`, `SCCACHE_BASEDIRS`, and whether the root is short
+enough for sccache to wrap rustc. It also warns when the compile-request counter
+went *backwards* since the previous run, which means the server was restarted by
+something else between runs.
 
 sccache 0.18 facts that cost real time to rediscover:
 
 - **`--show-stats` is not a liveness probe.** With no server running it still
   exits 0 and prints a zeroed table (`Max cache size 10 GiB`, the *client's*
   `SCCACHE_BASEDIRS`). Code that greps its output for `Compile requests` to
-  decide "is a server up?" concludes "yes" for a dead server. The server is the
-  `sccache.exe` process whose command line has no `rustc` in it; clients are
-  `sccache.exe <rustc> ...`.
+  decide "is a server up?" concludes "yes" for a dead server. Probe the port
+  instead (`SCCACHE_SERVER_PORT`, default 4226).
+- **The server shuts down after 600 s without a new request**
+  (`DEFAULT_IDLE_TIMEOUT`), waiting only ~10 s for in-flight work. One long
+  compile is enough to lose it. `SCCACHE_IDLE_TIMEOUT=0` disables that, and
+  `engine-build.ps1` sets it for its own server.
 - **No server means silent local compilation.** Clients do not resurrect a
   missing server; they just run the compiler. If the server dies *while* a
   client is connected, that client prints `The server looks like it shut down
@@ -114,15 +172,18 @@ sccache 0.18 facts that cost real time to rediscover:
 
 Checklist, in the order the causes were actually observed:
 
-1. **The server was stopped by another client.** The server is one per user and
-   shared by every build. Any client running `sccache --stop-server` kills it
-   for everybody. `engine-build.ps1` never does that any more (it only starts a
-   missing server and waits for the port to accept connections); an older copy
-   of the script did it on every run from a different worktree, because the
-   basedirs marker it compared contained the current worktree root. If the
-   warning reappears, look for a script or a person stopping the server.
-   rust-analyzer and other IDEs are *not* a cause: basedirs are per request, so
-   a foreign client cannot invalidate the server.
+1. **The isolated server exited on its idle timer or was killed.** The first
+   suspect is the 600 s idle shutdown: a server not started with
+   `SCCACHE_IDLE_TIMEOUT=0` dies during the long `refact-lsp` compile.
+   `-Mode cache-status` says whether the running server has it disabled, and the
+   next build restarts a server that does not. Otherwise the shared per-user
+   server on 4226 (rust-analyzer, other worktrees) cannot stop the isolated one:
+   basedirs are per request, and a `--stop-server` on the default port does not
+   reach 4227. What *can* kill it is something aimed at the isolated port:
+   another copy of this script running `-Mode cache-reset`, or a person running
+   `SCCACHE_SERVER_PORT=4227 sccache --stop-server` mid-build. The run then ends
+   with `the isolated sccache server on port 4227 is gone after the build`,
+   which is the explicit version of the old silent-local-compile failure.
 2. **Nothing was compiled.** A warm tree makes cargo a no-op: zero compile
    requests, so zero hits, and any stray sccache warning is noise. The run ends
    with `sccache this run - nothing recompiled, nothing to cache`.

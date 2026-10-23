@@ -21,6 +21,7 @@ use crate::agents::registry::BackgroundAgentRegistry;
 use crate::buddy::actor::BuddyService;
 use crate::buddy::events::BuddyEvent;
 use crate::buddy::user_activity::UserActivityRing;
+use crate::chat::ctx::{ChatCtx, ProjectTreeProvider, SubchatLauncher};
 use crate::chat::perf_diagnostics::{self, PerfComponent, PerfOutcome};
 use crate::chat::trajectory_index::TrajectoryIndexCoordinator;
 use crate::chat::types::EnqueueCommandOutcome;
@@ -30,7 +31,9 @@ use crate::completion_cache::CompletionCache;
 use crate::exec::ExecRegistry;
 use crate::files_blocklist::IndexingEverywhere;
 use crate::files_in_workspace::DocumentsState;
-use crate::global_context::{AtCommandsPreviewCache, CommandLine, SharedGlobalContext};
+pub use crate::global_context::{AtCommandsPreviewCache, CommandLine, ToolCatalogGenerations};
+use crate::global_context::SharedGlobalContext;
+use crate::subchat::{SubchatConfig, SubchatResult};
 use crate::http::routers::v1::sidebar::NotificationEvent;
 use crate::integrations::browser_runtime::BrowserRuntime;
 use crate::integrations::sessions::IntegrationSession;
@@ -324,6 +327,7 @@ impl ChatSessionFacade for EngineChatSessionFacade {
 #[derive(Clone)]
 pub struct AppState {
     pub gcx: SharedGlobalContext,
+    pub ctx: ChatCtx,
     pub runtime: RuntimeServices,
     pub paths: PathServices,
     pub model: ModelServices,
@@ -335,6 +339,45 @@ pub struct AppState {
     pub buddy_event_sink: Arc<dyn BuddyEventSink>,
     pub tool_registry: Arc<dyn ToolRegistry>,
     pub agents: Arc<BackgroundAgentRegistry>,
+}
+
+pub struct EngineSubchatLauncher {
+    gcx: SharedGlobalContext,
+}
+
+impl EngineSubchatLauncher {
+    pub fn new(gcx: SharedGlobalContext) -> Self {
+        Self { gcx }
+    }
+}
+
+#[async_trait]
+impl SubchatLauncher for EngineSubchatLauncher {
+    async fn run_subchat(
+        &self,
+        messages: Vec<ChatMessage>,
+        config: SubchatConfig,
+    ) -> Result<SubchatResult, String> {
+        crate::subchat::run_subchat(self.gcx.clone(), messages, config).await
+    }
+}
+
+pub struct EngineProjectTreeProvider {
+    gcx: SharedGlobalContext,
+}
+
+impl EngineProjectTreeProvider {
+    pub fn new(gcx: SharedGlobalContext) -> Self {
+        Self { gcx }
+    }
+}
+
+#[async_trait]
+impl ProjectTreeProvider for EngineProjectTreeProvider {
+    async fn generate_compact_project_tree(&self, max_depth: usize) -> Result<String, String> {
+        crate::chat::system_context::generate_compact_project_tree(self.gcx.clone(), max_depth)
+            .await
+    }
 }
 
 pub struct AppActivitySink {
@@ -1470,6 +1513,10 @@ impl BuddyEventSink for AppBuddyEventSink {
 impl AppState {
     pub async fn from_gcx(gcx: SharedGlobalContext) -> Self {
         gcx.app_state(gcx.clone())
+    }
+
+    pub fn chat_ctx(&self) -> ChatCtx {
+        self.ctx.clone()
     }
 }
 

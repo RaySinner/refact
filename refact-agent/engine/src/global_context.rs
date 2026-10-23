@@ -16,10 +16,12 @@ use tracing::{error, info};
 use crate::agents::registry::BackgroundAgentRegistry;
 use crate::app_state::{
     AppActivitySink, AppBuddyEventSink, AppState, AppToolRegistry, BuddyServices, CapsState,
-    ChatServices, EngineChatSessionFacade, IntegrationServices, ModelServices, PathServices,
-    RuntimeServices, TokenizerState, ToolCatalogCache, WorkspaceServices,
+    ChatServices, EngineChatSessionFacade, EngineProjectTreeProvider, EngineSubchatLauncher,
+    IntegrationServices, ModelServices, PathServices, RuntimeServices, TokenizerState,
+    ToolCatalogCache, WorkspaceServices,
 };
 use crate::caps::CodeAssistantCaps;
+use crate::chat::ctx::{ChatCtx, ChatIntegrationScope, ChatWorkspace};
 use crate::caps::providers::get_latest_provider_mtime;
 use crate::providers::{ProviderRegistry, load_providers_from_config};
 use crate::providers::quota::ProviderQuotaCache;
@@ -437,12 +439,8 @@ pub struct GlobalContext {
 pub type SharedGlobalContext = Arc<GlobalContext>; // TODO: remove this type alias, confusing
 
 impl GlobalContext {
-    pub fn app_state(&self, gcx: SharedGlobalContext) -> AppState {
-        let activity_sink = Arc::new(AppActivitySink::new(self.user_activity.clone()));
-        let buddy_event_sink = Arc::new(AppBuddyEventSink::new(gcx.clone(), self.buddy.clone()));
-        let tool_registry = Arc::new(AppToolRegistry::new(gcx.clone()));
-        AppState {
-            gcx: gcx.clone(),
+    pub fn chat_ctx(&self, gcx: SharedGlobalContext) -> ChatCtx {
+        ChatCtx {
             runtime: RuntimeServices {
                 shutdown_flag: self.shutdown_flag.clone(),
                 cmdline: Arc::new(self.cmdline.clone()),
@@ -461,15 +459,13 @@ impl GlobalContext {
                 providers: self.providers.clone(),
                 llm_stats_sender: self.llm_stats_sender.lock().unwrap().clone(),
             },
-            workspace: WorkspaceServices {
-                documents_state: self.documents_state.clone(),
-                privacy_settings: self.privacy_settings.read().unwrap().clone(),
-                indexing_everywhere: self.indexing_everywhere.clone(),
-                completions_cache: self.completions_cache.clone(),
+            workspace: ChatWorkspace {
+                workspace_folders: self.documents_state.workspace_folders.clone(),
                 vec_db: self.vec_db.clone(),
                 vec_db_error: self.vec_db_error.clone(),
                 knowledge_index: self.knowledge_index.clone(),
                 at_commands_preview_cache: self.at_commands_preview_cache.clone(),
+                privacy_settings: self.privacy_settings.read().unwrap().clone(),
             },
             chat: ChatServices {
                 sessions: self.chat_sessions.clone(),
@@ -504,18 +500,55 @@ impl GlobalContext {
                     .expect("buddy event sender is not initialized"),
                 user_activity: self.user_activity.clone(),
             },
+            integrations: ChatIntegrationScope {
+                browser_runtimes: self.browser_runtimes.clone(),
+            },
+            agents: self.agents.clone(),
+            tool_registry: Arc::new(AppToolRegistry::new(gcx.clone())),
+            activity_sink: Arc::new(AppActivitySink::new(self.user_activity.clone())),
+            buddy_event_sink: Arc::new(AppBuddyEventSink::new(gcx.clone(), self.buddy.clone())),
+            card_verifier_tasks: self.card_verifier_tasks.clone(),
+            privacy_policy_load: self.privacy_policy_load.clone(),
+            tool_catalog_generations: self.tool_catalog_generations.clone(),
+            project_registry_cache: self.project_registry_cache.clone(),
+            trajectory_vectorization_queue: self.trajectory_vectorization_queue.clone(),
+            subchat: Arc::new(EngineSubchatLauncher::new(gcx.clone())),
+            project_tree: Arc::new(EngineProjectTreeProvider::new(gcx)),
+        }
+    }
+
+    pub fn app_state(&self, gcx: SharedGlobalContext) -> AppState {
+        let ctx = self.chat_ctx(gcx.clone());
+        AppState {
+            gcx: gcx.clone(),
+            runtime: ctx.runtime.clone(),
+            paths: ctx.paths.clone(),
+            model: ctx.model.clone(),
+            workspace: WorkspaceServices {
+                documents_state: self.documents_state.clone(),
+                privacy_settings: ctx.workspace.privacy_settings.clone(),
+                indexing_everywhere: self.indexing_everywhere.clone(),
+                completions_cache: self.completions_cache.clone(),
+                vec_db: ctx.workspace.vec_db.clone(),
+                vec_db_error: ctx.workspace.vec_db_error.clone(),
+                knowledge_index: ctx.workspace.knowledge_index.clone(),
+                at_commands_preview_cache: ctx.workspace.at_commands_preview_cache.clone(),
+            },
+            chat: ctx.chat.clone(),
+            buddy: ctx.buddy.clone(),
             integrations: IntegrationServices {
                 integration_sessions: self.integration_sessions.clone(),
-                browser_runtimes: self.browser_runtimes.clone(),
+                browser_runtimes: ctx.integrations.browser_runtimes.clone(),
                 ext_cache_generation: self.ext_cache_generation.clone(),
-                project_registry_cache: self.project_registry_cache.clone(),
+                project_registry_cache: ctx.project_registry_cache.clone(),
                 init_shadow_repos_lock: self.init_shadow_repos_lock.clone(),
                 git_operations_abort_flag: self.git_operations_abort_flag.clone(),
             },
-            activity_sink,
-            buddy_event_sink,
-            tool_registry,
-            agents: self.agents.clone(),
+            activity_sink: ctx.activity_sink.clone(),
+            buddy_event_sink: ctx.buddy_event_sink.clone(),
+            tool_registry: ctx.tool_registry.clone(),
+            agents: ctx.agents.clone(),
+            ctx,
         }
     }
 }
@@ -1135,6 +1168,27 @@ pub mod tests {
         let cache_dir = std::env::temp_dir().join(format!("refact-test-{}", uuid::Uuid::new_v4()));
         let config_dir = std::env::temp_dir().join(format!("refact-cfg-{}", uuid::Uuid::new_v4()));
         make_test_gcx_with_dirs(cache_dir, config_dir).await
+    }
+
+    pub async fn test_chat_ctx() -> crate::chat::ctx::ChatCtx {
+        let gcx = make_test_gcx().await;
+        gcx.chat_ctx(gcx.clone())
+    }
+
+    #[tokio::test]
+    async fn test_chat_ctx_clones_and_shares_services() {
+        let ctx = test_chat_ctx().await;
+        let clone = ctx.clone();
+
+        assert!(Arc::ptr_eq(
+            &clone.runtime.shutdown_flag,
+            &ctx.runtime.shutdown_flag
+        ));
+        assert!(Arc::ptr_eq(
+            &clone.workspace.workspace_folders,
+            &ctx.workspace.workspace_folders
+        ));
+        assert!(Arc::ptr_eq(&clone.agents, &ctx.agents));
     }
 
     pub async fn make_test_gcx_with_dirs(

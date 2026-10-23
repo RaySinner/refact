@@ -3193,7 +3193,7 @@ async fn subchat_stream(
     };
 
     let prepared = prepare_chat_passthrough(
-        gcx.clone(),
+        gcx.chat_ctx(gcx.clone()),
         ccx.clone(),
         &t,
         messages.clone(),

@@ -607,7 +607,7 @@ pub async fn run_goal_verifier(
     let mut options = prepare_inputs.options;
     options.supports_tools = model_rec.supports_tools;
     let prepared = prepare_chat_passthrough(
-        gcx,
+        gcx.chat_ctx(gcx.clone()),
         Arc::new(AMutex::new(ccx)),
         &t,
         prepare_inputs.messages,

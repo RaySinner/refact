@@ -378,7 +378,9 @@ pub async fn handle_v1_project_information_preview(
     if config.sections.memories.enabled {
         let memory_tags = &["preference", "lesson", "insight", "pattern"];
         let max_items = config.sections.memories.max_items.unwrap_or(30);
-        let memories = load_memories_by_tags_from_index(gcx.clone(), memory_tags, max_items).await;
+        let memories =
+            load_memories_by_tags_from_index(gcx.knowledge_index.clone(), memory_tags, max_items)
+                .await;
         let default_max_chars = config.sections.memories.max_chars_per_item.unwrap_or(2000);
         let overrides = &config.sections.memories.overrides;
 

@@ -7,11 +7,11 @@ use tracing::{debug, warn};
 
 use crate::call_validation::ChatUsage;
 use crate::caps::BaseModelRecord;
-use crate::global_context::SharedGlobalContext;
 use crate::llm::adapter::{AdapterSettings, HttpParts, LlmWireAdapter};
 use crate::llm::LlmRequest;
 use crate::privacy::destinations::clear_for_model;
 use refact_core::model_caps::{ANTHROPIC_CLOUD_TOKENIZER, CLAUDE_CLOUD_TOKENIZER_ALIAS};
+use super::ctx::ChatCtx;
 use super::perf_diagnostics;
 
 const CLOUD_TOKEN_COUNT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -28,7 +28,7 @@ pub struct CloudInputTokenCount {
 }
 
 pub fn spawn_input_token_count_task(
-    gcx: SharedGlobalContext,
+    ctx: ChatCtx,
     client: reqwest::Client,
     req: &LlmRequest,
     model_rec: &BaseModelRecord,
@@ -41,7 +41,7 @@ pub fn spawn_input_token_count_task(
     Some(tokio::spawn(async move {
         let result = match cloud_tokenizer_kind {
             CloudTokenizerKind::Anthropic => {
-                try_count_input_tokens(&gcx, &client, &req, &model_rec).await
+                try_count_input_tokens(&ctx, &client, &req, &model_rec).await
             }
         };
         if let Some(started_at) = started_at {
@@ -134,7 +134,7 @@ fn body_usize(body: &Value, key: &str) -> Option<usize> {
 }
 
 fn anthropic_count_http_parts(
-    gcx: &SharedGlobalContext,
+    ctx: &ChatCtx,
     req: &LlmRequest,
     model_rec: &BaseModelRecord,
     settings: &AdapterSettings,
@@ -145,7 +145,7 @@ fn anthropic_count_http_parts(
     let count_url = anthropic_count_url(&settings.endpoint)
         .ok_or_else(|| "Anthropic cloud token count requires a /messages endpoint".to_string())?;
 
-    let cleared_req = clear_for_model(gcx, req.clone(), model_rec)
+    let cleared_req = clear_for_model(&ctx.privacy_policy_load, req.clone(), model_rec)
         .map_err(|refusal| refusal.model_facing().to_string())?;
     let mut http =
         crate::llm::adapters::anthropic::AnthropicAdapter.build_http(&cleared_req, settings)?;
@@ -157,7 +157,7 @@ fn anthropic_count_http_parts(
 }
 
 fn cloud_count_http_parts(
-    gcx: &SharedGlobalContext,
+    ctx: &ChatCtx,
     req: &LlmRequest,
     model_rec: &BaseModelRecord,
 ) -> Result<Option<(HttpParts, usize)>, String> {
@@ -189,7 +189,7 @@ fn cloud_count_http_parts(
 
     let parts = match kind {
         CloudTokenizerKind::Anthropic => {
-            anthropic_count_http_parts(gcx, req, model_rec, &settings)?
+            anthropic_count_http_parts(ctx, req, model_rec, &settings)?
         }
     };
     Ok(Some(parts))
@@ -239,12 +239,12 @@ async fn send_cloud_count_request(
 }
 
 pub async fn try_count_input_tokens(
-    gcx: &SharedGlobalContext,
+    ctx: &ChatCtx,
     client: &reqwest::Client,
     req: &LlmRequest,
     model_rec: &BaseModelRecord,
 ) -> Option<CloudInputTokenCount> {
-    let (parts, output_token_reserve) = match cloud_count_http_parts(gcx, req, model_rec) {
+    let (parts, output_token_reserve) = match cloud_count_http_parts(ctx, req, model_rec) {
         Ok(Some(parts)) => parts,
         Ok(None) => return None,
         Err(err) => {
@@ -465,13 +465,13 @@ mod tests {
 
     #[tokio::test]
     async fn spawn_input_token_count_task_returns_none_for_unsupported_tokenizer() {
-        let gcx = crate::global_context::tests::make_test_gcx().await;
+        let ctx = crate::global_context::tests::test_chat_ctx().await;
         let model = base_model(
             "tiktoken",
             WireFormat::OpenaiChatCompletions,
             "https://api.openai.com/v1/chat/completions",
         );
-        let task = spawn_input_token_count_task(gcx, reqwest::Client::new(), &req(), &model, None);
+        let task = spawn_input_token_count_task(ctx, reqwest::Client::new(), &req(), &model, None);
         assert!(task.is_none());
     }
 }

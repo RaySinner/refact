@@ -2174,7 +2174,7 @@ async fn process_command_queue_inner(
                     session.chat_id.clone()
                 };
                 match super::session::clean_background_processes_for_chat(
-                    app.clone(),
+                    app.chat_ctx(),
                     &chat_id,
                     include_services,
                 )
@@ -2355,7 +2355,7 @@ async fn process_command_queue_inner(
                 let sessions = app.chat.sessions.clone();
 
                 let source_session_arc = super::session::get_or_create_session_with_trajectory(
-                    app.clone(),
+                    app.chat_ctx(),
                     &sessions,
                     &source_chat_id,
                 )

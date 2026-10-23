@@ -4,12 +4,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::Mutex as AMutex;
 
-use crate::app_state::AppState;
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::at_commands::execute_at::run_at_commands_locally;
 use crate::call_validation::{ChatContent, ChatMessage, ChatMeta, ReasoningEffort, SamplingParameters};
 use crate::caps::{resolve_chat_model, ChatModelRecord};
-use crate::global_context::GlobalContext;
 use crate::llm::{LlmRequest, CanonicalToolChoice, CommonParams, ReasoningIntent, WireFormat};
 use crate::llm::params::CacheControl;
 use crate::scratchpad_abstract::HasTokenizerAndEot;
@@ -17,6 +15,7 @@ use crate::scratchpads::scratchpad_utils::HasRagResults;
 use refact_chat_api::FrozenRequestPrefix;
 use refact_chat_history::trajectory_ops::COMPRESSION_REPORT_ROLE;
 use refact_tool_api::{build_registry_from_names, ToolAliasRegistry, ToolDesc};
+use super::ctx::ChatCtx;
 use super::tools::execute_tools;
 use super::types::ThreadParams;
 
@@ -65,7 +64,7 @@ pub fn build_canonical_openai_tools_from_aliases(
 }
 
 pub async fn build_canonical_openai_tools(
-    gcx: Arc<GlobalContext>,
+    ctx: ChatCtx,
     tools: &[ToolDesc],
     mode_supports_strict: bool,
     supports_tools: bool,
@@ -105,9 +104,7 @@ pub async fn build_canonical_openai_tools(
                 .map(|n| n == handoff_alias)
                 .unwrap_or(false)
         }) {
-            if let Some(registry) =
-                crate::yaml_configs::customization_registry::get_project_registry(gcx.clone()).await
-            {
+            if let Some(registry) = ctx.mode_config.get_project_registry().await {
                 let mut mode_lines = Vec::new();
                 let mut mode_ids = Vec::new();
                 let mut modes: Vec<_> = registry.modes.values().collect();
@@ -242,7 +239,7 @@ fn frozen_openai_tools(prefix: Option<&FrozenRequestPrefix>) -> Option<Vec<Value
 }
 
 async fn select_canonical_openai_tools(
-    gcx: Arc<GlobalContext>,
+    ctx: ChatCtx,
     tools: &[ToolDesc],
     mode_supports_strict: bool,
     supports_tools: bool,
@@ -256,7 +253,7 @@ async fn select_canonical_openai_tools(
         };
     }
 
-    build_canonical_openai_tools(gcx, tools, mode_supports_strict, supports_tools).await
+    build_canonical_openai_tools(ctx, tools, mode_supports_strict, supports_tools).await
 }
 
 fn apply_frozen_system_prompt(
@@ -291,7 +288,7 @@ fn apply_frozen_system_prompt(
 }
 
 pub async fn prepare_chat_passthrough(
-    gcx: Arc<GlobalContext>,
+    ctx: ChatCtx,
     ccx: Arc<AMutex<AtCommandsContext>>,
     t: &HasTokenizerAndEot,
     messages: Vec<ChatMessage>,
@@ -311,7 +308,9 @@ pub async fn prepare_chat_passthrough(
     let tool_names: HashSet<String> = tools.iter().map(|x| x.name.clone()).collect();
 
     // 1. Resolve model early to get reasoning params before history limiting
-    let caps = crate::global_context::try_load_caps_quickly_if_not_present(gcx.clone(), 0)
+    let caps = ctx
+        .caps
+        .try_load_caps_quickly(0)
         .await
         .map_err(|e| e.message)?;
     let model_record = resolve_chat_model(caps, model_id)?;
@@ -341,10 +340,9 @@ pub async fn prepare_chat_passthrough(
         HashSet::new()
     };
     let task_meta = ccx.lock().await.task_meta.clone();
-    let app = AppState::from_gcx(gcx.clone()).await;
     let messages = if options.prepend_system_prompt {
         let (msgs, _) = prepend_the_right_system_prompt_and_maybe_more_initial_messages(
-            app.clone(),
+            ctx.clone(),
             messages,
             meta,
             &task_meta,
@@ -409,7 +407,7 @@ pub async fn prepare_chat_passthrough(
                         prerun_thread.context_tokens_cap = Some(effective_n_ctx);
                         prerun_thread.model = model_id.to_string();
                         let (tool_results, _) = execute_tools(
-                            app.clone(),
+                            ctx.clone(),
                             &unanswered_calls,
                             &messages,
                             &prerun_thread,
@@ -426,7 +424,7 @@ pub async fn prepare_chat_passthrough(
     }
 
     let canonical_tools = select_canonical_openai_tools(
-        gcx.clone(),
+        ctx.clone(),
         &tools,
         model_record.supports_strict_tools,
         options.supports_tools,
@@ -803,6 +801,7 @@ fn replace_images_for_text_only_model(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app_state::AppState;
     use crate::llm::adapter::{AdapterSettings, LlmWireAdapter};
     use crate::llm::adapters::openai_chat::OpenAiChatAdapter;
     use crate::yaml_configs::customization_types::{ModeConfig, ProjectRegistry};
@@ -1105,6 +1104,7 @@ mod tests {
         frozen_request_prefix: Option<FrozenRequestPrefix>,
     ) -> Result<PreparedChat, String> {
         let app = AppState::from_gcx(gcx.clone()).await;
+        let ctx = app.chat_ctx();
         let model_id = "test/frozen-model";
         let ccx = AtCommandsContext::new_from_app(
             app,
@@ -1162,7 +1162,7 @@ mod tests {
         };
 
         prepare_chat_passthrough(
-            gcx,
+            ctx,
             Arc::new(AMutex::new(ccx)),
             &t,
             messages,
@@ -1186,8 +1186,9 @@ mod tests {
         .await;
         let tools = vec![handoff_tool_desc()];
 
-        let first = build_canonical_openai_tools(gcx.clone(), &tools, false, true).await;
-        let second = build_canonical_openai_tools(gcx, &tools, false, true).await;
+        let ctx = AppState::from_gcx(gcx).await.chat_ctx();
+        let first = build_canonical_openai_tools(ctx.clone(), &tools, false, true).await;
+        let second = build_canonical_openai_tools(ctx, &tools, false, true).await;
 
         assert_eq!(first.tools, second.tools);
         let description = first.tools[0]["function"]["description"].as_str().unwrap();
@@ -1793,7 +1794,7 @@ mod tests {
         };
 
         let prepared_default = prepare_chat_passthrough(
-            gcx.clone(),
+            app.chat_ctx(),
             Arc::new(AMutex::new(ccx)),
             &t,
             make_messages(),
@@ -1843,7 +1844,7 @@ mod tests {
         };
 
         let prepared_true = prepare_chat_passthrough(
-            gcx.clone(),
+            app.chat_ctx(),
             Arc::new(AMutex::new(ccx_true)),
             &t,
             make_messages(),
@@ -1962,7 +1963,7 @@ mod tests {
         };
 
         let prepared = prepare_chat_passthrough(
-            gcx,
+            app.chat_ctx(),
             Arc::new(AMutex::new(ccx)),
             &t,
             make_messages(),

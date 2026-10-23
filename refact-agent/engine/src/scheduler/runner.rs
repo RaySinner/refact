@@ -164,7 +164,7 @@ impl CronRunner {
             if let Some(chat_id) = &chat_id {
                 let app = AppState::from_gcx(self.gcx.clone()).await;
                 let restored =
-                    try_restore_session_if_trajectory_exists(app, &self.gcx.chat_sessions, chat_id)
+                    try_restore_session_if_trajectory_exists(app.chat_ctx(), &self.gcx.chat_sessions, chat_id)
                         .await;
                 if !restored {
                     tracing::warn!(
@@ -378,7 +378,7 @@ impl CronRunner {
                 if task.durable {
                     let app = AppState::from_gcx(self.gcx.clone()).await;
                     let restored = try_restore_session_if_trajectory_exists(
-                        app,
+                        app.chat_ctx(),
                         &self.gcx.chat_sessions,
                         chat_id,
                     )
@@ -543,7 +543,7 @@ impl CronRunner {
                         if task.durable {
                             let app = AppState::from_gcx(self.gcx.clone()).await;
                             let restored = try_restore_session_if_trajectory_exists(
-                                app,
+                                app.chat_ctx(),
                                 &self.gcx.chat_sessions,
                                 chat_id,
                             )
@@ -1155,7 +1155,7 @@ impl CronRunner {
         let chat_id = format!("cron_{}_{}", task.id, task.fire_count);
         let app = AppState::from_gcx(self.gcx.clone()).await;
         let session_arc =
-            get_or_create_session_with_trajectory(app.clone(), &app.chat.sessions, &chat_id).await;
+            get_or_create_session_with_trajectory(app.chat_ctx(), &app.chat.sessions, &chat_id).await;
         let event_message = if missed {
             cron_fire_message_with_missed(task, final_fire, missed)
         } else {

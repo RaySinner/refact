@@ -7,11 +7,11 @@ use tokio::sync::Mutex as AMutex;
 use tracing::{info, warn};
 
 use crate::agents::types::AgentListFilter;
-use crate::app_state::AppState;
 use crate::exec::{ExecMode, ExecProcessFilter, ExecProcessSnapshot, ExecStatusKind};
 use crate::ext::hooks::HookEvent;
-use crate::ext::hooks_runner::{HookPayload, get_project_dir_string, run_hooks};
+use crate::ext::hooks_runner::HookPayload;
 
+use super::ctx::ChatCtx;
 use super::session::{SessionsMap, should_replace_background_agent};
 use super::types::*;
 use super::types::session_cleanup_interval;
@@ -26,7 +26,7 @@ fn background_process_cleanup_modes(include_services: bool) -> Vec<ExecMode> {
 }
 
 pub async fn clean_background_processes_for_chat(
-    app: AppState,
+    ctx: ChatCtx,
     chat_id: &str,
     include_services: bool,
 ) -> Result<Vec<ExecProcessSnapshot>, String> {
@@ -34,7 +34,7 @@ pub async fn clean_background_processes_for_chat(
     for mode in background_process_cleanup_modes(include_services) {
         for status in [ExecStatusKind::Starting, ExecStatusKind::Running] {
             killed.extend(
-                app.runtime
+                ctx.runtime
                     .exec_registry
                     .remove_by_owner(ExecProcessFilter {
                         chat_id: Some(chat_id.to_string()),
@@ -51,7 +51,7 @@ pub async fn clean_background_processes_for_chat(
 }
 
 pub fn snapshot_with_agents(
-    app: AppState,
+    ctx: ChatCtx,
     session: &ChatSession,
 ) -> impl std::future::Future<Output = (ChatEvent, Vec<BackgroundAgentSummary>)> + Send + 'static {
     let chat_id = session.chat_id.clone();
@@ -59,11 +59,12 @@ pub fn snapshot_with_agents(
         session.background_agents.clone();
     let mut snapshot = session.snapshot();
     async move {
-        let browser =
-            crate::integrations::browser_runtime::browser_snapshot_for_chat(app.clone(), &chat_id)
-                .await;
+        let browser = crate::integrations::browser_runtime::browser_snapshot_for_chat(
+            &ctx, &chat_id,
+        )
+        .await;
         let mut background_agents = base_background_agents;
-        let agents = app
+        let agents = ctx
             .agents
             .list_for_parent(&chat_id, AgentListFilter::default())
             .await;
@@ -92,7 +93,7 @@ pub fn snapshot_with_agents(
 }
 
 async fn migrate_legacy_frozen_prefix_on_open(
-    app: AppState,
+    ctx: ChatCtx,
     session_arc: Arc<AMutex<ChatSession>>,
 ) {
     let installed = {
@@ -114,7 +115,7 @@ async fn migrate_legacy_frozen_prefix_on_open(
     };
     if installed {
         super::trajectories::maybe_save_trajectory_with_intent(
-            app,
+            ctx,
             session_arc,
             TrajectoryCommitIntent::Required,
         )
@@ -123,11 +124,10 @@ async fn migrate_legacy_frozen_prefix_on_open(
 }
 
 pub async fn get_or_create_session_with_trajectory(
-    app: AppState,
+    ctx: ChatCtx,
     sessions: &SessionsMap,
     chat_id: &str,
 ) -> Arc<AMutex<ChatSession>> {
-    let gcx = app.gcx.clone();
     let maybe_existing = {
         let sessions_read = sessions.read().await;
         sessions_read.get(chat_id).cloned()
@@ -140,7 +140,7 @@ pub async fn get_or_create_session_with_trajectory(
         };
         if !is_closed {
             super::trajectories::refresh_session_from_trajectory_if_stale(
-                app.clone(),
+                ctx.clone(),
                 chat_id,
                 false,
             )
@@ -155,10 +155,10 @@ pub async fn get_or_create_session_with_trajectory(
         }
     }
 
-    let trajectory_events_tx = app.chat.trajectory_events_tx.clone();
+    let trajectory_events_tx = ctx.chat.trajectory_events_tx.clone();
 
     let (mut session, is_new, transition_repair_patch) = if let Some(mut loaded) =
-        super::trajectories::load_trajectory_for_chat(gcx.clone(), chat_id).await
+        super::trajectories::load_trajectory_for_chat(ctx.clone(), chat_id).await
     {
         info!(
             "Loaded trajectory for chat {} with {} messages",
@@ -166,7 +166,7 @@ pub async fn get_or_create_session_with_trajectory(
             loaded.messages.len()
         );
         super::trajectories::apply_mode_defaults_to_thread(
-            gcx.clone(),
+            ctx.clone(),
             &mut loaded.thread,
             loaded.auto_approve_editing_tools_present,
             loaded.auto_approve_dangerous_commands_present,
@@ -183,10 +183,10 @@ pub async fn get_or_create_session_with_trajectory(
             loaded.waiting_for_card_ids,
             loaded.goal,
         );
-        if let Some(agent_id) = app.agents.find_agent_id_by_child_chat_id(chat_id).await {
-            if app.agents.has_runtime(&agent_id).await {
+        if let Some(agent_id) = ctx.agents.find_agent_id_by_child_chat_id(chat_id).await {
+            if ctx.agents.has_runtime(&agent_id).await {
                 session.restore_pending_deliveries(Vec::new());
-                session.runner_pending_deliveries = app.agents.pending_deliveries(&agent_id).await;
+                session.runner_pending_deliveries = ctx.agents.pending_deliveries(&agent_id).await;
             } else {
                 session.restore_pending_deliveries(loaded.pending_deliveries);
             }
@@ -206,7 +206,7 @@ pub async fn get_or_create_session_with_trajectory(
         (s, true, None)
     };
 
-    let background_agents = app
+    let background_agents = ctx
         .agents
         .list_for_parent(chat_id, AgentListFilter::default())
         .await;
@@ -214,12 +214,10 @@ pub async fn get_or_create_session_with_trajectory(
 
     if is_new {
         session.thread.auto_enrichment_enabled = Some(true);
-        if let Some(mode_config) = crate::yaml_configs::customization_registry::get_mode_config(
-            gcx.clone(),
-            &session.thread.mode,
-            None,
-        )
-        .await
+        if let Some(mode_config) = ctx
+            .mode_config
+            .get_mode_config(&session.thread.mode, None)
+            .await
         {
             let defaults = &mode_config.thread_defaults;
             if let Some(v) = defaults.include_project_info {
@@ -252,10 +250,10 @@ pub async fn get_or_create_session_with_trajectory(
     };
 
     if inserted && is_new {
-        let app_hook = AppState::from_gcx(gcx.clone()).await;
+        let ctx_hook = ctx.clone();
         let chat_id_clone = chat_id.to_string();
         tokio::spawn(async move {
-            let project_dir = get_project_dir_string(app_hook.clone()).await;
+            let project_dir = ctx_hook.hooks.project_dir().await;
             let payload = HookPayload {
                 hook_event_name: "SessionStart".to_string(),
                 session_id: chat_id_clone,
@@ -266,13 +264,13 @@ pub async fn get_or_create_session_with_trajectory(
                 user_prompt: None,
                 extra: std::collections::HashMap::new(),
             };
-            run_hooks(app_hook, HookEvent::SessionStart, payload).await;
+            ctx_hook.hooks.run_hooks(HookEvent::SessionStart, payload).await;
         });
     }
 
     if inserted && !is_new {
         if transition_repair_patch.is_none() {
-            migrate_legacy_frozen_prefix_on_open(app.clone(), session_arc.clone()).await;
+            migrate_legacy_frozen_prefix_on_open(ctx.clone(), session_arc.clone()).await;
         }
         if let Some(repair_patch) = transition_repair_patch {
             let repaired_version = {
@@ -280,7 +278,7 @@ pub async fn get_or_create_session_with_trajectory(
                 session.trajectory_version
             };
             if let Err(e) = super::trajectories::persist_loaded_trajectory_repair_raw(
-                gcx.clone(),
+                ctx.clone(),
                 &repair_patch,
             )
             .await
@@ -300,7 +298,7 @@ pub async fn get_or_create_session_with_trajectory(
 }
 
 pub async fn try_restore_session_if_trajectory_exists(
-    app: AppState,
+    ctx: ChatCtx,
     sessions: &SessionsMap,
     chat_id: &str,
 ) -> bool {
@@ -322,25 +320,25 @@ pub async fn try_restore_session_if_trajectory_exists(
         }
     }
 
-    if super::trajectories::load_trajectory_for_chat(app.gcx.clone(), chat_id)
+    if super::trajectories::load_trajectory_for_chat(ctx.clone(), chat_id)
         .await
         .is_none()
     {
         return false;
     }
 
-    get_or_create_session_with_trajectory(app, sessions, chat_id).await;
+    get_or_create_session_with_trajectory(ctx, sessions, chat_id).await;
     true
 }
 
-pub async fn close_all_chat_sessions(app: AppState) {
-    let sessions = app.chat.sessions.clone();
+pub async fn close_all_chat_sessions(ctx: ChatCtx) {
+    let sessions = ctx.chat.sessions.clone();
     let session_arcs: Vec<Arc<AMutex<ChatSession>>> = {
         let sessions_read = sessions.read().await;
         sessions_read.values().cloned().collect()
     };
     let flushes = futures::future::join_all(session_arcs.iter().cloned().map(|session_arc| {
-        super::trajectories::flush_trajectory_for_session(app.clone(), session_arc)
+        super::trajectories::flush_trajectory_for_session(ctx.clone(), session_arc)
     }));
     match tokio::time::timeout(std::time::Duration::from_secs(5), flushes).await {
         Ok(results) => {
@@ -378,23 +376,23 @@ pub async fn close_all_chat_sessions(app: AppState) {
 }
 
 async fn cleanup_idle_session(
-    app: AppState,
+    ctx: ChatCtx,
     sessions: &SessionsMap,
     chat_id: &str,
     session_arc: Arc<AMutex<ChatSession>>,
 ) -> bool {
-    if !save_idle_session_for_cleanup(app, session_arc.clone()).await {
+    if !save_idle_session_for_cleanup(ctx, session_arc.clone()).await {
         return false;
     }
     remove_idle_session_if_safe(sessions, chat_id, session_arc).await
 }
 
 async fn save_idle_session_for_cleanup(
-    app: AppState,
+    ctx: ChatCtx,
     session_arc: Arc<AMutex<ChatSession>>,
 ) -> bool {
     match super::trajectories::try_save_trajectory_with_intent(
-        app,
+        ctx,
         session_arc,
         TrajectoryCommitIntent::Required,
     )
@@ -517,9 +515,9 @@ fn close_idle_session_for_cleanup(session: &mut ChatSession) -> bool {
     true
 }
 
-pub fn start_session_cleanup_task(app: AppState) {
+pub fn start_session_cleanup_task(ctx: ChatCtx) {
     tokio::spawn(async move {
-        let shutdown_flag = app.runtime.shutdown_flag.clone();
+        let shutdown_flag = ctx.runtime.shutdown_flag.clone();
         let mut run_immediately = true;
         loop {
             if !run_immediately {
@@ -537,7 +535,7 @@ pub fn start_session_cleanup_task(app: AppState) {
             }
             run_immediately = false;
 
-            let sessions = app.chat.sessions.clone();
+            let sessions = ctx.chat.sessions.clone();
 
             let candidates: Vec<(String, Arc<AMutex<ChatSession>>)> = {
                 let sessions_read = sessions.read().await;
@@ -566,15 +564,15 @@ pub fn start_session_cleanup_task(app: AppState) {
             info!("Cleaning up {} idle sessions", to_cleanup.len());
 
             for (chat_id, session_arc) in &to_cleanup {
-                if !cleanup_idle_session(app.clone(), &sessions, chat_id, session_arc.clone()).await
+                if !cleanup_idle_session(ctx.clone(), &sessions, chat_id, session_arc.clone()).await
                 {
                     continue;
                 }
 
-                let app_hook = app.clone();
+                let ctx_hook = ctx.clone();
                 let chat_id_hook = chat_id.clone();
                 tokio::spawn(async move {
-                    let project_dir = get_project_dir_string(app_hook.clone()).await;
+                    let project_dir = ctx_hook.hooks.project_dir().await;
                     let payload = HookPayload {
                         hook_event_name: "SessionEnd".to_string(),
                         session_id: chat_id_hook,
@@ -585,7 +583,7 @@ pub fn start_session_cleanup_task(app: AppState) {
                         user_prompt: None,
                         extra: std::collections::HashMap::new(),
                     };
-                    run_hooks(app_hook, HookEvent::SessionEnd, payload).await;
+                    ctx_hook.hooks.run_hooks(HookEvent::SessionEnd, payload).await;
                 });
 
                 info!("Saved trajectory for closed session {}", chat_id);
@@ -654,7 +652,7 @@ mod tests {
 
         assert!(
             cleanup_idle_session(
-                app.clone(),
+                app.chat_ctx(),
                 &app.chat.sessions,
                 chat_id,
                 session_arc.clone(),
@@ -664,7 +662,7 @@ mod tests {
 
         assert!(app.chat.sessions.read().await.get(chat_id).is_none());
         assert!(
-            super::super::trajectories::load_trajectory_for_chat(app.gcx.clone(), chat_id)
+            super::super::trajectories::load_trajectory_for_chat(app.chat_ctx(), chat_id)
                 .await
                 .is_some()
         );
@@ -715,7 +713,7 @@ mod tests {
 
         assert!(
             !cleanup_idle_session(
-                app.clone(),
+                app.chat_ctx(),
                 &app.chat.sessions,
                 chat_id,
                 session_arc.clone(),
@@ -751,7 +749,7 @@ mod tests {
             .insert(chat_id.to_string(), session_arc.clone());
 
         super::super::trajectories::maybe_save_trajectory_with_intent(
-            app.clone(),
+            app.chat_ctx(),
             session_arc.clone(),
             TrajectoryCommitIntent::Required,
         )
@@ -779,7 +777,7 @@ mod tests {
 
         assert!(
             !cleanup_idle_session(
-                app.clone(),
+                app.chat_ctx(),
                 &app.chat.sessions,
                 chat_id,
                 session_arc.clone(),
@@ -825,13 +823,14 @@ mod tests {
             .write()
             .await
             .insert(chat_id.into(), session_arc.clone());
-        assert!(cleanup_idle_session(app.clone(), &app.chat.sessions, chat_id, session_arc).await);
-        let loaded = super::super::trajectories::load_trajectory_for_chat(app.gcx.clone(), chat_id)
+        assert!(cleanup_idle_session(app.chat_ctx(), &app.chat.sessions, chat_id, session_arc).await);
+        let loaded = super::super::trajectories::load_trajectory_for_chat(app.chat_ctx(), chat_id)
             .await
             .unwrap();
         assert_eq!(loaded.pending_deliveries, vec![delivery.clone()]);
         let restored =
-            get_or_create_session_with_trajectory(app.clone(), &app.chat.sessions, chat_id).await;
+            get_or_create_session_with_trajectory(app.chat_ctx(), &app.chat.sessions, chat_id)
+                .await;
         assert_eq!(
             restored.lock().await.pending_deliveries_for_snapshot(),
             vec![delivery]

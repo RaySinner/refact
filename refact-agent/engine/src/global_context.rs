@@ -16,9 +16,10 @@ use tracing::{error, info};
 use crate::agents::registry::BackgroundAgentRegistry;
 use crate::app_state::{
     AppActivitySink, AppBuddyEventSink, AppState, AppToolRegistry, BuddyServices, CapsState,
-    ChatServices, EngineChatSessionFacade, EngineProjectTreeProvider, EngineSubchatLauncher,
-    IntegrationServices, ModelServices, PathServices, RuntimeServices, TokenizerState,
-    ToolCatalogCache, WorkspaceServices,
+    ChatServices, EngineCapsProvider, EngineChatSessionFacade, EngineHookRunner,
+    EngineModeConfigProvider, EngineProjectTreeProvider, EngineSubchatLauncher, IntegrationServices,
+    ModelServices, PathServices, RuntimeServices, TokenizerState, ToolCatalogCache,
+    WorkspaceServices,
 };
 use crate::caps::CodeAssistantCaps;
 use crate::chat::ctx::{ChatCtx, ChatIntegrationScope, ChatWorkspace};
@@ -513,7 +514,10 @@ impl GlobalContext {
             project_registry_cache: self.project_registry_cache.clone(),
             trajectory_vectorization_queue: self.trajectory_vectorization_queue.clone(),
             subchat: Arc::new(EngineSubchatLauncher::new(gcx.clone())),
-            project_tree: Arc::new(EngineProjectTreeProvider::new(gcx)),
+            project_tree: Arc::new(EngineProjectTreeProvider::new(gcx.clone())),
+            hooks: Arc::new(EngineHookRunner::new(gcx.clone())),
+            mode_config: Arc::new(EngineModeConfigProvider::new(gcx.clone())),
+            caps: Arc::new(EngineCapsProvider::new(gcx)),
         }
     }
 
@@ -980,7 +984,7 @@ pub async fn create_global_context(
     let gcx = Arc::new(cx);
     crate::files_in_workspace::watcher_init(gcx.clone()).await;
     let app_state = crate::app_state::AppState::from_gcx(gcx.clone()).await;
-    crate::chat::start_session_cleanup_task(app_state);
+    crate::chat::start_session_cleanup_task(app_state.chat_ctx());
     crate::chat::start_trajectory_watcher(gcx.clone());
     (gcx, ask_shutdown_receiver)
 }

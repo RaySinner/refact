@@ -223,7 +223,7 @@ use super::test_support::*;
                 .unwrap();
 
             let session_arc = crate::chat::get_or_create_session_with_trajectory(
-                app.clone(),
+                app.chat_ctx(),
                 &app.chat.sessions,
                 chat_id,
             )
@@ -412,7 +412,7 @@ use super::test_support::*;
         .await
         .unwrap();
         let session_arc = crate::chat::get_or_create_session_with_trajectory(
-            app.clone(),
+            app.chat_ctx(),
             &app.chat.sessions,
             chat_id,
         )
@@ -467,7 +467,7 @@ use super::test_support::*;
         .await
         .unwrap();
         let session_arc = crate::chat::get_or_create_session_with_trajectory(
-            app.clone(),
+            app.chat_ctx(),
             &app.chat.sessions,
             chat_id,
         )
@@ -554,7 +554,7 @@ use super::test_support::*;
             .await
             .unwrap();
         let session_arc = crate::chat::get_or_create_session_with_trajectory(
-            app.clone(),
+            app.chat_ctx(),
             &app.chat.sessions,
             chat_id,
         )

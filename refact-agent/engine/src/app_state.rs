@@ -21,7 +21,9 @@ use crate::agents::registry::BackgroundAgentRegistry;
 use crate::buddy::actor::BuddyService;
 use crate::buddy::events::BuddyEvent;
 use crate::buddy::user_activity::UserActivityRing;
-use crate::chat::ctx::{ChatCtx, ProjectTreeProvider, SubchatLauncher};
+use crate::chat::ctx::{
+    CapsProvider, ChatCtx, HookRunner, ModeConfigProvider, ProjectTreeProvider, SubchatLauncher,
+};
 use crate::chat::perf_diagnostics::{self, PerfComponent, PerfOutcome};
 use crate::chat::trajectory_index::TrajectoryIndexCoordinator;
 use crate::chat::types::EnqueueCommandOutcome;
@@ -156,7 +158,7 @@ impl EngineChatSessionFacade {
             _ => {}
         }
         let session_arc = chat::get_or_create_session_with_trajectory(
-            app.clone(),
+            app.chat_ctx(),
             &self.gcx.chat_sessions,
             chat_id,
         )
@@ -218,7 +220,7 @@ impl ChatSessionFacade for EngineChatSessionFacade {
     async fn session_snapshot(&self, chat_id: &str) -> Result<ChatSessionSnapshot, String> {
         let app = AppState::from_gcx(self.gcx.clone()).await;
         let session_arc =
-            chat::get_or_create_session_with_trajectory(app, &self.gcx.chat_sessions, chat_id)
+            chat::get_or_create_session_with_trajectory(app.chat_ctx(), &self.gcx.chat_sessions, chat_id)
                 .await;
         let session = session_arc.lock().await;
         Ok(ChatSessionSnapshot {
@@ -233,7 +235,7 @@ impl ChatSessionFacade for EngineChatSessionFacade {
     async fn update_session(&self, chat_id: &str, update: ChatSessionUpdate) -> Result<(), String> {
         let app = AppState::from_gcx(self.gcx.clone()).await;
         let session_arc =
-            chat::get_or_create_session_with_trajectory(app, &self.gcx.chat_sessions, chat_id)
+            chat::get_or_create_session_with_trajectory(app.chat_ctx(), &self.gcx.chat_sessions, chat_id)
                 .await;
         let background_agents: Vec<_> = self
             .gcx
@@ -255,7 +257,7 @@ impl ChatSessionFacade for EngineChatSessionFacade {
     async fn create_session(&self, request: CreateSessionRequest) -> Result<(), String> {
         let app = AppState::from_gcx(self.gcx.clone()).await;
         let session_arc = chat::get_or_create_session_with_trajectory(
-            app,
+            app.chat_ctx(),
             &self.gcx.chat_sessions,
             &request.chat_id,
         )
@@ -377,6 +379,89 @@ impl ProjectTreeProvider for EngineProjectTreeProvider {
     async fn generate_compact_project_tree(&self, max_depth: usize) -> Result<String, String> {
         crate::chat::system_context::generate_compact_project_tree(self.gcx.clone(), max_depth)
             .await
+    }
+}
+
+pub struct EngineHookRunner {
+    gcx: SharedGlobalContext,
+}
+
+impl EngineHookRunner {
+    pub fn new(gcx: SharedGlobalContext) -> Self {
+        Self { gcx }
+    }
+}
+
+#[async_trait]
+impl HookRunner for EngineHookRunner {
+    async fn project_dir(&self) -> String {
+        let app = AppState::from_gcx(self.gcx.clone()).await;
+        crate::ext::hooks_runner::get_project_dir_string(app).await
+    }
+
+    async fn run_hooks(
+        &self,
+        event: crate::ext::hooks::HookEvent,
+        payload: crate::ext::hooks_runner::HookPayload,
+    ) -> Vec<crate::ext::hooks_runner::HookResult> {
+        let app = AppState::from_gcx(self.gcx.clone()).await;
+        crate::ext::hooks_runner::run_hooks(app, event, payload).await
+    }
+}
+
+pub struct EngineModeConfigProvider {
+    gcx: SharedGlobalContext,
+}
+
+impl EngineModeConfigProvider {
+    pub fn new(gcx: SharedGlobalContext) -> Self {
+        Self { gcx }
+    }
+}
+
+#[async_trait]
+impl ModeConfigProvider for EngineModeConfigProvider {
+    async fn get_project_registry(
+        &self,
+    ) -> Option<crate::yaml_configs::customization_types::ProjectRegistry> {
+        crate::yaml_configs::customization_registry::get_project_registry(self.gcx.clone()).await
+    }
+
+    async fn get_mode_config(
+        &self,
+        mode_id: &str,
+        model_id: Option<&str>,
+    ) -> Option<crate::yaml_configs::customization_types::ModeConfig> {
+        crate::yaml_configs::customization_registry::get_mode_config(
+            self.gcx.clone(),
+            mode_id,
+            model_id,
+        )
+        .await
+    }
+}
+
+pub struct EngineCapsProvider {
+    gcx: SharedGlobalContext,
+}
+
+impl EngineCapsProvider {
+    pub fn new(gcx: SharedGlobalContext) -> Self {
+        Self { gcx }
+    }
+}
+
+#[async_trait]
+impl CapsProvider for EngineCapsProvider {
+    async fn try_load_caps_quickly(
+        &self,
+        max_age_seconds: u64,
+    ) -> Result<Arc<crate::caps::CodeAssistantCaps>, crate::custom_error::ScratchError> {
+        crate::global_context::try_load_caps_quickly_if_not_present(
+            self.gcx.clone(),
+            max_age_seconds,
+        )
+        .await
     }
 }
 

@@ -175,7 +175,7 @@ async fn persist_live_source_goal_transfer(
             session.emit_goal_status();
         }
         crate::chat::trajectories::try_save_trajectory_with_intent(
-            AppState::from_gcx(gcx.clone()).await,
+            AppState::from_gcx(gcx.clone()).await.chat_ctx(),
             session_arc,
             crate::chat::types::TrajectoryCommitIntent::Required,
         )
@@ -321,7 +321,7 @@ pub async fn handle_llm_compress_preview(
     let req = parse_llm_compress_request(&body_bytes)?;
     let gcx = app.gcx.clone();
     let session_arc = get_or_create_session_with_trajectory(
-        AppState::from_gcx(gcx.clone()).await,
+        AppState::from_gcx(gcx.clone()).await.chat_ctx(),
         &gcx.chat_sessions,
         &chat_id,
     )
@@ -359,7 +359,7 @@ pub async fn handle_llm_compress_apply(
     let req = parse_llm_compress_request(&body_bytes)?;
     let gcx = app.gcx.clone();
     let session_arc = get_or_create_session_with_trajectory(
-        AppState::from_gcx(gcx.clone()).await,
+        AppState::from_gcx(gcx.clone()).await.chat_ctx(),
         &gcx.chat_sessions,
         &chat_id,
     )
@@ -373,7 +373,7 @@ pub async fn handle_llm_compress_apply(
     .await;
     if result.applied {
         let _ = crate::chat::trajectories::try_save_trajectory_with_intent(
-            AppState::from_gcx(gcx).await,
+            AppState::from_gcx(gcx).await.chat_ctx(),
             session_arc,
             crate::chat::types::TrajectoryCommitIntent::Required,
         )
@@ -456,7 +456,7 @@ pub async fn handle_transform_preview(
 
     let sessions = gcx.chat_sessions.clone();
     let session_arc = get_or_create_session_with_trajectory(
-        AppState::from_gcx(gcx.clone()).await,
+        AppState::from_gcx(gcx.clone()).await.chat_ctx(),
         &sessions,
         &chat_id,
     )
@@ -496,7 +496,7 @@ pub async fn handle_transform_apply(
 
     let sessions = gcx.chat_sessions.clone();
     let session_arc = get_or_create_session_with_trajectory(
-        AppState::from_gcx(gcx.clone()).await,
+        AppState::from_gcx(gcx.clone()).await.chat_ctx(),
         &sessions,
         &chat_id,
     )
@@ -546,7 +546,7 @@ pub async fn handle_transform_apply(
     };
 
     crate::chat::trajectories::maybe_save_trajectory_with_intent(
-        AppState::from_gcx(gcx.clone()).await,
+        AppState::from_gcx(gcx.clone()).await.chat_ctx(),
         session_arc,
         crate::chat::types::TrajectoryCommitIntent::Required,
     )
@@ -635,7 +635,7 @@ pub async fn handle_mode_transition_apply(
 
     let sessions = gcx.chat_sessions.clone();
     let session_arc = get_or_create_session_with_trajectory(
-        AppState::from_gcx(gcx.clone()).await,
+        AppState::from_gcx(gcx.clone()).await.chat_ctx(),
         &sessions,
         &chat_id,
     )
@@ -829,7 +829,7 @@ pub async fn handle_planner_from_transition(
 
     let sessions = gcx.chat_sessions.clone();
     let session_arc = get_or_create_session_with_trajectory(
-        AppState::from_gcx(gcx.clone()).await,
+        AppState::from_gcx(gcx.clone()).await.chat_ctx(),
         &sessions,
         &req.source_chat_id,
     )

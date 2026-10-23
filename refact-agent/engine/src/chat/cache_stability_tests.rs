@@ -275,7 +275,7 @@ async fn prepare_request(
     };
 
     prepare_chat_passthrough(
-        gcx,
+        gcx.chat_ctx(gcx.clone()),
         Arc::new(AMutex::new(ccx)),
         &t,
         messages,

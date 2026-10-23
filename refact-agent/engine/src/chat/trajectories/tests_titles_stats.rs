@@ -66,7 +66,7 @@ use super::test_support::*;
         write_trajectory_file(&path, "other-chat", "Mismatched", "2024-01-01T00:00:00Z").await;
 
         let session_arc = crate::chat::get_or_create_session_with_trajectory(
-            app.clone(),
+            app.chat_ctx(),
             &app.chat.sessions,
             "safe",
         )
@@ -86,7 +86,7 @@ use super::test_support::*;
         let chat_id = "subchat-late-trajectory";
 
         let session_arc = crate::chat::get_or_create_session_with_trajectory(
-            app.clone(),
+            app.chat_ctx(),
             &app.chat.sessions,
             chat_id,
         )
@@ -106,7 +106,7 @@ use super::test_support::*;
         write_trajectory_file_with_user_message(&path, chat_id, "Child Chat", "child work").await;
 
         let reopened = crate::chat::get_or_create_session_with_trajectory(
-            app.clone(),
+            app.chat_ctx(),
             &app.chat.sessions,
             chat_id,
         )
@@ -135,7 +135,7 @@ use super::test_support::*;
         let chat_id = "subchat-cleanup-no-clobber";
 
         let session_arc = crate::chat::get_or_create_session_with_trajectory(
-            app.clone(),
+            app.chat_ctx(),
             &app.chat.sessions,
             chat_id,
         )
@@ -221,7 +221,7 @@ use super::test_support::*;
         write_trajectory_file_with_user_message(&path, chat_id, "Child Chat", "seed prompt").await;
 
         let session_arc = crate::chat::get_or_create_session_with_trajectory(
-            app.clone(),
+            app.chat_ctx(),
             &app.chat.sessions,
             chat_id,
         )
@@ -264,7 +264,7 @@ use super::test_support::*;
         write_buddy_conversation_file(&buddy_path, chat_id, "Buddy Child").await;
 
         let session_arc = crate::chat::get_or_create_session_with_trajectory(
-            app.clone(),
+            app.chat_ctx(),
             &app.chat.sessions,
             chat_id,
         )
@@ -329,7 +329,7 @@ use super::test_support::*;
             .unwrap();
 
         let session_arc = crate::chat::get_or_create_session_with_trajectory(
-            app.clone(),
+            app.chat_ctx(),
             &app.chat.sessions,
             chat_id,
         )
@@ -349,7 +349,7 @@ use super::test_support::*;
             .unwrap();
 
         let reopened = crate::chat::get_or_create_session_with_trajectory(
-            app.clone(),
+            app.chat_ctx(),
             &app.chat.sessions,
             chat_id,
         )

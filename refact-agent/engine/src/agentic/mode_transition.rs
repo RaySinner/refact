@@ -244,7 +244,7 @@ async fn analyze_reconstruction(
     crate::privacy::records::carry_records_into(&mut analysis, request.messages)
         .map_err(|e| e.to_string())?;
     crate::privacy::destinations::clear_for_model(
-        &gcx,
+        &gcx.privacy_policy_load,
         MessageAudit(std::slice::from_ref(&analysis)),
         &model_rec.base,
     )
@@ -323,7 +323,7 @@ pub async fn reconstruct_context(
             let mut audit = ChatMessage::default();
             crate::privacy::records::attach_record(&mut audit, record.clone());
             crate::privacy::destinations::clear_for_model(
-                &gcx,
+                &gcx.privacy_policy_load,
                 MessageAudit(std::slice::from_ref(&audit)),
                 &model_rec.base,
             )

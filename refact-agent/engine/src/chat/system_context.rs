@@ -10,12 +10,15 @@ use crate::at_commands::at_tree::TreeNode;
 use crate::call_validation::{ChatMessage, ChatContent, ContextFile};
 use crate::files_correction::{get_unscoped_project_dirs, paths_from_anywhere};
 use crate::memories::{load_memories_by_tags_from_index, MemoRecord};
-use crate::yaml_configs::project_information::{load_project_information_config, override_key};
+use crate::yaml_configs::project_information::{
+    load_project_information_config_for_ctx, override_key,
+};
 
 pub const PROJECT_CONTEXT_MARKER: &str = "project_context";
 use crate::files_in_workspace::detect_vcs_for_a_file_path;
 use crate::global_context::GlobalContext;
 use crate::git::operations::{get_git_remotes, get_diff_statuses};
+use super::ctx::ChatCtx;
 
 const INSTRUCTION_FILE_PATTERNS: &[&str] = &[
     "AGENTS.md",
@@ -1257,6 +1260,7 @@ pub fn generate_environment_instructions(environments: &[DetectedEnvironment]) -
 
 const MAX_TREE_CHARS: usize = 16_000; // ~4K tokens
 
+// stays on gcx: this IS the ProjectTreeProvider implementation (D-6i follow-up)
 pub async fn generate_compact_project_tree(
     gcx: Arc<GlobalContext>,
     max_depth: usize,
@@ -1489,11 +1493,11 @@ pub fn truncate_to_chars(s: &str, max_chars: usize) -> String {
 }
 
 pub async fn gather_system_context(
-    gcx: Arc<GlobalContext>,
+    ctx: ChatCtx,
     include_tree: bool,
     tree_max_depth: usize,
 ) -> Result<SystemContext, String> {
-    let config = load_project_information_config(gcx.clone()).await;
+    let config = load_project_information_config_for_ctx(&ctx).await;
 
     if !config.enabled {
         return Ok(SystemContext {
@@ -1509,7 +1513,7 @@ pub async fn gather_system_context(
     }
 
     let system_info = SystemInfo::gather();
-    let project_dirs = get_unscoped_project_dirs(gcx.clone()).await;
+    let project_dirs = crate::files_correction::get_unscoped_project_dirs_for_ctx(&ctx).await;
 
     let need_environments = config.sections.detected_environments.enabled
         || config.sections.environment_instructions.enabled;
@@ -1580,7 +1584,11 @@ pub async fn gather_system_context(
         .unwrap_or(tree_max_depth);
     let project_tree = if include_tree && config.sections.project_tree.enabled {
         let max_chars = config.sections.project_tree.max_chars.unwrap_or(16000);
-        match generate_compact_project_tree(gcx.clone(), effective_max_depth).await {
+        match ctx
+            .project_tree
+            .generate_compact_project_tree(effective_max_depth)
+            .await
+        {
             Ok(tree) => {
                 if tree.chars().count() > max_chars {
                     Some(truncate_to_chars(&tree, max_chars))
@@ -1619,8 +1627,12 @@ pub async fn gather_system_context(
         let overrides = &config.sections.memories.overrides;
         let default_max_chars = config.sections.memories.max_chars_per_item.unwrap_or(2000);
 
-        load_memories_by_tags_from_index(gcx.clone(), MEMORY_TAGS_FOR_CONTEXT, max_items)
-            .await
+        load_memories_by_tags_from_index(
+            ctx.workspace.knowledge_index.clone(),
+            MEMORY_TAGS_FOR_CONTEXT,
+            max_items,
+        )
+        .await
             .into_iter()
             .filter_map(|mut m| {
                 let file_override = m

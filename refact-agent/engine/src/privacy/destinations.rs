@@ -1,3 +1,5 @@
+use std::sync::{Arc, RwLock as StdRwLock};
+
 use refact_privacy::{Cleared, Destination, DestinationId, DestinationKind, PrivacyAudited};
 
 use crate::caps::{BaseModelRecord, EmbeddingModelRecord};
@@ -30,13 +32,12 @@ impl DestinationExt<EmbeddingModelRecord> for Destination {
 }
 
 pub(crate) fn clear_for_model<T: PrivacyAudited>(
-    gcx: &SharedGlobalContext,
+    privacy_policy_load: &Arc<StdRwLock<refact_privacy::PolicyLoad>>,
     value: T,
     model_rec: &BaseModelRecord,
 ) -> Result<Cleared<T>, refact_privacy::Refusal> {
     let destination = Destination::from_model_record(model_rec);
-    let policy = gcx
-        .privacy_policy_load
+    let policy = privacy_policy_load
         .read()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .policy
@@ -144,7 +145,7 @@ mod tests {
             ..Default::default()
         };
 
-        let refusal = match clear_for_model(&gcx, EmptyAudit, &model) {
+        let refusal = match clear_for_model(&gcx.privacy_policy_load, EmptyAudit, &model) {
             Ok(_) => panic!("invalid recovered policy must fail closed"),
             Err(refusal) => refusal,
         };

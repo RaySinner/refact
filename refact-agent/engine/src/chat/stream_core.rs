@@ -2327,7 +2327,7 @@ fn build_http_for_attempt(
     adapter: &dyn crate::llm::adapter::LlmWireAdapter,
     adapter_settings: &AdapterSettings,
 ) -> Result<HttpParts, String> {
-    let cleared_request = clear_for_model(&app.gcx, llm_request.clone(), model_rec)
+    let cleared_request = clear_for_model(&app.ctx.privacy_policy_load, llm_request.clone(), model_rec)
         .map_err(|refusal| refusal.model_facing().to_string())?;
     adapter
         .build_http(&cleared_request, adapter_settings)

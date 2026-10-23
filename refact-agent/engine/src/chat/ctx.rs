@@ -13,12 +13,17 @@ use crate::app_state::{
     AtCommandsPreviewCache, BuddyServices, ChatServices, CommandLine, ModelServices, PathServices,
     RuntimeServices, ToolCatalogGenerations,
 };
+use crate::caps::CodeAssistantCaps;
 use crate::chat::trajectories::TrajectoryVectorizationQueue;
+use crate::custom_error::ScratchError;
+use crate::ext::hooks::HookEvent;
+use crate::ext::hooks_runner::{HookPayload, HookResult};
 use crate::integrations::browser_runtime::BrowserRuntime;
 use crate::knowledge_index::KnowledgeIndex;
 use crate::privacy::PrivacySettings;
 use crate::subchat::{SubchatConfig, SubchatResult};
 use crate::yaml_configs::customization_registry::RegistryCacheManager;
+use crate::yaml_configs::customization_types::{ModeConfig, ProjectRegistry};
 
 #[derive(Clone)]
 pub struct ChatWorkspace {
@@ -49,6 +54,26 @@ pub trait ProjectTreeProvider: Send + Sync {
     async fn generate_compact_project_tree(&self, max_depth: usize) -> Result<String, String>;
 }
 
+#[async_trait]
+pub trait HookRunner: Send + Sync {
+    async fn project_dir(&self) -> String;
+    async fn run_hooks(&self, event: HookEvent, payload: HookPayload) -> Vec<HookResult>;
+}
+
+#[async_trait]
+pub trait ModeConfigProvider: Send + Sync {
+    async fn get_project_registry(&self) -> Option<ProjectRegistry>;
+    async fn get_mode_config(&self, mode_id: &str, model_id: Option<&str>) -> Option<ModeConfig>;
+}
+
+#[async_trait]
+pub trait CapsProvider: Send + Sync {
+    async fn try_load_caps_quickly(
+        &self,
+        max_age_seconds: u64,
+    ) -> Result<Arc<CodeAssistantCaps>, ScratchError>;
+}
+
 #[derive(Clone)]
 pub struct ChatCtx {
     pub runtime: RuntimeServices,
@@ -69,4 +94,7 @@ pub struct ChatCtx {
     pub trajectory_vectorization_queue: Arc<AMutex<TrajectoryVectorizationQueue>>,
     pub subchat: Arc<dyn SubchatLauncher>,
     pub project_tree: Arc<dyn ProjectTreeProvider>,
+    pub hooks: Arc<dyn HookRunner>,
+    pub mode_config: Arc<dyn ModeConfigProvider>,
+    pub caps: Arc<dyn CapsProvider>,
 }

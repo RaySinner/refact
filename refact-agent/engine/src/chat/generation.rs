@@ -2776,7 +2776,7 @@ pub async fn run_llm_generation(
 
     check_aborted_before_stream(&abort_flag)?;
     let mut prepared = prepare_chat_passthrough(
-        gcx.clone(),
+        gcx.chat_ctx(gcx.clone()),
         ccx_arc.clone(),
         &t,
         messages,
@@ -2892,7 +2892,7 @@ async fn run_streaming_generation(
 
         let mut cloud_input_usage_task =
             crate::chat::cloud_token_count::spawn_input_token_count_task(
-                app.gcx.clone(),
+                app.chat_ctx(),
                 app.runtime.http_client.clone(),
                 &llm_request,
                 &model_rec.base,

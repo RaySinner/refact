@@ -60,7 +60,7 @@ pub async fn deliver_to_chat(
             return Err(format!("chat '{chat_id}' is closed"));
         }
     }
-    if !crate::chat::try_restore_session_if_trajectory_exists(app.clone(), &sessions, chat_id).await
+    if !crate::chat::try_restore_session_if_trajectory_exists(app.chat_ctx(), &sessions, chat_id).await
     {
         return Err(format!(
             "chat '{chat_id}' does not exist or cannot be restored"

@@ -1053,11 +1053,11 @@ pub async fn load_memories_by_tags(
 }
 
 pub async fn load_memories_by_tags_from_index(
-    gcx: Arc<GlobalContext>,
+    knowledge_index: Arc<AMutex<KnowledgeIndex>>,
     allowed_tags: &[&str],
     max_items: usize,
 ) -> Vec<MemoRecord> {
-    let idx_arc = gcx.knowledge_index.clone();
+    let idx_arc = knowledge_index;
     let matched = {
         let idx = idx_arc.lock().await;
         idx.memos_by_tag_or_kind_substring(allowed_tags, max_items)

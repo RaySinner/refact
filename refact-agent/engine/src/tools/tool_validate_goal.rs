@@ -60,7 +60,7 @@ impl Tool for ToolValidateGoal {
         let session_arc = match session_arc {
             Some(session) => session,
             None if crate::chat::try_restore_session_if_trajectory_exists(
-                app.clone(),
+                app.chat_ctx(),
                 &app.chat.sessions,
                 &chat_id,
             )

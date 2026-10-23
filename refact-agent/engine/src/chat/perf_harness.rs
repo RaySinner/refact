@@ -2361,7 +2361,7 @@ impl FullSoakFixture {
         *base.gcx.codegraph.lock().await = Some(service);
         let vecdb = Arc::new(FullSoakVecdb::default());
         *base.gcx.vec_db.lock().await = Some(vecdb.clone());
-        crate::chat::start_session_cleanup_task(base.app.clone());
+        crate::chat::start_session_cleanup_task(base.app.chat_ctx());
         crate::chat::start_trajectory_watcher(base.gcx.clone());
         let background_tasks =
             crate::background_tasks::start_full_soak_background_tasks(base.gcx.clone()).await;
@@ -2663,7 +2663,7 @@ async fn run_full_soak_sample(
     for chat_index in 0..workload.chat_count {
         let chat_id = format!("full-soak-{}-{chat_index}", workload.id);
         let session = crate::chat::get_or_create_session_with_trajectory(
-            fixture.base.app.clone(),
+            fixture.base.app.chat_ctx(),
             &fixture.base.app.chat.sessions,
             &chat_id,
         )
@@ -3378,7 +3378,7 @@ async fn run_tool_pool_sample(
 
         let schema_alias_started = Instant::now();
         let canonical =
-            build_canonical_openai_tools(fixture.gcx.clone(), &catalog.index.tools, false, true)
+            build_canonical_openai_tools(fixture.app.chat_ctx(), &catalog.index.tools, false, true)
                 .await;
         let resolved = resolve_tool_call_aliases_with_catalog(tool_calls.clone(), &catalog);
         schema_alias_preparation_elapsed_us.push(elapsed_us(schema_alias_started));
@@ -3393,7 +3393,7 @@ async fn run_tool_pool_sample(
         if snapshots_enabled {
             let warm_schema_alias_started = Instant::now();
             let warm_canonical = build_canonical_openai_tools(
-                fixture.gcx.clone(),
+                fixture.app.chat_ctx(),
                 &catalog.index.tools,
                 false,
                 true,
@@ -3742,7 +3742,7 @@ async fn run_sample(
         .get_tools_index_for_mode("agent", None)
         .await;
     let canonical =
-        build_canonical_openai_tools(fixture.gcx.clone(), &catalog.tools, false, true).await;
+        build_canonical_openai_tools(fixture.app.chat_ctx(), &catalog.tools, false, true).await;
     let policies = fixture
         .app
         .tool_registry

@@ -402,6 +402,11 @@ pub async fn get_unscoped_project_dirs(gcx: Arc<GlobalContext>) -> Vec<PathBuf> 
     get_project_dirs(gcx).await
 }
 
+pub async fn get_unscoped_project_dirs_for_ctx(ctx: &crate::chat::ctx::ChatCtx) -> Vec<PathBuf> {
+    let workspace_folders = ctx.workspace.workspace_folders.lock().unwrap().clone();
+    project_dirs_for_unscoped_paths(ctx.paths.cache_dir.as_path(), workspace_folders.as_slice())
+}
+
 #[allow(dead_code)]
 pub async fn get_project_dirs_with_execution_scope(
     gcx: Arc<GlobalContext>,

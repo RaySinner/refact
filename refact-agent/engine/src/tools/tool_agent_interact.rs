@@ -1148,7 +1148,7 @@ mod tests {
         app.chat.sessions.write().await.remove("subchat-child-chat");
 
         crate::chat::get_or_create_session_with_trajectory(
-            app.clone(),
+            app.chat_ctx(),
             &app.chat.sessions,
             "subchat-child-chat",
         )

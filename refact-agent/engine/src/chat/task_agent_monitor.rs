@@ -172,7 +172,7 @@ pub(crate) async fn notify_planner_blocking_question(
 
     let sessions = app.chat.sessions.clone();
     let planner_session =
-        get_or_create_session_with_trajectory(app.clone(), &sessions, planner_chat_id).await;
+        get_or_create_session_with_trajectory(app.chat_ctx(), &sessions, planner_chat_id).await;
 
     ensure_planner_task_meta(
         app.clone(),
@@ -419,7 +419,7 @@ async fn notify_planner_about_reasoning_token_limit(
 
     let sessions = app.chat.sessions.clone();
     let planner_session =
-        get_or_create_session_with_trajectory(app.clone(), &sessions, planner_chat_id).await;
+        get_or_create_session_with_trajectory(app.chat_ctx(), &sessions, planner_chat_id).await;
 
     if ensure_planner_task_meta(
         app.clone(),
@@ -915,7 +915,7 @@ async fn notify_planner_about_stalled_agent(
 
     let sessions = app.chat.sessions.clone();
     let planner_session =
-        get_or_create_session_with_trajectory(app.clone(), &sessions, planner_chat_id).await;
+        get_or_create_session_with_trajectory(app.chat_ctx(), &sessions, planner_chat_id).await;
 
     if ensure_planner_task_meta(
         app.clone(),
@@ -1607,7 +1607,7 @@ pub(crate) async fn notify_planner_agents_finished(
         })?
     };
     let planner_session =
-        get_or_create_session_with_trajectory(app.clone(), &sessions, &planner_chat_id).await;
+        get_or_create_session_with_trajectory(app.chat_ctx(), &sessions, &planner_chat_id).await;
     ensure_planner_task_meta(
         app.clone(),
         &planner_session,

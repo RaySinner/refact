@@ -661,7 +661,7 @@ async fn emit_created_notice(
     summary: &str,
 ) {
     let session_arc = crate::chat::get_or_create_session_with_trajectory(
-        app.clone(),
+        app.chat_ctx(),
         &app.chat.sessions,
         chat_id,
     )

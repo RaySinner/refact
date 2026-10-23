@@ -452,8 +452,14 @@ pub async fn find_runtime_for_chat(
     app: crate::app_state::AppState,
     lookup: &ChatRuntimeLookup,
 ) -> Option<(String, Arc<AMutex<BrowserRuntime>>)> {
+    find_runtime_in(app.integrations.browser_runtimes.clone(), lookup).await
+}
+
+async fn find_runtime_in(
+    browser_runtimes: Arc<AMutex<HashMap<String, Arc<AMutex<BrowserRuntime>>>>>,
+    lookup: &ChatRuntimeLookup,
+) -> Option<(String, Arc<AMutex<BrowserRuntime>>)> {
     let runtime_arcs: Vec<(String, Arc<AMutex<BrowserRuntime>>)> = {
-        let browser_runtimes = app.integrations.browser_runtimes.clone();
         let browser_runtimes = browser_runtimes.lock().await;
         browser_runtimes
             .iter()
@@ -649,10 +655,14 @@ pub async fn relaunch_runtime_for_chat(
 }
 
 pub async fn browser_snapshot_for_chat(
-    app: crate::app_state::AppState,
+    ctx: &crate::chat::ctx::ChatCtx,
     chat_id: &str,
 ) -> Option<crate::chat::types::BrowserSnapshot> {
-    let (runtime_id, runtime_arc) = find_runtime_by_chat_id(app, chat_id).await?;
+    let (runtime_id, runtime_arc) = find_runtime_in(
+        ctx.integrations.browser_runtimes.clone(),
+        &ChatRuntimeLookup::for_chat(chat_id),
+    )
+    .await?;
     let mut rt = runtime_arc.lock().await;
     refact_browser::adopt_new_tabs(&mut rt, None);
     let tabs = rt

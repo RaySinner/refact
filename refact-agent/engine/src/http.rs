@@ -280,7 +280,7 @@ pub async fn start_server(
                             error!("graceful shutdown trajectory flush failed: {}", error);
                         }
                     }
-                    crate::chat::close_all_chat_sessions(app).await;
+                    crate::chat::close_all_chat_sessions(app.chat_ctx()).await;
                 };
                 let server = builder
                     .serve(router.into_make_service())

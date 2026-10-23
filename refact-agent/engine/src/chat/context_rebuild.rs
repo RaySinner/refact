@@ -674,7 +674,7 @@ pub async fn rebuild_session(
                 .clone(),
         };
         let canonical = crate::chat::prepare::build_canonical_openai_tools(
-            gcx.clone(),
+            gcx.chat_ctx(gcx.clone()),
             &tools,
             record.supports_strict_tools,
             record.supports_tools,

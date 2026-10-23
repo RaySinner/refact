@@ -90,7 +90,7 @@ pub async fn handle_v1_chat_subscribe(
 
     let sessions = app.chat.sessions.clone();
 
-    let session_arc = get_or_create_session_with_trajectory(app.clone(), &sessions, &chat_id).await;
+    let session_arc = get_or_create_session_with_trajectory(app.chat_ctx(), &sessions, &chat_id).await;
     if let Err(error) = crate::agents::delivery::recover_runner_deliveries(&app, &chat_id).await {
         tracing::warn!(%chat_id, %error, "runner delivery recovery failed");
     }
@@ -98,7 +98,7 @@ pub async fn handle_v1_chat_subscribe(
     let session = session_arc.lock().await;
     let mut rx = session.subscribe();
     let initial_seq = session.event_seq;
-    let snapshot = snapshot_with_agents(app.clone(), &session);
+    let snapshot = snapshot_with_agents(app.chat_ctx(), &session);
     drop(session);
     let (snapshot, background_agents) = snapshot.await;
     {
@@ -182,7 +182,7 @@ pub async fn handle_v1_chat_subscribe(
                             // emitted between snapshot and the new receiver start.
                             rx = session.subscribe();
                             let recovery_seq = session.event_seq;
-                            let recovery_snapshot = snapshot_with_agents(app.clone(), &session);
+                            let recovery_snapshot = snapshot_with_agents(app.chat_ctx(), &session);
                             drop(session);
                             let (recovery_snapshot, background_agents) = recovery_snapshot.await;
                             {
@@ -287,7 +287,7 @@ pub async fn handle_v1_chat_command(
 
     let sessions = app.chat.sessions.clone();
 
-    let session_arc = get_or_create_session_with_trajectory(app.clone(), &sessions, &chat_id).await;
+    let session_arc = get_or_create_session_with_trajectory(app.chat_ctx(), &sessions, &chat_id).await;
     if let Err(error) = crate::agents::delivery::recover_runner_deliveries(&app, &chat_id).await {
         tracing::warn!(%chat_id, %error, "runner delivery recovery failed");
     }
@@ -705,7 +705,7 @@ pub async fn handle_v1_chat_cancel_queued(
 
     let sessions = app.chat.sessions.clone();
 
-    let session_arc = get_or_create_session_with_trajectory(app.clone(), &sessions, &chat_id).await;
+    let session_arc = get_or_create_session_with_trajectory(app.chat_ctx(), &sessions, &chat_id).await;
     let mut session = session_arc.lock().await;
 
     let initial_len = session.command_queue.len();

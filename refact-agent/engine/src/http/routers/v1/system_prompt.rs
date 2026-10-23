@@ -55,7 +55,7 @@ mod tests {
         let (_gcx, app) = make_app_with_workspace(dir.path()).await;
         let chat_id = "init-freeze-normal";
         let session_arc =
-            get_or_create_session_with_trajectory(app.clone(), &app.chat.sessions, chat_id).await;
+            get_or_create_session_with_trajectory(app.chat_ctx(), &app.chat.sessions, chat_id).await;
         {
             let mut session = session_arc.lock().await;
             session.add_message(ChatMessage::new("user".to_string(), "hello".to_string()));
@@ -135,7 +135,7 @@ mod tests {
         let (_gcx, app) = make_app_with_workspace(dir.path()).await;
         let chat_id = "init-freeze-existing";
         let session_arc =
-            get_or_create_session_with_trajectory(app.clone(), &app.chat.sessions, chat_id).await;
+            get_or_create_session_with_trajectory(app.chat_ctx(), &app.chat.sessions, chat_id).await;
         {
             let mut session = session_arc.lock().await;
             session.thread.frozen_request_prefix = Some(prefix("original frozen"));
@@ -200,7 +200,7 @@ mod tests {
         .await
         .unwrap();
         let session_arc =
-            get_or_create_session_with_trajectory(app.clone(), &app.chat.sessions, chat_id).await;
+            get_or_create_session_with_trajectory(app.chat_ctx(), &app.chat.sessions, chat_id).await;
         {
             let session = session_arc.lock().await;
             assert!(session.thread.buddy_meta.is_some());
@@ -241,7 +241,7 @@ async fn persist_init_frozen_prefix(
     frozen_prefix: refact_chat_api::FrozenRequestPrefix,
 ) {
     let session_arc =
-        get_or_create_session_with_trajectory(app.clone(), &app.chat.sessions, chat_id).await;
+        get_or_create_session_with_trajectory(app.chat_ctx(), &app.chat.sessions, chat_id).await;
     let installed = {
         let mut session = session_arc.lock().await;
         ensure_frozen_prefix(
@@ -315,7 +315,7 @@ pub async fn handle_v1_prepend_system_prompt_and_maybe_more_initial_messages(
             None
         }
     });
-    let canonical_tools = build_canonical_openai_tools(gcx.clone(), &tool_descs, false, true).await;
+    let canonical_tools = build_canonical_openai_tools(gcx.chat_ctx(gcx.clone()), &tool_descs, false, true).await;
     let frozen_prefix = new_frozen_request_prefix(
         system_prompt,
         serde_json::Value::Array(canonical_tools.tools),

@@ -2641,7 +2641,7 @@ async fn gather_and_inject_system_context(
     messages: &mut Vec<ChatMessage>,
     stream_back_to_user: &mut HasRagResults,
 ) -> Result<SkillsTrackingInfo, String> {
-    let context = gather_system_context(app.gcx.clone(), false, 4).await?;
+    let context = gather_system_context(app.chat_ctx(), false, 4).await?;
 
     if !context.instruction_files.is_empty() {
         match create_instruction_files_message(&context.instruction_files).await {

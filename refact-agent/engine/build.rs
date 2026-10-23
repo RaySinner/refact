@@ -6,6 +6,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=REFACT_SKIP_GUI_BUILD");
     println!("cargo:rerun-if-env-changed=REFACT_USE_PREBUILT_GUI");
     println!("cargo:rerun-if-env-changed=REFACT_GUI_DIR");
+    println!("cargo:rerun-if-env-changed=SOURCE_DATE_EPOCH");
     println!("cargo:rerun-if-changed=../gui/package.json");
     println!("cargo:rerun-if-changed=../gui/package-lock.json");
     println!("cargo:rerun-if-changed=../gui/src");
@@ -16,7 +17,34 @@ fn main() {
         build_gui_assets();
     }
 
+    pin_source_date_epoch();
     shadow_rs::ShadowBuilder::builder().build().unwrap();
+}
+
+fn pin_source_date_epoch() {
+    if env::var_os("SOURCE_DATE_EPOCH").is_some() {
+        return;
+    }
+    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+    if let Some(git_dir) = git_stdout(&manifest_dir, &["rev-parse", "--absolute-git-dir"]) {
+        println!("cargo:rerun-if-changed={}/HEAD", git_dir.trim());
+    }
+    let epoch = git_stdout(&manifest_dir, &["log", "-1", "--format=%ct"])
+        .and_then(|value| value.trim().parse::<i64>().ok())
+        .unwrap_or(0);
+    env::set_var("SOURCE_DATE_EPOCH", epoch.to_string());
+}
+
+fn git_stdout(cwd: &Path, args: &[&str]) -> Option<String> {
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(cwd)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    String::from_utf8(output.stdout).ok()
 }
 
 fn build_gui_assets() {

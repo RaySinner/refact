@@ -151,12 +151,34 @@ engine-build: sccache this run - 884 compile request(s), 503 cache hit(s), 381 m
 So roughly half the units of a cold check come straight out of the cache -
 dependency crates that other worktrees already built.
 
-The one unit that can never hit is `refact-lsp` itself: its build script runs
-`shadow_rs::ShadowBuilder::builder().build()`, which writes `BUILD_TIME` (the
-wall-clock time of that build) into `OUT_DIR/shadow.rs`, and sccache hashes
-`include!`-ed files. Every build therefore has a different key, and the biggest
-crate in the graph is always a full local compile (about 27 minutes here). That
-is the dominant cost of a cold worktree build, and it is not an sccache problem.
+`refact-lsp` itself used to be the one unit that could never hit: its build
+script ran `shadow_rs::ShadowBuilder::builder().build()`, which wrote the
+wall-clock build time into `OUT_DIR/shadow.rs` - as the `BUILD_TIME*` constants
+*and* in the generated file's `// Generation time:` header - and sccache hashes
+`include!`-ed files. Every build had a different key, so the biggest crate in
+the graph was always a full local compile (about 27 minutes here), and that was
+the dominant cost of a cold worktree build.
+
+`refact-agent/engine/build.rs` now pins `SOURCE_DATE_EPOCH` to the HEAD commit
+timestamp before calling `ShadowBuilder` (shadow-rs honours that variable for
+every timestamp it emits, header included). `OUT_DIR/shadow.rs` is therefore
+byte-identical for a given commit and `refact-lsp` is cached like any other
+crate. `BUILD_TIME*` keeps its meaning - it is the commit time, not an empty
+value - and an explicitly exported `SOURCE_DATE_EPOCH` still wins. To see the
+hit, force the crate to recompile (`cargo clean -p refact-lsp`) and run
+`-Mode check` again: the second run reports `refact-lsp` as a cache hit instead
+of a ~27 minute local compile.
+
+Measured on this Windows box (2026-10-23, `-Mode check`, `refact-lsp` cleaned
+with `cargo clean -p refact-lsp` before each run so it really recompiles):
+
+```
+run B (populates the cache): 869.5s - 2 compile request(s), 0 cache hit(s), 2 miss(es)
+run C (same inputs):          37.8s - 2 compile request(s), 1 cache hit(s), 1 miss(es)
+```
+
+`OUT_DIR/shadow.rs` was byte-identical between the two runs, and `BUILD_TIME`
+carries the HEAD commit timestamp instead of the wall clock.
 
 ## sccache and worktree root length (Windows)
 

@@ -31,7 +31,23 @@ mod runtime;
 mod snapshot;
 mod stream;
 #[cfg(test)]
-mod tests;
+mod tests_goal;
+#[cfg(test)]
+mod tests_messages;
+#[cfg(test)]
+mod tests_misc;
+#[cfg(test)]
+mod tests_queue;
+#[cfg(test)]
+mod tests_runtime;
+#[cfg(test)]
+mod tests_snapshot;
+#[cfg(test)]
+mod tests_stream;
+#[cfg(test)]
+mod tests_support;
+#[cfg(test)]
+mod tests_tool_decisions;
 
 use construct::*;
 use goal::*;

@@ -4332,7 +4332,7 @@ dependencies = [
 
 [[package]]
 name = "refact-lsp"
-version = "8.7.9"
+version = "8.8.1"
 dependencies = [
  "astral-tokio-tar",
  "async-stream",
@@ -4659,7 +4659,7 @@ dependencies = [
 
 [[package]]
 name = "refact-tui"
-version = "8.7.9"
+version = "8.8.1"
 dependencies = [
  "base64 0.22.1",
  "chrono",

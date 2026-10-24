@@ -1,5 +1,6 @@
 pub mod action_policy;
 pub mod autonomous_workflows;
+pub mod briefing;
 pub mod chat_reactions;
 pub mod conversation_ledger;
 pub mod diagnostics;
@@ -12,6 +13,7 @@ pub mod opportunities;
 pub mod planner_backstop;
 pub mod policy;
 pub mod queue;
+pub mod receipts;
 pub mod runtime_queue;
 pub mod runtime_writer;
 pub mod settings;

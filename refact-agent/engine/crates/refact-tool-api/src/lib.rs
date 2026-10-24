@@ -1,10 +1,17 @@
 pub mod arg_coerce;
+pub mod cat_line_range;
 pub mod command_classify;
 pub mod command_risk;
 pub mod command_rules;
 pub mod integration_confirmation;
+pub mod review_contract;
+pub mod review_merge;
+pub mod review_paths;
+pub mod review_types;
 pub mod tool_desc;
+pub mod tool_call_loop_guard;
 pub mod tool_name_alias;
+pub mod undo_history;
 
 pub use arg_coerce::{
     coerce_args_to_schema, coerce_array, coerce_bool, coerce_hashmap_to_schema, coerce_integer,

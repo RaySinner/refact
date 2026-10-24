@@ -4649,10 +4649,13 @@ name = "refact-tool-api"
 version = "0.1.0"
 dependencies = [
  "glob",
+ "hex",
  "md5",
+ "refact-core",
  "regex",
  "serde",
  "serde_json",
+ "sha2",
  "shell-words",
  "tracing",
 ]

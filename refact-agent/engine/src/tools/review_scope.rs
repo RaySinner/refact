@@ -39,18 +39,7 @@ const GENERATED_SUFFIXES: &[&str] = &[
     "_pb2.py",
 ];
 
-pub fn normalize_path(path: &str) -> String {
-    path.replace('\\', "/")
-        .trim_start_matches("./")
-        .trim_end_matches('/')
-        .to_string()
-}
-
-pub fn paths_match(left: &str, right: &str) -> bool {
-    let left = normalize_path(left);
-    let right = normalize_path(right);
-    left == right || left.ends_with(&format!("/{right}")) || right.ends_with(&format!("/{left}"))
-}
+pub use refact_tool_api::review_paths::{normalize_path, paths_match};
 
 pub fn is_generated_path(path: &str) -> bool {
     let lowered = normalize_path(path).to_ascii_lowercase();

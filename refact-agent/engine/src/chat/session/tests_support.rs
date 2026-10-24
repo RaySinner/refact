@@ -1,6 +1,5 @@
 use super::*;
 use crate::chat::perf_diagnostics::{self, MemoryPerfSink, PerfClock, PerfRecorder};
-use crate::call_validation::{ChatToolCall, ChatToolFunction};
 use serde_json::json;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
@@ -70,7 +69,7 @@ use std::sync::Arc;
     }
 
     impl PerfClock for TestClock {
-        pub(super) fn now_us(&self) -> u64 {
+        fn now_us(&self) -> u64 {
             self.now.load(Ordering::SeqCst)
         }
     }

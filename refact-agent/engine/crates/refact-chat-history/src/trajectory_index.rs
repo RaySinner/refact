@@ -660,8 +660,7 @@ impl TrajectoryIndexCoordinator {
         }
     }
 
-    #[cfg(test)]
-    fn with_listing_counter_scope(
+    pub fn with_listing_counter_scope(
         listing_counter_scope: TrajectoryIndexListingCounterScope,
     ) -> Self {
         Self {

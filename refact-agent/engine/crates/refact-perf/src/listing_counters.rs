@@ -82,35 +82,35 @@ impl TrajectoryIndexListingCounterState {
         }
     }
 
-    fn record_listing_caller(&self, caller: TrajectoryIndexListingCaller) {
+    pub fn record_listing_caller(&self, caller: TrajectoryIndexListingCaller) {
         self.calls_by_caller[caller as usize].fetch_add(1, Ordering::Relaxed);
     }
 
-    fn record_listing_cache_hit(&self) {
+    pub fn record_listing_cache_hit(&self) {
         self.cache_hits.fetch_add(1, Ordering::Relaxed);
     }
 
-    fn record_index_read(&self) {
+    pub fn record_index_read(&self) {
         self.index_reads.fetch_add(1, Ordering::Relaxed);
     }
 
-    fn record_directory_scan(&self) {
+    pub fn record_directory_scan(&self) {
         self.directory_scans.fetch_add(1, Ordering::Relaxed);
     }
 
-    fn record_generation_check(&self) {
+    pub fn record_generation_check(&self) {
         self.generation_checks.fetch_add(1, Ordering::Relaxed);
     }
 
-    fn record_directory_eviction(&self) {
+    pub fn record_directory_eviction(&self) {
         self.directory_evictions.fetch_add(1, Ordering::Relaxed);
     }
 
-    fn record_journal_append(&self) {
+    pub fn record_journal_append(&self) {
         self.journal_appends.fetch_add(1, Ordering::Relaxed);
     }
 
-    fn record_checkpoint_write(&self) {
+    pub fn record_checkpoint_write(&self) {
         self.checkpoint_writes.fetch_add(1, Ordering::Relaxed);
     }
 
@@ -173,35 +173,35 @@ impl TrajectoryIndexListingCounterScope {
         }
     }
 
-    fn record_listing_caller(&self, caller: TrajectoryIndexListingCaller) {
+    pub fn record_listing_caller(&self, caller: TrajectoryIndexListingCaller) {
         self.state().record_listing_caller(caller);
     }
 
-    fn record_listing_cache_hit(&self) {
+    pub fn record_listing_cache_hit(&self) {
         self.state().record_listing_cache_hit();
     }
 
-    fn record_index_read(&self) {
+    pub fn record_index_read(&self) {
         self.state().record_index_read();
     }
 
-    fn record_directory_scan(&self) {
+    pub fn record_directory_scan(&self) {
         self.state().record_directory_scan();
     }
 
-    fn record_generation_check(&self) {
+    pub fn record_generation_check(&self) {
         self.state().record_generation_check();
     }
 
-    fn record_directory_eviction(&self) {
+    pub fn record_directory_eviction(&self) {
         self.state().record_directory_eviction();
     }
 
-    fn record_journal_append(&self) {
+    pub fn record_journal_append(&self) {
         self.state().record_journal_append();
     }
 
-    fn record_checkpoint_write(&self) {
+    pub fn record_checkpoint_write(&self) {
         self.state().record_checkpoint_write();
     }
 

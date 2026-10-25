@@ -283,6 +283,28 @@ pub async fn get_json<T: DeserializeOwned>(
     decode_json_response(response).await
 }
 
+/// GET with the readiness budget, for probes that legitimately outlast the short control timeout.
+///
+/// `/daemon/v1/status` hashes the daemon executable the first time it is asked, so a freshly
+/// started daemon answers it in seconds, not milliseconds. Probing that endpoint with the short
+/// hot-path budget made `refact doctor` report a healthy daemon as unreachable while it was still
+/// hashing itself.
+pub async fn get_json_readiness<T: DeserializeOwned>(
+    info: &DaemonInfo,
+    path: &str,
+) -> Result<T, DaemonClientError> {
+    let response = send_auth_required(info, |attempt| {
+        daemon_request_with_timeout(
+            attempt,
+            reqwest::Method::GET,
+            path,
+            ControlRequestTimeout::Readiness,
+        )
+    })
+    .await?;
+    decode_json_response(response).await
+}
+
 pub async fn get_text(info: &DaemonInfo, path: &str) -> Result<String, DaemonClientError> {
     let response = send_auth_required(info, |attempt| {
         daemon_request(attempt, reqwest::Method::GET, path)

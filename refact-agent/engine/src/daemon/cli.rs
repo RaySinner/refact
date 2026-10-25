@@ -1520,15 +1520,14 @@ async fn doctor_report() -> DoctorReport {
         }
     };
     if let Some(info) = &info {
-        let status = client::get_json::<DaemonStatus>(info, "/daemon/v1/status").await;
+        let status = client::get_json_readiness::<DaemonStatus>(info, "/daemon/v1/status").await;
         let reachable = status.is_ok();
         checks.push(check(
             "daemon reachable",
             reachable,
-            if reachable {
-                format!("port {}", info.port)
-            } else {
-                format!("unreachable at port {}", info.port)
+            match &status {
+                Ok(_) => format!("port {}", info.port),
+                Err(error) => format!("unreachable at port {}: {error}", info.port),
             },
         ));
         let version_ok = info.version == env!("CARGO_PKG_VERSION");
@@ -2453,9 +2452,7 @@ mod tests {
                 backoff: std::env::var("REFACT_DAEMON_SUPERVISOR_BACKOFF_MS").ok(),
                 crash: std::env::var("FAKE_WORKER_CRASH").ok(),
             };
-            let script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("tests")
-                .join("fake_worker.py");
+            let script = crate::daemon::fake_worker_script()?;
             std::env::set_var("REFACT_DAEMON_CACHE_DIR", cache);
             std::env::set_var("REFACT_DAEMON_CONFIG_DIR", config);
             std::env::set_var(
@@ -2992,7 +2989,16 @@ mod tests {
             .await
             .unwrap();
         let report = doctor_report().await;
-        assert_eq!(report.exit_code(), 0);
+        assert_eq!(
+            report.exit_code(),
+            0,
+            "failing doctor checks: {:#?}",
+            report
+                .checks
+                .iter()
+                .filter(|check| !check.ok)
+                .collect::<Vec<_>>()
+        );
         assert!(report
             .checks
             .iter()
@@ -3016,7 +3022,16 @@ mod tests {
         .await
         .unwrap();
         let report = doctor_report().await;
-        assert_eq!(report.exit_code(), 1);
+        assert_eq!(
+            report.exit_code(),
+            1,
+            "failing doctor checks: {:#?}",
+            report
+                .checks
+                .iter()
+                .filter(|check| !check.ok)
+                .collect::<Vec<_>>()
+        );
         assert!(report
             .checks
             .iter()

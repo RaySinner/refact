@@ -53,6 +53,26 @@ pub(crate) fn fake_worker_python() -> Option<String> {
         })
 }
 
+/// Materialises `tests/fake_worker.py` so no test depends on the build directory still existing.
+///
+/// Resolving the script through `env!("CARGO_MANIFEST_DIR")` bakes the build directory into the
+/// test binary, and worktrees are disposable while the shared `target/` outlives them. A binary
+/// built in a deleted worktree therefore pointed at a script that was gone: the worker died with
+/// python's "can't open file" (exit code 2) and every daemon test failed with a 502 that had
+/// nothing to do with the code under test.
+#[cfg(test)]
+pub(crate) fn fake_worker_script() -> Option<PathBuf> {
+    static SCRIPT: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
+    SCRIPT
+        .get_or_init(|| {
+            let path =
+                std::env::temp_dir().join(format!("refact-fake-worker-{}.py", std::process::id()));
+            std::fs::write(&path, include_str!("../../tests/fake_worker.py")).ok()?;
+            Some(path)
+        })
+        .clone()
+}
+
 #[cfg(not(test))]
 const DAEMON_SHUTDOWN_DRAIN: Duration = Duration::from_secs(10);
 #[cfg(test)]

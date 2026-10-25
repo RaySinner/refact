@@ -3,37 +3,11 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use fd_lock::{RwLock, RwLockWriteGuard};
+use fd_lock::RwLock;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-pub fn open_lock(path: &Path) -> io::Result<RwLock<File>> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let file = OpenOptions::new()
-        .create(true)
-        .read(true)
-        .write(true)
-        .open(path)?;
-    Ok(RwLock::new(file))
-}
-
-pub fn try_lock(lock: &mut RwLock<File>) -> io::Result<RwLockWriteGuard<'_, File>> {
-    lock.try_write()
-}
-
-pub fn lock_blocking(lock: &mut RwLock<File>) -> io::Result<RwLockWriteGuard<'_, File>> {
-    lock.write()
-}
-
-pub fn is_already_locked(error: &io::Error) -> bool {
-    error.kind() == io::ErrorKind::WouldBlock
-}
-
-pub const WORKSPACE_BUSY_EXIT_CODE: i32 = 75;
-pub const WORKSPACE_BUSY_MARKER: &str = "workspace busy";
-pub const ENGINE_LOCKS_DIR_ENV: &str = "REFACT_ENGINE_LOCKS_DIR";
+pub use refact_core::file_lock::*;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkspaceLeaseInfo {

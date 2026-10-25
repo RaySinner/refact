@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use refact_core::chat_types::{ChatMessage, Checkpoint};
+use refact_core::chat_types::{ChatContent, ChatMessage, Checkpoint};
 use crate::diagnostics::is_ui_only_message;
 use crate::{TaskMeta, ThreadParams};
 
@@ -305,6 +305,38 @@ pub fn is_segment_summary(message: &ChatMessage) -> bool {
         .and_then(|value| value.get("kind"))
         .and_then(|value| value.as_str())
         == Some(SEGMENT_SUMMARY_KIND)
+}
+
+pub fn has_displayable_assistant_content(message: &ChatMessage) -> bool {
+    let has_text_content = match &message.content {
+        ChatContent::SimpleText(s) => !s.trim().is_empty(),
+        ChatContent::Multimodal(v) => !v.is_empty(),
+        ChatContent::ContextFiles(v) => !v.is_empty(),
+    };
+    let has_structured_data = message
+        .tool_calls
+        .as_ref()
+        .map_or(false, |tc| !tc.is_empty())
+        || message
+            .reasoning_content
+            .as_ref()
+            .map_or(false, |r| !r.trim().is_empty())
+        || message
+            .thinking_blocks
+            .as_ref()
+            .map_or(false, |tb| !tb.is_empty())
+        || !message.citations.is_empty()
+        || !message.server_content_blocks.is_empty()
+        || (!message.extra.is_empty() && has_non_metadata_extra(message));
+
+    has_text_content || has_structured_data
+}
+
+fn has_non_metadata_extra(message: &ChatMessage) -> bool {
+    message
+        .extra
+        .keys()
+        .any(|key| !key.starts_with('_') && key != "openai_response_id")
 }
 
 #[cfg(test)]

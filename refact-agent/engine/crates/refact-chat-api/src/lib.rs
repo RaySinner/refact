@@ -19,10 +19,10 @@ pub use goal_ledger::{
 };
 
 pub use chat_local_types::{
-    effective_stream_idle_timeout, max_queue_size, session_cleanup_interval, session_idle_timeout,
-    StreamIdleWatchdog, stream_heartbeat, stream_idle_timeout, stream_total_timeout,
-    install_runtime_timeouts, EnqueueCommandOutcome, PendingBrowserMessage,
-    PendingSkillDeactivation, RuntimeChatTimeouts, TrajectorySourceIdentity,
+    effective_stream_idle_timeout, has_displayable_assistant_content, max_queue_size,
+    session_cleanup_interval, session_idle_timeout, StreamIdleWatchdog, stream_heartbeat,
+    stream_idle_timeout, stream_total_timeout, install_runtime_timeouts, EnqueueCommandOutcome,
+    PendingBrowserMessage, PendingSkillDeactivation, RuntimeChatTimeouts, TrajectorySourceIdentity,
 };
 pub use notification_event::{NotificationEvent, NotificationQuestion};
 pub use tool_enrichment::{

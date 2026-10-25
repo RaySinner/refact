@@ -4168,6 +4168,7 @@ dependencies = [
  "async-trait",
  "axum",
  "base64 0.22.1",
+ "fd-lock",
  "hyper 0.14.32",
  "image",
  "indexmap 1.9.3",

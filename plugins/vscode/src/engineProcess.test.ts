@@ -17,7 +17,7 @@ import {
     type EngineSpawnOptions,
 } from "./engineProcess";
 
-const PLUGIN_VERSION = "8.8.1";
+const PLUGIN_VERSION = "8.8.2";
 
 type FakeBehavior = {
     busy?: boolean;
@@ -54,7 +54,7 @@ function writeFakeEngine(dir: string, behavior: FakeBehavior): string {
         "        if (behavior.answerPing === false) { return; }",
         "        res.end(pingMessage + '\\n');",
         "    } else if (req.url === '/v1/build_info') {",
-        "        res.end(JSON.stringify({version: behavior.version || '8.8.1'}));",
+        "        res.end(JSON.stringify({version: behavior.version || '8.8.2'}));",
         "    } else if (req.url === '/v1/graceful-shutdown') {",
         "        if (behavior.graceful === 'fail') {",
         "            res.statusCode = 500;",

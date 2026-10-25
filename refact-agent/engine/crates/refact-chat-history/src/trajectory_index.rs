@@ -80,7 +80,7 @@ pub fn trajectory_index_coordinator_rollout_enabled() -> bool {
     )
 }
 
-pub(crate) fn trajectory_index_coordinator_rollout_enabled_for(value: Option<&str>) -> bool {
+pub fn trajectory_index_coordinator_rollout_enabled_for(value: Option<&str>) -> bool {
     value.is_some_and(|value| {
         let value = value.trim();
         value == "1"
@@ -679,13 +679,11 @@ impl TrajectoryIndexCoordinator {
         self
     }
 
-    #[cfg(test)]
-    pub(crate) fn new_with_local_listing_counters() -> Self {
+    pub fn new_with_local_listing_counters() -> Self {
         Self::with_listing_counter_scope(TrajectoryIndexListingCounterScope::local())
     }
 
-    #[cfg(test)]
-    pub(crate) fn listing_counters_for_test(&self) -> TrajectoryIndexListingCounters {
+    pub fn listing_counters_for_test(&self) -> TrajectoryIndexListingCounters {
         self.listing_counter_scope.snapshot()
     }
 
@@ -3414,7 +3412,7 @@ async fn list_trajectory_entries_from_index_or_rebuild_with_counter_scope(
     Ok(new_entries)
 }
 
-pub(crate) fn list_candidate_from_entry(
+pub fn list_candidate_from_entry(
     dir: &Path,
     entry: &TrajectoryIndexEntry,
 ) -> TrajectoryListCandidate {

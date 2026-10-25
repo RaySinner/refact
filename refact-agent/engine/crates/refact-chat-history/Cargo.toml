@@ -6,6 +6,8 @@ edition = "2021"
 [dependencies]
 refact-core = { path = "../refact-core" }
 refact-chat-api = { path = "../refact-chat-api" }
+refact-files = { path = "../refact-files" }
+refact-perf = { path = "../refact-perf" }
 chrono = { version = "0.4.31", features = ["serde"] }
 serde.workspace = true
 serde_json.workspace = true
@@ -14,8 +16,10 @@ md5.workspace = true
 sha2 = "0.10.8"
 hex = "0.4.3"
 tracing.workspace = true
-tokio = { workspace = true, features = ["time", "macros"] }
+tokio = { workspace = true, features = ["time", "macros", "sync", "rt"] }
 
 [dev-dependencies]
 base64 = "0.22.1"
 image = "0.25.2"
+tempfile.workspace = true
+serial_test = "3"

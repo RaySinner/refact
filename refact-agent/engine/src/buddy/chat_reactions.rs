@@ -83,12 +83,6 @@ struct ChatReactionVoiceInputs {
     pulse_one_liner: String,
 }
 
-/// Chat reactions are independent of `proactive_enabled` and `message_observation_enabled`,
-/// which gate proactive suggestions and the periodic ChatPatternObserver respectively.
-pub fn settings_allow_chat_reactions(settings: &BuddySettings) -> bool {
-    settings.enabled && settings.chat_reactions_enabled && !settings.quiet_mode
-}
-
 pub fn chat_reaction_candidate(
     thread: &ThreadParams,
     raw_text: &str,

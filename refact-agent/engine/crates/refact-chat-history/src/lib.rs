@@ -9,6 +9,8 @@ pub mod source_hash;
 pub mod tool_call_recovery;
 pub mod tool_call_recovery_oss;
 pub mod trajectory_event;
+pub mod trajectory_metrics;
+pub mod trajectory_model;
 pub mod trajectory_ops;
 pub mod trajectory_snapshot;
 

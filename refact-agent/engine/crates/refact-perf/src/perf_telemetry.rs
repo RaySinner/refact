@@ -5,8 +5,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 
-use super::perf_diagnostics::{PerfComponent, PerfEvent};
-use super::trajectory_index::trajectory_index_listing_counters;
+use crate::perf_diagnostics::{PerfComponent, PerfEvent};
+use crate::listing_counters::trajectory_index_listing_counters;
 
 pub const PERFORMANCE_TELEMETRY_SCHEMA_VERSION: u8 = 1;
 const HISTOGRAM_BUCKETS: usize = 64;
@@ -571,7 +571,7 @@ fn now_ms() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chat::perf_diagnostics::PerfOutcome;
+    use crate::perf_diagnostics::PerfOutcome;
 
     fn event(
         component: PerfComponent,

@@ -6,7 +6,7 @@ use rand::RngCore;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
-use super::perf_telemetry::PerformanceTelemetry;
+use crate::perf_telemetry::PerformanceTelemetry;
 
 pub const PERFORMANCE_DIAGNOSTICS_ENV: &str = "REFACT_PERF_DIAGNOSTICS";
 pub const PERFORMANCE_DIAGNOSTICS_SCHEMA_VERSION: u8 = 1;

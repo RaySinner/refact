@@ -114,7 +114,7 @@ impl TrajectoryIndexListingCounterState {
         self.checkpoint_writes.fetch_add(1, Ordering::Relaxed);
     }
 
-    fn snapshot(&self) -> TrajectoryIndexListingCounters {
+    pub fn snapshot(&self) -> TrajectoryIndexListingCounters {
         TrajectoryIndexListingCounters {
             calls_by_caller: TrajectoryIndexListingCaller::ALL
                 .iter()
@@ -135,7 +135,7 @@ impl TrajectoryIndexListingCounterState {
         }
     }
 
-    fn reset(&self) {
+    pub fn reset(&self) {
         for counter in &self.calls_by_caller {
             counter.store(0, Ordering::Relaxed);
         }
@@ -205,19 +205,19 @@ impl TrajectoryIndexListingCounterScope {
         self.state().record_checkpoint_write();
     }
 
-    fn local() -> Self {
+    pub fn local() -> Self {
         Self::Local(Arc::new(TrajectoryIndexListingCounterState::new()))
     }
 
-    fn snapshot(&self) -> TrajectoryIndexListingCounters {
+    pub fn snapshot(&self) -> TrajectoryIndexListingCounters {
         self.state().snapshot()
     }
 
-    fn reset(&self) {
+    pub fn reset(&self) {
         self.state().reset();
     }
 
-    fn is_global(&self) -> bool {
+    pub fn is_global(&self) -> bool {
         matches!(self, Self::Global)
     }
 }

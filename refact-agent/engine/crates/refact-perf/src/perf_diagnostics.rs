@@ -397,8 +397,7 @@ impl PerfRecorder {
         Self { clock, sink, salt }
     }
 
-    #[cfg(any(test, feature = "bench"))]
-    pub(crate) fn with_salt(
+    pub fn with_salt(
         clock: Arc<dyn PerfClock>,
         sink: Arc<dyn PerfSink>,
         salt: [u8; 32],
@@ -414,8 +413,7 @@ impl PerfRecorder {
         hash[..ID_HASH_HEX_CHARS].to_string()
     }
 
-    #[cfg(test)]
-    pub(crate) fn hash_identity_for_test(&self, value: &str) -> String {
+    pub fn hash_identity_for_test(&self, value: &str) -> String {
         self.hash_bytes(value.as_bytes())
     }
 
@@ -574,7 +572,6 @@ impl Drop for PerfSpan {
 static PROCESS_RECORDER: OnceLock<Arc<PerfRecorder>> = OnceLock::new();
 static PROCESS_TELEMETRY: OnceLock<Arc<PerformanceTelemetry>> = OnceLock::new();
 
-#[cfg(any(test, feature = "bench"))]
 thread_local! {
     static TEST_RECORDERS: std::cell::RefCell<Vec<Arc<PerfRecorder>>> = const {
         std::cell::RefCell::new(Vec::new())
@@ -605,8 +602,7 @@ fn diagnostics_enabled_from_environment() -> bool {
         })
 }
 
-#[cfg(test)]
-pub(crate) fn clear_process_telemetry_for_test() {
+pub fn clear_process_telemetry_for_test() {
     let telemetry = process_telemetry();
     telemetry.reset();
 }
@@ -626,7 +622,6 @@ fn process_recorder() -> Arc<PerfRecorder> {
 }
 
 fn active_recorder() -> Option<Arc<PerfRecorder>> {
-    #[cfg(any(test, feature = "bench"))]
     if let Some(recorder) = TEST_RECORDERS.with(|recorders| recorders.borrow().last().cloned()) {
         return Some(recorder);
     }
@@ -704,16 +699,14 @@ pub fn record_enrichment(
     });
 }
 
-#[cfg(any(test, feature = "bench"))]
-pub(crate) struct TestRecorderLock(std::sync::Mutex<()>);
+pub struct TestRecorderLock(std::sync::Mutex<()>);
 
-#[cfg(any(test, feature = "bench"))]
 impl TestRecorderLock {
     pub(crate) const fn new() -> Self {
         Self(std::sync::Mutex::new(()))
     }
 
-    pub(crate) fn lock(&self) -> Result<std::sync::MutexGuard<'_, ()>, std::convert::Infallible> {
+    pub fn lock(&self) -> Result<std::sync::MutexGuard<'_, ()>, std::convert::Infallible> {
         Ok(match self.0.lock() {
             Ok(guard) => guard,
             Err(poisoned) => poisoned.into_inner(),
@@ -721,8 +714,7 @@ impl TestRecorderLock {
     }
 }
 
-#[cfg(any(test, feature = "bench"))]
-pub(crate) static PERF_RECORDER_TEST_LOCK: TestRecorderLock = TestRecorderLock::new();
+pub static PERF_RECORDER_TEST_LOCK: TestRecorderLock = TestRecorderLock::new();
 
 fn span_with_recorder(
     recorder: Option<Arc<PerfRecorder>>,
@@ -746,12 +738,10 @@ fn span_with_recorder(
     })
 }
 
-#[cfg(any(test, feature = "bench"))]
-pub(crate) struct TestRecorderGuard {
+pub struct TestRecorderGuard {
     _not_send: std::marker::PhantomData<std::rc::Rc<()>>,
 }
 
-#[cfg(any(test, feature = "bench"))]
 impl Drop for TestRecorderGuard {
     fn drop(&mut self) {
         TEST_RECORDERS.with(|recorders| {
@@ -760,28 +750,25 @@ impl Drop for TestRecorderGuard {
     }
 }
 
-#[cfg(any(test, feature = "bench"))]
-pub(crate) fn install_test_recorder(recorder: Arc<PerfRecorder>) -> TestRecorderGuard {
+pub fn install_test_recorder(recorder: Arc<PerfRecorder>) -> TestRecorderGuard {
     TEST_RECORDERS.with(|recorders| recorders.borrow_mut().push(recorder));
     TestRecorderGuard {
         _not_send: std::marker::PhantomData,
     }
 }
 
-#[cfg(any(test, feature = "bench"))]
-pub(crate) struct MemoryPerfSink {
+pub struct MemoryPerfSink {
     events: std::sync::Mutex<Vec<PerfEvent>>,
 }
 
-#[cfg(any(test, feature = "bench"))]
 impl MemoryPerfSink {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             events: std::sync::Mutex::new(Vec::new()),
         }
     }
 
-    pub(crate) fn events(&self) -> Vec<PerfEvent> {
+    pub fn events(&self) -> Vec<PerfEvent> {
         self.events
             .lock()
             .expect("performance event lock poisoned")
@@ -789,7 +776,6 @@ impl MemoryPerfSink {
     }
 }
 
-#[cfg(any(test, feature = "bench"))]
 impl PerfSink for MemoryPerfSink {
     fn record(&self, event: PerfEvent) {
         self.events

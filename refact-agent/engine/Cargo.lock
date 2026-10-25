@@ -4410,6 +4410,7 @@ dependencies = [
  "refact-integrations",
  "refact-knowledge-graph",
  "refact-llm",
+ "refact-perf",
  "refact-postprocessing",
  "refact-pricing-core",
  "refact-privacy",
@@ -4482,6 +4483,18 @@ dependencies = [
  "winreg 0.55.0",
  "zerocopy",
  "zip",
+]
+
+[[package]]
+name = "refact-perf"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tracing",
 ]
 
 [[package]]

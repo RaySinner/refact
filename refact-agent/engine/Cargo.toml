@@ -40,6 +40,7 @@ members = [
     "crates/refact-self-update",
     "crates/refact-tui",
     "crates/refact-privacy",
+    "crates/refact-perf",
 ]
 resolver = "2"
 
@@ -245,6 +246,7 @@ refact-git-intel = { path = "crates/refact-git-intel" }
 refact-codewiki = { path = "crates/refact-codewiki" }
 refact-llm = { path = "crates/refact-llm" }
 refact-privacy = { path = "crates/refact-privacy" }
+refact-perf = { path = "crates/refact-perf" }
 refact-knowledge-graph = { path = "crates/refact-knowledge-graph" }
 refact-git = { path = "crates/refact-git" }
 refact-postprocessing = { path = "crates/refact-postprocessing" }

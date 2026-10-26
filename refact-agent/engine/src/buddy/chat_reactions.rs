@@ -5,7 +5,6 @@ use crate::app_state::AppState;
 use crate::call_validation::ChatContent;
 use crate::chat::types::ThreadParams;
 
-#[cfg(test)]
 use super::settings::BuddySettings;
 use super::types::{BuddyChatPhraseBank, BuddyPersonalityProfile, BuddyRuntimeEvent};
 use super::voice_service::{voice_service, ChatReactionSpeechIntent, VoiceCtx};
@@ -14,7 +13,7 @@ use super::voice_service::VoiceService;
 
 pub use refact_buddy_core::chat_reactions::*;
 
-const CHAT_REACTION_PERMITS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(4);
+static CHAT_REACTION_PERMITS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(4);
 
 pub struct AcceptedUserMessage {
     pub chat_id: String,

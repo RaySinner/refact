@@ -348,13 +348,16 @@ export const ChatContent: React.FC<ChatContentProps> = ({
     return displayItems.length > 0 ? displayItems.length - 1 : undefined;
   }, [displayItems]);
 
-  // A message the engine stamped no time for still deserves one, and the GUI is the
-  // only side that saw when it arrive. Recorded on first sight and never rewritten, so
-  // a message does not change its clock every time it re-renders.
-  // Keys are derived from a message's role and index, so two chats share them. The
-  // map is therefore scoped to one chat and rebuilt whenever the chat changes.
+  // A message the engine stamped no time for still deserves one — but only while it
+  // is being watched live, which is the only moment the GUI actually saw it arrive.
+  // Items present in the first render of a chat (a snapshot reload) get no invented
+  // clock: a wrong timestamp is worse than none, so unstamped history shows none.
+  // Keys are shared between chats, so the first-seen map and the pre-existing key set
+  // are both scoped to one chat and rebuilt whenever the chat changes.
   const seenChatIdRef = useRef<string | null>(null);
   const firstSeenMsRef = useRef(new Map<string, number>());
+  const preexistingKeysRef = useRef(new Set<string>());
+  const primedChatsRef = useRef(new Set<string>());
   const clientTimezone = useMemo(
     () => Intl.DateTimeFormat().resolvedOptions().timeZone,
     [],
@@ -364,14 +367,28 @@ export const ChatContent: React.FC<ChatContentProps> = ({
     if (seenChatIdRef.current !== renderChatId) {
       seenChatIdRef.current = renderChatId;
       firstSeenMsRef.current = new Map<string, number>();
+      preexistingKeysRef.current = new Set(
+        displayItems.map((item) => item.key),
+      );
+      if (snapshotReceived) primedChatsRef.current.add(renderChatId);
+    } else if (!primedChatsRef.current.has(renderChatId) && snapshotReceived) {
+      preexistingKeysRef.current = new Set(
+        displayItems.map((item) => item.key),
+      );
+      primedChatsRef.current.add(renderChatId);
     }
+    const primed = primedChatsRef.current.has(renderChatId);
 
     const nowMs = Date.now();
     const liveKeys = new Set<string>();
     for (const item of displayItems) {
       if (liveKeys.has(item.key)) continue;
       liveKeys.add(item.key);
-      if (!firstSeenMsRef.current.has(item.key)) {
+      if (
+        primed &&
+        !firstSeenMsRef.current.has(item.key) &&
+        !preexistingKeysRef.current.has(item.key)
+      ) {
         firstSeenMsRef.current.set(item.key, nowMs);
       }
     }
@@ -403,7 +420,7 @@ export const ChatContent: React.FC<ChatContentProps> = ({
         return null;
       },
     );
-  }, [displayItems, clientTimezone, renderChatId]);
+  }, [displayItems, clientTimezone, renderChatId, snapshotReceived]);
 
   const handleProcessCompletedClick = useCallback((processId: string) => {
     revealProcessOutput(processId);
@@ -489,10 +506,7 @@ export const ChatContent: React.FC<ChatContentProps> = ({
 
         case "user":
           return (
-            <UserInput
-              onRetry={onRetryWrapper}
-              messageIndex={item.index}
-            >
+            <UserInput onRetry={onRetryWrapper} messageIndex={item.index}>
               {item.message.content}
             </UserInput>
           );
@@ -588,7 +602,10 @@ export const ChatContent: React.FC<ChatContentProps> = ({
       let messageId: string | undefined;
       let onCopy: (() => void) | undefined;
       let usage: import("../../services/refact").Usage | null | undefined;
-      let checkpoints: import("../../features/Checkpoints/types").Checkpoint[] | null | undefined;
+      let checkpoints:
+        | import("../../features/Checkpoints/types").Checkpoint[]
+        | null
+        | undefined;
       let messageIndex: number | undefined;
 
       if (item.type === "assistant") {

@@ -70,6 +70,16 @@ pub fn start_generation(
     Box::pin(async move {
         let gcx = app.gcx.clone();
         let mut network_retry_attempt = 0usize;
+        // A failed reactive compaction in a previous turn must not permanently
+        // disable the model-based rebuild: the breaker only resets after a
+        // successful generation, so clear it once per fresh generation run.
+        {
+            let mut session = session_arc.lock().await;
+            if session.thread.reactive_compact_attempts.take().is_some() {
+                session.increment_version();
+                session.touch();
+            }
+        }
         // Marks the whole turn (assistant plus the multi-step tool loop) as
         // in-flight, so `when_idle` deliveries do not land on a transient Idle.
         let mut turn_guard = TurnDepthGuard::enter(app.clone(), session_arc.clone()).await;

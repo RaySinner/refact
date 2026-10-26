@@ -130,6 +130,20 @@ fn idle(session: &ChatSession) -> bool {
         && !session.abort_flag.load(Ordering::SeqCst)
 }
 
+/// Deterministic recovery runs right after a failed model rebuild, which has
+/// already left the session in the Error state, so only a live stream, draft,
+/// closed session, or abort must block it — not the Error state itself.
+fn compaction_safe(session: &ChatSession) -> bool {
+    matches!(
+        session.runtime.state,
+        SessionState::Idle | SessionState::Error | SessionState::Completed
+    ) && session.draft_message.is_none()
+        && session.draft_usage.is_none()
+        && session.stream_started_at.is_none()
+        && !session.closed
+        && !session.abort_flag.load(Ordering::SeqCst)
+}
+
 fn status(session: &mut ChatSession, phase: CompressionPhase, reason: Option<CompressionReason>) {
     let running = matches!(
         phase,
@@ -1036,7 +1050,7 @@ pub async fn apply_deterministic_compaction_for_recovery(
         }
     };
     let mut s = session.lock().await;
-    if compression_attempt_active(&s) || !idle(&s) {
+    if compression_attempt_active(&s) || !compaction_safe(&s) {
         return false;
     }
     s.replace_messages(updated);
@@ -1717,6 +1731,21 @@ mod tests {
         let s = &*session.lock().await;
         assert_eq!(s.messages.len(), 1);
         assert!(s.compression_phase.is_none());
+    }
+
+    #[tokio::test]
+    async fn deterministic_recovery_runs_after_failed_rebuild_leaves_error_state() {
+        let gcx = crate::global_context::tests::make_test_gcx().await;
+        let mut s = ChatSession::new("det-error-state".into());
+        s.add_message(ChatMessage::new("system".into(), "system prompt".into()));
+        s.add_message(ChatMessage::new("user".into(), "big conversation ".repeat(2000)));
+        s.set_runtime_state(SessionState::Error, Some("Context rebuild failed".into()));
+        let session = Arc::new(Mutex::new(s));
+        let applied = apply_deterministic_compaction_for_recovery(gcx, &session).await;
+        assert!(
+            applied,
+            "an Error state left by a failed model rebuild must not block the deterministic fallback"
+        );
     }
 
     #[test]

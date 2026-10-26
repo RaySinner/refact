@@ -132,6 +132,7 @@ import {
 import { useReportErrorMutation } from "../../services/refact/buddy";
 
 import { useUsageCounter } from "../UsageCounter/useUsageCounter";
+import { useSendStateRecovery } from "../../hooks/useSendStateRecovery";
 import { ChatInputTopControls } from "./ChatInputTopControls";
 
 import classNames from "classnames";
@@ -216,6 +217,7 @@ export const ChatForm: React.FC<ChatFormProps> = ({
   );
   const autoFocus = useAutoFocusOnce();
   const { abort, regenerate } = useChatActions(chatId);
+  useSendStateRecovery(chatId);
   useFirstSendAutoFlip();
 
   const onSetMode = useCallback(

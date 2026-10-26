@@ -27,6 +27,7 @@ import {
   removeChatFromCache,
   restoreChat,
   setPreventSend,
+  resetStuckSendState,
   saveTitle,
   newIntegrationChat,
   setSendImmediately,
@@ -704,6 +705,15 @@ export const chatReducer = createReducer(initialState, (builder) => {
   builder.addCase(enableSend, (state, action) => {
     const rt = getRuntime(state, action.payload.id);
     if (rt) rt.prevent_send = false;
+  });
+
+  builder.addCase(resetStuckSendState, (state, action) => {
+    const rt = getRuntime(state, action.payload.id);
+    if (rt) {
+      rt.streaming = false;
+      rt.waiting_for_response = false;
+      rt.prevent_send = false;
+    }
   });
 
   builder.addCase(setAreFollowUpsEnabled, (state, action) => {

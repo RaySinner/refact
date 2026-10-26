@@ -25,10 +25,13 @@
   --rf-selected-bg: rgba(127, 147, 216, 0.14);
   --rf-selected-border: rgba(127, 147, 216, 0.6);
   --rf-selected-fg: #c2cdf2;
-  /* Base value must resolve on engines without color-mix() (JetBrains JCEF,
-     Chromium < 111): an invalid-at-computed-value-time mix resets the
-     ::selection background to transparent. The guarded mix lives in @supports. */
-  --rf-selection-bg: var(--rf-selected-bg, var(--rf-color-accent-soft));
+  /* Selection tint must stay clearly stronger than the accent-soft
+     "modified text" background (data-live-change / data-target-line lines)
+     or selection over those lines becomes invisible. The base value must
+     resolve on engines without color-mix() (JetBrains JCEF, Chromium < 111):
+     an invalid-at-computed-value-time mix resets the ::selection background
+     to transparent. The guarded mix lives in @supports. */
+  --rf-selection-bg: rgba(127, 147, 216, 0.45);
   --rf-selection-fg: inherit;
   --rf-color-success: #5fae8b;
   --rf-color-warning: #cda04e;
@@ -204,7 +207,7 @@
     );
     --rf-selection-bg: color-mix(
       in srgb,
-      var(--rf-color-accent) 35%,
+      var(--rf-color-accent) 50%,
       transparent
     );
   }
@@ -295,7 +298,9 @@
   --rf-selected-bg: rgba(0, 106, 220, 0.1);
   --rf-selected-border: rgba(0, 106, 220, 0.7);
   --rf-selected-fg: #10457f;
-  --rf-selection-bg: var(--rf-selected-bg, var(--rf-color-accent-soft));
+  /* Stronger than --rf-selected-bg so selection stays visible over the
+     accent-soft "modified text" backgrounds (see the dark block comment). */
+  --rf-selection-bg: rgba(0, 106, 220, 0.3);
   --rf-selection-fg: inherit;
   --rf-focus-ring: rgba(0, 106, 220, 0.5);
   --rf-chart-1: #5566c4;
@@ -351,7 +356,7 @@
     );
     --rf-selection-bg: color-mix(
       in srgb,
-      var(--rf-color-accent) 25%,
+      var(--rf-color-accent) 50%,
       transparent
     );
   }
@@ -418,7 +423,7 @@
      Chromium < 111. */
   --rf-selection-bg: var(
     --vscode-editor-selectionBackground,
-    var(--rf-selected-bg, var(--rf-color-accent-soft))
+    rgba(0, 106, 220, 0.3)
   );
   --rf-selection-fg: inherit;
 }

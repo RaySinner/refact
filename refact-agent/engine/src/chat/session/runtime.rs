@@ -264,6 +264,12 @@ impl ChatSession {
         self.post_turn_task_handles
             .retain(|task| !task.is_finished());
     }
+
+    /// The last provider usage was measured under the previous model; it must not
+    /// anchor the compression gate for the new one.
+    pub(crate) fn invalidate_usage_on_model_switch(&mut self) {
+        self.provider_usage_stale = true;
+    }
 }
 
 impl ChatSession {

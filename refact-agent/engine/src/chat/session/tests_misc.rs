@@ -15,6 +15,14 @@ use serde_json::json;
     }
 
     #[test]
+    fn test_model_switch_invalidates_provider_usage() {
+        let mut session = make_session();
+        session.provider_usage_stale = false;
+        session.invalidate_usage_on_model_switch();
+        assert!(session.provider_usage_stale);
+    }
+
+    #[test]
     fn test_new_with_trajectory() {
         let msg = ChatMessage {
             role: "user".into(),

@@ -898,6 +898,9 @@ pub(crate) async fn process_command_queue_inner(
                 }
                 if mode_changed || session.thread.model != old_model {
                     session.release_turn_only_state();
+                    if session.thread.model != old_model {
+                        session.invalidate_usage_on_model_switch();
+                    }
                 }
                 if let Some(message) = worktree_message {
                     session.add_message(message);

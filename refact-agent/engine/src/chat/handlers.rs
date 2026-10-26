@@ -526,6 +526,9 @@ pub async fn handle_v1_chat_command(
         }
         if session.thread.model != old_model || mode_changed {
             session.release_turn_only_state();
+            if session.thread.model != old_model {
+                session.invalidate_usage_on_model_switch();
+            }
         }
         let title_in_patch = patch.get("title").and_then(|v| v.as_str());
         let is_gen_in_patch = patch.get("is_title_generated").and_then(|v| v.as_bool());

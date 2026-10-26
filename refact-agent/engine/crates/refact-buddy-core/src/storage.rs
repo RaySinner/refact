@@ -1095,7 +1095,7 @@ fn drafts_path(project_root: &Path) -> PathBuf {
     project_root.join(".refact/buddy/drafts.json")
 }
 
-pub async fn load_drafts(project_root: &Path) -> Vec<refact_buddy_core::types::BuddyDraft> {
+pub async fn load_drafts(project_root: &Path) -> Vec<crate::types::BuddyDraft> {
     let path = drafts_path(project_root);
     let content = match fs::read_to_string(&path).await {
         Ok(content) => content,
@@ -1105,7 +1105,7 @@ pub async fn load_drafts(project_root: &Path) -> Vec<refact_buddy_core::types::B
             return Vec::new();
         }
     };
-    match serde_json::from_str::<Vec<refact_buddy_core::types::BuddyDraft>>(&content) {
+    match serde_json::from_str::<Vec<crate::types::BuddyDraft>>(&content) {
         Ok(drafts) => {
             let now = DateTime::<Utc>::from(std::time::SystemTime::now());
             drafts
@@ -1122,7 +1122,7 @@ pub async fn load_drafts(project_root: &Path) -> Vec<refact_buddy_core::types::B
 
 pub async fn save_drafts(
     project_root: &Path,
-    drafts: &[refact_buddy_core::types::BuddyDraft],
+    drafts: &[crate::types::BuddyDraft],
 ) -> Result<(), String> {
     atomic_write_json(&drafts_path(project_root), &drafts.to_vec()).await
 }

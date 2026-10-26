@@ -1,6 +1,7 @@
 pub mod action_policy;
 pub mod autonomous_workflows;
 pub mod briefing;
+pub mod chat_interjection;
 pub mod chat_reactions;
 pub mod conversation_ledger;
 pub mod diagnostics;

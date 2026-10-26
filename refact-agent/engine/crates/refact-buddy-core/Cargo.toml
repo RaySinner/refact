@@ -6,6 +6,8 @@ edition = "2021"
 [dependencies]
 refact-core = { path = "../refact-core" }
 refact-ext = { path = "../refact-ext" }
+refact-tasks = { path = "../refact-tasks" }
+humantime = "2.1"
 chrono = { version = "0.4.31", features = ["serde"] }
 hex = "0.4.3"
 indexmap.workspace = true

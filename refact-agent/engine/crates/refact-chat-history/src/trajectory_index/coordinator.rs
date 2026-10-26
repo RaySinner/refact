@@ -1027,7 +1027,7 @@ pub(super) fn sync_persisted_index_for_flush_sync(
     let journal_path = trajectory_index_journal_path(dir);
     let checkpoint_stamp = regular_file_generation(&trajectory_index_path(dir))?;
     let journal_len = regular_file_generation(&journal_path)?
-        .map(|generation| generation.file_len)
+        .map(|generation| generation.file_len())
         .unwrap_or(0);
     if let (Some(cached), true) = (cached, checkpoint_stamp.is_some()) {
         let cursor = cached.cursor;
@@ -1209,7 +1209,7 @@ pub(super) fn flush_trajectory_index_mutations_sync(
         let skipped_changed = index.skipped_files != baseline_skipped;
         let has_delta = !upserts.is_empty() || !removes.is_empty() || skipped_changed;
         let journal_len = regular_file_generation(&trajectory_index_journal_path(dir))?
-            .map(|generation| generation.file_len)
+            .map(|generation| generation.file_len())
             .unwrap_or(0);
         if !has_delta && !rebuilt && checkpoint_present && journal_len == 0 {
             finish_coordinator_span(spans.index_write, PerfOutcome::Skipped, Some(0));

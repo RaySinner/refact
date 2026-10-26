@@ -6,6 +6,12 @@ pub(super) struct FileGeneration {
     file_modified_at: SystemTime,
 }
 
+impl FileGeneration {
+    pub(super) fn file_len(&self) -> u64 {
+        self.file_len
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct DirectoryContentsGeneration {
     metadata: FileGeneration,

@@ -9,7 +9,7 @@ use super::single_step::{execute_runtime_network_step, execute_single_step};
 use super::steps_runtime::{apply_http_response, cancel_download_step_result, context_summary, download_step_result, execute_cdp_send_step, execute_clock_step, execute_context_management_step, execute_init_script_step, execute_instrumentation_step, execute_reset_step, execute_route_management_step, execute_screencast_step, execute_set_window_bounds_step, http_request_result, is_clock_step, is_context_management_step, is_instrumentation_step, is_screencast_step, prepare_http_request};
 
 
-pub(crate) fn execute_step(
+pub fn execute_step(
     tab: &Tab,
     step: &BrowserStep,
     idx: usize,
@@ -114,7 +114,7 @@ impl TabManagementSections {
     }
 }
 
-pub(crate) async fn execute_request_with_runtime(
+pub async fn execute_request_with_runtime(
     runtime_arc: Arc<AMutex<BrowserRuntime>>,
     request: BrowserActionRequest,
     image_policy: &ImagePolicy,

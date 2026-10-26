@@ -6,7 +6,7 @@ use super::execute::{is_navigation_step, is_non_fatal_step};
 use super::single_step::{execute_single_step};
 
 
-pub(crate) fn execute_steps(
+pub fn execute_steps(
     tab: &Tab,
     steps: &[BrowserStep],
     image_policy: &ImagePolicy,
@@ -82,7 +82,7 @@ pub(crate) fn execute_steps_with_world(
     }
 }
 
-pub(crate) fn is_tab_management_step(step: &BrowserStep) -> bool {
+pub fn is_tab_management_step(step: &BrowserStep) -> bool {
     matches!(
         step,
         BrowserStep::OpenTab { .. }

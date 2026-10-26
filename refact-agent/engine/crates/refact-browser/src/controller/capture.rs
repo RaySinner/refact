@@ -388,7 +388,7 @@ pub(crate) fn truncate_chars(value: String, max_chars: usize) -> String {
     truncated
 }
 
-pub(crate) fn capture_viewport_screenshot(
+pub fn capture_viewport_screenshot(
     tab: &Tab,
     policy: &ImagePolicy,
 ) -> Result<(String, String), String> {
@@ -574,7 +574,7 @@ pub(crate) fn capture_report_screenshot(tab: &Tab, policy: &ImagePolicy) -> Resu
     })
 }
 
-pub(crate) fn capture_viewport_screenshot_png(tab: &Tab) -> Result<(String, String), String> {
+pub fn capture_viewport_screenshot_png(tab: &Tab) -> Result<(String, String), String> {
     let result = tab
         .call_method(Page::CaptureScreenshot {
             format: Some(Page::CaptureScreenshotFormatOption::Png),
@@ -1143,7 +1143,7 @@ pub(crate) fn step_capture_element_states(
     }
 }
 
-pub(crate) fn run_element_state_sequence<T, F>(
+pub fn run_element_state_sequence<T, F>(
     tab: &Tab,
     world: &WorldManager,
     handle: &ElementHandle,

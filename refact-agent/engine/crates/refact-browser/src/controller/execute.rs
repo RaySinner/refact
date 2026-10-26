@@ -9,7 +9,7 @@ use super::single_step::{execute_single_step, wait_for_network_idle_step};
 use super::steps_runtime::{cancel_download_step_result, context_summary, download_step_result, execute_cdp_send_step, execute_context_management_step, execute_http_request_step, execute_init_script_step, execute_instrumentation_step, execute_reset_step, execute_route_management_step, execute_screencast_step, execute_set_window_bounds_step, is_context_management_step, is_instrumentation_step, is_screencast_step, open_tab_for_device};
 
 
-pub(crate) fn execute_steps_with_runtime(
+pub fn execute_steps_with_runtime(
     runtime: &mut BrowserRuntime,
     steps: &[BrowserStep],
     image_policy: &ImagePolicy,
@@ -487,7 +487,7 @@ pub(crate) fn is_non_fatal_step(step: &BrowserStep) -> bool {
     )
 }
 
-pub(crate) fn mark_unexecuted_steps_skipped(results: &mut Vec<StepResult>, total_steps: usize) {
+pub fn mark_unexecuted_steps_skipped(results: &mut Vec<StepResult>, total_steps: usize) {
     let executed = results.len();
     if executed >= total_steps {
         return;

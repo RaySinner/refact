@@ -100,7 +100,7 @@ pub(crate) const REPORT_STABILIZATION_TIMEOUT_MS: u64 = 3_000;
 pub(crate) const REPORT_STABILITY_INTERVAL_MS: u64 = 200;
 pub(crate) const CONSOLE_POLL_INTERVAL_MS: u64 = 50;
 
-pub(crate) fn resolve_tab(runtime: &BrowserRuntime, target: &TabTarget) -> Result<Arc<Tab>, String> {
+pub fn resolve_tab(runtime: &BrowserRuntime, target: &TabTarget) -> Result<Arc<Tab>, String> {
     match target {
         TabTarget::Active => runtime
             .get_active_tab()
@@ -119,7 +119,7 @@ pub(crate) fn resolve_tab(runtime: &BrowserRuntime, target: &TabTarget) -> Resul
     }
 }
 
-pub(crate) fn session_tab(runtime: &mut BrowserRuntime) -> Result<Arc<Tab>, String> {
+pub fn session_tab(runtime: &mut BrowserRuntime) -> Result<Arc<Tab>, String> {
     refact_browser::adopt_new_tabs(runtime, None);
     resolve_tab(runtime, &TabTarget::Active)
 }
@@ -343,7 +343,7 @@ impl ActionabilityDriver for DragActionabilityDriver<'_> {
 }
 
 impl<'a> BrowserActionDriver<'a> {
-    fn new(
+    pub(super) fn new(
         tab: &'a Tab,
         world: &'a WorldManager,
         locator: &'a BrowserLocator,
@@ -606,7 +606,7 @@ pub(crate) fn resolve_element_typed(
     inspect_resolved_element(tab, world, handle).map_err(ResolveElementError::Other)
 }
 
-pub(crate) fn resolve_locator_element(
+pub fn resolve_locator_element(
     tab: &Tab,
     world: &WorldManager,
     locator: &BrowserLocator,

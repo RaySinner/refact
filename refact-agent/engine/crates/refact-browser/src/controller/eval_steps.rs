@@ -844,7 +844,7 @@ pub(crate) fn step_hide_highlight(tab: &Tab, world: &WorldManager, idx: usize) -
     }
 }
 
-pub(crate) fn describe_locator(locator: &BrowserLocator) -> String {
+pub fn describe_locator(locator: &BrowserLocator) -> String {
     let mut description = match &locator.strategy {
         LocatorStrategy::Ref { value } => format!("ref={}", value),
         LocatorStrategy::Css { value } => format!("css={}", value),

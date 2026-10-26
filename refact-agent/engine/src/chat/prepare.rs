@@ -739,7 +739,10 @@ fn strip_thinking_blocks_if_disabled(
                 } else {
                     None
                 };
-                msg.reasoning_content = None;
+                // Plain-text reasoning has no replay constraints, so it is NOT
+                // stripped here. Whether the model's own reasoning is sent back
+                // is controlled solely by strip_reasoning_from_prompt
+                // (applied later by strip_reasoning_from_prompt_messages).
                 msg
             })
             .collect()
@@ -1598,7 +1601,7 @@ mod tests {
         }];
         let result = strip_thinking_blocks_if_disabled(msgs, &params, &model);
         assert_eq!(result[0].role, "assistant");
-        assert_eq!(result[0].reasoning_content, None);
+        assert_eq!(result[0].reasoning_content.as_deref(), Some("reasoning"));
         assert_eq!(result[0].citations.len(), 1);
         assert!(result[0].thinking_blocks.is_none());
     }
@@ -1628,7 +1631,7 @@ mod tests {
 
         let result = strip_thinking_blocks_if_disabled(msgs, &params, &model);
 
-        assert_eq!(result[0].reasoning_content, None);
+        assert_eq!(result[0].reasoning_content.as_deref(), Some("reasoning"));
         let blocks = result[0].thinking_blocks.as_ref().unwrap();
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks[0]["provider"], "google_cloud_code");

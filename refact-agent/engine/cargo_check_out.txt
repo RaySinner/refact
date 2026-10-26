@@ -1,0 +1,2218 @@
+    Checking cfg-if v1.0.4
+    Checking windows-link v0.2.1
+    Checking log v0.4.29
+    Checking memchr v2.7.6
+    Checking smallvec v1.15.1
+    Checking itoa v1.0.17
+    Checking once_cell v1.21.3
+    Checking pin-project-lite v0.2.16
+    Checking equivalent v1.0.2
+    Checking bytes v1.11.0
+    Checking futures-core v0.3.31
+    Checking hashbrown v0.16.1
+    Checking stable_deref_trait v1.2.1
+    Checking futures-sink v0.3.31
+    Checking serde_core v1.0.228
+    Checking windows_x86_64_msvc v0.53.1
+    Checking futures-io v0.3.31
+    Checking slab v0.4.11
+    Checking pin-utils v0.1.0
+    Checking libc v0.2.189
+    Checking futures-task v0.3.31
+    Checking zerocopy v0.8.33
+    Checking zmij v1.0.16
+    Checking crossbeam-utils v0.8.21
+    Checking num-traits v0.2.19
+    Checking windows-sys v0.61.2
+    Checking percent-encoding v2.3.2
+    Checking fnv v1.0.7
+    Checking simd-adler32 v0.3.8
+    Checking getrandom v0.3.4
+    Checking regex-syntax v0.8.8
+    Checking tracing-core v0.1.36
+    Checking new_debug_unreachable v1.0.6
+    Checking httparse v1.10.1
+    Checking windows-targets v0.53.5
+    Checking adler2 v2.0.1
+    Checking futures-channel v0.3.31
+    Checking tower-service v0.3.3
+    Checking either v1.15.0
+    Checking thiserror v2.0.18
+    Checking crc32fast v1.5.0
+    Checking base64 v0.22.1
+    Checking form_urlencoded v1.2.2
+    Checking windows_x86_64_msvc v0.52.6
+    Checking indexmap v2.13.0
+    Checking arrayvec v0.7.6
+    Checking windows-sys v0.60.2
+    Checking tower-layer v0.3.3
+    Checking ryu v1.0.22
+    Checking try-lock v0.2.5
+    Checking miniz_oxide v0.8.9
+    Checking aho-corasick v1.1.4
+    Checking bytemuck v1.24.0
+    Checking crossbeam-epoch v0.9.18
+    Checking tracing v0.1.44
+    Checking bitflags v1.3.2
+    Checking futures-util v0.3.31
+    Checking windows-targets v0.52.6
+    Checking num-integer v0.1.46
+    Checking equator v0.4.2
+    Checking anyhow v1.0.100
+    Checking unicode-width v0.2.0
+    Checking zerofrom v0.1.6
+    Checking want v0.3.1
+    Checking quick-error v2.0.1
+    Checking itertools v0.14.0
+    Checking fdeflate v0.3.7
+    Checking http v0.2.12
+    Checking as-slice v0.2.1
+    Checking windows-sys v0.59.0
+    Checking weezl v0.1.12
+    Checking flate2 v1.1.8
+    Checking mime v0.3.17
+    Checking num-bigint v0.4.6
+    Checking onig_sys v69.9.1
+    Checking core2 v0.4.0
+    Checking nom v8.0.0
+    Checking crossbeam-deque v0.8.6
+    Checking rand_core v0.9.5
+    Checking castaway v0.2.4
+    Checking socket2 v0.6.1
+    Checking zune-core v0.4.12
+    Checking aligned v0.4.3
+    Checking byteorder-lite v0.1.0
+    Checking aligned-vec v0.6.4
+    Checking y4m v0.8.0
+    Checking regex-automata v0.4.13
+    Checking color_quant v1.1.0
+    Checking static_assertions v1.1.0
+    Checking yoke v0.8.1
+    Checking rayon-core v1.13.0
+    Checking unicode-segmentation v1.12.0
+    Checking minimal-lexical v0.2.1
+    Checking bitstream-io v4.9.0
+    Checking profiling v1.0.17
+    Checking v_frame v0.3.9
+    Checking rgb v0.8.52
+    Checking zune-jpeg v0.4.21
+    Checking http-body v0.4.6
+    Checking imgref v1.12.0
+    Checking pin-project v1.1.10
+    Checking fax v0.2.6
+    Checking portable-atomic v1.13.0
+    Checking windows-sys v0.52.0
+    Checking avif-serialize v0.8.6
+    Checking pxfm v0.1.27
+    Checking nom v7.1.3
+    Checking zune-inflate v0.2.54
+    Checking rayon v1.11.0
+    Checking zerovec v0.11.5
+    Checking lebe v0.5.3
+    Checking zune-core v0.5.1
+    Checking mio v1.1.1
+    Checking num-rational v0.4.2
+    Checking bit_field v0.10.3
+    Checking loop9 v0.1.5
+    Checking encode_unicode v1.0.0
+    Checking derive_builder v0.20.2
+    Checking gif v0.14.1
+    Checking image-webp v0.2.4
+    Checking qoi v0.4.1
+    Checking httpdate v1.0.3
+    Checking number_prefix v0.4.0
+    Checking socket2 v0.5.10
+    Checking base64 v0.13.1
+    Checking macro_rules_attribute v0.2.2
+    Checking esaxx-rs v0.1.10
+    Checking unicode-normalization-alignments v0.1.12
+    Checking litemap v0.8.1
+    Checking zune-jpeg v0.5.11
+    Checking av1-grain v0.2.5
+    Checking matchit v0.7.3
+    Checking console v0.15.11
+    Checking unicode_categories v0.1.1
+    Checking str_indices v0.4.4
+    Checking regex v1.12.2
+    Checking hashbrown v0.12.3
+    Checking unsafe-libyaml v0.2.11
+    Checking tokio v1.49.0
+    Checking sync_wrapper v0.1.2
+    Checking writeable v0.6.2
+    Checking ppv-lite86 v0.2.21
+    Checking half v2.7.1
+    Checking zerotrie v0.2.3
+    Checking fd-lock v4.0.4
+    Checking md5 v0.7.0
+    Checking icu_properties_data v2.1.2
+    Checking icu_normalizer_data v2.1.1
+    Checking ropey v1.6.1
+    Checking indicatif v0.17.11
+    Checking typenum v1.19.0
+    Checking utf8_iter v1.0.4
+    Checking tree-sitter-language v0.1.8
+    Checking cpufeatures v0.2.17
+    Checking zeroize v1.8.2
+    Checking http v1.4.0
+    Checking untrusted v0.9.0
+    Checking scopeguard v1.2.0
+    Checking rand_chacha v0.9.0
+    Checking subtle v2.6.1
+    Checking tinystr v0.8.2
+    Checking potential_utf v0.1.4
+    Checking siphasher v1.0.1
+    Checking aws-lc-sys v0.38.0
+    Checking exr v1.74.0
+    Checking tiff v0.10.3
+    Checking winapi v0.3.9
+    Checking getrandom v0.2.17
+    Checking rustls-pki-types v1.14.0
+    Checking parking_lot_core v0.9.12
+    Checking winapi-util v0.1.11
+    Checking utf-8 v0.7.6
+    Checking atomic-waker v1.1.2
+    Checking serde v1.0.228
+    Checking bitflags v2.10.0
+    Checking serde_json v1.0.149
+    Checking rand v0.9.2
+    Checking serde_path_to_error v0.1.20
+    Checking monostate v0.1.18
+    Checking uuid v1.19.0
+    Checking icu_collections v2.1.1
+    Checking generic-array v0.14.7
+    Checking dunce v1.0.5
+    Checking av-scenechange v0.14.1
+    Checking maybe-rayon v0.1.1
+    Checking rayon-cond v0.4.0
+    Checking http-body v1.0.1
+    Checking same-file v1.0.6
+    Checking icu_locale_core v2.1.1
+    Checking onig v6.5.1
+    Checking png v0.18.0
+    Checking block-buffer v0.10.4
+    Checking crypto-common v0.1.7
+    Checking hex v0.4.3
+    Checking rand_core v0.6.4
+    Checking sync_wrapper v1.0.2
+    Checking ipnet v2.11.0
+    Checking windows-link v0.1.3
+    Checking walkdir v2.5.0
+    Checking http-body-util v0.1.3
+    Checking phf_shared v0.11.3
+    Checking iri-string v0.7.10
+    Checking mac v0.1.1
+    Checking digest v0.10.7
+    Checking encoding_rs v0.8.35
+    Checking lazy_static v1.5.0
+    Checking precomputed-hash v0.1.1
+    Checking thiserror v1.0.69
+    Checking rand_chacha v0.3.1
+    Checking windows-result v0.3.4
+    Checking ahash v0.8.12
+    Checking serde_urlencoded v0.7.1
+    Checking compact_str v0.9.0
+    Checking dary_heap v0.3.8
+    Checking spm_precompiled v0.1.4
+    Checking indexmap v1.9.3
+    Checking serde_yaml v0.9.34+deprecated
+    Checking chrono v0.4.43
+    Checking sha2 v0.10.9
+    Checking lock_api v0.4.14
+    Checking rand v0.8.5
+    Checking aws-lc-rs v1.16.1
+    Checking futf v0.1.5
+    Checking rav1e v0.8.1
+    Checking windows-strings v0.4.2
+    Checking libz-sys v1.1.23
+    Checking streaming-iterator v0.1.9
+    Checking glob v0.3.3
+    Checking hashbrown v0.14.5
+    Checking tree-sitter-bash v0.25.1
+    Checking tendril v0.4.3
+    Checking windows-result v0.4.1
+    Checking windows-strings v0.5.1
+    Checking tinyvec_macros v0.1.1
+    Checking windows-core v0.61.2
+    Checking tree-sitter v0.25.10
+    Checking siphasher v0.3.11
+    Checking libssh2-sys v0.3.1
+    Checking parking_lot v0.12.5
+    Checking home v0.5.12
+    Checking tokenizers v0.21.4
+    Checking windows-core v0.62.2
+    Checking tinyvec v1.10.0
+    Checking icu_provider v2.1.1
+    Checking phf_shared v0.10.0
+    Checking powerfmt v0.2.0
+    Checking unicode-width v0.1.13
+    Checking libm v0.2.15
+    Checking windows_x86_64_msvc v0.48.5
+    Checking windows-threading v0.1.0
+    Checking libgit2-sys v0.18.3+1.9.2
+    Checking moxcms v0.7.11
+    Checking winsafe v0.0.19
+    Checking phf v0.10.1
+    Checking num-conv v0.1.0
+    Checking shell-words v1.1.1
+    Checking rustls-webpki v0.103.9
+    Checking time-core v0.1.7
+    Checking fastrand v2.3.0
+    Checking env_home v0.1.0
+    Checking deranged v0.5.5
+    Checking string_cache v0.8.9
+    Checking windows-targets v0.48.5
+    Checking tree-sitter-kotlin-ng v1.1.0
+    Checking tree-sitter-go v0.25.0
+    Checking hashlink v0.9.1
+    Checking icu_normalizer v2.1.1
+    Checking icu_properties v2.1.2
+    Checking tree-sitter-typescript v0.23.2
+    Checking axum-core v0.3.4
+    Checking futures-executor v0.3.31
+    Checking tree-sitter-javascript v0.25.0
+    Checking tree-sitter-ruby v0.23.1
+    Checking tree-sitter-java v0.23.5
+    Checking windows-numerics v0.2.0
+    Checking windows-collections v0.2.0
+    Checking rustls v0.23.36
+    Checking windows-future v0.2.1
+    Checking tree-sitter-php v0.24.2
+    Checking time v0.3.45
+    Checking tree-sitter-c-sharp v0.23.5
+    Checking tree-sitter-python v0.25.0
+    Checking futures v0.3.31
+    Checking tree-sitter-haskell v0.23.1
+    Checking markup5ever v0.11.0
+    Checking tree-sitter-cpp v0.23.4
+    Checking tree-sitter-elixir v0.3.5
+    Checking tree-sitter-rust v0.24.2
+    Checking tree-sitter-c v0.24.2
+    Checking tree-sitter-ocaml v0.25.0
+    Checking tree-sitter-scala v0.26.2
+    Checking idna_adapter v1.2.1
+    Checking tree-sitter-swift v0.7.3
+    Checking libsqlite3-sys v0.28.0
+    Checking sha1 v0.10.6
+    Checking bincode v1.3.3
+    Checking ring v0.17.14
+    Checking float-cmp v0.9.0
+    Checking data-encoding v2.10.0
+    Checking fallible-iterator v0.3.0
+    Checking fallible-streaming-iterator v0.1.9
+    Checking idna v1.1.0
+    Checking windows v0.61.3
+    Checking windows-sys v0.48.0
+    Checking tempfile v3.24.0
+    Checking refact-perf v0.1.0 (C:\wt\8a0bca400273025f\480378e5-a207-4a0c-8964-e5ed04600818\refact-agent\engine\crates\refact-perf)
+    Checking schannel v0.1.28
+    Checking vte v0.14.1
+    Checking core_maths v0.1.1
+    Checking quick-xml v0.38.4
+    Checking refact-codegraph-parsers v0.1.0 (C:\wt\8a0bca400273025f\480378e5-a207-4a0c-8964-e5ed04600818\refact-agent\engine\crates\refact-codegraph-parsers)
+    Checking bstr v1.13.1
+    Checking windows-threading v0.2.1
+    Checking arrayref v0.3.9
+    Checking strict-num v0.1.1
+    Checking rusqlite v0.31.0
+    Checking url v2.5.8
+warning: unused import: `OnceLock`
+ --> crates\refact-perf\src\listing_counters.rs:7:22
+  |
+7 | use std::sync::{Arc, OnceLock};
+  |                      ^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+    Checking fixedbitset v0.4.2
+    Checking foldhash v0.1.5
+    Checking ttf-parser v0.24.1
+    Checking option-ext v0.2.0
+    Checking linked-hash-map v0.5.6
+    Checking byteorder v1.5.0
+    Checking allocator-api2 v0.2.21
+warning: `refact-perf` (lib) generated 1 warning (run `cargo fix --lib -p refact-perf` to apply 1 suggestion)
+    Checking plist v1.8.0
+    Checking tiny-skia-path v0.11.4
+    Checking petgraph v0.6.5
+    Checking windows-future v0.3.2
+    Checking rustls-platform-verifier v0.6.2
+    Checking yaml-rust v0.4.5
+    Checking strip-ansi-escapes v0.2.1
+    Checking which v7.0.3
+    Checking globset v0.4.19
+    Checking slotmap v1.1.1
+    Checking rustls-native-certs v0.8.3
+    Checking xml5ever v0.17.0
+    Checking dirs-sys v0.4.1
+    Checking hashbrown v0.15.5
+    Checking html5ever v0.26.0
+    Checking windows-collections v0.3.2
+    Checking windows-numerics v0.3.1
+    Checking unicode-normalization v0.1.25
+    Checking crossterm_winapi v0.9.1
+    Checking phf v0.11.3
+    Checking serde_spanned v0.6.9
+    Checking toml_datetime v0.6.11
+    Checking git2 v0.20.3
+    Checking phf_shared v0.12.1
+    Checking kurbo v0.11.3
+    Checking itertools v0.13.0
+    Checking crossbeam-channel v0.5.15
+    Checking filetime v0.2.27
+    Checking bit-vec v0.6.3
+    Checking unicode-bidi-mirroring v0.3.0
+    Checking winnow v0.7.15
+    Checking toml_write v0.1.2
+    Checking bumpalo v3.19.1
+    Checking unicode-script v0.5.8
+    Checking unicode-ccc v0.3.0
+    Checking memmap2 v0.9.9
+    Checking unicode-properties v0.1.4
+    Checking ref-cast v1.0.25
+    Checking lru v0.12.5
+    Checking svgtypes v0.15.3
+    Checking crossterm v0.28.1
+    Checking bit-set v0.5.3
+    Checking phf v0.12.1
+    Checking syntect v5.3.0
+    Checking windows v0.62.2
+    Checking zopfli v0.8.3
+    Checking markup5ever v0.12.1
+    Checking dirs v5.0.1
+    Checking oauth2 v5.0.0
+    Checking rust-embed-utils v8.11.0
+    Checking unicode-truncate v1.1.0
+    Checking tungstenite v0.28.0
+    Checking nix v0.28.0
+    Checking rustybuzz v0.18.0
+    Checking fontdb v0.22.0
+    Checking markup5ever_rcdom v0.2.0
+    Checking strum v0.26.3
+    Checking winreg v0.10.1
+    Checking toml_edit v0.22.27
+    Checking typeid v1.0.3
+    Checking which v8.0.0
+    Checking textwrap v0.11.0
+    Checking spin v0.9.8
+    Checking filedescriptor v0.8.3
+    Checking sharded-slab v0.1.7
+    Checking shared_library v0.1.9
+    Checking tokio-util v0.7.18
+    Checking tower v0.4.13
+    Checking tower v0.5.3
+    Checking tokio-rustls v0.26.4
+    Checking tokio-stream v0.1.18
+    Checking atty v0.2.14
+    Checking tracing-serde v0.2.0
+    Checking webpki-roots v1.0.5
+    Checking matchers v0.2.0
+    Checking nu-ansi-term v0.50.3
+    Checking serial2 v0.2.37
+    Checking compact_str v0.8.2
+    Checking winreg v0.55.0
+    Checking tower-http v0.6.8
+    Checking h2 v0.3.27
+    Checking h2 v0.4.13
+    Checking png v0.17.16
+    Checking getopts v0.2.24
+    Checking tracing-log v0.2.0
+    Checking crossbeam-queue v0.3.12
+    Checking simplecss v0.2.2
+    Checking thread_local v1.1.9
+    Checking heed-traits v0.20.0
+    Checking xmlwriter v0.1.0
+    Checking roxmltree v0.20.0
+    Checking vec_map v0.8.2
+    Checking cassowary v0.3.0
+    Checking imagesize v0.13.0
+    Checking ravif v0.12.0
+    Checking pulldown-cmark-escape v0.10.1
+    Checking strsim v0.8.0
+    Checking unicode-linebreak v0.1.5
+    Checking pico-args v0.5.0
+    Checking smawk v0.3.2
+    Checking data-url v0.3.2
+    Checking unicase v2.9.0
+    Checking rustls-webpki v0.102.8
+    Checking unicode-bidi v0.3.18
+    Checking is_ci v1.2.0
+    Checking dyn-clone v1.0.20
+    Checking unicode-vo v0.1.0
+    Checking downcast-rs v1.2.1
+    Checking heed-types v0.21.0
+    Checking tracing-subscriber v0.3.22
+    Checking hyper v0.14.32
+    Checking tiny-skia v0.11.4
+    Checking hyper v1.8.1
+    Checking ratatui v0.29.0
+    Checking clap v2.34.0
+    Checking synchronoise v1.0.1
+    Checking html5ever v0.27.0
+    Checking textwrap v0.16.2
+    Checking supports-color v3.0.2
+    Checking pulldown-cmark v0.10.3
+    Checking headless_chrome v1.0.20
+    Checking schemars v1.2.1
+    Checking lsp-types v0.94.1
+    Checking process-wrap v8.2.1
+    Checking flume v0.11.1
+    Checking image v0.25.9
+    Checking portable-pty v0.9.0
+    Checking two-face v0.5.1
+    Checking webpki-roots v0.26.11
+    Checking process-wrap v9.0.3
+    Checking rustls v0.22.4
+    Checking select v0.6.1
+    Checking erased-serde v0.4.9
+    Checking tokio-rusqlite v0.5.1
+    Checking zip v2.4.2
+    Checking hyper-util v0.1.19
+    Checking rust-embed v8.11.0
+    Checking lmdb-master-sys v0.2.5
+    Checking chrono-tz v0.10.4
+    Checking usvg v0.44.0
+    Checking libmimalloc-sys v0.1.49
+    Checking sqlite-vec v0.1.6
+    Checking toml v0.8.23
+    Checking axum v0.6.20
+    Checking ntapi v0.4.3
+    Checking tar v0.4.46
+    Checking cron v0.12.1
+    Checking sse-stream v0.2.1
+    Checking hyper-rustls v0.27.7
+    Checking dashmap v5.5.3
+    Checking const_format v0.2.35
+    Checking fs2 v0.4.3
+    Checking page_size v0.6.0
+    Checking refact-sandbox v0.1.0 (C:\wt\8a0bca400273025f\480378e5-a207-4a0c-8964-e5ed04600818\refact-agent\engine\crates\refact-sandbox)
+    Checking notify-types v2.0.0
+    Checking if-addrs v0.15.0
+    Checking gif v0.13.3
+    Checking reqwest v0.13.2
+    Checking socket-pktinfo v0.3.2
+    Checking image-webp v0.1.3
+    Checking rustc-demangle v0.1.27
+    Checking inventory v0.3.21
+    Checking regex-lite v0.1.9
+    Checking rustc-hash v2.1.1
+    Checking icy_sixel v0.1.3
+    Checking half v1.8.3
+    Checking is_debug v1.1.0
+    Checking http-range-header v0.3.1
+    Checking typetag v0.2.21
+    Checking mdns-sd v0.20.0
+    Checking backtrace v0.3.76
+    Checking sysinfo v0.35.2
+    Checking tracing-appender v0.2.4
+    Checking async-stream v0.3.6
+    Checking heed v0.22.0
+    Checking dyn_partial_eq v0.1.2
+    Checking astral-tokio-tar v0.5.6
+    Checking mimalloc v0.1.52
+    Checking html2text v0.12.6
+    Checking notify v8.2.0
+    Checking serde_cbor v0.11.2
+    Checking tower-http v0.4.4
+    Checking tungstenite v0.21.0
+    Checking tokio-rustls v0.25.0
+    Checking structopt v0.3.26
+    Checking iana-time-zone v0.1.64
+    Checking resvg v0.44.0
+    Checking refact-tasks v0.1.0 (C:\wt\8a0bca400273025f\480378e5-a207-4a0c-8964-e5ed04600818\refact-agent\engine\crates\refact-tasks)
+    Checking eventsource-stream v0.2.3
+    Checking shadow-rs v1.6.0
+    Checking hostname v0.4.2
+    Checking strsim v0.11.1
+    Checking diff v0.1.13
+    Checking shell-escape v0.1.5
+    Checking similar v2.7.0
+    Checking humantime v2.3.0
+    Checking refact-context-api v0.1.0 (C:\wt\8a0bca400273025f\480378e5-a207-4a0c-8964-e5ed04600818\refact-agent\engine\crates\refact-context-api)
+    Checking rmcp v1.5.0 (https://github.com/modelcontextprotocol/rust-sdk?rev=63583b164f54ec6ed2f17c98450487c747d34aeb#63583b16)
+    Checking refact-tui v8.8.2 (C:\wt\8a0bca400273025f\480378e5-a207-4a0c-8964-e5ed04600818\refact-agent\engine\crates\refact-tui)
+    Checking tokio-tungstenite v0.21.0
+    Checking refact-core v0.1.0 (C:\wt\8a0bca400273025f\480378e5-a207-4a0c-8964-e5ed04600818\refact-agent\engine\crates\refact-core)
+    Checking refact-chat-api v0.1.0 (C:\wt\8a0bca400273025f\480378e5-a207-4a0c-8964-e5ed04600818\refact-agent\engine\crates\refact-chat-api)
+    Checking refact-files v0.1.0 (C:\wt\8a0bca400273025f\480378e5-a207-4a0c-8964-e5ed04600818\refact-agent\engine\crates\refact-files)
+    Checking refact-git-intel v0.1.0 (C:\wt\8a0bca400273025f\480378e5-a207-4a0c-8964-e5ed04600818\refact-agent\engine\crates\refact-git-intel)
+    Checking refact-ext v0.1.0 (C:\wt\8a0bca400273025f\480378e5-a207-4a0c-8964-e5ed04600818\refact-agent\engine\crates\refact-ext)
+    Checking refact-privacy v0.1.0 (C:\wt\8a0bca400273025f\480378e5-a207-4a0c-8964-e5ed04600818\refact-agent\engine\crates\refact-privacy)
+    Checking refact-tool-api v0.1.0 (C:\wt\8a0bca400273025f\480378e5-a207-4a0c-8964-e5ed04600818\refact-agent\engine\crates\refact-tool-api)
+    Checking refact-postprocessing v0.1.0 (C:\wt\8a0bca400273025f\480378e5-a207-4a0c-8964-e5ed04600818\refact-agent\engine\crates\refact-postprocessing)
+    Checking refact-integrations v0.1.0 (C:\wt\8a0bca400273025f\480378e5-a207-4a0c-8964-e5ed04600818\refact-agent\engine\crates\refact-integrations)
+    Checking refact-worktrees v0.1.0 (C:\wt\8a0bca400273025f\480378e5-a207-4a0c-8964-e5ed04600818\refact-agent\engine\crates\refact-worktrees)
+    Checking refact-codewiki v0.1.0 (C:\wt\8a0bca400273025f\480378e5-a207-4a0c-8964-e5ed04600818\refact-agent\engine\crates\refact-codewiki)
+    Checking refact-caps-core v0.1.0 (C:\wt\8a0bca400273025f\480378e5-a207-4a0c-8964-e5ed04600818\refact-agent\engine\crates\refact-caps-core)
+    Checking refact-at-web v0.1.0 (C:\wt\8a0bca400273025f\480378e5-a207-4a0c-8964-e5ed04600818\refact-agent\engine\crates\refact-at-web)
+    Checking refact-self-update v0.1.0 (C:\wt\8a0bca400273025f\480378e5-a207-4a0c-8964-e5ed04600818\refact-agent\engine\crates\refact-self-update)
+    Checking refact-git v0.1.0 (C:\wt\8a0bca400273025f\480378e5-a207-4a0c-8964-e5ed04600818\refact-agent\engine\crates\refact-git)
+    Checking refact-pricing-core v0.1.0 (C:\wt\8a0bca400273025f\480378e5-a207-4a0c-8964-e5ed04600818\refact-agent\engine\crates\refact-pricing-core)
+    Checking refact-exec v0.1.0 (C:\wt\8a0bca400273025f\480378e5-a207-4a0c-8964-e5ed04600818\refact-agent\engine\crates\refact-exec)
+    Checking refact-scheduler-core v0.1.0 (C:\wt\8a0bca400273025f\480378e5-a207-4a0c-8964-e5ed04600818\refact-agent\engine\crates\refact-scheduler-core)
+    Checking refact-vecdb v0.1.0 (C:\wt\8a0bca400273025f\480378e5-a207-4a0c-8964-e5ed04600818\refact-agent\engine\crates\refact-vecdb)
+    Checking refact-stats v0.1.0 (C:\wt\8a0bca400273025f\480378e5-a207-4a0c-8964-e5ed04600818\refact-agent\engine\crates\refact-stats)
+    Checking refact-codehealth v0.1.0 (C:\wt\8a0bca400273025f\480378e5-a207-4a0c-8964-e5ed04600818\refact-agent\engine\crates\refact-codehealth)
+    Checking refact-knowledge-graph v0.1.0 (C:\wt\8a0bca400273025f\480378e5-a207-4a0c-8964-e5ed04600818\refact-agent\engine\crates\refact-knowledge-graph)
+    Checking refact-yaml-configs v0.1.0 (C:\wt\8a0bca400273025f\480378e5-a207-4a0c-8964-e5ed04600818\refact-agent\engine\crates\refact-yaml-configs)
+    Checking tower-lsp v0.20.0
+    Checking refact-codegraph v0.1.0 (C:\wt\8a0bca400273025f\480378e5-a207-4a0c-8964-e5ed04600818\refact-agent\engine\crates\refact-codegraph)
+    Checking refact-file-edit-core v0.1.0 (C:\wt\8a0bca400273025f\480378e5-a207-4a0c-8964-e5ed04600818\refact-agent\engine\crates\refact-file-edit-core)
+    Checking refact-scope-utils v0.1.0 (C:\wt\8a0bca400273025f\480378e5-a207-4a0c-8964-e5ed04600818\refact-agent\engine\crates\refact-scope-utils)
+    Checking refact-buddy-core v0.1.0 (C:\wt\8a0bca400273025f\480378e5-a207-4a0c-8964-e5ed04600818\refact-agent\engine\crates\refact-buddy-core)
+    Checking refact-scratchpads v0.1.0 (C:\wt\8a0bca400273025f\480378e5-a207-4a0c-8964-e5ed04600818\refact-agent\engine\crates\refact-scratchpads)
+    Checking refact-chat-history v0.1.0 (C:\wt\8a0bca400273025f\480378e5-a207-4a0c-8964-e5ed04600818\refact-agent\engine\crates\refact-chat-history)
+    Checking refact-agents-core v0.1.0 (C:\wt\8a0bca400273025f\480378e5-a207-4a0c-8964-e5ed04600818\refact-agent\engine\crates\refact-agents-core)
+    Checking refact-agentic v0.1.0 (C:\wt\8a0bca400273025f\480378e5-a207-4a0c-8964-e5ed04600818\refact-agent\engine\crates\refact-agentic)
+warning: unused import: `TrajectoryRuntimeSettings`
+  --> crates\refact-chat-history\src\trajectory_index\mod.rs:25:46
+   |
+25 | use refact_core::trajectory_settings::{self, TrajectoryRuntimeSettings};
+   |                                              ^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `TrajectoryIndexListingCounterState` and `listing_counters`
+  --> crates\refact-chat-history\src\trajectory_index\mod.rs:41:5
+   |
+41 |     listing_counters, TrajectoryIndexListingCounterScope, TrajectoryIndexListingCounterState,
+   |     ^^^^^^^^^^^^^^^^                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `listing::*`
+  --> crates\refact-chat-history\src\trajectory_index\mod.rs:62:5
+   |
+62 | use listing::*;
+   |     ^^^^^^^^^^
+
+warning: unused import: `rollout::*`
+  --> crates\refact-chat-history\src\trajectory_index\mod.rs:64:5
+   |
+64 | use rollout::*;
+   |     ^^^^^^^^^^
+
+warning: unused import: `crate::trajectory_metrics::trajectory_meta_title`
+  --> crates\refact-chat-history\src\trajectory_model.rs:10:5
+   |
+10 | use crate::trajectory_metrics::trajectory_meta_title;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `refact-chat-history` (lib) generated 5 warnings (run `cargo fix --lib -p refact-chat-history` to apply 5 suggestions)
+    Checking refact-llm v0.1.0 (C:\wt\8a0bca400273025f\480378e5-a207-4a0c-8964-e5ed04600818\refact-agent\engine\crates\refact-llm)
+    Checking refact-runtime-api v0.1.0 (C:\wt\8a0bca400273025f\480378e5-a207-4a0c-8964-e5ed04600818\refact-agent\engine\crates\refact-runtime-api)
+    Checking refact-providers v0.1.0 (C:\wt\8a0bca400273025f\480378e5-a207-4a0c-8964-e5ed04600818\refact-agent\engine\crates\refact-providers)
+    Checking refact-browser v0.1.0 (C:\wt\8a0bca400273025f\480378e5-a207-4a0c-8964-e5ed04600818\refact-agent\engine\crates\refact-browser)
+warning: unused imports: `ActionabilityDiagnostic`, `HitTargetController`, `HitTargetPoint`, `HitTargetResult`, `LocatorGenerationOptions`, `LocatorOutcome`, `Ref`, `ScrollStrategy`, and `TabScopedHandle`
+  --> crates\refact-browser\src\controller\mod.rs:20:17
+   |
+20 |     ActionKind, ActionabilityDiagnostic, ActionabilityDriver, ActionabilityEngine,
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^
+...
+24 |     FUNCTION_POLL_BACKOFF_MS, HitTargetController, HitTargetPoint, HitTargetResult, Keyboard,
+   |                               ^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^
+25 |     KeyboardDispatcher, LocatorGenerationOptions, LocatorHandler, LocatorHandlerLease,
+   |                         ^^^^^^^^^^^^^^^^^^^^^^^^
+26 |     LocatorHandlerOperation, LocatorHandlerProbe, LocatorHandlerRegistry, LocatorOutcome,
+   |                                                                           ^^^^^^^^^^^^^^
+27 |     MainFrameCssPoint, Mouse, MouseButton, MouseDispatcher, MouseState, NetworkLoadState,
+28 |     NetworkMonitorHandle, NetworkWaitFilters, Ref, ScrollStrategy, SnapshotMode, SnapshotOptions,
+   |                                               ^^^  ^^^^^^^^^^^^^^
+29 |     SystemClock, TabScopedHandle, UrlMatcher, WebSocketRegistry, WorldManager,
+   |                  ^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `std::cmp::Ordering`
+ --> crates\refact-browser\src\controller\context.rs:6:5
+  |
+6 | use std::cmp::Ordering;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `PathBuf` and `Path`
+ --> crates\refact-browser\src\controller\context.rs:7:17
+  |
+7 | use std::path::{Path, PathBuf};
+  |                 ^^^^  ^^^^^^^
+
+warning: unused imports: `Receiver`, `RecvTimeoutError`, and `self`
+ --> crates\refact-browser\src\controller\context.rs:9:23
+  |
+9 | use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
+  |                       ^^^^  ^^^^^^^^  ^^^^^^^^^^^^^^^^
+
+warning: unused imports: `SystemTime` and `UNIX_EPOCH`
+  --> crates\refact-browser\src\controller\context.rs:10:36
+   |
+10 | use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+   |                                    ^^^^^^^^^^  ^^^^^^^^^^
+
+warning: unused import: `base64::Engine`
+  --> crates\refact-browser\src\controller\context.rs:12:5
+   |
+12 | use base64::Engine;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused imports: `DOM`, `Emulation`, `IO`, `Page`, `Runtime`, and `types::Event`
+  --> crates\refact-browser\src\controller\context.rs:14:38
+   |
+14 | use headless_chrome::protocol::cdp::{DOM, Emulation, IO, Page, Runtime, types::Event};
+   |                                      ^^^  ^^^^^^^^^  ^^  ^^^^  ^^^^^^^  ^^^^^^^^^^^^
+
+warning: unused import: `serde_json::Value`
+  --> crates\refact-browser\src\controller\context.rs:15:5
+   |
+15 | use serde_json::Value;
+   |     ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `tokio::sync::Mutex as AMutex`
+  --> crates\refact-browser\src\controller\context.rs:16:5
+   |
+16 | use tokio::sync::Mutex as AMutex;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `js_string_literal`
+  --> crates\refact-browser\src\controller\context.rs:19:11
+   |
+19 |     self, js_string_literal, parse_element_info, INSPECT_ELEMENT_JS,
+   |           ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `refact_integrations::browser_models::*`
+  --> crates\refact-browser\src\controller\context.rs:21:5
+   |
+21 | use refact_integrations::browser_models::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ConsoleEntry` and `NetworkEntry`
+  --> crates\refact-browser\src\controller\context.rs:23:42
+   |
+23 | use refact_integrations::browser_types::{ConsoleEntry, NetworkEntry};
+   |                                          ^^^^^^^^^^^^  ^^^^^^^^^^^^
+
+warning: unused imports: `ActionabilityEngine`, `ActionabilityExecutionMode`, `ActionabilityTimeouts`, `CDP_INLINE_RESULT_LIMIT_BYTES`, `CdpDragObserver`, `CdpGuardrail`, `ClockOp`, `DEFAULT_DISMISS_OVERLAYS_HANDLER`, `ElementStateName`, `ExpectPollResult`, `FUNCTION_POLL_BACKOFF_MS`, `KeyboardDispatcher`, `LocatorHandlerLease`, `LocatorHandlerOperation`, `LocatorHandlerProbe`, `LocatorHandler`, `MouseDispatcher`, `MouseState`, `NetworkLoadState`, `NetworkMonitorHandle`, `NetworkWaitFilters`, `SnapshotMode`, `SnapshotOptions`, `SystemClock`, `UrlMatcher`, `WebSocketRegistry`, `apply_network_report_mode`, `classify_cdp_command`, `current_wall_ms`, `parse_clock_ticks`, `parse_clock_time`, `redact_cdp_result`, and `required_states`
+  --> crates\refact-browser\src\controller\context.rs:25:63
+   |
+25 |     ActionKind, ActionabilityDiagnostic, ActionabilityDriver, ActionabilityEngine,
+   |                                                               ^^^^^^^^^^^^^^^^^^^
+26 |     ActionabilityExecutionMode, ActionabilityTimeouts, CDP_INLINE_RESULT_LIMIT_BYTES,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+27 |     CdpDragObserver, CdpGuardrail, CdpKeyboardDispatcher, CdpMouseDispatcher, ClockOp,
+   |     ^^^^^^^^^^^^^^^  ^^^^^^^^^^^^                                             ^^^^^^^
+28 |     DEFAULT_DISMISS_OVERLAYS_HANDLER, ElementHandle, ElementStateName, ExpectPollResult,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^                 ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^
+29 |     FUNCTION_POLL_BACKOFF_MS, HitTargetController, HitTargetPoint, HitTargetResult, Keyboard,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^
+30 |     KeyboardDispatcher, LocatorGenerationOptions, LocatorHandler, LocatorHandlerLease,
+   |     ^^^^^^^^^^^^^^^^^^                            ^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^
+31 |     LocatorHandlerOperation, LocatorHandlerProbe, LocatorHandlerRegistry, LocatorOutcome,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^
+32 |     MainFrameCssPoint, Mouse, MouseButton, MouseDispatcher, MouseState, NetworkLoadState,
+   |                                            ^^^^^^^^^^^^^^^  ^^^^^^^^^^  ^^^^^^^^^^^^^^^^
+33 |     NetworkMonitorHandle, NetworkWaitFilters, Ref, ScrollStrategy, SnapshotMode, SnapshotOptions,
+   |     ^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^                       ^^^^^^^^^^^^  ^^^^^^^^^^^^^^^
+34 |     SystemClock, TabScopedHandle, UrlMatcher, WebSocketRegistry, WorldManager,
+   |     ^^^^^^^^^^^                   ^^^^^^^^^^  ^^^^^^^^^^^^^^^^^
+35 |     apply_network_report_mode, classify_cdp_command, current_wall_ms, parse_clock_ticks,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^
+36 |     parse_clock_time, redact_cdp_result, required_states,
+   |     ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^
+
+warning: unused imports: `ComposeLayout`, `ElementStateAction`, `ScreenshotMetrics`, `compose_sheet`, `element_state_sequence`, `pdf_payload`, and `screenshot_capture`
+  --> crates\refact-browser\src\controller\context.rs:39:5
+   |
+39 |     ComposeLayout, ElementStateAction, ScreenshotMetrics, compose_sheet, element_state_sequence,
+   |     ^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^
+40 |     pdf_payload, screenshot_capture,
+   |     ^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `CapturedFrame`, `DEFAULT_SCREENCAST_QUALITY`, `FilmstripResult`, `FrameBurstPlan`, `MAX_FRAME_COUNT`, `MAX_SESSION_DURATION_MS`, `MAX_SESSION_FRAMES`, `ScreencastSessionOptions`, `build_filmstrip`, `capture_screencast_burst`, `capture_timed_frames`, and `select_evenly_spaced`
+  --> crates\refact-browser\src\controller\context.rs:43:5
+   |
+43 |     build_filmstrip, capture_screencast_burst, capture_timed_frames, select_evenly_spaced,
+   |     ^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^
+44 |     CapturedFrame, FilmstripResult, FrameBurstPlan, ScreencastSessionOptions,
+   |     ^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^
+45 |     DEFAULT_SCREENCAST_QUALITY, MAX_FRAME_COUNT, MAX_SESSION_DURATION_MS, MAX_SESSION_FRAMES,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `refact_browser::http_client`
+  --> crates\refact-browser\src\controller\context.rs:47:5
+   |
+47 | use refact_browser::http_client;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ImageFormat` and `resize_to_policy`
+  --> crates\refact-browser\src\controller\context.rs:48:33
+   |
+48 | use refact_core::image_policy::{resize_to_policy, ImageFormat, ImagePolicy};
+   |                                 ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^
+
+warning: unused import: `wait_for_load_state`
+ --> crates\refact-browser\src\controller\actions.rs:4:26
+  |
+4 | use super::single_step::{wait_for_load_state};
+  |                          ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `ActionabilityDriver`
+  --> crates\refact-browser\src\controller\mod.rs:20:42
+   |
+20 |     ActionKind, ActionabilityDiagnostic, ActionabilityDriver, ActionabilityEngine,
+   |                                          ^^^^^^^^^^^^^^^^^^^
+
+warning: `refact-browser` (lib) generated 19 warnings (run `cargo fix --lib -p refact-browser` to apply 18 suggestions)
+    Checking refact-lsp v8.8.2 (C:\wt\8a0bca400273025f\480378e5-a207-4a0c-8964-e5ed04600818\refact-agent\engine)
+warning: unused import: `job_finding_opportunities`
+  --> src\buddy\jobs\autonomous_chats\mod.rs:62:51
+   |
+62 | pub(crate) use runtime::{execute_autonomous_spec, job_finding_opportunities};
+   |                                                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: glob import doesn't reexport anything with visibility `pub(in crate::buddy::jobs)` because no imported item is public enough
+  --> src\buddy\jobs\autonomous_chats\mod.rs:68:16
+   |
+68 | pub(super) use behavior::*;
+   |                ^^^^^^^^^^^
+   |
+note: the most public imported item is `pub(self)`
+  --> src\buddy\jobs\autonomous_chats\mod.rs:68:16
+   |
+68 | pub(super) use behavior::*;
+   |                ^^^^^^^^^^^
+   = help: reduce the glob import's visibility or increase visibility of imported items
+
+warning: unused import: `local_jobs::*`
+  --> src\buddy\jobs\autonomous_chats\mod.rs:70:16
+   |
+70 | pub(super) use local_jobs::*;
+   |                ^^^^^^^^^^^^^
+
+warning: glob import doesn't reexport anything with visibility `pub(in crate::buddy::jobs)` because no imported item is public enough
+  --> src\buddy\jobs\autonomous_chats\mod.rs:72:16
+   |
+72 | pub(super) use model_cost::*;
+   |                ^^^^^^^^^^^^^
+   |
+note: the most public imported item is `pub(self)`
+  --> src\buddy\jobs\autonomous_chats\mod.rs:72:16
+   |
+72 | pub(super) use model_cost::*;
+   |                ^^^^^^^^^^^^^
+   = help: reduce the glob import's visibility or increase visibility of imported items
+
+warning: unused import: `model_cost::*`
+  --> src\buddy\jobs\autonomous_chats\mod.rs:72:16
+   |
+72 | pub(super) use model_cost::*;
+   |                ^^^^^^^^^^^^^
+
+warning: unused import: `CommandLine`
+  --> src\chat\ctx.rs:13:58
+   |
+13 |     AtCommandsPreviewCache, BuddyServices, ChatServices, CommandLine, ModelServices, PathServices,
+   |                                                          ^^^^^^^^^^^
+
+warning: unused import: `std::time::Instant`
+ --> src\chat\generation\preamble.rs:4:5
+  |
+4 | use std::time::Instant;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `serde_json::json`
+ --> src\chat\generation\preamble.rs:5:5
+  |
+5 | use serde_json::json;
+  |     ^^^^^^^^^^^^^^^^
+
+warning: unused imports: `NUDGE_MARKER`, `NUDGE_ROLE`, and `SilentTailSignal`
+  --> src\chat\generation\preamble.rs:10:23
+   |
+10 | use refact_chat_api::{NUDGE_MARKER, NUDGE_ROLE, SilentTailSignal};
+   |                       ^^^^^^^^^^^^  ^^^^^^^^^^  ^^^^^^^^^^^^^^^^
+
+warning: unused import: `refact_runtime_api::ToolCatalogSnapshot`
+  --> src\chat\generation\preamble.rs:11:5
+   |
+11 | use refact_runtime_api::ToolCatalogSnapshot;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ChatActivityCompletion` and `maybe_enqueue_chat_activity_reaction`
+  --> src\chat\generation\preamble.rs:14:36
+   |
+14 | use crate::buddy::chat_reactions::{maybe_enqueue_chat_activity_reaction, ChatActivityCompletion};
+   |                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `resolve_subchat_config_with_parent` and `run_subchat`
+  --> src\chat\generation\preamble.rs:15:22
+   |
+15 | use crate::subchat::{resolve_subchat_config_with_parent, run_subchat};
+   |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^
+
+warning: unused import: `crate::at_commands::at_commands::AtCommandsContext`
+  --> src\chat\generation\preamble.rs:17:5
+   |
+17 | use crate::at_commands::at_commands::AtCommandsContext;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ChatUsage`, `MeteringUsd`, and `SamplingParameters`
+  --> src\chat\generation\preamble.rs:19:41
+   |
+19 |     ChatContent, ChatMessage, ChatMeta, ChatUsage, MeteringUsd, SamplingParameters,
+   |                                         ^^^^^^^^^  ^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `LlmCallEvent`, `canonicalize_mode_for_stats`, and `split_model_provider`
+  --> src\chat\generation\preamble.rs:22:27
+   |
+22 | use crate::stats::event::{LlmCallEvent, canonicalize_mode_for_stats, split_model_provider};
+   |                           ^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::chat::tool_call_recovery`
+  --> src\chat\generation\preamble.rs:23:5
+   |
+23 | use crate::chat::tool_call_recovery;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::chat::tool_call_recovery_oss`
+  --> src\chat\generation\preamble.rs:24:5
+   |
+24 | use crate::chat::tool_call_recovery_oss;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::llm::LlmRequest`
+  --> src\chat\generation\preamble.rs:25:5
+   |
+25 | use crate::llm::LlmRequest;
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::llm::params::CacheControl`
+  --> src\chat\generation\preamble.rs:26:5
+   |
+26 | use crate::llm::params::CacheControl;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::scratchpad_abstract::HasTokenizerAndEot`
+  --> src\chat\generation\preamble.rs:27:5
+   |
+27 | use crate::scratchpad_abstract::HasTokenizerAndEot;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::constants::CHAT_TOP_N`
+  --> src\chat\generation\preamble.rs:28:5
+   |
+28 | use crate::constants::CHAT_TOP_N;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::chat::goal_monitor::handle_goal_turn_end`
+  --> src\chat\generation\preamble.rs:35:5
+   |
+35 | use crate::chat::goal_monitor::handle_goal_turn_end;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `check_external_reload_pending`, `ensure_frozen_prefix`, `first_system_prompt`, `frozen_prefix_is_complete`, and `maybe_save_trajectory_background_with_intent`
+  --> src\chat\generation\preamble.rs:38:5
+   |
+38 |     check_external_reload_pending, ensure_frozen_prefix, first_system_prompt,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^
+39 |     frozen_prefix_is_complete, maybe_save_trajectory_background_with_intent,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ToolStepOutcome` and `process_tool_calls_once`
+  --> src\chat\generation\preamble.rs:41:26
+   |
+41 | use crate::chat::tools::{process_tool_calls_once, ToolStepOutcome};
+   |                          ^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^
+
+warning: unused imports: `ChatPrepareOptions`, `build_canonical_openai_tools_from_aliases`, and `prepare_chat_passthrough`
+  --> src\chat\generation\preamble.rs:43:5
+   |
+43 |     build_canonical_openai_tools_from_aliases, prepare_chat_passthrough, ChatPrepareOptions,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ChoiceFinal`, `LlmStreamOutcome`, `StreamCollector`, `StreamRunParams`, and `normalize_tool_call`
+  --> src\chat\generation\preamble.rs:47:5
+   |
+47 |     StreamRunParams, StreamCollector, normalize_tool_call, ChoiceFinal, LlmStreamError,
+   |     ^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^
+48 |     LlmStreamOutcome, ABORT_ERROR_MESSAGE,
+   |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::chat::config::tokens`
+  --> src\chat\generation\preamble.rs:50:5
+   |
+50 | use crate::chat::config::tokens;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::ext::hooks::HookEvent`
+  --> src\chat\generation\preamble.rs:51:5
+   |
+51 | use crate::ext::hooks::HookEvent;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `HookPayload`, `get_project_dir_string`, and `run_hooks`
+  --> src\chat\generation\preamble.rs:52:32
+   |
+52 | use crate::ext::hooks_runner::{HookPayload, get_project_dir_string, run_hooks};
+   |                                ^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^
+
+warning: unused imports: `make_ui_only_error_message`, `make_ui_only_retry_status_message`, and `safe_provider_error_diagnostic`
+  --> src\chat\generation\preamble.rs:54:5
+   |
+54 |     make_ui_only_error_message, make_ui_only_retry_status_message, safe_provider_error_diagnostic,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::chat::history_limit::ContextPressure`
+  --> src\chat\generation\preamble.rs:56:5
+   |
+56 | use crate::chat::history_limit::ContextPressure;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `refact_core::llm_types::BaseModelRecord`
+  --> src\chat\generation\preamble.rs:57:5
+   |
+57 | use refact_core::llm_types::BaseModelRecord;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `super::retry::*`
+  --> src\chat\generation\preamble.rs:61:5
+   |
+61 | use super::retry::*;
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `super::run_loop::*`
+  --> src\chat\generation\preamble.rs:63:5
+   |
+63 | use super::run_loop::*;
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `super::stream::*`
+  --> src\chat\generation\preamble.rs:64:5
+   |
+64 | use super::stream::*;
+   |     ^^^^^^^^^^^^^^^^
+
+warning: unused imports: `AtomicBool` and `Ordering`
+ --> src\chat\generation\recovery.rs:3:25
+  |
+3 | use std::sync::atomic::{AtomicBool, Ordering};
+  |                         ^^^^^^^^^^  ^^^^^^^^
+
+warning: unused import: `std::time::Instant`
+ --> src\chat\generation\recovery.rs:4:5
+  |
+4 | use std::time::Instant;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `serde_json::json`
+ --> src\chat\generation\recovery.rs:5:5
+  |
+5 | use serde_json::json;
+  |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `info`
+ --> src\chat\generation\recovery.rs:7:15
+  |
+7 | use tracing::{info, warn};
+  |               ^^^^
+
+warning: unused import: `uuid::Uuid`
+ --> src\chat\generation\recovery.rs:8:5
+  |
+8 | use uuid::Uuid;
+  |     ^^^^^^^^^^
+
+warning: unused import: `refact_buddy_core::types::BuddyRuntimeEvent`
+ --> src\chat\generation\recovery.rs:9:5
+  |
+9 | use refact_buddy_core::types::BuddyRuntimeEvent;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::at_commands::at_commands::AtCommandsContext`
+  --> src\chat\generation\recovery.rs:17:5
+   |
+17 | use crate::at_commands::at_commands::AtCommandsContext;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ChatMeta`, `ChatUsage`, `MeteringUsd`, `SamplingParameters`, and `is_agentic_mode_id`
+  --> src\chat\generation\recovery.rs:19:31
+   |
+19 |     ChatContent, ChatMessage, ChatMeta, ChatUsage, MeteringUsd, SamplingParameters,
+   |                               ^^^^^^^^  ^^^^^^^^^  ^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^
+20 |     is_agentic_mode_id,
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `LlmCallEvent`, `canonicalize_mode_for_stats`, and `split_model_provider`
+  --> src\chat\generation\recovery.rs:22:27
+   |
+22 | use crate::stats::event::{LlmCallEvent, canonicalize_mode_for_stats, split_model_provider};
+   |                           ^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::chat::tool_call_recovery`
+  --> src\chat\generation\recovery.rs:23:5
+   |
+23 | use crate::chat::tool_call_recovery;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::chat::tool_call_recovery_oss`
+  --> src\chat\generation\recovery.rs:24:5
+   |
+24 | use crate::chat::tool_call_recovery_oss;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::llm::LlmRequest`
+  --> src\chat\generation\recovery.rs:25:5
+   |
+25 | use crate::llm::LlmRequest;
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::llm::params::CacheControl`
+  --> src\chat\generation\recovery.rs:26:5
+   |
+26 | use crate::llm::params::CacheControl;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::scratchpad_abstract::HasTokenizerAndEot`
+  --> src\chat\generation\recovery.rs:27:5
+   |
+27 | use crate::scratchpad_abstract::HasTokenizerAndEot;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::constants::CHAT_TOP_N`
+  --> src\chat\generation\recovery.rs:28:5
+   |
+28 | use crate::constants::CHAT_TOP_N;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `enrich_messages_with_knowledge`, `enrichment_identity_from_context`, `enrichment_query_fingerprint`, and `record_enrichment_identity_on_user_message`
+  --> src\chat\generation\recovery.rs:30:5
+   |
+30 |     enrich_messages_with_knowledge, enrichment_identity_from_context, enrichment_query_fingerprint,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+31 |     record_enrichment_identity_on_user_message,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `PerfComponent`, `PerfOutcome`, and `self`
+  --> src\chat\generation\recovery.rs:33:37
+   |
+33 | use crate::chat::perf_diagnostics::{self, PerfComponent, PerfOutcome};
+   |                                     ^^^^  ^^^^^^^^^^^^^  ^^^^^^^^^^^
+
+warning: unused import: `crate::chat::goal_monitor::handle_goal_turn_end`
+  --> src\chat\generation\recovery.rs:35:5
+   |
+35 | use crate::chat::goal_monitor::handle_goal_turn_end;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `check_external_reload_pending`, `ensure_frozen_prefix`, `first_system_prompt`, `frozen_prefix_is_complete`, and `maybe_save_trajectory_background_with_intent`
+  --> src\chat\generation\recovery.rs:38:5
+   |
+38 |     check_external_reload_pending, ensure_frozen_prefix, first_system_prompt,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^
+39 |     frozen_prefix_is_complete, maybe_save_trajectory_background_with_intent,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ToolStepOutcome` and `process_tool_calls_once`
+  --> src\chat\generation\recovery.rs:41:26
+   |
+41 | use crate::chat::tools::{process_tool_calls_once, ToolStepOutcome};
+   |                          ^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^
+
+warning: unused imports: `ChatPrepareOptions`, `build_canonical_openai_tools_from_aliases`, and `prepare_chat_passthrough`
+  --> src\chat\generation\recovery.rs:43:5
+   |
+43 |     build_canonical_openai_tools_from_aliases, prepare_chat_passthrough, ChatPrepareOptions,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::chat::prompts::prepend_the_right_system_prompt_and_maybe_more_initial_messages`
+  --> src\chat\generation\recovery.rs:45:5
+   |
+45 | use crate::chat::prompts::prepend_the_right_system_prompt_and_maybe_more_initial_messages;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ABORT_ERROR_MESSAGE`, `ChoiceFinal`, `LlmStreamError`, `LlmStreamOutcome`, `StreamCollector`, `StreamRunParams`, and `normalize_tool_call`
+  --> src\chat\generation\recovery.rs:47:5
+   |
+47 |     StreamRunParams, StreamCollector, normalize_tool_call, ChoiceFinal, LlmStreamError,
+   |     ^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^  ^^^^^^^^^^^^^^
+48 |     LlmStreamOutcome, ABORT_ERROR_MESSAGE,
+   |     ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::chat::config::tokens`
+  --> src\chat\generation\recovery.rs:50:5
+   |
+50 | use crate::chat::config::tokens;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `make_ui_only_retry_status_message` and `safe_provider_error_diagnostic`
+  --> src\chat\generation\recovery.rs:54:33
+   |
+54 |     make_ui_only_error_message, make_ui_only_retry_status_message, safe_provider_error_diagnostic,
+   |                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ModelTypeDefaults` and `ProviderDefaults`
+  --> src\chat\generation\recovery.rs:58:35
+   |
+58 | use refact_core::provider_types::{ModelTypeDefaults, ProviderDefaults};
+   |                                   ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^
+
+warning: unused import: `super::retry::*`
+  --> src\chat\generation\recovery.rs:61:5
+   |
+61 | use super::retry::*;
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `super::run_loop::*`
+  --> src\chat\generation\recovery.rs:63:5
+   |
+63 | use super::run_loop::*;
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `super::stream::*`
+  --> src\chat\generation\recovery.rs:64:5
+   |
+64 | use super::stream::*;
+   |     ^^^^^^^^^^^^^^^^
+
+warning: unused imports: `AtomicBool` and `Ordering`
+ --> src\chat\generation\retry.rs:3:25
+  |
+3 | use std::sync::atomic::{AtomicBool, Ordering};
+  |                         ^^^^^^^^^^  ^^^^^^^^
+
+warning: unused import: `std::time::Instant`
+ --> src\chat\generation\retry.rs:4:5
+  |
+4 | use std::time::Instant;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `serde_json::json`
+ --> src\chat\generation\retry.rs:5:5
+  |
+5 | use serde_json::json;
+  |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `Mutex as AMutex`
+ --> src\chat\generation\retry.rs:6:19
+  |
+6 | use tokio::sync::{Mutex as AMutex};
+  |                   ^^^^^^^^^^^^^^^
+
+warning: unused imports: `info` and `warn`
+ --> src\chat\generation\retry.rs:7:15
+  |
+7 | use tracing::{info, warn};
+  |               ^^^^  ^^^^
+
+warning: unused import: `uuid::Uuid`
+ --> src\chat\generation\retry.rs:8:5
+  |
+8 | use uuid::Uuid;
+  |     ^^^^^^^^^^
+
+warning: unused import: `refact_buddy_core::types::BuddyRuntimeEvent`
+ --> src\chat\generation\retry.rs:9:5
+  |
+9 | use refact_buddy_core::types::BuddyRuntimeEvent;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `NUDGE_MARKER`, `NUDGE_ROLE`, and `SilentTailSignal`
+  --> src\chat\generation\retry.rs:10:23
+   |
+10 | use refact_chat_api::{NUDGE_MARKER, NUDGE_ROLE, SilentTailSignal};
+   |                       ^^^^^^^^^^^^  ^^^^^^^^^^  ^^^^^^^^^^^^^^^^
+
+warning: unused import: `refact_runtime_api::ToolCatalogSnapshot`
+  --> src\chat\generation\retry.rs:11:5
+   |
+11 | use refact_runtime_api::ToolCatalogSnapshot;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::app_state::AppState`
+  --> src\chat\generation\retry.rs:13:5
+   |
+13 | use crate::app_state::AppState;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ChatActivityCompletion` and `maybe_enqueue_chat_activity_reaction`
+  --> src\chat\generation\retry.rs:14:36
+   |
+14 | use crate::buddy::chat_reactions::{maybe_enqueue_chat_activity_reaction, ChatActivityCompletion};
+   |                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `resolve_subchat_config_with_parent` and `run_subchat`
+  --> src\chat\generation\retry.rs:15:22
+   |
+15 | use crate::subchat::{resolve_subchat_config_with_parent, run_subchat};
+   |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^
+
+warning: unused import: `crate::at_commands::at_commands::AtCommandsContext`
+  --> src\chat\generation\retry.rs:17:5
+   |
+17 | use crate::at_commands::at_commands::AtCommandsContext;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ChatContent`, `ChatMeta`, `ChatUsage`, `MeteringUsd`, `SamplingParameters`, and `is_agentic_mode_id`
+  --> src\chat\generation\retry.rs:19:5
+   |
+19 |     ChatContent, ChatMessage, ChatMeta, ChatUsage, MeteringUsd, SamplingParameters,
+   |     ^^^^^^^^^^^               ^^^^^^^^  ^^^^^^^^^  ^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^
+20 |     is_agentic_mode_id,
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `LlmCallEvent`, `canonicalize_mode_for_stats`, and `split_model_provider`
+  --> src\chat\generation\retry.rs:22:27
+   |
+22 | use crate::stats::event::{LlmCallEvent, canonicalize_mode_for_stats, split_model_provider};
+   |                           ^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::chat::tool_call_recovery`
+  --> src\chat\generation\retry.rs:23:5
+   |
+23 | use crate::chat::tool_call_recovery;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::chat::tool_call_recovery_oss`
+  --> src\chat\generation\retry.rs:24:5
+   |
+24 | use crate::chat::tool_call_recovery_oss;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::llm::LlmRequest`
+  --> src\chat\generation\retry.rs:25:5
+   |
+25 | use crate::llm::LlmRequest;
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::llm::params::CacheControl`
+  --> src\chat\generation\retry.rs:26:5
+   |
+26 | use crate::llm::params::CacheControl;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::scratchpad_abstract::HasTokenizerAndEot`
+  --> src\chat\generation\retry.rs:27:5
+   |
+27 | use crate::scratchpad_abstract::HasTokenizerAndEot;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::constants::CHAT_TOP_N`
+  --> src\chat\generation\retry.rs:28:5
+   |
+28 | use crate::constants::CHAT_TOP_N;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `enrich_messages_with_knowledge`, `enrichment_identity_from_context`, `enrichment_query_fingerprint`, and `record_enrichment_identity_on_user_message`
+  --> src\chat\generation\retry.rs:30:5
+   |
+30 |     enrich_messages_with_knowledge, enrichment_identity_from_context, enrichment_query_fingerprint,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+31 |     record_enrichment_identity_on_user_message,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `PerfComponent`, `PerfOutcome`, and `self`
+  --> src\chat\generation\retry.rs:33:37
+   |
+33 | use crate::chat::perf_diagnostics::{self, PerfComponent, PerfOutcome};
+   |                                     ^^^^  ^^^^^^^^^^^^^  ^^^^^^^^^^^
+
+warning: unused import: `crate::chat::goal_monitor::handle_goal_turn_end`
+  --> src\chat\generation\retry.rs:35:5
+   |
+35 | use crate::chat::goal_monitor::handle_goal_turn_end;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::chat::types::*`
+  --> src\chat\generation\retry.rs:36:5
+   |
+36 | use crate::chat::types::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `check_external_reload_pending`, `ensure_frozen_prefix`, `first_system_prompt`, `frozen_prefix_is_complete`, and `maybe_save_trajectory_background_with_intent`
+  --> src\chat\generation\retry.rs:38:5
+   |
+38 |     check_external_reload_pending, ensure_frozen_prefix, first_system_prompt,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^
+39 |     frozen_prefix_is_complete, maybe_save_trajectory_background_with_intent,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ToolStepOutcome` and `process_tool_calls_once`
+  --> src\chat\generation\retry.rs:41:26
+   |
+41 | use crate::chat::tools::{process_tool_calls_once, ToolStepOutcome};
+   |                          ^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^
+
+warning: unused imports: `ChatPrepareOptions`, `build_canonical_openai_tools_from_aliases`, and `prepare_chat_passthrough`
+  --> src\chat\generation\retry.rs:43:5
+   |
+43 |     build_canonical_openai_tools_from_aliases, prepare_chat_passthrough, ChatPrepareOptions,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::chat::prompts::prepend_the_right_system_prompt_and_maybe_more_initial_messages`
+  --> src\chat\generation\retry.rs:45:5
+   |
+45 | use crate::chat::prompts::prepend_the_right_system_prompt_and_maybe_more_initial_messages;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ABORT_ERROR_MESSAGE`, `ChoiceFinal`, `LlmStreamOutcome`, `StreamCollector`, `StreamRunParams`, and `normalize_tool_call`
+  --> src\chat\generation\retry.rs:47:5
+   |
+47 |     StreamRunParams, StreamCollector, normalize_tool_call, ChoiceFinal, LlmStreamError,
+   |     ^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^
+48 |     LlmStreamOutcome, ABORT_ERROR_MESSAGE,
+   |     ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::chat::config::tokens`
+  --> src\chat\generation\retry.rs:50:5
+   |
+50 | use crate::chat::config::tokens;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::ext::hooks::HookEvent`
+  --> src\chat\generation\retry.rs:51:5
+   |
+51 | use crate::ext::hooks::HookEvent;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `HookPayload`, `get_project_dir_string`, and `run_hooks`
+  --> src\chat\generation\retry.rs:52:32
+   |
+52 | use crate::ext::hooks_runner::{HookPayload, get_project_dir_string, run_hooks};
+   |                                ^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^
+
+warning: unused imports: `make_ui_only_error_message` and `make_ui_only_retry_status_message`
+  --> src\chat\generation\retry.rs:54:5
+   |
+54 |     make_ui_only_error_message, make_ui_only_retry_status_message, safe_provider_error_diagnostic,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ModelTypeDefaults` and `ProviderDefaults`
+  --> src\chat\generation\retry.rs:58:35
+   |
+58 | use refact_core::provider_types::{ModelTypeDefaults, ProviderDefaults};
+   |                                   ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^
+
+warning: unused import: `super::preamble::*`
+  --> src\chat\generation\retry.rs:61:5
+   |
+61 | use super::preamble::*;
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `super::recovery::*`
+  --> src\chat\generation\retry.rs:62:5
+   |
+62 | use super::recovery::*;
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `super::run_loop::*`
+  --> src\chat\generation\retry.rs:63:5
+   |
+63 | use super::run_loop::*;
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `super::stream::*`
+  --> src\chat\generation\retry.rs:64:5
+   |
+64 | use super::stream::*;
+   |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `AtomicBool`
+ --> src\chat\generation\run_loop.rs:3:25
+  |
+3 | use std::sync::atomic::{AtomicBool, Ordering};
+  |                         ^^^^^^^^^^
+
+warning: unused import: `info`
+ --> src\chat\generation\run_loop.rs:7:15
+  |
+7 | use tracing::{info, warn};
+  |               ^^^^
+
+warning: unused import: `uuid::Uuid`
+ --> src\chat\generation\run_loop.rs:8:5
+  |
+8 | use uuid::Uuid;
+  |     ^^^^^^^^^^
+
+warning: unused import: `refact_buddy_core::types::BuddyRuntimeEvent`
+ --> src\chat\generation\run_loop.rs:9:5
+  |
+9 | use refact_buddy_core::types::BuddyRuntimeEvent;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `NUDGE_MARKER`, `NUDGE_ROLE`, and `SilentTailSignal`
+  --> src\chat\generation\run_loop.rs:10:23
+   |
+10 | use refact_chat_api::{NUDGE_MARKER, NUDGE_ROLE, SilentTailSignal};
+   |                       ^^^^^^^^^^^^  ^^^^^^^^^^  ^^^^^^^^^^^^^^^^
+
+warning: unused import: `refact_runtime_api::ToolCatalogSnapshot`
+  --> src\chat\generation\run_loop.rs:11:5
+   |
+11 | use refact_runtime_api::ToolCatalogSnapshot;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ChatActivityCompletion` and `maybe_enqueue_chat_activity_reaction`
+  --> src\chat\generation\run_loop.rs:14:36
+   |
+14 | use crate::buddy::chat_reactions::{maybe_enqueue_chat_activity_reaction, ChatActivityCompletion};
+   |                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `resolve_subchat_config_with_parent` and `run_subchat`
+  --> src\chat\generation\run_loop.rs:15:22
+   |
+15 | use crate::subchat::{resolve_subchat_config_with_parent, run_subchat};
+   |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^
+
+warning: unused import: `crate::at_commands::at_commands::AtCommandsContext`
+  --> src\chat\generation\run_loop.rs:17:5
+   |
+17 | use crate::at_commands::at_commands::AtCommandsContext;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ChatMeta`, `ChatUsage`, `MeteringUsd`, `SamplingParameters`, and `is_agentic_mode_id`
+  --> src\chat\generation\run_loop.rs:19:31
+   |
+19 |     ChatContent, ChatMessage, ChatMeta, ChatUsage, MeteringUsd, SamplingParameters,
+   |                               ^^^^^^^^  ^^^^^^^^^  ^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^
+20 |     is_agentic_mode_id,
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `LlmCallEvent`, `canonicalize_mode_for_stats`, and `split_model_provider`
+  --> src\chat\generation\run_loop.rs:22:27
+   |
+22 | use crate::stats::event::{LlmCallEvent, canonicalize_mode_for_stats, split_model_provider};
+   |                           ^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::chat::tool_call_recovery`
+  --> src\chat\generation\run_loop.rs:23:5
+   |
+23 | use crate::chat::tool_call_recovery;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::chat::tool_call_recovery_oss`
+  --> src\chat\generation\run_loop.rs:24:5
+   |
+24 | use crate::chat::tool_call_recovery_oss;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::llm::LlmRequest`
+  --> src\chat\generation\run_loop.rs:25:5
+   |
+25 | use crate::llm::LlmRequest;
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::llm::params::CacheControl`
+  --> src\chat\generation\run_loop.rs:26:5
+   |
+26 | use crate::llm::params::CacheControl;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::scratchpad_abstract::HasTokenizerAndEot`
+  --> src\chat\generation\run_loop.rs:27:5
+   |
+27 | use crate::scratchpad_abstract::HasTokenizerAndEot;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::constants::CHAT_TOP_N`
+  --> src\chat\generation\run_loop.rs:28:5
+   |
+28 | use crate::constants::CHAT_TOP_N;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `enrich_messages_with_knowledge`, `enrichment_identity_from_context`, `enrichment_query_fingerprint`, and `record_enrichment_identity_on_user_message`
+  --> src\chat\generation\run_loop.rs:30:5
+   |
+30 |     enrich_messages_with_knowledge, enrichment_identity_from_context, enrichment_query_fingerprint,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+31 |     record_enrichment_identity_on_user_message,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `PerfComponent` and `PerfOutcome`
+  --> src\chat\generation\run_loop.rs:33:43
+   |
+33 | use crate::chat::perf_diagnostics::{self, PerfComponent, PerfOutcome};
+   |                                           ^^^^^^^^^^^^^  ^^^^^^^^^^^
+
+warning: unused imports: `ensure_frozen_prefix`, `first_system_prompt`, and `frozen_prefix_is_complete`
+  --> src\chat\generation\run_loop.rs:38:36
+   |
+38 |     check_external_reload_pending, ensure_frozen_prefix, first_system_prompt,
+   |                                    ^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^
+39 |     frozen_prefix_is_complete, maybe_save_trajectory_background_with_intent,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ChatPrepareOptions`, `build_canonical_openai_tools_from_aliases`, and `prepare_chat_passthrough`
+  --> src\chat\generation\run_loop.rs:43:5
+   |
+43 |     build_canonical_openai_tools_from_aliases, prepare_chat_passthrough, ChatPrepareOptions,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::chat::prompts::prepend_the_right_system_prompt_and_maybe_more_initial_messages`
+  --> src\chat\generation\run_loop.rs:45:5
+   |
+45 | use crate::chat::prompts::prepend_the_right_system_prompt_and_maybe_more_initial_messages;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ABORT_ERROR_MESSAGE`, `ChoiceFinal`, `LlmStreamError`, `LlmStreamOutcome`, `StreamCollector`, `StreamRunParams`, and `normalize_tool_call`
+  --> src\chat\generation\run_loop.rs:47:5
+   |
+47 |     StreamRunParams, StreamCollector, normalize_tool_call, ChoiceFinal, LlmStreamError,
+   |     ^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^  ^^^^^^^^^^^^^^
+48 |     LlmStreamOutcome, ABORT_ERROR_MESSAGE,
+   |     ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::ext::hooks::HookEvent`
+  --> src\chat\generation\run_loop.rs:51:5
+   |
+51 | use crate::ext::hooks::HookEvent;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `HookPayload`, `get_project_dir_string`, and `run_hooks`
+  --> src\chat\generation\run_loop.rs:52:32
+   |
+52 | use crate::ext::hooks_runner::{HookPayload, get_project_dir_string, run_hooks};
+   |                                ^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^
+
+warning: unused import: `make_ui_only_error_message`
+  --> src\chat\generation\run_loop.rs:54:5
+   |
+54 |     make_ui_only_error_message, make_ui_only_retry_status_message, safe_provider_error_diagnostic,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::chat::history_limit::ContextPressure`
+  --> src\chat\generation\run_loop.rs:56:5
+   |
+56 | use crate::chat::history_limit::ContextPressure;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `refact_core::llm_types::BaseModelRecord`
+  --> src\chat\generation\run_loop.rs:57:5
+   |
+57 | use refact_core::llm_types::BaseModelRecord;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ModelTypeDefaults` and `ProviderDefaults`
+  --> src\chat\generation\run_loop.rs:58:35
+   |
+58 | use refact_core::provider_types::{ModelTypeDefaults, ProviderDefaults};
+   |                                   ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^
+
+warning: unused import: `Ordering`
+ --> src\chat\generation\stream.rs:3:37
+  |
+3 | use std::sync::atomic::{AtomicBool, Ordering};
+  |                                     ^^^^^^^^
+
+warning: unused import: `refact_buddy_core::types::BuddyRuntimeEvent`
+ --> src\chat\generation\stream.rs:9:5
+  |
+9 | use refact_buddy_core::types::BuddyRuntimeEvent;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `NUDGE_MARKER`, `NUDGE_ROLE`, and `SilentTailSignal`
+  --> src\chat\generation\stream.rs:10:23
+   |
+10 | use refact_chat_api::{NUDGE_MARKER, NUDGE_ROLE, SilentTailSignal};
+   |                       ^^^^^^^^^^^^  ^^^^^^^^^^  ^^^^^^^^^^^^^^^^
+
+warning: unused import: `refact_runtime_api::ToolCatalogSnapshot`
+  --> src\chat\generation\stream.rs:11:5
+   |
+11 | use refact_runtime_api::ToolCatalogSnapshot;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ChatActivityCompletion` and `maybe_enqueue_chat_activity_reaction`
+  --> src\chat\generation\stream.rs:14:36
+   |
+14 | use crate::buddy::chat_reactions::{maybe_enqueue_chat_activity_reaction, ChatActivityCompletion};
+   |                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `resolve_subchat_config_with_parent` and `run_subchat`
+  --> src\chat\generation\stream.rs:15:22
+   |
+15 | use crate::subchat::{resolve_subchat_config_with_parent, run_subchat};
+   |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^
+
+warning: unused imports: `enrich_messages_with_knowledge`, `enrichment_identity_from_context`, `enrichment_query_fingerprint`, and `record_enrichment_identity_on_user_message`
+  --> src\chat\generation\stream.rs:30:5
+   |
+30 |     enrich_messages_with_knowledge, enrichment_identity_from_context, enrichment_query_fingerprint,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+31 |     record_enrichment_identity_on_user_message,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::chat::goal_monitor::handle_goal_turn_end`
+  --> src\chat\generation\stream.rs:35:5
+   |
+35 | use crate::chat::goal_monitor::handle_goal_turn_end;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `check_external_reload_pending`
+  --> src\chat\generation\stream.rs:38:5
+   |
+38 |     check_external_reload_pending, ensure_frozen_prefix, first_system_prompt,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ToolStepOutcome` and `process_tool_calls_once`
+  --> src\chat\generation\stream.rs:41:26
+   |
+41 | use crate::chat::tools::{process_tool_calls_once, ToolStepOutcome};
+   |                          ^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::chat::prompts::prepend_the_right_system_prompt_and_maybe_more_initial_messages`
+  --> src\chat\generation\stream.rs:45:5
+   |
+45 | use crate::chat::prompts::prepend_the_right_system_prompt_and_maybe_more_initial_messages;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `ABORT_ERROR_MESSAGE`
+  --> src\chat\generation\stream.rs:48:23
+   |
+48 |     LlmStreamOutcome, ABORT_ERROR_MESSAGE,
+   |                       ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::ext::hooks::HookEvent`
+  --> src\chat\generation\stream.rs:51:5
+   |
+51 | use crate::ext::hooks::HookEvent;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `HookPayload`, `get_project_dir_string`, and `run_hooks`
+  --> src\chat\generation\stream.rs:52:32
+   |
+52 | use crate::ext::hooks_runner::{HookPayload, get_project_dir_string, run_hooks};
+   |                                ^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^
+
+warning: unused imports: `make_ui_only_error_message`, `make_ui_only_retry_status_message`, and `safe_provider_error_diagnostic`
+  --> src\chat\generation\stream.rs:54:5
+   |
+54 |     make_ui_only_error_message, make_ui_only_retry_status_message, safe_provider_error_diagnostic,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::chat::history_limit::ContextPressure`
+  --> src\chat\generation\stream.rs:56:5
+   |
+56 | use crate::chat::history_limit::ContextPressure;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `refact_core::llm_types::BaseModelRecord`
+  --> src\chat\generation\stream.rs:57:5
+   |
+57 | use refact_core::llm_types::BaseModelRecord;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ModelTypeDefaults` and `ProviderDefaults`
+  --> src\chat\generation\stream.rs:58:35
+   |
+58 | use refact_core::provider_types::{ModelTypeDefaults, ProviderDefaults};
+   |                                   ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^
+
+warning: unused imports: `AtomicBool` and `Ordering`
+ --> src\chat\generation\support.rs:3:25
+  |
+3 | use std::sync::atomic::{AtomicBool, Ordering};
+  |                         ^^^^^^^^^^  ^^^^^^^^
+
+warning: unused import: `std::time::Instant`
+ --> src\chat\generation\support.rs:4:5
+  |
+4 | use std::time::Instant;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `serde_json::json`
+ --> src\chat\generation\support.rs:5:5
+  |
+5 | use serde_json::json;
+  |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `Mutex as AMutex`
+ --> src\chat\generation\support.rs:6:19
+  |
+6 | use tokio::sync::{Mutex as AMutex};
+  |                   ^^^^^^^^^^^^^^^
+
+warning: unused imports: `info` and `warn`
+ --> src\chat\generation\support.rs:7:15
+  |
+7 | use tracing::{info, warn};
+  |               ^^^^  ^^^^
+
+warning: unused import: `uuid::Uuid`
+ --> src\chat\generation\support.rs:8:5
+  |
+8 | use uuid::Uuid;
+  |     ^^^^^^^^^^
+
+warning: unused import: `refact_buddy_core::types::BuddyRuntimeEvent`
+ --> src\chat\generation\support.rs:9:5
+  |
+9 | use refact_buddy_core::types::BuddyRuntimeEvent;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `NUDGE_MARKER`, `NUDGE_ROLE`, and `SilentTailSignal`
+  --> src\chat\generation\support.rs:10:23
+   |
+10 | use refact_chat_api::{NUDGE_MARKER, NUDGE_ROLE, SilentTailSignal};
+   |                       ^^^^^^^^^^^^  ^^^^^^^^^^  ^^^^^^^^^^^^^^^^
+
+warning: unused import: `refact_runtime_api::ToolCatalogSnapshot`
+  --> src\chat\generation\support.rs:11:5
+   |
+11 | use refact_runtime_api::ToolCatalogSnapshot;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::app_state::AppState`
+  --> src\chat\generation\support.rs:13:5
+   |
+13 | use crate::app_state::AppState;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ChatActivityCompletion` and `maybe_enqueue_chat_activity_reaction`
+  --> src\chat\generation\support.rs:14:36
+   |
+14 | use crate::buddy::chat_reactions::{maybe_enqueue_chat_activity_reaction, ChatActivityCompletion};
+   |                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `resolve_subchat_config_with_parent` and `run_subchat`
+  --> src\chat\generation\support.rs:15:22
+   |
+15 | use crate::subchat::{resolve_subchat_config_with_parent, run_subchat};
+   |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^
+
+warning: unused import: `crate::at_commands::at_commands::AtCommandsContext`
+  --> src\chat\generation\support.rs:17:5
+   |
+17 | use crate::at_commands::at_commands::AtCommandsContext;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ChatContent`, `ChatMessage`, `ChatMeta`, `ChatUsage`, `MeteringUsd`, `SamplingParameters`, and `is_agentic_mode_id`
+  --> src\chat\generation\support.rs:19:5
+   |
+19 |     ChatContent, ChatMessage, ChatMeta, ChatUsage, MeteringUsd, SamplingParameters,
+   |     ^^^^^^^^^^^  ^^^^^^^^^^^  ^^^^^^^^  ^^^^^^^^^  ^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^
+20 |     is_agentic_mode_id,
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `LlmCallEvent`, `canonicalize_mode_for_stats`, and `split_model_provider`
+  --> src\chat\generation\support.rs:22:27
+   |
+22 | use crate::stats::event::{LlmCallEvent, canonicalize_mode_for_stats, split_model_provider};
+   |                           ^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::chat::tool_call_recovery`
+  --> src\chat\generation\support.rs:23:5
+   |
+23 | use crate::chat::tool_call_recovery;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::chat::tool_call_recovery_oss`
+  --> src\chat\generation\support.rs:24:5
+   |
+24 | use crate::chat::tool_call_recovery_oss;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::llm::LlmRequest`
+  --> src\chat\generation\support.rs:25:5
+   |
+25 | use crate::llm::LlmRequest;
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::llm::params::CacheControl`
+  --> src\chat\generation\support.rs:26:5
+   |
+26 | use crate::llm::params::CacheControl;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::scratchpad_abstract::HasTokenizerAndEot`
+  --> src\chat\generation\support.rs:27:5
+   |
+27 | use crate::scratchpad_abstract::HasTokenizerAndEot;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::constants::CHAT_TOP_N`
+  --> src\chat\generation\support.rs:28:5
+   |
+28 | use crate::constants::CHAT_TOP_N;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `enrich_messages_with_knowledge`, `enrichment_identity_from_context`, `enrichment_query_fingerprint`, and `record_enrichment_identity_on_user_message`
+  --> src\chat\generation\support.rs:30:5
+   |
+30 |     enrich_messages_with_knowledge, enrichment_identity_from_context, enrichment_query_fingerprint,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+31 |     record_enrichment_identity_on_user_message,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `PerfComponent`, `PerfOutcome`, and `self`
+  --> src\chat\generation\support.rs:33:37
+   |
+33 | use crate::chat::perf_diagnostics::{self, PerfComponent, PerfOutcome};
+   |                                     ^^^^  ^^^^^^^^^^^^^  ^^^^^^^^^^^
+
+warning: unused import: `crate::chat::goal_monitor::handle_goal_turn_end`
+  --> src\chat\generation\support.rs:35:5
+   |
+35 | use crate::chat::goal_monitor::handle_goal_turn_end;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `check_external_reload_pending`, `ensure_frozen_prefix`, `first_system_prompt`, `frozen_prefix_is_complete`, and `maybe_save_trajectory_background_with_intent`
+  --> src\chat\generation\support.rs:38:5
+   |
+38 |     check_external_reload_pending, ensure_frozen_prefix, first_system_prompt,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^
+39 |     frozen_prefix_is_complete, maybe_save_trajectory_background_with_intent,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ToolStepOutcome` and `process_tool_calls_once`
+  --> src\chat\generation\support.rs:41:26
+   |
+41 | use crate::chat::tools::{process_tool_calls_once, ToolStepOutcome};
+   |                          ^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^
+
+warning: unused imports: `ChatPrepareOptions`, `build_canonical_openai_tools_from_aliases`, and `prepare_chat_passthrough`
+  --> src\chat\generation\support.rs:43:5
+   |
+43 |     build_canonical_openai_tools_from_aliases, prepare_chat_passthrough, ChatPrepareOptions,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::chat::prompts::prepend_the_right_system_prompt_and_maybe_more_initial_messages`
+  --> src\chat\generation\support.rs:45:5
+   |
+45 | use crate::chat::prompts::prepend_the_right_system_prompt_and_maybe_more_initial_messages;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ABORT_ERROR_MESSAGE`, `ChoiceFinal`, `LlmStreamError`, `LlmStreamOutcome`, `StreamCollector`, `StreamRunParams`, and `normalize_tool_call`
+  --> src\chat\generation\support.rs:47:5
+   |
+47 |     StreamRunParams, StreamCollector, normalize_tool_call, ChoiceFinal, LlmStreamError,
+   |     ^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^  ^^^^^^^^^^^^^^
+48 |     LlmStreamOutcome, ABORT_ERROR_MESSAGE,
+   |     ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::chat::config::tokens`
+  --> src\chat\generation\support.rs:50:5
+   |
+50 | use crate::chat::config::tokens;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::ext::hooks::HookEvent`
+  --> src\chat\generation\support.rs:51:5
+   |
+51 | use crate::ext::hooks::HookEvent;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `HookPayload`, `get_project_dir_string`, and `run_hooks`
+  --> src\chat\generation\support.rs:52:32
+   |
+52 | use crate::ext::hooks_runner::{HookPayload, get_project_dir_string, run_hooks};
+   |                                ^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^
+
+warning: unused imports: `make_ui_only_error_message`, `make_ui_only_retry_status_message`, and `safe_provider_error_diagnostic`
+  --> src\chat\generation\support.rs:54:5
+   |
+54 |     make_ui_only_error_message, make_ui_only_retry_status_message, safe_provider_error_diagnostic,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::chat::history_limit::ContextPressure`
+  --> src\chat\generation\support.rs:56:5
+   |
+56 | use crate::chat::history_limit::ContextPressure;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `refact_core::llm_types::BaseModelRecord`
+  --> src\chat\generation\support.rs:57:5
+   |
+57 | use refact_core::llm_types::BaseModelRecord;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ModelTypeDefaults` and `ProviderDefaults`
+  --> src\chat\generation\support.rs:58:35
+   |
+58 | use refact_core::provider_types::{ModelTypeDefaults, ProviderDefaults};
+   |                                   ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^
+
+warning: unused import: `super::retry::*`
+  --> src\chat\generation\support.rs:60:5
+   |
+60 | use super::retry::*;
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `super::preamble::*`
+  --> src\chat\generation\support.rs:61:5
+   |
+61 | use super::preamble::*;
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `super::recovery::*`
+  --> src\chat\generation\support.rs:62:5
+   |
+62 | use super::recovery::*;
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `super::run_loop::*`
+  --> src\chat\generation\support.rs:63:5
+   |
+63 | use super::run_loop::*;
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `super::stream::*`
+  --> src\chat\generation\support.rs:64:5
+   |
+64 | use super::stream::*;
+   |     ^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ensure_session_preamble` and `save_rag_results_to_session`
+ --> src\chat\generation\mod.rs:9:5
+  |
+9 |     ensure_session_preamble, prepare_session_preamble_and_knowledge, save_rag_results_to_session,
+  |     ^^^^^^^^^^^^^^^^^^^^^^^                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `GenerationResult` and `run_llm_generation`
+  --> src\chat\generation\mod.rs:12:18
+   |
+12 | pub use stream::{GenerationResult, run_llm_generation};
+   |                  ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `dispatch::*`
+  --> src\chat\queue\mod.rs:53:5
+   |
+53 | use dispatch::*;
+   |     ^^^^^^^^^^^
+
+warning: unused import: `drain_priority_user_messages`
+  --> src\chat\queue\mod.rs:59:39
+   |
+59 |     drain_non_priority_user_messages, drain_priority_user_messages,
+   |                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `WorktreeSetParamsUpdate`
+  --> src\chat\queue\mod.rs:64:79
+   |
+64 | pub use setparams::{apply_setparams_patch, resolve_worktree_setparams_update, WorktreeSetParamsUpdate};
+   |                                                                               ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `construct::*`
+  --> src\chat\session\mod.rs:52:5
+   |
+52 | use construct::*;
+   |     ^^^^^^^^^^^^
+
+warning: unused import: `messages::*`
+  --> src\chat\session\mod.rs:54:5
+   |
+54 | use messages::*;
+   |     ^^^^^^^^^^^
+
+warning: unused import: `queue::*`
+  --> src\chat\session\mod.rs:55:5
+   |
+55 | use queue::*;
+   |     ^^^^^^^^
+
+warning: unused import: `runtime::*`
+  --> src\chat\session\mod.rs:56:5
+   |
+56 | use runtime::*;
+   |     ^^^^^^^^^^
+
+warning: unused import: `snapshot::*`
+  --> src\chat\session\mod.rs:57:5
+   |
+57 | use snapshot::*;
+   |     ^^^^^^^^^^^
+
+warning: unused import: `stream::*`
+  --> src\chat\session\mod.rs:58:5
+   |
+58 | use stream::*;
+   |     ^^^^^^^^^
+
+warning: unused import: `safe_trajectory_file_in_dir`
+  --> src\chat\trajectories\load.rs:28:38
+   |
+28 |     safe_new_trajectory_file_in_dir, safe_trajectory_file_in_dir, TRAJECTORY_LABEL_MAX_CHARS,
+   |                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::call_validation::ChatMessage`
+ --> src\chat\trajectories\model.rs:3:5
+  |
+3 | use crate::call_validation::ChatMessage;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `serde_json::json`
+ --> src\chat\trajectories\queries.rs:9:5
+  |
+9 | use serde_json::json;
+  |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `Path`
+ --> src\chat\trajectories\reload.rs:1:17
+  |
+1 | use std::path::{Path, PathBuf};
+  |                 ^^^^
+
+warning: unused import: `TrajectoryCommitIntent`
+  --> src\chat\trajectories\reload.rs:12:69
+   |
+12 |     ChatSession, ExternalReloadPending, SessionState, ThreadParams, TrajectoryCommitIntent,
+   |                                                                     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `find_trajectory_or_buddy_path`
+  --> src\chat\trajectories\reload.rs:24:5
+   |
+24 |     find_trajectory_or_buddy_path, get_all_task_roots, index_dir_for_trajectory_file,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::call_validation::ChatMessage`
+  --> src\chat\trajectories\store.rs:12:5
+   |
+12 | use crate::call_validation::ChatMessage;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Arc`
+ --> src\chat\trajectories\writer.rs:2:17
+  |
+2 | use std::sync::{Arc, Mutex as StdMutex, OnceLock};
+  |                 ^^^
+
+warning: unused import: `TrajectoryCommitIntent`
+ --> src\chat\trajectories\writer.rs:8:26
+  |
+8 | use crate::chat::types::{TrajectoryCommitIntent, TrajectorySourceIdentity};
+  |                          ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `trajectory_watcher_self_write_rollout_enabled_for` and `trajectory_writer_rollout_enabled_for`
+   --> src\chat\trajectories\mod.rs:111:5
+    |
+111 |     trajectory_watcher_self_write_rollout_enabled_for, trajectory_writer_rollout_enabled_for,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `TrajectorySelfWriteScope`, `atomic_write_json_with_tmp_path`, `atomic_write_json`, `consume_trajectory_self_write`, and `unique_trajectory_tmp_path`
+   --> src\chat\trajectories\mod.rs:116:5
+    |
+116 |     atomic_write_json, atomic_write_json_with_tmp_path, consume_trajectory_self_write,
+    |     ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+117 |     unique_trajectory_tmp_path, TrajectorySelfWriteScope,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `TrajectoryListCandidate`, `TrajectoryListData`, and `trajectory_list_data_is_displayable_chat`
+   --> src\chat\trajectories\mod.rs:135:5
+    |
+135 |     trajectory_list_data_is_displayable_chat, trajectory_snapshot_from_session,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+136 |     TrajectoryListCandidate, TrajectoryListData,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `clamp_goal_snapshot_for_load`, `epoch_ms_now`, and `get_session_runtime_for_trajectory_source`
+   --> src\chat\trajectories\mod.rs:139:5
+    |
+139 |     clamp_goal_snapshot_for_load, epoch_ms_now, get_session_runtime_for_trajectory_source,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `index_dir_for_trajectory_file`, `is_trajectory_id_mismatch_error`, `list_chat_folder_dirs`, `list_task_trajectory_dirs`, and `trajectory_id_mismatch_error`
+   --> src\chat\trajectories\mod.rs:151:32
+    |
+151 |     find_trajectory_parent_id, index_dir_for_trajectory_file, is_trajectory_id_mismatch_error,
+    |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+152 |     list_chat_folder_dirs, list_task_trajectory_dirs, list_trajectory_dirs,
+    |     ^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^
+153 |     trajectory_id_mismatch_error,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `PRUNE_THROTTLE_MAX_ENTRIES`, `PruneThrottle`, `ValidTrajectoryCandidate`, `enqueue_trajectory_vectorization`, `ensure_existing_trajectory_file_matches`, `find_normal_trajectory_file`, `find_normal_trajectory_path`, `find_trajectory_file`, `find_trajectory_or_buddy_file`, `fix_tool_call_indexes`, `get_all_task_roots_from_weak`, `get_all_task_roots`, `get_all_trajectories_dirs_from_weak`, `get_or_create_buddy_conversations_dir`, `normal_trajectory_candidate_paths`, `parse_stored_messages`, `prune_buddy_conversations_throttled`, `prune_internal_traces_throttled`, `read_existing_trajectory_object`, `read_valid_trajectory_candidate`, `should_vectorize_trajectory`, and `trajectory_candidate_paths`
+   --> src\chat\trajectories\mod.rs:156:5
+    |
+156 |     enqueue_trajectory_vectorization, ensure_existing_trajectory_file_matches,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+157 |     find_normal_trajectory_file, find_normal_trajectory_path, find_trajectory_file,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^
+158 |     find_trajectory_or_buddy_file, fix_tool_call_indexes, get_all_task_roots,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^
+159 |     get_all_task_roots_from_weak, get_all_trajectories_dirs_from_weak,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+160 |     get_or_create_buddy_conversations_dir, normal_trajectory_candidate_paths,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+161 |     parse_stored_messages, prune_buddy_conversations_throttled, prune_internal_traces_throttled,
+    |     ^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+162 |     read_existing_trajectory_object, read_valid_trajectory_candidate, should_vectorize_trajectory,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+163 |     trajectory_candidate_paths, PruneThrottle, ValidTrajectoryCandidate,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^
+164 |     PRUNE_THROTTLE_MAX_ENTRIES,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `trajectory_path_stem_matches_id`
+   --> src\chat\trajectories\mod.rs:180:5
+    |
+180 |     trajectory_path_stem_matches_id, verified_planner_linked_root_chat_id,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `effective_trajectory_source_for_path`, `is_known_trajectory_top_level_key`, `load_generic_trajectory_for_chat_matching_source`, `load_trajectory_candidate`, `preserve_existing_trajectory_metadata`, `safe_new_buddy_trajectory_file`, `safe_new_nested_trajectory_file`, `safe_new_task_trajectory_file`, `sanitize_worktree_extra`, `title_generation_backing_file_matches`, `trajectory_candidate_has_minimum_schema`, `trajectory_root_id_matches`, `trajectory_source_matches_hint`, `trajectory_source_path_is_allowed`, `trajectory_worktree_from_extra`, and `validate_loaded_worktree_strict`
+   --> src\chat\trajectories\mod.rs:183:5
+    |
+183 |     effective_trajectory_source_for_path, is_known_trajectory_top_level_key,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+184 |     load_generic_trajectory_for_chat_matching_source, load_trajectory_candidate,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^
+185 |     preserve_existing_trajectory_metadata, safe_new_buddy_trajectory_file,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+186 |     safe_new_nested_trajectory_file, safe_new_task_trajectory_file, sanitize_worktree_extra,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^
+187 |     title_generation_backing_file_matches, trajectory_candidate_has_minimum_schema,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+188 |     trajectory_root_id_matches, trajectory_source_matches_hint, trajectory_source_path_is_allowed,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+189 |     trajectory_worktree_from_extra, validate_loaded_worktree_strict,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `new_legacy_incomplete_frozen_request_prefix`
+   --> src\chat\trajectories\mod.rs:224:5
+    |
+224 |     new_legacy_incomplete_frozen_request_prefix, persist_loaded_trajectory_repair_raw,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ExternalDeleteRevalidationOutcome`, `apply_external_delete_with_revalidation`, `apply_loaded_external_update_with_repair`, `can_apply_external_reload`, `loaded_trajectory_source`, `parsed_rfc3339_utc`, `persist_loaded_trajectory_repair`, `raw_frozen_prefix_has_tools`, `repair_transition_frozen_prefix`, and `session_is_stale_refresh_candidate`
+   --> src\chat\trajectories\mod.rs:227:5
+    |
+227 |     apply_external_delete_with_revalidation, apply_loaded_external_update_with_repair,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+228 |     can_apply_external_reload, loaded_trajectory_source, parsed_rfc3339_utc,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^
+229 |     persist_loaded_trajectory_repair, raw_frozen_prefix_has_tools, repair_transition_frozen_prefix,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+230 |     session_is_stale_refresh_candidate, ExternalDeleteRevalidationOutcome,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `is_trajectory_temporary_file`, `is_under_task_root`, `should_dispatch_trajectory_path`, `task_trajectory_context_from_path`, `trajectory_source_identity_from_path`, and `trajectory_watcher_message_for_path`
+   --> src\chat\trajectories\mod.rs:240:5
+    |
+240 |     is_trajectory_temporary_file, is_under_task_root, should_dispatch_trajectory_path,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+241 |     task_trajectory_context_from_path, trajectory_source_identity_from_path,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+242 |     trajectory_watcher_message_for_path,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `TokenTotals`, `calculate_line_changes_from_messages`, `calculate_task_progress_from_messages`, and `calculate_token_totals_from_messages`
+   --> src\chat\trajectories\mod.rs:263:5
+    |
+263 |     calculate_line_changes_from_messages, calculate_task_progress_from_messages,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+264 |     calculate_token_totals_from_messages, task_context_from_task_meta, trajectory_meta_title,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+265 |     TokenTotals,
+    |     ^^^^^^^^^^^
+
+warning: unused imports: `TRAJECTORY_META_TITLE_MAX_CHARS`, `allowed_real_dir_symlink_target`, `hydrate_trajectory_list_page`, `is_real_dir_sync`, and `trajectory_list_candidate_matches_hydrated_data`
+   --> src\chat\trajectories\mod.rs:268:5
+    |
+268 |     allowed_real_dir_symlink_target, calculate_line_changes_from_chat_messages,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+271 |     is_real_dir, is_real_dir_sync, is_real_file, safe_new_trajectory_file_in_dir,
+    |                  ^^^^^^^^^^^^^^^^
+272 |     safe_trajectory_file_in_dir, spawn_task_name_generation_task, spawn_title_generation_task,
+273 |     hydrate_trajectory_list_page, trajectory_list_candidate_matches_hydrated_data,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+274 |     TRAJECTORY_META_TITLE_MAX_CHARS,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `refact-lsp` (lib) generated 224 warnings (run `cargo fix --lib -p refact-lsp` to apply 222 suggestions)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 21m 22s

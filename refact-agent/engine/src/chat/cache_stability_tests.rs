@@ -586,9 +586,29 @@ async fn cache_stability_reasoning_toggle_preserves_prefix_and_strips_stale_thin
         .llm_request
         .messages
         .iter()
-        .all(|message| message.thinking_blocks.is_none() && message.reasoning_content.is_none()));
+        .all(|message| message.thinking_blocks.is_none() && message.reasoning_content.is_none()));    // Filter OFF (default): unsigned thinking blocks are dropped, but plain-text
+    // reasoning is preserved — only the user's strip filter controls it.
+    assert!(reasoning_off
+        .llm_request
+        .messages
+        .iter()
+        .all(|message| message.thinking_blocks.is_none()));
+    assert!(reasoning_off
+        .llm_request
+        .messages
+        .iter()
+        .any(|message| message.reasoning_content.as_deref() == Some("stale reasoning")));
+    assert!(off_body.to_string().contains("stale reasoning"));
     assert!(!off_body.to_string().contains("stale thought"));
-    assert!(!off_body.to_string().contains("stale reasoning"));
+    // Filter ON: both thinking blocks and reasoning are gone from the wire.
+    assert!(reasoning_on
+        .llm_request
+        .messages
+        .iter()
+        .all(|message| message.thinking_blocks.is_none() && message.reasoning_content.is_none()));
+    assert!(!openai_body(&reasoning_on.llm_request, "reasoning-openai")
+        .to_string()
+        .contains("stale reasoning"));    assert!(!off_body.to_string().contains("stale reasoning"));
 }
 
 #[tokio::test]

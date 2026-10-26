@@ -56,9 +56,9 @@ use setparams::*;
 
 pub use dispatch::process_command_queue;
 pub use helpers::{
-    drain_non_priority_user_messages, drain_priority_user_messages,
+    drain_non_priority_user_messages, drain_priority_user_messages, drain_queued_user_messages,
     find_allowed_command_while_paused, find_allowed_command_while_waiting_ide,
-    inject_priority_messages_if_any,
+    inject_queued_user_messages_if_any,
     worktree_activation_message, worktree_disabled_message,
 };
 pub use setparams::{apply_setparams_patch, resolve_worktree_setparams_update, WorktreeSetParamsUpdate};

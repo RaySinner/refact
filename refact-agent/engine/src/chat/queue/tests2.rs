@@ -293,7 +293,7 @@ async fn priority_user_message_resets_goal_no_progress() {
         });
     }
 
-    assert!(inject_priority_messages_if_any(app, session_arc.clone()).await);
+    assert!(inject_queued_user_messages_if_any(app, session_arc.clone()).await);
 
     let session = session_arc.lock().await;
     assert_eq!(session.goal.as_ref().unwrap().progress.no_progress_turns, 0);
@@ -323,7 +323,7 @@ async fn priority_user_message_preserves_client_message_id_and_server_message_id
         });
     }
 
-    assert!(inject_priority_messages_if_any(app, session_arc.clone()).await);
+    assert!(inject_queued_user_messages_if_any(app, session_arc.clone()).await);
 
     let session = session_arc.lock().await;
     let message = session
@@ -434,7 +434,7 @@ async fn priority_user_message_suppresses_auto_enrichment_without_context_files(
         });
     }
 
-    assert!(inject_priority_messages_if_any(app, session_arc.clone()).await);
+    assert!(inject_queued_user_messages_if_any(app, session_arc.clone()).await);
 
     let session = session_arc.lock().await;
     assert!(session.suppress_auto_enrichment_for_next_turn);
@@ -476,7 +476,7 @@ async fn promoted_multimodal_message_reaches_priority_injection_unchanged() {
         assert!(session.reprioritize_queued_command("multimodal-user", true));
     }
 
-    assert!(inject_priority_messages_if_any(app, session_arc.clone()).await);
+    assert!(inject_queued_user_messages_if_any(app, session_arc.clone()).await);
 
     let session = session_arc.lock().await;
     let user_message = session
@@ -580,6 +580,69 @@ fn test_drain_empty_queue() {
     let non_priority_drained = drain_non_priority_user_messages(&mut queue);
     assert!(priority_drained.is_empty());
     assert!(non_priority_drained.is_empty());
+}
+
+#[test]
+fn test_drain_queued_user_messages_extracts_all_user_messages_in_queue_order() {
+    let mut queue = VecDeque::new();
+    queue.push_back(CommandRequest {
+        client_request_id: "req-abort".into(),
+        priority: true,
+        command: ChatCommand::Abort {},
+    });
+    queue.push_back(CommandRequest {
+        client_request_id: "req-p".into(),
+        priority: true,
+        command: user_message_command("priority", None),
+    });
+    queue.push_back(CommandRequest {
+        client_request_id: "req-1".into(),
+        priority: false,
+        command: user_message_command("first", None),
+    });
+    queue.push_back(CommandRequest {
+        client_request_id: "req-2".into(),
+        priority: false,
+        command: user_message_command("second", None),
+    });
+
+    let drained = drain_queued_user_messages(&mut queue);
+    assert_eq!(drained.len(), 3);
+    assert_eq!(drained[0].client_request_id, "req-p");
+    assert_eq!(drained[1].client_request_id, "req-1");
+    assert_eq!(drained[2].client_request_id, "req-2");
+    assert_eq!(queue.len(), 1);
+    assert_eq!(queue[0].client_request_id, "req-abort");
+}
+
+#[tokio::test]
+async fn non_priority_user_message_is_injected_at_safe_boundary() {
+    let gcx = crate::global_context::tests::make_test_gcx().await;
+    let app = AppState::from_gcx(gcx).await;
+    let session_arc = Arc::new(AMutex::new(ChatSession::new(
+        "non-priority-injection".to_string(),
+    )));
+    {
+        let mut session = session_arc.lock().await;
+        session.thread.checkpoints_enabled = false;
+        session.command_queue.push_back(CommandRequest {
+            client_request_id: "ordinary-user".to_string(),
+            priority: false,
+            command: user_message_command("adjust course", None),
+        });
+    }
+
+    assert!(inject_queued_user_messages_if_any(app, session_arc.clone()).await);
+
+    let session = session_arc.lock().await;
+    assert!(session.command_queue.is_empty());
+    assert!(session.messages.iter().any(|message| {
+        message.role == "user"
+            && message
+                .content
+                .content_text_only()
+                .contains("adjust course")
+    }));
 }
 
 #[test]

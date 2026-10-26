@@ -141,13 +141,13 @@ pub(crate) fn drain_redundant_regenerates(
     removed
 }
 
-pub async fn inject_priority_messages_if_any(
+pub async fn inject_queued_user_messages_if_any(
     app: AppState,
     session_arc: Arc<AMutex<ChatSession>>,
 ) -> bool {
-    let priority_requests = {
+    let queued_user_requests = {
         let mut session = session_arc.lock().await;
-        let requests = drain_priority_user_messages(&mut session.command_queue);
+        let requests = drain_queued_user_messages(&mut session.command_queue);
         if !requests.is_empty() {
             for request in &requests {
                 session.record_command_queue_wait(&request.client_request_id);
@@ -157,11 +157,11 @@ pub async fn inject_priority_messages_if_any(
         requests
     };
 
-    if priority_requests.is_empty() {
+    if queued_user_requests.is_empty() {
         return false;
     }
 
-    for request in priority_requests {
+    for request in queued_user_requests {
         if let ChatCommand::UserMessage {
             content,
             attachments,
@@ -297,6 +297,21 @@ pub fn drain_priority_user_messages(queue: &mut VecDeque<CommandRequest>) -> Vec
         }
     }
     priority_messages
+}
+
+pub fn drain_queued_user_messages(queue: &mut VecDeque<CommandRequest>) -> Vec<CommandRequest> {
+    let mut messages = Vec::new();
+    let mut i = 0;
+    while i < queue.len() {
+        if matches!(queue[i].command, ChatCommand::UserMessage { .. }) {
+            if let Some(req) = queue.remove(i) {
+                messages.push(req);
+            }
+        } else {
+            i += 1;
+        }
+    }
+    messages
 }
 
 pub fn drain_non_priority_user_messages(

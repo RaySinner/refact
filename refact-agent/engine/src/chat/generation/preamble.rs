@@ -803,7 +803,7 @@ pub(in crate::chat::generation) fn latest_assistant_tool_call_window_closed(
         .all(|tc| answered_ids.contains(tc.id.as_str()))
 }
 
-pub(in crate::chat::generation) async fn inject_priority_messages_before_llm_if_safe(
+pub(in crate::chat::generation) async fn inject_queued_user_messages_before_llm_if_safe(
     app: AppState,
     session_arc: Arc<AMutex<ChatSession>>,
 ) -> bool {
@@ -812,5 +812,5 @@ pub(in crate::chat::generation) async fn inject_priority_messages_before_llm_if_
         latest_assistant_tool_call_window_closed(&session.messages)
     };
 
-    can_inject && crate::chat::queue::inject_priority_messages_if_any(app, session_arc).await
+    can_inject && crate::chat::queue::inject_queued_user_messages_if_any(app, session_arc).await
 }

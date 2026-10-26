@@ -106,7 +106,9 @@ pub fn start_generation(
                     break;
                 }
             }
-            if inject_priority_messages_before_llm_if_safe(app.clone(), session_arc.clone()).await {
+            if inject_queued_user_messages_before_llm_if_safe(app.clone(), session_arc.clone())
+                .await
+            {
                 continue;
             }
             // `append` deliveries land here: before the next LLM request, with
@@ -622,8 +624,11 @@ pub fn start_generation(
                         .await;
                         continue;
                     }
-                    if inject_priority_messages_before_llm_if_safe(app.clone(), session_arc.clone())
-                        .await
+                    if inject_queued_user_messages_before_llm_if_safe(
+                        app.clone(),
+                        session_arc.clone(),
+                    )
+                    .await
                     {
                         continue;
                     }
@@ -691,8 +696,11 @@ pub fn start_generation(
                     break;
                 }
                 ToolStepOutcome::Continue => {
-                    if inject_priority_messages_before_llm_if_safe(app.clone(), session_arc.clone())
-                        .await
+                    if inject_queued_user_messages_before_llm_if_safe(
+                        app.clone(),
+                        session_arc.clone(),
+                    )
+                    .await
                     {
                         continue;
                     }

@@ -546,7 +546,7 @@ impl WorktreeService {
         }
     }
 
-    fn cleanup_registered_worktree_blocking(
+    pub(super) fn cleanup_registered_worktree_blocking(
         &self,
         registry: &mut WorktreeRegistry,
         index: usize,

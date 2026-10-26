@@ -169,7 +169,7 @@ impl WorktreeService {
 }
 
 impl WorktreeService {
-    async fn record_view(
+    pub(super) async fn record_view(
         &self,
         record: &WorktreeRegistryRecord,
     ) -> Result<WorktreeRecordView, String> {
@@ -180,7 +180,7 @@ impl WorktreeService {
         self.record_view_with_status(record, status).await
     }
 
-    async fn validate_registered_record_checkout_record(
+    pub(super) async fn validate_registered_record_checkout_record(
         &self,
         record: &WorktreeRegistryRecord,
     ) -> Result<(), String> {
@@ -190,7 +190,7 @@ impl WorktreeService {
             .map_err(|e| format!("Worktree validation task failed: {}", e))?
     }
 
-    async fn validate_registered_record_diff_record(
+    pub(super) async fn validate_registered_record_diff_record(
         &self,
         record: &WorktreeRegistryRecord,
     ) -> Result<(), String> {
@@ -200,7 +200,7 @@ impl WorktreeService {
             .map_err(|e| format!("Worktree validation task failed: {}", e))?
     }
 
-    async fn record_view_with_status(
+    pub(super) async fn record_view_with_status(
         &self,
         record: &WorktreeRegistryRecord,
         status: WorktreeStatus,
@@ -228,7 +228,7 @@ impl WorktreeService {
         })
     }
 
-    async fn load_registry_unlocked(&self) -> Result<WorktreeRegistry, String> {
+    pub(super) async fn load_registry_unlocked(&self) -> Result<WorktreeRegistry, String> {
         let path = self.registry_path();
         if !tokio::fs::try_exists(&path).await.unwrap_or(false) {
             return Ok(WorktreeRegistry {
@@ -261,7 +261,7 @@ impl WorktreeService {
         Ok(registry)
     }
 
-    async fn save_registry_unlocked(&self, registry: &WorktreeRegistry) -> Result<(), String> {
+    pub(super) async fn save_registry_unlocked(&self, registry: &WorktreeRegistry) -> Result<(), String> {
         self.validate_registry(registry).await?;
         let dir = self.registry_dir();
         tokio::fs::create_dir_all(&dir)
@@ -313,7 +313,7 @@ impl WorktreeService {
         Ok(())
     }
 
-    async fn next_worktree_id(&self, registry: &WorktreeRegistry) -> Result<String, String> {
+    pub(super) async fn next_worktree_id(&self, registry: &WorktreeRegistry) -> Result<String, String> {
         for _ in 0..16 {
             let id = Uuid::new_v4().to_string();
             if registry.records.iter().all(|record| record.meta.id != id)

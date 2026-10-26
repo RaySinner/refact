@@ -40,9 +40,7 @@ impl SessionState {
     pub fn shows_working_indicator(self) -> bool {
         matches!(
             self,
-            SessionState::Starting
-                | SessionState::Generating
-                | SessionState::ExecutingTools
+            SessionState::Starting | SessionState::Generating | SessionState::ExecutingTools
         )
     }
 }

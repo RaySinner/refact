@@ -7,7 +7,7 @@ use tokio::sync::Mutex as AMutex;
 
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
-use crate::global_context::GlobalContext;
+use crate::chat::ctx::ModeConfigProvider;
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
 
 pub struct ToolAgentRegistry;
@@ -43,9 +43,9 @@ fn agent_registry_description() -> ToolDesc {
     }
 }
 
-async fn planner_gcx(
+async fn planner_mode_config(
     ccx: &Arc<AMutex<AtCommandsContext>>,
-) -> Result<Arc<GlobalContext>, String> {
+) -> Result<Arc<dyn ModeConfigProvider>, String> {
     let ccx_lock = ccx.lock().await;
     let is_planner = ccx_lock
         .task_meta
@@ -55,7 +55,7 @@ async fn planner_gcx(
     if !is_planner {
         return Err("agent_registry can only be called by the task planner.".to_string());
     }
-    Ok(ccx_lock.app.gcx.clone())
+    Ok(ccx_lock.tool.mode_config.clone())
 }
 
 fn render_registry(registry: &crate::yaml_configs::customization_types::ProjectRegistry) -> String {
@@ -119,8 +119,9 @@ impl Tool for ToolAgentRegistry {
         tool_call_id: &String,
         _args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
-        let gcx = planner_gcx(&ccx).await?;
-        let registry = crate::yaml_configs::customization_registry::get_project_registry(gcx)
+        let registry = planner_mode_config(&ccx)
+            .await?
+            .get_project_registry()
             .await
             .ok_or_else(|| "Failed to load project registry".to_string())?;
         let report = render_registry(&registry);

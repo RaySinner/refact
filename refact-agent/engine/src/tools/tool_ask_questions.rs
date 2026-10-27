@@ -141,23 +141,21 @@ impl Tool for ToolAskQuestions {
 
         {
             let ccx_lock = ccx.lock().await;
-            let gcx = ccx_lock.global_context.clone();
-            if let Some(ref tx) = gcx.notification_events_tx {
-                let notification_questions: Vec<NotificationQuestion> = questions
-                    .iter()
-                    .map(|q| NotificationQuestion {
-                        id: q.id.clone(),
-                        question_type: q.question_type.clone(),
-                        text: q.text.clone(),
-                        options: q.options.clone(),
-                    })
-                    .collect();
-                let _ = tx.send(NotificationEvent::AskQuestions {
-                    chat_id: chat_id.clone(),
-                    tool_call_id: tool_call_id.clone(),
-                    questions: notification_questions,
-                });
-            }
+            let tx = ccx_lock.tool.chat.notification_events_tx.clone();
+            let notification_questions: Vec<NotificationQuestion> = questions
+                .iter()
+                .map(|q| NotificationQuestion {
+                    id: q.id.clone(),
+                    question_type: q.question_type.clone(),
+                    text: q.text.clone(),
+                    options: q.options.clone(),
+                })
+                .collect();
+            let _ = tx.send(NotificationEvent::AskQuestions {
+                chat_id: chat_id.clone(),
+                tool_call_id: tool_call_id.clone(),
+                questions: notification_questions,
+            });
         }
 
         let result = serde_json::json!({

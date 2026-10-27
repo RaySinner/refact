@@ -421,15 +421,44 @@ pub async fn get_project_dirs_with_execution_scope(
 }
 
 pub async fn get_active_project_path(gcx: Arc<GlobalContext>) -> Option<PathBuf> {
-    let workspace_folders = get_unscoped_project_dirs(gcx.clone()).await;
+    let cache_dir = gcx.cache_dir.clone();
+    let active_file_path = gcx.documents_state.active_file_path.clone();
+    let workspace_folders = get_unscoped_project_dirs(gcx).await;
+    active_project_path(cache_dir.as_path(), &active_file_path, workspace_folders).await
+}
+
+pub async fn get_active_project_path_for_services(
+    paths: &crate::app_state::PathServices,
+    workspace: &crate::app_state::WorkspaceServices,
+) -> Option<PathBuf> {
+    let workspace_folders = project_dirs_for_unscoped_paths(
+        paths.cache_dir.as_path(),
+        workspace
+            .documents_state
+            .workspace_folders
+            .lock()
+            .unwrap()
+            .as_slice(),
+    );
+    active_project_path(
+        paths.cache_dir.as_path(),
+        &workspace.documents_state.active_file_path,
+        workspace_folders,
+    )
+    .await
+}
+
+async fn active_project_path(
+    cache_dir: &Path,
+    active_file_path: &Arc<tokio::sync::Mutex<Option<PathBuf>>>,
+    workspace_folders: Vec<PathBuf>,
+) -> Option<PathBuf> {
     if workspace_folders.is_empty() {
         return None;
     }
 
-    let worktree_mappings = registered_worktree_path_mappings(gcx.cache_dir.as_path());
-    let active_file = gcx
-        .documents_state
-        .active_file_path
+    let worktree_mappings = registered_worktree_path_mappings(cache_dir);
+    let active_file = active_file_path
         .lock()
         .await
         .clone()

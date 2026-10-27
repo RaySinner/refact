@@ -105,14 +105,14 @@ impl Tool for ToolActivateSkill {
             return Err(format!("Invalid skill name '{}': {}", name, e));
         }
 
-        let (gcx, chat_id) = {
+        let (sessions_map, chat_id) = {
             let cgcx = ccx.lock().await;
-            (cgcx.app.gcx.clone(), cgcx.chat_id.clone())
+            (cgcx.tool.chat.sessions.clone(), cgcx.chat_id.clone())
         };
 
         {
             let session_arc_opt = {
-                let sessions = gcx.chat_sessions.read().await;
+                let sessions = sessions_map.read().await;
                 sessions.get(&chat_id).cloned()
             };
             if let Some(session_arc) = session_arc_opt {
@@ -140,13 +140,13 @@ impl Tool for ToolActivateSkill {
             }
         }
 
-        let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+        let app = ccx.lock().await.app.clone();
         let ext_dirs = get_ext_dirs(app).await;
         let activated = activate_skill_inner(&ext_dirs, &name).await?;
 
         {
             let session_arc_opt = {
-                let sessions = gcx.chat_sessions.read().await;
+                let sessions = sessions_map.read().await;
                 sessions.get(&chat_id).cloned()
             };
             if let Some(session_arc) = session_arc_opt {
@@ -223,14 +223,14 @@ impl Tool for ToolDeactivateSkill {
                 ),
             };
 
-        let (gcx, chat_id) = {
+        let (sessions_map, chat_id) = {
             let cgcx = ccx.lock().await;
-            (cgcx.app.gcx.clone(), cgcx.chat_id.clone())
+            (cgcx.tool.chat.sessions.clone(), cgcx.chat_id.clone())
         };
 
         {
             let session_arc_opt = {
-                let sessions = gcx.chat_sessions.read().await;
+                let sessions = sessions_map.read().await;
                 sessions.get(&chat_id).cloned()
             };
             if let Some(session_arc) = session_arc_opt {

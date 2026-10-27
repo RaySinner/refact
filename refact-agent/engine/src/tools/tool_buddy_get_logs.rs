@@ -109,10 +109,12 @@ impl Tool for ToolBuddyGetLogs {
             None => None,
         };
 
-        let gcx = ccx.lock().await.app.gcx.clone();
         let (logs_to_file, cache_dir) = {
-            let lock = gcx.clone();
-            (lock.cmdline.logs_to_file.clone(), lock.cache_dir.clone())
+            let ccx_lock = ccx.lock().await;
+            (
+                ccx_lock.tool.runtime.cmdline.logs_to_file.clone(),
+                ccx_lock.tool.paths.cache_dir.clone(),
+            )
         };
 
         let log_path = if !logs_to_file.is_empty() {

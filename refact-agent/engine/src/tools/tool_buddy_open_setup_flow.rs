@@ -71,9 +71,7 @@ impl Tool for ToolBuddyOpenSetupFlow {
             ));
         }
 
-        let gcx = ccx.lock().await.app.gcx.clone();
-
-        let buddy_arc = gcx.buddy.clone();
+        let buddy_arc = ccx.lock().await.tool.buddy.buddy.clone();
         let lock = buddy_arc.lock().await;
         let svc = lock
             .as_ref()

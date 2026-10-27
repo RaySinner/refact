@@ -10,7 +10,7 @@ use crate::at_commands::at_commands::AtCommandsContext;
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
 use crate::exec::types::normalize_workspace_path;
 use crate::exec::{ExecMode, ExecProcessFilter, ExecProcessSnapshot, ExecStatusKind};
-use crate::files_correction::get_active_project_path;
+use crate::files_correction::get_active_project_path_for_services;
 use crate::postprocessing::pp_command_output::OutputFilter;
 use crate::tools::file_edit::auxiliary::active_execution_scope;
 use crate::integrations::integr_abstract::IntegrationConfirmation;
@@ -38,10 +38,11 @@ impl Tool for ToolCleanBackgroundProcesses {
     ) -> Result<(bool, Vec<ContextEnum>), String> {
         let scope = parse_scope(args)?;
         let include_services = parse_include_services(args)?;
-        let (gcx, exec_registry, execution_scope, chat_id, task_role) = {
+        let (paths, workspace_services, exec_registry, execution_scope, chat_id, task_role) = {
             let ccx = ccx.lock().await;
             (
-                ccx.app.gcx.clone(),
+                ccx.app.paths.clone(),
+                ccx.app.workspace.clone(),
                 ccx.app.runtime.exec_registry.clone(),
                 ccx.execution_scope.clone(),
                 ccx.chat_id.clone(),
@@ -50,7 +51,7 @@ impl Tool for ToolCleanBackgroundProcesses {
         };
         reject_unauthorized_sensitive_cleanup(scope, include_services, task_role.as_deref())?;
         let workspace = if scope == CleanScope::Workspace {
-            Some(current_workspace(gcx, execution_scope.as_ref()).await?)
+            Some(current_workspace(&paths, &workspace_services, execution_scope.as_ref()).await?)
         } else {
             None
         };
@@ -180,13 +181,14 @@ fn parse_include_services(args: &HashMap<String, Value>) -> Result<bool, String>
 }
 
 async fn current_workspace(
-    gcx: Arc<crate::global_context::GlobalContext>,
+    paths: &crate::app_state::PathServices,
+    workspace: &crate::app_state::WorkspaceServices,
     execution_scope: Option<&ExecutionScope>,
 ) -> Result<PathBuf, String> {
     if let Some(scope) = active_execution_scope(execution_scope) {
         return Ok(normalize_workspace_path(scope.effective_root()));
     }
-    get_active_project_path(gcx)
+    get_active_project_path_for_services(paths, workspace)
         .await
         .map(|path| normalize_workspace_path(&path))
         .ok_or_else(|| "No active project for background process cleanup".to_string())

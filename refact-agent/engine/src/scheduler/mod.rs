@@ -40,7 +40,22 @@ pub fn scheduler_timezone() -> chrono_tz::Tz {
 pub async fn active_durable_cron_store(
     gcx: std::sync::Arc<crate::global_context::GlobalContext>,
 ) -> Result<Option<std::sync::Arc<dyn CronStore>>, String> {
-    match crate::files_correction::get_active_project_path(gcx).await {
+    cron_store_for_project(crate::files_correction::get_active_project_path(gcx).await)
+}
+
+pub async fn active_durable_cron_store_for_services(
+    paths: &crate::app_state::PathServices,
+    workspace: &crate::app_state::WorkspaceServices,
+) -> Result<Option<std::sync::Arc<dyn CronStore>>, String> {
+    cron_store_for_project(
+        crate::files_correction::get_active_project_path_for_services(paths, workspace).await,
+    )
+}
+
+fn cron_store_for_project(
+    project: Option<std::path::PathBuf>,
+) -> Result<Option<std::sync::Arc<dyn CronStore>>, String> {
+    match project {
         None => Ok(None),
         Some(path) => JsonFileCronStore::new(path)
             .map(|store| Some(std::sync::Arc::new(store) as std::sync::Arc<dyn CronStore>)),

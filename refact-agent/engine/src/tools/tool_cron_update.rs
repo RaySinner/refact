@@ -10,8 +10,8 @@ use crate::at_commands::at_commands::AtCommandsContext;
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
 use crate::scheduler::schedule::parse_schedule;
 use crate::scheduler::{
-    active_durable_cron_store, push_from_value, push_schema, session_cron_store, CronStore, Job,
-    Trigger,
+    active_durable_cron_store_for_services, push_from_value, push_schema, session_cron_store,
+    CronStore, Job, Trigger,
 };
 use refact_core::chat_types::PushMode;
 use crate::tools::tool_cron_create::human_schedule_for_trigger;
@@ -71,8 +71,11 @@ impl ToolCronUpdate {
         if self.test_session_store.is_some() {
             return Ok(self.test_durable_store.clone());
         }
-        let gcx = ccx.lock().await.global_context.clone();
-        active_durable_cron_store(gcx).await
+        let (paths, workspace) = {
+            let ccx_lock = ccx.lock().await;
+            (ccx_lock.app.paths.clone(), ccx_lock.app.workspace.clone())
+        };
+        active_durable_cron_store_for_services(&paths, &workspace).await
     }
 
     fn now_ms(&self) -> u64 {

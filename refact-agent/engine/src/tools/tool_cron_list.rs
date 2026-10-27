@@ -9,7 +9,7 @@ use tokio::sync::Mutex as AMutex;
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
 use crate::scheduler::{
-    active_durable_cron_store, cron_task_response, next_run_ms, scheduler_timezone,
+    active_durable_cron_store_for_services, cron_task_response, next_run_ms, scheduler_timezone,
     session_cron_store, CronStore, Job,
 };
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
@@ -62,8 +62,11 @@ impl ToolCronList {
         if self.test_session_store.is_some() {
             return Ok(self.test_durable_store.clone());
         }
-        let gcx = ccx.lock().await.global_context.clone();
-        active_durable_cron_store(gcx).await
+        let (paths, workspace) = {
+            let ccx_lock = ccx.lock().await;
+            (ccx_lock.app.paths.clone(), ccx_lock.app.workspace.clone())
+        };
+        active_durable_cron_store_for_services(&paths, &workspace).await
     }
 }
 

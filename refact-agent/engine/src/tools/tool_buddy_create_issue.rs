@@ -169,8 +169,7 @@ impl Tool for ToolBuddyCreateIssue {
             .filter(|v| !v.is_empty())
             .map(|s| s.to_string());
 
-        let gcx = ccx.lock().await.app.gcx.clone();
-        let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+        let app = ccx.lock().await.app.clone();
 
         let context = crate::buddy::issues::resolve_or_synthesize_context(
             app.clone(),

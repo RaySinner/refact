@@ -8,7 +8,7 @@ use tokio::sync::Mutex as AMutex;
 
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
-use crate::global_context::GlobalContext;
+use crate::chat::ctx::ChatCtx;
 use crate::tasks::comments::{self, CreateCardComment};
 use crate::tasks::storage;
 use crate::tasks::types::CardComment;
@@ -21,7 +21,7 @@ pub struct ToolCardCommentAdd;
 pub struct ToolCardCommentList;
 
 struct CommentScope {
-    gcx: Arc<GlobalContext>,
+    ctx: ChatCtx,
     task_id: String,
     author_role: String,
     author_id: Option<String>,
@@ -98,7 +98,7 @@ async fn comment_scope(
         None
     };
     Ok(CommentScope {
-        gcx: ccx_lock.app.gcx.clone(),
+        ctx: ccx_lock.app.ctx.clone(),
         task_id: meta.task_id,
         author_role,
         author_id,
@@ -261,8 +261,8 @@ impl Tool for ToolCardCommentAdd {
         let card_id = required_card_id(args, &scope, "card_comment_add")?;
         let body = required_string(args, "body")?;
         let reply_to = optional_string(args, "reply_to");
-        let (_, comment) = comments::create_card_comment(
-            scope.gcx,
+        let (_, comment) = comments::create_card_comment_for_ctx(
+            &scope.ctx,
             &scope.task_id,
             CreateCardComment {
                 card_id: card_id.clone(),
@@ -334,7 +334,7 @@ impl Tool for ToolCardCommentList {
         let card_id = required_card_id(args, &scope, "card_comment_list")?;
         let limit = parse_limit(args)?;
         let since = parse_since(args)?;
-        let board = storage::load_board(scope.gcx, &scope.task_id).await?;
+        let board = storage::load_board_for_ctx(&scope.ctx, &scope.task_id).await?;
         let card = board
             .get_card(&card_id)
             .ok_or_else(|| format!("Card {} not found", card_id))?;

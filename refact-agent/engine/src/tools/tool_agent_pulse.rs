@@ -554,16 +554,16 @@ impl Tool for ToolAgentPulse {
         let requested_card_id = required_string(args, "card_id")?;
         let (card_id, _) = parse_card_variant_id(&requested_card_id);
         let task_id = require_bound_planner_task(&ccx, args).await?;
-        let (gcx, chat_facade, sessions, fallback_token_cap) = {
+        let (ctx, chat_facade, sessions, fallback_token_cap) = {
             let ccx_lock = ccx.lock().await;
             (
-                ccx_lock.app.gcx.clone(),
+                ccx_lock.app.ctx.clone(),
                 ccx_lock.app.chat.facade.clone(),
                 ccx_lock.app.chat.sessions.clone(),
                 ccx_lock.n_ctx,
             )
         };
-        let board = storage::load_board(gcx, &task_id).await?;
+        let board = storage::load_board_for_ctx(&ctx, &task_id).await?;
         let card = board
             .get_card(card_id)
             .ok_or_else(|| format!("Card {} not found", card_id))?;

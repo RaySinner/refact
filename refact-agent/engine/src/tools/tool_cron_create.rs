@@ -12,7 +12,7 @@ use tokio::sync::{Mutex as AMutex, Notify};
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
 use crate::chat::internal_roles::{event, EventSubkind};
-use crate::files_correction::get_active_project_path;
+use crate::files_correction::get_active_project_path_for_services;
 use crate::scheduler::schedule::parse_schedule;
 use crate::scheduler::{
     delivery_kind, human_schedule_for_trigger as scheduler_human_schedule_for_trigger, next_run_ms,
@@ -422,11 +422,10 @@ async fn cron_tool_context(
     Option<String>,
     Option<String>,
 ) {
-    let (app, gcx, chat_id, scoped_root) = {
+    let (app, chat_id, scoped_root) = {
         let locked = ccx.lock().await;
         (
             locked.app.clone(),
-            locked.global_context.clone(),
             locked.chat_id.clone(),
             locked
                 .execution_scope
@@ -436,10 +435,10 @@ async fn cron_tool_context(
     };
     let project_root = match scoped_root {
         Some(root) => Some(root),
-        None => get_active_project_path(gcx.clone()).await,
+        None => get_active_project_path_for_services(&app.paths, &app.workspace).await,
     };
     let session_arc = {
-        let sessions = gcx.chat_sessions.read().await;
+        let sessions = app.chat.sessions.read().await;
         sessions.get(&chat_id).cloned()
     };
     let (mode, model) = if let Some(session_arc) = session_arc {

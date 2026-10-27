@@ -8,7 +8,8 @@ use tokio::sync::Mutex as AMutex;
 
 use crate::at_commands::at_commands::{AtCommandsContext, MAX_SUBCHAT_DEPTH};
 use crate::call_validation::{ChatContent, ChatMessage, ChatToolCall, ContextEnum};
-use crate::subchat::{run_subchat, SubchatConfig, ToolsPolicy, TraceParent};
+use crate::chat::ctx::SubchatLauncher;
+use crate::subchat::{SubchatConfig, ToolsPolicy, TraceParent};
 use crate::tasks::storage;
 use crate::tools::task_tool_helpers::require_bound_planner_task;
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
@@ -332,7 +333,7 @@ async fn run_summary_subchat(
     tool_call_id: String,
 ) -> Result<String, String> {
     let (
-        gcx,
+        subchat,
         current_model,
         parent_chat_id,
         root_chat_id,
@@ -344,7 +345,7 @@ async fn run_summary_subchat(
     ) = {
         let ccx_lock = ccx.lock().await;
         (
-            ccx_lock.app.gcx.clone(),
+            ccx_lock.tool.subchat.clone(),
             ccx_lock.current_model.clone(),
             ccx_lock.chat_id.clone(),
             ccx_lock.root_chat_id.clone(),
@@ -407,7 +408,7 @@ async fn run_summary_subchat(
         .map_err(|error| error.to_string())?;
     let result = tokio::time::timeout(
         Duration::from_secs(SUMMARY_TIMEOUT_SECS),
-        run_subchat(gcx, messages, config),
+        subchat.run_subchat(messages, config),
     )
     .await
     .map_err(|_| format!("timed out after {}s", SUMMARY_TIMEOUT_SECS))??;
@@ -473,11 +474,11 @@ impl Tool for ToolAgentChatSummary {
         let card_id = required_string(args, "card_id")?;
         let focus = optional_string(args, "focus");
         let task_id = require_bound_planner_task(&ccx, args).await?;
-        let (gcx, chat_facade) = {
+        let (ctx, chat_facade) = {
             let ccx_lock = ccx.lock().await;
-            (ccx_lock.app.gcx.clone(), ccx_lock.app.chat.facade.clone())
+            (ccx_lock.app.ctx.clone(), ccx_lock.app.chat.facade.clone())
         };
-        let board = storage::load_board(gcx, &task_id).await?;
+        let board = storage::load_board_for_ctx(&ctx, &task_id).await?;
         let card = board
             .get_card(&card_id)
             .ok_or_else(|| format!("Card {} not found", card_id))?;

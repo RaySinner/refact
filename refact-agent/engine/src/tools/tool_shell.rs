@@ -17,6 +17,7 @@ use crate::exec::command_policy::{
     build_exec_request, chat_mode_for_exec, escalation_from_args, queue_sandbox_audit, CommandKind,
     CommandPolicyInput, ExecEscalation, ExecSource,
 };
+use crate::tools::ctx::ToolCtx;
 use crate::exec::{
     sanitize_short_description, ExecOutputChunk, ExecOutputStream, ExecOwnerMeta,
     ExecProcessSnapshot, ExecRawOutput, ExecReadResult, ExecStatus,

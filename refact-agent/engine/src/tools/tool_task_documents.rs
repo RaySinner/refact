@@ -531,9 +531,9 @@ fn format_history(items: &[HistoryItem]) -> String {
 async fn task_context(
     ccx: &Arc<AMutex<AtCommandsContext>>,
     args: &HashMap<String, Value>,
-) -> Result<(Arc<GlobalContext>, String, String), String> {
+) -> Result<(crate::app_state::AppState, String, String), String> {
     let ccx_lock = ccx.lock().await;
-    let gcx = ccx_lock.app.gcx.clone();
+    let app = ccx_lock.app.clone();
     let task_id = ccx_lock
         .task_meta
         .as_ref()
@@ -553,14 +553,21 @@ async fn task_context(
         _ => "user",
     }
     .to_string();
-    Ok((gcx, task_id, author_role))
+    Ok((app, task_id, author_role))
 }
 
 pub(crate) async fn documents_dir_for_task(
     gcx: Arc<GlobalContext>,
     task_id: &str,
 ) -> Result<PathBuf, String> {
-    let task_dir = storage::find_task_dir(gcx, task_id).await?;
+    documents_dir_for_task_for_ctx(&gcx.chat_ctx(gcx.clone()), task_id).await
+}
+
+pub(crate) async fn documents_dir_for_task_for_ctx(
+    ctx: &crate::chat::ctx::ChatCtx,
+    task_id: &str,
+) -> Result<PathBuf, String> {
+    let task_dir = storage::find_task_dir_for_ctx(ctx, task_id).await?;
     Ok(task_dir.join(DOCUMENTS_DIR))
 }
 
@@ -738,7 +745,14 @@ pub async fn list_task_documents_for_api(
     gcx: Arc<GlobalContext>,
     task_id: &str,
 ) -> Result<TaskDocumentListResponse, String> {
-    let documents_dir = documents_dir_for_task(gcx, task_id).await?;
+    list_task_documents_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()), task_id).await
+}
+
+pub async fn list_task_documents_for_api_for_ctx(
+    ctx: &crate::chat::ctx::ChatCtx,
+    task_id: &str,
+) -> Result<TaskDocumentListResponse, String> {
+    let documents_dir = documents_dir_for_task_for_ctx(ctx, task_id).await?;
     let mut documents = list_documents_at(&documents_dir).await?;
     documents.sort_by(|a, b| a.frontmatter.created_at.cmp(&b.frontmatter.created_at));
     Ok(TaskDocumentListResponse {
@@ -753,7 +767,16 @@ pub async fn get_task_document_for_api(
     slug: &str,
     version: Option<u64>,
 ) -> Result<TaskDocumentDetail, String> {
-    let documents_dir = documents_dir_for_task(gcx, task_id).await?;
+    get_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()), task_id, slug, version).await
+}
+
+pub async fn get_task_document_for_api_for_ctx(
+    ctx: &crate::chat::ctx::ChatCtx,
+    task_id: &str,
+    slug: &str,
+    version: Option<u64>,
+) -> Result<TaskDocumentDetail, String> {
+    let documents_dir = documents_dir_for_task_for_ctx(ctx, task_id).await?;
     if version.is_none() && !document_path(&documents_dir, slug).exists() {
         return Err(format!("document `{}` does not exist", slug));
     }
@@ -766,7 +789,16 @@ pub async fn create_task_document_for_api(
     task_id: &str,
     request: CreateDocumentRequest,
 ) -> Result<TaskDocumentDetail, String> {
-    let documents_dir = documents_dir_for_task(gcx.clone(), task_id).await?;
+    create_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()), gcx.clone(), task_id, request).await
+}
+
+pub async fn create_task_document_for_api_for_ctx(
+    ctx: &crate::chat::ctx::ChatCtx,
+    gcx: Arc<GlobalContext>,
+    task_id: &str,
+    request: CreateDocumentRequest,
+) -> Result<TaskDocumentDetail, String> {
+    let documents_dir = documents_dir_for_task_for_ctx(ctx, task_id).await?;
     let document = create_document_at(
         &documents_dir,
         &request.slug,
@@ -790,7 +822,18 @@ pub async fn update_task_document_for_api(
     content: String,
     pinned: Option<bool>,
 ) -> Result<TaskDocumentDetail, String> {
-    let documents_dir = documents_dir_for_task(gcx.clone(), task_id).await?;
+    update_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()), gcx.clone(), task_id, slug, content, pinned).await
+}
+
+pub async fn update_task_document_for_api_for_ctx(
+    ctx: &crate::chat::ctx::ChatCtx,
+    gcx: Arc<GlobalContext>,
+    task_id: &str,
+    slug: &str,
+    content: String,
+    pinned: Option<bool>,
+) -> Result<TaskDocumentDetail, String> {
+    let documents_dir = documents_dir_for_task_for_ctx(ctx, task_id).await?;
     if !document_path(&documents_dir, slug).exists() {
         return Err(format!("document `{}` does not exist", slug));
     }
@@ -806,7 +849,17 @@ pub async fn append_task_document_for_api(
     slug: &str,
     section: String,
 ) -> Result<TaskDocumentDetail, String> {
-    let documents_dir = documents_dir_for_task(gcx.clone(), task_id).await?;
+    append_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()), gcx.clone(), task_id, slug, section).await
+}
+
+pub async fn append_task_document_for_api_for_ctx(
+    ctx: &crate::chat::ctx::ChatCtx,
+    gcx: Arc<GlobalContext>,
+    task_id: &str,
+    slug: &str,
+    section: String,
+) -> Result<TaskDocumentDetail, String> {
+    let documents_dir = documents_dir_for_task_for_ctx(ctx, task_id).await?;
     if !document_path(&documents_dir, slug).exists() {
         return Err(format!("document `{}` does not exist", slug));
     }
@@ -821,7 +874,16 @@ pub async fn delete_task_document_for_api(
     task_id: &str,
     slug: &str,
 ) -> Result<(), String> {
-    let documents_dir = documents_dir_for_task(gcx.clone(), task_id).await?;
+    delete_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()), gcx.clone(), task_id, slug).await
+}
+
+pub async fn delete_task_document_for_api_for_ctx(
+    ctx: &crate::chat::ctx::ChatCtx,
+    gcx: Arc<GlobalContext>,
+    task_id: &str,
+    slug: &str,
+) -> Result<(), String> {
+    let documents_dir = documents_dir_for_task_for_ctx(ctx, task_id).await?;
     delete_document_at(&documents_dir, slug).await?;
     crate::tasks::events::emit_task_document_changed(gcx, task_id, Some(slug)).await;
     Ok(())
@@ -833,7 +895,17 @@ pub async fn pin_task_document_for_api(
     slug: &str,
     pinned: bool,
 ) -> Result<TaskDocumentDetail, String> {
-    let documents_dir = documents_dir_for_task(gcx.clone(), task_id).await?;
+    pin_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()), gcx.clone(), task_id, slug, pinned).await
+}
+
+pub async fn pin_task_document_for_api_for_ctx(
+    ctx: &crate::chat::ctx::ChatCtx,
+    gcx: Arc<GlobalContext>,
+    task_id: &str,
+    slug: &str,
+    pinned: bool,
+) -> Result<TaskDocumentDetail, String> {
+    let documents_dir = documents_dir_for_task_for_ctx(ctx, task_id).await?;
     if !document_path(&documents_dir, slug).exists() {
         return Err(format!("document `{}` does not exist", slug));
     }
@@ -848,7 +920,15 @@ pub async fn history_task_document_for_api(
     task_id: &str,
     slug: &str,
 ) -> Result<TaskDocumentHistoryResponse, String> {
-    let documents_dir = documents_dir_for_task(gcx, task_id).await?;
+    history_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()), task_id, slug).await
+}
+
+pub async fn history_task_document_for_api_for_ctx(
+    ctx: &crate::chat::ctx::ChatCtx,
+    task_id: &str,
+    slug: &str,
+) -> Result<TaskDocumentHistoryResponse, String> {
+    let documents_dir = documents_dir_for_task_for_ctx(ctx, task_id).await?;
     let items = history_document_at(&documents_dir, slug).await?;
     if !document_path(&documents_dir, slug).exists() && items.is_empty() {
         return Err(format!("document `{}` does not exist", slug));
@@ -909,8 +989,8 @@ impl Tool for ToolDocList {
         tool_call_id: &String,
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
-        let (gcx, task_id, _) = task_context(&ccx, args).await?;
-        let documents_dir = documents_dir_for_task(gcx, &task_id).await?;
+        let (app, task_id, _) = task_context(&ccx, args).await?;
+        let documents_dir = documents_dir_for_task_for_ctx(&app.chat_ctx(), &task_id).await?;
         let documents = list_documents_at(&documents_dir).await?;
         Ok((
             false,
@@ -941,10 +1021,10 @@ impl Tool for ToolDocGet {
         tool_call_id: &String,
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
-        let (gcx, task_id, _) = task_context(&ccx, args).await?;
+        let (app, task_id, _) = task_context(&ccx, args).await?;
         let slug = string_arg(args, "slug")?;
         let version = optional_u64_arg(args, "version")?;
-        let documents_dir = documents_dir_for_task(gcx, &task_id).await?;
+        let documents_dir = documents_dir_for_task_for_ctx(&app.chat_ctx(), &task_id).await?;
         let document = get_document_at(&documents_dir, &slug, version).await?;
         Ok((
             false,
@@ -982,14 +1062,14 @@ impl Tool for ToolDocCreate {
         tool_call_id: &String,
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
-        let (gcx, task_id, author_role) = task_context(&ccx, args).await?;
+        let (app, task_id, author_role) = task_context(&ccx, args).await?;
         let slug = string_arg(args, "slug")?;
         let name = string_arg(args, "name")?;
         let kind = string_arg(args, "kind")?;
         let content = string_arg(args, "content")?;
         let pinned = optional_bool_arg(args, "pinned")?.unwrap_or(true);
         let relevant_cards = optional_cards_arg(args, "relevant_cards")?;
-        let documents_dir = documents_dir_for_task(gcx.clone(), &task_id).await?;
+        let documents_dir = documents_dir_for_task_for_ctx(&app.chat_ctx(), &task_id).await?;
         let document = create_document_at(
             &documents_dir,
             &slug,
@@ -1002,7 +1082,7 @@ impl Tool for ToolDocCreate {
         )
         .await?;
         crate::tasks::events::emit_task_document_changed(
-            gcx,
+            app.gcx.clone(),
             &task_id,
             Some(&document.frontmatter.slug),
         )
@@ -1064,13 +1144,13 @@ impl Tool for ToolDocUpdate {
         tool_call_id: &String,
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
-        let (gcx, task_id, _) = task_context(&ccx, args).await?;
+        let (app, task_id, _) = task_context(&ccx, args).await?;
         let slug = string_arg(args, "slug")?;
         let content = string_arg(args, "content")?;
-        let documents_dir = documents_dir_for_task(gcx.clone(), &task_id).await?;
+        let documents_dir = documents_dir_for_task_for_ctx(&app.chat_ctx(), &task_id).await?;
         let document = update_document_at(&documents_dir, &slug, &content).await?;
         crate::tasks::events::emit_task_document_changed(
-            gcx,
+            app.gcx.clone(),
             &task_id,
             Some(&document.frontmatter.slug),
         )
@@ -1112,13 +1192,13 @@ impl Tool for ToolDocAppend {
         tool_call_id: &String,
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
-        let (gcx, task_id, _) = task_context(&ccx, args).await?;
+        let (app, task_id, _) = task_context(&ccx, args).await?;
         let slug = string_arg(args, "slug")?;
         let section = string_arg(args, "section")?;
-        let documents_dir = documents_dir_for_task(gcx.clone(), &task_id).await?;
+        let documents_dir = documents_dir_for_task_for_ctx(&app.chat_ctx(), &task_id).await?;
         let document = append_document_at(&documents_dir, &slug, &section).await?;
         crate::tasks::events::emit_task_document_changed(
-            gcx,
+            app.gcx.clone(),
             &task_id,
             Some(&document.frontmatter.slug),
         )
@@ -1159,11 +1239,11 @@ impl Tool for ToolDocDelete {
         tool_call_id: &String,
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
-        let (gcx, task_id, _) = task_context(&ccx, args).await?;
+        let (app, task_id, _) = task_context(&ccx, args).await?;
         let slug = string_arg(args, "slug")?;
-        let documents_dir = documents_dir_for_task(gcx.clone(), &task_id).await?;
+        let documents_dir = documents_dir_for_task_for_ctx(&app.chat_ctx(), &task_id).await?;
         let deleted_path = delete_document_at(&documents_dir, &slug).await?;
-        crate::tasks::events::emit_task_document_changed(gcx, &task_id, Some(&slug)).await;
+        crate::tasks::events::emit_task_document_changed(app.gcx.clone(), &task_id, Some(&slug)).await;
         Ok((
             false,
             tool_message(
@@ -1207,14 +1287,14 @@ impl Tool for ToolDocPin {
         tool_call_id: &String,
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
-        let (gcx, task_id, _) = task_context(&ccx, args).await?;
+        let (app, task_id, _) = task_context(&ccx, args).await?;
         let slug = string_arg(args, "slug")?;
         let pinned = optional_bool_arg(args, "pinned")?
             .ok_or_else(|| "argument `pinned` is required".to_string())?;
-        let documents_dir = documents_dir_for_task(gcx.clone(), &task_id).await?;
+        let documents_dir = documents_dir_for_task_for_ctx(&app.chat_ctx(), &task_id).await?;
         let document = pin_document_at(&documents_dir, &slug, pinned).await?;
         crate::tasks::events::emit_task_document_changed(
-            gcx,
+            app.gcx.clone(),
             &task_id,
             Some(&document.frontmatter.slug),
         )
@@ -1256,9 +1336,9 @@ impl Tool for ToolDocHistory {
         tool_call_id: &String,
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
-        let (gcx, task_id, _) = task_context(&ccx, args).await?;
+        let (app, task_id, _) = task_context(&ccx, args).await?;
         let slug = string_arg(args, "slug")?;
-        let documents_dir = documents_dir_for_task(gcx, &task_id).await?;
+        let documents_dir = documents_dir_for_task_for_ctx(&app.chat_ctx(), &task_id).await?;
         let items = history_document_at(&documents_dir, &slug).await?;
         Ok((false, tool_message(tool_call_id, format_history(&items))))
     }

@@ -694,8 +694,8 @@ impl Tool for ToolTaskBoardGet {
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
         let task_id = get_task_id(&ccx, args).await?;
-        let gcx = ccx.lock().await.app.gcx.clone();
-        let board = storage::load_board(gcx, &task_id).await?;
+        let app = ccx.lock().await.app.clone();
+        let board = storage::load_board_for_ctx(&app.chat_ctx(), &task_id).await?;
         let card_id = args
             .get("card_id")
             .and_then(|v| v.as_str())
@@ -768,15 +768,15 @@ impl Tool for ToolTaskBoardCreateCard {
         tool_call_id: &String,
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
-        let (is_planner, gcx) = {
+        let (is_planner, app) = {
             let ccx_lock = ccx.lock().await;
             let is_planner = ccx_lock
                 .task_meta
                 .as_ref()
                 .map(|m| m.role == "planner")
                 .unwrap_or(false);
-            let gcx = ccx_lock.app.gcx.clone();
-            (is_planner, gcx)
+            let app = ccx_lock.app.clone();
+            (is_planner, app)
         };
 
         if !is_planner {
@@ -804,7 +804,8 @@ impl Tool for ToolTaskBoardCreateCard {
             .unwrap_or("");
         let depends_on: Vec<String> = parse_depends_on(args.get("depends_on"));
         let target_files = parse_target_files(args.get("target_files"), instructions);
-        let mut board = storage::load_board(gcx.clone(), &task_id).await?;
+        let ctx = app.chat_ctx();
+        let mut board = storage::load_board_for_ctx(&ctx, &task_id).await?;
 
         if board.cards.iter().any(|c| c.id == card_id) {
             return Err(format!("Card {} already exists", card_id));
@@ -841,9 +842,9 @@ impl Tool for ToolTaskBoardCreateCard {
         });
         board.rev += 1;
 
-        storage::save_board(gcx.clone(), &task_id, &board).await?;
+        storage::save_board_for_ctx(&ctx, &task_id, &board).await?;
         emit_task_event(
-            gcx.clone(),
+            app.gcx.clone(),
             TaskEvent::BoardChanged {
                 task_id: task_id.to_string(),
                 rev: board.rev,
@@ -851,7 +852,7 @@ impl Tool for ToolTaskBoardCreateCard {
             },
         )
         .await;
-        storage::update_task_stats(gcx, &task_id).await?;
+        storage::update_task_stats_for_ctx(&ctx, &task_id).await?;
 
         let result = format!("Created card {} in Planned column", card_id);
         Ok((
@@ -899,15 +900,15 @@ impl Tool for ToolTaskBoardUpdateCard {
         tool_call_id: &String,
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
-        let (is_planner, gcx) = {
+        let (is_planner, app) = {
             let ccx_lock = ccx.lock().await;
             let is_planner = ccx_lock
                 .task_meta
                 .as_ref()
                 .map(|m| m.role == "planner")
                 .unwrap_or(false);
-            let gcx = ccx_lock.app.gcx.clone();
-            (is_planner, gcx)
+            let app = ccx_lock.app.clone();
+            (is_planner, app)
         };
 
         if !is_planner {
@@ -921,7 +922,8 @@ impl Tool for ToolTaskBoardUpdateCard {
             .get("card_id")
             .and_then(|v| v.as_str())
             .ok_or("Missing 'card_id'")?;
-        let mut board = storage::load_board(gcx.clone(), &task_id).await?;
+        let ctx = app.chat_ctx();
+        let mut board = storage::load_board_for_ctx(&ctx, &task_id).await?;
 
         let card = board
             .get_card_mut(card_id)
@@ -949,9 +951,9 @@ impl Tool for ToolTaskBoardUpdateCard {
         }
 
         board.rev += 1;
-        storage::save_board(gcx.clone(), &task_id, &board).await?;
+        storage::save_board_for_ctx(&ctx, &task_id, &board).await?;
         emit_task_event(
-            gcx,
+            app.gcx.clone(),
             TaskEvent::BoardChanged {
                 task_id: task_id.to_string(),
                 rev: board.rev,
@@ -1053,16 +1055,16 @@ impl Tool for ToolTaskBoardMoveCard {
         tool_call_id: &String,
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
-        let (is_planner, gcx, chat_facade) = {
+        let (is_planner, app, chat_facade) = {
             let ccx_lock = ccx.lock().await;
             let is_planner = ccx_lock
                 .task_meta
                 .as_ref()
                 .map(|m| m.role == "planner")
                 .unwrap_or(false);
-            let gcx = ccx_lock.app.gcx.clone();
+            let app = ccx_lock.app.clone();
             let chat_facade = ccx_lock.app.chat.facade.clone();
-            (is_planner, gcx, chat_facade)
+            (is_planner, app, chat_facade)
         };
 
         if !is_planner {
@@ -1088,7 +1090,8 @@ impl Tool for ToolTaskBoardMoveCard {
                 column, valid_columns
             ));
         }
-        let mut board = storage::load_board(gcx.clone(), &task_id).await?;
+        let ctx = app.chat_ctx();
+        let mut board = storage::load_board_for_ctx(&ctx, &task_id).await?;
         let now = Utc::now().to_rfc3339();
 
         let card = board
@@ -1124,9 +1127,9 @@ impl Tool for ToolTaskBoardMoveCard {
         card.column = column.to_string();
         board.rev += 1;
 
-        storage::save_board(gcx.clone(), &task_id, &board).await?;
+        storage::save_board_for_ctx(&ctx, &task_id, &board).await?;
         emit_task_event(
-            gcx.clone(),
+            app.gcx.clone(),
             TaskEvent::BoardChanged {
                 task_id: task_id.to_string(),
                 rev: board.rev,
@@ -1134,7 +1137,7 @@ impl Tool for ToolTaskBoardMoveCard {
             },
         )
         .await;
-        storage::update_task_stats(gcx, &task_id).await?;
+        storage::update_task_stats_for_ctx(&ctx, &task_id).await?;
 
         let result = format!("Moved card {} from {} to {}", card_id, old_column, column);
         Ok((
@@ -1192,16 +1195,16 @@ impl Tool for ToolTaskBoardDeleteCard {
         tool_call_id: &String,
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
-        let (is_planner, gcx, chat_facade) = {
+        let (is_planner, app, chat_facade) = {
             let ccx_lock = ccx.lock().await;
             let is_planner = ccx_lock
                 .task_meta
                 .as_ref()
                 .map(|m| m.role == "planner")
                 .unwrap_or(false);
-            let gcx = ccx_lock.app.gcx.clone();
+            let app = ccx_lock.app.clone();
             let chat_facade = ccx_lock.app.chat.facade.clone();
-            (is_planner, gcx, chat_facade)
+            (is_planner, app, chat_facade)
         };
 
         if !is_planner {
@@ -1215,7 +1218,8 @@ impl Tool for ToolTaskBoardDeleteCard {
             .get("card_id")
             .and_then(|v| v.as_str())
             .ok_or("Missing 'card_id'")?;
-        let mut board = storage::load_board(gcx.clone(), &task_id).await?;
+        let ctx = app.chat_ctx();
+        let mut board = storage::load_board_for_ctx(&ctx, &task_id).await?;
 
         let existed = board.cards.iter().any(|c| c.id == card_id);
         if !existed {
@@ -1240,9 +1244,9 @@ impl Tool for ToolTaskBoardDeleteCard {
         board.cards.retain(|c| c.id != card_id);
         board.rev += 1;
 
-        storage::save_board(gcx.clone(), &task_id, &board).await?;
+        storage::save_board_for_ctx(&ctx, &task_id, &board).await?;
         emit_task_event(
-            gcx.clone(),
+            app.gcx.clone(),
             TaskEvent::BoardChanged {
                 task_id: task_id.to_string(),
                 rev: board.rev,
@@ -1250,7 +1254,7 @@ impl Tool for ToolTaskBoardDeleteCard {
             },
         )
         .await;
-        storage::update_task_stats(gcx, &task_id).await?;
+        storage::update_task_stats_for_ctx(&ctx, &task_id).await?;
 
         let result = format!("Deleted card {}", card_id);
         Ok((
@@ -1303,8 +1307,8 @@ impl Tool for ToolTaskReadyCards {
     ) -> Result<(bool, Vec<ContextEnum>), String> {
         let task_id = get_task_id(&ccx, args).await?;
 
-        let gcx = ccx.lock().await.app.gcx.clone();
-        let board = storage::load_board(gcx, &task_id).await?;
+        let app = ccx.lock().await.app.clone();
+        let board = storage::load_board_for_ctx(&app.chat_ctx(), &task_id).await?;
         let result = render_ready_cards(&board);
 
         Ok((

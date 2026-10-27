@@ -220,7 +220,7 @@ async fn run_auto_enrichment_benchmark_async() -> Result<AutoEnrichmentBenchmark
     })
 }
 
-async fn run_auto_enrichment_workload(
+pub(crate) async fn run_auto_enrichment_workload(
     workload: &AutoEnrichmentWorkload,
 ) -> Result<AutoEnrichmentWorkloadReport, String> {
     let _diagnostic_lock = perf_diagnostics::PERF_RECORDER_TEST_LOCK
@@ -799,34 +799,34 @@ pub(crate) fn full_soak_variant_order(sample_index: usize) -> [bool; 2] {
 }
 
 pub(crate) struct FullSoakSample {
-    rollout_switches: FullSoakRolloutSwitches,
-    subsystems: FullSoakSubsystemFlags,
-    counters: FullSoakCounters,
-    queue_wait_us: Vec<u64>,
-    first_delta_us: Vec<u64>,
-    checkpoint_return_us: Vec<u64>,
-    required_flush_us: Vec<u64>,
-    tool_call_end_to_end_us: Vec<u64>,
-    tool_call_stage_samples: Vec<FullSoakToolCallStageSample>,
-    sse_serialize_us: Vec<u64>,
-    sse_emit_us: Vec<u64>,
-    process: FullSoakProcessMetrics,
+    pub(crate) rollout_switches: FullSoakRolloutSwitches,
+    pub(crate) subsystems: FullSoakSubsystemFlags,
+    pub(crate) counters: FullSoakCounters,
+    pub(crate) queue_wait_us: Vec<u64>,
+    pub(crate) first_delta_us: Vec<u64>,
+    pub(crate) checkpoint_return_us: Vec<u64>,
+    pub(crate) required_flush_us: Vec<u64>,
+    pub(crate) tool_call_end_to_end_us: Vec<u64>,
+    pub(crate) tool_call_stage_samples: Vec<FullSoakToolCallStageSample>,
+    pub(crate) sse_serialize_us: Vec<u64>,
+    pub(crate) sse_emit_us: Vec<u64>,
+    pub(crate) process: FullSoakProcessMetrics,
 }
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct FullSoakToolCallStageSample {
-    session_extraction_history_clone_us: u64,
-    catalog_pool_acquire_us: u64,
-    alias_resolution_us: u64,
-    confirmation_us: u64,
-    prehooks_us: u64,
-    execution_wait_us: u64,
-    execution_lookup_us: u64,
-    execution_runtime_us: u64,
-    posthooks_us: u64,
-    result_postprocess_privacy_us: u64,
-    session_merge_events_us: u64,
-    checkpoint_scheduling_us: u64,
+    pub(crate) session_extraction_history_clone_us: u64,
+    pub(crate) catalog_pool_acquire_us: u64,
+    pub(crate) alias_resolution_us: u64,
+    pub(crate) confirmation_us: u64,
+    pub(crate) prehooks_us: u64,
+    pub(crate) execution_wait_us: u64,
+    pub(crate) execution_lookup_us: u64,
+    pub(crate) execution_runtime_us: u64,
+    pub(crate) posthooks_us: u64,
+    pub(crate) result_postprocess_privacy_us: u64,
+    pub(crate) session_merge_events_us: u64,
+    pub(crate) checkpoint_scheduling_us: u64,
 }
 
 impl FullSoakToolCallStageSample {
@@ -1199,7 +1199,7 @@ async fn enqueue_repeated_vecdb_paths(
     Ok(())
 }
 
-async fn run_workload(
+pub(crate) async fn run_workload(
     workload: &ConcurrentChatWorkload,
     options: &BenchmarkOptions,
 ) -> Result<WorkloadBenchmarkReport, String> {

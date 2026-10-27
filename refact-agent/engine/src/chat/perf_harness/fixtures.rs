@@ -2,14 +2,14 @@ use super::*;
 
 #[derive(Clone)]
 pub(crate) struct BenchmarkFixture {
-    _temp_dir: Arc<tempfile::TempDir>,
-    workspace: PathBuf,
-    gcx: SharedGlobalContext,
-    app: AppState,
+    pub(crate) _temp_dir: Arc<tempfile::TempDir>,
+    pub(crate) workspace: PathBuf,
+    pub(crate) gcx: SharedGlobalContext,
+    pub(crate) app: AppState,
 }
 
 impl BenchmarkFixture {
-    async fn new(tool_count: usize) -> Result<Self, String> {
+    pub(crate) async fn new(tool_count: usize) -> Result<Self, String> {
         let temp_dir = Arc::new(
             tempfile::tempdir()
                 .map_err(|error| format!("failed to create benchmark fixture: {error}"))?,
@@ -46,10 +46,10 @@ impl BenchmarkFixture {
 
 #[derive(Default)]
 pub(crate) struct AutoEnrichmentVecdb {
-    records: Vec<VecdbRecord>,
-    delay: std::time::Duration,
-    active_searches: AtomicUsize,
-    max_concurrent_searches: AtomicUsize,
+    pub(crate) records: Vec<VecdbRecord>,
+    pub(crate) delay: std::time::Duration,
+    pub(crate) active_searches: AtomicUsize,
+    pub(crate) max_concurrent_searches: AtomicUsize,
 }
 
 impl AutoEnrichmentVecdb {
@@ -76,7 +76,7 @@ pub(crate) struct AutoEnrichmentSearchGuard<'a> {
 }
 
 impl Drop for AutoEnrichmentSearchGuard<'_> {
-    pub(crate) fn drop(&mut self) {
+    fn drop(&mut self) {
         self.vecdb.active_searches.fetch_sub(1, Ordering::SeqCst);
     }
 }
@@ -124,7 +124,7 @@ impl VecdbSearch for AutoEnrichmentVecdb {
     ) {
     }
 
-    pub(crate) fn current_constants(&self) -> (EmbeddingModelConfig, usize) {
+    fn current_constants(&self) -> (EmbeddingModelConfig, usize) {
         (
             EmbeddingModelConfig {
                 model_id: "local-auto-enrichment".to_string(),
@@ -195,14 +195,14 @@ impl VecdbSearch for AutoEnrichmentVecdb {
 }
 
 pub(crate) struct AutoEnrichmentFixture {
-    _temp_dir: Arc<tempfile::TempDir>,
-    gcx: SharedGlobalContext,
-    excluded_paths: HashSet<PathBuf>,
-    vecdb: Option<Arc<AutoEnrichmentVecdb>>,
+    pub(crate) _temp_dir: Arc<tempfile::TempDir>,
+    pub(crate) gcx: SharedGlobalContext,
+    pub(crate) excluded_paths: HashSet<PathBuf>,
+    pub(crate) vecdb: Option<Arc<AutoEnrichmentVecdb>>,
 }
 
 impl AutoEnrichmentFixture {
-    async fn new(workload: &AutoEnrichmentWorkload) -> Result<Self, String> {
+    pub(crate) async fn new(workload: &AutoEnrichmentWorkload) -> Result<Self, String> {
         let temp_dir = Arc::new(
             tempfile::tempdir()
                 .map_err(|error| format!("failed to create enrichment fixture: {error}"))?,
@@ -294,13 +294,13 @@ impl AutoEnrichmentFixture {
 }
 
 pub(crate) struct FullSoakFixture {
-    base: BenchmarkFixture,
-    background_tasks: crate::background_tasks::BackgroundTasksHolder,
-    vecdb: Arc<FullSoakVecdb>,
+    pub(crate) base: BenchmarkFixture,
+    pub(crate) background_tasks: crate::background_tasks::BackgroundTasksHolder,
+    pub(crate) vecdb: Arc<FullSoakVecdb>,
 }
 
 impl FullSoakFixture {
-    async fn new(tool_count: usize) -> Result<Self, String> {
+    pub(crate) async fn new(tool_count: usize) -> Result<Self, String> {
         let base = BenchmarkFixture::new(tool_count).await?;
         *base
             .gcx
@@ -334,7 +334,7 @@ impl FullSoakFixture {
         })
     }
 
-    async fn shutdown(mut self) {
+    pub(crate) async fn shutdown(mut self) {
         self.base.gcx.shutdown_flag.store(true, Ordering::SeqCst);
         self.background_tasks.abort().await;
     }
@@ -431,7 +431,7 @@ impl VecdbSearch for FullSoakVecdb {
         }
     }
 
-    pub(crate) fn current_constants(&self) -> (EmbeddingModelConfig, usize) {
+    fn current_constants(&self) -> (EmbeddingModelConfig, usize) {
         (
             EmbeddingModelConfig {
                 model_id: "full-soak-local".to_string(),
@@ -491,7 +491,7 @@ impl FullSoakEnvGuard {
 }
 
 impl Drop for FullSoakEnvGuard {
-    pub(crate) fn drop(&mut self) {
+    fn drop(&mut self) {
         for (key, value) in self.values.drain(..) {
             if let Some(value) = value {
                 std::env::set_var(key, value);
@@ -518,7 +518,7 @@ impl ToolCatalogSnapshotEnvGuard {
 }
 
 impl Drop for ToolCatalogSnapshotEnvGuard {
-    pub(crate) fn drop(&mut self) {
+    fn drop(&mut self) {
         if let Some(previous) = self.previous.take() {
             std::env::set_var("REFACT_TOOL_CATALOG_SNAPSHOTS", previous);
         } else {
@@ -528,11 +528,11 @@ impl Drop for ToolCatalogSnapshotEnvGuard {
 }
 
 pub(crate) struct SaveCounts {
-    total: u64,
-    checkpoints: u64,
-    required_commits: u64,
-    checkpoint_return_elapsed_us: u64,
-    background_flush_elapsed_us: u64,
+    pub(crate) total: u64,
+    pub(crate) checkpoints: u64,
+    pub(crate) required_commits: u64,
+    pub(crate) checkpoint_return_elapsed_us: u64,
+    pub(crate) background_flush_elapsed_us: u64,
 }
 
 pub(crate) struct TrajectoryWriterEnvGuard {
@@ -551,7 +551,7 @@ impl TrajectoryWriterEnvGuard {
 }
 
 impl Drop for TrajectoryWriterEnvGuard {
-    pub(crate) fn drop(&mut self) {
+    fn drop(&mut self) {
         if let Some(previous) = self.previous.take() {
             std::env::set_var(crate::chat::trajectories::TRAJECTORY_WRITER_ENV, previous);
         } else {
@@ -565,7 +565,7 @@ pub(crate) struct BenchmarkClock {
 }
 
 impl Default for BenchmarkClock {
-    pub(crate) fn default() -> Self {
+    fn default() -> Self {
         Self {
             origin: Instant::now(),
         }
@@ -573,7 +573,7 @@ impl Default for BenchmarkClock {
 }
 
 impl PerfClock for BenchmarkClock {
-    pub(crate) fn now_us(&self) -> u64 {
+    fn now_us(&self) -> u64 {
         self.origin
             .elapsed()
             .as_micros()
@@ -599,7 +599,7 @@ impl Tool for BenchmarkTool {
         Ok((false, vec![ContextEnum::ChatMessage(message)]))
     }
 
-    pub(crate) fn tool_description(&self) -> ToolDesc {
+    fn tool_description(&self) -> ToolDesc {
         ToolDesc {
             name: self.name.clone(),
             experimental: false,

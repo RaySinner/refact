@@ -545,7 +545,7 @@ pub(crate) fn assert_full_soak_invariants(
     Ok(())
 }
 
-async fn assert_tool_result_order(
+pub(crate) async fn assert_tool_result_order(
     session: &Arc<AMutex<crate::chat::types::ChatSession>>,
     workload: &ToolPoolWorkload,
     chat_index: u8,

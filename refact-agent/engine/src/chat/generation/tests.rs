@@ -65,8 +65,6 @@ use super::run_loop::*;
 use super::stream::*;
 use crate::call_validation::{ChatToolCall, ChatToolFunction};
 
-use crate::call_validation::{ChatToolCall, ChatToolFunction};
-
 #[tokio::test]
 async fn completion_side_effects_do_not_block_generation_on_buddy_lock() {
     let gcx = crate::global_context::tests::make_test_gcx().await;

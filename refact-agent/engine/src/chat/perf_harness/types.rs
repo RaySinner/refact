@@ -507,7 +507,7 @@ pub struct VariantBenchmarkReport {
 
 pub const TOOL_POOL_CHAT_COUNT: u8 = 8;
 pub const TOOL_POOL_DESCRIPTOR_COUNT: u16 = 50;
-const TOOL_POOL_SAME_NAME_PARALLEL_CALLS: usize = 8;
+pub(crate) const TOOL_POOL_SAME_NAME_PARALLEL_CALLS: usize = 8;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct ToolPoolWorkload {
@@ -615,28 +615,28 @@ pub struct ConcurrentChatBenchmarkReport {
 }
 
 pub(crate) struct Sample {
-    counters: BenchmarkCounters,
-    diagnostics: DiagnosticCounters,
-    snapshot_elapsed_us: u64,
-    serialize_elapsed_us: u64,
-    atomic_write_elapsed_us: u64,
-    commit_elapsed_us: u64,
-    index_wait_elapsed_us: u64,
-    index_write_elapsed_us: u64,
-    catalog_elapsed_us: u64,
-    checkpoint_return_elapsed_us: u64,
-    background_flush_elapsed_us: u64,
-    total_elapsed_us: u64,
+    pub(crate) counters: BenchmarkCounters,
+    pub(crate) diagnostics: DiagnosticCounters,
+    pub(crate) snapshot_elapsed_us: u64,
+    pub(crate) serialize_elapsed_us: u64,
+    pub(crate) atomic_write_elapsed_us: u64,
+    pub(crate) commit_elapsed_us: u64,
+    pub(crate) index_wait_elapsed_us: u64,
+    pub(crate) index_write_elapsed_us: u64,
+    pub(crate) catalog_elapsed_us: u64,
+    pub(crate) checkpoint_return_elapsed_us: u64,
+    pub(crate) background_flush_elapsed_us: u64,
+    pub(crate) total_elapsed_us: u64,
 }
 
 pub(crate) struct ToolPoolSample {
-    counters: ToolPoolCounters,
-    catalog_acquisition_elapsed_us: Vec<u64>,
-    schema_alias_preparation_elapsed_us: Vec<u64>,
-    warm_schema_alias_preparation_elapsed_us: Vec<u64>,
-    confirmation_preflight_elapsed_us: Vec<u64>,
-    execution_lookup_elapsed_us: Vec<u64>,
-    tool_runtime_elapsed_us: Vec<u64>,
+    pub(crate) counters: ToolPoolCounters,
+    pub(crate) catalog_acquisition_elapsed_us: Vec<u64>,
+    pub(crate) schema_alias_preparation_elapsed_us: Vec<u64>,
+    pub(crate) warm_schema_alias_preparation_elapsed_us: Vec<u64>,
+    pub(crate) confirmation_preflight_elapsed_us: Vec<u64>,
+    pub(crate) execution_lookup_elapsed_us: Vec<u64>,
+    pub(crate) tool_runtime_elapsed_us: Vec<u64>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]

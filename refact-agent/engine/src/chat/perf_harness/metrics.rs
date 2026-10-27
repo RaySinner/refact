@@ -211,10 +211,10 @@ pub(crate) fn elapsed_us(started: Instant) -> u64 {
 
 #[derive(Clone, Debug)]
 pub(crate) struct ProcessResourceSnapshot {
-    cpu_time_us: Option<u64>,
-    rss_bytes: Option<u64>,
-    read_bytes: Option<u64>,
-    write_bytes: Option<u64>,
+    pub(crate) cpu_time_us: Option<u64>,
+    pub(crate) rss_bytes: Option<u64>,
+    pub(crate) read_bytes: Option<u64>,
+    pub(crate) write_bytes: Option<u64>,
 }
 
 pub(crate) struct FullSoakProcessSampler {

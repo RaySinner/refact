@@ -51,7 +51,7 @@ mod tests {
     use chrono::Utc;
     use crate::buddy::memory_lifecycle::{
         MemoryCreatePayload, MemoryLifecycleOp, MemoryLifecyclePayload, MemoryOpStatus,
-        MemoryOpType, MEMORY_OP_EXACT_DUPLICATE_REASON,
+        MemoryOpType, MemorySource, MEMORY_OP_EXACT_DUPLICATE_REASON,
     };
 
     fn test_op(op_id: &str, evidence: &str, status: MemoryOpStatus) -> MemoryLifecycleOp {

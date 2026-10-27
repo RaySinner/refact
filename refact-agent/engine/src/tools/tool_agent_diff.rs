@@ -240,18 +240,18 @@ fn canonical_existing_path(path: &Path) -> Result<PathBuf, String> {
         .map_err(|e| format!("Failed to canonicalize '{}': {}", path.display(), e))
 }
 
-fn validated_cache_root(gcx: &GlobalContext) -> Result<PathBuf, String> {
-    if !gcx.cache_dir.exists() {
-        std::fs::create_dir_all(&gcx.cache_dir).map_err(|e| {
+fn validated_cache_root(cache_dir: &Path) -> Result<PathBuf, String> {
+    if !cache_dir.exists() {
+        std::fs::create_dir_all(cache_dir).map_err(|e| {
             format!(
                 "Failed to create cache directory '{}': {}",
-                gcx.cache_dir.display(),
+                cache_dir.display(),
                 e
             )
         })?;
     }
-    let cache_root = refact_worktrees::service::worktrees_base_dir(&gcx.cache_dir)
-        .unwrap_or_else(|_| gcx.cache_dir.join("worktrees"));
+    let cache_root = refact_worktrees::service::worktrees_base_dir(cache_dir)
+        .unwrap_or_else(|_| cache_dir.join("worktrees"));
     if !cache_root.exists() {
         std::fs::create_dir_all(&cache_root).map_err(|e| {
             format!(
@@ -265,7 +265,7 @@ fn validated_cache_root(gcx: &GlobalContext) -> Result<PathBuf, String> {
 }
 
 fn validate_fallback_worktree_path(
-    gcx: &GlobalContext,
+    cache_dir: &Path,
     workspace_root: &Path,
     card_id: &str,
     worktree: &Path,
@@ -279,8 +279,8 @@ fn validate_fallback_worktree_path(
         ));
     }
     let worktree = canonical_existing_path(worktree)?;
-    let cache_root = validated_cache_root(gcx)?;
-    let cache_dir = canonical_existing_path(&gcx.cache_dir)?;
+    let cache_root = validated_cache_root(cache_dir)?;
+    let cache_dir = canonical_existing_path(cache_dir)?;
     if worktree == Path::new("/") || worktree == cache_dir || worktree == cache_root {
         return Err(format!(
             "Refusing to use unsafe agent worktree path '{}' for card {}.",
@@ -354,7 +354,13 @@ fn legacy_worktree_path(
         .agent_branch
         .as_ref()
         .ok_or_else(|| format!("Card {} has no agent branch", card.id))?;
-    validate_fallback_worktree_path(gcx, workspace_root, &card.id, Path::new(worktree), branch)
+    validate_fallback_worktree_path(
+        gcx.cache_dir.as_path(),
+        workspace_root,
+        &card.id,
+        Path::new(worktree),
+        branch,
+    )
 }
 
 async fn registered_worktree_path(

@@ -14,10 +14,7 @@ use crate::files_correction::{
     canonical_path, correct_to_nearest_dir_path, correct_to_nearest_filename,
     get_unscoped_project_dirs, preprocess_path_for_normalization,
 };
-use crate::files_in_workspace::{
-    get_file_text_from_memory_or_disk, remove_memory_document_for_path,
-    remove_memory_documents_under_path,
-};
+use crate::files_in_workspace::remove_memory_documents_under_path;
 use crate::tools::tools_description::{
     MatchConfirmDeny, MatchConfirmDenyResult, Tool, ToolDesc, ToolSource, ToolSourceType,
     json_schema_from_params,
@@ -77,10 +74,11 @@ impl Tool for ToolMv {
         let dst_str = preprocess_path_for_normalization(dst_str);
         let overwrite = Self::parse_overwrite(args)?;
 
-        let (gcx, execution_scope, top_n) = {
+        let (gcx, tool, execution_scope, top_n) = {
             let cgcx = ccx.lock().await;
             (
                 cgcx.app.gcx.clone(),
+                cgcx.tool.clone(),
                 cgcx.execution_scope.clone(),
                 cgcx.top_n,
             )
@@ -223,13 +221,13 @@ impl Tool for ToolMv {
 
             let src_within_project = project_dirs.iter().any(|p| src_true_path.starts_with(p));
             let dst_within_project = project_dirs.iter().any(|p| dst_true_path.starts_with(p));
-            if !src_within_project && !gcx.cmdline.inside_container {
+            if !src_within_project && !tool.runtime.cmdline.inside_container {
                 return Err(format!(
                     "⚠️ Source '{}' is outside project. 💡 mv() only works within workspace",
                     src_str
                 ));
             }
-            if !dst_within_project && !gcx.cmdline.inside_container {
+            if !dst_within_project && !tool.runtime.cmdline.inside_container {
                 return Err(format!(
                     "⚠️ Destination '{}' is outside project. 💡 mv() only works within workspace",
                     dst_str
@@ -257,8 +255,10 @@ impl Tool for ToolMv {
 
         let mut src_file_content = String::new();
         if !src_is_dir {
-            src_file_content =
-                get_file_text_from_memory_or_disk(gcx.clone(), &src_true_path).await?;
+            src_file_content = tool
+                .files
+                .get_file_text_from_memory_or_disk(&src_true_path)
+                .await?;
         }
         let mut dst_file_content = String::new();
         if let Ok(dst_metadata) = fs::metadata(&dst_true_path).await {
@@ -279,7 +279,9 @@ impl Tool for ToolMv {
                 fs::remove_file(&dst_true_path)
                     .await
                     .map_err(|e| format!("Failed to remove existing file '{}': {}", dst_str, e))?;
-                remove_memory_document_for_path(gcx.clone(), &dst_true_path).await;
+                tool.files
+                    .remove_memory_document_for_path(&dst_true_path)
+                    .await;
             }
         }
 
@@ -313,8 +315,12 @@ impl Tool for ToolMv {
             remove_memory_documents_under_path(gcx.clone(), &src_true_path).await;
             remove_memory_documents_under_path(gcx.clone(), &dst_true_path).await;
         } else {
-            remove_memory_document_for_path(gcx.clone(), &src_true_path).await;
-            remove_memory_document_for_path(gcx.clone(), &dst_true_path).await;
+            tool.files
+                .remove_memory_document_for_path(&src_true_path)
+                .await;
+            tool.files
+                .remove_memory_document_for_path(&dst_true_path)
+                .await;
         }
 
         let mut messages = vec![];

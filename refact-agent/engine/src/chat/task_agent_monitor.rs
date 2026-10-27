@@ -20,6 +20,7 @@ use crate::app_state::AppState;
 use crate::tasks::storage;
 use crate::tasks::types::{BoardCard, StatusUpdate};
 use crate::call_validation::{ChatMessage, ChatUsage};
+use crate::chat::ctx::ChatCtx;
 use crate::chat::internal_roles::{event, EventSubkind};
 use crate::chat::retry_policy::{
     RetryDecision, UserErrorCategory, classify_llm_error_for_retry, classify_user_error,
@@ -1424,7 +1425,7 @@ async fn mark_agent_as_failed(
 }
 
 /// Notify planner about newly finished agents without waiting for the full batch to end.
-pub fn notify_planner_agents_finished(
+pub async fn notify_planner_agents_finished(
     ctx: ChatCtx,
     task_id: &str,
     board: &crate::tasks::types::TaskBoard,
@@ -1769,7 +1770,7 @@ fn fallback_remove_worktree_and_branch(
     (worktree_removed, branch_deleted)
 }
 
-pub fn remove_agent_worktree_and_branch(
+pub async fn remove_agent_worktree_and_branch(
     ctx: ChatCtx,
     task_id: &str,
     card_id: &str,
@@ -2174,7 +2175,7 @@ async fn check_for_stuck_agents(app: AppState) -> Result<(), String> {
                             );
 
                             mark_agent_as_failed(
-.ctx.clone(),
+app.ctx.clone(),
                                 task_id,
                                 &card.id,
                                 card.assignee.as_deref(),
@@ -2211,7 +2212,7 @@ async fn check_for_stuck_agents(app: AppState) -> Result<(), String> {
                         );
 
                         mark_agent_as_failed(
-.ctx.clone(),
+app.ctx.clone(),
                             task_id,
                             &card.id,
                             card.assignee.as_deref(),
@@ -2257,7 +2258,7 @@ async fn check_for_stuck_agents(app: AppState) -> Result<(), String> {
                     let failure_kind = AgentFailureKind::from_error(&error_msg);
                     let failure_reason = failure_kind.final_report_reason(&error_msg);
                     mark_agent_as_failed(
-.ctx.clone(),
+app.ctx.clone(),
                         task_id,
                         &card.id,
                         card.assignee.as_deref(),
@@ -2319,7 +2320,7 @@ async fn check_for_stuck_agents(app: AppState) -> Result<(), String> {
 
                 if notify_count >= MAX_STALL_PLANNER_NOTIFICATIONS_PER_CARD {
                     mark_agent_as_failed(
-.ctx.clone(),
+app.ctx.clone(),
                         task_id,
                         &card.id,
                         card.assignee.as_deref(),
@@ -2334,7 +2335,7 @@ async fn check_for_stuck_agents(app: AppState) -> Result<(), String> {
                     .await?;
                 } else if stall_planner_notify_allowed(card, now) {
                     if let Err(error) = notify_agent_about_stall(
-.ctx.clone(),
+app.ctx.clone(),
                         task_id,
                         card,
                         agent_chat_id,
@@ -2352,7 +2353,7 @@ async fn check_for_stuck_agents(app: AppState) -> Result<(), String> {
                         );
                     }
                     let notify_result = notify_planner_about_stalled_agent(
-.ctx.clone(),
+app.ctx.clone(),
                         task_id,
                         card,
                         agent_chat_id,
@@ -2377,7 +2378,7 @@ async fn check_for_stuck_agents(app: AppState) -> Result<(), String> {
                         && stalled_agent_should_fail_after_notify_failure(stall_elapsed)
                     {
                         mark_agent_as_failed(
-.ctx.clone(),
+app.ctx.clone(),
                             task_id,
                             &card.id,
                             card.assignee.as_deref(),
@@ -2408,7 +2409,7 @@ async fn check_for_stuck_agents(app: AppState) -> Result<(), String> {
                 );
 
                 mark_agent_as_failed(
-.ctx.clone(),
+app.ctx.clone(),
                     task_id,
                     &card.id,
                     card.assignee.as_deref(),
@@ -2463,7 +2464,7 @@ async fn check_for_stuck_agents(app: AppState) -> Result<(), String> {
                             _ => StallKind::IdleNoFinish,
                         };
                         let _ = notify_agent_about_stall(
-.ctx.clone(),
+app.ctx.clone(),
                             task_id,
                             card,
                             member_chat_id,
@@ -2472,7 +2473,7 @@ async fn check_for_stuck_agents(app: AppState) -> Result<(), String> {
                         )
                         .await;
                         let _ = notify_planner_about_stalled_agent(
-.ctx.clone(),
+app.ctx.clone(),
                             task_id,
                             card,
                             member_chat_id,
@@ -2789,7 +2790,7 @@ mod tests {
         for expected in [DeliveryOutcome::Queued, DeliveryOutcome::Duplicate] {
             assert_eq!(
                 notify_planner_blocking_question(
-.chat_ctx(),
+app.chat_ctx(),
                     &task_id,
                     "T-1",
                     "planner-test",
@@ -3069,7 +3070,7 @@ mod tests {
             setup_monitor_case("doing", SessionState::Idle, Duration::from_secs(90), vec![]).await;
 
         assert!(!notify_planner_about_stalled_agent(
-.ctx.clone(),
+app.ctx.clone(),
             &task_id,
             &board_card(&app, &task_id).await,
             &agent_chat_id,
@@ -3125,7 +3126,7 @@ mod tests {
 
         let card = board_card(&app, &task_id).await;
         assert!(!notify_planner_about_stalled_agent(
-.ctx.clone(),
+app.ctx.clone(),
             &task_id,
             &card,
             &agent_chat_id,
@@ -3398,7 +3399,7 @@ mod tests {
             setup_monitor_case("doing", SessionState::Idle, Duration::from_secs(90), vec![]).await;
 
         mark_agent_as_failed(
-.ctx.clone(),
+app.ctx.clone(),
             &task_id,
             "T-1",
             Some("agent-1"),

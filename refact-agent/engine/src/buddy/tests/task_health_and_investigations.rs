@@ -404,7 +404,7 @@ async fn task_agent_monitor_writes_heartbeat_on_message() {
     save_board(gcx.clone(), &task.id, &board).await.unwrap();
 
     update_card_heartbeat(
-.chat_ctx(gcx.clone()),
+gcx.chat_ctx(gcx.clone()),
         &task.id,
         "c1",
     )

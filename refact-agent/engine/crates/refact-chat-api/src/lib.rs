@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+pub mod cache_guard;
 pub mod chat_local_types;
 pub mod code_lens;
 pub mod diagnostics;
@@ -41,6 +42,18 @@ pub use refact_core::chat_types::{
     DELIVERY_EXTRA_KEY,
 };
 pub use refact_core::worktree_meta::WorktreeMeta;
+pub use cache_guard::{
+    AnthropicCachePrefixBoundary, CACHE_GUARD_DIFF_MAX_CHARS, CACHE_GUARD_DIFF_PREVIEW_NOTICE,
+    CACHE_GUARD_DIFF_TRUNCATION_NOTICE, CACHE_GUARD_PREVIEW_ARRAY_MAX_ITEMS,
+    CACHE_GUARD_PREVIEW_STRING_MAX_CHARS, CACHE_GUARD_RULE, CACHE_GUARD_TOOL_CALL_ID,
+    CACHE_GUARD_TOOL_NAME, RECURSIVELY_IGNORED_KEYS, TOP_LEVEL_IGNORED_KEYS,
+    CACHE_GUARD_REDACTION_PATTERNS, anthropic_cache_prefix_boundary, body_for_cache_guard,
+    body_for_cache_guard_with_boundary, cache_guard_event_message, cache_prefix_compatible,
+    cap_cache_guard_diff, chat_model_supports_cache_guard, has_anthropic_explicit_cache_markers,
+    is_append_only_prefix, is_cache_guard_pause_id, is_cache_guard_pause_reason,
+    is_non_interactive_thread, is_task_management_role, preview_body_for_cache_guard_diff,
+    sanitize_body_for_cache_guard, unified_json_diff,
+};
 
 pub const CLIENT_MESSAGE_ID_EXTRA_KEY: &str = "client_message_id";
 pub const MAX_CLIENT_MESSAGE_ID_CHARS: usize = 256;
@@ -1908,7 +1921,9 @@ mod tests {
     fn nudge_message_mentions_the_finish_tool() {
         let message = silent_tail(0, 2).nudge_message("agent_finish");
         assert!(message.contains("agent_finish"));
-        assert!(!silent_tail(0, 2).nudge_message("other_finish").contains("agent_finish`."));
+        assert!(!silent_tail(0, 2)
+            .nudge_message("other_finish")
+            .contains("agent_finish`."));
     }
 
     #[test]

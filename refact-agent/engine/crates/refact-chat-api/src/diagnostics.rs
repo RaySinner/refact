@@ -36,7 +36,9 @@ pub fn safe_provider_error_diagnostic_with_limit(error: &str, max_chars: usize) 
     if max_chars == 0 {
         return String::new();
     }
-    let friendly_error = if error.contains("Mandatory reconstruction input and instructions exceed resolved analyzer context") {
+    let friendly_error = if error.contains(
+        "Mandatory reconstruction input and instructions exceed resolved analyzer context",
+    ) {
         error.replace(
             "Mandatory reconstruction input and instructions exceed resolved analyzer context",
             "Conversation is too long to be automatically summarized for context compression. Try starting a new chat or deleting unneeded messages."
@@ -44,7 +46,7 @@ pub fn safe_provider_error_diagnostic_with_limit(error: &str, max_chars: usize) 
     } else {
         error.to_string()
     };
-    
+
     let (window, source_truncated) = provider_error_diagnostic_window(&friendly_error, max_chars);
     let redacted = redact_provider_error_diagnostic(window);
     let needs_truncation = source_truncated || redacted.len() > max_chars;

@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 refact-core = { path = "../refact-core" }
+refact-caps-core = { path = "../refact-caps-core" }
 chrono = { version = "0.4.31", features = ["serde"] }
 serde.workspace = true
 serde_json.workspace = true
@@ -12,3 +13,6 @@ tokio = { workspace = true, features = ["sync", "time"] }
 uuid.workspace = true
 regex.workspace = true
 url = "2.4.1"
+sha2 = "0.10.8"
+hex = "0.4.3"
+similar = "2.3.0"

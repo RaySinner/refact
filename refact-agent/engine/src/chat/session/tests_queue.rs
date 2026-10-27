@@ -996,3 +996,162 @@ use std::time::Instant;
             session.recent_request_ids_set.len()
         );
     }
+
+    #[test]
+    fn append_delivery_lands_between_steps_of_a_turn() {
+        let mut session = make_session();
+        session.turn_depth = 1;
+        session.add_message(make_user_message("look at the file"));
+        session.start_stream().unwrap();
+        session.emit_stream_delta(vec![DeltaOp::SetToolCalls {
+            tool_calls: vec![
+                json!({"id":"read","type":"function","function":{"name":"cat","arguments":"{}"}}),
+            ],
+        }]);
+        session.finish_stream_with_next_state(
+            Some("tool_calls".into()),
+            SessionState::ExecutingTools,
+        );
+        assert_eq!(
+            session
+                .enqueue_delivery(delivery_fixture("between-steps", PushMode::Append))
+                .unwrap(),
+            DeliveryOutcome::Queued
+        );
+        assert!(session.drain_pending_deliveries().0.is_empty());
+
+        session.add_message(make_tool_result("read", "contents"));
+        session.set_runtime_state(SessionState::Idle, None);
+
+        assert_eq!(
+            session.drain_pending_deliveries(),
+            (vec!["between-steps".to_string()], true)
+        );
+        assert_eq!(
+            role_sequence(&session),
+            vec!["user", "assistant", "tool", "event"]
+        );
+        assert_eq!(
+            delivery_id_of_message(session.messages.last().unwrap()),
+            Some("between-steps")
+        );
+        assert!(
+            !session.turn_finished(),
+            "the delivery must land while the turn is still in flight"
+        );
+        assert!(
+            session.start_stream().is_some(),
+            "the next step must begin after the delivery landed"
+        );
+        assert_eq!(session.runtime.state, SessionState::Generating);
+    }
+
+    #[test]
+    fn append_delivery_never_lands_inside_open_tool_window() {
+        let mut session = make_session();
+        session.turn_depth = 1;
+        session.start_stream().unwrap();
+        session.emit_stream_delta(vec![DeltaOp::SetToolCalls {
+            tool_calls: vec![
+                json!({"id":"one","type":"function","function":{"name":"cat","arguments":"{}"}}),
+                json!({"id":"two","type":"function","function":{"name":"cat","arguments":"{}"}}),
+            ],
+        }]);
+        assert_eq!(
+            session
+                .enqueue_delivery(delivery_fixture("append", PushMode::Append))
+                .unwrap(),
+            DeliveryOutcome::Queued
+        );
+        assert!(session.drain_pending_deliveries().0.is_empty());
+
+        session.finish_stream_with_next_state(
+            Some("tool_calls".into()),
+            SessionState::ExecutingTools,
+        );
+        assert!(session.drain_pending_deliveries().0.is_empty());
+
+        session.add_message(make_tool_result("one", "first"));
+        session.set_runtime_state(SessionState::Idle, None);
+        assert!(session.drain_pending_deliveries().0.is_empty());
+        assert_eq!(role_sequence(&session), vec!["assistant", "tool"]);
+
+        session.add_message(make_tool_result("two", "second"));
+        assert_eq!(session.drain_pending_deliveries().0, vec!["append"]);
+        assert_eq!(
+            role_sequence(&session),
+            vec!["assistant", "tool", "tool", "event"]
+        );
+    }
+
+    #[test]
+    fn when_idle_delivery_still_waits_for_turn_end() {
+        let mut session = make_session();
+        session.turn_depth = 1;
+        session.start_stream().unwrap();
+        session.emit_stream_delta(vec![DeltaOp::SetToolCalls {
+            tool_calls: vec![
+                json!({"id":"read","type":"function","function":{"name":"cat","arguments":"{}"}}),
+            ],
+        }]);
+        session.finish_stream_with_next_state(
+            Some("tool_calls".into()),
+            SessionState::ExecutingTools,
+        );
+        session
+            .enqueue_delivery(delivery_fixture("idle", PushMode::WhenIdle))
+            .unwrap();
+        session.add_message(make_tool_result("read", "contents"));
+        session.set_runtime_state(SessionState::Idle, None);
+
+        assert!(session.drain_pending_deliveries().0.is_empty());
+        assert_eq!(session.pending_deliveries.len(), 1);
+
+        session.turn_depth = 0;
+        assert_eq!(session.drain_pending_deliveries().0, vec!["idle"]);
+    }
+
+    #[test]
+    fn cancelled_delivery_does_not_leave_an_interrupted_wait_boundary_open() {
+        let mut session = make_session();
+        session.turn_depth = 1;
+        session.start_stream().unwrap();
+        session.emit_stream_delta(vec![DeltaOp::SetToolCalls {
+            tool_calls: vec![
+                json!({"id":"wait","type":"function","function":{"name":"sleep","arguments":"{}"}}),
+            ],
+        }]);
+        session.finish_stream_with_next_state(
+            Some("tool_calls".into()),
+            SessionState::ExecutingTools,
+        );
+        session.begin_interruptible_wait();
+        session
+            .enqueue_delivery(delivery_fixture("cancelled", PushMode::Append))
+            .unwrap();
+        assert!(session.wait_interrupt_flag.load(Ordering::SeqCst));
+        assert!(session.wait_delivery_boundary);
+
+        assert!(!session
+            .update_pending_delivery("cancelled", None, true)
+            .unwrap());
+        session.end_interruptible_wait();
+        session.add_message(make_tool_result("wait", "interrupted"));
+        session.set_runtime_state(SessionState::Idle, None);
+        assert!(session.drain_pending_deliveries().0.is_empty());
+        assert!(
+            !session.wait_delivery_boundary,
+            "a cancelled delivery must not leave the interrupted-wait boundary open"
+        );
+
+        assert_eq!(
+            session
+                .enqueue_delivery(delivery_fixture("idle", PushMode::WhenIdle))
+                .unwrap(),
+            DeliveryOutcome::Queued
+        );
+        assert!(session.drain_pending_deliveries().0.is_empty());
+
+        session.turn_depth = 0;
+        assert_eq!(session.drain_pending_deliveries().0, vec!["idle"]);
+    }

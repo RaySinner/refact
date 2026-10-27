@@ -693,6 +693,16 @@ pub fn start_generation(
                     break;
                 }
                 ToolStepOutcome::Continue => {
+                    // The step's assistant response and all its tool results are
+                    // in, so the `append` boundary is open exactly here. Land
+                    // pending deliveries before the loop-top pre-steps can
+                    // inject a queued user message ahead of them or end the
+                    // turn for a mode handoff.
+                    crate::chat::delivery::drain_deliveries_at_boundary(
+                        app.clone(),
+                        session_arc.clone(),
+                    )
+                    .await;
                     if inject_queued_user_messages_before_llm_if_safe(
                         app.clone(),
                         session_arc.clone(),

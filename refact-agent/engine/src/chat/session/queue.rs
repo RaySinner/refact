@@ -438,6 +438,7 @@ impl ChatSession {
     /// Returns `(delivered_ids, wake_requested)`.
     pub fn drain_pending_deliveries(&mut self) -> (Vec<String>, bool) {
         if self.pending_deliveries.is_empty() {
+            self.clear_settled_wait_delivery_boundary();
             return (Vec::new(), false);
         }
         let mut delivered_ids = Vec::new();
@@ -475,6 +476,20 @@ impl ChatSession {
             self.wait_delivery_boundary = false;
         }
         (delivered_ids, wake)
+    }
+
+    /// `wait_delivery_boundary` exists only to let a delivery land inside a wait
+    /// that was interrupted for it. Once nothing is pending, no tool result is
+    /// outstanding and no wait is running, it must not linger: a stale flag would
+    /// let a later `when_idle` delivery land mid-turn.
+    fn clear_settled_wait_delivery_boundary(&mut self) {
+        if self.pending_deliveries.is_empty()
+            && self.runner_pending_deliveries.is_empty()
+            && !self.has_pending_tool_result_window()
+            && self.interruptible_waits == 0
+        {
+            self.wait_delivery_boundary = false;
+        }
     }
 
     /// Reprioritize or cancel a still-pending delivery. Works while a
@@ -516,6 +531,7 @@ impl ChatSession {
                 );
             }
             self.pending_deliveries.remove(index);
+            self.clear_settled_wait_delivery_boundary();
             self.emit_queue_update();
             self.mark_persisted_runtime_changed();
             return Ok(false);

@@ -11,6 +11,18 @@ pub async fn emit_task_event(gcx: Arc<GlobalContext>, event: TaskEvent) {
     emit_task_event_via(&gcx.task_events_tx, &gcx.task_events_seq, event).await;
 }
 
+pub async fn emit_task_event_for_services(
+    chat: &crate::app_state::ChatServices,
+    event: TaskEvent,
+) {
+    emit_task_event_via(
+        &Some(chat.task_events_tx.clone()),
+        &Some(chat.task_events_seq.clone()),
+        event,
+    )
+    .await;
+}
+
 pub async fn emit_task_event_via(
     task_events_tx: &Option<tokio::sync::broadcast::Sender<TaskEventEnvelope>>,
     task_events_seq: &Option<Arc<std::sync::atomic::AtomicU64>>,

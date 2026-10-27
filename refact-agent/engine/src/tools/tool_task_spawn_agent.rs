@@ -10,12 +10,13 @@ use chrono::{DateTime, Utc};
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
 use crate::call_validation::{ChatMessage, ChatContent, ContextEnum, ContextFile};
 use crate::at_commands::at_commands::AtCommandsContext;
+use crate::chat::ctx::{CapsProvider, ChatCtx};
 use crate::chat::internal_roles::{event, EventSubkind};
 use crate::chat::trajectories::resolve_task_planner_controller_chat_id;
 use crate::tasks::rooms;
 use crate::tasks::storage;
 use crate::tasks::types::{BoardCard, StatusUpdate};
-use crate::global_context::{GlobalContext, try_load_caps_quickly_if_not_present};
+use crate::global_context::GlobalContext;
 use crate::tasks::types::TaskMeta as StoredTaskMeta;
 use crate::worktrees::git;
 use crate::worktrees::service::WorktreeService;
@@ -62,10 +63,11 @@ async fn get_task_id(
 }
 
 pub(crate) async fn resolve_agent_model(
-    gcx: Arc<GlobalContext>,
+    caps_provider: &Arc<dyn CapsProvider>,
     current_model: &str,
 ) -> Result<String, String> {
-    let caps = try_load_caps_quickly_if_not_present(gcx, 0)
+    let caps = caps_provider
+        .try_load_caps_quickly(0)
         .await
         .map_err(|e| format!("Failed to load caps for model resolution: {}", e))?;
 
@@ -118,8 +120,7 @@ impl PreparedWorktree {
         self.meta.clone()
     }
 
-    pub(crate) async fn cleanup_unlinked(self, gcx: Arc<GlobalContext>) {
-        let cache_dir = gcx.cache_dir.clone();
+    pub(crate) async fn cleanup_unlinked(self, cache_dir: PathBuf) {
         if let Ok(service) =
             WorktreeService::new_async(cache_dir, self.meta.source_workspace_root.clone()).await
         {
@@ -149,7 +150,7 @@ impl PreparedWorktree {
         }
     }
 
-    pub(crate) async fn retain(self, _gcx: Arc<GlobalContext>) {
+    pub(crate) async fn retain(self) {
         tracing::info!(
             "Retaining worktree '{}' / branch '{}' after spawn failure for inspection.",
             self.worktree_name(),
@@ -258,7 +259,7 @@ pub(crate) fn abandoned_worktrees_error(action: &str, abandoned_worktrees: &[Str
 }
 
 pub(crate) async fn prepare_agent_worktree(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     task_meta: &StoredTaskMeta,
     task_id: &str,
     agent_id: &str,
@@ -266,7 +267,7 @@ pub(crate) async fn prepare_agent_worktree(
     agent_chat_id: &str,
 ) -> Result<PreparedWorktree, String> {
     prepare_agent_worktree_with_suffix(
-        gcx,
+        ctx,
         task_meta,
         task_id,
         agent_id,
@@ -278,7 +279,7 @@ pub(crate) async fn prepare_agent_worktree(
 }
 
 pub(crate) async fn prepare_agent_worktree_with_suffix(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     task_meta: &StoredTaskMeta,
     task_id: &str,
     agent_id: &str,
@@ -287,7 +288,7 @@ pub(crate) async fn prepare_agent_worktree_with_suffix(
     branch_suffix: Option<&str>,
 ) -> Result<PreparedWorktree, String> {
     prepare_agent_worktree_with_base_and_suffix(
-        gcx,
+        ctx,
         task_meta,
         task_id,
         agent_id,
@@ -301,7 +302,7 @@ pub(crate) async fn prepare_agent_worktree_with_suffix(
 }
 
 async fn prepare_agent_worktree_with_base_and_suffix(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     task_meta: &StoredTaskMeta,
     task_id: &str,
     agent_id: &str,
@@ -311,7 +312,7 @@ async fn prepare_agent_worktree_with_base_and_suffix(
     base_commit: Option<String>,
     branch_suffix: Option<&str>,
 ) -> Result<PreparedWorktree, String> {
-    let project_dirs = crate::files_correction::get_project_dirs(gcx.clone()).await;
+    let project_dirs = crate::files_correction::get_unscoped_project_dirs_for_ctx(ctx).await;
     let workspace_root = project_dirs.first().cloned().ok_or_else(|| {
         "No workspace folder found; task agents require an isolated git worktree".to_string()
     })?;
@@ -329,7 +330,7 @@ async fn prepare_agent_worktree_with_base_and_suffix(
             "Generated branch name '{branch_name}' exceeds 200 chars"
         ));
     }
-    let cache_dir = gcx.cache_dir.clone();
+    let cache_dir = ctx.paths.cache_dir.clone();
     let service = WorktreeService::new_async(cache_dir, workspace_root.clone()).await?;
     let task_base_branch = base_branch;
     let current_branch = if task_base_branch.is_some() {
@@ -748,7 +749,7 @@ pub(crate) fn restore_original_card_if_current_agent(
 }
 
 pub(crate) async fn rollback_retain(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     task_id: &str,
     card_id: &str,
     guard_chat_id: &str,
@@ -761,7 +762,7 @@ pub(crate) async fn rollback_retain(
         "Spawn rolled back: {}. Worktree retained for inspection.",
         truncated
     );
-    let _ = storage::update_board_atomic(gcx.clone(), task_id, move |board| {
+    let _ = storage::update_board_atomic_for_ctx(ctx, task_id, move |board| {
         if let Some(card) = board.get_card_mut(&card_id) {
             if card.agent_chat_id.as_deref() == Some(&guard_chat_id) {
                 card.column = "failed".to_string();
@@ -774,7 +775,7 @@ pub(crate) async fn rollback_retain(
         Ok(Some(()))
     })
     .await;
-    let _ = storage::update_task_stats(gcx, task_id).await;
+    let _ = storage::update_task_stats_for_ctx(ctx, task_id).await;
 }
 
 pub(crate) fn build_agent_thread_params(
@@ -1058,7 +1059,7 @@ impl Tool for ToolTaskSpawnAgent {
 
         drop(ccx_lock);
 
-        let (gcx, current_model, task_id, chat_id, root_chat_id, task_meta, planner_worktree) = {
+        let (app, current_model, task_id, chat_id, root_chat_id, task_meta, planner_worktree) = {
             let ccx_lock = ccx.lock().await;
             let task_id = ccx_lock
                 .task_meta
@@ -1071,7 +1072,7 @@ impl Tool for ToolTaskSpawnAgent {
                         .unwrap_or_default()
                 });
             (
-                ccx_lock.app.gcx.clone(),
+                ccx_lock.app.clone(),
                 ccx_lock.current_model.clone(),
                 task_id,
                 ccx_lock.chat_id.clone(),
@@ -1083,8 +1084,10 @@ impl Tool for ToolTaskSpawnAgent {
                     .map(|scope| scope.worktree().clone()),
             )
         };
+        let ctx = app.chat_ctx();
+        let tool = app.tool.clone();
         let planner_chat_id = resolve_invoking_planner_chat_id(
-            gcx.clone(),
+            app.gcx.clone(),
             &chat_id,
             &root_chat_id,
             task_meta.as_ref(),
@@ -1110,17 +1113,17 @@ impl Tool for ToolTaskSpawnAgent {
         };
         let suggested_steps = suggested_steps.min(50).max(1);
 
-        let task_meta = storage::load_task_meta(gcx.clone(), &task_id).await?;
+        let task_meta = storage::load_task_meta_for_ctx(&ctx, &task_id).await?;
         let explicit_base_branch = optional_nonempty_string_arg(args, "base_branch")?;
         let explicit_base_commit = optional_nonempty_string_arg(args, "base_commit")?;
 
-        let model = resolve_agent_model(gcx.clone(), &current_model).await?;
-        crate::tools::task_tool_helpers::preflight_agent_model(gcx.clone(), &model).await?;
+        let model = resolve_agent_model(&tool.caps, &current_model).await?;
+        crate::tools::task_tool_helpers::preflight_agent_model(app.gcx.clone(), &model).await?;
 
         validate_id(&task_id, "task_id")?;
         validate_id(card_id, "card_id")?;
 
-        let board = storage::load_board(gcx.clone(), &task_id).await?;
+        let board = storage::load_board_for_ctx(&ctx, &task_id).await?;
         let abandoned_worktrees = find_abandoned_worktrees(&board);
         if !abandoned_worktrees.is_empty() {
             return Err(abandoned_worktrees_error(
@@ -1154,7 +1157,7 @@ impl Tool for ToolTaskSpawnAgent {
         let agent_id = Uuid::new_v4().to_string();
         let agent_chat_id = format!("agent-{}-{}", card_id, &agent_id[..8]);
 
-        let project_dirs = crate::files_correction::get_project_dirs(gcx.clone()).await;
+        let project_dirs = crate::files_correction::get_unscoped_project_dirs_for_ctx(&ctx).await;
         let workspace_root = project_dirs.first().ok_or_else(|| {
             "No workspace folder found; task agents require an isolated git worktree".to_string()
         })?;
@@ -1166,7 +1169,7 @@ impl Tool for ToolTaskSpawnAgent {
             &task_meta,
         );
         let prepared_worktree = prepare_agent_worktree_with_base_and_suffix(
-            gcx.clone(),
+            &ctx,
             &task_meta,
             &task_id,
             &agent_id,
@@ -1187,7 +1190,7 @@ impl Tool for ToolTaskSpawnAgent {
             let worktree_path = prepared_worktree.worktree_path();
             let source_workspace_root = prepared_worktree.source_workspace_root();
             match context_files_from_files_to_open(
-                gcx.clone(),
+                app.gcx.clone(),
                 &worktree_path,
                 &source_workspace_root,
                 &files_to_open,
@@ -1196,7 +1199,9 @@ impl Tool for ToolTaskSpawnAgent {
             {
                 Ok(context_files) => context_files,
                 Err(e) => {
-                    prepared_worktree.cleanup_unlinked(gcx.clone()).await;
+                    prepared_worktree
+                        .cleanup_unlinked(app.paths.cache_dir.clone())
+                        .await;
                     return Err(e);
                 }
             }
@@ -1204,10 +1209,12 @@ impl Tool for ToolTaskSpawnAgent {
         let initial_context_message = if initial_context_files.is_empty() {
             None
         } else {
-            match context_file_message(&gcx, initial_context_files) {
+            match context_file_message(&app.gcx, initial_context_files) {
                 Ok(message) => Some(message),
                 Err(e) => {
-                    prepared_worktree.cleanup_unlinked(gcx.clone()).await;
+                    prepared_worktree
+                        .cleanup_unlinked(app.paths.cache_dir.clone())
+                        .await;
                     return Err(e);
                 }
             }
@@ -1221,15 +1228,13 @@ impl Tool for ToolTaskSpawnAgent {
         // The tool names this member actually gets, recorded on the card so peers can see what
         // their neighbours are able to do. Resolved from the member's own mode, not from the
         // template it was spawned from: the allowed set is a per-spawn fact.
-        let member_tools: Vec<String> = crate::tools::tools_list::get_tools_for_mode(
-            gcx.clone(),
-            "task_agent",
-            Some(&model),
-        )
-        .await
-        .into_iter()
-        .map(|tool| tool.tool_description().name)
-        .collect();
+        let member_tools: Vec<String> = tool
+            .tool_registry
+            .get_tools_for_mode("task_agent", Some(&model))
+            .await
+            .into_iter()
+            .map(|description| description.name)
+            .collect();
         let worktree_branch = prepared_worktree.branch_name();
         let worktree_path_str = Some(
             prepared_worktree
@@ -1241,8 +1246,8 @@ impl Tool for ToolTaskSpawnAgent {
         let base_branch_from_prep = prepared_worktree.meta.base_branch.clone();
         let base_commit_from_prep = prepared_worktree.meta.base_commit.clone();
 
-        let board_update_result = storage::update_board_atomic(
-            gcx.clone(),
+        let board_update_result = storage::update_board_atomic_for_ctx(
+            &ctx,
             &task_id,
             move |board| {
                 let agents_active_before = board
@@ -1288,24 +1293,26 @@ impl Tool for ToolTaskSpawnAgent {
         let (board, commit_info) = match board_update_result {
             Ok(result) => result,
             Err(e) => {
-                prepared_worktree.cleanup_unlinked(gcx.clone()).await;
+                prepared_worktree
+                    .cleanup_unlinked(app.paths.cache_dir.clone())
+                    .await;
                 return Err(e);
             }
         };
 
         let starting_new_run = commit_info.unwrap();
 
-        if let Err(e) = storage::update_task_stats(gcx.clone(), &task_id).await {
-            rollback_retain(gcx.clone(), &task_id, card_id, &agent_chat_id, &e).await;
-            prepared_worktree.retain(gcx.clone()).await;
+        if let Err(e) = storage::update_task_stats_for_ctx(&ctx, &task_id).await {
+            rollback_retain(&ctx, &task_id, card_id, &agent_chat_id, &e).await;
+            prepared_worktree.retain().await;
             return Err(e);
         }
 
-        let mut meta = match storage::load_task_meta(gcx.clone(), &task_id).await {
+        let mut meta = match storage::load_task_meta_for_ctx(&ctx, &task_id).await {
             Ok(m) => m,
             Err(e) => {
-                rollback_retain(gcx.clone(), &task_id, card_id, &agent_chat_id, &e).await;
-                prepared_worktree.retain(gcx.clone()).await;
+                rollback_retain(&ctx, &task_id, card_id, &agent_chat_id, &e).await;
+                prepared_worktree.retain().await;
                 return Err(e);
             }
         };
@@ -1321,9 +1328,9 @@ impl Tool for ToolTaskSpawnAgent {
                 .min();
             meta.last_agents_summary_at = Some(earliest.unwrap_or_else(Utc::now).to_rfc3339());
         }
-        if let Err(e) = storage::save_task_meta(gcx.clone(), &task_id, &meta).await {
-            rollback_retain(gcx.clone(), &task_id, card_id, &agent_chat_id, &e).await;
-            prepared_worktree.retain(gcx.clone()).await;
+        if let Err(e) = storage::save_task_meta_for_ctx(&ctx, &task_id, &meta).await {
+            rollback_retain(&ctx, &task_id, card_id, &agent_chat_id, &e).await;
+            prepared_worktree.retain().await;
             return Err(e);
         }
 
@@ -1342,7 +1349,6 @@ impl Tool for ToolTaskSpawnAgent {
             .collect::<Vec<_>>()
             .join("\n\n");
 
-        let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
         let thread = build_agent_thread_params(
             &agent_chat_id,
             &card_title,
@@ -1416,8 +1422,8 @@ impl Tool for ToolTaskSpawnAgent {
         }
         .await;
         if let Err(e) = session_result {
-            rollback_retain(gcx.clone(), &task_id, card_id, &agent_chat_id, &e).await;
-            prepared_worktree.retain(gcx.clone()).await;
+            rollback_retain(&ctx, &task_id, card_id, &agent_chat_id, &e).await;
+            prepared_worktree.retain().await;
             return Err(e);
         }
 
@@ -1523,6 +1529,16 @@ mod tests {
         let mut state = gcx.caps_state.write().await;
         state.caps = Some(Arc::new(caps));
         state.last_attempted_ts = now;
+    }
+
+    async fn test_chat_ctx(gcx: &Arc<GlobalContext>) -> ChatCtx {
+        crate::app_state::AppState::from_gcx(gcx.clone())
+            .await
+            .chat_ctx()
+    }
+
+    async fn test_caps_provider(gcx: &Arc<GlobalContext>) -> Arc<dyn CapsProvider> {
+        crate::app_state::AppState::from_gcx(gcx.clone()).await.tool.caps
     }
 
     async fn test_gcx_with_privacy(blocked: Vec<String>) -> Arc<GlobalContext> {
@@ -1663,7 +1679,7 @@ mod tests {
         caps.defaults.chat_default_model = "provider/chat".to_string();
         set_caps(&gcx, caps).await;
 
-        let model = resolve_agent_model(gcx, "provider/current").await.unwrap();
+        let model = resolve_agent_model(&test_caps_provider(&gcx).await, "provider/current").await.unwrap();
 
         assert_eq!(model, "provider/task-planner");
     }
@@ -1675,7 +1691,7 @@ mod tests {
         caps.defaults.chat_default_model = "provider/chat".to_string();
         set_caps(&gcx, caps).await;
 
-        let model = resolve_agent_model(gcx, "provider/current").await.unwrap();
+        let model = resolve_agent_model(&test_caps_provider(&gcx).await, "provider/current").await.unwrap();
 
         assert_eq!(model, "provider/current");
     }
@@ -1687,7 +1703,7 @@ mod tests {
         caps.defaults.chat_default_model = "provider/chat".to_string();
         set_caps(&gcx, caps).await;
 
-        let model = resolve_agent_model(gcx, "").await.unwrap();
+        let model = resolve_agent_model(&test_caps_provider(&gcx).await, "").await.unwrap();
 
         assert_eq!(model, "provider/chat");
     }
@@ -1703,8 +1719,7 @@ mod tests {
         let task_id = "a".repeat(100);
         let card_id = "b".repeat(100);
         let task_meta = sample_task_meta(None);
-        let err = prepare_agent_worktree_with_suffix(
-            gcx,
+        let err = prepare_agent_worktree_with_suffix(&test_chat_ctx(&gcx).await,
             &task_meta,
             &task_id,
             "agent-12345678",
@@ -1729,8 +1744,7 @@ mod tests {
         set_workspace(gcx.clone(), &source).await;
 
         let task_meta = sample_task_meta(None);
-        let err = prepare_agent_worktree(
-            gcx,
+        let err = prepare_agent_worktree(&test_chat_ctx(&gcx).await,
             &task_meta,
             "task-1",
             "agent-12345678",
@@ -1754,8 +1768,7 @@ mod tests {
         let before = crate::files_correction::get_project_dirs(gcx.clone()).await;
 
         let task_meta = sample_task_meta(None);
-        let prepared = prepare_agent_worktree(
-            gcx.clone(),
+        let prepared = prepare_agent_worktree(&test_chat_ctx(&gcx).await,
             &task_meta,
             "task-1",
             "agent-12345678",
@@ -1775,7 +1788,7 @@ mod tests {
         assert_eq!(prepared.meta.agent_id.as_deref(), Some("agent-12345678"));
         assert!(prepared.meta.root.is_dir());
 
-        prepared.cleanup_unlinked(gcx).await;
+        prepared.cleanup_unlinked(gcx.cache_dir.clone()).await;
     }
 
     #[tokio::test]
@@ -1787,8 +1800,7 @@ mod tests {
         let gcx = crate::global_context::tests::make_test_gcx().await;
         set_workspace(gcx.clone(), &source).await;
         let task_meta = sample_task_meta(None);
-        let prepared = prepare_agent_worktree(
-            gcx.clone(),
+        let prepared = prepare_agent_worktree(&test_chat_ctx(&gcx).await,
             &task_meta,
             "task-1",
             "agent-abcdef12",
@@ -1804,7 +1816,7 @@ mod tests {
         let service = WorktreeService::new(cache_dir, source.canonicalize().unwrap()).unwrap();
         assert!(service.get_worktree(&id).await.is_ok());
 
-        prepared.cleanup_unlinked(gcx).await;
+        prepared.cleanup_unlinked(gcx.cache_dir.clone()).await;
 
         assert!(!root.exists());
         assert!(service.get_worktree(&id).await.is_err());
@@ -1825,8 +1837,7 @@ mod tests {
         set_workspace(gcx.clone(), &source).await;
         let task_meta = sample_task_meta(Some("main"));
 
-        let prepared = prepare_agent_worktree(
-            gcx.clone(),
+        let prepared = prepare_agent_worktree(&test_chat_ctx(&gcx).await,
             &task_meta,
             "task-1",
             "agent-11111111",
@@ -1845,7 +1856,7 @@ mod tests {
         assert!(!prepared.meta.root.join("dev_only.txt").exists());
         assert_eq!(run_git(&source, &["rev-parse", "dev"]).trim(), dev_head);
 
-        prepared.cleanup_unlinked(gcx).await;
+        prepared.cleanup_unlinked(gcx.cache_dir.clone()).await;
     }
 
     #[tokio::test]
@@ -1860,8 +1871,7 @@ mod tests {
         set_workspace(gcx.clone(), &source).await;
         let task_meta = sample_task_meta(None);
 
-        let prepared = prepare_agent_worktree(
-            gcx.clone(),
+        let prepared = prepare_agent_worktree(&test_chat_ctx(&gcx).await,
             &task_meta,
             "task-1",
             "agent-22222222",
@@ -1879,7 +1889,7 @@ mod tests {
         assert!(prepared.meta.root.join("dev_only.txt").is_file());
         assert!(prepared.base_branch_mismatch_warning.is_none());
 
-        prepared.cleanup_unlinked(gcx).await;
+        prepared.cleanup_unlinked(gcx.cache_dir.clone()).await;
     }
 
     #[tokio::test]
@@ -1894,8 +1904,7 @@ mod tests {
         set_workspace(gcx.clone(), &source).await;
         let task_meta = sample_task_meta(Some("task-base"));
 
-        let err = prepare_agent_worktree(
-            gcx,
+        let err = prepare_agent_worktree(&test_chat_ctx(&gcx).await,
             &task_meta,
             "task-1",
             "agent-33333333",
@@ -1923,8 +1932,7 @@ mod tests {
         set_workspace(gcx.clone(), &source).await;
         let task_meta = sample_task_meta(Some("main"));
 
-        let prepared = prepare_agent_worktree(
-            gcx.clone(),
+        let prepared = prepare_agent_worktree(&test_chat_ctx(&gcx).await,
             &task_meta,
             "task-1",
             "agent-44444444",
@@ -1938,7 +1946,7 @@ mod tests {
         assert!(warning.contains("Current repo HEAD is on branch 'dev'"));
         assert!(warning.contains("this task was created from 'main'"));
 
-        prepared.cleanup_unlinked(gcx).await;
+        prepared.cleanup_unlinked(gcx.cache_dir.clone()).await;
     }
 
     #[test]
@@ -2449,8 +2457,7 @@ mod tests {
         let gcx = crate::global_context::tests::make_test_gcx().await;
         set_workspace(gcx.clone(), &source).await;
         let task_meta = sample_task_meta(None);
-        let prepared = prepare_agent_worktree(
-            gcx.clone(),
+        let prepared = prepare_agent_worktree(&test_chat_ctx(&gcx).await,
             &task_meta,
             "task-1",
             "agent-abcdef12",
@@ -2462,7 +2469,7 @@ mod tests {
         let root = prepared.meta.root.clone();
         assert!(root.is_dir());
 
-        prepared.cleanup_unlinked(gcx).await;
+        prepared.cleanup_unlinked(gcx.cache_dir.clone()).await;
 
         assert!(!root.exists());
     }
@@ -2478,8 +2485,7 @@ mod tests {
 
         let task_id = "task-retain-test";
         let task_meta = sample_task_meta(None);
-        let prepared = prepare_agent_worktree(
-            gcx.clone(),
+        let prepared = prepare_agent_worktree(&test_chat_ctx(&gcx).await,
             &task_meta,
             task_id,
             "agent-abcdef12",
@@ -2495,15 +2501,14 @@ mod tests {
         card.agent_chat_id = Some("agent-T-1-abcdef12".to_string());
         setup_task_storage(gcx.clone(), &source, task_id, card).await;
 
-        rollback_retain(
-            gcx.clone(),
+        rollback_retain(&test_chat_ctx(&gcx).await,
             task_id,
             "T-1",
             "agent-T-1-abcdef12",
             "model unavailable",
         )
         .await;
-        prepared.retain(gcx.clone()).await;
+        prepared.retain().await;
 
         assert!(
             root.exists(),
@@ -2541,8 +2546,7 @@ mod tests {
         setup_task_storage(gcx.clone(), &source, task_id, card).await;
 
         let long_error: String = "x".repeat(400);
-        rollback_retain(
-            gcx.clone(),
+        rollback_retain(&test_chat_ctx(&gcx).await,
             task_id,
             "T-2",
             "agent-T-2-msgtest",

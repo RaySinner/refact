@@ -21,7 +21,8 @@ use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
 use crate::global_context::GlobalContext;
 use crate::knowledge_index::{build_knowledge_index, KnowledgeSearchFilters, KnowledgeSearchHit};
 use crate::postprocessing::pp_command_output::OutputFilter;
-use crate::tasks::storage::find_task_dir;
+use crate::chat::ctx::ChatCtx;
+use crate::tasks::storage::find_task_dir_for_ctx;
 use crate::tools::tools_description::{
     Tool, ToolDesc, ToolSource, ToolSourceType, json_schema_from_params,
 };
@@ -1217,7 +1218,7 @@ pub async fn list_task_memories_for_api(
     task_id: &str,
     filters: TaskMemoryListFilters,
 ) -> Result<TaskMemoriesApiResponse, String> {
-    let task_dir = find_task_dir(gcx, task_id).await?;
+    let task_dir = find_task_dir_for_ctx(&gcx.chat_ctx(gcx.clone()), task_id).await?;
     let now = Utc::now();
     let since = filters
         .since
@@ -1273,7 +1274,7 @@ pub async fn task_memory_facets_for_api(
     gcx: Arc<GlobalContext>,
     task_id: &str,
 ) -> Result<TaskMemoryFacetsResponse, String> {
-    let task_dir = find_task_dir(gcx, task_id).await?;
+    let task_dir = find_task_dir_for_ctx(&gcx.chat_ctx(gcx.clone()), task_id).await?;
     let (memories, _warnings) =
         load_task_memory_inbox_entries(&task_dir.join(MEMORIES_DIR)).await?;
     let total_count = memories.len();
@@ -1312,7 +1313,7 @@ pub async fn set_task_memory_pinned_for_api(
     filename: &str,
     pinned: bool,
 ) -> Result<TaskMemoryPinApiResponse, String> {
-    let memories_dir = get_task_memories_dir(gcx.clone(), task_id).await?;
+    let memories_dir = get_task_memories_dir(&gcx.chat_ctx(gcx.clone()), task_id).await?;
     let (path, changed) = set_task_memory_pinned(&memories_dir, filename, pinned).await?;
     crate::tasks::events::emit_task_memories_changed(gcx, task_id).await;
     Ok(TaskMemoryPinApiResponse {
@@ -1332,7 +1333,7 @@ pub async fn archive_task_memory_for_api(
     task_id: &str,
     filename: &str,
 ) -> Result<TaskMemoryArchiveApiResponse, String> {
-    let memories_dir = get_task_memories_dir(gcx.clone(), task_id).await?;
+    let memories_dir = get_task_memories_dir(&gcx.chat_ctx(gcx.clone()), task_id).await?;
     let (source_path, dest_path) = archive_task_memory(&memories_dir, filename).await?;
     crate::tasks::events::emit_task_memories_changed(gcx, task_id).await;
     Ok(TaskMemoryArchiveApiResponse {
@@ -1355,7 +1356,7 @@ pub async fn mark_task_memories_triaged_for_api(
     task_id: &str,
     cursor: Option<DateTime<Utc>>,
 ) -> Result<TaskMemoryTriageApiResponse, String> {
-    let task_dir = find_task_dir(gcx.clone(), task_id).await?;
+    let task_dir = find_task_dir_for_ctx(&gcx.chat_ctx(gcx.clone()), task_id).await?;
     let cursor = cursor.unwrap_or_else(Utc::now);
     write_memory_inbox_cursor(&task_dir, cursor).await?;
     crate::tasks::events::emit_task_memories_changed(gcx, task_id).await;
@@ -1674,10 +1675,10 @@ async fn atomic_write_text(path: &Path, content: &str) -> Result<(), String> {
 }
 
 pub async fn get_task_memories_dir(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     task_id: &str,
 ) -> Result<PathBuf, String> {
-    let task_dir = find_task_dir(gcx, task_id).await?;
+    let task_dir = find_task_dir_for_ctx(ctx, task_id).await?;
     Ok(task_dir.join(MEMORIES_DIR))
 }
 
@@ -1751,9 +1752,9 @@ impl Tool for ToolTaskMemorySave {
         tool_call_id: &String,
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
-        let (gcx, task_meta) = {
+        let (app, task_meta) = {
             let cgcx = ccx.lock().await;
-            (cgcx.app.gcx.clone(), cgcx.task_meta.clone())
+            (cgcx.app.clone(), cgcx.task_meta.clone())
         };
 
         let task_id = task_meta
@@ -1804,7 +1805,7 @@ impl Tool for ToolTaskMemorySave {
         let pinned = optional_bool_arg(args, "pinned")?.unwrap_or(false);
         let supersedes = optional_string_arg(args, "supersedes")?;
 
-        let memories_dir = get_task_memories_dir(gcx.clone(), &task_id).await?;
+        let memories_dir = get_task_memories_dir(&app.chat_ctx(), &task_id).await?;
         fs::create_dir_all(&memories_dir)
             .await
             .map_err(|e| format!("Failed to create memories directory: {}", e))?;
@@ -1841,7 +1842,7 @@ impl Tool for ToolTaskMemorySave {
         atomic_write_text(&file_path, &full_content)
             .await
             .map_err(|e| format!("Failed to write memory file: {}", e))?;
-        crate::tasks::events::emit_task_memories_changed(gcx.clone(), &task_id).await;
+        crate::tasks::events::emit_task_event_for_services(&app.chat, crate::tasks::events::TaskEvent::TaskMemoriesChanged { task_id: task_id.clone() }).await;
 
         info!("Task memory saved: {}", file_path.display());
 
@@ -1963,14 +1964,14 @@ impl Tool for ToolTaskMemoryInbox {
         tool_call_id: &String,
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
-        let (gcx, task_id) = {
+        let (app, task_id) = {
             let cgcx = ccx.lock().await;
             (
-                cgcx.app.gcx.clone(),
+                cgcx.app.clone(),
                 planner_task_id_from_meta(cgcx.task_meta.as_ref(), "task_mem_inbox")?,
             )
         };
-        let task_dir = find_task_dir(gcx, &task_id).await?;
+        let task_dir = find_task_dir_for_ctx(&app.chat_ctx(), &task_id).await?;
         let now = Utc::now();
         let cursor = if let Some(since) = optional_string_arg(args, "since")? {
             parse_rfc3339_utc(&since)?
@@ -2045,20 +2046,20 @@ impl Tool for ToolTaskMemoryTriageDone {
         tool_call_id: &String,
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
-        let (gcx, task_id) = {
+        let (app, task_id) = {
             let cgcx = ccx.lock().await;
             (
-                cgcx.app.gcx.clone(),
+                cgcx.app.clone(),
                 planner_task_id_from_meta(cgcx.task_meta.as_ref(), "task_mem_triage_done")?,
             )
         };
-        let task_dir = find_task_dir(gcx.clone(), &task_id).await?;
+        let task_dir = find_task_dir_for_ctx(&app.chat_ctx(), &task_id).await?;
         let cursor = optional_string_arg(args, "cursor")?
             .map(|value| parse_rfc3339_utc(&value))
             .transpose()?
             .unwrap_or_else(Utc::now);
         write_memory_inbox_cursor(&task_dir, cursor).await?;
-        crate::tasks::events::emit_task_memories_changed(gcx, &task_id).await;
+        crate::tasks::events::emit_task_event_for_services(&app.chat, crate::tasks::events::TaskEvent::TaskMemoriesChanged { task_id: task_id.clone() }).await;
         Ok(task_memory_tool_output(
             tool_call_id,
             format!(
@@ -2106,18 +2107,18 @@ impl Tool for ToolTaskMemoryPin {
         tool_call_id: &String,
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
-        let (gcx, task_id) = {
+        let (app, task_id) = {
             let cgcx = ccx.lock().await;
             (
-                cgcx.app.gcx.clone(),
+                cgcx.app.clone(),
                 planner_task_id_from_meta(cgcx.task_meta.as_ref(), "task_mem_pin")?,
             )
         };
         let memory_id = required_string_arg(args, "memory_id")?;
         let pinned = required_bool_arg(args, "pinned")?;
-        let memories_dir = get_task_memories_dir(gcx.clone(), &task_id).await?;
+        let memories_dir = get_task_memories_dir(&app.chat_ctx(), &task_id).await?;
         let (path, changed) = set_task_memory_pinned(&memories_dir, &memory_id, pinned).await?;
-        crate::tasks::events::emit_task_memories_changed(gcx, &task_id).await;
+        crate::tasks::events::emit_task_event_for_services(&app.chat, crate::tasks::events::TaskEvent::TaskMemoriesChanged { task_id: task_id.clone() }).await;
         info!(
             "Task memory pin updated: {} pinned={} changed={}",
             path.display(),
@@ -2174,17 +2175,17 @@ impl Tool for ToolTaskMemoryArchive {
         tool_call_id: &String,
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
-        let (gcx, task_id) = {
+        let (app, task_id) = {
             let cgcx = ccx.lock().await;
             (
-                cgcx.app.gcx.clone(),
+                cgcx.app.clone(),
                 planner_task_id_from_meta(cgcx.task_meta.as_ref(), "task_mem_archive")?,
             )
         };
         let memory_id = required_string_arg(args, "memory_id")?;
-        let memories_dir = get_task_memories_dir(gcx.clone(), &task_id).await?;
+        let memories_dir = get_task_memories_dir(&app.chat_ctx(), &task_id).await?;
         let (source_path, dest_path) = archive_task_memory(&memories_dir, &memory_id).await?;
-        crate::tasks::events::emit_task_memories_changed(gcx, &task_id).await;
+        crate::tasks::events::emit_task_event_for_services(&app.chat, crate::tasks::events::TaskEvent::TaskMemoriesChanged { task_id: task_id.clone() }).await;
         info!(
             "Task memory archived: {} -> {}",
             source_path.display(),
@@ -2239,17 +2240,17 @@ impl Tool for ToolTaskMemoryUnarchive {
         tool_call_id: &String,
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
-        let (gcx, task_id) = {
+        let (app, task_id) = {
             let cgcx = ccx.lock().await;
             (
-                cgcx.app.gcx.clone(),
+                cgcx.app.clone(),
                 planner_task_id_from_meta(cgcx.task_meta.as_ref(), "task_mem_unarchive")?,
             )
         };
         let memory_id = required_string_arg(args, "memory_id")?;
-        let memories_dir = get_task_memories_dir(gcx.clone(), &task_id).await?;
+        let memories_dir = get_task_memories_dir(&app.chat_ctx(), &task_id).await?;
         let (source_path, dest_path) = unarchive_task_memory(&memories_dir, &memory_id).await?;
-        crate::tasks::events::emit_task_memories_changed(gcx, &task_id).await;
+        crate::tasks::events::emit_task_event_for_services(&app.chat, crate::tasks::events::TaskEvent::TaskMemoriesChanged { task_id: task_id.clone() }).await;
         info!(
             "Task memory unarchived: {} -> {}",
             source_path.display(),
@@ -2295,9 +2296,9 @@ impl Tool for ToolTaskMemoriesGet {
         tool_call_id: &String,
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
-        let (gcx, task_meta) = {
+        let (app, task_meta) = {
             let cgcx = ccx.lock().await;
-            (cgcx.app.gcx.clone(), cgcx.task_meta.clone())
+            (cgcx.app.clone(), cgcx.task_meta.clone())
         };
 
         let task_id = task_meta
@@ -2310,7 +2311,7 @@ impl Tool for ToolTaskMemoriesGet {
             .and_then(|v| v.as_str())
             .unwrap_or("full");
 
-        let memories_dir = get_task_memories_dir(gcx.clone(), &task_id).await?;
+        let memories_dir = get_task_memories_dir(&app.chat_ctx(), &task_id).await?;
 
         if !memories_dir.exists() {
             return Ok((
@@ -2534,9 +2535,9 @@ impl Tool for ToolTaskMemorySearch {
         tool_call_id: &String,
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
-        let (gcx, task_meta) = {
+        let (app, task_meta) = {
             let cgcx = ccx.lock().await;
-            (cgcx.app.gcx.clone(), cgcx.task_meta.clone())
+            (cgcx.app.clone(), cgcx.task_meta.clone())
         };
         let query = match args.get("query") {
             Some(Value::String(value)) => value.trim().to_string(),
@@ -2551,7 +2552,8 @@ impl Tool for ToolTaskMemorySearch {
             .or_else(|| Some("*".to_string()));
         let filters = task_search_filters_from_args(args, task_id)?;
         let top_k = optional_usize_arg(args, "top_k", 10)?.clamp(1, 50);
-        let hits = search_task_memories_and_documents(gcx, &query, filters, top_k).await;
+        let hits =
+            search_task_memories_and_documents(app.gcx.clone(), &query, filters, top_k).await;
         let output = if hits.is_empty() {
             "[]".to_string()
         } else {
@@ -2580,7 +2582,7 @@ pub async fn load_task_memories(
     gcx: Arc<GlobalContext>,
     task_id: &str,
 ) -> Result<Vec<(PathBuf, String)>, String> {
-    let memories_dir = get_task_memories_dir(gcx, task_id).await?;
+    let memories_dir = get_task_memories_dir(&gcx.chat_ctx(gcx.clone()), task_id).await?;
 
     if !memories_dir.exists() {
         return Ok(vec![]);

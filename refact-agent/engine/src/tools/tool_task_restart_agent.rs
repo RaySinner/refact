@@ -7,8 +7,10 @@ use serde_json::{json, Value};
 use tokio::sync::Mutex as AMutex;
 use uuid::Uuid;
 
+use crate::app_state::AppState;
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::call_validation::{ChatMessage, ChatContent, ContextEnum, ContextFile};
+use crate::chat::ctx::ChatCtx;
 use crate::chat::internal_roles::{event, EventSubkind};
 use crate::global_context::GlobalContext;
 use crate::tasks::storage;
@@ -45,14 +47,14 @@ fn context_file_message(
 }
 
 async fn cleanup_old_worktree(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     agent_worktree_name: Option<&str>,
     agent_worktree: Option<&str>,
     agent_branch: Option<&str>,
 ) {
     if let Some(wt_name) = agent_worktree_name {
-        let cache_dir = gcx.cache_dir.clone();
-        let project_dirs = crate::files_correction::get_project_dirs(gcx.clone()).await;
+        let cache_dir = ctx.paths.cache_dir.clone();
+        let project_dirs = crate::files_correction::get_unscoped_project_dirs_for_ctx(ctx).await;
         if let Some(source_root) = project_dirs.first() {
             if let Ok(service) = WorktreeService::new_async(cache_dir, source_root.clone()).await {
                 if service.delete_worktree(wt_name, true, true).await.is_ok() {
@@ -62,7 +64,7 @@ async fn cleanup_old_worktree(
         }
     }
 
-    let project_dirs = crate::files_correction::get_project_dirs(gcx.clone()).await;
+    let project_dirs = crate::files_correction::get_unscoped_project_dirs_for_ctx(ctx).await;
     if let Some(workspace_root) = project_dirs.first() {
         if let Some(wt) = agent_worktree {
             let _ = tokio::process::Command::new("git")
@@ -82,18 +84,17 @@ async fn cleanup_old_worktree(
 }
 
 async fn restore_card_after_restart_failure(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     task_id: &str,
     original_card: BoardCard,
     guard_chat_id: String,
 ) {
-    let stats_gcx = gcx.clone();
-    let _ = storage::update_board_atomic(gcx, task_id, move |board| {
+    let _ = storage::update_board_atomic_for_ctx(ctx, task_id, move |board| {
         restore_original_card_if_current_agent(board, &original_card, &guard_chat_id);
         Ok(())
     })
     .await;
-    let _ = storage::update_task_stats(stats_gcx, task_id).await;
+    let _ = storage::update_task_stats_for_ctx(ctx, task_id).await;
 }
 
 fn mark_card_restarted_fresh(
@@ -170,7 +171,7 @@ fn ensure_restart_source_current(card: &BoardCard, original: &BoardCard) -> Resu
 }
 
 async fn get_worktree_meta_for_resume(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     card: &BoardCard,
 ) -> Result<WorktreeMeta, String> {
     let wt_name = card.agent_worktree_name.as_deref().ok_or_else(|| {
@@ -186,8 +187,8 @@ async fn get_worktree_meta_for_resume(
             wt_path, card.id
         ));
     }
-    let cache_dir = gcx.cache_dir.clone();
-    let project_dirs = crate::files_correction::get_project_dirs(gcx.clone()).await;
+    let cache_dir = ctx.paths.cache_dir.clone();
+    let project_dirs = crate::files_correction::get_unscoped_project_dirs_for_ctx(ctx).await;
     let source_root = project_dirs
         .first()
         .cloned()
@@ -289,8 +290,10 @@ impl Tool for ToolTaskRestartAgent {
             .unwrap_or_else(|| ccx_lock.chat_id.clone());
         let current_chat_id = ccx_lock.chat_id.clone();
         let current_model = ccx_lock.current_model.clone();
-        let gcx = ccx_lock.app.gcx.clone();
+        let app = ccx_lock.app.clone();
         drop(ccx_lock);
+        let ctx = app.chat_ctx();
+        let tool = app.tool.clone();
 
         let card_id = args
             .get("card_id")
@@ -326,11 +329,11 @@ impl Tool for ToolTaskRestartAgent {
             })
             .unwrap_or_default();
 
-        let task_meta = storage::load_task_meta(gcx.clone(), &task_id).await?;
-        let model = resolve_agent_model(gcx.clone(), &current_model).await?;
-        crate::tools::task_tool_helpers::preflight_agent_model(gcx.clone(), &model).await?;
+        let task_meta = storage::load_task_meta_for_ctx(&ctx, &task_id).await?;
+        let model = resolve_agent_model(&tool.caps, &current_model).await?;
+        crate::tools::task_tool_helpers::preflight_agent_model(app.gcx.clone(), &model).await?;
 
-        let board = storage::load_board(gcx.clone(), &task_id).await?;
+        let board = storage::load_board_for_ctx(&ctx, &task_id).await?;
         let card = board
             .get_card(card_id)
             .ok_or_else(|| format!("Card {} not found", card_id))?;
@@ -377,7 +380,7 @@ impl Tool for ToolTaskRestartAgent {
 
         let result_message = if mode == "resume" {
             self.execute_resume(
-                gcx.clone(),
+                &app,
                 &task_id,
                 &planner_chat_id,
                 &current_chat_id,
@@ -393,7 +396,7 @@ impl Tool for ToolTaskRestartAgent {
             .await?
         } else {
             self.execute_fresh(
-                gcx.clone(),
+                &app,
                 &task_id,
                 &planner_chat_id,
                 &task_meta,
@@ -429,7 +432,7 @@ impl Tool for ToolTaskRestartAgent {
 impl ToolTaskRestartAgent {
     async fn execute_fresh(
         &self,
-        gcx: Arc<GlobalContext>,
+        app: &AppState,
         task_id: &str,
         planner_chat_id: &str,
         task_meta: &crate::tasks::types::TaskMeta,
@@ -442,11 +445,12 @@ impl ToolTaskRestartAgent {
         files_to_open: Vec<String>,
         card: &BoardCard,
     ) -> Result<String, String> {
+        let ctx = app.chat_ctx();
         let original_card = card.clone();
 
         if let Some(old_chat_id) = original_card.agent_chat_id.as_deref() {
             if let Err(e) =
-                wait_for_agent_abort(gcx.clone(), old_chat_id, AGENT_ABORT_TIMEOUT).await
+                wait_for_agent_abort(app.gcx.clone(), old_chat_id, AGENT_ABORT_TIMEOUT).await
             {
                 return Err(format!(
                     "Cannot restart card {}: previous agent session '{}' did not stop in time: {}. \
@@ -465,7 +469,7 @@ impl ToolTaskRestartAgent {
             restart_task_meta.base_commit = original_card.base_commit.clone();
         }
         let prepared_worktree = prepare_agent_worktree(
-            gcx.clone(),
+            &ctx,
             &restart_task_meta,
             task_id,
             &agent_id,
@@ -491,7 +495,7 @@ impl ToolTaskRestartAgent {
         let source_card = original_card.clone();
 
         let board_update_result =
-            storage::update_board_atomic(gcx.clone(), task_id, move |board| {
+            storage::update_board_atomic_for_ctx(&ctx, task_id, move |board| {
                 let card = board
                     .get_card_mut(&card_id_owned)
                     .ok_or(format!("Card {} not found", card_id_owned))?;
@@ -511,15 +515,17 @@ impl ToolTaskRestartAgent {
             .await;
 
         if let Err(e) = board_update_result {
-            prepared_worktree.cleanup_unlinked(gcx.clone()).await;
+            prepared_worktree
+                .cleanup_unlinked(app.paths.cache_dir.clone())
+                .await;
             return Err(e);
         }
 
-        let _ = storage::update_task_stats(gcx.clone(), task_id).await;
+        let _ = storage::update_task_stats_for_ctx(&ctx, task_id).await;
 
         if let Err(e) = self
             .create_and_dispatch_session(
-                gcx.clone(),
+                app,
                 task_id,
                 planner_chat_id,
                 card_id,
@@ -535,9 +541,11 @@ impl ToolTaskRestartAgent {
             )
             .await
         {
-            prepared_worktree.cleanup_unlinked(gcx.clone()).await;
+            prepared_worktree
+                .cleanup_unlinked(app.paths.cache_dir.clone())
+                .await;
             restore_card_after_restart_failure(
-                gcx.clone(),
+                &ctx,
                 task_id,
                 original_card,
                 agent_chat_id.clone(),
@@ -547,7 +555,7 @@ impl ToolTaskRestartAgent {
         }
 
         cleanup_old_worktree(
-            gcx.clone(),
+            &ctx,
             original_card.agent_worktree_name.as_deref(),
             original_card.agent_worktree.as_deref(),
             original_card.agent_branch.as_deref(),
@@ -562,7 +570,7 @@ impl ToolTaskRestartAgent {
 
     async fn execute_resume(
         &self,
-        gcx: Arc<GlobalContext>,
+        app: &AppState,
         task_id: &str,
         planner_chat_id: &str,
         resume_chat_id: &str,
@@ -575,11 +583,12 @@ impl ToolTaskRestartAgent {
         files_to_open: Vec<String>,
         card: &BoardCard,
     ) -> Result<String, String> {
+        let ctx = app.chat_ctx();
         let original_card = card.clone();
 
         if let Some(old_chat_id) = original_card.agent_chat_id.as_deref() {
             if let Err(e) =
-                wait_for_agent_abort(gcx.clone(), old_chat_id, AGENT_ABORT_TIMEOUT).await
+                wait_for_agent_abort(app.gcx.clone(), old_chat_id, AGENT_ABORT_TIMEOUT).await
             {
                 return Err(format!(
                     "Cannot resume card {}: previous agent session '{}' did not stop in time: {}. \
@@ -589,7 +598,7 @@ impl ToolTaskRestartAgent {
             }
         }
 
-        let worktree_meta = get_worktree_meta_for_resume(gcx.clone(), card).await?;
+        let worktree_meta = get_worktree_meta_for_resume(&ctx, card).await?;
 
         let agent_id = Uuid::new_v4().to_string();
         let agent_chat_id = format!("agent-{}-{}", card_id, &agent_id[..8]);
@@ -599,7 +608,7 @@ impl ToolTaskRestartAgent {
         let _ = resume_chat_id;
         let source_card = original_card.clone();
 
-        storage::update_board_atomic(gcx.clone(), task_id, move |board| {
+        storage::update_board_atomic_for_ctx(&ctx, task_id, move |board| {
             let card = board
                 .get_card_mut(&card_id_owned)
                 .ok_or(format!("Card {} not found", card_id_owned))?;
@@ -609,11 +618,11 @@ impl ToolTaskRestartAgent {
         })
         .await?;
 
-        let _ = storage::update_task_stats(gcx.clone(), task_id).await;
+        let _ = storage::update_task_stats_for_ctx(&ctx, task_id).await;
 
         if let Err(e) = self
             .create_and_dispatch_session(
-                gcx.clone(),
+                app,
                 task_id,
                 planner_chat_id,
                 card_id,
@@ -630,7 +639,7 @@ impl ToolTaskRestartAgent {
             .await
         {
             restore_card_after_restart_failure(
-                gcx.clone(),
+                &ctx,
                 task_id,
                 original_card,
                 agent_chat_id.clone(),
@@ -648,7 +657,7 @@ impl ToolTaskRestartAgent {
     #[allow(clippy::too_many_arguments)]
     async fn create_and_dispatch_session(
         &self,
-        gcx: Arc<GlobalContext>,
+        app: &AppState,
         task_id: &str,
         planner_chat_id: &str,
         card_id: &str,
@@ -662,8 +671,6 @@ impl ToolTaskRestartAgent {
         suggested_steps: usize,
         files_to_open: Vec<String>,
     ) -> Result<(), String> {
-        let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
-
         let thread = build_agent_thread_params(
             agent_chat_id,
             card_title,
@@ -733,7 +740,7 @@ impl ToolTaskRestartAgent {
                     continue;
                 }
                 if crate::files_in_workspace::check_file_privacy_for_model_context(
-                    gcx.clone(),
+                    app.gcx.clone(),
                     &canonical_resolved,
                 )
                 .await
@@ -766,7 +773,7 @@ impl ToolTaskRestartAgent {
                 }
             }
             if !context_files.is_empty() {
-                messages.push(context_file_message(&gcx, context_files)?);
+                messages.push(context_file_message(&app.gcx, context_files)?);
             }
         }
 

@@ -99,14 +99,14 @@ fn related_memory_entities(symbols_str: &str) -> Vec<String> {
 }
 
 async fn compute_related_memories(
-    gcx: Arc<crate::global_context::GlobalContext>,
+    index: &Arc<AMutex<crate::knowledge_index::KnowledgeIndex>>,
     mut files: Vec<String>,
     symbols_str: &str,
     abort_flag: &Arc<AtomicBool>,
 ) -> Vec<KnowledgeCard> {
     files.sort();
     files.dedup();
-    let index = gcx.knowledge_index.clone();
+    let index = index.clone();
     let Some(mut cards) = knowledge_index_lookup(&index, abort_flag, |index| {
         index.related_for_files(&files, RELATED_MEMORIES_LIMIT)
     })
@@ -392,7 +392,7 @@ async fn symbol_def_via_codegraph(
     let related_memories = if abort_flag.load(Ordering::SeqCst) {
         Vec::new()
     } else {
-        compute_related_memories(gcx.clone(), files, symbols_str, &abort_flag).await
+        compute_related_memories(&gcx.knowledge_index, files, symbols_str, &abort_flag).await
     };
     let related_references = if abort_flag.load(Ordering::SeqCst) {
         Vec::new()
@@ -466,16 +466,17 @@ impl Tool for ToolAstDefinition {
             return Err("No valid symbols provided".to_string());
         }
 
-        let (gcx, execution_scope, abort_flag) = {
+        let (gcx, tool, execution_scope, abort_flag) = {
             let cgcx = ccx.lock().await;
             (
                 cgcx.app.gcx.clone(),
+                cgcx.tool.clone(),
                 cgcx.execution_scope.clone(),
                 cgcx.abort_flag.clone(),
             )
         };
 
-        let codegraph_opt = gcx.codegraph.lock().await.clone();
+        let codegraph_opt = tool.codeintel.codegraph.lock().await.clone();
         match codegraph_opt {
             Some(service) => {
                 symbol_def_via_codegraph(

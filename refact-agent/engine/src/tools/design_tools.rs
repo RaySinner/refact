@@ -908,10 +908,10 @@ async fn attached_runtime(
 }
 
 async fn image_policy_for_model(
-    gcx: Arc<crate::global_context::GlobalContext>,
+    caps: &dyn crate::chat::ctx::CapsProvider,
     model_id: &str,
 ) -> ImagePolicy {
-    let Ok(caps) = crate::global_context::try_load_caps_quickly_if_not_present(gcx, 0).await else {
+    let Ok(caps) = caps.try_load_caps_quickly(0).await else {
         return ImagePolicy::default();
     };
     crate::caps::resolve_chat_model(caps, model_id)
@@ -1282,8 +1282,8 @@ pub fn discover_design_token_files(root: &Path) -> Vec<String> {
     found
 }
 
-fn design_artifacts_dir(gcx: &crate::global_context::GlobalContext) -> PathBuf {
-    gcx.cache_dir.join("design_artifacts")
+fn design_artifacts_dir(cache_dir: &Path) -> PathBuf {
+    cache_dir.join("design_artifacts")
 }
 
 fn project_root(
@@ -1340,7 +1340,7 @@ pub fn artifact_reference_name(requested: &str) -> Option<String> {
 }
 
 async fn artifact_search_dirs(app: &crate::app_state::AppState) -> Vec<PathBuf> {
-    let mut dirs = vec![design_artifacts_dir(&app.gcx)];
+    let mut dirs = vec![design_artifacts_dir(&app.tool.paths.cache_dir)];
     let runtimes = app.integrations.browser_runtimes.clone();
     let runtimes = runtimes.lock().await;
     let arcs = runtimes.values().cloned().collect::<Vec<_>>();
@@ -1587,7 +1587,7 @@ impl Tool for ToolMarkElements {
     ) -> Result<(bool, Vec<ContextEnum>), String> {
         let selector = args.get("selector").and_then(Value::as_str);
         let (app, lookup, model_id, _) = tool_context(&ccx).await;
-        let policy = image_policy_for_model(app.gcx.clone(), &model_id).await;
+        let policy = image_policy_for_model(app.tool.caps.as_ref(), &model_id).await;
         let runtime = attached_runtime(app, &lookup).await?;
         let mut runtime = runtime.lock().await;
         let tab = browser_controller::session_tab(&mut runtime)?;
@@ -1816,7 +1816,7 @@ impl Tool for ToolImageRegion {
     ) -> Result<(bool, Vec<ContextEnum>), String> {
         let args: ImageRegionArgs = parse_args(args)?;
         let (app, _, model_id, execution_scope) = tool_context(&ccx).await;
-        let policy = image_policy_for_model(app.gcx.clone(), &model_id).await;
+        let policy = image_policy_for_model(app.tool.caps.as_ref(), &model_id).await;
         let path = resolve_image_source(&app, execution_scope.as_ref(), &args.image_path).await?;
         crate::files_in_workspace::check_file_privacy_for_send(app.gcx.clone(), &path).await?;
         let bytes = tokio::fs::read(&path)
@@ -1837,7 +1837,7 @@ impl Tool for ToolImageRegion {
         )?;
         let cropped = image.crop_imm(rect.x, rect.y, rect.width, rect.height);
         let artifact = artifact_from_bytes(encode_png(&cropped)?, "image/png", &policy)?;
-        let spilled = spill_artifact(&artifact, &design_artifacts_dir(&app.gcx), "image-region")?;
+        let spilled = spill_artifact(&artifact, &design_artifacts_dir(&app.tool.paths.cache_dir), "image-region")?;
         let summary = format!(
             "Cropped {}x{} region from `{}`",
             rect.width,
@@ -1888,7 +1888,7 @@ impl Tool for ToolVisualDiff {
         let (app, lookup, model_id, execution_scope) = tool_context(&ccx).await;
         let root = project_root(&app.gcx, execution_scope.as_ref())?;
         let baseline = baseline_path(&root, &args.baseline)?;
-        let policy = image_policy_for_model(app.gcx.clone(), &model_id).await;
+        let policy = image_policy_for_model(app.tool.caps.as_ref(), &model_id).await;
         let runtime = attached_runtime(app, &lookup).await?;
         let mut runtime = runtime.lock().await;
         let current = capture_runtime_screenshot(
@@ -2365,7 +2365,7 @@ mod tests {
             crate::global_context::tests::make_test_gcx().await,
         )
         .await;
-        let artifacts = design_artifacts_dir(&app.gcx);
+        let artifacts = design_artifacts_dir(&app.tool.paths.cache_dir);
         std::fs::create_dir_all(&artifacts).unwrap();
         let written = artifacts.join("chrome-screenshot-1.png");
         std::fs::write(&written, b"png-bytes").unwrap();

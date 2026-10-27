@@ -1113,8 +1113,11 @@ fn chrome_input_schema() -> serde_json::Value {
     })
 }
 
-async fn image_policy_for_model(gcx: Arc<GlobalContext>, model_id: &str) -> ImagePolicy {
-    let Ok(caps) = crate::global_context::try_load_caps_quickly_if_not_present(gcx, 0).await else {
+async fn image_policy_for_model(
+    caps: &dyn crate::chat::ctx::CapsProvider,
+    model_id: &str,
+) -> ImagePolicy {
+    let Ok(caps) = caps.try_load_caps_quickly(0).await else {
         return ImagePolicy::default();
     };
     crate::caps::resolve_chat_model(caps, model_id)
@@ -1205,15 +1208,17 @@ impl Tool for ToolChrome {
             }
         }
 
-        let (gcx, chat_id, current_model) = {
+        let (app, tool, chat_id, current_model) = {
             let ccx_lock = ccx.lock().await;
             (
-                ccx_lock.app.gcx.clone(),
+                ccx_lock.app.clone(),
+                ccx_lock.tool.clone(),
                 ccx_lock.chat_id.clone(),
                 ccx_lock.current_model.clone(),
             )
         };
-        let image_policy = image_policy_for_model(gcx.clone(), &current_model).await;
+        let gcx = app.gcx.clone();
+        let image_policy = image_policy_for_model(tool.caps.as_ref(), &current_model).await;
 
         let session_hashmap_key = get_session_hashmap_key("chrome", &chat_id);
         let mut tool_log = match setup_chrome_session(
@@ -1227,7 +1232,7 @@ impl Tool for ToolChrome {
             Ok(log) => log,
             Err(e) => {
                 crate::buddy::actor::report_error_persisted(
-                    crate::app_state::AppState::from_gcx(gcx.clone()).await,
+                    app.clone(),
                     "browser_error",
                     &e,
                     Some("tools/tool_chrome.rs"),
@@ -1239,7 +1244,7 @@ impl Tool for ToolChrome {
         };
 
         let command_session = {
-            let integration_sessions = gcx.integration_sessions.clone();
+            let integration_sessions = tool.integrations.integration_sessions.clone();
             let integration_sessions = integration_sessions.lock().await;
             integration_sessions
                 .get(&session_hashmap_key)
@@ -1277,7 +1282,7 @@ impl Tool for ToolChrome {
                 cs.runtime_id.clone()
             };
             let runtime_arc = {
-                let browser_runtimes = gcx.browser_runtimes.clone();
+                let browser_runtimes = tool.integrations.browser_runtimes.clone();
                 let browser_runtimes = browser_runtimes.lock().await;
                 browser_runtimes.get(&runtime_id).cloned().ok_or_else(|| {
                     format!(
@@ -1308,7 +1313,7 @@ impl Tool for ToolChrome {
                     let err_msg = format!("Failed to execute typed browser request: {}.", e);
                     tool_log.push(err_msg.clone());
                     crate::buddy::actor::report_error_persisted(
-                        crate::app_state::AppState::from_gcx(gcx.clone()).await,
+                        app.clone(),
                         "browser_error",
                         &err_msg,
                         Some("tools/tool_chrome.rs"),
@@ -1358,7 +1363,7 @@ impl Tool for ToolChrome {
                         let err_msg = format!("Failed to execute command: {}.", e);
                         tool_log.push(err_msg.clone());
                         crate::buddy::actor::report_error_persisted(
-                            crate::app_state::AppState::from_gcx(gcx.clone()).await,
+                            app.clone(),
                             "browser_error",
                             &err_msg,
                             Some("tools/tool_chrome.rs"),

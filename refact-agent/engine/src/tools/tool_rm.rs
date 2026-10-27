@@ -14,10 +14,7 @@ use crate::files_correction::{
     canonical_path, correct_to_nearest_dir_path, correct_to_nearest_filename,
     get_unscoped_project_dirs, preprocess_path_for_normalization,
 };
-use crate::files_in_workspace::{
-    get_file_text_from_memory_or_disk, remove_memory_document_for_path,
-    remove_memory_documents_under_path,
-};
+use crate::files_in_workspace::remove_memory_documents_under_path;
 use crate::privacy::{check_file_privacy, load_privacy_if_needed, FilePrivacyLevel};
 use crate::tools::file_edit::auxiliary::resolve_path_with_scope;
 use crate::tools::tools_description::{
@@ -135,10 +132,11 @@ impl Tool for ToolRm {
         }
 
         let (recursive, dry_run) = Self::parse_recursive(args)?;
-        let (gcx, execution_scope, top_n) = {
+        let (gcx, tool, execution_scope, top_n) = {
             let cgcx = ccx.lock().await;
             (
                 cgcx.app.gcx.clone(),
+                cgcx.tool.clone(),
                 cgcx.execution_scope.clone(),
                 cgcx.top_n,
             )
@@ -206,7 +204,7 @@ impl Tool for ToolRm {
                 }
 
                 let is_within_project = project_dirs.iter().any(|p| true_path.starts_with(p));
-                if !is_within_project && !gcx.cmdline.inside_container {
+                if !is_within_project && !tool.runtime.cmdline.inside_container {
                     return Err(format!(
                     "⚠️ '{}' is outside project directories. 💡 rm() only works within workspace",
                     path_str
@@ -239,7 +237,7 @@ impl Tool for ToolRm {
         let mut file_size = None;
         let is_dir = true_path.is_dir();
         if !is_dir {
-            file_content = match get_file_text_from_memory_or_disk(gcx.clone(), &true_path).await {
+            file_content = match tool.files.get_file_text_from_memory_or_disk(&true_path).await {
                 Ok(content) => content,
                 Err(e) => {
                     tracing::warn!("Failed to get file content: {}", e);
@@ -308,7 +306,7 @@ impl Tool for ToolRm {
             fs::remove_file(&true_path)
                 .await
                 .map_err(|e| format!("Failed to remove file '{}': {}", corrected_path, e))?;
-            remove_memory_document_for_path(gcx.clone(), &true_path).await;
+            tool.files.remove_memory_document_for_path(&true_path).await;
             if !file_content.is_empty() {
                 let diff_chunk = DiffChunk {
                     file_name: corrected_path.clone(),

@@ -129,10 +129,13 @@ impl Tool for ToolBuddyGetContext {
     ) -> Result<(bool, Vec<ContextEnum>), String> {
         let requested = parse_requested_sections(args)?;
 
-        let gcx = ccx.lock().await.app.gcx.clone();
+        let (gcx, tool) = {
+            let cgcx = ccx.lock().await;
+            (cgcx.app.gcx.clone(), cgcx.tool.clone())
+        };
         let (config_dir, project_dirs) = {
             (
-                gcx.config_dir.clone(),
+                tool.paths.config_dir.clone(),
                 crate::files_correction::get_project_dirs(gcx.clone()),
             )
         };
@@ -155,7 +158,7 @@ impl Tool for ToolBuddyGetContext {
                     result.insert(section.clone(), Value::String(redact_config(&content)));
                 }
                 "integrations" => {
-                    let content = read_integrations_summary(gcx.clone()).await;
+                    let content = read_integrations_summary(&tool.paths.config_dir).await;
                     result.insert(section.clone(), Value::String(redact_config(&content)));
                 }
                 "mcp_servers" => {
@@ -163,11 +166,11 @@ impl Tool for ToolBuddyGetContext {
                     result.insert(section.clone(), Value::String(redact_config(&content)));
                 }
                 "modes" => {
-                    let content = read_modes_summary(gcx.clone()).await;
+                    let content = read_modes_summary(tool.mode_config.as_ref()).await;
                     result.insert(section.clone(), Value::String(content));
                 }
                 "setup_status" => {
-                    let content = read_setup_status(gcx.clone(), &project_root).await;
+                    let content = read_setup_status(&tool.buddy, &project_root).await;
                     result.insert(section.clone(), Value::String(content));
                 }
                 "project_info" => {
@@ -234,8 +237,7 @@ async fn read_dir_summary(dir: &std::path::Path) -> String {
     lines.join("\n")
 }
 
-async fn read_integrations_summary(gcx: Arc<crate::global_context::GlobalContext>) -> String {
-    let config_dir = gcx.config_dir.clone();
+async fn read_integrations_summary(config_dir: &std::path::Path) -> String {
     let integr_dir = config_dir.join("integrations.d");
     if !integr_dir.exists() {
         return "no integrations.d directory found".to_string();
@@ -271,9 +273,8 @@ async fn read_mcp_summary(config_dir: &std::path::Path) -> String {
     format!("MCP servers: {}", mcp_names.join(", "))
 }
 
-async fn read_modes_summary(gcx: Arc<crate::global_context::GlobalContext>) -> String {
-    use crate::yaml_configs::customization_registry::get_project_registry;
-    let Some(registry) = get_project_registry(gcx).await else {
+async fn read_modes_summary(mode_config: &dyn crate::chat::ctx::ModeConfigProvider) -> String {
+    let Some(registry) = mode_config.get_project_registry().await else {
         return "no mode registry available".to_string();
     };
     let mut modes: Vec<String> = registry.modes.keys().cloned().collect();
@@ -282,7 +283,7 @@ async fn read_modes_summary(gcx: Arc<crate::global_context::GlobalContext>) -> S
 }
 
 async fn read_setup_status(
-    gcx: Arc<crate::global_context::GlobalContext>,
+    buddy: &crate::app_state::BuddyServices,
     project_root: &Option<std::path::PathBuf>,
 ) -> String {
     let Some(root) = project_root else {
@@ -291,7 +292,7 @@ async fn read_setup_status(
     let agents_md = root.join("AGENTS.md");
     let has_agents_md = tokio::fs::try_exists(&agents_md).await.unwrap_or(false);
 
-    let buddy_arc = gcx.buddy.clone();
+    let buddy_arc = buddy.buddy.clone();
     let lock = buddy_arc.lock().await;
     let stage = lock
         .as_ref()

@@ -88,9 +88,9 @@ impl Tool for ToolUpdateTextDocByLines {
         tool_call_id: &String,
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
-        let (gcx, execution_scope) = {
+        let (gcx, tool, execution_scope) = {
             let cgcx = ccx.lock().await;
-            (cgcx.app.gcx.clone(), cgcx.execution_scope.clone())
+            (cgcx.app.gcx.clone(), cgcx.tool.clone(), cgcx.execution_scope.clone())
         };
         let (_, _, chunks, summary) = tool_update_text_doc_by_lines_exec(
             gcx.clone(),
@@ -102,7 +102,7 @@ impl Tool for ToolUpdateTextDocByLines {
         .await?;
 
         let related_section = {
-            let idx_arc = { gcx.knowledge_index.clone() };
+            let idx_arc = { tool.workspace.knowledge_index.clone() };
             let idx_guard = idx_arc.lock().await;
             let mut paths: Vec<String> = Vec::new();
             for c in chunks.iter() {

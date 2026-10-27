@@ -401,10 +401,11 @@ impl Tool for ToolRegexSearch {
             .unwrap_or(DEFAULT_MAX_TOTAL_MATCHES)
             .clamp(1, CAP_MAX_TOTAL_MATCHES);
 
-        let (gcx, execution_scope, abort_flag) = {
+        let (gcx, tool, execution_scope, abort_flag) = {
             let cgcx = ccx.lock().await;
             (
                 cgcx.app.gcx.clone(),
+                cgcx.tool.clone(),
                 cgcx.execution_scope.clone(),
                 cgcx.abort_flag.clone(),
             )
@@ -557,7 +558,7 @@ impl Tool for ToolRegexSearch {
 
         // Append related memories (short form) based on the matched file paths.
         let related_section = {
-            let idx_arc = { gcx.knowledge_index.clone() };
+            let idx_arc = { tool.workspace.knowledge_index.clone() };
             let idx_guard = idx_arc.lock().await;
             let matched_files: Vec<String> = all_search_results
                 .iter()

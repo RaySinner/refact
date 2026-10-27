@@ -38,6 +38,10 @@ impl VerifyCommandPolicy {
         Self::from_shell_policy(&crate::tools::shell_gate::load_policy(gcx).await)
     }
 
+    pub(crate) async fn load_for_ctx(ctx: &crate::chat::ctx::ChatCtx) -> Self {
+        Self::from_shell_policy(&crate::tools::shell_gate::load_policy_for_ctx(ctx).await)
+    }
+
     pub(crate) fn from_shell_policy(policy: &ShellGatePolicy) -> Self {
         Self {
             deny: policy.deny.clone(),

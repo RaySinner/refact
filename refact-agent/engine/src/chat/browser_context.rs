@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use base64::Engine;
 use headless_chrome::Tab;
 use refact_core::image_policy::{resize_to_policy, ImageFormat, ImagePolicy};
@@ -7,10 +5,10 @@ use serde_json::json;
 
 use crate::call_validation::{ChatContent, ChatMessage, MultimodalElement};
 use crate::chat::internal_roles::{event, EventSubkind};
-use crate::global_context::GlobalContext;
 use crate::integrations::browser_types::{
     ConsoleEntry, MutationSummaryEntry, NetworkEntry, RecorderEvent,
 };
+use crate::chat::ctx::ChatCtx;
 
 const OVERSIZE_THRESHOLD: usize = 100 * 1024;
 
@@ -249,11 +247,11 @@ pub fn compute_context_size(
 }
 
 pub async fn get_browser_context_for_chat(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     chat_id: &str,
 ) -> Option<BrowserContextSnapshot> {
-    let (_, runtime_arc) = crate::integrations::browser_runtime::find_runtime_by_chat_id(
-        crate::app_state::AppState::from_gcx(gcx).await,
+    let (_, runtime_arc) = crate::integrations::browser_runtime::find_runtime_by_chat_id_for_ctx(
+        ctx,
         chat_id,
     )
     .await?;
@@ -297,12 +295,9 @@ pub async fn get_browser_context_for_chat(
     Some(snapshot)
 }
 
-pub async fn commit_browser_cursors(gcx: Arc<GlobalContext>, chat_id: &str) {
-    if let Some((_, runtime_arc)) = crate::integrations::browser_runtime::find_runtime_by_chat_id(
-        crate::app_state::AppState::from_gcx(gcx).await,
-        chat_id,
-    )
-    .await
+pub async fn commit_browser_cursors(ctx: &ChatCtx, chat_id: &str) {
+    if let Some((_, runtime_arc)) =
+        crate::integrations::browser_runtime::find_runtime_by_chat_id_for_ctx(ctx, chat_id).await
     {
         let mut rt = runtime_arc.lock().await;
         let url = rt.get_active_tab().map(|tab| tab.get_url());
@@ -310,10 +305,9 @@ pub async fn commit_browser_cursors(gcx: Arc<GlobalContext>, chat_id: &str) {
     }
 }
 
-async fn image_policy_for_chat(gcx: Arc<GlobalContext>, chat_id: &str) -> ImagePolicy {
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+async fn image_policy_for_chat(ctx: &ChatCtx, chat_id: &str) -> ImagePolicy {
     let model_id = {
-        let sessions = app.chat.sessions.read().await;
+        let sessions = ctx.chat.sessions.read().await;
         let session = sessions.get(chat_id).cloned();
         drop(sessions);
         let Some(session) = session else {
@@ -322,7 +316,7 @@ async fn image_policy_for_chat(gcx: Arc<GlobalContext>, chat_id: &str) -> ImageP
         let model_id = session.lock().await.thread.model.clone();
         model_id
     };
-    let Ok(caps) = crate::global_context::try_load_caps_quickly_if_not_present(gcx, 0).await else {
+    let Ok(caps) = ctx.caps.try_load_caps_quickly(0).await else {
         return ImagePolicy::browser_capture();
     };
     crate::caps::resolve_chat_model(caps, &model_id)
@@ -331,7 +325,7 @@ async fn image_policy_for_chat(gcx: Arc<GlobalContext>, chat_id: &str) -> ImageP
 }
 
 async fn capture_browser_screenshot_with(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     chat_id: &str,
     attach_screenshot: bool,
     page_changed: bool,
@@ -340,21 +334,20 @@ async fn capture_browser_screenshot_with(
     if !attach_screenshot || !page_changed {
         return None;
     }
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
     let (_, runtime_arc) =
-        crate::integrations::browser_runtime::find_runtime_by_chat_id(app, chat_id).await?;
-    let policy = image_policy_for_chat(gcx, chat_id).await;
+        crate::integrations::browser_runtime::find_runtime_by_chat_id_for_ctx(ctx, chat_id).await?;
+    let policy = image_policy_for_chat(ctx, chat_id).await;
     let rt = runtime_arc.lock().await;
     let tab = rt.get_active_tab()?;
     capture_screenshot_message_with(true, true, &policy, &|| capture(&tab))
 }
 
 pub async fn capture_browser_screenshot(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     chat_id: &str,
 ) -> Option<ChatMessage> {
     capture_browser_screenshot_with(
-        gcx,
+        ctx,
         chat_id,
         true,
         true,
@@ -395,7 +388,7 @@ fn capture_screenshot_message_with(
 }
 
 pub async fn maybe_insert_browser_context(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     chat_id: &str,
     has_browser_meta: bool,
     attach_screenshot_on_send: bool,
@@ -404,14 +397,14 @@ pub async fn maybe_insert_browser_context(
         return None;
     }
 
-    let snapshot = get_browser_context_for_chat(gcx.clone(), chat_id).await?;
+    let snapshot = get_browser_context_for_chat(ctx, chat_id).await?;
 
     if snapshot.total_bytes > OVERSIZE_THRESHOLD {
         return Some((make_context_messages(&snapshot, None), true));
     }
 
     let screenshot = capture_browser_screenshot_with(
-        gcx.clone(),
+        ctx,
         chat_id,
         attach_screenshot_on_send,
         snapshot.page_changed,
@@ -419,7 +412,7 @@ pub async fn maybe_insert_browser_context(
     )
     .await;
 
-    commit_browser_cursors(gcx, chat_id).await;
+    commit_browser_cursors(ctx, chat_id).await;
 
     Some((make_context_messages(&snapshot, screenshot), false))
 }

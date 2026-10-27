@@ -375,7 +375,15 @@ pub(crate) async fn get_agent_statuses(
     chat_facade: Arc<dyn ChatSessionFacade>,
     task_id: &str,
 ) -> Result<Vec<AgentStatus>, String> {
-    let board = storage::load_board(gcx, task_id).await?;
+    get_agent_statuses_for_ctx(&gcx.chat_ctx(gcx.clone()), chat_facade, task_id).await
+}
+
+pub(crate) async fn get_agent_statuses_for_ctx(
+    ctx: &crate::chat::ctx::ChatCtx,
+    chat_facade: Arc<dyn ChatSessionFacade>,
+    task_id: &str,
+) -> Result<Vec<AgentStatus>, String> {
+    let board = storage::load_board_for_ctx(ctx, task_id).await?;
     statuses_from_board(&board, chat_facade).await
 }
 

@@ -499,7 +499,16 @@ async fn project_dir(gcx: Arc<GlobalContext>) -> Option<PathBuf> {
 }
 
 pub async fn load_policy(gcx: Arc<GlobalContext>) -> ShellGatePolicy {
-    let Some(project_dir) = project_dir(gcx).await else {
+    load_policy_for_ctx(&gcx.chat_ctx(gcx.clone())).await
+}
+
+pub async fn load_policy_for_ctx(ctx: &crate::chat::ctx::ChatCtx) -> ShellGatePolicy {
+    let Some(project_dir) =
+        crate::files_correction::get_unscoped_project_dirs_for_ctx(ctx)
+            .await
+            .into_iter()
+            .next()
+    else {
         return ShellGatePolicy::default();
     };
     let path = policy_path(&project_dir);

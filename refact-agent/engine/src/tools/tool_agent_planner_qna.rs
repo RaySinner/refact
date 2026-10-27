@@ -414,7 +414,7 @@ impl Tool for ToolAgentAskPlanner {
                 Some(planner_chat_id) => {
                     let app = ccx.lock().await.app.clone();
                     match crate::chat::task_agent_monitor::notify_planner_blocking_question(
-                        app,
+                        app.chat_ctx(),
                         &task_id,
                         &card_id,
                         &planner_chat_id,

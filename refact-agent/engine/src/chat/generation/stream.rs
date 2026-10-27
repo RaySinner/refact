@@ -963,9 +963,11 @@ pub async fn run_llm_generation(
     abort_notify: Arc<tokio::sync::Notify>,
     stream_prepare_started_at: Option<Instant>,
 ) -> Result<GenerationResult, LlmStreamError> {
-    let gcx = app.gcx.clone();
     check_aborted_before_stream(&abort_flag)?;
-    let caps = crate::global_context::try_load_caps_quickly_if_not_present(gcx.clone(), 0)
+    let caps = app
+        .ctx
+        .caps
+        .try_load_caps_quickly(0)
         .await
         .map_err(|e| e.message)?;
     let model_rec = crate::caps::resolve_chat_model(caps.clone(), &thread.model)?;
@@ -1052,7 +1054,7 @@ pub async fn run_llm_generation(
         _ => model_n_ctx,
     };
     check_aborted_before_stream(&abort_flag)?;
-    let tokenizer_arc = crate::tokens::cached_tokenizer(gcx.clone(), &model_rec.base).await?;
+    let tokenizer_arc = crate::tokens::cached_tokenizer_for_ctx(&app.ctx, &model_rec.base).await?;
     let t = HasTokenizerAndEot::new(tokenizer_arc);
 
     let meta = ChatMeta {
@@ -1149,7 +1151,7 @@ pub async fn run_llm_generation(
 
     check_aborted_before_stream(&abort_flag)?;
     let mut prepared = prepare_chat_passthrough(
-        gcx.chat_ctx(gcx.clone()),
+        app.ctx.clone(),
         ccx_arc.clone(),
         &t,
         messages,
@@ -1193,6 +1195,7 @@ pub(in crate::chat::generation) async fn generation_metering_usd(
     model_id: &str,
     usage: &ChatUsage,
 ) -> Option<MeteringUsd> {
-    let pricing = crate::providers::pricing::lookup_model_pricing(&app.gcx, model_id).await?;
+    let pricing =
+        crate::providers::pricing::lookup_model_pricing_for_ctx(&app.ctx, model_id).await?;
     crate::providers::pricing::compute_cost(usage, &pricing)
 }

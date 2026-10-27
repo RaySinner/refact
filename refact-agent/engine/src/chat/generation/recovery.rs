@@ -807,7 +807,7 @@ pub(in crate::chat::generation) async fn handle_task_agent_reasoning_token_stop(
     .await;
 
     if let Err(error) = crate::chat::task_agent_monitor::handle_agent_reasoning_token_limit_stop(
-        app,
+        app.chat_ctx(),
         task_meta,
         finish_reason,
         usage,

@@ -491,6 +491,17 @@ pub async fn find_runtime_by_chat_id(
     find_runtime_for_chat(app, &ChatRuntimeLookup::for_chat(chat_id)).await
 }
 
+pub async fn find_runtime_by_chat_id_for_ctx(
+    ctx: &crate::chat::ctx::ChatCtx,
+    chat_id: &str,
+) -> Option<(String, Arc<AMutex<BrowserRuntime>>)> {
+    find_runtime_in(
+        ctx.integrations.browser_runtimes.clone(),
+        &ChatRuntimeLookup::for_chat(chat_id),
+    )
+    .await
+}
+
 #[allow(dead_code)]
 pub const RELAUNCH_SETTLE: Duration = Duration::from_millis(800);
 

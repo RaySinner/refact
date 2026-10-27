@@ -1,22 +1,31 @@
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
+use crate::chat::SessionsMap;
 use crate::global_context::GlobalContext;
 
 pub use refact_tasks::events::{TaskEvent, TaskEventEnvelope};
 use refact_tasks::types::TaskMeta;
 
 pub async fn emit_task_event(gcx: Arc<GlobalContext>, event: TaskEvent) {
-    if let (Some(tx), Some(seq_counter)) = (&gcx.task_events_tx, &gcx.task_events_seq) {
+    emit_task_event_via(&gcx.task_events_tx, &gcx.task_events_seq, event).await;
+}
+
+pub async fn emit_task_event_via(
+    task_events_tx: &Option<tokio::sync::broadcast::Sender<TaskEventEnvelope>>,
+    task_events_seq: &Option<Arc<std::sync::atomic::AtomicU64>>,
+    event: TaskEvent,
+) {
+    if let (Some(tx), Some(seq_counter)) = (task_events_tx, task_events_seq) {
         let seq = seq_counter.fetch_add(1, Ordering::SeqCst);
         let envelope = TaskEventEnvelope { seq, event };
         let _ = tx.send(envelope);
     }
 }
 
-async fn enrich_task_meta_with_session_state(gcx: Arc<GlobalContext>, meta: &mut TaskMeta) {
+async fn enrich_task_meta_with_session_state(sessions: &SessionsMap, meta: &mut TaskMeta) {
     let all_session_arcs = {
-        let sessions = gcx.chat_sessions.read().await;
+        let sessions = sessions.read().await;
         sessions.values().cloned().collect::<Vec<_>>()
     };
 
@@ -66,12 +75,34 @@ async fn enrich_task_meta_with_session_state(gcx: Arc<GlobalContext>, meta: &mut
 }
 
 pub async fn enrich_task_with_session_state(gcx: Arc<GlobalContext>, task: &mut TaskMeta) {
-    enrich_task_meta_with_session_state(gcx, task).await;
+    enrich_task_meta_with_session_state(&gcx.chat_sessions, task).await;
 }
 
 pub async fn emit_task_updated(gcx: Arc<GlobalContext>, task_id: String, mut meta: TaskMeta) {
-    enrich_task_meta_with_session_state(gcx.clone(), &mut meta).await;
-    emit_task_event(gcx, TaskEvent::TaskUpdated { task_id, meta }).await;
+    emit_task_updated_via(
+        &gcx.chat_sessions,
+        &gcx.task_events_tx,
+        &gcx.task_events_seq,
+        task_id,
+        meta,
+    )
+    .await;
+}
+
+pub async fn emit_task_updated_via(
+    sessions: &SessionsMap,
+    task_events_tx: &Option<tokio::sync::broadcast::Sender<TaskEventEnvelope>>,
+    task_events_seq: &Option<Arc<std::sync::atomic::AtomicU64>>,
+    task_id: String,
+    mut meta: TaskMeta,
+) {
+    enrich_task_meta_with_session_state(sessions, &mut meta).await;
+    emit_task_event_via(
+        task_events_tx,
+        task_events_seq,
+        TaskEvent::TaskUpdated { task_id, meta },
+    )
+    .await;
 }
 
 pub async fn emit_task_comments_changed(gcx: Arc<GlobalContext>, task_id: &str, card_id: &str) {

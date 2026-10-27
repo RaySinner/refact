@@ -11,11 +11,18 @@ pub async fn lookup_model_pricing(
     gcx: &Arc<GlobalContext>,
     model_id: &str,
 ) -> Option<ModelPricing> {
-    if let Some(custom_pricing) = lookup_provider_custom_pricing(gcx, model_id).await {
+    lookup_model_pricing_for_ctx(&gcx.chat_ctx(gcx.clone()), model_id).await
+}
+
+pub async fn lookup_model_pricing_for_ctx(
+    ctx: &crate::chat::ctx::ChatCtx,
+    model_id: &str,
+) -> Option<ModelPricing> {
+    if let Some(custom_pricing) = lookup_provider_custom_pricing_for_ctx(ctx, model_id).await {
         return Some(custom_pricing);
     }
 
-    let caps_state = gcx.caps_state.clone();
+    let caps_state = ctx.model.caps.clone();
     if let Some(pricing) = caps_state
         .read()
         .await
@@ -26,7 +33,9 @@ pub async fn lookup_model_pricing(
         return Some(pricing);
     }
 
-    let caps = crate::global_context::try_load_caps_quickly_if_not_present(gcx.clone(), 0)
+    let caps = ctx
+        .caps
+        .try_load_caps_quickly(0)
         .await
         .ok()?;
     standard_model_pricing_from_caps(&caps.model_caps, model_id)
@@ -38,6 +47,17 @@ async fn lookup_provider_custom_pricing(
 ) -> Option<ModelPricing> {
     let (provider_name, model_name) = model_id.split_once('/')?;
     let registry = gcx.providers.read().await;
+    registry
+        .get(provider_name)
+        .and_then(|provider| provider.custom_model_pricing(model_name))
+}
+
+async fn lookup_provider_custom_pricing_for_ctx(
+    ctx: &crate::chat::ctx::ChatCtx,
+    model_id: &str,
+) -> Option<ModelPricing> {
+    let (provider_name, model_name) = model_id.split_once('/')?;
+    let registry = ctx.model.providers.read().await;
     registry
         .get(provider_name)
         .and_then(|provider| provider.custom_model_pricing(model_name))

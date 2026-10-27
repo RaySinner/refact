@@ -512,7 +512,7 @@ pub(crate) async fn process_command_queue_inner(
                     };
 
                     let browser_ctx_result = browser_context::maybe_insert_browser_context(
-                        app.gcx.clone(),
+                        &app.chat_ctx(),
                         &browser_chat_id,
                         has_browser_meta,
                         attach_screenshot_on_send,
@@ -601,7 +601,7 @@ pub(crate) async fn process_command_queue_inner(
                     if is_oversize {
                         if let Some((_, true)) = browser_ctx_result {
                             let snapshot = browser_context::get_browser_context_for_chat(
-                                app.gcx.clone(),
+                                &app.chat_ctx(),
                                 &browser_chat_id,
                             )
                             .await;
@@ -1216,7 +1216,7 @@ pub(crate) async fn process_command_queue_inner(
                 };
 
                 let snapshot = browser_context::get_browser_context_for_chat(
-                    app.gcx.clone(),
+                    &app.chat_ctx(),
                     &browser_chat_id,
                 )
                 .await;
@@ -1225,7 +1225,7 @@ pub(crate) async fn process_command_queue_inner(
                         .as_ref()
                         .is_some_and(|snapshot| snapshot.page_changed)
                 {
-                    browser_context::capture_browser_screenshot(app.gcx.clone(), &browser_chat_id)
+                    browser_context::capture_browser_screenshot(&app.chat_ctx(), &browser_chat_id)
                         .await
                 } else {
                     None
@@ -1285,7 +1285,7 @@ pub(crate) async fn process_command_queue_inner(
                     session.set_runtime_state(SessionState::Idle, None);
                 }
 
-                browser_context::commit_browser_cursors(app.gcx.clone(), &browser_chat_id).await;
+                browser_context::commit_browser_cursors(&app.chat_ctx(), &browser_chat_id).await;
                 maybe_save_trajectory_background_with_intent(
                     app.clone(),
                     session_arc.clone(),

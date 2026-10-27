@@ -943,7 +943,7 @@ async fn merge_registered_task_worktree(
     let post_merge_check = post_merge_check_result?;
     if response.merged && !force_merge_auto_reverted && !changed_files.is_empty() {
         let _ = crate::chat::task_agent_monitor::append_card_target_files(
-            crate::app_state::AppState::from_gcx(gcx.clone()).await,
+            gcx.chat_ctx(gcx.clone()),
             task_id,
             card_id,
             changed_files,
@@ -1582,7 +1582,7 @@ Use `cat <file>` to see conflict markers in each file."#,
 
         if !merge_auto_reverted && !squash_nothing_to_commit {
             let _ = crate::chat::task_agent_monitor::append_card_target_files(
-                crate::app_state::AppState::from_gcx(gcx.clone()).await,
+                gcx.chat_ctx(gcx.clone()),
                 &task_id,
                 card_id,
                 changed_files,

@@ -208,8 +208,7 @@ pub fn start_generation(
             // actual model override applied. Failed resolution remains pending.
             if thread.auto_compression_cap_pending {
                 if let Ok(caps) =
-                    crate::global_context::try_load_caps_quickly_if_not_present(gcx.clone(), 0)
-                        .await
+                    app.ctx.caps.try_load_caps_quickly(0).await
                 {
                     if let Ok(model) = crate::caps::resolve_chat_model(caps, &thread.model) {
                         let window = if model.base.n_ctx > 0 {
@@ -552,9 +551,7 @@ pub fn start_generation(
             };
 
             let (effective_n_ctx, image_token_mode) = {
-                let caps =
-                    crate::global_context::try_load_caps_quickly_if_not_present(gcx.clone(), 0)
-                        .await;
+                let caps = app.ctx.caps.try_load_caps_quickly(0).await;
                 let model_rec = match caps {
                     Ok(caps) => crate::caps::resolve_chat_model(caps, &model_id).ok(),
                     Err(_) => None,

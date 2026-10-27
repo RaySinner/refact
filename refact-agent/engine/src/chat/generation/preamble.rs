@@ -426,7 +426,6 @@ pub(in crate::chat::generation) async fn ensure_session_preamble_inner(
     app: AppState,
     session_arc: Arc<AMutex<ChatSession>>,
 ) {
-    let gcx = app.gcx.clone();
     let (thread, chat_id, has_system, has_project_context) = {
         let session = session_arc.lock().await;
         let active = match refact_core::active_context::active_context(&session.messages) {
@@ -455,9 +454,7 @@ pub(in crate::chat::generation) async fn ensure_session_preamble_inner(
     let mut mcp_lazy_total: Option<usize> = None;
 
     if needs_preamble {
-        let caps = match crate::global_context::try_load_caps_quickly_if_not_present(gcx.clone(), 0)
-            .await
-        {
+        let caps = match app.ctx.caps.try_load_caps_quickly(0).await {
             Ok(caps) => caps,
             Err(e) => {
                 warn!("Failed to load caps for preamble: {}", e.message);

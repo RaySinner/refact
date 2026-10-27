@@ -1169,7 +1169,7 @@ impl Tool for ToolTaskAgentFinish {
         );
 
         let notify_error = crate::chat::task_agent_monitor::notify_planner_agents_finished(
-            crate::app_state::AppState::from_gcx(gcx.clone()).await,
+            gcx.chat_ctx(gcx.clone()),
             &task_id,
             &board,
             all_finished,

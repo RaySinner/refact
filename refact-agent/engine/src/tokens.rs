@@ -1,8 +1,9 @@
 use tokio::io::AsyncWriteExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::RwLock as StdRwLock;
 use std::time::Duration;
-use tokio::sync::Mutex as AMutex;
+use tokio::sync::{Mutex as AMutex, RwLock as ARwLock};
 use tokenizers::Tokenizer;
 use reqwest::header::AUTHORIZATION;
 use reqwest::Response;
@@ -10,8 +11,10 @@ use uuid::Uuid;
 
 use crate::custom_error::MapErrToString;
 use crate::files_correction::canonical_path;
+use crate::app_state::CapsState;
 use crate::global_context::GlobalContext;
 use crate::caps::{default_hf_tokenizer_template, strip_model_from_finetune, BaseModelRecord};
+use refact_core::tokenizer_state::TokenizerState;
 use refact_core::model_caps::is_predefined_cloud_tokenizer;
 
 async fn try_open_tokenizer(res: Response, to: impl AsRef<Path>) -> Result<(), String> {
@@ -142,8 +145,38 @@ pub async fn cached_tokenizer(
     global_context: Arc<GlobalContext>,
     model_rec: &BaseModelRecord,
 ) -> Result<Option<Arc<Tokenizer>>, String> {
+    cached_tokenizer_for_parts(
+        global_context.tokenizer_state.clone(),
+        global_context.http_client.clone(),
+        global_context.cache_dir.clone(),
+        global_context.caps_state.clone(),
+        model_rec,
+    )
+    .await
+}
+
+pub async fn cached_tokenizer_for_ctx(
+    ctx: &crate::chat::ctx::ChatCtx,
+    model_rec: &BaseModelRecord,
+) -> Result<Option<Arc<Tokenizer>>, String> {
+    cached_tokenizer_for_parts(
+        ctx.model.tokenizers.clone(),
+        ctx.runtime.http_client.clone(),
+        ctx.paths.cache_dir.clone(),
+        ctx.model.caps.clone(),
+        model_rec,
+    )
+    .await
+}
+
+async fn cached_tokenizer_for_parts(
+    tokenizer_state: Arc<StdRwLock<TokenizerState>>,
+    http_client: reqwest::Client,
+    cache_dir: PathBuf,
+    caps_state: Arc<ARwLock<CapsState>>,
+    model_rec: &BaseModelRecord,
+) -> Result<Option<Arc<Tokenizer>>, String> {
     let model_id = strip_model_from_finetune(&model_rec.id);
-    let tokenizer_state = global_context.tokenizer_state.clone();
     let tokenizer_download_lock: Arc<AMutex<bool>> =
         tokenizer_state.read().unwrap().download_lock.clone();
     let _tokenizer_download_locked = tokenizer_download_lock.lock().await;
@@ -151,9 +184,9 @@ pub async fn cached_tokenizer(
     let (client2, cache_dir, tokenizer_in_gcx, hf_tokenizer_template) = {
         let (client, cache_dir, caps_state) = {
             (
-                global_context.http_client.clone(),
-                global_context.cache_dir.clone(),
-                global_context.caps_state.clone(),
+                http_client,
+                cache_dir,
+                caps_state,
             )
         };
         let template = caps_state

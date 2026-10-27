@@ -27,7 +27,6 @@ use crate::chat::retry_policy::{
 };
 use crate::chat::types::{ChatSession, SessionState, TaskMeta};
 use crate::chat::get_or_create_session_with_trajectory;
-use crate::chat::delivery::deliver_to_chat;
 use refact_core::chat_types::{DeliveryOutcome, PendingDelivery, PushMode};
 use crate::worktrees::service::WorktreeService;
 use crate::worktrees::git;
@@ -75,7 +74,7 @@ fn task_agent_monitor_notice(payload: serde_json::Value, content: String) -> Cha
 /// trajectory for the task, record a durable trace on the card (when known) so the
 /// failure is visible to the planner via task_list rather than only in logs.
 async fn ensure_planner_task_meta(
-    app: AppState,
+    ctx: ChatCtx,
     planner_session: &Arc<AMutex<ChatSession>>,
     task_id: &str,
     planner_chat_id: &str,
@@ -88,8 +87,8 @@ async fn ensure_planner_task_meta(
             return Ok(());
         }
     }
-    let known_planner = storage::list_task_trajectories_for(
-        app.gcx.clone(),
+    let known_planner = storage::list_task_trajectories_for_ctx(
+        &ctx,
         task_id,
         "planner",
         None,
@@ -130,7 +129,7 @@ async fn ensure_planner_task_meta(
             "[NOTIFY-FAILED:{}] planner {} unreachable (no planner metadata); notification dropped",
             notification_kind, planner_chat_id
         );
-        let _ = storage::update_board_atomic(app.gcx.clone(), task_id, move |board| {
+        let _ = storage::update_board_atomic_for_ctx(&ctx, task_id, move |board| {
             if let Some(card) = board.get_card_mut(&card_id) {
                 card.status_updates.push(StatusUpdate {
                     timestamp: Utc::now().to_rfc3339(),
@@ -149,7 +148,7 @@ async fn ensure_planner_task_meta(
 /// status update; the chosen push mode controls when the notice lands, while
 /// wake=true resumes an idle planner instead of relying on its next poll.
 pub(crate) async fn notify_planner_blocking_question(
-    app: AppState,
+    ctx: ChatCtx,
     task_id: &str,
     card_id: &str,
     planner_chat_id: &str,
@@ -170,12 +169,12 @@ pub(crate) async fn notify_planner_blocking_question(
         ),
     );
 
-    let sessions = app.chat.sessions.clone();
+    let sessions = ctx.chat.sessions.clone();
     let planner_session =
-        get_or_create_session_with_trajectory(app.chat_ctx(), &sessions, planner_chat_id).await;
+        get_or_create_session_with_trajectory(ctx.clone(), &sessions, planner_chat_id).await;
 
     ensure_planner_task_meta(
-        app.clone(),
+        ctx.clone(),
         &planner_session,
         task_id,
         planner_chat_id,
@@ -184,20 +183,20 @@ pub(crate) async fn notify_planner_blocking_question(
     )
     .await?;
 
-    deliver_to_chat(
-        app,
-        planner_chat_id,
-        PendingDelivery::with_id(
-            format!("task-agent-blocking-question:{task_id}:{card_id}:{question_id}"),
-            vec![notice],
-            push,
-            TASK_AGENT_MONITOR_SOURCE,
-            true,
-        ),
-    )
-    .await
+    ctx.chat
+        .facade
+        .deliver_messages(
+            planner_chat_id,
+            PendingDelivery::with_id(
+                format!("task-agent-blocking-question:{task_id}:{card_id}:{question_id}"),
+                vec![notice],
+                push,
+                TASK_AGENT_MONITOR_SOURCE,
+                true,
+            ),
+        )
+        .await
 }
-
 fn make_runtime_event(
     signal_type: &str,
     title: &str,
@@ -388,7 +387,7 @@ A good recovery path is: run `agent_pulse(card_id=\"{card_id}\")`, use `agent_st
 }
 
 async fn notify_planner_about_reasoning_token_limit(
-    app: AppState,
+    ctx: ChatCtx,
     task_id: &str,
     card_id: &str,
     agent_chat_id: &str,
@@ -417,12 +416,12 @@ async fn notify_planner_about_reasoning_token_limit(
         prompt,
     );
 
-    let sessions = app.chat.sessions.clone();
+    let sessions = ctx.chat.sessions.clone();
     let planner_session =
-        get_or_create_session_with_trajectory(app.chat_ctx(), &sessions, planner_chat_id).await;
+        get_or_create_session_with_trajectory(ctx.clone(), &sessions, planner_chat_id).await;
 
     if ensure_planner_task_meta(
-        app.clone(),
+        ctx.clone(),
         &planner_session,
         task_id,
         planner_chat_id,
@@ -436,7 +435,7 @@ async fn notify_planner_about_reasoning_token_limit(
     }
 
     if !record_stall_planner_notification(
-        app.clone(),
+        &ctx,
         task_id,
         card_id,
         agent_chat_id,
@@ -447,23 +446,24 @@ async fn notify_planner_about_reasoning_token_limit(
         return Ok(false);
     }
 
-    deliver_to_chat(
-        app.clone(),
-        planner_chat_id,
-        PendingDelivery::new(
-            vec![notice],
-            PushMode::Append,
-            TASK_AGENT_MONITOR_SOURCE,
-            true,
-        ),
-    )
-    .await?;
+    ctx.chat
+        .facade
+        .deliver_messages(
+            planner_chat_id,
+            PendingDelivery::new(
+                vec![notice],
+                PushMode::Append,
+                TASK_AGENT_MONITOR_SOURCE,
+                true,
+            ),
+        )
+        .await?;
 
     Ok(true)
 }
 
 pub async fn handle_agent_reasoning_token_limit_stop(
-    app: AppState,
+    ctx: ChatCtx,
     task_meta: TaskMeta,
     finish_reason: String,
     usage: Option<ChatUsage>,
@@ -482,7 +482,7 @@ pub async fn handle_agent_reasoning_token_limit_stop(
 
     let prompt = reasoning_token_limit_resume_prompt(&card_id, &finish_reason, usage.as_ref());
     let planner_notified = notify_planner_about_reasoning_token_limit(
-        app.clone(),
+        ctx.clone(),
         &task_meta.task_id,
         &card_id,
         &agent_chat_id,
@@ -503,7 +503,7 @@ pub async fn handle_agent_reasoning_token_limit_stop(
         "Agent stopped while reasoning before producing an answer/tool call (finish_reason={finish_reason}, usage={}). {notification_status} message_id={message_id}",
         usage_summary(usage.as_ref())
     );
-    let _ = storage::update_board_atomic(app.gcx.clone(), &task_meta.task_id, move |board| {
+    let _ = storage::update_board_atomic_for_ctx(&ctx, &task_meta.task_id, move |board| {
         if let Some(card) = board.get_card_mut(&card_id) {
             card.status_updates.push(StatusUpdate {
                 timestamp: Utc::now().to_rfc3339(),
@@ -539,7 +539,7 @@ impl StallKind {
 /// Append one `prefix`-scoped status update to the card, guarding against the
 /// card leaving `doing` and against exceeding that prefix's budget/cooldown.
 async fn record_stall_notification(
-    app: AppState,
+    ctx: &ChatCtx,
     task_id: &str,
     card_id: &str,
     agent_chat_id: &str,
@@ -554,7 +554,7 @@ async fn record_stall_notification(
     let message = format!("{} {} ({})", prefix, agent_chat_id, detail);
     let prefix = prefix.to_string();
 
-    storage::update_board_atomic(app.gcx.clone(), task_id, move |board| {
+    storage::update_board_atomic_for_ctx(ctx, task_id, move |board| {
         let card = board
             .get_card_mut(&card_id_owned)
             .ok_or_else(|| format!("Card {} not found", card_id_owned))?;
@@ -581,14 +581,14 @@ async fn record_stall_notification(
 }
 
 async fn record_stall_planner_notification(
-    app: AppState,
+    ctx: &ChatCtx,
     task_id: &str,
     card_id: &str,
     agent_chat_id: &str,
     reason: &str,
 ) -> Result<bool, String> {
     record_stall_notification(
-        app,
+        ctx,
         task_id,
         card_id,
         agent_chat_id,
@@ -741,7 +741,7 @@ fn stalled_agent_chat_targets(card: &BoardCard) -> Vec<String> {
 /// session with a non-empty `pending_deliveries`, so a queued nudge suppresses the
 /// next stall detection until the nudge lands and the session drains again.
 async fn notify_agent_about_stall(
-    app: AppState,
+    ctx: ChatCtx,
     task_id: &str,
     card: &BoardCard,
     agent_chat_id: &str,
@@ -760,7 +760,7 @@ async fn notify_agent_about_stall(
         // The budget is tracked against the primary agent chat so a room card does
         // not get one nudge per member per pass.
         if !record_stall_notification(
-            app.clone(),
+            &ctx,
             task_id,
             &card.id,
             agent_chat_id,
@@ -786,17 +786,19 @@ async fn notify_agent_about_stall(
             message.clone(),
         );
 
-        match deliver_to_chat(
-            app.clone(),
-            &target,
-            PendingDelivery::new(
-                vec![notice],
-                PushMode::WhenIdle,
-                TASK_AGENT_MONITOR_SOURCE,
-                true,
-            ),
-        )
-        .await
+        match ctx
+            .chat
+            .facade
+            .deliver_messages(
+                &target,
+                PendingDelivery::new(
+                    vec![notice],
+                    PushMode::WhenIdle,
+                    TASK_AGENT_MONITOR_SOURCE,
+                    true,
+                ),
+            )
+            .await
         {
             Ok(_) => {
                 notified = true;
@@ -831,7 +833,7 @@ async fn notify_agent_about_stall(
 /// stalled agent look like a healthy wait: the planner was never told, and the
 /// card showed nothing either.
 async fn record_stall_escalation(
-    app: AppState,
+    ctx: &ChatCtx,
     task_id: &str,
     card_id: &str,
     agent_chat_id: &str,
@@ -842,7 +844,7 @@ async fn record_stall_escalation(
         "{} {} ({})",
         STALL_ESCALATION_STATUS_PREFIX, agent_chat_id, detail
     );
-    let _ = storage::update_board_atomic(app.gcx.clone(), task_id, move |board| {
+    let _ = storage::update_board_atomic_for_ctx(ctx, task_id, move |board| {
         if let Some(card) = board.get_card_mut(&card_id_owned) {
             card.status_updates.push(StatusUpdate {
                 timestamp: Utc::now().to_rfc3339(),
@@ -855,7 +857,7 @@ async fn record_stall_escalation(
 }
 
 async fn notify_planner_about_stalled_agent(
-    app: AppState,
+    ctx: ChatCtx,
     task_id: &str,
     card: &BoardCard,
     agent_chat_id: &str,
@@ -877,7 +879,7 @@ async fn notify_planner_about_stalled_agent(
             short_reason
         );
         record_stall_escalation(
-            app.clone(),
+            &ctx,
             task_id,
             card_id,
             agent_chat_id,
@@ -913,12 +915,12 @@ async fn notify_planner_about_stalled_agent(
         message,
     );
 
-    let sessions = app.chat.sessions.clone();
+    let sessions = ctx.chat.sessions.clone();
     let planner_session =
-        get_or_create_session_with_trajectory(app.chat_ctx(), &sessions, planner_chat_id).await;
+        get_or_create_session_with_trajectory(ctx.clone(), &sessions, planner_chat_id).await;
 
     if ensure_planner_task_meta(
-        app.clone(),
+        ctx.clone(),
         &planner_session,
         task_id,
         planner_chat_id,
@@ -935,7 +937,7 @@ async fn notify_planner_about_stalled_agent(
             card_id
         );
         record_stall_escalation(
-            app.clone(),
+            &ctx,
             task_id,
             card_id,
             agent_chat_id,
@@ -949,7 +951,7 @@ async fn notify_planner_about_stalled_agent(
     }
 
     if !record_stall_planner_notification(
-        app.clone(),
+        &ctx,
         task_id,
         card_id,
         agent_chat_id,
@@ -960,17 +962,19 @@ async fn notify_planner_about_stalled_agent(
         return Ok(false);
     }
 
-    if let Err(error) = deliver_to_chat(
-        app.clone(),
-        planner_chat_id,
-        PendingDelivery::new(
-            vec![notice],
-            PushMode::Append,
-            TASK_AGENT_MONITOR_SOURCE,
-            true,
-        ),
-    )
-    .await
+    if let Err(error) = ctx
+        .chat
+        .facade
+        .deliver_messages(
+            planner_chat_id,
+            PendingDelivery::new(
+                vec![notice],
+                PushMode::Append,
+                TASK_AGENT_MONITOR_SOURCE,
+                true,
+            ),
+        )
+        .await
     {
         // Distinct from "no planner chat": here the destination existed and the
         // transport failed, so the recorded detail carries the transport error.
@@ -981,7 +985,7 @@ async fn notify_planner_about_stalled_agent(
             error
         );
         record_stall_escalation(
-            app.clone(),
+            &ctx,
             task_id,
             card_id,
             agent_chat_id,
@@ -1132,7 +1136,7 @@ pub async fn handle_agent_streaming_error(
     let (should_retry, current_attempt) = {
         let card_id_owned = card_id.clone();
         let error_msg = error_message.to_string();
-        storage::update_board_atomic(app.gcx.clone(), &task_meta.task_id, move |board| {
+        storage::update_board_atomic_for_ctx(&app.ctx, &task_meta.task_id, move |board| {
             let mut info = (false, 0usize);
             if let Some(card) = board.get_card_mut(&card_id_owned) {
                 if card.column == "doing" && card.retry_count < max_retries {
@@ -1162,7 +1166,7 @@ pub async fn handle_agent_streaming_error(
             max_retries,
             error_message
         );
-        if let Ok(board) = storage::load_board(app.gcx.clone(), &task_meta.task_id).await {
+        if let Ok(board) = storage::load_board_for_ctx(&app.ctx, &task_meta.task_id).await {
             if let Some(card) = board.get_card(card_id) {
                 if let Some(ref agent_chat_id) = card.agent_chat_id {
                     let sessions = app.chat.sessions.clone();
@@ -1185,7 +1189,7 @@ pub async fn handle_agent_streaming_error(
     let failure_reason = failure_kind.final_report_reason(error_message);
 
     if let Err(e) = mark_agent_as_failed(
-        app.clone(),
+        app.ctx.clone(),
         &task_meta.task_id,
         card_id,
         task_meta.agent_id.as_deref(),
@@ -1201,7 +1205,7 @@ pub async fn handle_agent_streaming_error(
 
 /// Mark a task card as failed and notify planner
 async fn mark_agent_as_failed(
-    app: AppState,
+    ctx: ChatCtx,
     task_id: &str,
     card_id: &str,
     expected_agent_id: Option<&str>,
@@ -1209,7 +1213,7 @@ async fn mark_agent_as_failed(
     reason: &str,
     failure_kind: AgentFailureKind,
 ) -> Result<(), String> {
-    let _ = update_card_heartbeat(app.clone(), task_id, card_id).await;
+    let _ = update_card_heartbeat(ctx.clone(), task_id, card_id).await;
 
     let card_id_owned = card_id.to_string();
     let reason_clone = reason.to_string();
@@ -1218,7 +1222,7 @@ async fn mark_agent_as_failed(
     // The closure returns (card_title, actually_failed, all_finished).
     // actually_failed is true only when the card transitioned from "doing" to "failed".
     let (board, (card_title, actually_failed, all_finished)) =
-        storage::update_board_atomic(app.gcx.clone(), task_id, move |board| {
+        storage::update_board_atomic_for_ctx(&ctx, task_id, move |board| {
             let card = board
                 .get_card_mut(&card_id_owned)
                 .ok_or(format!("Card {} not found", card_id_owned))?;
@@ -1270,7 +1274,7 @@ async fn mark_agent_as_failed(
         return Ok(());
     }
 
-    storage::update_task_stats(app.gcx.clone(), task_id).await?;
+    storage::update_task_stats_for_ctx(&ctx, task_id).await?;
 
     tracing::info!("Marked agent for card {} as failed: {}", card_id, reason);
 
@@ -1283,7 +1287,7 @@ async fn mark_agent_as_failed(
             "failed",
             Some("high"),
         );
-        app.buddy_event_sink.enqueue_event(ev).await;
+        ctx.buddy_event_sink.enqueue_event(ev).await;
     }
 
     {
@@ -1297,14 +1301,14 @@ async fn mark_agent_as_failed(
             (None, None, None)
         };
         let diff_report = if let (Some(ref wt), Some(ref br)) = (&worktree, &branch) {
-            capture_failed_agent_diff(app.clone(), wt, br, worktree_name.as_deref()).await
+            capture_failed_agent_diff(&ctx, wt, br, worktree_name.as_deref()).await
         } else {
             String::new()
         };
         let cleanup_result = if failure_kind.should_cleanup_worktree() {
             if let (Some(ref wt), Some(ref br)) = (&worktree, &branch) {
                 let result = remove_agent_worktree_and_branch(
-                    app.clone(),
+                    ctx.clone(),
                     task_id,
                     card_id,
                     wt,
@@ -1356,7 +1360,7 @@ async fn mark_agent_as_failed(
         let clear_branch_field = cleanup_result
             .map(|(_, branch_deleted)| branch_deleted)
             .unwrap_or(false);
-        if let Err(e) = storage::update_board_atomic(app.gcx.clone(), task_id, move |board| {
+        if let Err(e) = storage::update_board_atomic_for_ctx(&ctx, task_id, move |board| {
             if let Some(c) = board.get_card_mut(&card_id_for_report) {
                 if let Some(ref mut report) = c.final_report {
                     if !diff_report.is_empty() {
@@ -1389,7 +1393,7 @@ async fn mark_agent_as_failed(
         }
     }
 
-    let notification_board = storage::load_board(app.gcx.clone(), task_id)
+    let notification_board = storage::load_board_for_ctx(&ctx, task_id)
         .await
         .unwrap_or_else(|e| {
             tracing::warn!(
@@ -1401,7 +1405,7 @@ async fn mark_agent_as_failed(
         });
 
     if let Err(e) = notify_planner_agents_finished(
-        app.clone(),
+        ctx.clone(),
         task_id,
         &notification_board,
         all_finished,
@@ -1420,14 +1424,14 @@ async fn mark_agent_as_failed(
 }
 
 /// Notify planner about newly finished agents without waiting for the full batch to end.
-pub(crate) async fn notify_planner_agents_finished(
-    app: AppState,
+pub fn notify_planner_agents_finished(
+    ctx: ChatCtx,
     task_id: &str,
     board: &crate::tasks::types::TaskBoard,
     all_finished: bool,
     planner_chat_id: Option<&str>,
 ) -> Result<(), String> {
-    let since = match storage::load_task_meta(app.gcx.clone(), task_id).await {
+    let since = match storage::load_task_meta_for_ctx(&ctx, task_id).await {
         Ok(meta) => meta
             .last_agents_summary_at
             .as_deref()
@@ -1547,7 +1551,7 @@ pub(crate) async fn notify_planner_agents_finished(
         planner_message,
     );
 
-    let sessions = app.chat.sessions.clone();
+    let sessions = ctx.chat.sessions.clone();
 
     let planner_chat_id = if let Some(id) = planner_chat_id {
         id.to_string()
@@ -1575,8 +1579,8 @@ pub(crate) async fn notify_planner_agents_finished(
             }
         }
         if planner_chat_id.is_none() {
-            planner_chat_id = storage::list_task_trajectories_for(
-                app.gcx.clone(),
+            planner_chat_id = storage::list_task_trajectories_for_ctx(
+                &ctx,
                 task_id,
                 "planner",
                 None,
@@ -1607,9 +1611,9 @@ pub(crate) async fn notify_planner_agents_finished(
         })?
     };
     let planner_session =
-        get_or_create_session_with_trajectory(app.chat_ctx(), &sessions, &planner_chat_id).await;
+        get_or_create_session_with_trajectory(ctx.clone(), &sessions, &planner_chat_id).await;
     ensure_planner_task_meta(
-        app.clone(),
+        ctx.clone(),
         &planner_session,
         task_id,
         &planner_chat_id,
@@ -1618,22 +1622,23 @@ pub(crate) async fn notify_planner_agents_finished(
     )
     .await?;
 
-    deliver_to_chat(
-        app.clone(),
-        &planner_chat_id,
-        PendingDelivery::new(
-            vec![notice],
-            PushMode::Append,
-            TASK_AGENT_MONITOR_SOURCE,
-            true,
-        ),
-    )
-    .await?;
+    ctx.chat
+        .facade
+        .deliver_messages(
+            &planner_chat_id,
+            PendingDelivery::new(
+                vec![notice],
+                PushMode::Append,
+                TASK_AGENT_MONITOR_SOURCE,
+                true,
+            ),
+        )
+        .await?;
 
     // Best-effort: mark summary as emitted.
-    if let Ok(mut meta) = storage::load_task_meta(app.gcx.clone(), task_id).await {
+    if let Ok(mut meta) = storage::load_task_meta_for_ctx(&ctx, task_id).await {
         meta.last_agents_summary_at = Some(Utc::now().to_rfc3339());
-        let _ = storage::save_task_meta(app.gcx.clone(), task_id, &meta).await;
+        let _ = storage::save_task_meta_for_ctx(&ctx, task_id, &meta).await;
     }
 
     Ok(())
@@ -1764,16 +1769,16 @@ fn fallback_remove_worktree_and_branch(
     (worktree_removed, branch_deleted)
 }
 
-pub(crate) async fn remove_agent_worktree_and_branch(
-    app: AppState,
+pub fn remove_agent_worktree_and_branch(
+    ctx: ChatCtx,
     task_id: &str,
     card_id: &str,
     agent_worktree: &str,
     agent_branch: &str,
     agent_worktree_name: Option<&str>,
 ) -> (bool, bool) {
-    let cache_dir = app.paths.cache_dir.clone();
-    let project_dirs = crate::files_correction::get_project_dirs(app.gcx.clone()).await;
+    let cache_dir = ctx.paths.cache_dir.clone();
+    let project_dirs = crate::files_correction::get_unscoped_project_dirs_for_ctx(&ctx).await;
     let Some(workspace_root) = project_dirs.first().cloned() else {
         tracing::warn!(
             "Cannot cleanup failed agent worktree for card {}: no workspace folder found",
@@ -1850,7 +1855,7 @@ pub(crate) async fn remove_agent_worktree_and_branch(
 }
 
 pub(crate) async fn capture_failed_agent_diff(
-    _app: AppState,
+    _ctx: &ChatCtx,
     agent_worktree: &str,
     agent_branch: &str,
     _agent_worktree_name: Option<&str>,
@@ -1902,13 +1907,13 @@ pub(crate) async fn capture_failed_agent_diff(
 }
 
 pub async fn update_card_heartbeat(
-    app: AppState,
+    ctx: ChatCtx,
     task_id: &str,
     card_id: &str,
 ) -> Result<(), String> {
     let card_id_owned = card_id.to_string();
     let heartbeat = Utc::now().to_rfc3339();
-    storage::update_board_atomic(app.gcx.clone(), task_id, move |board| {
+    storage::update_board_atomic_for_ctx(&ctx, task_id, move |board| {
         let card = board
             .get_card_mut(&card_id_owned)
             .ok_or_else(|| format!("Card {} not found", card_id_owned))?;
@@ -1956,7 +1961,7 @@ pub fn git_diff_name_only(worktree_path: &Path, base_ref: &str, head_ref: &str) 
 }
 
 pub async fn append_card_target_files(
-    app: AppState,
+    ctx: ChatCtx,
     task_id: &str,
     card_id: &str,
     files: Vec<String>,
@@ -1965,7 +1970,7 @@ pub async fn append_card_target_files(
         return Ok(());
     }
     let card_id_owned = card_id.to_string();
-    storage::update_board_atomic(app.gcx.clone(), task_id, move |board| {
+    storage::update_board_atomic_for_ctx(&ctx, task_id, move |board| {
         let card = board
             .get_card_mut(&card_id_owned)
             .ok_or_else(|| format!("Card {} not found", card_id_owned))?;
@@ -1983,10 +1988,10 @@ pub async fn append_card_target_files(
 /// Return the wall-clock timestamp of the last recorded activity for the
 /// given agent chat session. Returns `None` when the session no longer exists.
 pub async fn get_last_agent_heartbeat(
-    app: AppState,
+    ctx: ChatCtx,
     agent_chat_id: &str,
 ) -> Option<chrono::DateTime<Utc>> {
-    let sessions = app.chat.sessions.clone();
+    let sessions = ctx.chat.sessions.clone();
     let sessions_read = sessions.read().await;
     let session_arc = sessions_read.get(agent_chat_id)?.clone();
     drop(sessions_read);
@@ -2023,7 +2028,7 @@ pub async fn start_agent_monitor(app: AppState) {
 
 async fn sweep_planner_wake_ups(app: AppState) -> Result<(), String> {
     let now = Utc::now();
-    let task_metas = storage::list_tasks(app.gcx.clone()).await?;
+    let task_metas = storage::list_tasks_for_ctx(&app.ctx).await?;
 
     for task_meta in task_metas {
         if task_meta.status != crate::tasks::types::TaskStatus::Active {
@@ -2065,8 +2070,8 @@ async fn sweep_planner_wake_ups(app: AppState) -> Result<(), String> {
                 session.mark_persisted_runtime_changed();
             }
 
-            let statuses = crate::tools::tool_task_check_agents::get_agent_statuses(
-                app.gcx.clone(),
+            let statuses = crate::tools::tool_task_check_agents::get_agent_statuses_for_ctx(
+                &app.ctx,
                 app.chat.facade.clone(),
                 &task_id,
             )
@@ -2100,17 +2105,19 @@ async fn sweep_planner_wake_ups(app: AppState) -> Result<(), String> {
                 message,
             );
 
-            deliver_to_chat(
-                app.clone(),
-                &chat_id,
-                PendingDelivery::new(
-                    vec![notice],
-                    PushMode::Append,
-                    TASK_AGENT_MONITOR_SOURCE,
-                    true,
-                ),
-            )
-            .await?;
+
+            app.chat
+                .facade
+                .deliver_messages(
+                    &chat_id,
+                    PendingDelivery::new(
+                        vec![notice],
+                        PushMode::Append,
+                        TASK_AGENT_MONITOR_SOURCE,
+                        true,
+                    ),
+                )
+                .await?;
 
             tracing::info!(
                 "Auto-woke planner {} for task {} (wake_up_at deadline passed)",
@@ -2125,7 +2132,7 @@ async fn sweep_planner_wake_ups(app: AppState) -> Result<(), String> {
 
 /// Check all active tasks for stuck agents
 async fn check_for_stuck_agents(app: AppState) -> Result<(), String> {
-    let task_metas = storage::list_tasks(app.gcx.clone()).await?;
+    let task_metas = storage::list_tasks_for_ctx(&app.ctx).await?;
 
     for task_meta in task_metas {
         if task_meta.status != crate::tasks::types::TaskStatus::Active {
@@ -2133,7 +2140,7 @@ async fn check_for_stuck_agents(app: AppState) -> Result<(), String> {
         }
 
         let task_id = &task_meta.id;
-        let board = storage::load_board(app.gcx.clone(), task_id).await?;
+        let board = storage::load_board_for_ctx(&app.ctx, task_id).await?;
         let sessions = app.chat.sessions.clone();
 
         for card in &board.cards {
@@ -2167,7 +2174,7 @@ async fn check_for_stuck_agents(app: AppState) -> Result<(), String> {
                             );
 
                             mark_agent_as_failed(
-                                app.clone(),
+.ctx.clone(),
                                 task_id,
                                 &card.id,
                                 card.assignee.as_deref(),
@@ -2204,7 +2211,7 @@ async fn check_for_stuck_agents(app: AppState) -> Result<(), String> {
                         );
 
                         mark_agent_as_failed(
-                            app.clone(),
+.ctx.clone(),
                             task_id,
                             &card.id,
                             card.assignee.as_deref(),
@@ -2250,7 +2257,7 @@ async fn check_for_stuck_agents(app: AppState) -> Result<(), String> {
                     let failure_kind = AgentFailureKind::from_error(&error_msg);
                     let failure_reason = failure_kind.final_report_reason(&error_msg);
                     mark_agent_as_failed(
-                        app.clone(),
+.ctx.clone(),
                         task_id,
                         &card.id,
                         card.assignee.as_deref(),
@@ -2312,7 +2319,7 @@ async fn check_for_stuck_agents(app: AppState) -> Result<(), String> {
 
                 if notify_count >= MAX_STALL_PLANNER_NOTIFICATIONS_PER_CARD {
                     mark_agent_as_failed(
-                        app.clone(),
+.ctx.clone(),
                         task_id,
                         &card.id,
                         card.assignee.as_deref(),
@@ -2327,7 +2334,7 @@ async fn check_for_stuck_agents(app: AppState) -> Result<(), String> {
                     .await?;
                 } else if stall_planner_notify_allowed(card, now) {
                     if let Err(error) = notify_agent_about_stall(
-                        app.clone(),
+.ctx.clone(),
                         task_id,
                         card,
                         agent_chat_id,
@@ -2345,7 +2352,7 @@ async fn check_for_stuck_agents(app: AppState) -> Result<(), String> {
                         );
                     }
                     let notify_result = notify_planner_about_stalled_agent(
-                        app.clone(),
+.ctx.clone(),
                         task_id,
                         card,
                         agent_chat_id,
@@ -2370,7 +2377,7 @@ async fn check_for_stuck_agents(app: AppState) -> Result<(), String> {
                         && stalled_agent_should_fail_after_notify_failure(stall_elapsed)
                     {
                         mark_agent_as_failed(
-                            app.clone(),
+.ctx.clone(),
                             task_id,
                             &card.id,
                             card.assignee.as_deref(),
@@ -2401,7 +2408,7 @@ async fn check_for_stuck_agents(app: AppState) -> Result<(), String> {
                 );
 
                 mark_agent_as_failed(
-                    app.clone(),
+.ctx.clone(),
                     task_id,
                     &card.id,
                     card.assignee.as_deref(),
@@ -2456,7 +2463,7 @@ async fn check_for_stuck_agents(app: AppState) -> Result<(), String> {
                             _ => StallKind::IdleNoFinish,
                         };
                         let _ = notify_agent_about_stall(
-                            app.clone(),
+.ctx.clone(),
                             task_id,
                             card,
                             member_chat_id,
@@ -2465,7 +2472,7 @@ async fn check_for_stuck_agents(app: AppState) -> Result<(), String> {
                         )
                         .await;
                         let _ = notify_planner_about_stalled_agent(
-                            app.clone(),
+.ctx.clone(),
                             task_id,
                             card,
                             member_chat_id,
@@ -2782,7 +2789,7 @@ mod tests {
         for expected in [DeliveryOutcome::Queued, DeliveryOutcome::Duplicate] {
             assert_eq!(
                 notify_planner_blocking_question(
-                    app.clone(),
+.chat_ctx(),
                     &task_id,
                     "T-1",
                     "planner-test",
@@ -3062,7 +3069,7 @@ mod tests {
             setup_monitor_case("doing", SessionState::Idle, Duration::from_secs(90), vec![]).await;
 
         assert!(!notify_planner_about_stalled_agent(
-            app.clone(),
+.ctx.clone(),
             &task_id,
             &board_card(&app, &task_id).await,
             &agent_chat_id,
@@ -3118,7 +3125,7 @@ mod tests {
 
         let card = board_card(&app, &task_id).await;
         assert!(!notify_planner_about_stalled_agent(
-            app.clone(),
+.ctx.clone(),
             &task_id,
             &card,
             &agent_chat_id,
@@ -3391,7 +3398,7 @@ mod tests {
             setup_monitor_case("doing", SessionState::Idle, Duration::from_secs(90), vec![]).await;
 
         mark_agent_as_failed(
-            app.clone(),
+.ctx.clone(),
             &task_id,
             "T-1",
             Some("agent-1"),

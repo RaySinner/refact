@@ -4059,10 +4059,14 @@ name = "refact-chat-api"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "hex",
+ "refact-caps-core",
  "refact-core",
  "regex",
  "serde",
  "serde_json",
+ "sha2",
+ "similar",
  "tokio",
  "url",
  "uuid",

@@ -175,7 +175,6 @@ impl ChatSession {
         self.interruptible_waits += 1;
         self.runtime.waiting_interruptible = true;
         self.emit_goal_status();
-        self.interrupt_wait_for_delivery();
     }
 
     pub fn end_interruptible_wait(&mut self) {
@@ -184,7 +183,7 @@ impl ChatSession {
         self.emit_goal_status();
     }
 
-    pub fn interrupt_wait_for_delivery(&mut self) {
+    pub(crate) fn interrupt_wait_for_delivery(&mut self, cause: WaitInterruptCause) {
         if self.interruptible_waits > 0
             && self
                 .pending_deliveries
@@ -196,6 +195,10 @@ impl ChatSession {
         {
             self.wait_delivery_boundary = true;
             self.wait_interrupt_flag.store(true, Ordering::SeqCst);
+            *self
+                .wait_interrupt_cause
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()) = cause;
             self.abort_notify.notify_waiters();
         }
     }
@@ -422,7 +425,7 @@ impl ChatSession {
         }
 
         self.pending_deliveries.push_back(delivery);
-        self.interrupt_wait_for_delivery();
+        self.interrupt_wait_for_delivery(WaitInterruptCause::MessageArrived);
         self.emit_queue_update();
         self.mark_persisted_runtime_changed();
         Ok(DeliveryOutcome::Queued)
@@ -527,7 +530,6 @@ impl ChatSession {
         if let Some(pending) = self.pending_deliveries.get_mut(index) {
             pending.push = push;
         }
-        self.interrupt_wait_for_delivery();
         self.emit_queue_update();
         self.mark_persisted_runtime_changed();
         Ok(self.delivery_envelope_boundary_open(&self.pending_deliveries[index]))
@@ -535,13 +537,22 @@ impl ChatSession {
 
     /// Replace the runner-owned delivery mirror shown in queue snapshots. The
     /// background-agent registry stays authoritative; these are never drained
-    /// by this session.
+    /// by this session. Only a genuinely new delivery in the mirror interrupts
+    /// an active wait; rewrites and removals never do.
     pub fn set_runner_pending_deliveries(&mut self, deliveries: Vec<PendingDelivery>) {
         if self.runner_pending_deliveries == deliveries {
             return;
         }
+        let previous = std::mem::take(&mut self.runner_pending_deliveries);
+        let new_wake_worthy = deliveries.iter().any(|delivery| {
+            !previous.iter().any(|existing| existing.id == delivery.id)
+                && delivery.push != PushMode::Preempt
+                && delivery.after_tool_call_id.is_none()
+        });
         self.runner_pending_deliveries = deliveries;
-        self.interrupt_wait_for_delivery();
+        if new_wake_worthy {
+            self.interrupt_wait_for_delivery(WaitInterruptCause::RunnerMessageArrived);
+        }
         self.emit_queue_update();
     }
 

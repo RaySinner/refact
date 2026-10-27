@@ -1,10 +1,11 @@
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex};
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::{broadcast, Notify, Mutex as AMutex};
 
 use crate::call_validation::{ChatMessage, ChatUsage};
+use crate::tools::tools_description::WaitInterruptCause;
 use refact_runtime_api::{ToolCatalogSnapshot, TurnToolPool};
 
 pub use refact_chat_api::chat_local_types::{
@@ -324,6 +325,7 @@ pub struct ChatSession {
     pub interruptible_waits: usize,
     pub wait_delivery_boundary: bool,
     pub wait_interrupt_flag: Arc<AtomicBool>,
+    pub(crate) wait_interrupt_cause: Arc<StdMutex<WaitInterruptCause>>,
     pub user_interrupt_flag: Arc<AtomicBool>,
     pub queue_processor_running: Arc<AtomicBool>,
     pub queue_notify: Arc<Notify>,

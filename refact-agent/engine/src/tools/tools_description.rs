@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex};
 use serde_json::Value;
 use async_trait::async_trait;
 use tokio::sync::Mutex as AMutex;
@@ -190,11 +190,29 @@ pub async fn set_tool_config(
     Ok(())
 }
 
+/// Why an interruptible wait was interrupted. Tool results surface the label so
+/// the model can tell a real incoming message apart from a user abort.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum WaitInterruptCause {
+    MessageArrived,
+    RunnerMessageArrived,
+}
+
+impl WaitInterruptCause {
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::MessageArrived => "message arrived",
+            Self::RunnerMessageArrived => "background agent message arrived",
+        }
+    }
+}
+
 /// A wait-only cancellation signal; observing it never aborts the chat turn.
 #[derive(Clone)]
 pub(crate) struct WaitInterrupt {
     pub(crate) abort_flag: Arc<std::sync::atomic::AtomicBool>,
     pub(crate) wait_flag: Arc<std::sync::atomic::AtomicBool>,
+    pub(crate) cause: Arc<StdMutex<WaitInterruptCause>>,
     pub(crate) notify: Option<Arc<tokio::sync::Notify>>,
 }
 
@@ -209,18 +227,24 @@ impl WaitInterrupt {
             )
         };
         let session = app.chat.sessions.read().await.get(&chat_id).cloned();
-        let (wait_flag, notify) = if let Some(session) = session {
+        let (wait_flag, cause, notify) = if let Some(session) = session {
             let session = session.lock().await;
             (
                 session.wait_interrupt_flag.clone(),
+                session.wait_interrupt_cause.clone(),
                 Some(session.abort_notify.clone()),
             )
         } else {
-            (Arc::new(std::sync::atomic::AtomicBool::new(false)), None)
+            (
+                Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                Arc::new(StdMutex::new(WaitInterruptCause::MessageArrived)),
+                None,
+            )
         };
         Self {
             abort_flag,
             wait_flag,
+            cause,
             notify,
         }
     }
@@ -231,8 +255,13 @@ impl WaitInterrupt {
     }
 
     pub(crate) fn reason(&self, elapsed_seconds: f64) -> String {
+        let wait_cause = self
+            .cause
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .label();
         let cause = if self.wait_flag.load(std::sync::atomic::Ordering::SeqCst) {
-            "message arrived"
+            wait_cause
         } else {
             "user aborted"
         };

@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 use serde_json::json;
@@ -11,6 +11,7 @@ use crate::call_validation::{ChatContent, ChatMessage, ChatUsage};
 use crate::chat::diagnostics::{make_ui_only_error_message, make_ui_only_error_message_with_info};
 use crate::chat::internal_roles::{event, EventSubkind, GOAL_ROLE};
 use crate::chat::perf_diagnostics::{self, PerfComponent, PerfOutcome};
+use crate::tools::tools_description::WaitInterruptCause;
 
 use super::types::*;
 use super::types::session_idle_timeout;

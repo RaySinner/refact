@@ -188,6 +188,93 @@ use std::time::Instant;
     }
 
     #[test]
+    fn fresh_wait_not_interrupted_by_preexisting_pending_delivery() {
+        for push in [PushMode::Append, PushMode::WhenIdle] {
+            let mut session = make_session();
+            session.turn_depth = 1;
+            session.start_stream().unwrap();
+            session.emit_stream_delta(vec![DeltaOp::SetToolCalls {
+                tool_calls: vec![json!({"id":"wait","type":"function","function":{"name":"sleep","arguments":"{}"}})],
+            }]);
+            session.finish_stream_with_next_state(
+                Some("tool_calls".into()),
+                SessionState::ExecutingTools,
+            );
+            let mut preexisting = delivery_fixture("preexisting", push);
+            preexisting.wake = false;
+            assert_eq!(
+                session.enqueue_delivery(preexisting).unwrap(),
+                DeliveryOutcome::Queued
+            );
+            session.begin_interruptible_wait();
+            assert!(!session.wait_interrupt_flag.load(Ordering::SeqCst));
+            assert!(!session.wait_delivery_boundary);
+            session
+                .enqueue_delivery(delivery_fixture("later", PushMode::Append))
+                .unwrap();
+            assert!(session.wait_interrupt_flag.load(Ordering::SeqCst));
+        }
+    }
+
+    #[test]
+    fn runner_mirror_update_does_not_interrupt_wait() {
+        let mut session = make_session();
+        let initial = vec![PendingDelivery::with_id(
+            "runner-1",
+            vec![ChatMessage::new("user".into(), "queued to runner".into())],
+            PushMode::Append,
+            "test",
+            false,
+        )];
+        session.set_runner_pending_deliveries(initial.clone());
+        session.begin_interruptible_wait();
+        assert!(!session.wait_interrupt_flag.load(Ordering::SeqCst));
+        session.set_runner_pending_deliveries(initial);
+        assert!(!session.wait_interrupt_flag.load(Ordering::SeqCst));
+        session.set_runner_pending_deliveries(vec![PendingDelivery::with_id(
+            "runner-1",
+            vec![ChatMessage::new("user".into(), "progress update".into())],
+            PushMode::Append,
+            "test",
+            false,
+        )]);
+        assert!(!session.wait_interrupt_flag.load(Ordering::SeqCst));
+        session.set_runner_pending_deliveries(Vec::new());
+        assert!(!session.wait_interrupt_flag.load(Ordering::SeqCst));
+        session.set_runner_pending_deliveries(vec![PendingDelivery::with_id(
+            "runner-2",
+            vec![ChatMessage::new("user".into(), "fresh agent message".into())],
+            PushMode::Append,
+            "test",
+            true,
+        )]);
+        assert!(session.wait_interrupt_flag.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn new_wake_delivery_still_interrupts_wait() {
+        let mut session = make_session();
+        session.turn_depth = 1;
+        session.start_stream().unwrap();
+        session.emit_stream_delta(vec![DeltaOp::SetToolCalls {
+            tool_calls: vec![json!({"id":"wait","type":"function","function":{"name":"sleep","arguments":"{}"}})],
+        }]);
+        session.finish_stream_with_next_state(
+            Some("tool_calls".into()),
+            SessionState::ExecutingTools,
+        );
+        session.begin_interruptible_wait();
+        assert!(!session.wait_interrupt_flag.load(Ordering::SeqCst));
+        let mut wake = delivery_fixture("wake", PushMode::Append);
+        wake.wake = true;
+        assert_eq!(
+            session.enqueue_delivery(wake).unwrap(),
+            DeliveryOutcome::Queued
+        );
+        assert!(session.wait_interrupt_flag.load(Ordering::SeqCst));
+    }
+
+    #[test]
     fn parallel_wait_runtime_remains_true_until_last_wait_finishes() {
         let mut session = make_session();
         session.begin_interruptible_wait();

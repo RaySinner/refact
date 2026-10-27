@@ -31,6 +31,9 @@ use super::test_support::*;
             interruptible_waits: 0,
             wait_delivery_boundary: false,
             wait_interrupt_flag: Arc::new(AtomicBool::new(false)),
+            wait_interrupt_cause: Arc::new(std::sync::Mutex::new(
+                crate::tools::tools_description::WaitInterruptCause::MessageArrived,
+            )),
             derived_privacy_zones: crate::privacy::records::new_derived_privacy_zones(),
             tool_loop_guard: crate::tools::tool_call_loop_guard::ToolCallLoopGuard::new(),
             turn_investigation_tracker:
@@ -195,6 +198,9 @@ use super::test_support::*;
             interruptible_waits: 0,
             wait_delivery_boundary: false,
             wait_interrupt_flag: Arc::new(AtomicBool::new(false)),
+            wait_interrupt_cause: Arc::new(std::sync::Mutex::new(
+                crate::tools::tools_description::WaitInterruptCause::MessageArrived,
+            )),
             derived_privacy_zones: crate::privacy::records::new_derived_privacy_zones(),
             tool_loop_guard: crate::tools::tool_call_loop_guard::ToolCallLoopGuard::new(),
             turn_investigation_tracker:

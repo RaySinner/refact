@@ -3815,7 +3815,9 @@ mod subchat_tests {
             session.messages = messages.clone();
             session.turn_depth = 1;
             session.interruptible_waits = 1;
-            session.interrupt_wait_for_delivery();
+            session.interrupt_wait_for_delivery(
+                crate::tools::tools_description::WaitInterruptCause::MessageArrived,
+            );
             assert!(session.wait_delivery_boundary);
             assert!(!session.abort_flag.load(std::sync::atomic::Ordering::SeqCst));
             session.interruptible_waits = 0;

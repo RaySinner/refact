@@ -10,6 +10,8 @@ use serde_json::{json, Value};
 use tokio::sync::Mutex as AMutex;
 #[cfg(test)]
 use tokio::sync::Notify;
+#[cfg(test)]
+use std::sync::Mutex as StdMutex;
 use tokio::time::{sleep_until, Instant as TokioInstant};
 #[cfg(test)]
 use tokio::time::sleep;
@@ -19,6 +21,8 @@ use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
 use crate::chat::internal_roles::{event, EventSubkind};
 use crate::postprocessing::pp_command_output::OutputFilter;
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType, WaitInterrupt};
+#[cfg(test)]
+use crate::tools::tools_description::WaitInterruptCause;
 
 const MIN_DURATION_MS: u64 = 100;
 const MAX_DURATION_MS: u64 = 3_600_000;
@@ -212,6 +216,7 @@ async fn sleep_with_ticks(
         WaitInterrupt {
             abort_flag,
             wait_flag: Arc::new(AtomicBool::new(false)),
+            cause: Arc::new(StdMutex::new(WaitInterruptCause::MessageArrived)),
             notify: abort_notify,
         },
     )
@@ -361,6 +366,7 @@ mod tests {
         let interrupt = WaitInterrupt {
             abort_flag: abort.clone(),
             wait_flag: flag.clone(),
+            cause: Arc::new(StdMutex::new(WaitInterruptCause::MessageArrived)),
             notify: Some(notify.clone()),
         };
         let run = tokio::spawn(sleep_with_ticks_interruptible(
@@ -377,6 +383,68 @@ mod tests {
         assert!(outcome.interrupted);
         assert_eq!(outcome.ticks.len(), 1);
         assert!(!abort.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn pending_non_wake_delivery_does_not_stop_sleep_before_deadline() {
+        let gcx = crate::global_context::tests::make_test_gcx().await;
+        let session_arc = Arc::new(AMutex::new(ChatSession::new(CHAT_ID.to_string())));
+        gcx.chat_sessions
+            .write()
+            .await
+            .insert(CHAT_ID.to_string(), session_arc.clone());
+        {
+            let mut session = session_arc.lock().await;
+            session.add_message(assistant_tool_call("call-sleep"));
+            session
+                .enqueue_delivery(PendingDelivery::with_id(
+                    "late-notice",
+                    vec![ChatMessage::new("user".into(), "queued while sleeping".into())],
+                    PushMode::Append,
+                    "hooks",
+                    false,
+                ))
+                .unwrap();
+            session.begin_interruptible_wait();
+            assert!(!session.wait_interrupt_flag.load(Ordering::SeqCst));
+            assert_eq!(session.pending_deliveries.len(), 1);
+        }
+
+        let ccx = make_ccx(gcx).await;
+        let mut tool = ToolSleep {
+            config_path: String::new(),
+        };
+        let args = HashMap::from([
+            ("duration_ms".to_string(), json!(30_000)),
+            ("description".to_string(), json!("wait")),
+        ]);
+        let run = tokio::spawn(async move {
+            tool.tool_execute(ccx, &"call-sleep".to_string(), &args)
+                .await
+                .unwrap()
+        });
+        tokio::task::yield_now().await;
+        tokio::time::advance(Duration::from_millis(30_000)).await;
+        let (tool_failed, results) = run.await.unwrap();
+        assert!(!tool_failed);
+
+        let mut sleep_body = None;
+        for message in results {
+            let ContextEnum::ChatMessage(message) = message else {
+                panic!("expected chat message")
+            };
+            sleep_body = Some(message.extra["sleep"].clone());
+        }
+        let body = sleep_body.expect("sleep tool result body");
+        assert_eq!(body["slept_ms"], json!(30_000));
+        assert_eq!(body["interrupted"], json!(false));
+        assert!(body.get("reason").is_none());
+
+        let mut session = session_arc.lock().await;
+        session.end_interruptible_wait();
+        assert!(!session.wait_interrupt_flag.load(Ordering::SeqCst));
+        assert_eq!(session.pending_deliveries.len(), 1);
+        assert_eq!(session.pending_deliveries[0].id, "late-notice");
     }
 
     #[test]

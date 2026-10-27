@@ -74,12 +74,12 @@ impl Tool for ToolSetGoal {
                 .map_err(|error| format!("argument `criteria` is malformed: {error}"))?,
         };
 
-        let (gcx, chat_id) = {
-            let cgcx = ccx.lock().await;
-            (cgcx.app.gcx.clone(), cgcx.chat_id.clone())
+        let (sessions_map, chat_id) = {
+            let guard = ccx.lock().await;
+            (guard.tool.chat.sessions.clone(), guard.chat_id.clone())
         };
         let session_arc = {
-            let sessions = gcx.chat_sessions.read().await;
+            let sessions = sessions_map.read().await;
             sessions.get(&chat_id).cloned()
         }
         .ok_or_else(|| format!("chat session `{chat_id}` not found"))?;

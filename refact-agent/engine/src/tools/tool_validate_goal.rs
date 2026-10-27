@@ -52,9 +52,9 @@ impl Tool for ToolValidateGoal {
             let ccx = ccx.lock().await;
             (ccx.app.clone(), ccx.chat_id.clone())
         };
-        let gcx = app.gcx.clone();
+        let sessions_map = app.chat.sessions.clone();
         let session_arc = {
-            let sessions = gcx.chat_sessions.read().await;
+            let sessions = sessions_map.read().await;
             sessions.get(&chat_id).cloned()
         };
         let session_arc = match session_arc {
@@ -66,7 +66,7 @@ impl Tool for ToolValidateGoal {
             )
             .await =>
             {
-                let sessions = gcx.chat_sessions.read().await;
+                let sessions = sessions_map.read().await;
                 sessions
                     .get(&chat_id)
                     .cloned()

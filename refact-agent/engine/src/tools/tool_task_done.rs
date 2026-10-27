@@ -110,28 +110,25 @@ impl Tool for ToolTaskDone {
             _ => vec![],
         };
 
-        let (root_chat_id, chat_id, abort_flag, gcx) = {
+        let (root_chat_id, chat_id, abort_flag, notification_events_tx) = {
             let ccx_lock = ccx.lock().await;
             (
                 ccx_lock.root_chat_id.clone(),
                 ccx_lock.chat_id.clone(),
                 ccx_lock.abort_flag.clone(),
-                ccx_lock.app.gcx.clone(),
+                ccx_lock.tool.chat.notification_events_tx.clone(),
             )
         };
 
         abort_flag.store(true, Ordering::SeqCst);
 
         {
-            let gcx_read = gcx.clone();
-            if let Some(ref tx) = gcx_read.notification_events_tx {
-                let _ = tx.send(NotificationEvent::TaskDone {
-                    chat_id: chat_id.clone(),
-                    tool_call_id: tool_call_id.clone(),
-                    summary: summary.clone(),
-                    knowledge_path: None,
-                });
-            }
+            let _ = notification_events_tx.send(NotificationEvent::TaskDone {
+                chat_id: chat_id.clone(),
+                tool_call_id: tool_call_id.clone(),
+                summary: summary.clone(),
+                knowledge_path: None,
+            });
         }
 
         spawn_memory_enrichment_task(

@@ -56,11 +56,11 @@ fn require_pursuable_goal(session: &ChatSession) -> Result<(), String> {
 async fn session_for_chat(
     ccx: Arc<AMutex<AtCommandsContext>>,
 ) -> Result<Arc<AMutex<ChatSession>>, String> {
-    let (gcx, chat_id) = {
+    let (sessions_map, chat_id) = {
         let ccx = ccx.lock().await;
-        (ccx.app.gcx.clone(), ccx.chat_id.clone())
+        (ccx.tool.chat.sessions.clone(), ccx.chat_id.clone())
     };
-    let sessions = gcx.chat_sessions.read().await;
+    let sessions = sessions_map.read().await;
     sessions
         .get(&chat_id)
         .cloned()

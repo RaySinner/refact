@@ -808,7 +808,7 @@ async fn navigated_fixture_context_contains_screenshot_image() {
     case.runtime.reattach(CHAT_ID);
     refact_lsp::integrations::browser_runtime::register_browser_runtime(app, case.runtime).await;
 
-    let (context, oversize) = maybe_insert_browser_context(gcx, CHAT_ID, true, true)
+    let (context, oversize) = maybe_insert_browser_context(&gcx.chat_ctx(gcx.clone()), CHAT_ID, true, true)
         .await
         .expect("navigated page must produce browser context");
 

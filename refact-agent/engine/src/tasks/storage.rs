@@ -107,7 +107,7 @@ async fn get_all_tasks_dirs_for_ctx(ctx: &crate::chat::ctx::ChatCtx) -> Vec<Path
     dirs
 }
 
-async fn find_task_dir_for_ctx(
+pub(crate) async fn find_task_dir_for_ctx(
     ctx: &crate::chat::ctx::ChatCtx,
     task_id: &str,
 ) -> Result<PathBuf, String> {

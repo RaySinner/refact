@@ -13,7 +13,7 @@ use crate::global_context::GlobalContext;
 use crate::files_correction::get_project_dirs;
 use super::types::{BoardCard, TaskBoard, TaskMeta, TaskStatus, TrajectoryInfo};
 use super::events::{
-    emit_task_event, emit_task_event_via, emit_task_updated, emit_task_updated_via, TaskEvent,
+    emit_task_event, emit_task_event_via, emit_task_updated_via, TaskEvent,
 };
 
 const TASKS_DIR: &str = "tasks";
@@ -498,12 +498,27 @@ pub async fn update_task_name(
     task_id: &str,
     name: &str,
 ) -> Result<TaskMeta, String> {
-    let mut meta = load_task_meta(gcx.clone(), task_id).await?;
+    update_task_name_for_ctx(&gcx.chat_ctx(gcx.clone()), task_id, name).await
+}
+
+pub async fn update_task_name_for_ctx(
+    ctx: &crate::chat::ctx::ChatCtx,
+    task_id: &str,
+    name: &str,
+) -> Result<TaskMeta, String> {
+    let mut meta = load_task_meta_for_ctx(ctx, task_id).await?;
     meta.name = name.to_string();
     meta.is_name_generated = true;
     meta.updated_at = Utc::now().to_rfc3339();
-    save_task_meta(gcx.clone(), task_id, &meta).await?;
-    emit_task_updated(gcx, task_id.to_string(), meta.clone()).await;
+    save_task_meta_for_ctx(ctx, task_id, &meta).await?;
+    emit_task_updated_via(
+        &ctx.chat.sessions,
+        &Some(ctx.chat.task_events_tx.clone()),
+        &Some(ctx.chat.task_events_seq.clone()),
+        task_id.to_string(),
+        meta.clone(),
+    )
+    .await;
     Ok(meta)
 }
 

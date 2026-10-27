@@ -152,7 +152,7 @@ use super::test_support::*;
 
         assert_eq!(
             commit_trajectory_snapshot_for_session(
-                gcx.clone(),
+                &gcx.chat_ctx(gcx.clone()),
                 session_arc.clone(),
                 current,
                 TrajectoryCommitIntent::Required,
@@ -163,7 +163,7 @@ use super::test_support::*;
         );
         assert_eq!(
             commit_trajectory_snapshot_for_session(
-                gcx.clone(),
+                &gcx.chat_ctx(gcx.clone()),
                 session_arc.clone(),
                 stale,
                 TrajectoryCommitIntent::Required,
@@ -319,7 +319,7 @@ use super::test_support::*;
             };
             assert_eq!(
                 commit_trajectory_snapshot_for_session(
-                    gcx.clone(),
+                    &gcx.chat_ctx(gcx.clone()),
                     session_arc.clone(),
                     current,
                     TrajectoryCommitIntent::Required,
@@ -330,7 +330,7 @@ use super::test_support::*;
             );
             assert_eq!(
                 commit_trajectory_snapshot_for_session(
-                    gcx.clone(),
+                    &gcx.chat_ctx(gcx.clone()),
                     session_arc.clone(),
                     stale,
                     TrajectoryCommitIntent::Required,
@@ -613,12 +613,12 @@ use super::test_support::*;
             let mut folders = gcx.documents_state.workspace_folders.lock().unwrap();
             *folders = vec![PathBuf::from("alpha|beta"), PathBuf::from("gamma")];
         }
-        let first = detached_trajectory_writer_key(&gcx, &snapshot);
+        let first = detached_trajectory_writer_key(&gcx.chat_ctx(gcx.clone()), &snapshot);
         {
             let mut folders = gcx.documents_state.workspace_folders.lock().unwrap();
             *folders = vec![PathBuf::from("alpha"), PathBuf::from("beta|gamma")];
         }
-        let second = detached_trajectory_writer_key(&gcx, &snapshot);
+        let second = detached_trajectory_writer_key(&gcx.chat_ctx(gcx.clone()), &snapshot);
         assert_ne!(first, second);
     }
 
@@ -710,7 +710,7 @@ use super::test_support::*;
             vec![ChatMessage::new("user".to_string(), "first".to_string())],
         );
         let write_cache = Arc::new(AMutex::new(DetachedTrajectoryWriteCache::default()));
-        save_trajectory_snapshot_inner(gcx.clone(), first, Some(write_cache.clone()))
+        save_trajectory_snapshot_inner(&gcx.chat_ctx(gcx.clone()), first, Some(write_cache.clone()))
             .await
             .unwrap();
         let path = workspace
@@ -731,7 +731,7 @@ use super::test_support::*;
             "Second",
             vec![ChatMessage::new("user".to_string(), "second".to_string())],
         );
-        save_trajectory_snapshot_inner(gcx, second, Some(write_cache))
+        save_trajectory_snapshot_inner(&gcx.chat_ctx(gcx.clone()), second, Some(write_cache))
             .await
             .unwrap();
 
@@ -818,7 +818,7 @@ use super::test_support::*;
         let chat_id = "detached-writer-cache-replaced";
         let write_cache = Arc::new(AMutex::new(DetachedTrajectoryWriteCache::default()));
         save_trajectory_snapshot_inner(
-            gcx.clone(),
+            &gcx.chat_ctx(gcx.clone()),
             test_snapshot(
                 chat_id,
                 "First",
@@ -844,7 +844,7 @@ use super::test_support::*;
             .unwrap();
 
         let error = save_trajectory_snapshot_inner(
-            gcx,
+            &gcx.chat_ctx(gcx.clone()),
             test_snapshot(
                 chat_id,
                 "Second",
@@ -878,7 +878,7 @@ use super::test_support::*;
             ..Default::default()
         }));
         set_test_message_serialization_failure(Some(snapshot.messages[0].message_id.clone()));
-        run_detached_trajectory_writer(gcx, writer.clone()).await;
+        run_detached_trajectory_writer(&gcx.chat_ctx(gcx.clone()), writer.clone()).await;
         set_test_message_serialization_failure(None);
 
         let error = wait_for_detached_trajectory_commit(writer.clone(), 1)
@@ -922,7 +922,10 @@ use super::test_support::*;
         )));
         set_test_message_serialization_failure(Some(failed.messages[0].message_id.clone()));
         let failure_seen_wait = failure_seen.notified();
-        let task = tokio::spawn(run_detached_trajectory_writer(gcx.clone(), writer.clone()));
+        let writer_ctx = gcx.chat_ctx(gcx.clone());
+        let task = tokio::spawn(async move {
+            run_detached_trajectory_writer(&writer_ctx, writer.clone()).await
+        });
 
         tokio::time::timeout(Duration::from_secs(5), failure_seen_wait)
             .await
@@ -969,8 +972,8 @@ use super::test_support::*;
         );
         buddy.mode = "buddy".to_string();
         buddy.buddy_meta = Some(buddy_thread_meta());
-        let normal_key = detached_trajectory_writer_key(&gcx, &normal);
-        let buddy_key = detached_trajectory_writer_key(&gcx, &buddy);
+        let normal_key = detached_trajectory_writer_key(&gcx.chat_ctx(gcx.clone()), &normal);
+        let buddy_key = detached_trajectory_writer_key(&gcx.chat_ctx(gcx.clone()), &buddy);
 
         let (normal_result, buddy_result) = tokio::join!(
             save_trajectory_snapshot(gcx.clone(), normal),

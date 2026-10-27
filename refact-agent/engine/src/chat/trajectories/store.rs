@@ -10,6 +10,7 @@ use crate::chat::types::TrajectorySourceIdentitySessionExt;
 
 use crate::app_state::AppState;
 use crate::call_validation::ChatMessage;
+use crate::chat::ctx::ChatCtx;
 use crate::chat::perf_diagnostics::{self, PerfComponent, PerfOutcome};
 use crate::chat::trajectory_index;
 use crate::chat::types::{ChatSession, SessionState, TrajectoryCommitIntent, TrajectorySourceIdentity};
@@ -17,15 +18,11 @@ use crate::global_context::GlobalContext;
 use refact_chat_history::trajectory_event::TrajectoryEvent;
 use refact_chat_history::trajectory_snapshot::TrajectorySnapshot;
 
-use super::load::{
-    is_known_trajectory_top_level_key, preserve_existing_trajectory_metadata,
-    safe_new_buddy_trajectory_file, safe_new_nested_trajectory_file, safe_new_task_trajectory_file,
-};
+use super::load::{is_known_trajectory_top_level_key, preserve_existing_trajectory_metadata};
 use super::model::trajectory_snapshot_from_session;
 use super::paths::{
-    enqueue_trajectory_vectorization, find_normal_trajectory_path, index_dir_for_trajectory_file,
-    prune_buddy_conversations_throttled, prune_internal_traces_throttled,
-    read_existing_trajectory_object, should_vectorize_trajectory, validate_trajectory_id,
+    prune_internal_traces_throttled, read_existing_trajectory_object, should_vectorize_trajectory,
+    validate_trajectory_id,
 };
 use super::{
     calculate_line_changes_from_chat_messages, calculate_task_progress_from_chat_messages,
@@ -281,11 +278,11 @@ pub(super) fn detached_trajectory_writers() -> &'static StdMutex<DetachedTraject
 }
 
 pub(super) fn detached_trajectory_writer_key(
-    gcx: &Arc<GlobalContext>,
+    ctx: &ChatCtx,
     snapshot: &TrajectorySnapshot,
 ) -> DetachedTrajectoryWriterKey {
-    let workspace_folders = gcx
-        .documents_state
+    let workspace_folders = ctx
+        .workspace
         .workspace_folders
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -305,14 +302,14 @@ pub(super) fn detached_trajectory_writer_key(
 }
 
 pub(super) fn detached_trajectory_writer(
-    gcx: &Arc<GlobalContext>,
+    ctx: &ChatCtx,
     snapshot: &TrajectorySnapshot,
 ) -> Arc<AMutex<DetachedTrajectoryWriterState>> {
     let mut writers = detached_trajectory_writers()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     writers.retain(|_, writer| writer.strong_count() > 0);
-    let key = detached_trajectory_writer_key(gcx, snapshot);
+    let key = detached_trajectory_writer_key(ctx, snapshot);
     if let Some(writer) = writers.get(&key).and_then(Weak::upgrade) {
         return writer;
     }
@@ -366,19 +363,27 @@ pub(crate) async fn persist_trajectory_snapshot_with_intent(
     snapshot: TrajectorySnapshot,
     intent: TrajectoryCommitIntent,
 ) -> Result<(), String> {
+    persist_trajectory_snapshot_with_intent_ctx(&gcx.chat_ctx(gcx.clone()), snapshot, intent).await
+}
+
+pub(super) async fn persist_trajectory_snapshot_with_intent_ctx(
+    ctx: &ChatCtx,
+    snapshot: TrajectorySnapshot,
+    intent: TrajectoryCommitIntent,
+) -> Result<(), String> {
     if trajectory_writer_rollout_enabled() {
-        schedule_detached_trajectory_writer(gcx, snapshot, intent).await
+        schedule_detached_trajectory_writer(ctx, snapshot, intent).await
     } else {
-        save_trajectory_snapshot_inner(gcx, snapshot, None).await
+        save_trajectory_snapshot_inner(ctx, snapshot, None).await
     }
 }
 
 pub(super) async fn schedule_detached_trajectory_writer(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     snapshot: TrajectorySnapshot,
     intent: TrajectoryCommitIntent,
 ) -> Result<(), String> {
-    let writer = detached_trajectory_writer(&gcx, &snapshot);
+    let writer = detached_trajectory_writer(ctx, &snapshot);
     let target_version = {
         let mut state = writer.lock().await;
         state.requested_version = state.requested_version.saturating_add(1);
@@ -387,8 +392,9 @@ pub(super) async fn schedule_detached_trajectory_writer(
         if !state.in_flight {
             state.in_flight = true;
             let writer = writer.clone();
+            let ctx: ChatCtx = ctx.clone();
             tokio::spawn(async move {
-                run_detached_trajectory_writer(gcx, writer).await;
+                run_detached_trajectory_writer(&ctx, writer).await;
             });
         }
         target_version
@@ -402,7 +408,7 @@ pub(super) async fn schedule_detached_trajectory_writer(
 }
 
 pub(super) async fn run_detached_trajectory_writer(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     writer: Arc<AMutex<DetachedTrajectoryWriterState>>,
 ) {
     loop {
@@ -417,7 +423,7 @@ pub(super) async fn run_detached_trajectory_writer(
         };
         #[cfg(test)]
         let hook_chat_id = snapshot.chat_id.clone();
-        let result = save_trajectory_snapshot_inner(gcx.clone(), snapshot, Some(write_cache)).await;
+        let result = save_trajectory_snapshot_inner(ctx, snapshot, Some(write_cache)).await;
         #[cfg(test)]
         if result.is_err() {
             wait_for_test_detached_trajectory_writer_failure(&hook_chat_id).await;
@@ -574,15 +580,16 @@ pub(super) async fn wait_for_test_detached_trajectory_writer_failure(chat_id: &s
 }
 
 pub(super) async fn save_trajectory_snapshot_inner(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     mut snapshot: TrajectorySnapshot,
     write_cache: Option<Arc<AMutex<DetachedTrajectoryWriteCache>>>,
 ) -> Result<(), String> {
     validate_trajectory_id(&snapshot.chat_id).map_err(|e| e.message)?;
     let chat_id = snapshot.chat_id.clone();
-    let app = AppState::from_gcx(gcx.clone()).await;
     let existing_no_meta_path = if snapshot.task_meta.is_none() && snapshot.buddy_meta.is_none() {
-        find_normal_trajectory_path(gcx.clone(), &snapshot.chat_id).await
+        ctx.trajectories
+            .find_normal_trajectory_path(&snapshot.chat_id)
+            .await
     } else {
         None
     };
@@ -851,18 +858,19 @@ pub(super) async fn save_trajectory_snapshot_inner(
     let file_path_result = if let Some((path, _)) = cached_path_and_metadata.as_ref() {
         Ok(path.clone())
     } else if let Some(ref task_meta) = snapshot.task_meta {
-        safe_new_task_trajectory_file(gcx.clone(), task_meta, &snapshot.chat_id).await
+        ctx.trajectories
+            .safe_new_task_trajectory_file(task_meta, &snapshot.chat_id)
+            .await
     } else if snapshot.buddy_meta.is_some() {
-        safe_new_buddy_trajectory_file(gcx.clone(), &snapshot.chat_id).await
+        ctx.trajectories
+            .safe_new_buddy_trajectory_file(&snapshot.chat_id)
+            .await
     } else if let Some(path) = existing_no_meta_path {
         Ok(path)
     } else {
-        safe_new_nested_trajectory_file(
-            gcx.clone(),
-            &snapshot.chat_id,
-            snapshot.root_chat_id.as_deref(),
-        )
-        .await
+        ctx.trajectories
+            .safe_new_nested_trajectory_file(&snapshot.chat_id, snapshot.root_chat_id.as_deref())
+            .await
     };
     let file_path = match file_path_result {
         Ok(path) => path,
@@ -987,7 +995,7 @@ pub(super) async fn save_trajectory_snapshot_inner(
     );
 
     if !is_internal_trace_link_type(snapshot.link_type.as_deref()) {
-        if let Some(dir) = index_dir_for_trajectory_file(gcx.clone(), &file_path).await {
+        if let Some(dir) = ctx.trajectories.index_dir_for_trajectory_file(&file_path).await {
             let source_hint = if let Some(task_meta) = snapshot.task_meta.as_ref() {
                 Some(TrajectorySourceIdentity::from_task_meta(task_meta))
             } else if snapshot.buddy_meta.is_some() {
@@ -996,7 +1004,7 @@ pub(super) async fn save_trajectory_snapshot_inner(
                 Some(TrajectorySourceIdentity::Normal)
             };
             trajectory_index::upsert_trajectory_index_entry_from_owned_value_with_rollout(
-                &app.chat.trajectory_index_coordinator,
+                &ctx.chat.trajectory_index_coordinator,
                 &dir,
                 &file_path,
                 trajectory,
@@ -1013,11 +1021,13 @@ pub(super) async fn save_trajectory_snapshot_inner(
     }
 
     if snapshot.buddy_meta.is_some() {
-        prune_buddy_conversations_throttled(gcx.clone()).await;
+        ctx.trajectories.prune_buddy_conversations_throttled().await;
     }
 
     if should_vectorize_trajectory(&source, snapshot.link_type.as_deref()) {
-        enqueue_trajectory_vectorization(gcx.clone(), file_path.clone()).await;
+        ctx.trajectories
+            .enqueue_trajectory_vectorization(file_path.clone())
+            .await;
     }
 
     if snapshot.task_meta.is_none() && snapshot.buddy_meta.is_none() {
@@ -1025,7 +1035,7 @@ pub(super) async fn save_trajectory_snapshot_inner(
             .root_chat_id
             .clone()
             .unwrap_or_else(|| snapshot.chat_id.clone());
-        let sessions = app.chat.sessions.clone();
+        let sessions = ctx.chat.sessions.clone();
         let source = TrajectorySourceIdentity::Normal;
         let live_session = sessions.read().await.get(&snapshot.chat_id).cloned();
         let runtime = live_session.as_ref().and_then(|session| {
@@ -1048,7 +1058,7 @@ pub(super) async fn save_trajectory_snapshot_inner(
         let (total_lines_added, total_lines_removed) = line_changes.unwrap_or_default();
         let (tasks_total, tasks_done, tasks_failed) = task_progress.unwrap_or_default();
         let token_totals = token_totals.unwrap_or_default();
-        let tx = &app.chat.trajectory_events_tx;
+        let tx = &ctx.chat.trajectory_events_tx;
         {
             let event = TrajectoryEvent {
                 event_type: "updated".to_string(),
@@ -1086,7 +1096,7 @@ pub(super) async fn save_trajectory_snapshot_inner(
 
         if should_generate_title {
             let _ = spawn_title_generation_task(
-                gcx.clone(),
+                ctx,
                 snapshot.chat_id.clone(),
                 background_messages_json.unwrap_or_default(),
                 file_path.clone(),
@@ -1096,7 +1106,7 @@ pub(super) async fn save_trajectory_snapshot_inner(
     } else if snapshot.task_meta.is_none() && snapshot.buddy_meta.is_some() {
         if should_generate_title {
             let _ = spawn_title_generation_task(
-                gcx.clone(),
+                ctx,
                 snapshot.chat_id.clone(),
                 background_messages_json.unwrap_or_default(),
                 file_path.clone(),
@@ -1108,7 +1118,7 @@ pub(super) async fn save_trajectory_snapshot_inner(
 
         if should_generate_title {
             let _ = spawn_title_generation_task(
-                gcx.clone(),
+                ctx,
                 snapshot.chat_id.clone(),
                 background_messages_json.clone(),
                 file_path.clone(),
@@ -1120,7 +1130,7 @@ pub(super) async fn save_trajectory_snapshot_inner(
             let user_message_count = count_user_messages(&background_messages_json);
             if user_message_count >= 1 {
                 spawn_task_name_generation_task(
-                    gcx.clone(),
+                    ctx,
                     task_meta.task_id.clone(),
                     std::mem::take(&mut background_messages_json),
                 );
@@ -1175,7 +1185,8 @@ pub(super) async fn try_save_trajectory_legacy_with_intent(
         }
         trajectory_snapshot_from_session(&session)
     };
-    commit_trajectory_snapshot_for_session(app.gcx, session_arc.clone(), snapshot, intent).await?;
+    commit_trajectory_snapshot_for_session(&app.chat_ctx(), session_arc.clone(), snapshot, intent)
+        .await?;
     Ok(!session_arc.lock().await.trajectory_dirty)
 }
 
@@ -1187,7 +1198,7 @@ pub(super) enum SessionTrajectoryCommitOutcome {
 }
 
 pub(super) async fn commit_trajectory_snapshot_for_session(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     session_arc: Arc<AMutex<ChatSession>>,
     snapshot: TrajectorySnapshot,
     intent: TrajectoryCommitIntent,
@@ -1223,9 +1234,12 @@ pub(super) async fn commit_trajectory_snapshot_for_session(
         }
     }
 
-    let result =
-        persist_trajectory_snapshot_with_intent(gcx, snapshot, TrajectoryCommitIntent::Required)
-            .await;
+    let result = persist_trajectory_snapshot_with_intent_ctx(
+        ctx,
+        snapshot,
+        TrajectoryCommitIntent::Required,
+    )
+    .await;
     span.finish(
         if result.is_ok() {
             PerfOutcome::Success
@@ -1273,7 +1287,7 @@ pub(super) async fn schedule_trajectory_writer(
         session.trajectory_save_error = None;
         target_version
     };
-    let gcx = app.gcx.clone();
+    let ctx = app.chat_ctx();
     let writer_session_arc = session_arc.clone();
     tokio::spawn(async move {
         loop {
@@ -1294,7 +1308,7 @@ pub(super) async fn schedule_trajectory_writer(
             };
 
             let result = commit_trajectory_snapshot_for_session(
-                gcx.clone(),
+                &ctx,
                 writer_session_arc.clone(),
                 snapshot,
                 TrajectoryCommitIntent::Checkpoint,

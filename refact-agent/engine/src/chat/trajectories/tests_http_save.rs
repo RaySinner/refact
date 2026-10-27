@@ -1017,7 +1017,7 @@ use super::test_support::*;
         let before = tokio::fs::read_to_string(&path).await.unwrap();
 
         spawn_title_generation_task(
-            gcx,
+            &gcx.chat_ctx(gcx.clone()),
             chat_id.to_string(),
             vec![json!({"role":"user","content":"Generate guarded title"})],
             path.clone(),
@@ -1049,7 +1049,7 @@ use super::test_support::*;
             .insert(chat_id.to_string(), session_arc.clone());
 
         spawn_title_generation_task(
-            gcx,
+            &gcx.chat_ctx(gcx.clone()),
             chat_id.to_string(),
             vec![json!({"role":"user","content":"Generate guarded active title"})],
             path.clone(),
@@ -1088,7 +1088,7 @@ use super::test_support::*;
             .insert(chat_id.to_string(), session_arc.clone());
 
         spawn_title_generation_task(
-            gcx,
+            &gcx.chat_ctx(gcx.clone()),
             chat_id.to_string(),
             vec![json!({"role":"user","content":expected_title})],
             path.clone(),
@@ -1135,7 +1135,7 @@ use super::test_support::*;
             .insert(chat_id.to_string(), session_arc.clone());
 
         spawn_title_generation_task(
-            gcx,
+            &gcx.chat_ctx(gcx.clone()),
             chat_id.to_string(),
             vec![json!({"role":"user","content":expected_title})],
             path.clone(),
@@ -1195,7 +1195,7 @@ use super::test_support::*;
             .insert(chat_id.to_string(), session_arc.clone());
 
         spawn_title_generation_task(
-            gcx,
+            &gcx.chat_ctx(gcx.clone()),
             chat_id.to_string(),
             vec![json!({"role":"user","content":expected_title})],
             path.clone(),
@@ -1263,7 +1263,7 @@ use super::test_support::*;
             .unwrap();
 
         spawn_title_generation_task(
-            gcx,
+            &gcx.chat_ctx(gcx.clone()),
             chat_id.to_string(),
             vec![json!({"role":"user","content":expected_title})],
             path.clone(),
@@ -1313,7 +1313,7 @@ use super::test_support::*;
             .unwrap();
 
         spawn_title_generation_task(
-            gcx,
+            &gcx.chat_ctx(gcx.clone()),
             chat_id.to_string(),
             vec![json!({"role":"user","content":expected_title})],
             path.clone(),
@@ -1381,7 +1381,7 @@ use super::test_support::*;
             .unwrap();
 
         spawn_title_generation_task(
-            gcx,
+            &gcx.chat_ctx(gcx.clone()),
             chat_id.to_string(),
             vec![json!({"role":"user","content":expected_title})],
             path.clone(),
@@ -1418,7 +1418,7 @@ use super::test_support::*;
         write_buddy_conversation_file(&path, chat_id, "New Chat").await;
 
         spawn_title_generation_task(
-            gcx,
+            &gcx.chat_ctx(gcx.clone()),
             chat_id.to_string(),
             vec![json!({"role":"user","content":expected_title})],
             path.clone(),
@@ -1455,7 +1455,7 @@ use super::test_support::*;
             .insert(chat_id.to_string(), session_arc.clone());
 
         spawn_title_generation_task(
-            gcx,
+            &gcx.chat_ctx(gcx.clone()),
             chat_id.to_string(),
             vec![json!({"role":"user","content":expected_title})],
             path.clone(),
@@ -1500,7 +1500,7 @@ use super::test_support::*;
             .insert(chat_id.to_string(), session_arc.clone());
 
         spawn_title_generation_task(
-            gcx,
+            &gcx.chat_ctx(gcx.clone()),
             chat_id.to_string(),
             vec![json!({"role":"user","content":expected_title})],
             path.clone(),
@@ -1562,7 +1562,7 @@ use super::test_support::*;
             .insert(chat_id.to_string(), session_arc.clone());
 
         spawn_title_generation_task(
-            gcx,
+            &gcx.chat_ctx(gcx.clone()),
             chat_id.to_string(),
             vec![json!({"role":"user","content":expected_title})],
             path.clone(),
@@ -1608,7 +1608,7 @@ use super::test_support::*;
             .insert(chat_id.to_string(), session_arc.clone());
 
         spawn_title_generation_task(
-            gcx,
+            &gcx.chat_ctx(gcx.clone()),
             chat_id.to_string(),
             vec![json!({"role":"user","content":expected_title})],
             path.clone(),
@@ -1655,7 +1655,7 @@ use super::test_support::*;
             .insert(chat_id.to_string(), session_arc.clone());
 
         spawn_title_generation_task(
-            gcx,
+            &gcx.chat_ctx(gcx.clone()),
             chat_id.to_string(),
             vec![json!({"role":"user","content":expected_title})],
             path.clone(),

@@ -16,32 +16,26 @@ use refact_chat_history::trajectory_event::TrajectoryEvent;
 pub use refact_chat_history::trajectory_metrics::*;
 use crate::app_state::AppState;
 use crate::call_validation::{ChatContent, ChatMessage};
+use crate::chat::ctx::ChatCtx;
 use crate::chat::trajectory_index;
 use crate::chat::types::{ChatSession, TrajectoryCommitIntent, TrajectorySourceIdentity};
 use crate::custom_error::ScratchError;
-use crate::global_context::GlobalContext;
-use crate::subchat::run_subchat_once;
 use crate::worktrees::types::WorktreeMeta;
-use crate::yaml_configs::customization_registry::get_subagent_config;
 
 use super::load::{
-    effective_trajectory_source_for_path, load_trajectory_candidate,
-    resolve_trajectory_data_save_path, sanitize_worktree_extra,
+    effective_trajectory_source_for_path, sanitize_worktree_extra,
     title_generation_backing_file_matches, trajectory_path_stem_matches_id,
     trajectory_worktree_from_extra, validate_loaded_worktree_strict,
 };
 use super::model::{
-    apply_mode_defaults_to_thread, get_session_runtime_for_trajectory_source, LoadedTrajectory,
-    TrajectoryData, TrajectoryListCandidate, TrajectoryMeta,
+    get_session_runtime_for_trajectory_source, LoadedTrajectory, TrajectoryData,
+    TrajectoryListCandidate, TrajectoryMeta,
 };
 use super::paths::{
-    ensure_existing_trajectory_file_matches, find_trajectory_file, find_trajectory_or_buddy_file,
-    find_trajectory_path_for_active_chat, get_all_task_roots, index_dir_for_trajectory_file,
-    is_internal_trace_link_type, is_trajectory_id_mismatch_error, list_trajectory_dirs,
-    validate_trajectory_id,
+    ensure_existing_trajectory_file_matches, is_internal_trace_link_type,
+    is_trajectory_id_mismatch_error, validate_trajectory_id,
 };
 use super::reload::{loaded_trajectory_source, persist_loaded_trajectory_repair_raw};
-use super::store::maybe_save_trajectory_with_intent;
 use super::watcher::task_trajectory_context_from_path;
 use super::writer::atomic_write_json;
 
@@ -214,7 +208,7 @@ pub(crate) fn task_context_from_task_meta(
 }
 
 pub(super) async fn generate_title_llm(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     messages: &[serde_json::Value],
     parent_chat_id: Option<&str>,
 ) -> Option<String> {
@@ -223,17 +217,20 @@ pub(super) async fn generate_title_llm(
         return None;
     }
 
-    let subagent_config =
-        match get_subagent_config(gcx.clone(), TITLE_GENERATION_SUBAGENT_ID, None).await {
-            Some(config) => config,
-            None => {
-                warn!(
-                    "subagent config '{}' not found",
-                    TITLE_GENERATION_SUBAGENT_ID
-                );
-                return None;
-            }
-        };
+    let subagent_config = match ctx
+        .mode_config
+        .get_subagent_config(TITLE_GENERATION_SUBAGENT_ID, None)
+        .await
+    {
+        Some(config) => config,
+        None => {
+            warn!(
+                "subagent config '{}' not found",
+                TITLE_GENERATION_SUBAGENT_ID
+            );
+            return None;
+        }
+    };
 
     let title_prompt = match subagent_config.messages.user_template.as_ref() {
         Some(prompt) => prompt,
@@ -249,13 +246,14 @@ pub(super) async fn generate_title_llm(
     let prompt = format!("Chat conversation:\n{}\n\n{}", context, title_prompt);
     let chat_messages = vec![ChatMessage::new("user".to_string(), prompt)];
 
-    match run_subchat_once(
-        gcx,
-        TITLE_GENERATION_SUBAGENT_ID,
-        chat_messages,
-        crate::subchat::TraceParent::from_parts(parent_chat_id, None),
-    )
-    .await
+    match ctx
+        .subchat
+        .run_subchat_once(
+            TITLE_GENERATION_SUBAGENT_ID,
+            chat_messages,
+            crate::subchat::TraceParent::from_parts(parent_chat_id, None),
+        )
+        .await
     {
         Ok(result) => {
             if let Some(last_msg) = result.messages.last() {
@@ -276,17 +274,17 @@ pub(super) async fn generate_title_llm(
 }
 
 pub(super) fn spawn_title_generation_task(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     id: String,
     messages: Vec<serde_json::Value>,
     file_path: PathBuf,
     source: TrajectorySourceIdentity,
 ) {
+    let ctx: ChatCtx = ctx.clone();
     tokio::spawn(async move {
-        let app = AppState::from_gcx(gcx.clone()).await;
         let generated_title = match tokio::time::timeout(
             TITLE_GENERATION_LLM_TIMEOUT,
-            generate_title_llm(gcx.clone(), &messages, Some(id.as_str())),
+            generate_title_llm(&ctx, &messages, Some(id.as_str())),
         )
         .await
         {
@@ -310,7 +308,7 @@ pub(super) fn spawn_title_generation_task(
                 None => return,
             },
         };
-        let sessions = app.chat.sessions.clone();
+        let sessions = ctx.chat.sessions.clone();
         if !title_generation_backing_file_matches(&file_path, &id, &source).await {
             return;
         }
@@ -338,12 +336,12 @@ pub(super) fn spawn_title_generation_task(
                     session.trajectory_events_tx = Some(tx);
                 }
                 drop(session);
-                maybe_save_trajectory_with_intent(
-                    app.clone(),
-                    session_arc,
-                    TrajectoryCommitIntent::Checkpoint,
-                )
-                .await;
+                ctx.trajectories
+                    .maybe_save_trajectory_with_intent(
+                        session_arc,
+                        TrajectoryCommitIntent::Checkpoint,
+                    )
+                    .await;
                 info!("Updated session {} with generated title: {}", id, title);
                 return;
             }
@@ -406,7 +404,7 @@ pub(super) fn spawn_title_generation_task(
             warn!("Failed to write trajectory with generated title: {}", e);
             return;
         }
-        if let Some(dir) = index_dir_for_trajectory_file(gcx.clone(), &file_path).await {
+        if let Some(dir) = ctx.trajectories.index_dir_for_trajectory_file(&file_path).await {
             let value = match serde_json::to_value(&data) {
                 Ok(value) => value,
                 Err(e) => {
@@ -419,7 +417,7 @@ pub(super) fn spawn_title_generation_task(
             };
             if let Err(e) =
                 trajectory_index::upsert_trajectory_index_entry_from_owned_value_with_rollout(
-                    &app.chat.trajectory_index_coordinator,
+                    &ctx.chat.trajectory_index_coordinator,
                     &dir,
                     &file_path,
                     value,
@@ -451,8 +449,8 @@ pub(super) fn spawn_title_generation_task(
                 return;
             }
         };
-        let task_roots = get_all_task_roots(gcx.clone()).await;
-        let mut meta = trajectory_data_to_meta_validated(app.clone(), &updated_data).await;
+        let task_roots = ctx.trajectories.get_all_task_roots().await;
+        let mut meta = trajectory_data_to_meta_validated(&ctx, &updated_data).await;
         apply_task_trajectory_context(&file_path, &task_roots, &mut meta);
         if meta.root_chat_id.is_none() {
             meta.root_chat_id = Some(id.clone());
@@ -466,7 +464,7 @@ pub(super) fn spawn_title_generation_task(
             session_error,
             session_worktree,
         );
-        let tx = &app.chat.trajectory_events_tx;
+        let tx = &ctx.chat.trajectory_events_tx;
         {
             let _ = tx.send(event);
         }
@@ -474,18 +472,20 @@ pub(super) fn spawn_title_generation_task(
 }
 
 pub(super) fn spawn_task_name_generation_task(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     task_id: String,
     messages: Vec<serde_json::Value>,
 ) {
+    let ctx: ChatCtx = ctx.clone();
     tokio::spawn(async move {
-        let task_meta = match crate::tasks::storage::load_task_meta(gcx.clone(), &task_id).await {
-            Ok(meta) => meta,
-            Err(e) => {
-                warn!("Failed to load task meta for name generation: {}", e);
-                return;
-            }
-        };
+        let task_meta =
+            match crate::tasks::storage::load_task_meta_for_ctx(&ctx, &task_id).await {
+                Ok(meta) => meta,
+                Err(e) => {
+                    warn!("Failed to load task meta for name generation: {}", e);
+                    return;
+                }
+            };
 
         if task_meta.is_name_generated {
             return;
@@ -495,7 +495,7 @@ pub(super) fn spawn_task_name_generation_task(
             return;
         }
 
-        let generated_name = generate_title_llm(gcx.clone(), &messages, None).await;
+        let generated_name = generate_title_llm(&ctx, &messages, None).await;
         let name = match generated_name {
             Some(n) => n,
             None => match extract_first_user_message(&messages) {
@@ -511,7 +511,7 @@ pub(super) fn spawn_task_name_generation_task(
             },
         };
 
-        match crate::tasks::storage::update_task_name(gcx.clone(), &task_id, &name).await {
+        match crate::tasks::storage::update_task_name_for_ctx(&ctx, &task_id, &name).await {
             Ok(_) => {
                 info!("Updated task {} with generated name: {}", task_id, name);
             }
@@ -771,10 +771,16 @@ pub(super) fn decode_cursor(cursor: &str) -> Option<(String, String)> {
     }
 }
 
-pub(super) async fn trajectory_data_to_meta_validated(app: AppState, data: &TrajectoryData) -> TrajectoryMeta {
+pub(super) async fn trajectory_data_to_meta_validated(
+    ctx: &ChatCtx,
+    data: &TrajectoryData,
+) -> TrajectoryMeta {
     let mut meta = trajectory_data_to_meta(data);
     if let Some(worktree) = trajectory_worktree_from_extra(&data.extra) {
-        meta.worktree = validate_loaded_worktree_strict(app, &data.id, worktree).await;
+        meta.worktree = ctx
+            .trajectories
+            .validate_loaded_worktree_strict(&data.id, worktree)
+            .await;
     }
     meta
 }
@@ -989,7 +995,7 @@ pub(super) async fn hydrate_trajectory_list_candidate(
     if !trajectory_list_candidate_matches_hydrated_data(candidate, &data) {
         return None;
     }
-    let mut meta = trajectory_data_to_meta_validated(app, &data).await;
+    let mut meta = trajectory_data_to_meta_validated(&app.chat_ctx(), &data).await;
     apply_task_trajectory_context(&candidate.path, task_roots, &mut meta);
     Some(meta)
 }
@@ -1018,21 +1024,20 @@ pub(super) async fn hydrate_trajectory_list_page(
 }
 
 pub(super) async fn collect_trajectory_list_candidates(
-    gcx: &Arc<GlobalContext>,
+    ctx: &ChatCtx,
     cursor_filter: Option<&(String, String)>,
     displayable_only: bool,
     caller: trajectory_index::TrajectoryIndexListingCaller,
 ) -> Vec<TrajectoryListCandidate> {
     let mut candidates = Vec::new();
     let mut seen_ids = std::collections::HashSet::new();
-    let app = AppState::from_gcx(gcx.clone()).await;
 
-    for trajectories_dir in list_trajectory_dirs(gcx).await {
+    for trajectories_dir in ctx.trajectories.list_trajectory_dirs().await {
         if !is_real_dir(&trajectories_dir).await {
             continue;
         }
         let entries = match trajectory_index::list_trajectory_entries_with_rollout_for(
-            &app.chat.trajectory_index_coordinator,
+            &ctx.chat.trajectory_index_coordinator,
             &trajectories_dir,
             None,
             caller,
@@ -1283,7 +1288,7 @@ pub async fn list_trajectories_page_for(
     displayable_only: bool,
     caller: trajectory_index::TrajectoryIndexListingCaller,
 ) -> Result<PaginatedTrajectories, String> {
-    let gcx = app.gcx.clone();
+    let ctx = app.chat_ctx();
     let limit = limit.clamp(1, 200);
     let cursor_filter = match cursor.as_deref() {
         Some(cursor) => {
@@ -1292,14 +1297,14 @@ pub async fn list_trajectories_page_for(
         None => None,
     };
 
-    let task_roots = get_all_task_roots(gcx.clone()).await;
+    let task_roots = ctx.trajectories.get_all_task_roots().await;
     let mut candidates =
-        collect_trajectory_list_candidates(&gcx, cursor_filter.as_ref(), displayable_only, caller)
+        collect_trajectory_list_candidates(&ctx, cursor_filter.as_ref(), displayable_only, caller)
             .await;
     let total_count = if cursor_filter.is_none() {
         candidates.len()
     } else {
-        collect_trajectory_list_candidates(&gcx, None, displayable_only, caller)
+        collect_trajectory_list_candidates(&ctx, None, displayable_only, caller)
             .await
             .len()
     };
@@ -1358,12 +1363,12 @@ pub async fn list_all_trajectories_meta(
     app: AppState,
     displayable_only: bool,
 ) -> Result<Vec<TrajectoryMeta>, String> {
-    let gcx = app.gcx.clone();
+    let ctx = app.chat_ctx();
     let mut result: Vec<TrajectoryMeta> = Vec::new();
     let mut seen_ids = std::collections::HashSet::new();
-    let task_roots = get_all_task_roots(gcx.clone()).await;
+    let task_roots = ctx.trajectories.get_all_task_roots().await;
 
-    for trajectories_dir in list_trajectory_dirs(&gcx).await {
+    for trajectories_dir in ctx.trajectories.list_trajectory_dirs().await {
         if !is_real_dir(&trajectories_dir).await {
             continue;
         }
@@ -1459,14 +1464,14 @@ pub async fn handle_v1_trajectories_get(
     State(app): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
     validate_trajectory_id(&id)?;
-    let candidate = find_trajectory_or_buddy_file(gcx, &id)
+    let content = app.chat_ctx()
+        .trajectories
+        .read_trajectory_or_buddy_content(&id)
         .await
         .ok_or_else(|| {
             ScratchError::new(StatusCode::NOT_FOUND, "Trajectory not found".to_string())
         })?;
-    let content = candidate.content;
     Ok(Response::builder()
         .status(StatusCode::OK)
         .header("Content-Type", "application/json")
@@ -1477,10 +1482,11 @@ pub async fn handle_v1_trajectory_path(
     State(app): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
     let sessions = app.chat.sessions.clone();
     validate_trajectory_id(&id)?;
-    let path = find_trajectory_path_for_active_chat(gcx, &sessions, &id)
+    let path = app.chat_ctx()
+        .trajectories
+        .find_trajectory_path_for_active_chat(&sessions, &id)
         .await
         .ok_or_else(|| {
             ScratchError::new(StatusCode::NOT_FOUND, "Trajectory not found".to_string())
@@ -1498,7 +1504,6 @@ pub async fn handle_v1_trajectories_save(
     AxumPath(id): AxumPath<String>,
     body_bytes: hyper::body::Bytes,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
     validate_trajectory_id(&id)?;
     let data: TrajectoryData = serde_json::from_slice(&body_bytes)
         .map_err(|e| ScratchError::new(StatusCode::BAD_REQUEST, format!("Invalid JSON: {}", e)))?;
@@ -1518,7 +1523,10 @@ pub async fn handle_v1_trajectories_save(
         .extra
         .get("buddy_meta")
         .map_or(true, |value| value.is_null());
-    let file_path = resolve_trajectory_data_save_path(gcx.clone(), &id, &data)
+    let ctx = app.chat_ctx();
+    let file_path = ctx
+        .trajectories
+        .resolve_trajectory_data_save_path(&id, &data)
         .await
         .map_err(|e| {
             let status = if is_trajectory_id_mismatch_error(&e) {
@@ -1577,7 +1585,7 @@ pub async fn handle_v1_trajectories_save(
                 )
             })?,
         );
-        if let Some(dir) = index_dir_for_trajectory_file(gcx.clone(), &file_path).await {
+        if let Some(dir) = ctx.trajectories.index_dir_for_trajectory_file(&file_path).await {
             trajectory_index::upsert_trajectory_index_entry_from_owned_value_with_rollout(
                 &app.chat.trajectory_index_coordinator,
                 &dir,
@@ -1678,7 +1686,7 @@ pub async fn handle_v1_trajectories_save(
             )
         })?;
         spawn_title_generation_task(
-            gcx.clone(),
+            &ctx,
             id.clone(),
             data.messages.clone(),
             file_path.clone(),
@@ -1696,18 +1704,19 @@ pub async fn handle_v1_trajectories_delete(
     State(app): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
+    let ctx = app.chat_ctx();
     validate_trajectory_id(&id)?;
-    let candidate = find_trajectory_file(gcx.clone(), &id)
+    let file_path = ctx
+        .trajectories
+        .find_trajectory_path(&id)
         .await
         .ok_or_else(|| {
             ScratchError::new(StatusCode::NOT_FOUND, "Trajectory not found".to_string())
         })?;
-    let file_path = candidate.path;
     fs::remove_file(&file_path)
         .await
         .map_err(|e| ScratchError::new(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    if let Some(dir) = index_dir_for_trajectory_file(gcx.clone(), &file_path).await {
+    if let Some(dir) = ctx.trajectories.index_dir_for_trajectory_file(&file_path).await {
         if let Err(e) = trajectory_index::remove_trajectory_index_entry_with_rollout(
             &app.chat.trajectory_index_coordinator,
             &dir,
@@ -1723,21 +1732,17 @@ pub async fn handle_v1_trajectories_delete(
     }
 
     let sessions = app.chat.sessions.clone();
-    let fallback = match find_trajectory_file(gcx.clone(), &id).await {
-        Some(candidate) => load_trajectory_candidate(gcx.clone(), &id, candidate).await,
-        None => None,
-    };
+    let fallback = ctx.trajectories.load_trajectory_by_chat_id(&id).await;
     let event = if let Some(mut fallback) = fallback {
         if fallback.transition_identity_repaired {
-            apply_mode_defaults_to_thread(
-                gcx.clone(),
-                &mut fallback.thread,
-                fallback.auto_approve_editing_tools_present,
-                fallback.auto_approve_dangerous_commands_present,
-            )
-            .await;
-            match persist_loaded_trajectory_repair_raw(&gcx.chat_ctx(gcx.clone()).clone(), &fallback.repair_patch()).await
-            {
+            ctx.trajectories
+                .apply_mode_defaults_to_thread(
+                    &mut fallback.thread,
+                    fallback.auto_approve_editing_tools_present,
+                    fallback.auto_approve_dangerous_commands_present,
+                )
+                .await;
+            match persist_loaded_trajectory_repair_raw(&ctx, &fallback.repair_patch()).await {
                 Ok(updated_at) => fallback.updated_at = updated_at,
                 Err(e) => warn!(
                     "Failed to persist repaired trajectory for {}: {}",
@@ -1745,7 +1750,7 @@ pub async fn handle_v1_trajectories_delete(
                 ),
             }
         }
-        let task_roots = get_all_task_roots(gcx).await;
+        let task_roots = ctx.trajectories.get_all_task_roots().await;
         let meta = loaded_trajectory_to_meta(&fallback, &task_roots);
         let (session_state, session_error, session_worktree) =
             get_session_runtime_for_trajectory_source(&sessions, &id, &meta.source).await;

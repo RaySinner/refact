@@ -1736,7 +1736,7 @@ pub async fn handle_v1_trajectories_delete(
                 fallback.auto_approve_dangerous_commands_present,
             )
             .await;
-            match persist_loaded_trajectory_repair_raw(gcx.clone(), &fallback.repair_patch()).await
+            match persist_loaded_trajectory_repair_raw(&gcx.chat_ctx(gcx.clone()).clone(), &fallback.repair_patch()).await
             {
                 Ok(updated_at) => fallback.updated_at = updated_at,
                 Err(e) => warn!(

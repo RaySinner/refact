@@ -148,19 +148,18 @@ pub use paths::{
     INTERNAL_TRACE_LINK_PREFIX, UNATTRIBUTED_TRACES_DIR,
 };
 pub(crate) use paths::{
-    find_trajectory_parent_id, index_dir_for_trajectory_file, is_trajectory_id_mismatch_error,
-    list_chat_folder_dirs, list_task_trajectory_dirs, list_trajectory_dirs,
+    enqueue_trajectory_vectorization, find_normal_trajectory_path, find_trajectory_file,
+    find_trajectory_or_buddy_file, find_trajectory_parent_id, get_all_task_roots,
+    index_dir_for_trajectory_file, is_trajectory_id_mismatch_error, list_chat_folder_dirs,
+    list_task_trajectory_dirs, list_trajectory_dirs, prune_buddy_conversations_throttled,
     trajectory_id_mismatch_error,
 };
 use paths::{
-    enqueue_trajectory_vectorization, ensure_existing_trajectory_file_matches,
-    find_normal_trajectory_file, find_normal_trajectory_path, find_trajectory_file,
-    find_trajectory_or_buddy_file, fix_tool_call_indexes, get_all_task_roots,
+    ensure_existing_trajectory_file_matches, find_normal_trajectory_file, fix_tool_call_indexes,
     get_all_task_roots_from_weak, get_all_trajectories_dirs_from_weak,
-    get_or_create_buddy_conversations_dir, normal_trajectory_candidate_paths,
-    parse_stored_messages, prune_buddy_conversations_throttled, prune_internal_traces_throttled,
-    read_existing_trajectory_object, read_valid_trajectory_candidate, should_vectorize_trajectory,
-    trajectory_candidate_paths, PruneThrottle, ValidTrajectoryCandidate,
+    get_or_create_buddy_conversations_dir, normal_trajectory_candidate_paths, parse_stored_messages,
+    prune_internal_traces_throttled, read_existing_trajectory_object, read_valid_trajectory_candidate,
+    should_vectorize_trajectory, trajectory_candidate_paths, PruneThrottle, ValidTrajectoryCandidate,
     PRUNE_THROTTLE_MAX_ENTRIES,
 };
 #[cfg(test)]
@@ -176,17 +175,18 @@ pub use load::{
     set_trajectory_label, validate_trajectory_label,
 };
 pub(crate) use load::{
-    chat_id_is_planner_for_task, resolve_task_planner_controller_chat_id,
-    trajectory_path_stem_matches_id, verified_planner_linked_root_chat_id,
+    chat_id_is_planner_for_task, load_generic_trajectory_for_chat_matching_source,
+    load_trajectory_candidate, resolve_task_planner_controller_chat_id,
+    resolve_trajectory_data_save_path, safe_new_buddy_trajectory_file,
+    safe_new_nested_trajectory_file, safe_new_task_trajectory_file,
+    trajectory_path_stem_matches_id, trajectory_source_path_is_allowed,
+    validate_loaded_worktree_strict, verified_planner_linked_root_chat_id,
 };
 use load::{
     effective_trajectory_source_for_path, is_known_trajectory_top_level_key,
-    load_generic_trajectory_for_chat_matching_source, load_trajectory_candidate,
-    preserve_existing_trajectory_metadata, safe_new_buddy_trajectory_file,
-    safe_new_nested_trajectory_file, safe_new_task_trajectory_file, sanitize_worktree_extra,
+    preserve_existing_trajectory_metadata, sanitize_worktree_extra,
     title_generation_backing_file_matches, trajectory_candidate_has_minimum_schema,
-    trajectory_root_id_matches, trajectory_source_matches_hint, trajectory_source_path_is_allowed,
-    trajectory_worktree_from_extra, validate_loaded_worktree_strict,
+    trajectory_root_id_matches, trajectory_source_matches_hint, trajectory_worktree_from_extra,
 };
 
 // Re-exports from store

@@ -167,7 +167,7 @@ use super::test_support::*;
         .await
         .unwrap();
 
-        remove_stale_trajectory_index_entries(gcx.clone(), stale_id).await;
+        remove_stale_trajectory_index_entries(&gcx.chat_ctx(gcx.clone()).clone(), stale_id).await;
 
         let root_entries = trajectory_index::list_trajectory_entries_with_rollout_for(
             &app.chat.trajectory_index_coordinator,

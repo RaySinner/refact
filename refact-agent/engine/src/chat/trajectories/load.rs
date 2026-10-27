@@ -145,7 +145,7 @@ pub(super) async fn safe_task_trajectory_dir(
     Ok(traj_dir)
 }
 
-pub(super) async fn safe_new_task_trajectory_file(
+pub(crate) async fn safe_new_task_trajectory_file(
     gcx: Arc<GlobalContext>,
     task_meta: &crate::chat::types::TaskMeta,
     chat_id: &str,
@@ -154,7 +154,7 @@ pub(super) async fn safe_new_task_trajectory_file(
     safe_new_trajectory_file_in_dir(&traj_dir, chat_id).await
 }
 
-pub(super) async fn safe_new_buddy_trajectory_file(
+pub(crate) async fn safe_new_buddy_trajectory_file(
     gcx: Arc<GlobalContext>,
     chat_id: &str,
 ) -> Result<PathBuf, String> {
@@ -174,7 +174,7 @@ pub(super) async fn ensure_legacy_flat_slot_is_safe(
     Ok(())
 }
 
-pub(super) async fn safe_new_nested_trajectory_file(
+pub(crate) async fn safe_new_nested_trajectory_file(
     gcx: Arc<GlobalContext>,
     chat_id: &str,
     root_chat_id: Option<&str>,
@@ -188,7 +188,7 @@ pub(super) async fn safe_new_nested_trajectory_file(
     safe_new_trajectory_file_in_dir(&dir, chat_id).await
 }
 
-pub(super) async fn trajectory_source_path_is_allowed(
+pub(crate) async fn trajectory_source_path_is_allowed(
     gcx: Arc<GlobalContext>,
     path: &Path,
 ) -> bool {
@@ -214,7 +214,7 @@ pub(super) async fn trajectory_source_path_is_allowed(
     false
 }
 
-pub(super) async fn resolve_trajectory_data_save_path(
+pub(crate) async fn resolve_trajectory_data_save_path(
     gcx: Arc<GlobalContext>,
     id: &str,
     data: &TrajectoryData,
@@ -405,7 +405,7 @@ pub(super) async fn worktree_service_from_gcx(
     WorktreeService::new_async(cache_dir, source_root).await
 }
 
-pub(super) async fn validate_loaded_worktree_strict(
+pub(crate) async fn validate_loaded_worktree_strict(
     app: AppState,
     chat_id: &str,
     worktree: WorktreeMeta,
@@ -612,7 +612,7 @@ pub(crate) fn trajectory_path_stem_matches_id(path: &Path, id: &str) -> bool {
     false
 }
 
-pub(super) async fn load_trajectory_candidate(
+pub(crate) async fn load_trajectory_candidate(
     gcx: Arc<GlobalContext>,
     chat_id: &str,
     candidate: ValidTrajectoryCandidate,
@@ -1148,7 +1148,7 @@ pub(super) fn effective_trajectory_source_for_path(
     }
 }
 
-pub(super) async fn load_generic_trajectory_for_chat_matching_source(
+pub(crate) async fn load_generic_trajectory_for_chat_matching_source(
     gcx: Arc<GlobalContext>,
     chat_id: &str,
     source: &TrajectorySourceIdentity,

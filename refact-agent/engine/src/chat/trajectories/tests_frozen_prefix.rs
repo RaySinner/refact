@@ -1164,7 +1164,7 @@ use super::test_support::*;
             .await
             .insert(chat_id.to_string(), session_arc.clone());
 
-        process_trajectory_change(gcx, chat_id, false).await;
+        process_trajectory_change(&gcx.chat_ctx(gcx.clone()), chat_id, false).await;
 
         {
             let session = session_arc.lock().await;
@@ -1251,7 +1251,7 @@ use super::test_support::*;
             .await
             .insert(chat_id.to_string(), session_arc.clone());
 
-        process_trajectory_change(gcx.clone(), chat_id, false).await;
+        process_trajectory_change(&gcx.chat_ctx(gcx.clone()).clone(), chat_id, false).await;
         {
             let session = session_arc.lock().await;
             assert_eq!(
@@ -1269,7 +1269,7 @@ use super::test_support::*;
             session.runtime.state = SessionState::Idle;
             session.trajectory_dirty = false;
         }
-        check_external_reload_pending(gcx, session_arc.clone()).await;
+        check_external_reload_pending(&gcx.chat_ctx(gcx.clone()), session_arc.clone()).await;
 
         {
             let session = session_arc.lock().await;
@@ -1350,7 +1350,7 @@ use super::test_support::*;
         .await
         .unwrap();
 
-        process_trajectory_change(gcx, chat_id, false).await;
+        process_trajectory_change(&gcx.chat_ctx(gcx.clone()), chat_id, false).await;
 
         let raw: serde_json::Value =
             serde_json::from_str(&tokio::fs::read_to_string(path).await.unwrap()).unwrap();
@@ -1446,7 +1446,7 @@ use super::test_support::*;
         .unwrap();
         tokio::fs::write(&path, &replacement).await.unwrap();
 
-        let err = persist_loaded_trajectory_repair_raw(gcx.clone(), &repair_patch)
+        let err = persist_loaded_trajectory_repair_raw(&gcx.chat_ctx(gcx.clone()).clone(), &repair_patch)
             .await
             .unwrap_err();
 

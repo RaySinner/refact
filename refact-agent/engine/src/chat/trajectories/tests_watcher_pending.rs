@@ -917,7 +917,7 @@ use super::test_support::*;
             session.trajectory_dirty = false;
         }
 
-        check_external_reload_pending(gcx, session_arc.clone()).await;
+        check_external_reload_pending(&gcx.chat_ctx(gcx.clone()), session_arc.clone()).await;
 
         let session = session_arc.lock().await;
         assert_eq!(session.external_reload_pending, None);
@@ -986,7 +986,7 @@ use super::test_support::*;
             session.trajectory_dirty = false;
         }
 
-        check_external_reload_pending(gcx, session_arc.clone()).await;
+        check_external_reload_pending(&gcx.chat_ctx(gcx.clone()), session_arc.clone()).await;
 
         let session = session_arc.lock().await;
         assert_eq!(session.external_reload_pending, None);
@@ -1039,7 +1039,7 @@ use super::test_support::*;
             session.trajectory_dirty = false;
         }
 
-        check_external_reload_pending(gcx, session_arc.clone()).await;
+        check_external_reload_pending(&gcx.chat_ctx(gcx.clone()), session_arc.clone()).await;
 
         let session = session_arc.lock().await;
         assert_eq!(session.external_reload_pending, None);
@@ -1092,7 +1092,7 @@ use super::test_support::*;
             session.trajectory_dirty = false;
         }
 
-        check_external_reload_pending(gcx, session_arc.clone()).await;
+        check_external_reload_pending(&gcx.chat_ctx(gcx.clone()), session_arc.clone()).await;
 
         let session = session_arc.lock().await;
         assert_eq!(session.external_reload_pending, None);
@@ -1144,7 +1144,7 @@ use super::test_support::*;
             session.trajectory_dirty = false;
         }
 
-        check_external_reload_pending(gcx, session_arc.clone()).await;
+        check_external_reload_pending(&gcx.chat_ctx(gcx.clone()), session_arc.clone()).await;
 
         let session = session_arc.lock().await;
         assert_eq!(session.external_reload_pending, None);
@@ -1371,7 +1371,7 @@ use super::test_support::*;
             session.runtime.state = SessionState::Idle;
             session.trajectory_dirty = false;
         }
-        check_external_reload_pending(gcx, session_arc.clone()).await;
+        check_external_reload_pending(&gcx.chat_ctx(gcx.clone()), session_arc.clone()).await;
 
         let session = session_arc.lock().await;
         assert_eq!(session.external_reload_pending, None);
@@ -1609,7 +1609,7 @@ use super::test_support::*;
         let (gcx, app) = make_app_with_workspace(dir.path()).await;
         let mut rx = app.chat.trajectory_events_tx.subscribe();
 
-        process_trajectory_change(gcx, "missing-update-no-event", false).await;
+        process_trajectory_change(&gcx.chat_ctx(gcx.clone()), "missing-update-no-event", false).await;
 
         assert_no_trajectory_event_for(&mut rx, std::time::Duration::from_millis(100)).await;
     }
@@ -1627,7 +1627,7 @@ use super::test_support::*;
             .join(format!("{chat_id}.json"));
         write_schema_incomplete_trajectory_file(&path, chat_id).await;
 
-        process_trajectory_change(gcx, chat_id, false).await;
+        process_trajectory_change(&gcx.chat_ctx(gcx.clone()), chat_id, false).await;
 
         assert_no_trajectory_event_for(&mut rx, std::time::Duration::from_millis(100)).await;
     }
@@ -1645,7 +1645,7 @@ use super::test_support::*;
             .join(format!("{chat_id}.json"));
         write_trajectory_file(&path, "other-chat", "Mismatched", "2024-01-01T00:00:01Z").await;
 
-        process_trajectory_change(gcx, chat_id, false).await;
+        process_trajectory_change(&gcx.chat_ctx(gcx.clone()), chat_id, false).await;
 
         assert_no_trajectory_event_for(&mut rx, std::time::Duration::from_millis(100)).await;
     }
@@ -1673,7 +1673,7 @@ use super::test_support::*;
         )
         .await;
 
-        process_trajectory_change(gcx, chat_id, false).await;
+        process_trajectory_change(&gcx.chat_ctx(gcx.clone()), chat_id, false).await;
 
         let event = wait_for_trajectory_event(&mut rx, chat_id).await;
         assert_eq!(event.event_type, "updated");
@@ -1709,7 +1709,7 @@ use super::test_support::*;
             .await
             .insert(chat_id.to_string(), session_arc.clone());
 
-        process_trajectory_change(gcx, chat_id, false).await;
+        process_trajectory_change(&gcx.chat_ctx(gcx.clone()), chat_id, false).await;
 
         let session = session_arc.lock().await;
         assert_eq!(
@@ -1742,7 +1742,7 @@ use super::test_support::*;
             .await
             .insert(chat_id.to_string(), session_arc.clone());
 
-        process_trajectory_change(gcx, chat_id, false).await;
+        process_trajectory_change(&gcx.chat_ctx(gcx.clone()), chat_id, false).await;
 
         let session = session_arc.lock().await;
         assert_eq!(session.external_reload_pending, None);
@@ -1785,7 +1785,7 @@ use super::test_support::*;
                 .await
                 .insert(chat_id.to_string(), session_arc.clone());
 
-            process_trajectory_change(gcx.clone(), chat_id, true).await;
+            process_trajectory_change(&gcx.chat_ctx(gcx.clone()).clone(), chat_id, true).await;
 
             let session = session_arc.lock().await;
             assert_eq!(session.external_reload_pending, None);
@@ -1823,7 +1823,7 @@ use super::test_support::*;
             .await
             .insert(chat_id.to_string(), session_arc.clone());
 
-        process_trajectory_change(gcx.clone(), chat_id, true).await;
+        process_trajectory_change(&gcx.chat_ctx(gcx.clone()).clone(), chat_id, true).await;
         {
             let mut session = session_arc.lock().await;
             session.add_message(ChatMessage::new(
@@ -1864,7 +1864,7 @@ use super::test_support::*;
             session.trajectory_dirty = false;
         }
 
-        check_external_reload_pending(gcx, session_arc.clone()).await;
+        check_external_reload_pending(&gcx.chat_ctx(gcx.clone()), session_arc.clone()).await;
 
         let session = session_arc.lock().await;
         assert_eq!(session.external_reload_pending, None);

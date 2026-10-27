@@ -5,25 +5,21 @@ use tokio::sync::Mutex as AMutex;
 use tracing::{info, warn};
 use crate::chat::types::TrajectorySourceIdentitySessionExt;
 
-use crate::app_state::AppState;
 use crate::call_validation::{ChatContent, ChatMessage};
+use crate::chat::ctx::ChatCtx;
 use crate::chat::trajectory_index;
 use crate::chat::types::{
     ChatSession, ExternalReloadPending, SessionState, ThreadParams, TrajectoryCommitIntent,
     TrajectorySourceIdentity,
 };
+#[cfg(test)]
 use crate::global_context::GlobalContext;
 use refact_chat_api::FrozenRequestPrefix;
 
-use super::load::{
-    load_generic_trajectory_for_chat, load_generic_trajectory_for_chat_matching_source,
-    load_trajectory_for_chat, trajectory_source_path_is_allowed,
-};
-use super::model::{apply_mode_defaults_to_thread, LoadedTrajectory, TrajectoryRepairPatch};
-use super::paths::{
-    find_trajectory_or_buddy_path, get_all_task_roots, index_dir_for_trajectory_file,
-    validate_trajectory_id,
-};
+use super::model::{LoadedTrajectory, TrajectoryRepairPatch};
+#[cfg(test)]
+use super::paths::find_trajectory_or_buddy_path;
+use super::paths::validate_trajectory_id;
 use super::watcher::trajectory_source_identity_from_path;
 use super::writer::{atomic_write_json_with_tmp_path, unique_trajectory_tmp_path};
 
@@ -293,13 +289,17 @@ pub(crate) fn trajectory_commit_contract_for_test(boundary: &str) -> TrajectoryC
 }
 
 pub(crate) async fn persist_loaded_trajectory_repair_raw(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     repair: &TrajectoryRepairPatch,
 ) -> Result<String, String> {
     let chat_id = &repair.chat_id;
     validate_trajectory_id(chat_id).map_err(|e| e.message)?;
     let file_path = &repair.source_path;
-    if !trajectory_source_path_is_allowed(gcx.clone(), file_path).await {
+    if !ctx
+        .trajectories
+        .trajectory_source_path_is_allowed(file_path)
+        .await
+    {
         return Err(format!(
             "Trajectory source path is not in an approved trajectory root: {}",
             file_path.display()
@@ -372,16 +372,17 @@ pub(crate) async fn persist_loaded_trajectory_repair_raw(
         )),
     )
     .await?;
-    if let Some(dir) = index_dir_for_trajectory_file(gcx.clone(), file_path).await {
+    if let Some(dir) = ctx
+        .trajectories
+        .index_dir_for_trajectory_file(file_path)
+        .await
+    {
         let source_hint = Some(trajectory_index::source_from_hint_or_value(
             &trajectory,
             None,
         ));
         trajectory_index::upsert_trajectory_index_entry_from_owned_value_with_rollout(
-            &AppState::from_gcx(gcx)
-                .await
-                .chat
-                .trajectory_index_coordinator,
+            &ctx.chat.trajectory_index_coordinator,
             &dir,
             file_path,
             trajectory,
@@ -393,19 +394,18 @@ pub(crate) async fn persist_loaded_trajectory_repair_raw(
 }
 
 pub(super) async fn persist_loaded_trajectory_repair(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     mut loaded: LoadedTrajectory,
 ) {
     let chat_id = loaded.thread.id.clone();
-    apply_mode_defaults_to_thread(
-        gcx.clone(),
-        &mut loaded.thread,
-        loaded.auto_approve_editing_tools_present,
-        loaded.auto_approve_dangerous_commands_present,
-    )
-    .await;
-    if let Err(e) = persist_loaded_trajectory_repair_raw(gcx.clone(), &loaded.repair_patch()).await
-    {
+    ctx.trajectories
+        .apply_mode_defaults_to_thread(
+            &mut loaded.thread,
+            loaded.auto_approve_editing_tools_present,
+            loaded.auto_approve_dangerous_commands_present,
+        )
+        .await;
+    if let Err(e) = persist_loaded_trajectory_repair_raw(ctx, &loaded.repair_patch()).await {
         warn!(
             "Failed to persist repaired trajectory for {}: {}",
             chat_id, e
@@ -543,12 +543,12 @@ pub(super) fn session_is_stale_refresh_candidate(
 }
 
 pub async fn refresh_session_from_trajectory_if_stale(
-    app: AppState,
+    ctx: &ChatCtx,
     chat_id: &str,
     allow_replacing_messages: bool,
 ) -> bool {
     let session_arc = {
-        let sessions_read = app.chat.sessions.read().await;
+        let sessions_read = ctx.chat.sessions.read().await;
         sessions_read.get(chat_id).cloned()
     };
     let Some(session_arc) = session_arc else {
@@ -560,19 +560,19 @@ pub async fn refresh_session_from_trajectory_if_stale(
             return false;
         }
     }
-    let Some(mut loaded) = load_trajectory_for_chat(app.gcx.clone(), chat_id).await else {
+    let Some(mut loaded) = ctx.trajectories.load_trajectory_for_chat(chat_id).await else {
         return false;
     };
     if loaded.messages.is_empty() {
         return false;
     }
-    apply_mode_defaults_to_thread(
-        app.gcx.clone(),
-        &mut loaded.thread,
-        loaded.auto_approve_editing_tools_present,
-        loaded.auto_approve_dangerous_commands_present,
-    )
-    .await;
+    ctx.trajectories
+        .apply_mode_defaults_to_thread(
+            &mut loaded.thread,
+            loaded.auto_approve_editing_tools_present,
+            loaded.auto_approve_dangerous_commands_present,
+        )
+        .await;
     let transition_identity_repaired = loaded.transition_identity_repaired;
     let mut session = session_arc.lock().await;
     if !session_is_stale_refresh_candidate(&session, allow_replacing_messages) {
@@ -597,7 +597,7 @@ pub async fn refresh_session_from_trajectory_if_stale(
 }
 
 pub(super) async fn apply_loaded_external_update_with_repair(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     session_arc: Arc<AMutex<ChatSession>>,
     chat_id: &str,
     mut loaded: LoadedTrajectory,
@@ -607,13 +607,13 @@ pub(super) async fn apply_loaded_external_update_with_repair(
 ) -> bool {
     let loaded_source = TrajectorySourceIdentity::from_session_parts(&loaded.thread);
     let transition_identity_repaired = loaded.transition_identity_repaired;
-    apply_mode_defaults_to_thread(
-        gcx.clone(),
-        &mut loaded.thread,
-        loaded.auto_approve_editing_tools_present,
-        loaded.auto_approve_dangerous_commands_present,
-    )
-    .await;
+    ctx.trajectories
+        .apply_mode_defaults_to_thread(
+            &mut loaded.thread,
+            loaded.auto_approve_editing_tools_present,
+            loaded.auto_approve_dangerous_commands_present,
+        )
+        .await;
     let repair_patch = loaded.repair_patch();
     let mut skipped_active_buddy = false;
     let mut skipped_source_mismatch = false;
@@ -646,7 +646,7 @@ pub(super) async fn apply_loaded_external_update_with_repair(
     };
     if skipped_active_buddy || skipped_source_mismatch {
         if transition_identity_repaired {
-            if let Err(e) = persist_loaded_trajectory_repair_raw(gcx.clone(), &repair_patch).await {
+            if let Err(e) = persist_loaded_trajectory_repair_raw(ctx, &repair_patch).await {
                 warn!(
                     "Failed to persist repaired trajectory for {}: {}",
                     chat_id, e
@@ -656,7 +656,7 @@ pub(super) async fn apply_loaded_external_update_with_repair(
         return false;
     }
     if let Some(repaired_version) = repaired_version {
-        if let Err(e) = persist_loaded_trajectory_repair_raw(gcx.clone(), &repair_patch).await {
+        if let Err(e) = persist_loaded_trajectory_repair_raw(ctx, &repair_patch).await {
             warn!(
                 "Failed to persist repaired trajectory for {}: {}",
                 chat_id, e
@@ -681,40 +681,41 @@ pub(super) enum ExternalDeleteRevalidationOutcome {
 }
 
 pub(super) async fn apply_external_delete_with_revalidation(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     session_arc: Arc<AMutex<ChatSession>>,
     chat_id: &str,
     expected_pending: Option<ExternalReloadPending>,
     deleted_source: Option<TrajectorySourceIdentity>,
 ) -> ExternalDeleteRevalidationOutcome {
-    let loaded = load_generic_trajectory_for_chat(gcx.clone(), chat_id).await;
+    let loaded = ctx.trajectories.load_generic_trajectory_for_chat(chat_id).await;
 
     if let Some(mut loaded) = loaded {
-        let task_roots = get_all_task_roots(gcx.clone()).await;
+        let task_roots = ctx.trajectories.get_all_task_roots().await;
         let loaded_source = loaded_trajectory_source(&loaded, &task_roots);
         let transition_identity_repaired = loaded.transition_identity_repaired;
-        apply_mode_defaults_to_thread(
-            gcx.clone(),
-            &mut loaded.thread,
-            loaded.auto_approve_editing_tools_present,
-            loaded.auto_approve_dangerous_commands_present,
-        )
-        .await;
+        ctx.trajectories
+            .apply_mode_defaults_to_thread(
+                &mut loaded.thread,
+                loaded.auto_approve_editing_tools_present,
+                loaded.auto_approve_dangerous_commands_present,
+            )
+            .await;
         let repair_patch = loaded.repair_patch();
         let outcome_loaded = loaded.clone();
         let same_source_loaded = match deleted_source.as_ref() {
             Some(source) if loaded_source != *source => {
                 let mut loaded =
-                    load_generic_trajectory_for_chat_matching_source(gcx.clone(), chat_id, source)
+                    ctx.trajectories
+                        .load_generic_trajectory_for_chat_matching_source(chat_id, source)
                         .await;
                 if let Some(loaded) = loaded.as_mut() {
-                    apply_mode_defaults_to_thread(
-                        gcx.clone(),
-                        &mut loaded.thread,
-                        loaded.auto_approve_editing_tools_present,
-                        loaded.auto_approve_dangerous_commands_present,
-                    )
-                    .await;
+                    ctx.trajectories
+                        .apply_mode_defaults_to_thread(
+                            &mut loaded.thread,
+                            loaded.auto_approve_editing_tools_present,
+                            loaded.auto_approve_dangerous_commands_present,
+                        )
+                        .await;
                 }
                 loaded
             }
@@ -740,7 +741,7 @@ pub(super) async fn apply_external_delete_with_revalidation(
                 drop(session);
                 if transition_identity_repaired {
                     if let Err(e) =
-                        persist_loaded_trajectory_repair_raw(gcx.clone(), &repair_patch).await
+                        persist_loaded_trajectory_repair_raw(ctx, &repair_patch).await
                     {
                         warn!(
                             "Failed to persist repaired trajectory for {}: {}",
@@ -815,7 +816,7 @@ pub(super) async fn apply_external_delete_with_revalidation(
         if let Some(repaired_version) = repaired_version {
             let applied_repair_patch = same_source_repair_patch.as_ref().unwrap_or(&repair_patch);
             if let Err(e) =
-                persist_loaded_trajectory_repair_raw(gcx.clone(), applied_repair_patch).await
+                persist_loaded_trajectory_repair_raw(ctx, applied_repair_patch).await
             {
                 warn!(
                     "Failed to persist repaired trajectory for {}: {}",
@@ -829,7 +830,7 @@ pub(super) async fn apply_external_delete_with_revalidation(
         if same_source_transition_identity_repaired {
             if let Some(repair_patch) = same_source_repair_patch.as_ref() {
                 if let Err(e) =
-                    persist_loaded_trajectory_repair_raw(gcx.clone(), repair_patch).await
+                    persist_loaded_trajectory_repair_raw(ctx, repair_patch).await
                 {
                     warn!(
                         "Failed to persist repaired trajectory for {}: {}",
@@ -839,7 +840,7 @@ pub(super) async fn apply_external_delete_with_revalidation(
             }
         }
         if transition_identity_repaired {
-            if let Err(e) = persist_loaded_trajectory_repair_raw(gcx.clone(), &repair_patch).await {
+            if let Err(e) = persist_loaded_trajectory_repair_raw(ctx, &repair_patch).await {
                 warn!(
                     "Failed to persist repaired trajectory for {}: {}",
                     chat_id, e
@@ -878,7 +879,7 @@ pub(super) async fn apply_external_delete_with_revalidation(
 }
 
 pub async fn check_external_reload_pending(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     session_arc: Arc<AMutex<ChatSession>>,
 ) {
     let (chat_id, pending) = {
@@ -907,7 +908,7 @@ pub async fn check_external_reload_pending(
         Some(ExternalReloadPending::Delete { source }) => {
             let expected_pending = ExternalReloadPending::delete(source.clone());
             apply_external_delete_with_revalidation(
-                gcx.clone(),
+                ctx,
                 session_arc.clone(),
                 &chat_id,
                 Some(expected_pending),
@@ -917,12 +918,13 @@ pub async fn check_external_reload_pending(
         }
         Some(ExternalReloadPending::Update { source }) => {
             let expected_pending = ExternalReloadPending::update(source.clone());
-            if let Some(loaded) =
-                load_generic_trajectory_for_chat_matching_source(gcx.clone(), &chat_id, &source)
-                    .await
+            if let Some(loaded) = ctx
+                .trajectories
+                .load_generic_trajectory_for_chat_matching_source(&chat_id, &source)
+                .await
             {
                 apply_loaded_external_update_with_repair(
-                    gcx.clone(),
+                    ctx,
                     session_arc.clone(),
                     &chat_id,
                     loaded,

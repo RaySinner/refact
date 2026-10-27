@@ -237,7 +237,7 @@ pub(super) async fn wait_for_trajectory_vectorization_shutdown(
     }
 }
 
-pub(super) async fn enqueue_trajectory_vectorization(gcx: Arc<GlobalContext>, file_path: PathBuf) {
+pub(crate) async fn enqueue_trajectory_vectorization(gcx: Arc<GlobalContext>, file_path: PathBuf) {
     if gcx.shutdown_flag.load(Ordering::Relaxed) {
         return;
     }
@@ -514,7 +514,7 @@ pub(super) fn task_root_candidates(
     }
 }
 
-pub(super) async fn get_all_task_roots(gcx: Arc<GlobalContext>) -> Vec<PathBuf> {
+pub(crate) async fn get_all_task_roots(gcx: Arc<GlobalContext>) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     for dir in task_root_candidates(gcx).await {
         if is_real_dir(&dir).await {
@@ -619,7 +619,7 @@ pub(super) fn buddy_conversation_prune_throttle() -> &'static StdMutex<PruneThro
     LAST_PRUNE_BY_DIR.get_or_init(|| StdMutex::new(PruneThrottle::default()))
 }
 
-pub(super) async fn prune_buddy_conversations_throttled(gcx: Arc<GlobalContext>) {
+pub(crate) async fn prune_buddy_conversations_throttled(gcx: Arc<GlobalContext>) {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|elapsed| elapsed.as_secs())
@@ -986,7 +986,7 @@ pub(super) async fn find_normal_trajectory_file(
     None
 }
 
-pub(super) async fn find_trajectory_file(
+pub(crate) async fn find_trajectory_file(
     gcx: Arc<GlobalContext>,
     chat_id: &str,
 ) -> Option<ValidTrajectoryCandidate> {
@@ -1014,7 +1014,7 @@ pub(super) async fn find_trajectory_file(
     first_valid_trajectory_candidate(nested, chat_id).await
 }
 
-pub(super) async fn find_normal_trajectory_path(
+pub(crate) async fn find_normal_trajectory_path(
     gcx: Arc<GlobalContext>,
     chat_id: &str,
 ) -> Option<PathBuf> {
@@ -1112,7 +1112,7 @@ pub async fn find_trajectory_path_for_active_chat(
     find_validated_trajectory_path_for_source(gcx, chat_id, &source).await
 }
 
-pub(super) async fn find_trajectory_or_buddy_file(
+pub(crate) async fn find_trajectory_or_buddy_file(
     gcx: Arc<GlobalContext>,
     chat_id: &str,
 ) -> Option<ValidTrajectoryCandidate> {

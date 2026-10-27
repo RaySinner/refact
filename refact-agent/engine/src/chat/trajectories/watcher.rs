@@ -7,18 +7,15 @@ use tokio::fs;
 use tracing::{debug, info, warn};
 use crate::chat::types::TrajectorySourceIdentitySessionExt;
 
-use crate::app_state::AppState;
+use crate::chat::ctx::ChatCtx;
 use crate::chat::config::timeouts;
 use crate::chat::trajectory_index;
 use crate::chat::types::{ExternalReloadPending, TrajectorySourceIdentity};
 use crate::global_context::GlobalContext;
 
-use super::load::{load_generic_trajectory_for_chat, load_generic_trajectory_for_chat_matching_source};
 use super::model::get_session_runtime_for_trajectory_source;
 use super::paths::{
-    find_trajectory_file, get_all_task_roots, get_all_task_roots_from_weak,
-    get_all_trajectories_dirs_from_weak, index_dir_for_trajectory_file, list_trajectory_dirs,
-    stale_entry_cleanup_allowed,
+    get_all_task_roots_from_weak, get_all_trajectories_dirs_from_weak, stale_entry_cleanup_allowed,
 };
 use super::queries::{
     deleted_trajectory_event, is_real_dir, is_real_dir_sync, loaded_trajectory_to_meta,
@@ -34,12 +31,13 @@ use super::writer::{
 };
 
 pub(super) async fn refresh_trajectory_index_entry_for_path(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     path: &Path,
     source_hint: Option<TrajectorySourceIdentity>,
 ) -> Result<(), String> {
-    let app = AppState::from_gcx(gcx.clone()).await;
-    let dir = index_dir_for_trajectory_file(gcx, path)
+    let dir = ctx
+        .trajectories
+        .index_dir_for_trajectory_file(path)
         .await
         .ok_or_else(|| format!("Trajectory path has no parent: {}", path.display()))?;
     let dir = dir.as_path();
@@ -59,7 +57,7 @@ pub(super) async fn refresh_trajectory_index_entry_for_path(
     .await
     .map_err(|e| format!("Trajectory index refresh parse task failed: {}", e))??;
     trajectory_index::upsert_trajectory_index_entry_from_owned_value_with_rollout(
-        &app.chat.trajectory_index_coordinator,
+        &ctx.chat.trajectory_index_coordinator,
         dir,
         path,
         value,
@@ -68,23 +66,24 @@ pub(super) async fn refresh_trajectory_index_entry_for_path(
     .await
 }
 
-pub(super) async fn remove_stale_trajectory_index_entries(gcx: Arc<GlobalContext>, chat_id: &str) {
-    let app = AppState::from_gcx(gcx.clone()).await;
-    let dirs = match find_trajectory_file(gcx.clone(), chat_id).await {
-        Some(candidate) => index_dir_for_trajectory_file(gcx.clone(), &candidate.path)
+pub(super) async fn remove_stale_trajectory_index_entries(ctx: &ChatCtx, chat_id: &str) {
+    let dirs = match ctx.trajectories.find_trajectory_path(chat_id).await {
+        Some(candidate) => ctx
+            .trajectories
+            .index_dir_for_trajectory_file(&candidate)
             .await
             .map(|dir| vec![dir])
-            .unwrap_or_else(|| Vec::new()),
+            .unwrap_or_else(Vec::new),
         None => Vec::new(),
     };
     let dirs = if dirs.is_empty() {
-        list_trajectory_dirs(&gcx).await
+        ctx.trajectories.list_trajectory_dirs().await
     } else {
         dirs
     };
     for dir in dirs {
         let entries = match trajectory_index::list_trajectory_entries_with_rollout_for(
-            &app.chat.trajectory_index_coordinator,
+            &ctx.chat.trajectory_index_coordinator,
             &dir,
             None,
             trajectory_index::TrajectoryIndexListingCaller::StaleEntryCleanup,
@@ -108,7 +107,7 @@ pub(super) async fn remove_stale_trajectory_index_entries(gcx: Arc<GlobalContext
         }
         if should_remove {
             if let Err(e) = trajectory_index::remove_trajectory_index_entry_with_rollout(
-                &app.chat.trajectory_index_coordinator,
+                &ctx.chat.trajectory_index_coordinator,
                 &dir,
                 chat_id,
             )
@@ -125,40 +124,43 @@ pub(super) async fn remove_stale_trajectory_index_entries(gcx: Arc<GlobalContext
 
 #[cfg(test)]
 pub(crate) async fn process_trajectory_change(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     chat_id: &str,
     is_remove: bool,
 ) {
-    process_trajectory_change_for_source(gcx, chat_id, is_remove, None).await;
+    process_trajectory_change_for_source(ctx, chat_id, is_remove, None).await;
 }
 
 pub(super) async fn process_trajectory_change_for_source(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     chat_id: &str,
     is_remove: bool,
     changed_source: Option<TrajectorySourceIdentity>,
 ) {
-    let app = AppState::from_gcx(gcx.clone()).await;
-    let sessions = app.chat.sessions.clone();
+    let sessions = ctx.chat.sessions.clone();
 
     if is_remove {
-        remove_stale_trajectory_index_entries(gcx.clone(), chat_id).await;
+        remove_stale_trajectory_index_entries(ctx, chat_id).await;
         let session_arc = {
             let sessions_read = sessions.read().await;
             sessions_read.get(chat_id).cloned()
         };
         let outcome = if let Some(session_arc) = session_arc {
             apply_external_delete_with_revalidation(
-                gcx.clone(),
+                ctx,
                 session_arc,
                 chat_id,
                 None,
                 changed_source.clone(),
             )
             .await
-        } else if let Some(loaded) = load_generic_trajectory_for_chat(gcx.clone(), chat_id).await {
+        } else if let Some(loaded) = ctx
+            .trajectories
+            .load_generic_trajectory_for_chat(chat_id)
+            .await
+        {
             if loaded.transition_identity_repaired {
-                persist_loaded_trajectory_repair(gcx.clone(), loaded.clone()).await;
+                persist_loaded_trajectory_repair(ctx, loaded.clone()).await;
             }
             ExternalDeleteRevalidationOutcome::Updated {
                 loaded,
@@ -178,7 +180,7 @@ pub(super) async fn process_trajectory_change_for_source(
                     "External delete revalidation for {} updated list; applied_to_session={}",
                     chat_id, applied_to_session
                 );
-                let task_roots = get_all_task_roots(gcx.clone()).await;
+                let task_roots = ctx.trajectories.get_all_task_roots().await;
                 let meta = loaded_trajectory_to_meta(&loaded, &task_roots);
                 let (session_state, session_error, _) =
                     get_session_runtime_for_trajectory_source(&sessions, chat_id, &meta.source)
@@ -200,15 +202,20 @@ pub(super) async fn process_trajectory_change_for_source(
             }
             ExternalDeleteRevalidationOutcome::NoopStalePending => return,
         };
-        let _ = app.chat.trajectory_events_tx.send(event);
+        let _ = ctx.chat.trajectory_events_tx.send(event);
         return;
     }
 
     let mut loaded = match changed_source.as_ref() {
         Some(source) => {
-            load_generic_trajectory_for_chat_matching_source(gcx.clone(), chat_id, source).await
+            ctx.trajectories
+                .load_generic_trajectory_for_chat_matching_source(chat_id, source)
+                .await
         }
-        None => load_generic_trajectory_for_chat(gcx.clone(), chat_id).await,
+        None => ctx
+            .trajectories
+            .load_generic_trajectory_for_chat(chat_id)
+            .await,
     };
 
     if let Some(loaded_for_index) = loaded.as_ref() {
@@ -218,7 +225,7 @@ pub(super) async fn process_trajectory_change_for_source(
             ))
         });
         if let Err(e) = refresh_trajectory_index_entry_for_path(
-            gcx.clone(),
+            ctx,
             &loaded_for_index.source_path,
             source_hint,
         )
@@ -227,7 +234,7 @@ pub(super) async fn process_trajectory_change_for_source(
             warn!("Failed to refresh trajectory index for {}: {}", chat_id, e);
         }
     } else if stale_entry_cleanup_allowed(chat_id) {
-        remove_stale_trajectory_index_entries(gcx.clone(), chat_id).await;
+        remove_stale_trajectory_index_entries(ctx, chat_id).await;
     }
 
     let session_arc = {
@@ -237,7 +244,7 @@ pub(super) async fn process_trajectory_change_for_source(
 
     if let Some(session_arc) = session_arc {
         if let Some(t) = loaded.as_ref() {
-            let task_roots = get_all_task_roots(gcx.clone()).await;
+            let task_roots = ctx.trajectories.get_all_task_roots().await;
             let meta = loaded_trajectory_to_meta(t, &task_roots);
             let (session_state, session_error, _) =
                 get_session_runtime_for_trajectory_source(&sessions, chat_id, &meta.source).await;
@@ -248,7 +255,7 @@ pub(super) async fn process_trajectory_change_for_source(
                 session_state,
                 session_error,
             );
-            let _ = app.chat.trajectory_events_tx.send(event);
+            let _ = ctx.chat.trajectory_events_tx.send(event);
         }
 
         let source_collision = {
@@ -261,7 +268,7 @@ pub(super) async fn process_trajectory_change_for_source(
         if source_collision {
             if let Some(loaded) = loaded.take() {
                 if loaded.transition_identity_repaired {
-                    persist_loaded_trajectory_repair(gcx.clone(), loaded).await;
+                    persist_loaded_trajectory_repair(ctx, loaded).await;
                 }
             }
             return;
@@ -272,7 +279,7 @@ pub(super) async fn process_trajectory_change_for_source(
                 TrajectorySourceIdentity::from_session_parts(&loaded.thread),
             );
             apply_loaded_external_update_with_repair(
-                gcx.clone(),
+                ctx,
                 session_arc.clone(),
                 chat_id,
                 loaded,
@@ -301,7 +308,7 @@ pub(super) async fn process_trajectory_change_for_source(
         return;
     };
 
-    let task_roots = get_all_task_roots(gcx.clone()).await;
+    let task_roots = ctx.trajectories.get_all_task_roots().await;
     let meta = loaded_trajectory_to_meta(&loaded, &task_roots);
     let (session_state, session_error, _) =
         get_session_runtime_for_trajectory_source(&sessions, chat_id, &meta.source).await;
@@ -312,10 +319,10 @@ pub(super) async fn process_trajectory_change_for_source(
         session_state,
         session_error,
     );
-    let _ = app.chat.trajectory_events_tx.send(event);
+    let _ = ctx.chat.trajectory_events_tx.send(event);
 
     if loaded.transition_identity_repaired {
-        persist_loaded_trajectory_repair(gcx, loaded).await;
+        persist_loaded_trajectory_repair(ctx, loaded).await;
     }
 }
 
@@ -542,7 +549,7 @@ pub(super) fn trajectory_watcher_message_for_path(
 }
 
 pub(super) async fn process_trajectory_watcher_change(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     chat_id: String,
     is_remove: bool,
     source: TrajectorySourceIdentity,
@@ -555,7 +562,7 @@ pub(super) async fn process_trajectory_watcher_change(
     {
         return;
     }
-    process_trajectory_change_for_source(gcx, &chat_id, is_remove, Some(source)).await;
+    process_trajectory_change_for_source(ctx, &chat_id, is_remove, Some(source)).await;
 }
 
 pub(super) static TRAJECTORY_WATCHER_TASK: OnceLock<StdMutex<Option<tokio::task::JoinHandle<()>>>> =
@@ -754,7 +761,8 @@ pub fn start_trajectory_watcher(gcx: Arc<GlobalContext>) {
             for ((chat_id, source), is_remove, path) in ready {
                 pending.remove(&(chat_id.clone(), source.clone()));
                 if let Some(gcx) = gcx_weak.upgrade() {
-                    process_trajectory_watcher_change(gcx, chat_id, is_remove, source, path).await;
+                    let ctx = gcx.chat_ctx(gcx.clone());
+                    process_trajectory_watcher_change(&ctx, chat_id, is_remove, source, path).await;
                 }
             }
         }

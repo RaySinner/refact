@@ -694,7 +694,7 @@ use super::*;
             .await
             .insert(chat_id.clone(), session_arc.clone());
 
-        process_trajectory_change(gcx, &chat_id, true).await;
+        process_trajectory_change(&gcx.chat_ctx(gcx.clone()), &chat_id, true).await;
 
         let session = session_arc.lock().await;
         assert!(session.messages.is_empty());

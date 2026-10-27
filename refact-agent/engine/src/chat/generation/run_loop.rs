@@ -715,7 +715,7 @@ pub fn start_generation(
             }
         }
 
-        check_external_reload_pending(gcx.clone(), session_arc.clone()).await;
+        check_external_reload_pending(&gcx.chat_ctx(gcx.clone()).clone(), session_arc.clone()).await;
 
         {
             let session = session_arc.lock().await;

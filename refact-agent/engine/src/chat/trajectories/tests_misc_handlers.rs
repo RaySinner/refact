@@ -42,7 +42,7 @@ use super::test_support::*;
             auto_approve_dangerous_commands: true,
         };
 
-        let err = persist_loaded_trajectory_repair_raw(gcx, &repair_patch)
+        let err = persist_loaded_trajectory_repair_raw(&gcx.chat_ctx(gcx.clone()), &repair_patch)
             .await
             .unwrap_err();
 
@@ -156,7 +156,7 @@ use super::test_support::*;
         .unwrap();
         let normal_before = tokio::fs::read_to_string(&normal_path).await.unwrap();
 
-        persist_loaded_trajectory_repair_raw(gcx.clone(), &repair_patch)
+        persist_loaded_trajectory_repair_raw(&gcx.chat_ctx(gcx.clone()).clone(), &repair_patch)
             .await
             .unwrap();
 

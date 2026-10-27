@@ -62,7 +62,7 @@ use super::test_support::*;
             .await
             .insert(chat_id.to_string(), session_arc.clone());
 
-        process_trajectory_change(gcx, chat_id, true).await;
+        process_trajectory_change(&gcx.chat_ctx(gcx.clone()), chat_id, true).await;
 
         let event = wait_for_trajectory_event(&mut rx, chat_id).await;
         assert_eq!(event.event_type, "updated");
@@ -115,7 +115,7 @@ use super::test_support::*;
             .await
             .insert(chat_id.to_string(), session_arc.clone());
 
-        process_trajectory_change(gcx, chat_id, true).await;
+        process_trajectory_change(&gcx.chat_ctx(gcx.clone()), chat_id, true).await;
 
         let event = wait_for_trajectory_event(&mut rx, chat_id).await;
         assert_eq!(event.event_type, "deleted");
@@ -268,7 +268,7 @@ use super::test_support::*;
             .await
             .insert(chat_id.to_string(), session_arc.clone());
 
-        process_trajectory_change(gcx.clone(), chat_id, true).await;
+        process_trajectory_change(&gcx.chat_ctx(gcx.clone()).clone(), chat_id, true).await;
         {
             let session = session_arc.lock().await;
             assert_eq!(
@@ -289,7 +289,7 @@ use super::test_support::*;
             session.runtime.state = SessionState::Idle;
             session.trajectory_dirty = false;
         }
-        check_external_reload_pending(gcx, session_arc.clone()).await;
+        check_external_reload_pending(&gcx.chat_ctx(gcx.clone()), session_arc.clone()).await;
 
         let session = session_arc.lock().await;
         assert_eq!(session.external_reload_pending, None);
@@ -352,7 +352,7 @@ use super::test_support::*;
             .await
             .insert(chat_id.to_string(), session_arc.clone());
 
-        process_trajectory_change(gcx.clone(), chat_id, true).await;
+        process_trajectory_change(&gcx.chat_ctx(gcx.clone()).clone(), chat_id, true).await;
         {
             let session = session_arc.lock().await;
             assert_eq!(
@@ -384,7 +384,7 @@ use super::test_support::*;
             session.runtime.state = SessionState::Idle;
             session.trajectory_dirty = false;
         }
-        check_external_reload_pending(gcx, session_arc.clone()).await;
+        check_external_reload_pending(&gcx.chat_ctx(gcx.clone()), session_arc.clone()).await;
 
         let session = session_arc.lock().await;
         assert_eq!(session.external_reload_pending, None);
@@ -459,7 +459,7 @@ use super::test_support::*;
             .await
             .insert(chat_id.to_string(), session_arc.clone());
 
-        process_trajectory_change(gcx.clone(), chat_id, true).await;
+        process_trajectory_change(&gcx.chat_ctx(gcx.clone()).clone(), chat_id, true).await;
         let event = wait_for_trajectory_event(&mut rx, chat_id).await;
         assert_eq!(event.event_type, "deleted");
         assert_eq!(event.title, None);
@@ -532,7 +532,7 @@ use super::test_support::*;
             .await
             .insert(chat_id.to_string(), session_arc.clone());
 
-        process_trajectory_change(gcx.clone(), chat_id, true).await;
+        process_trajectory_change(&gcx.chat_ctx(gcx.clone()).clone(), chat_id, true).await;
 
         let event = wait_for_trajectory_event(&mut rx, chat_id).await;
         assert_eq!(event.event_type, "updated");
@@ -642,7 +642,7 @@ use super::test_support::*;
             .await
             .insert(chat_id.to_string(), session_arc.clone());
 
-        process_trajectory_change(gcx.clone(), chat_id, true).await;
+        process_trajectory_change(&gcx.chat_ctx(gcx.clone()).clone(), chat_id, true).await;
 
         let event = wait_for_trajectory_event(&mut rx, chat_id).await;
         assert_eq!(event.event_type, "updated");
@@ -724,8 +724,8 @@ use super::test_support::*;
             .await
             .insert(chat_id.to_string(), session_arc.clone());
 
-        process_trajectory_change(gcx.clone(), chat_id, false).await;
-        check_external_reload_pending(gcx, session_arc.clone()).await;
+        process_trajectory_change(&gcx.chat_ctx(gcx.clone()).clone(), chat_id, false).await;
+        check_external_reload_pending(&gcx.chat_ctx(gcx.clone()), session_arc.clone()).await;
 
         let session = session_arc.lock().await;
         assert_eq!(session.external_reload_pending, None);
@@ -814,8 +814,8 @@ use super::test_support::*;
             .await
             .insert(chat_id.to_string(), session_arc.clone());
 
-        process_trajectory_change(gcx.clone(), chat_id, false).await;
-        check_external_reload_pending(gcx.clone(), session_arc.clone()).await;
+        process_trajectory_change(&gcx.chat_ctx(gcx.clone()).clone(), chat_id, false).await;
+        check_external_reload_pending(&gcx.chat_ctx(gcx.clone()).clone(), session_arc.clone()).await;
 
         let event = wait_for_trajectory_event(&mut rx, chat_id).await;
         assert_eq!(event.event_type, "updated");

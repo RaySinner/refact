@@ -365,6 +365,15 @@ impl SubchatLauncher for EngineSubchatLauncher {
     ) -> Result<SubchatResult, String> {
         crate::subchat::run_subchat(self.gcx.clone(), messages, config).await
     }
+
+    async fn run_subchat_once(
+        &self,
+        subagent_id: &str,
+        messages: Vec<ChatMessage>,
+        trace_parent: crate::subchat::TraceParent,
+    ) -> Result<SubchatResult, String> {
+        crate::subchat::run_subchat_once(self.gcx.clone(), subagent_id, messages, trace_parent).await
+    }
 }
 
 pub struct EngineProjectTreeProvider {
@@ -438,6 +447,19 @@ impl ModeConfigProvider for EngineModeConfigProvider {
         crate::yaml_configs::customization_registry::get_mode_config(
             self.gcx.clone(),
             mode_id,
+            model_id,
+        )
+        .await
+    }
+
+    async fn get_subagent_config(
+        &self,
+        subagent_id: &str,
+        model_id: Option<&str>,
+    ) -> Option<crate::yaml_configs::customization_types::SubagentConfig> {
+        crate::yaml_configs::customization_registry::get_subagent_config(
+            self.gcx.clone(),
+            subagent_id,
             model_id,
         )
         .await
@@ -528,7 +550,7 @@ impl TrajectoryStore for EngineTrajectoryStore {
         allow_replacing_messages: bool,
     ) -> bool {
         trajectories::refresh_session_from_trajectory_if_stale(
-            AppState::from_gcx(self.gcx.clone()).await,
+            &self.gcx.chat_ctx(self.gcx.clone()),
             chat_id,
             allow_replacing_messages,
         )
@@ -554,7 +576,11 @@ impl TrajectoryStore for EngineTrajectoryStore {
         &self,
         repair: &trajectories::TrajectoryRepairPatch,
     ) -> Result<String, String> {
-        trajectories::persist_loaded_trajectory_repair_raw(self.gcx.clone(), repair).await
+        trajectories::persist_loaded_trajectory_repair_raw(
+            &self.gcx.chat_ctx(self.gcx.clone()),
+            repair,
+        )
+        .await
     }
 
     async fn maybe_save_trajectory_with_intent(
@@ -592,6 +618,122 @@ impl TrajectoryStore for EngineTrajectoryStore {
             session_arc,
         )
         .await
+    }
+
+    async fn find_trajectory_path(&self, chat_id: &str) -> Option<PathBuf> {
+        trajectories::find_trajectory_path(self.gcx.clone(), chat_id).await
+    }
+
+    async fn find_trajectory_or_buddy_path(&self, chat_id: &str) -> Option<PathBuf> {
+        trajectories::find_trajectory_or_buddy_path(self.gcx.clone(), chat_id).await
+    }
+
+    async fn find_trajectory_path_for_active_chat(
+        &self,
+        sessions: &crate::chat::SessionsMap,
+        chat_id: &str,
+    ) -> Option<PathBuf> {
+        trajectories::find_trajectory_path_for_active_chat(self.gcx.clone(), sessions, chat_id).await
+    }
+
+    async fn read_trajectory_or_buddy_content(&self, chat_id: &str) -> Option<String> {
+        trajectories::find_trajectory_or_buddy_file(self.gcx.clone(), chat_id)
+            .await
+            .map(|candidate| candidate.content)
+    }
+
+    async fn load_trajectory_by_chat_id(&self, chat_id: &str) -> Option<trajectories::LoadedTrajectory> {
+        let candidate = trajectories::find_trajectory_file(self.gcx.clone(), chat_id).await?;
+        trajectories::load_trajectory_candidate(self.gcx.clone(), chat_id, candidate).await
+    }
+
+    async fn load_generic_trajectory_for_chat(
+        &self,
+        chat_id: &str,
+    ) -> Option<trajectories::LoadedTrajectory> {
+        trajectories::load_generic_trajectory_for_chat(self.gcx.clone(), chat_id).await
+    }
+
+    async fn load_generic_trajectory_for_chat_matching_source(
+        &self,
+        chat_id: &str,
+        source: &crate::chat::types::TrajectorySourceIdentity,
+    ) -> Option<trajectories::LoadedTrajectory> {
+        trajectories::load_generic_trajectory_for_chat_matching_source(
+            self.gcx.clone(),
+            chat_id,
+            source,
+        )
+        .await
+    }
+
+    async fn trajectory_source_path_is_allowed(&self, path: &std::path::Path) -> bool {
+        trajectories::trajectory_source_path_is_allowed(self.gcx.clone(), path).await
+    }
+
+    async fn safe_new_task_trajectory_file(
+        &self,
+        task_meta: &crate::chat::types::TaskMeta,
+        chat_id: &str,
+    ) -> Result<PathBuf, String> {
+        trajectories::safe_new_task_trajectory_file(self.gcx.clone(), task_meta, chat_id).await
+    }
+
+    async fn safe_new_buddy_trajectory_file(&self, chat_id: &str) -> Result<PathBuf, String> {
+        trajectories::safe_new_buddy_trajectory_file(self.gcx.clone(), chat_id).await
+    }
+
+    async fn safe_new_nested_trajectory_file(
+        &self,
+        chat_id: &str,
+        root_chat_id: Option<&str>,
+    ) -> Result<PathBuf, String> {
+        trajectories::safe_new_nested_trajectory_file(self.gcx.clone(), chat_id, root_chat_id).await
+    }
+
+    async fn find_normal_trajectory_path(&self, chat_id: &str) -> Option<PathBuf> {
+        trajectories::find_normal_trajectory_path(self.gcx.clone(), chat_id).await
+    }
+
+    async fn resolve_trajectory_data_save_path(
+        &self,
+        id: &str,
+        data: &trajectories::TrajectoryData,
+    ) -> Result<PathBuf, String> {
+        trajectories::resolve_trajectory_data_save_path(self.gcx.clone(), id, data).await
+    }
+
+    async fn validate_loaded_worktree_strict(
+        &self,
+        chat_id: &str,
+        worktree: crate::worktrees::types::WorktreeMeta,
+    ) -> Option<crate::worktrees::types::WorktreeMeta> {
+        trajectories::validate_loaded_worktree_strict(
+            AppState::from_gcx(self.gcx.clone()).await,
+            chat_id,
+            worktree,
+        )
+        .await
+    }
+
+    async fn index_dir_for_trajectory_file(&self, file_path: &std::path::Path) -> Option<PathBuf> {
+        trajectories::index_dir_for_trajectory_file(self.gcx.clone(), file_path).await
+    }
+
+    async fn list_trajectory_dirs(&self) -> Vec<PathBuf> {
+        trajectories::list_trajectory_dirs(&self.gcx).await
+    }
+
+    async fn get_all_task_roots(&self) -> Vec<PathBuf> {
+        trajectories::get_all_task_roots(self.gcx.clone()).await
+    }
+
+    async fn enqueue_trajectory_vectorization(&self, file_path: PathBuf) {
+        trajectories::enqueue_trajectory_vectorization(self.gcx.clone(), file_path).await
+    }
+
+    async fn prune_buddy_conversations_throttled(&self) {
+        trajectories::prune_buddy_conversations_throttled(self.gcx.clone()).await
     }
 }
 

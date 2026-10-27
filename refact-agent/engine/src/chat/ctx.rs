@@ -16,8 +16,10 @@ use crate::app_state::{
 use crate::caps::CodeAssistantCaps;
 use crate::call_validation::{ChatMeta, ChatToolCall};
 use crate::chat::tools::ExecuteToolsOptions;
-use crate::chat::trajectories::{LoadedTrajectory, TrajectoryRepairPatch, TrajectoryVectorizationQueue};
-use crate::chat::types::{ChatSession, ThreadParams, TrajectoryCommitIntent};
+use crate::chat::trajectories::{
+    LoadedTrajectory, TrajectoryData, TrajectoryRepairPatch, TrajectoryVectorizationQueue,
+};
+use crate::chat::types::{ChatSession, ThreadParams, TrajectoryCommitIntent, TrajectorySourceIdentity};
 use crate::custom_error::ScratchError;
 use crate::ext::hooks::HookEvent;
 use crate::ext::hooks_runner::{HookPayload, HookResult};
@@ -26,9 +28,9 @@ use crate::integrations::browser_runtime::BrowserRuntime;
 use crate::knowledge_index::KnowledgeIndex;
 use crate::privacy::PrivacySettings;
 use crate::scratchpads::scratchpad_utils::HasRagResults;
-use crate::subchat::{SubchatConfig, SubchatResult};
+use crate::subchat::{SubchatConfig, SubchatResult, TraceParent};
 use crate::yaml_configs::customization_registry::RegistryCacheManager;
-use crate::yaml_configs::customization_types::{ModeConfig, ProjectRegistry};
+use crate::yaml_configs::customization_types::{ModeConfig, ProjectRegistry, SubagentConfig};
 
 #[derive(Clone)]
 pub struct ChatWorkspace {
@@ -52,6 +54,13 @@ pub trait SubchatLauncher: Send + Sync {
         messages: Vec<ChatMessage>,
         config: SubchatConfig,
     ) -> Result<SubchatResult, String>;
+
+    async fn run_subchat_once(
+        &self,
+        subagent_id: &str,
+        messages: Vec<ChatMessage>,
+        trace_parent: TraceParent,
+    ) -> Result<SubchatResult, String>;
 }
 
 #[async_trait]
@@ -69,6 +78,11 @@ pub trait HookRunner: Send + Sync {
 pub trait ModeConfigProvider: Send + Sync {
     async fn get_project_registry(&self) -> Option<ProjectRegistry>;
     async fn get_mode_config(&self, mode_id: &str, model_id: Option<&str>) -> Option<ModeConfig>;
+    async fn get_subagent_config(
+        &self,
+        subagent_id: &str,
+        model_id: Option<&str>,
+    ) -> Option<SubagentConfig>;
 }
 
 #[async_trait]
@@ -111,6 +125,68 @@ pub trait TrajectoryStore: Send + Sync {
         &self,
         session_arc: Arc<AMutex<ChatSession>>,
     ) -> Result<(), String>;
+
+    async fn find_trajectory_path(&self, chat_id: &str) -> Option<PathBuf>;
+
+    async fn find_trajectory_or_buddy_path(&self, chat_id: &str) -> Option<PathBuf>;
+
+    async fn find_trajectory_path_for_active_chat(
+        &self,
+        sessions: &crate::chat::SessionsMap,
+        chat_id: &str,
+    ) -> Option<PathBuf>;
+
+    async fn read_trajectory_or_buddy_content(&self, chat_id: &str) -> Option<String>;
+
+    async fn load_trajectory_by_chat_id(&self, chat_id: &str) -> Option<LoadedTrajectory>;
+
+    async fn load_generic_trajectory_for_chat(&self, chat_id: &str) -> Option<LoadedTrajectory>;
+
+    async fn load_generic_trajectory_for_chat_matching_source(
+        &self,
+        chat_id: &str,
+        source: &TrajectorySourceIdentity,
+    ) -> Option<LoadedTrajectory>;
+
+    async fn trajectory_source_path_is_allowed(&self, path: &std::path::Path) -> bool;
+
+    async fn safe_new_task_trajectory_file(
+        &self,
+        task_meta: &crate::chat::types::TaskMeta,
+        chat_id: &str,
+    ) -> Result<PathBuf, String>;
+
+    async fn safe_new_buddy_trajectory_file(&self, chat_id: &str) -> Result<PathBuf, String>;
+
+    async fn safe_new_nested_trajectory_file(
+        &self,
+        chat_id: &str,
+        root_chat_id: Option<&str>,
+    ) -> Result<PathBuf, String>;
+
+    async fn find_normal_trajectory_path(&self, chat_id: &str) -> Option<PathBuf>;
+
+    async fn resolve_trajectory_data_save_path(
+        &self,
+        id: &str,
+        data: &TrajectoryData,
+    ) -> Result<PathBuf, String>;
+
+    async fn validate_loaded_worktree_strict(
+        &self,
+        chat_id: &str,
+        worktree: crate::worktrees::types::WorktreeMeta,
+    ) -> Option<crate::worktrees::types::WorktreeMeta>;
+
+    async fn index_dir_for_trajectory_file(&self, file_path: &std::path::Path) -> Option<PathBuf>;
+
+    async fn list_trajectory_dirs(&self) -> Vec<PathBuf>;
+
+    async fn get_all_task_roots(&self) -> Vec<PathBuf>;
+
+    async fn enqueue_trajectory_vectorization(&self, file_path: PathBuf);
+
+    async fn prune_buddy_conversations_throttled(&self);
 }
 
 #[async_trait]

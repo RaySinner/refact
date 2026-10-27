@@ -443,7 +443,7 @@ use super::test_support::*;
             .join(format!("{chat_id}.json"));
         write_buddy_conversation_file(&buddy_path, chat_id, "Fallback Buddy").await;
 
-        process_trajectory_change(gcx, chat_id, true).await;
+        process_trajectory_change(&gcx.chat_ctx(gcx.clone()), chat_id, true).await;
 
         let event = wait_for_trajectory_event(&mut rx, chat_id).await;
         assert_eq!(event.event_type, "deleted");
@@ -475,7 +475,7 @@ use super::test_support::*;
         )
         .await;
 
-        process_trajectory_change(gcx, chat_id, true).await;
+        process_trajectory_change(&gcx.chat_ctx(gcx.clone()), chat_id, true).await;
 
         let event = wait_for_trajectory_event(&mut rx, chat_id).await;
         assert_eq!(event.event_type, "updated");

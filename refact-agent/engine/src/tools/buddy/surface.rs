@@ -7,11 +7,11 @@ use tokio::sync::Mutex as AMutex;
 use uuid::Uuid;
 
 use crate::at_commands::at_commands::AtCommandsContext;
+use crate::app_state::{AppState, BuddyServices};
 use crate::buddy::actor::{buddy_apply, buddy_enqueue_event, make_runtime_event, BuddyMutation};
 use crate::buddy::jobs::autonomous_chats::redact_and_cap_text;
 use crate::buddy::types::{BuddyActivity, BuddySpeechItem};
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
-use crate::global_context::GlobalContext;
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
 
 const VALID_MOODS: &[&str] = &[
@@ -110,13 +110,13 @@ fn ok_message(
     ))
 }
 
-async fn context(ccx: Arc<AMutex<AtCommandsContext>>) -> (Arc<GlobalContext>, String) {
+async fn context(ccx: Arc<AMutex<AtCommandsContext>>) -> (AppState, String) {
     let lock = ccx.lock().await;
-    (lock.app.gcx.clone(), lock.chat_id.clone())
+    (lock.app.clone(), lock.chat_id.clone())
 }
 
-async fn buddy_initialized(gcx: Arc<GlobalContext>) -> bool {
-    let buddy_arc = gcx.buddy.clone();
+async fn buddy_initialized(buddy: &BuddyServices) -> bool {
+    let buddy_arc = buddy.buddy.clone();
     let initialized = buddy_arc.lock().await.is_some();
     initialized
 }
@@ -142,8 +142,8 @@ impl Tool for ToolBuddyLogActivity {
         let title = cap(required_str(args, "title")?, 80);
         let description = cap(required_str(args, "description")?, 240);
         let icon = cap(optional_str(args, "icon").as_deref().unwrap_or("✨"), 16);
-        let (gcx, context_chat_id) = context(ccx).await;
-        if !buddy_initialized(gcx.clone()).await {
+        let (app, context_chat_id) = context(ccx).await;
+        if !buddy_initialized(&app.tool.buddy).await {
             return ok_message(
                 tool_call_id,
                 "Buddy service not initialized; activity logging ignored",
@@ -164,7 +164,7 @@ impl Tool for ToolBuddyLogActivity {
             failure_summary: None,
         };
         buddy_apply(
-            crate::app_state::AppState::from_gcx(gcx).await,
+            app,
             BuddyMutation {
                 activity: Some(activity),
                 ..Default::default()
@@ -202,8 +202,8 @@ impl Tool for ToolBuddySpeak {
         validate(&mood, VALID_MOODS, "mood")?;
         let intent = required_str(args, "intent")?.to_string();
         validate(&intent, VALID_INTENTS, "intent")?;
-        let (gcx, _) = context(ccx).await;
-        let buddy_arc = gcx.buddy.clone();
+        let (app, _) = context(ccx).await;
+        let buddy_arc = app.tool.buddy.buddy.clone();
         let mut lock = buddy_arc.lock().await;
         let Some(svc) = lock.as_mut() else {
             return ok_message(
@@ -261,8 +261,8 @@ impl Tool for ToolBuddyRuntimeEvent {
         let dedupe_key = optional_str(args, "dedupe_key")
             .map(|s| cap(&s, 120))
             .filter(|s| !s.is_empty());
-        let (gcx, _) = context(ccx).await;
-        if !buddy_initialized(gcx.clone()).await {
+        let (app, _) = context(ccx).await;
+        if !buddy_initialized(&app.tool.buddy).await {
             return ok_message(
                 tool_call_id,
                 "Buddy service not initialized; runtime event ignored",
@@ -286,7 +286,7 @@ impl Tool for ToolBuddyRuntimeEvent {
             event.dedupe_key = None;
         }
         event.description = optional_str(args, "description").map(|s| cap(&s, 240));
-        buddy_enqueue_event(crate::app_state::AppState::from_gcx(gcx).await, event).await;
+        buddy_enqueue_event(app, event).await;
         ok_message(tool_call_id, format!("Runtime event enqueued: {}", title))
     }
 
@@ -301,6 +301,7 @@ mod tests {
     use crate::buddy::actor::BuddyService;
     use crate::buddy::runtime_queue::RuntimeQueue;
     use crate::buddy::settings::BuddySettings;
+    use crate::global_context::GlobalContext;
 
     async fn ccx(gcx: Arc<GlobalContext>) -> Arc<AMutex<AtCommandsContext>> {
         Arc::new(AMutex::new(

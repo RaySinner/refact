@@ -81,17 +81,17 @@ impl Tool for ToolProcessSubscribe {
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
         let parsed = parse_subscribe_args(args)?;
-        let (gcx, exec_registry, chat_id, execution_scope, abort_flag) = {
+        let (app, exec_registry, chat_id, execution_scope, abort_flag) = {
             let ccx_lock = ccx.lock().await;
             (
-                ccx_lock.app.gcx.clone(),
+                ccx_lock.app.clone(),
                 ccx_lock.app.runtime.exec_registry.clone(),
                 ccx_lock.chat_id.clone(),
                 ccx_lock.execution_scope.clone(),
                 ccx_lock.abort_flag.clone(),
             )
         };
-        let workspace = current_workspace(gcx.clone(), execution_scope.as_ref()).await;
+        let workspace = current_workspace(app.gcx.clone(), execution_scope.as_ref()).await;
         let snapshot = exec_registry
             .authorize_process_access(&parsed.process_id, &chat_id, workspace.as_deref())
             .await?;
@@ -100,7 +100,7 @@ impl Tool for ToolProcessSubscribe {
         }
 
         spawn_process_subscription(
-            gcx,
+            app,
             exec_registry,
             parsed.process_id.clone(),
             chat_id,
@@ -155,7 +155,7 @@ impl Tool for ToolProcessSubscribe {
 }
 
 fn spawn_process_subscription(
-    gcx: SharedGlobalContext,
+    app: crate::app_state::AppState,
     exec_registry: Arc<ExecRegistry>,
     process_id: ExecProcessId,
     chat_id: String,
@@ -163,12 +163,12 @@ fn spawn_process_subscription(
     abort_flag: Arc<AtomicBool>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
-        run_process_subscription(gcx, exec_registry, process_id, chat_id, config, abort_flag).await;
+        run_process_subscription(app, exec_registry, process_id, chat_id, config, abort_flag).await;
     })
 }
 
 async fn run_process_subscription(
-    gcx: SharedGlobalContext,
+    app: crate::app_state::AppState,
     exec_registry: Arc<ExecRegistry>,
     process_id: ExecProcessId,
     chat_id: String,
@@ -182,7 +182,6 @@ async fn run_process_subscription(
         config.max_line_bytes,
     );
     let push = config.push;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
     let timeout = tokio::time::sleep(config.max_duration);
     tokio::pin!(timeout);
     let wait_process_id = process_id.clone();
@@ -190,7 +189,7 @@ async fn run_process_subscription(
     tokio::pin!(process_finished);
     let mut input_finished = false;
     loop {
-        if gcx.shutdown_flag.load(Ordering::Relaxed) || abort_flag.load(Ordering::Relaxed) {
+        if app.runtime.shutdown_flag.load(Ordering::Relaxed) || abort_flag.load(Ordering::Relaxed) {
             break;
         }
         if input_finished {
@@ -547,7 +546,7 @@ async fn flush_events(
     pending: &mut Option<PendingDelivery>,
     abort_flag: Arc<AtomicBool>,
 ) -> bool {
-    if app.gcx.shutdown_flag.load(Ordering::Relaxed) || abort_flag.load(Ordering::Relaxed) {
+    if app.runtime.shutdown_flag.load(Ordering::Relaxed) || abort_flag.load(Ordering::Relaxed) {
         return false;
     }
     if pending.is_none() && !events.is_empty() {
@@ -1241,7 +1240,7 @@ mod tests {
         let (gcx, _ccx, _session) = test_context(chat_id).await;
         let process_id = spawn_background(&gcx, chat_id, short_sleep_command()).await;
         let handle = spawn_process_subscription(
-            gcx.clone(),
+            AppState::from_gcx(gcx.clone()).await,
             gcx.exec_registry.clone(),
             process_id.clone(),
             chat_id.to_string(),
@@ -1268,7 +1267,7 @@ mod tests {
         let (gcx, _ccx, _session) = test_context(chat_id).await;
         let process_id = spawn_background(&gcx, chat_id, long_sleep_command()).await;
         let handle = spawn_process_subscription(
-            gcx.clone(),
+            AppState::from_gcx(gcx.clone()).await,
             gcx.exec_registry.clone(),
             process_id.clone(),
             chat_id.to_string(),

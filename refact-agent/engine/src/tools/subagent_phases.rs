@@ -11,7 +11,7 @@ use crate::chat::internal_roles::{event, EventSubkind};
 use crate::files_correction::correct_to_nearest_filename;
 use crate::global_context::GlobalContext;
 use crate::subchat::{
-    run_subchat, run_subchat_once_with_parent, resolve_subchat_config_with_parent, TraceParent,
+    run_subchat_once_with_parent, resolve_subchat_config_with_parent, TraceParent,
 };
 use crate::tools::tool_helpers::{load_code_subagent_config, CodeSubagentConfig};
 use crate::worktrees::scope::ExecutionScope;
@@ -498,7 +498,8 @@ pub async fn gather_files_phase_with_plan(
     ));
 
     tracing::info!("{}: starting file-gathering subagent", attribution_id);
-    let result = run_subchat(gcx.clone(), messages.clone(), subchat_config).await?;
+    let subchat = ccx.lock().await.app.tool.subchat.clone();
+    let result = subchat.run_subchat(messages.clone(), subchat_config).await?;
 
     let response = get_last_assistant_content(&result.messages);
     let mut files = parse_relevant_files(&response, max_files);

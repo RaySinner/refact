@@ -13,11 +13,10 @@ use crate::agents::types::BgAgentKind;
 use crate::at_commands::at_commands::{AtCommandsContext, MAX_SUBCHAT_DEPTH};
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
 use crate::chat::types::{GoalBudget, GoalCriterion};
-use crate::global_context::try_load_caps_quickly_if_not_present;
 use crate::postprocessing::pp_command_output::OutputFilter;
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
-use crate::tools::tools_list::{get_available_tools, get_tools_for_mode};
-use crate::yaml_configs::customization_registry::get_subagent_config;
+use crate::tools::tools_list::get_available_tools;
+use crate::yaml_configs::customization_registry::resolve_subagent_for_model;
 
 pub const SUBAGENT_FORCE_TOOLS: &[&str] = &[
     "tasks_set",
@@ -128,17 +127,19 @@ impl Tool for ToolSubagent {
             ));
         }
 
-        let config = get_subagent_config(gcx.clone(), "subagent", None)
-            .await
-            .ok_or_else(|| "subagent config 'subagent' not found".to_string())?;
+        let config = match app.tool.mode_config.get_project_registry().await {
+            Some(registry) => resolve_subagent_for_model(&registry, "subagent", None),
+            None => None,
+        }
+        .ok_or_else(|| "subagent config 'subagent' not found".to_string())?;
         let max_steps = config.subchat.max_steps.unwrap_or(60).max(1);
         let available_tools = available_tools(gcx.clone()).await;
         let spawn_tools = match args.tools.as_ref() {
             Some(requested) => Some(normalize_explicit_tools(requested, &available_tools)?),
-            None => inherit_parent_tools(&app, gcx.clone(), &parent_chat_id, &current_model).await,
+            None => inherit_parent_tools(&app, &parent_chat_id, &current_model).await,
         };
         let (model, model_type) = resolve_model(
-            gcx.clone(),
+            &app.tool.caps,
             args.model_name.as_deref(),
             args.model_type.as_deref(),
             &current_model,
@@ -373,7 +374,6 @@ async fn available_tools(gcx: Arc<crate::global_context::GlobalContext>) -> Hash
 
 async fn inherit_parent_tools(
     app: &crate::app_state::AppState,
-    gcx: Arc<crate::global_context::GlobalContext>,
     parent_chat_id: &str,
     model: &str,
 ) -> Option<Vec<String>> {
@@ -382,10 +382,13 @@ async fn inherit_parent_tools(
         sessions.get(parent_chat_id)?.clone()
     };
     let parent_mode = session.lock().await.thread.mode.clone();
-    let mut tools = get_tools_for_mode(gcx, &parent_mode, Some(model))
+    let mut tools = app
+        .tool
+        .tool_registry
+        .get_tools_for_mode(&parent_mode, Some(model))
         .await
         .into_iter()
-        .map(|tool| tool.tool_description().name)
+        .map(|tool| tool.name)
         .collect::<Vec<_>>();
     for tool in SUBAGENT_FORCE_TOOLS {
         if !tools.iter().any(|candidate| candidate == tool) {
@@ -442,14 +445,15 @@ fn normalize_explicit_tools(
 }
 
 async fn resolve_model(
-    gcx: Arc<crate::global_context::GlobalContext>,
+    caps: &Arc<dyn crate::chat::ctx::CapsProvider>,
     model_name: Option<&str>,
     model_type: Option<&str>,
     parent_model: &str,
     config_model_name: Option<&str>,
     config_model_type: Option<&str>,
 ) -> Result<(String, Option<String>), String> {
-    let caps = try_load_caps_quickly_if_not_present(gcx, 0)
+    let caps = caps
+        .try_load_caps_quickly(0)
         .await
         .map_err(|error| format!("failed to load caps: {error:?}"))?;
 
@@ -907,15 +911,29 @@ mod tests {
         let gcx = crate::global_context::tests::make_test_gcx().await;
         install_test_caps(gcx.clone()).await;
         for model_type in MODEL_TYPES {
-            let (model, selected) = resolve_model(gcx.clone(), None, Some(model_type), "parent", None, None)
-                .await
-                .unwrap();
+            let (model, selected) = resolve_model(
+                &gcx.chat_ctx(gcx.clone()).caps,
+                None,
+                Some(model_type),
+                "parent",
+                None,
+                None,
+            )
+            .await
+            .unwrap();
             assert_eq!(model, format!("test/{model_type}"));
             assert_eq!(selected.as_deref(), Some(*model_type));
         }
-        let (model, selected) = resolve_model(gcx, Some("test/light"), Some("thinking"), "parent", None, None)
-            .await
-            .unwrap();
+        let (model, selected) = resolve_model(
+            &gcx.chat_ctx(gcx.clone()).caps,
+            Some("test/light"),
+            Some("thinking"),
+            "parent",
+            None,
+            None,
+        )
+        .await
+        .unwrap();
         assert_eq!(model, "test/light");
         assert_eq!(selected, None);
     }
@@ -929,9 +947,16 @@ mod tests {
             .clone();
         caps.defaults.chat_buddy_model.clear();
         gcx.caps_state.write().await.caps = Some(Arc::new(caps));
-        let error = resolve_model(gcx, None, Some("buddy"), "parent", None, None)
-            .await
-            .unwrap_err();
+        let error = resolve_model(
+            &gcx.chat_ctx(gcx.clone()).caps,
+            None,
+            Some("buddy"),
+            "parent",
+            None,
+            None,
+        )
+        .await
+        .unwrap_err();
         assert!(error.contains("not configured"));
         assert!(error.contains("Configured model slots"));
     }
@@ -1040,10 +1065,9 @@ mod tests {
             .write()
             .await
             .insert("restricted-parent".to_string(), parent_session);
-        let expected =
-            inherit_parent_tools(&app, app.gcx.clone(), "restricted-parent", "test/default")
-                .await
-                .expect("parent mode tools");
+        let expected = inherit_parent_tools(&app, "restricted-parent", "test/default")
+            .await
+            .expect("parent mode tools");
         let captured = Arc::new(std::sync::Mutex::new(None));
         let captured_runner = captured.clone();
         let _runner =

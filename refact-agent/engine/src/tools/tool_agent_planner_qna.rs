@@ -8,8 +8,8 @@ use tokio::sync::Mutex as AMutex;
 use uuid::Uuid;
 
 use crate::at_commands::at_commands::AtCommandsContext;
+use crate::app_state::AppState;
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
-use crate::global_context::GlobalContext;
 use crate::tasks::storage;
 use crate::tasks::types::{BoardCard, StatusUpdate};
 use crate::tools::task_tool_helpers::require_bound_planner_task;
@@ -156,7 +156,7 @@ fn required_question_id(args: &HashMap<String, Value>) -> Result<String, String>
 
 async fn agent_scope(
     ccx: &Arc<AMutex<AtCommandsContext>>,
-) -> Result<(Arc<GlobalContext>, String, String, Option<String>), String> {
+) -> Result<(AppState, String, String, Option<String>), String> {
     let ccx_lock = ccx.lock().await;
     let meta = ccx_lock
         .task_meta
@@ -170,7 +170,7 @@ async fn agent_scope(
         .clone()
         .ok_or_else(|| "agent_ask_planner requires a bound card_id.".to_string())?;
     Ok((
-        ccx_lock.app.gcx.clone(),
+        ccx_lock.app.clone(),
         meta.task_id.clone(),
         card_id,
         meta.planner_chat_id.clone(),
@@ -364,7 +364,7 @@ impl Tool for ToolAgentAskPlanner {
         tool_call_id: &String,
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
-        let (gcx, task_id, card_id, planner_chat_id) = agent_scope(&ccx).await?;
+        let (app, task_id, card_id, planner_chat_id) = agent_scope(&ccx).await?;
         let question_limit = crate::runtime_settings::current().planner_qna_question_limit;
         let (question, question_notice) = truncate_chars_with_notice(
             &required_string(args, "question")?,
@@ -391,7 +391,7 @@ impl Tool for ToolAgentAskPlanner {
         };
         let card_id_for_update = card_id.clone();
         let timestamp = Utc::now().to_rfc3339();
-        storage::update_board_atomic(gcx.clone(), &task_id, move |board| {
+        storage::update_board_atomic_for_ctx(&app.ctx, &task_id, move |board| {
             let card = board
                 .get_card_mut(&card_id_for_update)
                 .ok_or_else(|| format!("Card {} not found", card_id_for_update))?;
@@ -520,15 +520,15 @@ impl Tool for ToolPlannerReply {
             "answer",
             "planner_qna_answer_limit",
         );
-        let gcx = ccx.lock().await.app.gcx.clone();
-        let facade = ccx.lock().await.app.chat.facade.clone();
+        let app = ccx.lock().await.app.clone();
+        let facade = app.chat.facade.clone();
         let push = planner_delivery::parse_push_mode(args)?;
 
         let card_id_for_update = card_id.clone();
         let question_id_for_update = question_id.clone();
         let answer_for_update = answer.clone();
         let (_, (recorded, target)) =
-            storage::update_board_atomic(gcx.clone(), &task_id, move |board| {
+            storage::update_board_atomic_for_ctx(&app.ctx, &task_id, move |board| {
                 let card = board
                     .get_card_mut(&card_id_for_update)
                     .ok_or_else(|| format!("Card {} not found", card_id_for_update))?;
@@ -570,7 +570,7 @@ impl Tool for ToolPlannerReply {
                 format!("planner-reply:{}:{}:{}", task_id, card_id, question_id),
             );
             planner_delivery::deliver_to_card(
-                gcx,
+                app.gcx.clone(),
                 facade,
                 &task_id,
                 &target,
@@ -641,8 +641,8 @@ impl Tool for ToolTaskQuestionsList {
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
         let task_id = planner_task_id(&ccx, args, "task_questions_list").await?;
-        let gcx = ccx.lock().await.app.gcx.clone();
-        let board = storage::load_board(gcx, &task_id).await?;
+        let ctx = ccx.lock().await.app.ctx.clone();
+        let board = storage::load_board_for_ctx(&ctx, &task_id).await?;
         let questions = collect_unanswered_questions(&board.cards);
         Ok((
             false,

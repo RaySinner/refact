@@ -12,8 +12,8 @@ use tokio::sync::OwnedMutexGuard;
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::buddy::jobs::autonomous_chats::redact_and_cap_text;
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
-use crate::files_correction::get_project_dirs;
-use crate::global_context::GlobalContext;
+use crate::chat::ctx::ChatCtx;
+use crate::files_correction::get_unscoped_project_dirs_for_ctx;
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -144,16 +144,16 @@ fn top_k_arg(args: &HashMap<String, Value>) -> Result<usize, String> {
     }
 }
 
-async fn project_root(gcx: Arc<GlobalContext>) -> Result<PathBuf, String> {
-    get_project_dirs(gcx)
+async fn project_root(ctx: &ChatCtx) -> Result<PathBuf, String> {
+    get_unscoped_project_dirs_for_ctx(ctx)
         .await
         .into_iter()
         .next()
         .ok_or_else(|| "No workspace folder found".to_string())
 }
 
-async fn profile_path(gcx: Arc<GlobalContext>) -> Result<PathBuf, String> {
-    Ok(project_root(gcx)
+async fn profile_path(ctx: &ChatCtx) -> Result<PathBuf, String> {
+    Ok(project_root(ctx)
         .await?
         .join(".refact")
         .join("buddy")
@@ -430,8 +430,8 @@ impl Tool for ToolBuddyUserPrefList {
         tool_call_id: &String,
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
-        let gcx = ccx.lock().await.app.gcx.clone();
-        let prefs = read_profile(&profile_path(gcx).await?).await?;
+        let ctx = ccx.lock().await.app.ctx.clone();
+        let prefs = read_profile(&profile_path(&ctx).await?).await?;
         Ok(result(
             tool_call_id,
             user_pref_table(prefs, top_k_arg(args)?),
@@ -473,10 +473,10 @@ impl Tool for ToolBuddyUserPrefUpsert {
         let statement = limited_text_arg(args, "statement", 600)?;
         let evidence = optional_limited_text_arg(args, "evidence", 600)?;
         let confidence = confidence_arg(args)?;
-        let gcx = ccx.lock().await.app.gcx.clone();
+        let ctx = ccx.lock().await.app.ctx.clone();
         let now = Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true);
         let (slug, created, updates) = upsert_user_pref_at(
-            &profile_path(gcx).await?,
+            &profile_path(&ctx).await?,
             &statement,
             &evidence,
             confidence,
@@ -521,8 +521,8 @@ impl Tool for ToolBuddyUserPrefRemove {
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
         let substring = required_string_arg(args, "substring_match")?;
-        let gcx = ccx.lock().await.app.gcx.clone();
-        let removed = remove_user_prefs(&profile_path(gcx).await?, substring).await?;
+        let ctx = ccx.lock().await.app.ctx.clone();
+        let removed = remove_user_prefs(&profile_path(&ctx).await?, substring).await?;
         Ok(result(
             tool_call_id,
             format!("Removed {removed} preferences"),

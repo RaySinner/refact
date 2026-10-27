@@ -120,7 +120,7 @@ async fn ensure_lock_for<T>(
 }
 
 async fn refresh_finish_heartbeat_if_current(
-    gcx: Arc<crate::global_context::GlobalContext>,
+    ctx: &crate::chat::ctx::ChatCtx,
     task_id: &str,
     card_id: &str,
     finish_chat_id: &str,
@@ -130,7 +130,7 @@ async fn refresh_finish_heartbeat_if_current(
     let finish_chat_id_owned = finish_chat_id.to_string();
     let expected_agent_id_owned = expected_agent_id.map(str::to_string);
     let heartbeat = Utc::now().to_rfc3339();
-    storage::update_board_atomic(gcx, task_id, move |board| {
+    storage::update_board_atomic_for_ctx(ctx, task_id, move |board| {
         let card = board
             .get_card_mut(&card_id_owned)
             .ok_or_else(|| format!("Card {} not found", card_id_owned))?;
@@ -907,9 +907,9 @@ impl Tool for ToolTaskAgentFinish {
 
         let report = parse_finish_report(args, success)?;
 
-        let gcx = {
+        let app = {
             let ccx_lock = ccx.lock().await;
-            ccx_lock.app.gcx.clone()
+            ccx_lock.app.clone()
         };
         let lock_task_id = task_id.clone();
         let lock_card_id = card_id.clone();
@@ -917,7 +917,7 @@ impl Tool for ToolTaskAgentFinish {
         ensure_lock_for(&lock_task_id, &lock_card_id, async move {
 
         refresh_finish_heartbeat_if_current(
-            gcx.clone(),
+            &app.ctx,
             &task_id,
             &card_id,
             &finish_chat_id,
@@ -925,7 +925,7 @@ impl Tool for ToolTaskAgentFinish {
         )
         .await?;
 
-        let board_pre = storage::load_board(gcx.clone(), &task_id).await?;
+        let board_pre = storage::load_board_for_ctx(&app.ctx, &task_id).await?;
         let card_pre = board_pre
             .get_card(&card_id)
             .ok_or(format!("Card {} not found", card_id))?;
@@ -1006,7 +1006,7 @@ impl Tool for ToolTaskAgentFinish {
         let finish_agent_id_for_update = finish_agent_id.clone();
         let ab_variant_key_for_update = ab_variant_key.clone();
         let (board, (card_title, all_finished, verifier_expected_state, finished_ab_variant, card_success)) =
-            storage::update_board_atomic(gcx.clone(), &task_id, move |board| {
+            storage::update_board_atomic_for_ctx(&app.ctx, &task_id, move |board| {
                 let next_board_rev = board.rev + 1;
                 let card = board
                     .get_card_mut(&card_id_owned)
@@ -1108,7 +1108,7 @@ impl Tool for ToolTaskAgentFinish {
             })
             .await?;
 
-        storage::update_task_stats(gcx.clone(), &task_id).await?;
+        storage::update_task_stats_for_ctx(&app.ctx, &task_id).await?;
 
         let result_message = if let Some(variant_key) = finished_ab_variant.as_deref() {
             let variant_label = variant_key.to_ascii_uppercase();
@@ -1169,7 +1169,7 @@ impl Tool for ToolTaskAgentFinish {
         );
 
         let notify_error = crate::chat::task_agent_monitor::notify_planner_agents_finished(
-            gcx.chat_ctx(gcx.clone()),
+            app.chat_ctx(),
             &task_id,
             &board,
             all_finished,
@@ -1188,7 +1188,7 @@ impl Tool for ToolTaskAgentFinish {
         if card_success {
             if let Some(verifier_expected_state) = verifier_expected_state {
                 schedule_card_verifier_after_finish(
-                    gcx.clone(),
+                    app.gcx.clone(),
                     task_id.clone(),
                     card_id.clone(),
                     verifier_expected_state,
@@ -1197,7 +1197,7 @@ impl Tool for ToolTaskAgentFinish {
             }
         } else if let Some(expected_state) = verifier_expected_state {
             let card_id_clear = card_id.clone();
-            let _ = storage::update_board_atomic(gcx.clone(), &task_id, move |board| {
+            let _ = storage::update_board_atomic_for_ctx(&app.ctx, &task_id, move |board| {
                 let board_rev = board.rev;
                 if let Some(c) = board.get_card_mut(&card_id_clear) {
                     clear_finished_agent_session_if_current(c, &expected_state, board_rev)?;
@@ -1464,7 +1464,7 @@ mod tests {
         write_task(temp.path(), gcx.clone(), card).await;
 
         let error = refresh_finish_heartbeat_if_current(
-            gcx.clone(),
+            &gcx.chat_ctx(gcx.clone()),
             "task-1",
             "T-1",
             "agent-chat-1",
@@ -1487,7 +1487,7 @@ mod tests {
         write_task(temp.path(), gcx.clone(), test_card(None)).await;
 
         refresh_finish_heartbeat_if_current(
-            gcx.clone(),
+            &gcx.chat_ctx(gcx.clone()),
             "task-1",
             "T-1",
             "agent-chat-1",

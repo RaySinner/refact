@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::chat::internal_roles::{event, EventSubkind};
+use crate::chat::ctx::ChatCtx;
 use crate::exec::{ExecAuditMeta, ExecEnvPolicy, ExecMode, ExecSpawnRequest};
 use crate::exec::types::{ExecSandboxMode, ExecSandboxSpec};
 use crate::global_context::{GlobalContext, TerminalSecurityMode};
@@ -126,6 +127,13 @@ pub async fn build_exec_request(
     gcx: Arc<GlobalContext>,
     input: CommandPolicyInput<'_>,
 ) -> Result<ExecRequestPolicy, ExecPolicyError> {
+    build_exec_request_for_ctx(&gcx.chat_ctx(gcx.clone()), input).await
+}
+
+pub async fn build_exec_request_for_ctx(
+    ctx: &ChatCtx,
+    input: CommandPolicyInput<'_>,
+) -> Result<ExecRequestPolicy, ExecPolicyError> {
     let command = match input.command {
         CommandKind::Shell(command) => {
             if command.trim().is_empty() {
@@ -144,12 +152,8 @@ pub async fn build_exec_request(
         requested_sandbox_mode(input.chat_mode.as_deref(), input.escalation.as_ref());
     let baseline_sandbox_mode = requested_sandbox_mode(input.chat_mode.as_deref(), None);
     let status = refact_sandbox::sandbox_status();
-    let roots = gcx
-        .documents_state
-        .workspace_folders
-        .lock()
-        .unwrap()
-        .clone();
+    let roots = ctx.workspace.workspace_folders.lock().unwrap().clone();
+    let terminal_security_config = ctx.exec_policy.terminal_security_config();
     let cwd = input.cwd.clone().unwrap_or_else(|| {
         roots
             .first()
@@ -161,7 +165,7 @@ pub async fn build_exec_request(
         warning,
         audit,
     } = resolve_sandbox_policy(
-        gcx.terminal_security_config.mode,
+        terminal_security_config.mode,
         sandbox_mode.clone(),
         status,
         &cwd,
@@ -180,7 +184,7 @@ pub async fn build_exec_request(
     let request = command
         .with_env_map(input.env)
         .with_env_policy(ExecEnvPolicy::Scrubbed {
-            passthrough: gcx.terminal_security_config.env_passthrough.clone(),
+            passthrough: terminal_security_config.env_passthrough.clone(),
         })
         .with_audit(ExecAuditMeta {
             source: input.source.audit_source().to_string(),

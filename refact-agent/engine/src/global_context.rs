@@ -17,10 +17,10 @@ use crate::agents::registry::BackgroundAgentRegistry;
 use crate::app_state::{
     AppActivitySink, AppBuddyEventSink, AppState, AppToolRegistry, BuddyServices, CapsState,
     ChatServices, EngineCapsProvider, EngineChatSessionFacade, EngineChatToolExecutor,
-    EngineFilesProvider, EngineHookRunner, EngineModeConfigProvider, EngineProjectTreeProvider,
-    EnginePromptAssembler, EngineSubchatLauncher, EngineTrajectoryStore, IntegrationServices,
-    ModelServices, PathServices, RuntimeServices, TokenizerState, ToolCatalogCache,
-    WorkspaceServices,
+    EngineExecPolicyProvider, EngineFilesProvider, EngineHookRunner, EngineModeConfigProvider,
+    EngineProjectTreeProvider, EnginePromptAssembler, EngineSubchatLauncher, EngineTrajectoryStore,
+    IntegrationServices, ModelServices, PathServices, RuntimeServices, TokenizerState,
+    ToolCatalogCache, WorkspaceServices,
 };
 use crate::caps::CodeAssistantCaps;
 use crate::chat::ctx::{ChatCtx, ChatIntegrationScope, ChatWorkspace};
@@ -520,6 +520,7 @@ impl GlobalContext {
             hooks: Arc::new(EngineHookRunner::new(gcx.clone())),
             mode_config: Arc::new(EngineModeConfigProvider::new(gcx.clone())),
             caps: Arc::new(EngineCapsProvider::new(gcx.clone())),
+            exec_policy: Arc::new(EngineExecPolicyProvider::new(gcx.clone())),
             trajectories: Arc::new(EngineTrajectoryStore::new(gcx.clone())),
             prompts: Arc::new(EnginePromptAssembler::new(gcx.clone())),
             tool_executor: Arc::new(EngineChatToolExecutor::new(gcx)),

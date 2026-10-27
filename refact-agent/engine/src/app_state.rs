@@ -22,8 +22,8 @@ use crate::buddy::actor::BuddyService;
 use crate::buddy::events::BuddyEvent;
 use crate::buddy::user_activity::UserActivityRing;
 use crate::chat::ctx::{
-    CapsProvider, ChatCtx, ChatToolExecutor, HookRunner, ModeConfigProvider, ProjectTreeProvider,
-    PromptAssembler, SubchatLauncher, TrajectoryStore,
+    CapsProvider, ChatCtx, ChatToolExecutor, ExecPolicyProvider, HookRunner, ModeConfigProvider,
+    ProjectTreeProvider, PromptAssembler, SubchatLauncher, TrajectoryStore,
 };
 use crate::chat::perf_diagnostics::{self, PerfComponent, PerfOutcome};
 use crate::chat::trajectory_index::TrajectoryIndexCoordinator;
@@ -36,6 +36,7 @@ use crate::files_blocklist::IndexingEverywhere;
 use crate::files_in_workspace::DocumentsState;
 pub use crate::global_context::{AtCommandsPreviewCache, CommandLine, ToolCatalogGenerations};
 use crate::global_context::SharedGlobalContext;
+use crate::global_context::TerminalSecurityConfig;
 use crate::subchat::{SubchatConfig, SubchatResult};
 use crate::http::routers::v1::sidebar::NotificationEvent;
 use crate::integrations::browser_runtime::BrowserRuntime;
@@ -487,6 +488,22 @@ impl CapsProvider for EngineCapsProvider {
             max_age_seconds,
         )
         .await
+    }
+}
+
+pub struct EngineExecPolicyProvider {
+    gcx: SharedGlobalContext,
+}
+
+impl EngineExecPolicyProvider {
+    pub fn new(gcx: SharedGlobalContext) -> Self {
+        Self { gcx }
+    }
+}
+
+impl ExecPolicyProvider for EngineExecPolicyProvider {
+    fn terminal_security_config(&self) -> TerminalSecurityConfig {
+        self.gcx.terminal_security_config.clone()
     }
 }
 

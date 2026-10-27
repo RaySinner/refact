@@ -354,7 +354,7 @@ pub async fn run_with_cmdline(cmdline: global_context::CommandLine) {
     }
 
     chat::close_all_chat_sessions(gcx.chat_ctx(gcx.clone())).await;
-    chat::verifier::shutdown_card_verifiers(gcx.clone()).await;
+    chat::verifier::shutdown_card_verifiers(&gcx.chat_ctx(gcx.clone())).await;
     if let Err(error) = gcx.trajectory_index_coordinator.flush_all().await {
         tracing::warn!("trajectory index coordinator shutdown flush failed: {error}");
     }

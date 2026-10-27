@@ -8,6 +8,7 @@ use chrono::Utc;
 use tokio::process::Command;
 
 use crate::chat::verify_cmd::{parse_verification_argv, verification_commands, VerifyCommandPolicy};
+use crate::chat::ctx::ChatCtx;
 use crate::chat::verifier::ExpectedCardState;
 use crate::global_context::GlobalContext;
 use crate::tasks::storage;
@@ -72,7 +73,7 @@ pub trait PostMergeCommandRunner: Send {
 }
 
 struct SystemPostMergeCommandRunner {
-    gcx: Arc<GlobalContext>,
+    ctx: ChatCtx,
 }
 
 #[async_trait]
@@ -95,7 +96,7 @@ impl PostMergeCommandRunner for SystemPostMergeCommandRunner {
                     };
                 }
                 let result = crate::chat::verifier::run_verification_argv_impl(
-                    self.gcx.clone(),
+                    &self.ctx,
                     workspace_root,
                     &label,
                     cwd,
@@ -195,12 +196,19 @@ pub async fn post_merge_check(
     gcx: Arc<GlobalContext>,
     request: PostMergeCheckRequest,
 ) -> Result<PostMergeCheckResult, String> {
-    let mut runner = SystemPostMergeCommandRunner { gcx: gcx.clone() };
-    post_merge_check_with_runner(gcx, request, &mut runner).await
+    post_merge_check_for_ctx(&gcx.chat_ctx(gcx.clone()), request).await
+}
+
+pub async fn post_merge_check_for_ctx(
+    ctx: &ChatCtx,
+    request: PostMergeCheckRequest,
+) -> Result<PostMergeCheckResult, String> {
+    let mut runner = SystemPostMergeCommandRunner { ctx: ctx.clone() };
+    post_merge_check_with_runner(ctx, request, &mut runner).await
 }
 
 pub async fn post_merge_check_with_runner<R: PostMergeCommandRunner>(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     request: PostMergeCheckRequest,
     runner: &mut R,
 ) -> Result<PostMergeCheckResult, String> {
@@ -208,7 +216,7 @@ pub async fn post_merge_check_with_runner<R: PostMergeCommandRunner>(
         return Ok(skipped_result("auto_revert disabled"));
     }
 
-    let board = storage::load_board(gcx.clone(), &request.task_id).await?;
+    let board = storage::load_board_for_ctx(ctx, &request.task_id).await?;
     let Some(card) = board.get_card(&request.card_id) else {
         if request.expected_card_state.is_some() {
             return Ok(skipped_result("stale card state"));
@@ -229,7 +237,7 @@ pub async fn post_merge_check_with_runner<R: PostMergeCommandRunner>(
             "no verification command found".to_string(),
         ));
     }
-    let command_policy = VerifyCommandPolicy::load(gcx.clone()).await;
+    let command_policy = VerifyCommandPolicy::load_for_ctx(ctx).await;
     let mut parsed = Vec::new();
     for command in commands {
         match parse_verification_argv(&command) {
@@ -321,7 +329,7 @@ pub async fn post_merge_check_with_runner<R: PostMergeCommandRunner>(
         let reason = "unable to verify HEAD before revert";
         let diagnostic = format!("Expected merge commit: {}", expected_merge_commit);
         let fix_card_id = store_regression_result(
-            gcx,
+            ctx,
             &request.task_id,
             &request.card_id,
             request.expected_card_state.as_ref(),
@@ -355,7 +363,7 @@ pub async fn post_merge_check_with_runner<R: PostMergeCommandRunner>(
             expected_merge_commit, current_head
         );
         let fix_card_id = store_regression_result(
-            gcx,
+            ctx,
             &request.task_id,
             &request.card_id,
             request.expected_card_state.as_ref(),
@@ -403,7 +411,7 @@ pub async fn post_merge_check_with_runner<R: PostMergeCommandRunner>(
             status_output.output.trim()
         );
         let fix_card_id = store_regression_result(
-            gcx,
+            ctx,
             &request.task_id,
             &request.card_id,
             request.expected_card_state.as_ref(),
@@ -480,7 +488,7 @@ pub async fn post_merge_check_with_runner<R: PostMergeCommandRunner>(
             revert_output.output.trim()
         );
         store_regression_result(
-            gcx,
+            ctx,
             &request.task_id,
             &request.card_id,
             request.expected_card_state.as_ref(),
@@ -510,7 +518,7 @@ pub async fn post_merge_check_with_runner<R: PostMergeCommandRunner>(
     let merge_commit = Some(expected_merge_commit);
     let first_error = first_error_line(&output_tail);
     let fix_card_id = store_regression_result(
-        gcx,
+        ctx,
         &request.task_id,
         &request.card_id,
         request.expected_card_state.as_ref(),
@@ -584,7 +592,7 @@ fn git_text(output: PostMergeCommandOutput) -> Option<String> {
 }
 
 async fn store_regression_result(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     task_id: &str,
     card_id: &str,
     expected_card_state: Option<&ExpectedCardState>,
@@ -606,7 +614,7 @@ async fn store_regression_result(
     let first_error_owned = first_error.to_string();
     let revert_skipped_reason_owned = revert_skipped_reason.map(str::to_string);
     let diagnostic_owned = diagnostic.map(str::to_string);
-    let result = storage::update_board_atomic(gcx.clone(), task_id, move |board| {
+    let result = storage::update_board_atomic_for_ctx(ctx, task_id, move |board| {
         let Some(source_card_ref) = board.get_card(&card_id_owned) else {
             if expected_card_state.is_some() {
                 return Err(format!(
@@ -661,7 +669,7 @@ async fn store_regression_result(
         }
         Err(error) => return Err(error),
     };
-    let _ = storage::update_task_stats(gcx, task_id).await;
+    let _ = storage::update_task_stats_for_ctx(ctx, task_id).await;
     Ok(Some(fix_card_id))
 }
 
@@ -1008,9 +1016,13 @@ mod tests {
         write_task(gcx.clone(), temp.path(), card("No verify command")).await;
         let mut runner = MockRunner::default();
 
-        let result = post_merge_check_with_runner(gcx.clone(), request(temp.path()), &mut runner)
-            .await
-            .unwrap();
+        let result = post_merge_check_with_runner(
+            &gcx.chat_ctx(gcx.clone()),
+            request(temp.path()),
+            &mut runner,
+        )
+        .await
+        .unwrap();
 
         assert!(result.checked);
         assert!(!result.auto_reverted);
@@ -1039,9 +1051,13 @@ mod tests {
             calls: Vec::new(),
         };
 
-        let result = post_merge_check_with_runner(gcx.clone(), request(temp.path()), &mut runner)
-            .await
-            .unwrap();
+        let result = post_merge_check_with_runner(
+            &gcx.chat_ctx(gcx.clone()),
+            request(temp.path()),
+            &mut runner,
+        )
+        .await
+        .unwrap();
 
         assert!(result.checked);
         assert!(!result.auto_reverted);
@@ -1073,9 +1089,13 @@ mod tests {
             calls: Vec::new(),
         };
 
-        let result = post_merge_check_with_runner(gcx, request(temp.path()), &mut runner)
-            .await
-            .unwrap();
+        let result = post_merge_check_with_runner(
+            &gcx.chat_ctx(gcx.clone()),
+            request(temp.path()),
+            &mut runner,
+        )
+        .await
+        .unwrap();
 
         assert!(result.checked);
         assert_eq!(
@@ -1103,9 +1123,13 @@ mod tests {
             calls: Vec::new(),
         };
 
-        let result = post_merge_check_with_runner(gcx, request(temp.path()), &mut runner)
-            .await
-            .unwrap();
+        let result = post_merge_check_with_runner(
+            &gcx.chat_ctx(gcx.clone()),
+            request(temp.path()),
+            &mut runner,
+        )
+        .await
+        .unwrap();
 
         assert!(result.checked);
         assert_eq!(
@@ -1130,9 +1154,13 @@ mod tests {
         .await;
         let mut runner = MockRunner::default();
 
-        let result = post_merge_check_with_runner(gcx, request(temp.path()), &mut runner)
-            .await
-            .unwrap();
+        let result = post_merge_check_with_runner(
+            &gcx.chat_ctx(gcx.clone()),
+            request(temp.path()),
+            &mut runner,
+        )
+        .await
+        .unwrap();
 
         assert!(result.checked);
         assert!(!result.auto_reverted);
@@ -1157,9 +1185,13 @@ mod tests {
         .await;
         let mut runner = MockRunner::default();
 
-        let result = post_merge_check_with_runner(gcx, request(temp.path()), &mut runner)
-            .await
-            .unwrap();
+        let result = post_merge_check_with_runner(
+            &gcx.chat_ctx(gcx.clone()),
+            request(temp.path()),
+            &mut runner,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(result.outcome, VerificationOutcome::Rejected);
         assert!(
@@ -1188,9 +1220,13 @@ mod tests {
             calls: Vec::new(),
         };
 
-        let result = post_merge_check_with_runner(gcx.clone(), request(temp.path()), &mut runner)
-            .await
-            .unwrap();
+        let result = post_merge_check_with_runner(
+            &gcx.chat_ctx(gcx.clone()),
+            request(temp.path()),
+            &mut runner,
+        )
+        .await
+        .unwrap();
 
         assert!(result.checked);
         assert!(!result.auto_reverted);
@@ -1234,9 +1270,13 @@ mod tests {
             calls: Vec::new(),
         };
 
-        let result = post_merge_check_with_runner(gcx.clone(), request(temp.path()), &mut runner)
-            .await
-            .unwrap();
+        let result = post_merge_check_with_runner(
+            &gcx.chat_ctx(gcx.clone()),
+            request(temp.path()),
+            &mut runner,
+        )
+        .await
+        .unwrap();
 
         assert!(result.checked);
         assert!(!result.auto_reverted);
@@ -1284,9 +1324,13 @@ mod tests {
             calls: Vec::new(),
         };
 
-        let result = post_merge_check_with_runner(gcx.clone(), request(temp.path()), &mut runner)
-            .await
-            .unwrap();
+        let result = post_merge_check_with_runner(
+            &gcx.chat_ctx(gcx.clone()),
+            request(temp.path()),
+            &mut runner,
+        )
+        .await
+        .unwrap();
 
         assert!(result.auto_reverted);
         assert_eq!(result.merge_commit.as_deref(), Some("mergehash"));
@@ -1329,9 +1373,13 @@ mod tests {
             calls: Vec::new(),
         };
 
-        let result = post_merge_check_with_runner(gcx, request(temp.path()), &mut runner)
-            .await
-            .unwrap();
+        let result = post_merge_check_with_runner(
+            &gcx.chat_ctx(gcx.clone()),
+            request(temp.path()),
+            &mut runner,
+        )
+        .await
+        .unwrap();
 
         assert!(result.auto_reverted);
         assert!(runner.calls.contains(&PostMergeCommand::Git(vec![
@@ -1367,7 +1415,7 @@ mod tests {
         req.expected_card_state = Some(expected_card_state);
         let mut runner = MockRunner::default();
 
-        let result = post_merge_check_with_runner(gcx.clone(), req, &mut runner)
+        let result = post_merge_check_with_runner(&gcx.chat_ctx(gcx.clone()), req, &mut runner)
             .await
             .unwrap();
 
@@ -1405,7 +1453,7 @@ mod tests {
             mutated: false,
         };
 
-        let result = post_merge_check_with_runner(gcx.clone(), req, &mut runner)
+        let result = post_merge_check_with_runner(&gcx.chat_ctx(gcx.clone()), req, &mut runner)
             .await
             .unwrap();
 
@@ -1443,9 +1491,13 @@ mod tests {
             calls: Vec::new(),
         };
 
-        let error = post_merge_check_with_runner(gcx.clone(), request(temp.path()), &mut runner)
-            .await
-            .unwrap_err();
+        let error = post_merge_check_with_runner(
+            &gcx.chat_ctx(gcx.clone()),
+            request(temp.path()),
+            &mut runner,
+        )
+        .await
+        .unwrap_err();
 
         assert!(
             error.contains("post-merge verification failed, and git revert failed"),
@@ -1495,7 +1547,7 @@ mod tests {
             calls: Vec::new(),
         };
 
-        post_merge_check_with_runner(gcx.clone(), req, &mut runner)
+        post_merge_check_with_runner(&gcx.chat_ctx(gcx.clone()), req, &mut runner)
             .await
             .unwrap();
 

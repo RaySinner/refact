@@ -9,11 +9,14 @@ use chrono::Utc;
 use serde_json::{json, Value};
 
 use crate::chat::internal_roles::{event, EventSubkind};
+use crate::chat::ctx::ChatCtx;
 use crate::chat::verifier_diff::{git_changed_files_summary, resolve_verifier_diff_base};
 use crate::chat::verify_cmd::{parse_verification_argv, verification_commands, VerifyCommandPolicy};
-use crate::exec::command_policy::{build_exec_request, CommandKind, CommandPolicyInput, ExecSource};
+use crate::exec::command_policy::{
+    build_exec_request_for_ctx, CommandKind, CommandPolicyInput, ExecSource,
+};
 use crate::exec::{ExecOutputStream, ExecStatus};
-use crate::global_context::{try_load_caps_quickly_if_not_present, GlobalContext};
+use crate::global_context::GlobalContext;
 use crate::worktrees::service::WorktreeService;
 use crate::tasks::storage;
 use crate::tasks::types::{
@@ -57,7 +60,15 @@ pub async fn load_expected_card_state(
     task_id: &str,
     card_id: &str,
 ) -> Result<ExpectedCardState, String> {
-    let board = storage::load_board(gcx, task_id).await?;
+    load_expected_card_state_for_ctx(&gcx.chat_ctx(gcx.clone()), task_id, card_id).await
+}
+
+pub async fn load_expected_card_state_for_ctx(
+    ctx: &ChatCtx,
+    task_id: &str,
+    card_id: &str,
+) -> Result<ExpectedCardState, String> {
+    let board = storage::load_board_for_ctx(ctx, task_id).await?;
     let card = board
         .get_card(card_id)
         .ok_or_else(|| format!("Card {} not found", card_id))?;
@@ -124,7 +135,7 @@ trait VerificationCommandRunner: Send {
 }
 
 struct SystemVerificationCommandRunner {
-    gcx: Arc<GlobalContext>,
+    ctx: ChatCtx,
 }
 
 #[async_trait]
@@ -137,7 +148,7 @@ impl VerificationCommandRunner for SystemVerificationCommandRunner {
         env: Vec<(String, String)>,
         argv: Vec<String>,
     ) -> VerificationResult {
-        run_verification_argv(self.gcx.clone(), worktree, command, cwd, env, argv).await
+        run_verification_argv(&self.ctx, worktree, command, cwd, env, argv).await
     }
 }
 
@@ -174,7 +185,7 @@ fn append_verifier_status(card: &mut BoardCard, report: &VerifierReport) {
 }
 
 pub async fn store_verifier_report(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     task_id: &str,
     card_id: &str,
     expected_state: Option<&ExpectedCardState>,
@@ -183,7 +194,7 @@ pub async fn store_verifier_report(
     let card_id = card_id.to_string();
     let task_id_owned = task_id.to_string();
     let expected_state = expected_state.cloned();
-    match storage::update_board_atomic(gcx, task_id, move |board| {
+    match storage::update_board_atomic_for_ctx(ctx, task_id, move |board| {
         let board_rev = board.rev;
         let Some(card) = board.get_card_mut(&card_id) else {
             if expected_state.is_some() {
@@ -211,29 +222,29 @@ pub async fn store_verifier_report(
     }
 }
 
-pub async fn schedule_card_verifier(gcx: Arc<GlobalContext>, request: VerifyCardRequest) {
-    if gcx.shutdown_flag.load(Ordering::SeqCst) {
+pub async fn schedule_card_verifier(ctx: &ChatCtx, request: VerifyCardRequest) {
+    if ctx.runtime.shutdown_flag.load(Ordering::SeqCst) {
         return;
     }
-    let task_gcx = gcx.clone();
-    let mut tasks = gcx.card_verifier_tasks.lock().await;
+    let task_ctx = ctx.clone();
+    let mut tasks = ctx.card_verifier_tasks.lock().await;
     while let Some(result) = tasks.try_join_next() {
         if let Err(error) = result {
             tracing::warn!("card verifier task failed: {error}");
         }
     }
-    if gcx.shutdown_flag.load(Ordering::SeqCst) {
+    if ctx.runtime.shutdown_flag.load(Ordering::SeqCst) {
         return;
     }
     tasks.spawn(async move {
-        if let Err(error) = verify_card(task_gcx.clone(), request.clone()).await {
+        if let Err(error) = verify_card_for_ctx(&task_ctx, request.clone()).await {
             if is_stale_verifier_error(&error) {
                 tracing::info!("{}", error);
                 return;
             }
             let report = launch_failure_report(error);
             if let Err(store_error) = store_verifier_report(
-                task_gcx,
+                &task_ctx,
                 &request.task_id,
                 &request.card_id,
                 request.expected_state.as_ref(),
@@ -251,8 +262,8 @@ pub async fn schedule_card_verifier(gcx: Arc<GlobalContext>, request: VerifyCard
     });
 }
 
-pub async fn shutdown_card_verifiers(gcx: Arc<GlobalContext>) {
-    let mut tasks = gcx.card_verifier_tasks.lock().await;
+pub async fn shutdown_card_verifiers(ctx: &ChatCtx) {
+    let mut tasks = ctx.card_verifier_tasks.lock().await;
     tasks.abort_all();
     while let Some(result) = tasks.join_next().await {
         if let Err(error) = result {
@@ -269,8 +280,23 @@ pub async fn schedule_card_verifier_after_finish(
     card_id: String,
     expected_state: ExpectedCardState,
 ) {
+    schedule_card_verifier_after_finish_for_ctx(
+        &gcx.chat_ctx(gcx.clone()),
+        task_id,
+        card_id,
+        expected_state,
+    )
+    .await;
+}
+
+pub async fn schedule_card_verifier_after_finish_for_ctx(
+    ctx: &ChatCtx,
+    task_id: String,
+    card_id: String,
+    expected_state: ExpectedCardState,
+) {
     schedule_card_verifier(
-        gcx,
+        ctx,
         VerifyCardRequest {
             task_id,
             card_id,
@@ -285,8 +311,15 @@ pub async fn verify_card(
     gcx: Arc<GlobalContext>,
     request: VerifyCardRequest,
 ) -> Result<VerifierReport, String> {
-    let task_meta = storage::load_task_meta(gcx.clone(), &request.task_id).await?;
-    let board = storage::load_board(gcx.clone(), &request.task_id).await?;
+    verify_card_for_ctx(&gcx.chat_ctx(gcx.clone()), request).await
+}
+
+pub async fn verify_card_for_ctx(
+    ctx: &ChatCtx,
+    request: VerifyCardRequest,
+) -> Result<VerifierReport, String> {
+    let task_meta = storage::load_task_meta_for_ctx(ctx, &request.task_id).await?;
+    let board = storage::load_board_for_ctx(ctx, &request.task_id).await?;
     let card = board
         .get_card(&request.card_id)
         .ok_or_else(|| format!("Card {} not found", request.card_id))?
@@ -326,11 +359,10 @@ pub async fn verify_card(
         );
     }
 
-    let command_policy = VerifyCommandPolicy::load(gcx.clone()).await;
+    let command_policy = VerifyCommandPolicy::load_for_ctx(ctx).await;
     for command in commands {
         let result =
-            run_verification_command_with_policy(gcx.clone(), &worktree, &command, &command_policy)
-                .await;
+            run_verification_command_with_policy(ctx, &worktree, &command, &command_policy).await;
         if !result.passed {
             concerns.push(format!("Verification command failed: {}", result.command));
         }
@@ -338,12 +370,12 @@ pub async fn verify_card(
     }
 
     let worktree_base = if let Some(worktree_id) = card.agent_worktree_name.as_deref() {
-        let project_root = crate::files_correction::get_project_dirs(gcx.clone())
+        let project_root = crate::files_correction::get_unscoped_project_dirs_for_ctx(ctx)
             .await
             .into_iter()
             .next();
         if let Some(project_root) = project_root {
-            match WorktreeService::new_async(gcx.cache_dir.clone(), project_root).await {
+            match WorktreeService::new_async(ctx.paths.cache_dir.clone(), project_root).await {
                 Ok(service) => service
                     .get_worktree(worktree_id)
                     .await
@@ -374,7 +406,7 @@ pub async fn verify_card(
         .await
         .unwrap_or_else(|error| format!("diff unavailable: {}", error));
     let prompt = verifier_prompt(&card, &command_results, &diff);
-    let review = run_verifier_review(gcx.clone(), prompt, card.agent_chat_id.as_deref()).await;
+    let review = run_verifier_review(ctx, prompt, card.agent_chat_id.as_deref()).await;
     let review_unavailable = review.is_err();
     let model_concerns = review.unwrap_or_else(|error| {
         vec![format!(
@@ -408,7 +440,7 @@ pub async fn verify_card(
         classification,
     };
     let stored = store_verifier_report(
-        gcx,
+        ctx,
         &request.task_id,
         &request.card_id,
         request.expected_state.as_ref(),
@@ -484,21 +516,21 @@ fn launch_failure_report(error: String) -> VerifierReport {
 
 #[cfg(test)]
 async fn run_verification_command(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     worktree: &Path,
     command: &str,
 ) -> VerificationResult {
-    let policy = VerifyCommandPolicy::load(gcx.clone()).await;
-    run_verification_command_with_policy(gcx, worktree, command, &policy).await
+    let policy = VerifyCommandPolicy::load_for_ctx(ctx).await;
+    run_verification_command_with_policy(ctx, worktree, command, &policy).await
 }
 
 async fn run_verification_command_with_policy(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     worktree: &Path,
     command: &str,
     policy: &VerifyCommandPolicy,
 ) -> VerificationResult {
-    let mut runner = SystemVerificationCommandRunner { gcx };
+    let mut runner = SystemVerificationCommandRunner { ctx: ctx.clone() };
     run_verification_command_with_runner(worktree, command, policy, &mut runner).await
 }
 
@@ -535,7 +567,7 @@ async fn run_verification_command_with_runner<R: VerificationCommandRunner>(
 }
 
 async fn run_verification_argv(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     worktree: &Path,
     command: &str,
     cwd: Option<PathBuf>,
@@ -543,7 +575,7 @@ async fn run_verification_argv(
     argv: Vec<String>,
 ) -> VerificationResult {
     run_verification_argv_impl(
-        gcx,
+        ctx,
         worktree,
         command,
         cwd,
@@ -556,7 +588,7 @@ async fn run_verification_argv(
 }
 
 pub(crate) async fn run_verification_argv_impl(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     worktree: &Path,
     command: &str,
     cwd: Option<PathBuf>,
@@ -584,8 +616,8 @@ pub(crate) async fn run_verification_argv_impl(
             outcome: VerificationOutcome::InfrastructureFailed,
         };
     }
-    let request = match build_exec_request(
-        gcx.clone(),
+    let request = match build_exec_request_for_ctx(
+        ctx,
         CommandPolicyInput {
             source: ExecSource::Verifier,
             command: CommandKind::Argv(&argv),
@@ -612,7 +644,7 @@ pub(crate) async fn run_verification_argv_impl(
             };
         }
     };
-    let result = match gcx.exec_registry.spawn(request).await {
+    let result = match ctx.runtime.exec_registry.spawn(request).await {
         Ok(result) => result,
         Err(error) => {
             return VerificationResult {
@@ -624,7 +656,8 @@ pub(crate) async fn run_verification_argv_impl(
             };
         }
     };
-    let read = gcx
+    let read = ctx
+        .runtime
         .exec_registry
         .read(&result.snapshot.meta.process_id, 0, None)
         .await;
@@ -697,11 +730,11 @@ fn verifier_prompt(card: &BoardCard, commands: &[VerificationResult], diff: &str
 }
 
 async fn run_verifier_review(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     prompt: String,
     parent_chat_id: Option<&str>,
 ) -> Result<Vec<String>, String> {
-    let model = resolve_verifier_model(gcx.clone()).await?;
+    let model = resolve_verifier_model(ctx).await?;
     let config = crate::subchat::SubchatConfig {
         tool_name: "verifier".to_string(),
         stateful: false,
@@ -744,7 +777,7 @@ async fn run_verifier_review(
         json!({ "kind": "verifier_review_prompt" }),
         prompt,
     )];
-    let result = crate::subchat::run_subchat(gcx, messages, config).await?;
+    let result = ctx.subchat.run_subchat(messages, config).await?;
     let answer = result
         .messages
         .iter()
@@ -755,8 +788,10 @@ async fn run_verifier_review(
     Ok(parse_review_concerns(&answer))
 }
 
-async fn resolve_verifier_model(gcx: Arc<GlobalContext>) -> Result<String, String> {
-    let caps = try_load_caps_quickly_if_not_present(gcx, 0)
+async fn resolve_verifier_model(ctx: &ChatCtx) -> Result<String, String> {
+    let caps = ctx
+        .caps
+        .try_load_caps_quickly(0)
         .await
         .map_err(|e| e.message.clone())?;
     if !caps.defaults.chat_light_model.is_empty() {
@@ -1107,7 +1142,7 @@ mod tests {
             .unwrap();
 
         let stored = store_verifier_report(
-            gcx.clone(),
+            &gcx.chat_ctx(gcx.clone()),
             "task-1",
             "T-1",
             Some(&expected),
@@ -1151,7 +1186,7 @@ mod tests {
         .unwrap();
 
         let stored = store_verifier_report(
-            gcx.clone(),
+            &gcx.chat_ctx(gcx.clone()),
             "task-1",
             "T-1",
             Some(&expected),
@@ -1193,7 +1228,7 @@ mod tests {
         .unwrap();
 
         let stored = store_verifier_report(
-            gcx.clone(),
+            &gcx.chat_ctx(gcx.clone()),
             "task-1",
             "T-1",
             Some(&expected),
@@ -1221,12 +1256,18 @@ mod tests {
             .await
             .unwrap();
 
-        store_verifier_report(gcx.clone(), "task-1", "T-1", None, verifier_report(true))
-            .await
-            .unwrap();
+        store_verifier_report(
+            &gcx.chat_ctx(gcx.clone()),
+            "task-1",
+            "T-1",
+            None,
+            verifier_report(true),
+        )
+        .await
+        .unwrap();
 
         let stored = store_verifier_report(
-            gcx.clone(),
+            &gcx.chat_ctx(gcx.clone()),
             "task-1",
             "T-1",
             Some(&expected),
@@ -1428,7 +1469,12 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let gcx = crate::global_context::tests::make_test_gcx().await;
 
-        let result = run_verification_command(gcx, temp.path(), "cargo test | tee f").await;
+        let result = run_verification_command(
+            &gcx.chat_ctx(gcx.clone()),
+            temp.path(),
+            "cargo test | tee f",
+        )
+        .await;
 
         assert!(!result.passed);
         assert_eq!(result.outcome, VerificationOutcome::Rejected);
@@ -1451,7 +1497,7 @@ mod tests {
         .await;
 
         assert_eq!(gcx.card_verifier_tasks.lock().await.len(), 1);
-        shutdown_card_verifiers(gcx.clone()).await;
+        shutdown_card_verifiers(&gcx.chat_ctx(gcx.clone())).await;
         assert!(gcx.card_verifier_tasks.lock().await.is_empty());
     }
 
@@ -1481,7 +1527,7 @@ mod tests {
         let gcx = crate::global_context::tests::make_test_gcx().await;
 
         let result = run_verification_argv_impl(
-            gcx,
+            &gcx.chat_ctx(gcx.clone()),
             worktree.path(),
             "cargo check",
             Some(outside.path().to_path_buf()),
@@ -1505,7 +1551,7 @@ mod tests {
         let result = tokio::time::timeout(
             Duration::from_secs(5),
             run_verification_argv_impl(
-                gcx,
+                &gcx.chat_ctx(gcx.clone()),
                 temp.path(),
                 "cat",
                 None,
@@ -1528,7 +1574,7 @@ mod tests {
         let gcx = crate::global_context::tests::make_test_gcx().await;
 
         let result = run_verification_argv_impl(
-            gcx,
+            &gcx.chat_ctx(gcx.clone()),
             temp.path(),
             "sleep 30",
             None,
@@ -1555,7 +1601,7 @@ mod tests {
         let result = tokio::time::timeout(
             Duration::from_secs(5),
             run_verification_argv_impl(
-                gcx,
+                &gcx.chat_ctx(gcx.clone()),
                 temp.path(),
                 "bash -c 'sleep 60 &'",
                 None,

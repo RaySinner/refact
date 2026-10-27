@@ -24,6 +24,7 @@ use crate::custom_error::ScratchError;
 use crate::ext::hooks::HookEvent;
 use crate::ext::hooks_runner::{HookPayload, HookResult};
 use crate::ext::skills_context::SkillsTrackingInfo;
+use crate::global_context::TerminalSecurityConfig;
 use crate::integrations::browser_runtime::BrowserRuntime;
 use crate::knowledge_index::KnowledgeIndex;
 use crate::privacy::PrivacySettings;
@@ -91,6 +92,10 @@ pub trait CapsProvider: Send + Sync {
         &self,
         max_age_seconds: u64,
     ) -> Result<Arc<CodeAssistantCaps>, ScratchError>;
+}
+
+pub trait ExecPolicyProvider: Send + Sync {
+    fn terminal_security_config(&self) -> TerminalSecurityConfig;
 }
 
 #[async_trait]
@@ -239,6 +244,7 @@ pub struct ChatCtx {
     pub hooks: Arc<dyn HookRunner>,
     pub mode_config: Arc<dyn ModeConfigProvider>,
     pub caps: Arc<dyn CapsProvider>,
+    pub exec_policy: Arc<dyn ExecPolicyProvider>,
     pub trajectories: Arc<dyn TrajectoryStore>,
     pub prompts: Arc<dyn PromptAssembler>,
     pub tool_executor: Arc<dyn ChatToolExecutor>,

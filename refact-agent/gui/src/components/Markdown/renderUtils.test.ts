@@ -123,6 +123,22 @@ describe("makeCrispSvg", () => {
     const input = "<div>not an svg</div>";
     expect(makeCrispSvg(input, "0 0 1 1")).toBe(input);
   });
+
+  test("keeps HTML labels inside foreignObject", () => {
+    const input =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="60" viewBox="0 0 200 60">' +
+      '<foreignObject width="160" height="46">' +
+      '<div xmlns="http://www.w3.org/1999/xhtml">' +
+      '<span class="nodeLabel">Агент закончил ход<br>0 tool calls</span>' +
+      "</div></foreignObject></svg>";
+    const out = makeCrispSvg(input, "0 0 200 60");
+
+    expect(out).toContain("foreignObject");
+    expect(out).toContain("nodeLabel");
+    expect(out).toContain("Агент закончил ход");
+    expect(out).toContain("<br");
+    expect(out).toContain("0 tool calls");
+  });
 });
 
 describe("parseSvgMeta", () => {

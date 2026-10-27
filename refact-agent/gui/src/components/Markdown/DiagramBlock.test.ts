@@ -58,3 +58,31 @@ describe("DiagramBlock sizing", () => {
     expect(foreignObject).toContain("overflow: visible");
   });
 });
+
+const FOREIGN_OBJECT_LABEL_SELECTORS = [
+  ".diagram_render :global(foreignObject div)",
+  ".diagram_render :global(foreignObject span)",
+  ".diagram_render :global(foreignObject p)",
+  ".diagram_fallback :global(foreignObject div)",
+  ".diagram_fallback :global(foreignObject span)",
+  ".diagram_fallback :global(foreignObject p)",
+].join(", ");
+
+describe("DiagramBlock label typography", () => {
+  test("never collapses label line boxes in the diagram container", () => {
+    expect(stylesheet).not.toMatch(/line-height:\s*0\s*;/u);
+    expect(readCssRule(stylesheet, ".diagram_render svg")).toContain(
+      "display: block",
+    );
+  });
+
+  test("declares typography for HTML labels inside foreignObject", () => {
+    const labels = readCssRule(stylesheet, FOREIGN_OBJECT_LABEL_SELECTORS);
+    const lineHeight = Number(/line-height:\s*([\d.]+)/u.exec(labels)?.[1]);
+
+    expect(lineHeight).toBeGreaterThanOrEqual(1.2);
+    expect(lineHeight).toBeLessThanOrEqual(1.4);
+    expect(labels).toContain("white-space: normal");
+    expect(labels).toContain("overflow-wrap: anywhere");
+  });
+});

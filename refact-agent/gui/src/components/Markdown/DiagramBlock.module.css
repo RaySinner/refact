@@ -79,10 +79,6 @@
   outline-offset: calc(-1 * var(--rf-focus-ring-w));
 }
 
-.diagram_render {
-  line-height: 0;
-}
-
 .diagram_render svg {
   display: block;
   width: 100%;
@@ -91,6 +87,22 @@
 
 .diagram_render :global(foreignObject) {
   overflow: visible;
+}
+
+/* Mermaid renders node labels as HTML inside <foreignObject> when htmlLabels
+   is on, so those line boxes inherit typography from the diagram container.
+   Declare it here instead: an inherited line-height of 0 collapses every line
+   of a multi-line label onto the same spot. */
+.diagram_render :global(foreignObject div),
+.diagram_render :global(foreignObject span),
+.diagram_render :global(foreignObject p),
+.diagram_fallback :global(foreignObject div),
+.diagram_fallback :global(foreignObject span),
+.diagram_fallback :global(foreignObject p) {
+  line-height: 1.35;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 /* Non-interactive fallback when SVG metadata cannot be derived. */

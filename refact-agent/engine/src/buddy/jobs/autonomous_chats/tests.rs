@@ -131,6 +131,7 @@ fn test_fact_source(kind: BuddyFactKind) -> &'static str {
         }
         BuddyFactKind::GitDiffWidening | BuddyFactKind::UncommittedPressure => "git_pressure",
         BuddyFactKind::WorktreeHygiene => "worktree_hygiene",
+        BuddyFactKind::AgentTurnStalled => "stalled_turn",
     }
 }
 

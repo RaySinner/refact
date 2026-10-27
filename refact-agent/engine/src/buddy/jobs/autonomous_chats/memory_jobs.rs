@@ -34,6 +34,7 @@ pub(super) fn fact_kind_name(kind: BuddyFactKind) -> &'static str {
         BuddyFactKind::GitDiffWidening => "git_diff_widening",
         BuddyFactKind::UncommittedPressure => "uncommitted_pressure",
         BuddyFactKind::WorktreeHygiene => "worktree_hygiene",
+        BuddyFactKind::AgentTurnStalled => "agent_turn_stalled",
     }
 }
 

@@ -129,6 +129,10 @@ pub struct BuddySettings {
     /// Seconds a question must go unanswered before the backstop may act.
     #[serde(default = "default_planner_backstop_after_secs")]
     pub planner_backstop_after_secs: u64,
+    /// Whether Buddy may step in when an agent's turn ends without a tool call
+    /// while the task is still unfinished.
+    #[serde(default = "default_true")]
+    pub stalled_turn_intervention: bool,
     #[serde(default)]
     pub observers: ObserverToggles,
 }
@@ -178,6 +182,7 @@ impl Default for BuddySettings {
             daily_llm_token_budget: None,
             planner_backstop_enabled: false,
             planner_backstop_after_secs: default_planner_backstop_after_secs(),
+            stalled_turn_intervention: true,
             observers: ObserverToggles::default(),
         }
     }
@@ -207,6 +212,7 @@ mod tests {
             settings.planner_backstop_after_secs,
             crate::planner_backstop::DEFAULT_PLANNER_BACKSTOP_AFTER_SECS
         );
+        assert!(settings.stalled_turn_intervention);
     }
 
     #[test]

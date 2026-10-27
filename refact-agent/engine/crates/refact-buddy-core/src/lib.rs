@@ -20,6 +20,7 @@ pub mod runtime_writer;
 pub mod settings;
 pub mod snapshot;
 pub mod speech_policy;
+pub mod stalled_turn;
 pub mod state;
 pub mod storage;
 pub mod types;
@@ -30,3 +31,4 @@ pub mod voice_service;
 pub mod workflows;
 
 pub use queue::*;
+pub use stalled_turn::*;

@@ -2879,14 +2879,6 @@ mod tests {
         );
     }
 
-    fn cross_process_ready_marker(root: &Path) -> PathBuf {
-        root.join("cross-process-parent-ready")
-    }
-
-    fn cross_process_done_marker(root: &Path) -> PathBuf {
-        root.join("cross-process-parent-done")
-    }
-
     #[tokio::test]
     async fn memory_ops_cross_process_appender_child() {
         let Ok(root) = std::env::var(CROSS_PROCESS_ROOT_ENV) else {

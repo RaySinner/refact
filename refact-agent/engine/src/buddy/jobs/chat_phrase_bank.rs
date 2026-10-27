@@ -65,6 +65,7 @@ fn kind_token(kind: BuddyFactKind) -> &'static str {
         BuddyFactKind::GitDiffWidening => "git-diff-widening",
         BuddyFactKind::UncommittedPressure => "uncommitted-pressure",
         BuddyFactKind::WorktreeHygiene => "worktree-hygiene",
+        BuddyFactKind::AgentTurnStalled => "agent-turn-stalled",
     }
 }
 

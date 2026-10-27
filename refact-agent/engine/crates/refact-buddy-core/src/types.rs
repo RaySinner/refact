@@ -506,6 +506,7 @@ pub enum BuddyFactKind {
     GitDiffWidening,
     UncommittedPressure,
     WorktreeHygiene,
+    AgentTurnStalled,
 }
 
 fn default_cooldown_secs() -> u64 {

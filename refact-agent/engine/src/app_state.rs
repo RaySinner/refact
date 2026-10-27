@@ -45,6 +45,7 @@ use crate::privacy::PrivacySettings;
 use crate::providers::ProviderRegistry;
 use crate::stats::event::LlmCallEvent;
 use crate::tasks::events::TaskEventEnvelope;
+use crate::tools::ctx::{FilesProvider, ToolCtx};
 use crate::yaml_configs::customization_registry::RegistryCacheManager;
 pub use refact_caps_core::caps_state::CapsState;
 pub use refact_core::tokenizer_state::TokenizerState;
@@ -331,6 +332,7 @@ impl ChatSessionFacade for EngineChatSessionFacade {
 pub struct AppState {
     pub gcx: SharedGlobalContext,
     pub ctx: ChatCtx,
+    pub tool: ToolCtx,
     pub runtime: RuntimeServices,
     pub paths: PathServices,
     pub model: ModelServices,
@@ -461,6 +463,41 @@ impl CapsProvider for EngineCapsProvider {
         crate::global_context::try_load_caps_quickly_if_not_present(
             self.gcx.clone(),
             max_age_seconds,
+        )
+        .await
+    }
+}
+
+pub struct EngineFilesProvider {
+    gcx: SharedGlobalContext,
+}
+
+impl EngineFilesProvider {
+    pub fn new(gcx: SharedGlobalContext) -> Self {
+        Self { gcx }
+    }
+}
+
+#[async_trait]
+impl FilesProvider for EngineFilesProvider {
+    async fn get_file_text_from_memory_or_disk(&self, path: &PathBuf) -> Result<String, String> {
+        crate::files_in_workspace::get_file_text_from_memory_or_disk(self.gcx.clone(), path).await
+    }
+
+    async fn fast_enqueue_for_edit(&self, docs: &[PathBuf]) -> Result<(), String> {
+        crate::tools::file_edit::auxiliary::fast_enqueue_for_edit(self.gcx.clone(), docs).await
+    }
+
+    async fn remove_memory_document_for_path(&self, path: &PathBuf) -> bool {
+        crate::files_in_workspace::remove_memory_document_for_path(self.gcx.clone(), path).await
+    }
+
+    async fn file_repair_candidates(&self, value: &str, top_n: usize, fuzzy: bool) -> Vec<String> {
+        crate::at_commands::at_file::file_repair_candidates(
+            self.gcx.clone(),
+            &value.to_string(),
+            top_n,
+            fuzzy,
         )
         .await
     }

@@ -1,3 +1,5 @@
+pub mod ctx;
+pub use ctx::{FilesProvider, ToolChatScope, ToolCodeIntelScope, ToolCtx, ToolWorkspaceScope};
 pub(crate) mod native_enrichment;
 pub(crate) mod planner_delivery;
 pub mod review_agents;

@@ -17,8 +17,8 @@ use crate::agents::registry::BackgroundAgentRegistry;
 use crate::app_state::{
     AppActivitySink, AppBuddyEventSink, AppState, AppToolRegistry, BuddyServices, CapsState,
     ChatServices, EngineCapsProvider, EngineChatSessionFacade, EngineChatToolExecutor,
-    EngineHookRunner, EngineModeConfigProvider, EngineProjectTreeProvider, EnginePromptAssembler,
-    EngineSubchatLauncher, EngineTrajectoryStore, IntegrationServices,
+    EngineFilesProvider, EngineHookRunner, EngineModeConfigProvider, EngineProjectTreeProvider,
+    EnginePromptAssembler, EngineSubchatLauncher, EngineTrajectoryStore, IntegrationServices,
     ModelServices, PathServices, RuntimeServices, TokenizerState, ToolCatalogCache,
     WorkspaceServices,
 };
@@ -39,6 +39,7 @@ use crate::ext::hooks_runner::HooksConfig;
 use crate::scheduler::SchedulerConfig;
 use crate::yaml_configs::customization_registry::RegistryCacheManager;
 use crate::knowledge_index::KnowledgeIndex;
+use crate::tools::ctx::{ToolChatScope, ToolCodeIntelScope, ToolCtx, ToolWorkspaceScope};
 use refact_context_api::{HttpClientAccess, PathsAccess, ShutdownAccess};
 pub use refact_core::at_commands_preview_cache::AtCommandsPreviewCache;
 
@@ -525,8 +526,71 @@ impl GlobalContext {
         }
     }
 
+    pub fn tool_ctx(&self, gcx: SharedGlobalContext) -> ToolCtx {
+        ToolCtx {
+            runtime: RuntimeServices {
+                shutdown_flag: self.shutdown_flag.clone(),
+                cmdline: Arc::new(self.cmdline.clone()),
+                http_client: self.http_client.clone(),
+                ask_shutdown_sender: self.ask_shutdown_sender.clone(),
+                exec_registry: self.exec_registry.clone(),
+            },
+            paths: PathServices {
+                cache_dir: self.cache_dir.clone(),
+                config_dir: self.config_dir.clone(),
+                app_searchable_id: self.app_searchable_id.lock().unwrap().clone(),
+            },
+            model: ModelServices {
+                caps: self.caps_state.clone(),
+                tokenizers: self.tokenizer_state.clone(),
+                providers: self.providers.clone(),
+                llm_stats_sender: self.llm_stats_sender.lock().unwrap().clone(),
+            },
+            chat: ToolChatScope {
+                sessions: self.chat_sessions.clone(),
+                facade: Arc::new(EngineChatSessionFacade::new(gcx.clone())),
+                notification_events_tx: self
+                    .notification_events_tx
+                    .clone()
+                    .expect("notification event sender is not initialized"),
+            },
+            buddy: BuddyServices {
+                buddy: self.buddy.clone(),
+                buddy_events_tx: self
+                    .buddy_events_tx
+                    .clone()
+                    .expect("buddy event sender is not initialized"),
+                user_activity: self.user_activity.clone(),
+            },
+            integrations: IntegrationServices {
+                integration_sessions: self.integration_sessions.clone(),
+                browser_runtimes: self.browser_runtimes.clone(),
+                ext_cache_generation: self.ext_cache_generation.clone(),
+                project_registry_cache: self.project_registry_cache.clone(),
+                init_shadow_repos_lock: self.init_shadow_repos_lock.clone(),
+                git_operations_abort_flag: self.git_operations_abort_flag.clone(),
+            },
+            workspace: ToolWorkspaceScope {
+                knowledge_index: self.knowledge_index.clone(),
+                privacy_settings: self.privacy_settings.read().unwrap().clone(),
+            },
+            codeintel: ToolCodeIntelScope {
+                codegraph: self.codegraph.clone(),
+            },
+            agents: self.agents.clone(),
+            tool_registry: Arc::new(AppToolRegistry::new(gcx.clone())),
+            privacy_policy_load: self.privacy_policy_load.clone(),
+            files: Arc::new(EngineFilesProvider::new(gcx.clone())),
+            trajectories: Arc::new(EngineTrajectoryStore::new(gcx.clone())),
+            subchat: Arc::new(EngineSubchatLauncher::new(gcx.clone())),
+            mode_config: Arc::new(EngineModeConfigProvider::new(gcx.clone())),
+            caps: Arc::new(EngineCapsProvider::new(gcx)),
+        }
+    }
+
     pub fn app_state(&self, gcx: SharedGlobalContext) -> AppState {
         let ctx = self.chat_ctx(gcx.clone());
+        let tool = self.tool_ctx(gcx.clone());
         AppState {
             gcx: gcx.clone(),
             runtime: ctx.runtime.clone(),
@@ -557,6 +621,7 @@ impl GlobalContext {
             tool_registry: ctx.tool_registry.clone(),
             agents: ctx.agents.clone(),
             ctx,
+            tool,
         }
     }
 }
@@ -1181,6 +1246,11 @@ pub mod tests {
     pub async fn test_chat_ctx() -> crate::chat::ctx::ChatCtx {
         let gcx = make_test_gcx().await;
         gcx.chat_ctx(gcx.clone())
+    }
+
+    pub async fn test_tool_ctx() -> crate::tools::ctx::ToolCtx {
+        let gcx = make_test_gcx().await;
+        gcx.tool_ctx(gcx.clone())
     }
 
     #[tokio::test]

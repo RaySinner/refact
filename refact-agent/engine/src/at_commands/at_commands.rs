@@ -13,6 +13,7 @@ use crate::call_validation::{
 use crate::app_state::AppState;
 use crate::chat::types::TaskMeta;
 use crate::global_context::GlobalContext;
+use crate::tools::ctx::ToolCtx;
 use crate::worktrees::scope::ExecutionScope;
 use crate::worktrees::types::WorktreeMeta;
 
@@ -27,6 +28,7 @@ pub const MAX_SUBCHAT_DEPTH: usize = 5;
 pub struct AtCommandsContext {
     pub global_context: Arc<GlobalContext>,
     pub app: AppState,
+    pub tool: ToolCtx,
     pub n_ctx: usize,
     pub top_n: usize,
     pub tokens_for_rag: usize,
@@ -175,6 +177,7 @@ impl AtCommandsContext {
         AtCommandsContext {
             global_context,
             app: app.clone(),
+            tool: app.tool.clone(),
             n_ctx,
             top_n,
             tokens_for_rag: (n_ctx / 4).max(64).min(n_ctx),

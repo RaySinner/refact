@@ -218,6 +218,16 @@
   border-color: var(--rf-border-strong);
 }
 
+.chipStatic {
+  display: inline-flex;
+  align-items: center;
+  cursor: default;
+}
+
+.chipStatic:hover {
+  border-color: transparent;
+}
+
 .chipLabel {
   overflow: hidden;
   text-overflow: ellipsis;

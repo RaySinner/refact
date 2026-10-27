@@ -92,6 +92,29 @@ describe("describeQueuedItem", () => {
     expect(presentation.isUserMessage).toBe(true);
     expect(presentation.isDelivery).toBe(false);
   });
+
+  it("labels a legacy command row as idle-only instead of a step boundary", () => {
+    const presentation = describeQueuedItem(
+      deliveryItem({ command_type: "remove_message", source: undefined }),
+    );
+
+    expect(presentation.title).toBe("Remove message");
+    expect(presentation.isDelivery).toBe(false);
+    expect(presentation.isLegacyCommand).toBe(true);
+    expect(presentation.push).toBe("when_idle");
+  });
+
+  it("keeps delivery rows on their real push mode", () => {
+    expect(describeQueuedItem(deliveryItem({ push: "append" })).push).toBe(
+      "append",
+    );
+    expect(describeQueuedItem(deliveryItem({ push: "preempt" })).push).toBe(
+      "preempt",
+    );
+    expect(
+      describeQueuedItem(deliveryItem({ push: "append" })).isDelivery,
+    ).toBe(true);
+  });
 });
 
 const statusItem: QueuedItem = {
@@ -112,6 +135,21 @@ describe("queue presentation", () => {
     expect(queueStatusText(items, false)).toBe(
       "1 interrupting · 1 ready to deliver · 1 when idle",
     );
+  });
+  it("counts legacy idle commands in the idle bucket, never after step", () => {
+    const legacy = {
+      ...statusItem,
+      command_type: "remove_message",
+    } as QueuedItem;
+    const append = { ...statusItem, push: "append" } as QueuedItem;
+
+    expect(queueStatusText([legacy, append], true)).toBe(
+      "1 after step · 1 when idle",
+    );
+    expect(queueStatusText([legacy, append], false)).toBe(
+      "1 ready to deliver · 1 when idle",
+    );
+    expect(queueStatusText([legacy], true, true)).toBe("1 when idle");
   });
   it("keeps legacy priority options distinct", () => {
     expect(queueModeOptions(true).map((o) => o.label)).toEqual([

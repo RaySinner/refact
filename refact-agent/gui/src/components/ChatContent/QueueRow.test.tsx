@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "../../utils/test-utils";
 import type { QueuedItem } from "../../features/Chat";
 import { QueueRow } from "./QueueRow";
+import { LEGACY_TIMING_HINT } from "./queuePresentation";
 const actions = vi.hoisted(() => ({
   cancelQueued: vi.fn(),
   setQueuedPriority: vi.fn(),
@@ -111,6 +112,36 @@ describe("QueueRow", () => {
         position={1}
       />,
     );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Cancel queued message" }),
+    );
+    await waitFor(() =>
+      expect(actions.cancelQueued).toHaveBeenCalledWith("delivery-1"),
+    );
+    expect(actions.updatePendingDelivery).not.toHaveBeenCalled();
+  });
+  it("shows legacy commands as idle-only without a timing switcher", async () => {
+    render(
+      <QueueRow
+        queuedItem={{
+          ...item,
+          command_type: "remove_message",
+          preview: "Remove message",
+        }}
+        position={1}
+      />,
+    );
+    expect(screen.getByTestId("queued-item")).toHaveAttribute(
+      "data-push",
+      "when_idle",
+    );
+    expect(screen.queryByRole("combobox")).toBeNull();
+    expect(screen.getByText("When idle")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /1 Remove message/ }));
+    expect(screen.queryByRole("radio")).toBeNull();
+    expect(screen.getByText(LEGACY_TIMING_HINT)).toBeInTheDocument();
+
     fireEvent.click(
       screen.getByRole("button", { name: "Cancel queued message" }),
     );

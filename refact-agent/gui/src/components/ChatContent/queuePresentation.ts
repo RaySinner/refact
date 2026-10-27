@@ -20,6 +20,8 @@ export type QueuedItemPresentation = {
   isUserMessage: boolean;
   /** Anything the engine delivers on the unified A/B/C wire. */
   isDelivery: boolean;
+  /** A command row the engine dequeues at idle only: its timing is not editable. */
+  isLegacyCommand: boolean;
   push: PushMode;
   /** Present when the item is a finished process the transcript can reveal. */
   processId: string | null;
@@ -129,9 +131,28 @@ export function queueModeOptions(isUserMessage: boolean): QueueModeOption[] {
   }));
 }
 
-/** `append` is the default: the engine treats a missing push the same way. */
+/**
+ * Legacy command rows are drained by the engine at idle only, so they must not
+ * advertise a step boundary they never had.
+ */
+export const LEGACY_TIMING_HINT =
+  "Legacy commands run only when the agent is idle.";
+
+/** Deliveries ride the unified wire; every other non-user row is a legacy command. */
+function isLegacyCommandItem(item: QueuedItem): boolean {
+  return (
+    item.command_type !== "delivery" && item.command_type !== "user_message"
+  );
+}
+
+/**
+ * `append` is the default for the unified wire: the engine treats a missing
+ * push the same way. A legacy command row never carries a push, and the engine
+ * dequeues it at idle, so `when_idle` is its truthful label.
+ */
 export function queuedItemPushMode(item: QueuedItem): PushMode {
   if (item.push) return item.push;
+  if (isLegacyCommandItem(item)) return "when_idle";
   return item.priority ? "preempt" : "append";
 }
 
@@ -155,6 +176,7 @@ function queuedItemProcessId(item: QueuedItem): string | null {
 
 export function describeQueuedItem(item: QueuedItem): QueuedItemPresentation {
   const isUserMessage = item.command_type === "user_message";
+  const isDelivery = item.command_type === "delivery";
   const event = item.event;
   const subkind =
     typeof event?.subkind === "string" && event.subkind.length > 0
@@ -192,7 +214,8 @@ export function describeQueuedItem(item: QueuedItem): QueuedItemPresentation {
     icon,
     tone,
     isUserMessage,
-    isDelivery: !isUserMessage,
+    isDelivery,
+    isLegacyCommand: !isUserMessage && !isDelivery,
     push: queuedItemPushMode(item),
     processId: queuedItemProcessId(item),
   };
@@ -201,19 +224,25 @@ export function describeQueuedItem(item: QueuedItem): QueuedItemPresentation {
 /**
  * One-line summary of what the engine will deliver next. `append` reads as
  * "ready to deliver" when the agent is idle because nothing is holding it.
+ * Legacy command rows join the idle bucket: the engine drains them at idle and
+ * never at a step boundary.
  */
 export function queueStatusText(
   queuedItems: QueuedItem[],
   isBusy: boolean,
   waitingInterruptible = false,
 ): string {
+  const legacyIdle = queuedItems.filter(isLegacyCommandItem).length;
+  const timed = queuedItems.filter((item) => !isLegacyCommandItem(item));
   const count = (push: PushMode) =>
-    queuedItems.filter((item) => queuedItemPushMode(item) === push).length;
+    timed.filter((item) => queuedItemPushMode(item) === push).length;
+  const idle = count("when_idle") + legacyIdle;
   if (isBusy && waitingInterruptible) {
     const delivering = count("append") + count("when_idle");
     return [
       delivering ? `${delivering} delivering now` : "",
       count("preempt") ? `${count("preempt")} interrupting` : "",
+      legacyIdle ? `${legacyIdle} when idle` : "",
     ]
       .filter(Boolean)
       .join(" · ");
@@ -221,15 +250,9 @@ export function queueStatusText(
   return [
     count("preempt") ? `${count("preempt")} interrupting` : "",
     count("append")
-      ? `${count("append")} ${
-          isBusy && waitingInterruptible
-            ? "delivering now"
-            : isBusy
-              ? "after step"
-              : "ready to deliver"
-        }`
+      ? `${count("append")} ${isBusy ? "after step" : "ready to deliver"}`
       : "",
-    count("when_idle") ? `${count("when_idle")} when idle` : "",
+    idle ? `${idle} when idle` : "",
   ]
     .filter(Boolean)
     .join(" · ");

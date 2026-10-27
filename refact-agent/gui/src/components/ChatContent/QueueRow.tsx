@@ -12,7 +12,11 @@ import { useChatActions } from "../../hooks/useChatActions";
 import { useThreadId } from "../../features/Chat/Thread";
 import { setInputValue } from "../ChatForm/actions";
 import { Button, Icon, IconButton, SegmentedControl, Select } from "../ui";
-import { describeQueuedItem, queueModeOptions } from "./queuePresentation";
+import {
+  describeQueuedItem,
+  LEGACY_TIMING_HINT,
+  queueModeOptions,
+} from "./queuePresentation";
 import { revealProcessOutput } from "./revealProcessOutput";
 import styles from "./QueuePanel.module.css";
 
@@ -63,6 +67,7 @@ export const QueueRow: React.FC<QueueRowProps> = ({
   const presentation = describeQueuedItem(queuedItem);
   const content = queuedItem.content ?? "";
   const isEditable = presentation.isUserMessage && content.length > 0;
+  const timingLocked = presentation.isLegacyCommand;
   const options = queueModeOptions(presentation.isUserMessage);
   const active =
     options.find((option) => option.value === presentation.push) ?? options[0];
@@ -124,17 +129,17 @@ export const QueueRow: React.FC<QueueRowProps> = ({
       setIsWorking(true);
       setActionError(null);
       try {
-        if (presentation.isUserMessage) {
+        if (presentation.isDelivery) {
+          await updatePendingDelivery(queuedItem.client_request_id, {
+            push: next,
+          });
+        } else {
           const ok = await setQueuedPriority(
             queuedItem.client_request_id,
             next === "preempt",
           );
           if (!ok) throw new Error("Priority failed");
-          return;
         }
-        await updatePendingDelivery(queuedItem.client_request_id, {
-          push: next,
-        });
       } catch {
         setActionError(TIMING_ERROR);
         return;
@@ -145,7 +150,7 @@ export const QueueRow: React.FC<QueueRowProps> = ({
     [
       isWorking,
       presentation.push,
-      presentation.isUserMessage,
+      presentation.isDelivery,
       setQueuedPriority,
       updatePendingDelivery,
       queuedItem.client_request_id,
@@ -204,34 +209,45 @@ export const QueueRow: React.FC<QueueRowProps> = ({
               onClick={() => void handleEdit()}
             />
           )}
-          <Select
-            disabled={isWorking}
-            value={presentation.push}
-            onValueChange={(next) => void handleModeChange(next as PushMode)}
-          >
-            <Select.Trigger
-              aria-busy={isWorking}
-              aria-label={`${modeLabel}: ${active.label}`}
-              className={styles.chip}
+          {timingLocked ? (
+            <span
+              className={classNames(styles.chip, styles.chipStatic)}
               data-tone={active.tone}
-              title={active.label}
+              title={LEGACY_TIMING_HINT}
             >
               <Icon icon={active.icon} size="sm" />
               <span className={styles.chipLabel}>{active.shortLabel}</span>
-            </Select.Trigger>
-            <Select.Content>
-              {options.map((option) => (
-                <Select.Item key={option.value} value={option.value}>
-                  <span className={styles.optionLabel}>
-                    <span>{option.label}</span>
-                    <span className={styles.optionDescription}>
-                      {option.description}
+            </span>
+          ) : (
+            <Select
+              disabled={isWorking}
+              value={presentation.push}
+              onValueChange={(next) => void handleModeChange(next as PushMode)}
+            >
+              <Select.Trigger
+                aria-busy={isWorking}
+                aria-label={`${modeLabel}: ${active.label}`}
+                className={styles.chip}
+                data-tone={active.tone}
+                title={active.label}
+              >
+                <Icon icon={active.icon} size="sm" />
+                <span className={styles.chipLabel}>{active.shortLabel}</span>
+              </Select.Trigger>
+              <Select.Content>
+                {options.map((option) => (
+                  <Select.Item key={option.value} value={option.value}>
+                    <span className={styles.optionLabel}>
+                      <span>{option.label}</span>
+                      <span className={styles.optionDescription}>
+                        {option.description}
+                      </span>
                     </span>
-                  </span>
-                </Select.Item>
-              ))}
-            </Select.Content>
-          </Select>
+                  </Select.Item>
+                ))}
+              </Select.Content>
+            </Select>
+          )}
           <IconButton
             aria-label={cancelLabel}
             disabled={isWorking}
@@ -263,25 +279,33 @@ export const QueueRow: React.FC<QueueRowProps> = ({
             </p>
           )}
           <div className={styles.detailLine}>
-            <SegmentedControl
-              aria-busy={isWorking}
-              aria-label={modeLabel}
-              className={styles.detailSegments}
-              data-push={presentation.push}
-              size="sm"
-              options={options.map((option) => ({
-                value: option.value,
-                label:
-                  option.value === "preempt" && !presentation.isUserMessage
-                    ? "Interrupt"
-                    : option.shortLabel,
-                ariaLabel: option.label,
-                disabled: isWorking,
-              }))}
-              value={presentation.push}
-              onValueChange={(next) => void handleModeChange(next as PushMode)}
-            />
-            <p className={styles.detailHint}>{active.description}</p>
+            {timingLocked ? (
+              <p className={styles.detailHint}>{LEGACY_TIMING_HINT}</p>
+            ) : (
+              <>
+                <SegmentedControl
+                  aria-busy={isWorking}
+                  aria-label={modeLabel}
+                  className={styles.detailSegments}
+                  data-push={presentation.push}
+                  size="sm"
+                  options={options.map((option) => ({
+                    value: option.value,
+                    label:
+                      option.value === "preempt" && !presentation.isUserMessage
+                        ? "Interrupt"
+                        : option.shortLabel,
+                    ariaLabel: option.label,
+                    disabled: isWorking,
+                  }))}
+                  value={presentation.push}
+                  onValueChange={(next) =>
+                    void handleModeChange(next as PushMode)
+                  }
+                />
+                <p className={styles.detailHint}>{active.description}</p>
+              </>
+            )}
             <div className={styles.detailActions}>
               {presentation.processId !== null && (
                 <Button

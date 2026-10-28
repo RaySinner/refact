@@ -57,6 +57,18 @@ pub trait FilesProvider: Send + Sync {
         fuzzy: bool,
         top_n: usize,
     ) -> Vec<String>;
+    async fn correct_to_nearest_filename(
+        &self,
+        correction_candidate: &str,
+        fuzzy: bool,
+        top_n: usize,
+    ) -> Vec<String>;
+    async fn shortify_paths(&self, paths: &[String]) -> Vec<String>;
+    async fn paths_from_anywhere(&self) -> Vec<PathBuf>;
+    async fn get_file_text_from_memory_or_disk_for_model_context(
+        &self,
+        path: &PathBuf,
+    ) -> Result<String, String>;
     async fn return_one_candidate_or_a_good_error(
         &self,
         file_path: &str,

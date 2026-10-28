@@ -2459,7 +2459,7 @@ async fn run_subchat_loop(
                         context_limit_compact_count, MAX_CONTEXT_LIMIT_COMPACT_ATTEMPTS, log_error,
                     );
                     apply_subchat_reactive_compaction(
-                        ccx.lock().await.global_context.clone(),
+                        ccx.lock().await.app.gcx.clone(),
                         config,
                         &mut messages,
                         &original_error,
@@ -2582,7 +2582,7 @@ async fn run_forced_final_answer_turn(
                     *context_limit_compact_count, MAX_CONTEXT_LIMIT_COMPACT_ATTEMPTS, log_error,
                 );
                 apply_subchat_reactive_compaction(
-                    ccx.lock().await.global_context.clone(),
+                    ccx.lock().await.app.gcx.clone(),
                     config,
                     &mut messages,
                     &original_error,
@@ -2696,7 +2696,7 @@ async fn run_subchat_with_wrap_up(
                         context_limit_compact_count, MAX_CONTEXT_LIMIT_COMPACT_ATTEMPTS, log_error,
                     );
                     apply_subchat_reactive_compaction(
-                        ccx.lock().await.global_context.clone(),
+                        ccx.lock().await.app.gcx.clone(),
                         config,
                         &mut messages,
                         &original_error,
@@ -2806,7 +2806,7 @@ async fn run_subchat_with_wrap_up(
                     context_limit_compact_count, MAX_CONTEXT_LIMIT_COMPACT_ATTEMPTS, log_error,
                 );
                 apply_subchat_reactive_compaction(
-                    ccx.lock().await.global_context.clone(),
+                    ccx.lock().await.app.gcx.clone(),
                     config,
                     &mut messages,
                     &original_error,
@@ -3528,7 +3528,7 @@ async fn subchat_single_internal(
 ) -> Result<Vec<Vec<ChatMessage>>, String> {
     let gcx = {
         let cgcx = ccx.lock().await;
-        cgcx.global_context.clone()
+        cgcx.app.gcx.clone()
     };
 
     let tools: Vec<ToolDesc> = if tools_subset
@@ -3727,7 +3727,7 @@ mod subchat_tests {
         config.stateful = true;
         config.background_agent_id = Some(agent.agent_id.clone());
         let progress = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let gcx = ccx.lock().await.global_context.clone();
+        let gcx = ccx.lock().await.app.gcx.clone();
         assert_eq!(
             crate::chat::trajectories::get_trajectories_dir(&gcx.chat_ctx(gcx.clone()))
                 .await
@@ -3752,7 +3752,7 @@ mod subchat_tests {
         assert_eq!(pending[0].push, refact_chat_api::PushMode::WhenIdle);
         let (gcx, chat_id) = {
             let context = ccx.lock().await;
-            (context.global_context.clone(), context.chat_id.clone())
+            (context.app.gcx.clone(), context.chat_id.clone())
         };
         let saved = crate::chat::trajectories::load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), &chat_id)
             .await
@@ -4001,7 +4001,7 @@ mod subchat_tests {
         config.stateful = true;
         config.background_agent_id = Some(agent.agent_id.clone());
         let workspace = tempfile::tempdir().unwrap();
-        let gcx = ccx.lock().await.global_context.clone();
+        let gcx = ccx.lock().await.app.gcx.clone();
         *gcx.documents_state.workspace_folders.lock().unwrap() =
             vec![workspace.path().to_path_buf()];
         let progress = Arc::new(StdMutex::new(Vec::new()));
@@ -4041,7 +4041,7 @@ mod subchat_tests {
             .pending_deliveries(&agent.agent_id)
             .await
             .is_empty());
-        let gcx = ccx.lock().await.global_context.clone();
+        let gcx = ccx.lock().await.app.gcx.clone();
         let saved = crate::chat::trajectories::load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), &chat_id)
             .await
             .unwrap();
@@ -4188,8 +4188,8 @@ mod subchat_tests {
     ) -> Arc<tokio::sync::Mutex<crate::at_commands::at_commands::AtCommandsContext>> {
         let gcx = make_test_gcx().await;
         Arc::new(tokio::sync::Mutex::new(
-            crate::at_commands::at_commands::AtCommandsContext::new(
-                gcx,
+            crate::at_commands::at_commands::AtCommandsContext::new_from_app(
+                crate::app_state::AppState::from_gcx(gcx).await,
                 4096,
                 1,
                 false,

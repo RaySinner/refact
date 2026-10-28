@@ -26,7 +26,7 @@ pub async fn handle_v1_fullpath(
     })?;
 
     let path = preprocess_path_for_normalization(post.path);
-    let candidates_file = file_repair_candidates(gcx.clone(), &path, 10, false).await;
+    let candidates_file = file_repair_candidates(&app.tool, &path, 10, false).await;
     let candidates_dir = correct_to_nearest_dir_path(gcx.clone(), &path, false, 10).await;
     let candidates = candidates_file
         .into_iter()
@@ -35,8 +35,7 @@ pub async fn handle_v1_fullpath(
         .into_iter()
         .collect::<Vec<_>>();
 
-    match return_one_candidate_or_a_good_error(gcx.clone(), &path, &candidates, &vec![], false)
-        .await
+    match return_one_candidate_or_a_good_error(&app.tool, &path, &candidates, &vec![], false).await
     {
         Ok(candidate) => {
             let is_directory = candidates_dir.contains(&candidate);

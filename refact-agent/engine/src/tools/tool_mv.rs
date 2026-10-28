@@ -146,7 +146,7 @@ impl Tool for ToolMv {
             let (src_corrected_path, src_is_dir) = if !src_file_candidates.is_empty() {
                 (
                     return_one_candidate_or_a_good_error(
-                        gcx.clone(),
+                        &tool,
                         &src_str,
                         &src_file_candidates,
                         &project_dirs,
@@ -158,7 +158,7 @@ impl Tool for ToolMv {
             } else if !src_dir_candidates.is_empty() {
                 (
                     return_one_candidate_or_a_good_error(
-                        gcx.clone(),
+                        &tool,
                         &src_str,
                         &src_dir_candidates,
                         &project_dirs,
@@ -188,7 +188,7 @@ impl Tool for ToolMv {
                 correct_to_nearest_dir_path(gcx.clone(), &dst_parent, false, top_n).await;
             let dst_parent_path = if !dst_dir_candidates.is_empty() {
                 return_one_candidate_or_a_good_error(
-                    gcx.clone(),
+                    &tool,
                     &dst_parent,
                     &dst_dir_candidates,
                     &project_dirs,

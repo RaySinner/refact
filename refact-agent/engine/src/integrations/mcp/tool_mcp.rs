@@ -192,7 +192,7 @@ impl Tool for ToolMCP {
         let (gcx, current_model, producing_messages) = {
             let cgcx = ccx.lock().await;
             (
-                cgcx.global_context.clone(),
+                cgcx.app.gcx.clone(),
                 cgcx.current_model.clone(),
                 cgcx.messages.clone(),
             )

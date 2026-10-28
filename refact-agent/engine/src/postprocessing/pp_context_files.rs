@@ -6,11 +6,11 @@ pub use refact_postprocessing::pp_context_files::{
 };
 use refact_core::chat_types::{ContextFile, PostprocessSettings};
 
-use crate::global_context::GlobalContext;
-use super::gcx_pp_context::GcxPPContext;
+use super::gcx_pp_context::ToolPPContext;
+use crate::tools::ctx::ToolCtx;
 
-pub async fn postprocess_context_files(
-    gcx: Arc<GlobalContext>,
+pub async fn postprocess_context_files_for_tool_ctx(
+    tool: ToolCtx,
     context_file_vec: &mut Vec<ContextFile>,
     tokenizer: Option<Arc<Tokenizer>>,
     tokens_limit: usize,
@@ -18,7 +18,7 @@ pub async fn postprocess_context_files(
     settings: &PostprocessSettings,
 ) -> (Vec<ContextFile>, Vec<String>) {
     refact_postprocessing::pp_context_files::postprocess_context_files(
-        Arc::new(GcxPPContext(gcx)),
+        Arc::new(ToolPPContext(tool)),
         context_file_vec,
         tokenizer,
         tokens_limit,

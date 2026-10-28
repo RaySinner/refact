@@ -432,9 +432,9 @@ async fn resolve_codegraph_file(
         } else {
             preprocess_path_for_normalization(raw_path.to_string())
         };
-        let candidates = file_repair_candidates(gcx.clone(), &normalized, top_n, false).await;
+        let candidates = file_repair_candidates(&tool, &normalized, top_n, false).await;
         let resolved = return_one_candidate_or_a_good_error(
-            gcx.clone(),
+            &tool,
             &normalized,
             &candidates,
             &get_project_dirs(gcx.clone()).await,

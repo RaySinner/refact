@@ -193,7 +193,7 @@ impl Tool for ToolTree {
                     let project_dirs =
                         crate::files_correction::get_unscoped_project_dirs_for_ctx(&chat).await;
                     let candidate = return_one_candidate_or_a_good_error(
-                        gcx.clone(),
+                        &tool,
                         &path,
                         &dir_candidates,
                         &project_dirs,

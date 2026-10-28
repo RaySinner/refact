@@ -12,9 +12,6 @@ use crate::at_commands::at_commands::{AtCommand, AtCommandsContext, AtParam};
 use crate::at_commands::at_file::return_one_candidate_or_a_good_error;
 use crate::at_commands::execute_at::AtCommandMember;
 use crate::call_validation::{ChatMessage, ContextEnum};
-use crate::files_correction::{
-    correct_to_nearest_dir_path, get_unscoped_project_dirs, paths_from_anywhere,
-};
 use crate::tools::scope_utils::{
     format_scope_notices, is_worktree_root_alias, list_execution_scope_root_limited,
     list_scoped_files_under_dir_limited, resolve_existing_path_with_execution_scope,
@@ -430,11 +427,11 @@ pub async fn tree_for_tools_ex(
     build_truncated: bool,
 ) -> Result<String, String> {
     let max_files = sanitize_max_files(max_files);
-    let (tokens_for_rag, gcx, abort_flag) = {
+    let (tokens_for_rag, tool, abort_flag) = {
         let cgcx = ccx.lock().await;
         (
             cgcx.tokens_for_rag,
-            cgcx.app.gcx.clone(),
+            cgcx.tool.clone(),
             cgcx.abort_flag.clone(),
         )
     };
@@ -444,7 +441,7 @@ pub async fn tree_for_tools_ex(
     let ast_db: Option<Arc<TreeSymbols>> = if !use_ast {
         None
     } else {
-        let codegraph_opt = gcx.codegraph.lock().await.clone();
+        let codegraph_opt = tool.codeintel.codegraph.lock().await.clone();
         match codegraph_opt {
             Some(service) => {
                 let mut source_paths = Vec::new();
@@ -490,10 +487,9 @@ impl AtCommand for AtTree {
         cmd: &mut AtCommandMember,
         args: &mut Vec<AtCommandMember>,
     ) -> Result<(Vec<ContextEnum>, String), String> {
-        let (gcx, tool, execution_scope, abort_flag) = {
+        let (tool, execution_scope, abort_flag) = {
             let cgcx = ccx.lock().await;
             (
-                cgcx.global_context.clone(),
                 cgcx.tool.clone(),
                 cgcx.execution_scope.clone(),
                 cgcx.abort_flag.clone(),
@@ -507,9 +503,9 @@ impl AtCommand for AtTree {
         let paths_from_anywhere = if scoped_enforced {
             vec![]
         } else {
-            paths_from_anywhere(gcx.clone()).await
+            tool.files.paths_from_anywhere().await
         };
-        let project_dirs = get_unscoped_project_dirs(gcx.clone()).await;
+        let project_dirs = tool.files.project_dirs().await;
         let filtered_paths: Vec<PathBuf> = paths_from_anywhere
             .into_iter()
             .filter(|path| project_dirs.iter().any(|pd| path.starts_with(pd)))
@@ -612,9 +608,9 @@ impl AtCommand for AtTree {
                 Some(arg) => {
                     let path = arg.text.clone();
                     let candidates =
-                        correct_to_nearest_dir_path(gcx.clone(), &path, false, 10).await;
+                        tool.files.correct_to_nearest_dir_path(&path, false, 10).await;
                     let candidate = return_one_candidate_or_a_good_error(
-                        gcx.clone(),
+                        &tool,
                         &path,
                         &candidates,
                         &project_dirs,

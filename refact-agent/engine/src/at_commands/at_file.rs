@@ -8,13 +8,10 @@ use crate::at_commands::at_commands::{
     AtCommand, AtCommandsContext, AtParam, vec_context_file_to_context_tools,
 };
 use crate::at_commands::execute_at::{AtCommandMember, correct_at_arg};
-use crate::files_in_workspace::get_file_text_from_memory_or_disk_for_model_context;
 use crate::call_validation::{ChatMessage, ContextFile, ContextEnum};
 use crate::files_correction::{
-    canonicalize_normalized_path, correct_to_nearest_filename, correct_to_nearest_dir_path,
-    get_unscoped_project_dirs, project_dirs_for_unscoped_paths, shortify_paths,
+    canonicalize_normalized_path, project_dirs_for_unscoped_paths,
 };
-use crate::global_context::GlobalContext;
 use crate::tools::scope_utils::{
     format_scope_notices, resolve_existing_path_with_execution_scope_for_model_context,
 };
@@ -22,7 +19,7 @@ use crate::tools::ctx::ToolCtx;
 use crate::worktrees::scope::ExecutionScope;
 
 pub async fn resolve_file_path_directly(
-    gcx: Arc<GlobalContext>,
+    tool: &ToolCtx,
     path_with_colon: &str,
 ) -> Option<String> {
     let mut path_str = path_with_colon.to_string();
@@ -39,7 +36,7 @@ pub async fn resolve_file_path_directly(
         return None;
     }
 
-    let project_dirs = get_unscoped_project_dirs(gcx.clone()).await;
+    let project_dirs = tool.files.project_dirs().await;
     let mut matches = Vec::new();
 
     for pd in &project_dirs {
@@ -59,7 +56,6 @@ pub async fn resolve_file_path_directly(
 }
 
 pub async fn resolve_file_path_directly_with_scope(
-    gcx: Arc<GlobalContext>,
     tool: &ToolCtx,
     execution_scope: Option<&ExecutionScope>,
     path_with_colon: &str,
@@ -80,7 +76,7 @@ pub async fn resolve_file_path_directly_with_scope(
         put_colon_back_to_arg(&mut result, &colon_range);
         return Ok(Some((result, resolved.notices)));
     }
-    Ok(resolve_file_path_directly(gcx, path_with_colon)
+    Ok(resolve_file_path_directly(tool, path_with_colon)
         .await
         .map(|path| (path, vec![])))
 }
@@ -190,7 +186,7 @@ fn put_colon_back_to_arg(value: &mut String, colon: &Option<ColonLinesRange>) {
 }
 
 pub async fn file_repair_candidates(
-    gcx: Arc<GlobalContext>,
+    tool: &ToolCtx,
     value: &String,
     top_n: usize,
     fuzzy: bool,
@@ -198,8 +194,10 @@ pub async fn file_repair_candidates(
     let mut correction_candidate = value.clone();
     let colon_mb = colon_lines_range_from_arg(&mut correction_candidate);
 
-    let result: Vec<String> =
-        correct_to_nearest_filename(gcx.clone(), &correction_candidate, fuzzy, top_n).await;
+    let result: Vec<String> = tool
+        .files
+        .correct_to_nearest_filename(&correction_candidate, fuzzy, top_n)
+        .await;
 
     result
         .iter()
@@ -212,7 +210,7 @@ pub async fn file_repair_candidates(
 }
 
 pub async fn return_one_candidate_or_a_good_error(
-    gcx: Arc<GlobalContext>,
+    tool: &ToolCtx,
     file_path: &String,
     candidates: &Vec<String>,
     project_paths: &Vec<PathBuf>,
@@ -220,14 +218,15 @@ pub async fn return_one_candidate_or_a_good_error(
 ) -> Result<String, String> {
     let mut f_path = PathBuf::from(file_path);
     let project_paths = if project_paths.is_empty() {
-        get_unscoped_project_dirs(gcx.clone()).await
+        tool.files.project_dirs().await
     } else {
-        project_dirs_for_unscoped_paths(gcx.cache_dir.as_path(), project_paths.as_slice())
+        project_dirs_for_unscoped_paths(tool.paths.cache_dir.as_path(), project_paths.as_slice())
     };
 
     if candidates.is_empty() {
         let similar_paths_str = if dirs {
-            correct_to_nearest_dir_path(gcx.clone(), file_path, true, 10)
+            tool.files
+                .correct_to_nearest_dir_path(file_path, true, 10)
                 .await
                 .join("\n")
         } else {
@@ -236,13 +235,13 @@ pub async fn return_one_candidate_or_a_good_error(
                 .ok_or(format!("unable to get file name from path: {:?}", f_path))?
                 .to_string_lossy()
                 .to_string();
-            let x = file_repair_candidates(gcx.clone(), &name_only, 10, true)
+            let x = file_repair_candidates(tool, &name_only, 10, true)
                 .await
                 .iter()
                 .cloned()
                 .take(10)
                 .collect::<Vec<_>>();
-            let shortified_file_names = shortify_paths(gcx.clone(), &x).await;
+            let shortified_file_names = tool.files.shortify_paths(&x).await;
             shortified_file_names.join("\n")
         };
         if f_path.is_absolute() {
@@ -378,18 +377,18 @@ impl AtParam for AtParamFilePath {
         ccx: Arc<AMutex<AtCommandsContext>>,
         value: &String,
     ) -> Vec<String> {
-        let (gcx, top_n) = {
+        let (tool, top_n) = {
             let ccx_lock = ccx.lock().await;
-            (ccx_lock.global_context.clone(), ccx_lock.top_n)
+            (ccx_lock.tool.clone(), ccx_lock.top_n)
         };
 
-        let candidates = file_repair_candidates(gcx.clone(), value, top_n, false).await;
+        let candidates = file_repair_candidates(&tool, value, top_n, false).await;
         if !candidates.is_empty() {
-            return shortify_paths(gcx.clone(), &candidates).await;
+            return tool.files.shortify_paths(&candidates).await;
         }
         let file_path = PathBuf::from(value);
         if file_path.is_relative() {
-            let project_dirs = get_unscoped_project_dirs(gcx.clone()).await;
+            let project_dirs = tool.files.project_dirs().await;
             let options = project_dirs
                 .iter()
                 .map(|x| x.join(&file_path))
@@ -400,11 +399,11 @@ impl AtParam for AtParamFilePath {
                     .iter()
                     .map(|x| x.to_string_lossy().to_string())
                     .collect();
-                return shortify_paths(gcx.clone(), &res).await;
+                return tool.files.shortify_paths(&res).await;
             }
         }
-        let res = file_repair_candidates(gcx.clone(), value, top_n, true).await;
-        shortify_paths(gcx.clone(), &res).await
+        let res = file_repair_candidates(&tool, value, top_n, true).await;
+        tool.files.shortify_paths(&res).await
     }
 
     fn param_completion_valid(&self) -> bool {
@@ -413,7 +412,7 @@ impl AtParam for AtParamFilePath {
 }
 
 pub async fn context_file_from_file_path(
-    gcx: Arc<GlobalContext>,
+    tool: &ToolCtx,
     file_path_hopefully_corrected: String,
 ) -> Result<ContextFile, String> {
     let mut line1 = 0;
@@ -422,11 +421,12 @@ pub async fn context_file_from_file_path(
     let colon_kind_mb = colon_lines_range_from_arg(&mut file_path_no_colon);
     let gradient_type = gradient_type_from_range_kind(&colon_kind_mb);
 
-    let file_content = get_file_text_from_memory_or_disk_for_model_context(
-        gcx.clone(),
-        &PathBuf::from(&file_path_no_colon),
-    )
-    .await?;
+    let file_content = tool
+        .files
+        .get_file_text_from_memory_or_disk_for_model_context(
+            &PathBuf::from(&file_path_no_colon),
+        )
+        .await?;
     let file_line_count = file_content.lines().count().max(1);
 
     if let Some(colon) = &colon_kind_mb {
@@ -483,10 +483,9 @@ impl AtCommand for AtFile {
         cmd: &mut AtCommandMember,
         args: &mut Vec<AtCommandMember>,
     ) -> Result<(Vec<ContextEnum>, String), String> {
-        let (gcx, tool, top_n, is_preview, execution_scope) = {
+        let (tool, top_n, is_preview, execution_scope) = {
             let ccx_lock = ccx.lock().await;
             (
-                ccx_lock.global_context.clone(),
                 ccx_lock.tool.clone(),
                 ccx_lock.top_n,
                 ccx_lock.is_preview,
@@ -511,7 +510,6 @@ impl AtCommand for AtFile {
         args.push(arg0.clone());
 
         match resolve_file_path_directly_with_scope(
-            gcx.clone(),
             &tool,
             execution_scope.as_ref(),
             &arg0.text,
@@ -523,7 +521,7 @@ impl AtCommand for AtFile {
                 arg0.ok = true;
                 args[0] = arg0.clone();
 
-                match context_file_from_file_path(gcx.clone(), resolved).await {
+                match context_file_from_file_path(&tool, resolved).await {
                     Ok(context_file) => {
                         let replacement_text = if cmd.pos1 == 0 {
                             "".to_string()
@@ -594,11 +592,11 @@ impl AtCommand for AtFile {
 
         let candidates = {
             let candidates_fuzzy0 =
-                file_repair_candidates(gcx.clone(), &arg0.text, top_n, false).await;
+                file_repair_candidates(&tool, &arg0.text, top_n, false).await;
             if !candidates_fuzzy0.is_empty() {
                 candidates_fuzzy0
             } else {
-                file_repair_candidates(gcx.clone(), &arg0.text, top_n, true).await
+                file_repair_candidates(&tool, &arg0.text, top_n, true).await
             }
         };
 
@@ -612,7 +610,7 @@ impl AtCommand for AtFile {
         }
 
         let context_file =
-            match context_file_from_file_path(gcx.clone(), candidates[0].clone()).await {
+            match context_file_from_file_path(&tool, candidates[0].clone()).await {
                 Ok(cf) => cf,
                 Err(e) => {
                     if is_preview {
@@ -772,8 +770,9 @@ mod tests {
         ];
         let project_paths = vec![worktree, source];
 
+        let tool = gcx.tool_ctx(gcx.clone());
         let resolved = return_one_candidate_or_a_good_error(
-            gcx,
+            &tool,
             &"src/lib.rs".to_string(),
             &candidates,
             &project_paths,

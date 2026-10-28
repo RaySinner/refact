@@ -9,7 +9,7 @@ use crate::at_commands::at_commands::{
     AtCommandsContext, AtParam, filter_only_context_file_from_context_tool,
 };
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
-use crate::postprocessing::pp_context_files::postprocess_context_files;
+use crate::postprocessing::pp_context_files::postprocess_context_files_for_tool_ctx;
 use crate::postprocessing::pp_plain_text::postprocess_plain_text;
 use crate::scratchpads::scratchpad_utils::{HasRagResults, max_tokens_for_rag_chat};
 
@@ -139,10 +139,10 @@ pub async fn run_at_commands_locally(
             }
             tokens_limit_files += non_used_plain;
             info!("tokens_limit_files {}", tokens_limit_files);
-            let (gcx, mut pp_settings, pp_skeleton) = {
+            let (tool, mut pp_settings, pp_skeleton) = {
                 let cgcx = ccx.lock().await;
                 (
-                    cgcx.global_context.clone(),
+                    cgcx.tool.clone(),
                     cgcx.postprocess_parameters.clone(),
                     cgcx.pp_skeleton,
                 )
@@ -152,8 +152,8 @@ pub async fn run_at_commands_locally(
             if pp_skeleton {
                 pp_settings.take_floor = 50.0;
             }
-            let post_processed = postprocess_context_files(
-                gcx.clone(),
+            let post_processed = postprocess_context_files_for_tool_ctx(
+                tool,
                 &mut context_file_pp,
                 tokenizer.clone(),
                 tokens_limit_files,

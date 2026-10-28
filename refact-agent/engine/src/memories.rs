@@ -1348,6 +1348,23 @@ pub async fn memories_search(
     .await
 }
 
+pub async fn memories_search_for_app(
+    app: &crate::app_state::AppState,
+    query: &str,
+    top_n_memories: usize,
+    top_n_trajectories: usize,
+    exclude_trajectory_id: Option<&str>,
+) -> Result<Vec<MemoRecord>, String> {
+    memories_search(
+        app.gcx.clone(),
+        query,
+        top_n_memories,
+        top_n_trajectories,
+        exclude_trajectory_id,
+    )
+    .await
+}
+
 pub async fn memories_search_for_enrichment(
     gcx: Arc<GlobalContext>,
     query: &str,
@@ -2156,7 +2173,7 @@ pub async fn memories_add_enriched(
     content: &str,
     params: EnrichmentParams,
 ) -> Result<PathBuf, String> {
-    let gcx = ccx.lock().await.global_context.clone();
+    let gcx = ccx.lock().await.app.gcx.clone();
 
     let exact_duplicate = {
         let signature = refact_buddy_core::memory_dedup::content_signature(content);

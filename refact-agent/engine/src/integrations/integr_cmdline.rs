@@ -502,7 +502,7 @@ impl Tool for ToolCmdline {
         let (gcx, exec_registry, abort_flag, chat_id, current_model, derived_privacy_zones) = {
             let cgcx = ccx.lock().await;
             (
-                cgcx.global_context.clone(),
+                cgcx.app.gcx.clone(),
                 cgcx.app.runtime.exec_registry.clone(),
                 cgcx.abort_flag.clone(),
                 cgcx.chat_id.clone(),

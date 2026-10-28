@@ -12,7 +12,6 @@ use crate::call_validation::{
 };
 use crate::app_state::AppState;
 use crate::chat::types::TaskMeta;
-use crate::global_context::GlobalContext;
 use crate::tools::ctx::ToolCtx;
 use crate::worktrees::scope::ExecutionScope;
 use crate::worktrees::types::WorktreeMeta;
@@ -26,7 +25,6 @@ use crate::at_commands::execute_at::AtCommandMember;
 pub const MAX_SUBCHAT_DEPTH: usize = 5;
 
 pub struct AtCommandsContext {
-    pub global_context: Arc<GlobalContext>,
     pub app: AppState,
     pub tool: ToolCtx,
     pub n_ctx: usize,
@@ -59,34 +57,6 @@ pub struct AtCommandsContext {
 }
 
 impl AtCommandsContext {
-    pub async fn new(
-        global_context: Arc<GlobalContext>,
-        n_ctx: usize,
-        top_n: usize,
-        is_preview: bool,
-        messages: Vec<ChatMessage>,
-        chat_id: String,
-        root_chat_id: Option<String>,
-        current_model: String,
-        task_meta: Option<TaskMeta>,
-        worktree: Option<WorktreeMeta>,
-    ) -> Self {
-        let app = AppState::from_gcx(global_context).await;
-        Self::new_from_app(
-            app,
-            n_ctx,
-            top_n,
-            is_preview,
-            messages,
-            chat_id,
-            root_chat_id,
-            current_model,
-            task_meta,
-            worktree,
-        )
-        .await
-    }
-
     pub async fn new_from_app(
         app: AppState,
         n_ctx: usize,
@@ -160,7 +130,6 @@ impl AtCommandsContext {
     ) -> Self {
         let (tx, rx) = mpsc::unbounded_channel::<serde_json::Value>();
         let effective_root = root_chat_id.unwrap_or_else(|| chat_id.clone());
-        let global_context = app.gcx.clone();
         let session = app.chat.sessions.read().await.get(&chat_id).cloned();
         let derived_privacy_zones = match session {
             Some(session) => {
@@ -175,7 +144,6 @@ impl AtCommandsContext {
             app.agents.find_agent_id_by_child_chat_id(&chat_id).await
         };
         AtCommandsContext {
-            global_context,
             app: app.clone(),
             tool: app.tool.clone(),
             n_ctx,
@@ -287,7 +255,7 @@ pub async fn at_commands_dict(app: AppState) -> HashMap<String, Arc<dyn AtComman
         ),
     ]);
 
-    let codegraph_on = app.gcx.codegraph.lock().await.is_some();
+    let codegraph_on = app.tool.codeintel.codegraph.lock().await.is_some();
     let vecdb_on = app.workspace.vec_db.lock().await.is_some();
     let mut result = HashMap::new();
     for (key, value) in at_commands_dict {

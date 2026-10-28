@@ -7,7 +7,6 @@ use tokio::sync::Mutex as AMutex;
 use crate::at_commands::at_commands::{AtCommand, AtCommandsContext, AtParam};
 use crate::at_commands::execute_at::AtCommandMember;
 use crate::call_validation::{ChatMessage, ContextEnum};
-use crate::memories::memories_search;
 
 pub struct AtLoadKnowledge {
     params: Vec<Box<dyn AtParam>>,
@@ -36,9 +35,10 @@ impl AtCommand for AtLoadKnowledge {
         }
 
         let search_key = args.iter().map(|x| x.text.clone()).join(" ");
-        let gcx = ccx.lock().await.global_context.clone();
+        let app = ccx.lock().await.app.clone();
 
-        let memories = memories_search(gcx, &search_key, 5, 0, None).await?;
+        let memories =
+            crate::memories::memories_search_for_app(&app, &search_key, 5, 0, None).await?;
         let mut seen_memids = HashSet::new();
         let unique_memories: Vec<_> = memories
             .into_iter()

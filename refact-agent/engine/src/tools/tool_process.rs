@@ -2068,7 +2068,7 @@ mod tests {
             None,
         )
         .await;
-        ccx.global_context
+        ccx.app.gcx
             .documents_state
             .active_file_path
             .lock()

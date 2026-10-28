@@ -684,12 +684,12 @@ async fn paths_and_symbols_to_cat_with_path_ranges(
             preprocess_path_for_normalization(p)
         };
 
-        let candidates_file = file_repair_candidates(gcx.clone(), &path, top_n, false).await;
+        let candidates_file = file_repair_candidates(&tool, &path, top_n, false).await;
         let candidates_dir = correct_to_nearest_dir_path(gcx.clone(), &path, false, top_n).await;
 
         if !candidates_file.is_empty() || candidates_dir.is_empty() {
             let file_path = match return_one_candidate_or_a_good_error(
-                gcx.clone(),
+                &tool,
                 &path,
                 &candidates_file,
                 &get_project_dirs(gcx.clone()).await,
@@ -712,7 +712,7 @@ async fn paths_and_symbols_to_cat_with_path_ranges(
             );
         } else {
             let candidate = match return_one_candidate_or_a_good_error(
-                gcx.clone(),
+                &tool,
                 &path,
                 &candidates_dir,
                 &get_project_dirs(gcx.clone()).await,

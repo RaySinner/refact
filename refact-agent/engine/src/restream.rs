@@ -133,7 +133,7 @@ pub async fn scratchpad_interaction_not_stream_json(
     only_deterministic_messages: bool,
 ) -> Result<serde_json::Value, ScratchError> {
     let t2 = std::time::SystemTime::now();
-    let gcx = ccx.lock().await.global_context.clone();
+    let gcx = ccx.lock().await.app.gcx.clone();
     let client = gcx.http_client.clone();
 
     let mut save_url: String = String::new();
@@ -354,7 +354,7 @@ pub async fn scratchpad_interaction_stream(
         let mut my_parameters = parameters.clone();
         let my_ccx = ccx.clone();
 
-        let gcx = ccx.lock().await.global_context.clone();
+        let gcx = ccx.lock().await.app.gcx.clone();
         let client = gcx.http_client.clone();
 
         let t0 = std::time::Instant::now();

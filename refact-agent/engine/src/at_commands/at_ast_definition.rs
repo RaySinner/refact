@@ -6,6 +6,7 @@ use crate::at_commands::at_commands::{AtCommand, AtCommandsContext, AtParam};
 use crate::call_validation::{ContextFile, ContextEnum};
 use crate::at_commands::execute_at::{AtCommandMember, correct_at_arg};
 use crate::custom_error::trace_and_default;
+use crate::tools::ctx::ToolCtx;
 // use strsim::jaro_winkler;
 
 #[derive(Debug)]
@@ -61,13 +62,12 @@ impl AtParam for AtParamSymbolPathQuery {
         if value.is_empty() {
             return vec![];
         }
-        let (app, top_n) = {
+        let (tool, top_n) = {
             let cgcx = ccx.lock().await;
-            (cgcx.app.clone(), cgcx.top_n)
+            (cgcx.tool.clone(), cgcx.top_n)
         };
 
-        let gcx = app.gcx.clone();
-        let codegraph_opt = gcx.codegraph.lock().await.clone();
+        let codegraph_opt = tool.codeintel.codegraph.lock().await.clone();
         match codegraph_opt {
             Some(service) => service
                 .definition_paths_fuzzy(value, top_n)
@@ -108,14 +108,13 @@ impl AtCommand for AtAstDefinition {
         args.clear();
         args.push(arg_symbol.clone());
 
-        let app = ccx.lock().await.app.clone();
-        let gcx = app.gcx.clone();
+        let tool = ccx.lock().await.tool.clone();
 
-        let codegraph_opt = gcx.codegraph.lock().await.clone();
+        let codegraph_opt = tool.codeintel.codegraph.lock().await.clone();
         match codegraph_opt {
             Some(service) => {
                 let defs = service.definitions(arg_symbol.text.as_str()).await?;
-                Ok(build_definition_context(gcx.clone(), &arg_symbol.text, &defs).await)
+                Ok(build_definition_context(&tool, &arg_symbol.text, &defs).await)
             }
             None => Err("codegraph is not available".to_string()),
         }
@@ -127,12 +126,12 @@ impl AtCommand for AtAstDefinition {
 }
 
 async fn build_definition_context(
-    gcx: Arc<crate::global_context::GlobalContext>,
+    tool: &ToolCtx,
     symbol_text: &str,
     defs: &[Arc<refact_core::ast_types::AstDefinition>],
 ) -> (Vec<ContextEnum>, String) {
     let file_paths = defs.iter().map(|x| x.cpath.clone()).collect::<Vec<_>>();
-    let short_file_paths = crate::files_correction::shortify_paths(gcx.clone(), &file_paths).await;
+    let short_file_paths = tool.files.shortify_paths(&file_paths).await;
 
     let text = if let Some(path0) = short_file_paths.get(0) {
         if short_file_paths.len() > 1 {

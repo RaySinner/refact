@@ -1213,7 +1213,6 @@ mod tests {
         {
             let mut ccx_lock = other_ccx.lock().await;
             ccx_lock.app = AppState::from_gcx(gcx.clone()).await;
-            ccx_lock.global_context = gcx.clone();
         }
         let process_id = spawn_background(&gcx, "subscribe-owner-chat", long_sleep_command()).await;
         let mut tool = ToolProcessSubscribe {

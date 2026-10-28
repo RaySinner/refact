@@ -523,6 +523,17 @@ impl FilesProvider for EngineFilesProvider {
         crate::files_in_workspace::get_file_text_from_memory_or_disk(self.gcx.clone(), path).await
     }
 
+    async fn get_file_text_from_memory_or_disk_for_model_context(
+        &self,
+        path: &PathBuf,
+    ) -> Result<String, String> {
+        crate::files_in_workspace::get_file_text_from_memory_or_disk_for_model_context(
+            self.gcx.clone(),
+            path,
+        )
+        .await
+    }
+
     async fn fast_enqueue_for_edit(&self, docs: &[PathBuf]) -> Result<(), String> {
         crate::tools::file_edit::auxiliary::fast_enqueue_for_edit(self.gcx.clone(), docs).await
     }
@@ -532,8 +543,9 @@ impl FilesProvider for EngineFilesProvider {
     }
 
     async fn file_repair_candidates(&self, value: &str, top_n: usize, fuzzy: bool) -> Vec<String> {
+        let tool = self.gcx.tool_ctx(self.gcx.clone());
         crate::at_commands::at_file::file_repair_candidates(
-            self.gcx.clone(),
+            &tool,
             &value.to_string(),
             top_n,
             fuzzy,
@@ -543,6 +555,10 @@ impl FilesProvider for EngineFilesProvider {
 
     async fn project_dirs(&self) -> Vec<PathBuf> {
         crate::files_correction::get_unscoped_project_dirs(self.gcx.clone()).await
+    }
+
+    async fn paths_from_anywhere(&self) -> Vec<PathBuf> {
+        crate::files_correction::paths_from_anywhere(self.gcx.clone()).await
     }
 
     async fn check_file_privacy_for_send(&self, path: &PathBuf) -> Result<(), String> {
@@ -588,6 +604,25 @@ impl FilesProvider for EngineFilesProvider {
         .await
     }
 
+    async fn correct_to_nearest_filename(
+        &self,
+        correction_candidate: &str,
+        fuzzy: bool,
+        top_n: usize,
+    ) -> Vec<String> {
+        crate::files_correction::correct_to_nearest_filename(
+            self.gcx.clone(),
+            &correction_candidate.to_string(),
+            fuzzy,
+            top_n,
+        )
+        .await
+    }
+
+    async fn shortify_paths(&self, paths: &[String]) -> Vec<String> {
+        crate::files_correction::shortify_paths(self.gcx.clone(), &paths.to_vec()).await
+    }
+
     async fn return_one_candidate_or_a_good_error(
         &self,
         file_path: &str,
@@ -595,8 +630,9 @@ impl FilesProvider for EngineFilesProvider {
         project_paths: &[PathBuf],
         dirs: bool,
     ) -> Result<String, String> {
+        let tool = self.gcx.tool_ctx(self.gcx.clone());
         crate::at_commands::at_file::return_one_candidate_or_a_good_error(
-            self.gcx.clone(),
+            &tool,
             &file_path.to_string(),
             &candidates.to_vec(),
             &project_paths.to_vec(),

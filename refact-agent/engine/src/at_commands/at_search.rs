@@ -88,16 +88,16 @@ pub async fn execute_at_search(
     query: &String,
     vecdb_scope_filter_mb: Option<String>,
 ) -> Result<Vec<ContextFile>, String> {
-    let (vec_db, top_n, gcx) = {
+    let (vec_db, top_n, codegraph) = {
         let cgcx = ccx.lock().await;
         (
             cgcx.app.workspace.vec_db.clone(),
             cgcx.top_n,
-            cgcx.app.gcx.clone(),
+            cgcx.tool.codeintel.codegraph.clone(),
         )
     };
 
-    let codegraph_opt = gcx.codegraph.lock().await.clone();
+    let codegraph_opt = codegraph.lock().await.clone();
     if let Some(service) = codegraph_opt {
         let hits = service.search_hybrid(query, top_n * 2).await?;
         return Ok(hits_to_context_files(hits));

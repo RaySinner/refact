@@ -21,7 +21,7 @@ use crate::integrations::mcp::mcp_prompts::mcp_prompts_as_slash_commands;
 
 use crate::at_commands::execute_at::run_at_commands_locally;
 use crate::indexing_utils::wait_for_indexing_if_needed;
-use crate::postprocessing::pp_context_files::postprocess_context_files;
+use crate::postprocessing::pp_context_files::postprocess_context_files_for_tool_ctx;
 use crate::tokens;
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::at_commands::execute_at::{execute_at_commands_in_query, parse_words_from_line};
@@ -422,10 +422,10 @@ pub async fn handle_v1_command_preview(
         filter_only_context_file_from_context_tool(&messages_for_postprocessing);
 
     if !context_files.is_empty() {
-        let (gcx, mut pp_settings) = {
+        let (tool, mut pp_settings) = {
             let cgcx = ccx.lock().await;
             (
-                cgcx.global_context.clone(),
+                cgcx.tool.clone(),
                 cgcx.postprocess_parameters.clone(),
             )
         };
@@ -434,8 +434,8 @@ pub async fn handle_v1_command_preview(
         pp_settings.use_ast_based_pp = false;
 
         let tokens_limit = (model_rec.base.n_ctx / 4).max(256);
-        let (post_processed_files, _notes) = postprocess_context_files(
-            gcx.clone(),
+        let (post_processed_files, _notes) = postprocess_context_files_for_tool_ctx(
+            tool,
             &mut context_files,
             tokenizer_arc.clone(),
             tokens_limit,

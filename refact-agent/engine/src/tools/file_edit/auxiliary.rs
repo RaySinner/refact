@@ -154,6 +154,7 @@ pub async fn parse_path_for_update(
     privacy_settings: Arc<PrivacySettings>,
     execution_scope: Option<&ExecutionScope>,
 ) -> Result<ResolvedToolPath, String> {
+    let tool = gcx.tool_ctx(gcx.clone());
     let s = parse_string_arg(args, "path", "Provide absolute path to file")?;
     let raw_path = preprocess_path_for_normalization(s.trim().to_string());
     if let Some(resolved) = resolve_path_with_scope(
@@ -165,9 +166,9 @@ pub async fn parse_path_for_update(
         return resolved;
     }
 
-    let candidates = file_repair_candidates(gcx.clone(), &raw_path, 3, false).await;
+    let candidates = file_repair_candidates(&tool, &raw_path, 3, false).await;
     let path = return_one_candidate_or_a_good_error(
-        gcx.clone(),
+        &tool,
         &raw_path,
         &candidates,
         &get_unscoped_project_dirs(gcx.clone()).await,
@@ -206,6 +207,7 @@ pub async fn parse_path_for_create(
     privacy_settings: Arc<PrivacySettings>,
     execution_scope: Option<&ExecutionScope>,
 ) -> Result<ResolvedToolPath, String> {
+    let tool = gcx.tool_ctx(gcx.clone());
     let s = parse_string_arg(args, "path", "Provide absolute path for new file")?;
     let raw_string = preprocess_path_for_normalization(s.trim().to_string());
     let raw_path = PathBuf::from(&raw_string);
@@ -239,7 +241,7 @@ pub async fn parse_path_for_create(
             let parent_str = parent.to_string_lossy().to_string();
             let candidates = correct_to_nearest_dir_path(gcx.clone(), &parent_str, false, 3).await;
             let parent_dir = return_one_candidate_or_a_good_error(
-                gcx.clone(),
+                &tool,
                 &parent_str,
                 &candidates,
                 &get_unscoped_project_dirs(gcx.clone()).await,

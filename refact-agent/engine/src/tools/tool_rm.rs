@@ -170,7 +170,7 @@ impl Tool for ToolRm {
                     correct_to_nearest_dir_path(gcx.clone(), &path_str, false, top_n).await;
                 let corrected_path = if !file_candidates.is_empty() {
                     return_one_candidate_or_a_good_error(
-                        gcx.clone(),
+                        &tool,
                         &path_str,
                         &file_candidates,
                         &project_dirs,
@@ -179,7 +179,7 @@ impl Tool for ToolRm {
                     .await?
                 } else if !dir_candidates.is_empty() {
                     return_one_candidate_or_a_good_error(
-                        gcx.clone(),
+                        &tool,
                         &path_str,
                         &dir_candidates,
                         &project_dirs,

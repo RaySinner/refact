@@ -4,6 +4,9 @@ version = "8.8.2"
 edition = "2021"
 
 [dependencies]
+async-stream = "0.3.5"
+dunce = "1.0.5"
+shell-words = "1.1.0"
 refact-core = { path = "../refact-core" }
 refact-files = { path = "../refact-files" }
 refact-scheduler-core = { path = "../refact-scheduler-core" }

@@ -11,8 +11,10 @@ use crate::app_state::AppState;
 use crate::buddy::drafts::{draft_kind_str, DraftTarget, DraftValidationError};
 use crate::buddy::types::DraftKind;
 use crate::caps::model_caps::get_model_caps;
+use crate::chat::ctx::ChatCtx;
 use crate::custom_error::ScratchError;
 use crate::global_context::GlobalContext;
+use tokio::sync::Mutex as AMutex;
 
 fn json_response(
     status: StatusCode,
@@ -36,12 +38,12 @@ fn json_response(
         })
 }
 
-async fn invalidate_caps(gcx: Arc<GlobalContext>) {
-    let caps_state = gcx.caps_state.clone();
+async fn invalidate_caps(ctx: &ChatCtx) {
+    let caps_state = ctx.model.caps.clone();
     let mut caps_state = caps_state.write().await;
     caps_state.caps = None;
     caps_state.last_attempted_ts = 0;
-    gcx.tool_catalog_generations.advance_capabilities();
+    ctx.tool_catalog_generations.advance_capabilities();
 }
 use crate::providers::config::ProviderDefaults;
 use refact_core::provider_types::{ProjectModelDefaults, project_model_defaults_path};
@@ -206,12 +208,12 @@ async fn resolve_config_identity(
 }
 
 async fn resolve_provider_identity(
-    gcx: &Arc<GlobalContext>,
+    ctx: &ChatCtx,
     instance_id: &str,
 ) -> Result<HttpProviderIdentity, ScratchError> {
     validate_instance_id_for_http(instance_id)?;
     let (config_dir, registry_identity) = {
-        let registry = gcx.providers.read().await;
+        let registry = ctx.model.providers.read().await;
         let registry_identity = registry
             .get(instance_id)
             .map(|provider| HttpProviderIdentity {
@@ -219,7 +221,7 @@ async fn resolve_provider_identity(
                 base_provider: provider.base_provider_name().to_string(),
                 display_name: provider.display_name().to_string(),
             });
-        (gcx.config_dir.clone(), registry_identity)
+        (ctx.paths.config_dir.clone(), registry_identity)
     };
     if let Some(identity) = registry_identity {
         return Ok(identity);
@@ -240,11 +242,11 @@ fn downcast_provider<'a, T: 'static>(
 }
 
 async fn resolve_provider_for_base(
-    gcx: &Arc<GlobalContext>,
+    ctx: &ChatCtx,
     provider_name: &str,
     expected_base: &str,
 ) -> Result<(Box<dyn ProviderTrait>, reqwest::Client), ScratchError> {
-    let identity = resolve_provider_identity(gcx, provider_name).await?;
+    let identity = resolve_provider_identity(ctx, provider_name).await?;
     if identity.base_provider != expected_base {
         return Err(ScratchError::new(
             StatusCode::BAD_REQUEST,
@@ -255,18 +257,18 @@ async fn resolve_provider_for_base(
         ));
     }
     let (provider, http_client) = {
-        let registry = gcx.providers.read().await;
+        let registry = ctx.model.providers.read().await;
         (
             registry
                 .get(provider_name)
                 .map(|provider| provider.clone_box()),
-            gcx.http_client.clone(),
+            ctx.runtime.http_client.clone(),
         )
     };
     let provider = if let Some(provider) = provider {
         provider
     } else {
-        let config_dir = gcx.config_dir.clone();
+        let config_dir = ctx.paths.config_dir.clone();
         if provider_file_exists(&config_dir, provider_name) {
             let settings = read_existing_provider_settings(&config_dir, provider_name)
                 .await?
@@ -313,13 +315,13 @@ async fn identity_for_model_management(
 }
 
 async fn ensure_provider_for_model_management(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     provider_name: &str,
 ) -> Result<(), ScratchError> {
     let (config_dir, already_registered) = {
-        let registry = gcx.providers.read().await;
+        let registry = ctx.model.providers.read().await;
         (
-            gcx.config_dir.clone(),
+            ctx.paths.config_dir.clone(),
             registry.get(provider_name).is_some(),
         )
     };
@@ -327,7 +329,7 @@ async fn ensure_provider_for_model_management(
         return Ok(());
     }
     if provider_file_exists(&config_dir, provider_name) {
-        reload_provider_from_disk(gcx, provider_name, &config_dir).await
+        reload_provider_from_disk(ctx, provider_name, &config_dir).await
     } else {
         let identity = identity_for_model_management(&config_dir, provider_name).await?;
         let provider = create_provider(&identity.base_provider).ok_or_else(|| {
@@ -346,7 +348,7 @@ async fn ensure_provider_for_model_management(
                 provider,
             ))
         };
-        let mut registry = gcx.providers.write().await;
+        let mut registry = ctx.model.providers.write().await;
         registry.add(provider);
         Ok(())
     }
@@ -579,8 +581,8 @@ struct ProviderListResponse {
 pub async fn handle_v1_providers_list(
     State(app): State<AppState>,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
-    let registry = gcx.providers.read().await;
+    let ctx = app.chat_ctx();
+    let registry = ctx.model.providers.read().await;
 
     let mut providers = Vec::new();
     let mut seen = HashSet::new();
@@ -658,17 +660,17 @@ pub async fn handle_v1_provider_get(
     State(app): State<AppState>,
     Path(params): Path<ProviderPathParams>,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
+    let ctx = app.chat_ctx();
     validate_instance_id_for_http(&params.name)?;
     let is_claude_code = {
-        let registry = gcx.providers.read().await;
+        let registry = ctx.model.providers.read().await;
         registry
             .get(&params.name)
             .is_some_and(|provider| provider.base_provider_name() == "claude_code")
     };
     if is_claude_code {
         if let Err(error) = crate::providers::oauth_refresh::refresh_claude_code_instance_if_needed(
-            &gcx,
+            &app.gcx,
             &params.name,
         )
         .await
@@ -677,12 +679,12 @@ pub async fn handle_v1_provider_get(
         }
     }
     let (registry_provider, config_dir) = {
-        let registry = gcx.providers.read().await;
+        let registry = ctx.model.providers.read().await;
         (
             registry
                 .get(&params.name)
                 .map(|provider| provider.clone_box()),
-            gcx.config_dir.clone(),
+            ctx.paths.config_dir.clone(),
         )
     };
     let provider: Box<dyn ProviderTrait> = if let Some(provider) = registry_provider {
@@ -737,10 +739,10 @@ pub async fn handle_v1_provider_schema(
     State(app): State<AppState>,
     Path(params): Path<ProviderPathParams>,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
+    let ctx = app.chat_ctx();
     validate_instance_id_for_http(&params.name)?;
     let schema = {
-        let registry = gcx.providers.read().await;
+        let registry = ctx.model.providers.read().await;
 
         if let Some(provider) = registry.get(&params.name) {
             provider.provider_schema().to_string()
@@ -767,7 +769,8 @@ pub async fn handle_v1_provider_update(
     Path(params): Path<ProviderPathParams>,
     body_bytes: hyper::body::Bytes,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
+    let ctx = app.chat_ctx();
+    let quota_cache = app.gcx.quota_cache.clone();
     validate_instance_id_for_http(&params.name)?;
     let settings: serde_yaml::Value =
         if let Ok(json_val) = serde_json::from_slice::<serde_json::Value>(&body_bytes) {
@@ -787,7 +790,7 @@ pub async fn handle_v1_provider_update(
         };
 
     let (config_dir, registry_identity, registry_model_config) = {
-        let registry = gcx.providers.read().await;
+        let registry = ctx.model.providers.read().await;
         let registry_provider = registry.get(&params.name);
         let registry_identity = if let Some(provider) = registry_provider {
             if provider.is_readonly() {
@@ -807,7 +810,7 @@ pub async fn handle_v1_provider_update(
         let registry_model_config =
             registry_provider.map(ProviderModelConfigSnapshot::from_provider);
         (
-            gcx.config_dir.clone(),
+            ctx.paths.config_dir.clone(),
             registry_identity,
             registry_model_config,
         )
@@ -878,11 +881,11 @@ pub async fn handle_v1_provider_update(
             )
         })?;
 
-    reload_provider_from_disk(gcx.clone(), &identity.instance_id, &config_dir).await?;
+    reload_provider_from_disk(&ctx, &identity.instance_id, &config_dir).await?;
     refact_providers::credential::invalidate(&identity.instance_id);
-    invalidate_provider_quota(&gcx, &identity.instance_id).await;
+    invalidate_provider_quota(&quota_cache, &identity.instance_id).await;
 
-    invalidate_caps(gcx).await;
+    invalidate_caps(&ctx).await;
 
     json_response(StatusCode::OK, &json!({"success": true}))
 }
@@ -891,11 +894,12 @@ pub async fn handle_v1_provider_delete(
     State(app): State<AppState>,
     Path(params): Path<ProviderPathParams>,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
+    let ctx = app.chat_ctx();
+    let quota_cache = app.gcx.quota_cache.clone();
     validate_instance_id_for_http(&params.name)?;
 
     let registered_base_provider = {
-        let registry = gcx.providers.read().await;
+        let registry = ctx.model.providers.read().await;
         if let Some(provider) = registry.get(&params.name) {
             if provider.is_readonly() {
                 return Err(ScratchError::new(
@@ -908,7 +912,7 @@ pub async fn handle_v1_provider_delete(
             None
         }
     };
-    let config_dir = gcx.config_dir.clone();
+    let config_dir = ctx.paths.config_dir.clone();
     let base_provider = if let Some(base_provider) = registered_base_provider {
         base_provider
     } else if create_provider(&params.name).is_some() {
@@ -958,13 +962,13 @@ pub async fn handle_v1_provider_delete(
         .map_err(|e| ScratchError::new(StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
     {
-        let mut registry = gcx.providers.write().await;
+        let mut registry = ctx.model.providers.write().await;
         registry.remove(&params.name);
     }
     refact_providers::credential::invalidate(&params.name);
-    invalidate_provider_quota(&gcx, &params.name).await;
+    invalidate_provider_quota(&quota_cache, &params.name).await;
 
-    invalidate_caps(gcx).await;
+    invalidate_caps(&ctx).await;
 
     json_response(StatusCode::OK, &json!({"success": true}))
 }
@@ -978,9 +982,9 @@ pub async fn handle_v1_provider_models(
     State(app): State<AppState>,
     Path(params): Path<ProviderPathParams>,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
+    let ctx = app.chat_ctx();
     validate_instance_id_for_http(&params.name)?;
-    let registry = gcx.providers.read().await;
+    let registry = ctx.model.providers.read().await;
 
     let provider: Box<dyn crate::providers::traits::ProviderTrait> =
         if let Some(p) = registry.get(&params.name) {
@@ -1012,8 +1016,8 @@ pub async fn handle_v1_provider_models(
 pub async fn handle_v1_defaults_get(
     State(app): State<AppState>,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
-    let config_dir = gcx.config_dir.clone();
+    let ctx = app.chat_ctx();
+    let config_dir = ctx.paths.config_dir.clone();
     let defaults = ProviderDefaults::load(&config_dir)
         .await
         .map_err(|e| ScratchError::new(StatusCode::UNPROCESSABLE_ENTITY, e))?;
@@ -1097,10 +1101,10 @@ fn validate_defaults_draft_shape(content: &str) -> Result<(), ScratchError> {
 }
 
 async fn validate_defaults_draft(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     draft_id: &str,
 ) -> Result<(), ScratchError> {
-    let buddy_arc = gcx.buddy.clone();
+    let buddy_arc = ctx.buddy.buddy.clone();
     let lock = buddy_arc.lock().await;
     let svc = lock.as_ref().ok_or_else(|| {
         ScratchError::new(
@@ -1119,10 +1123,10 @@ async fn validate_defaults_draft(
 }
 
 async fn consume_defaults_draft(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     draft_id: &str,
 ) -> Result<(), ScratchError> {
-    let buddy_arc = gcx.buddy.clone();
+    let buddy_arc = ctx.buddy.buddy.clone();
     let mut lock = buddy_arc.lock().await;
     let svc = lock.as_mut().ok_or_else(|| {
         ScratchError::new(
@@ -1139,7 +1143,7 @@ pub async fn handle_v1_defaults_update(
     State(app): State<AppState>,
     body_bytes: hyper::body::Bytes,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
+    let ctx = app.chat_ctx();
     let req: DefaultsUpdateRequest = serde_json::from_slice(&body_bytes).map_err(|e| {
         ScratchError::new(
             StatusCode::UNPROCESSABLE_ENTITY,
@@ -1148,7 +1152,7 @@ pub async fn handle_v1_defaults_update(
     })?;
 
     if let Some(draft_id) = req.draft_id.as_deref() {
-        validate_defaults_draft(gcx.clone(), draft_id).await?;
+        validate_defaults_draft(&ctx, draft_id).await?;
     }
 
     let config_dir = app.paths.config_dir.clone();
@@ -1158,16 +1162,16 @@ pub async fn handle_v1_defaults_update(
         .map_err(|e| ScratchError::new(StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
     if let Some(draft_id) = req.draft_id.as_deref() {
-        consume_defaults_draft(gcx.clone(), draft_id).await?;
+        consume_defaults_draft(&ctx, draft_id).await?;
     }
 
-    invalidate_caps(gcx).await;
+    invalidate_caps(&ctx).await;
 
     json_response(StatusCode::OK, &json!({"success": true}))
 }
 
-async fn project_defaults_root(gcx: Arc<GlobalContext>) -> Option<std::path::PathBuf> {
-    crate::files_correction::get_project_dirs(gcx)
+async fn project_defaults_root(ctx: &ChatCtx) -> Option<std::path::PathBuf> {
+    crate::files_correction::get_unscoped_project_dirs_for_ctx(ctx)
         .await
         .into_iter()
         .next()
@@ -1176,8 +1180,8 @@ async fn project_defaults_root(gcx: Arc<GlobalContext>) -> Option<std::path::Pat
 pub async fn handle_v1_project_defaults_get(
     State(app): State<AppState>,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
-    let Some(root) = project_defaults_root(gcx).await else {
+    let ctx = app.chat_ctx();
+    let Some(root) = project_defaults_root(&ctx).await else {
         return json_response(
             StatusCode::OK,
             &json!({
@@ -1208,7 +1212,7 @@ pub async fn handle_v1_project_defaults_update(
     State(app): State<AppState>,
     body_bytes: hyper::body::Bytes,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
+    let ctx = app.chat_ctx();
     let defaults: ProjectModelDefaults = serde_json::from_slice(&body_bytes).map_err(|e| {
         ScratchError::new(
             StatusCode::UNPROCESSABLE_ENTITY,
@@ -1216,7 +1220,7 @@ pub async fn handle_v1_project_defaults_update(
         )
     })?;
 
-    let Some(root) = project_defaults_root(gcx.clone()).await else {
+    let Some(root) = project_defaults_root(&ctx).await else {
         return Err(ScratchError::new(
             StatusCode::BAD_REQUEST,
             "no project directory is open, cannot save project model defaults".to_string(),
@@ -1228,7 +1232,7 @@ pub async fn handle_v1_project_defaults_update(
         .await
         .map_err(|e| ScratchError::new(StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
-    invalidate_caps(gcx).await;
+    invalidate_caps(&ctx).await;
 
     json_response(StatusCode::OK, &json!({"success": true}))
 }
@@ -1270,9 +1274,9 @@ pub async fn handle_v1_models(
     State(app): State<AppState>,
     Query(params): Query<ModelsQueryParams>,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
+    let ctx = app.chat_ctx();
     validate_instance_id_for_http(&params.provider_name)?;
-    let registry = gcx.providers.read().await;
+    let registry = ctx.model.providers.read().await;
 
     let provider: Box<dyn crate::providers::traits::ProviderTrait> =
         if let Some(p) = registry.get(&params.provider_name) {
@@ -1341,11 +1345,11 @@ pub async fn handle_v1_provider_available_models(
     State(app): State<AppState>,
     Path(params): Path<ProviderPathParams>,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
+    let ctx = app.chat_ctx();
     validate_instance_id_for_http(&params.name)?;
     let (provider, http_client) = {
-        let registry = gcx.providers.read().await;
-        let http_client = gcx.http_client.clone();
+        let registry = ctx.model.providers.read().await;
+        let http_client = ctx.runtime.http_client.clone();
 
         let provider: Box<dyn crate::providers::traits::ProviderTrait> =
             if let Some(p) = registry.get(&params.name) {
@@ -1363,7 +1367,7 @@ pub async fn handle_v1_provider_available_models(
     };
 
     let source = provider.model_source();
-    let (model_caps, caps_error) = match get_model_caps(gcx.clone(), false).await {
+    let (model_caps, caps_error) = match get_model_caps(app.gcx.clone(), false).await {
         Ok(caps) => (caps, None),
         Err(e) => {
             tracing::warn!(
@@ -1434,7 +1438,7 @@ pub async fn handle_v1_provider_model_toggle(
     Path(params): Path<ProviderPathParams>,
     body_bytes: hyper::body::Bytes,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
+    let ctx = app.chat_ctx();
     validate_instance_id_for_http(&params.name)?;
     let request: ModelToggleRequest = serde_json::from_slice(&body_bytes).map_err(|e| {
         ScratchError::new(
@@ -1457,7 +1461,7 @@ pub async fn handle_v1_provider_model_toggle(
         ));
     }
 
-    update_model_enabled_state(gcx, &params.name, &request.model_id, request.enabled).await
+    update_model_enabled_state(&ctx, &params.name, &request.model_id, request.enabled).await
 }
 
 /// POST /v1/providers/{name}/models/provider
@@ -1468,7 +1472,7 @@ pub async fn handle_v1_provider_model_provider_update(
     Path(params): Path<ProviderPathParams>,
     body_bytes: hyper::body::Bytes,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
+    let ctx = app.chat_ctx();
     validate_instance_id_for_http(&params.name)?;
     let request: ModelProviderRequest = serde_json::from_slice(&body_bytes).map_err(|e| {
         ScratchError::new(
@@ -1494,7 +1498,7 @@ pub async fn handle_v1_provider_model_provider_update(
     }
 
     update_model_selected_provider_state(
-        gcx,
+        &ctx,
         &params.name,
         &request.model_id,
         request.selected_provider,
@@ -1507,9 +1511,9 @@ pub async fn handle_v1_openrouter_model_endpoints(
     State(app): State<AppState>,
     Path(params): Path<ProviderModelPathParams>,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
+    let ctx = app.chat_ctx();
     let (provider, http_client) =
-        resolve_provider_for_base(&gcx, &params.name, "openrouter").await?;
+        resolve_provider_for_base(&ctx, &params.name, "openrouter").await?;
     let openrouter = downcast_provider::<OpenRouterProvider>(provider.as_ref(), "OpenRouter")?;
 
     let (provider_variants, available_providers) = openrouter
@@ -1527,11 +1531,11 @@ pub async fn handle_v1_openrouter_model_endpoints(
 }
 
 async fn openrouter_account_info_response(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     provider_name: &str,
 ) -> Result<Response<Body>, ScratchError> {
     let (provider, http_client) =
-        resolve_provider_for_base(&gcx, provider_name, "openrouter").await?;
+        resolve_provider_for_base(ctx, provider_name, "openrouter").await?;
     let openrouter = downcast_provider::<OpenRouterProvider>(provider.as_ref(), "OpenRouter")?;
 
     let account_info = openrouter
@@ -1546,32 +1550,32 @@ async fn openrouter_account_info_response(
 pub async fn handle_v1_openrouter_account_info(
     State(app): State<AppState>,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
-    openrouter_account_info_response(gcx, "openrouter").await
+    let ctx = app.chat_ctx();
+    openrouter_account_info_response(&ctx, "openrouter").await
 }
 
 pub async fn handle_v1_provider_account_info(
     State(app): State<AppState>,
     Path(params): Path<ProviderPathParams>,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
+    let ctx = app.chat_ctx();
     validate_instance_id_for_http(&params.name)?;
-    let identity = resolve_provider_identity(&gcx, &params.name).await?;
+    let identity = resolve_provider_identity(&ctx, &params.name).await?;
     if !openrouter_base_provider_supported(&identity.base_provider) {
         return Err(ScratchError::new(
             StatusCode::BAD_REQUEST,
             format!("Provider '{}' does not support account-info", params.name),
         ));
     }
-    openrouter_account_info_response(gcx, &params.name).await
+    openrouter_account_info_response(&ctx, &params.name).await
 }
 
 async fn openrouter_health_response(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     provider_name: &str,
 ) -> Result<Response<Body>, ScratchError> {
     let (provider, http_client) =
-        resolve_provider_for_base(&gcx, provider_name, "openrouter").await?;
+        resolve_provider_for_base(ctx, provider_name, "openrouter").await?;
     let openrouter = downcast_provider::<OpenRouterProvider>(provider.as_ref(), "OpenRouter")?;
 
     match openrouter.check_api_key_health(&http_client).await {
@@ -1595,11 +1599,11 @@ async fn openrouter_health_response(
 }
 
 async fn google_gemini_health_response(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     provider_name: &str,
 ) -> Result<Response<Body>, ScratchError> {
     let (provider, http_client) =
-        resolve_provider_for_base(&gcx, provider_name, "google_gemini").await?;
+        resolve_provider_for_base(ctx, provider_name, "google_gemini").await?;
     let gemini = downcast_provider::<GoogleGeminiProvider>(provider.as_ref(), "Google Gemini")?;
 
     match gemini.check_api_key_health(&http_client).await {
@@ -1626,25 +1630,25 @@ async fn google_gemini_health_response(
 pub async fn handle_v1_openrouter_health(
     State(app): State<AppState>,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
-    openrouter_health_response(gcx, "openrouter").await
+    let ctx = app.chat_ctx();
+    openrouter_health_response(&ctx, "openrouter").await
 }
 
 /// GET /v1/google-gemini/health
 pub async fn handle_v1_google_gemini_health(
     State(app): State<AppState>,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
-    google_gemini_health_response(gcx, "google_gemini").await
+    let ctx = app.chat_ctx();
+    google_gemini_health_response(&ctx, "google_gemini").await
 }
 
 pub async fn handle_v1_provider_health(
     State(app): State<AppState>,
     Path(params): Path<ProviderPathParams>,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
+    let ctx = app.chat_ctx();
     validate_instance_id_for_http(&params.name)?;
-    let identity = resolve_provider_identity(&gcx, &params.name).await?;
+    let identity = resolve_provider_identity(&ctx, &params.name).await?;
     if !health_base_provider_supported(&identity.base_provider) {
         return Err(ScratchError::new(
             StatusCode::BAD_REQUEST,
@@ -1652,8 +1656,8 @@ pub async fn handle_v1_provider_health(
         ));
     }
     match identity.base_provider.as_str() {
-        "openrouter" => openrouter_health_response(gcx, &params.name).await,
-        "google_gemini" => google_gemini_health_response(gcx, &params.name).await,
+        "openrouter" => openrouter_health_response(&ctx, &params.name).await,
+        "google_gemini" => google_gemini_health_response(&ctx, &params.name).await,
         _ => Err(ScratchError::new(
             StatusCode::BAD_REQUEST,
             format!("Provider '{}' does not support health", params.name),
@@ -1662,15 +1666,15 @@ pub async fn handle_v1_provider_health(
 }
 
 async fn update_model_enabled_state(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     provider_name: &str,
     model_id: &str,
     enabled: bool,
 ) -> Result<Response<Body>, ScratchError> {
-    ensure_provider_for_model_management(gcx.clone(), provider_name).await?;
+    ensure_provider_for_model_management(ctx, provider_name).await?;
     // Capture previous state for rollback
     let (config_dir, previous_enabled_models, previous_disabled_models) = {
-        let mut registry = gcx.providers.write().await;
+        let mut registry = ctx.model.providers.write().await;
 
         let provider = registry.get_mut(provider_name).ok_or_else(|| {
             ScratchError::new(
@@ -1691,13 +1695,13 @@ async fn update_model_enabled_state(
         let previous_disabled = provider.disabled_models().to_vec();
 
         provider.set_model_enabled(model_id, enabled);
-        (gcx.config_dir.clone(), previous_enabled, previous_disabled)
+        (ctx.paths.config_dir.clone(), previous_enabled, previous_disabled)
     };
 
     // Try to save updated config
-    if let Err(e) = patch_provider_model_config(gcx.clone(), &config_dir, provider_name).await {
+    if let Err(e) = patch_provider_model_config(ctx, &config_dir, provider_name).await {
         // Rollback in-memory state on persistence failure
-        let mut registry = gcx.providers.write().await;
+        let mut registry = ctx.model.providers.write().await;
         if let Some(provider) = registry.get_mut(provider_name) {
             for model in provider.enabled_models().to_vec() {
                 provider.set_model_enabled(&model, false);
@@ -1715,9 +1719,9 @@ async fn update_model_enabled_state(
         return Err(e);
     }
 
-    reload_provider_from_disk(gcx.clone(), provider_name, &config_dir).await?;
+    reload_provider_from_disk(ctx, provider_name, &config_dir).await?;
 
-    invalidate_caps(gcx).await;
+    invalidate_caps(ctx).await;
 
     json_response(
         StatusCode::OK,
@@ -1726,14 +1730,14 @@ async fn update_model_enabled_state(
 }
 
 async fn update_model_selected_provider_state(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     provider_name: &str,
     model_id: &str,
     selected_provider: Option<String>,
 ) -> Result<Response<Body>, ScratchError> {
-    ensure_provider_for_model_management(gcx.clone(), provider_name).await?;
+    ensure_provider_for_model_management(ctx, provider_name).await?;
     let (config_dir, previous_selected_provider) = {
-        let mut registry = gcx.providers.write().await;
+        let mut registry = ctx.model.providers.write().await;
 
         let provider = registry.get_mut(provider_name).ok_or_else(|| {
             ScratchError::new(
@@ -1751,20 +1755,20 @@ async fn update_model_selected_provider_state(
 
         let prev = provider.selected_providers().get(model_id).cloned();
         provider.set_selected_provider(model_id, selected_provider.clone());
-        (gcx.config_dir.clone(), prev)
+        (ctx.paths.config_dir.clone(), prev)
     };
 
-    if let Err(e) = patch_provider_model_config(gcx.clone(), &config_dir, provider_name).await {
-        let mut registry = gcx.providers.write().await;
+    if let Err(e) = patch_provider_model_config(ctx, &config_dir, provider_name).await {
+        let mut registry = ctx.model.providers.write().await;
         if let Some(provider) = registry.get_mut(provider_name) {
             provider.set_selected_provider(model_id, previous_selected_provider);
         }
         return Err(e);
     }
 
-    reload_provider_from_disk(gcx.clone(), provider_name, &config_dir).await?;
+    reload_provider_from_disk(ctx, provider_name, &config_dir).await?;
 
-    invalidate_caps(gcx).await;
+    invalidate_caps(ctx).await;
 
     json_response(
         StatusCode::OK,
@@ -1790,7 +1794,7 @@ pub async fn handle_v1_provider_add_custom_model(
     Path(params): Path<ProviderPathParams>,
     body_bytes: hyper::body::Bytes,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
+    let ctx = app.chat_ctx();
     validate_instance_id_for_http(&params.name)?;
     let request: AddCustomModelRequest = serde_json::from_slice(&body_bytes).map_err(|e| {
         ScratchError::new(
@@ -1807,9 +1811,9 @@ pub async fn handle_v1_provider_add_custom_model(
         ));
     }
 
-    ensure_provider_for_model_management(gcx.clone(), &params.name).await?;
+    ensure_provider_for_model_management(&ctx, &params.name).await?;
     let (config_dir, previous_config) = {
-        let mut registry = gcx.providers.write().await;
+        let mut registry = ctx.model.providers.write().await;
 
         let provider = registry.get_mut(&params.name).ok_or_else(|| {
             ScratchError::new(
@@ -1827,11 +1831,11 @@ pub async fn handle_v1_provider_add_custom_model(
 
         let previous_config = provider.custom_models().get(&request.id).cloned();
         provider.add_custom_model(request.id.clone(), request.config.clone());
-        (gcx.config_dir.clone(), previous_config)
+        (ctx.paths.config_dir.clone(), previous_config)
     };
 
-    if let Err(e) = patch_provider_model_config(gcx.clone(), &config_dir, &params.name).await {
-        let mut registry = gcx.providers.write().await;
+    if let Err(e) = patch_provider_model_config(&ctx, &config_dir, &params.name).await {
+        let mut registry = ctx.model.providers.write().await;
         if let Some(provider) = registry.get_mut(&params.name) {
             if let Some(previous) = previous_config {
                 provider.add_custom_model(request.id.clone(), previous);
@@ -1842,9 +1846,9 @@ pub async fn handle_v1_provider_add_custom_model(
         return Err(e);
     }
 
-    reload_provider_from_disk(gcx.clone(), &params.name, &config_dir).await?;
+    reload_provider_from_disk(&ctx, &params.name, &config_dir).await?;
 
-    invalidate_caps(gcx).await;
+    invalidate_caps(&ctx).await;
 
     json_response(
         StatusCode::OK,
@@ -1865,8 +1869,8 @@ pub async fn handle_v1_provider_remove_custom_model_post(
     Path(params): Path<ProviderPathParams>,
     body_bytes: hyper::body::Bytes,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
-    handle_v1_provider_remove_custom_model_impl(gcx, &params.name, body_bytes).await
+    let ctx = app.chat_ctx();
+    handle_v1_provider_remove_custom_model_impl(&ctx, &params.name, body_bytes).await
 }
 
 /// DELETE /v1/providers/{name}/custom-models
@@ -1878,12 +1882,12 @@ pub async fn handle_v1_provider_remove_custom_model(
     Path(params): Path<ProviderPathParams>,
     body_bytes: hyper::body::Bytes,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
-    handle_v1_provider_remove_custom_model_impl(gcx, &params.name, body_bytes).await
+    let ctx = app.chat_ctx();
+    handle_v1_provider_remove_custom_model_impl(&ctx, &params.name, body_bytes).await
 }
 
 async fn handle_v1_provider_remove_custom_model_impl(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     provider_name: &str,
     body_bytes: hyper::body::Bytes,
 ) -> Result<Response<Body>, ScratchError> {
@@ -1903,7 +1907,7 @@ async fn handle_v1_provider_remove_custom_model_impl(
     }
 
     let (config_dir, previous_custom_models, previous_enabled_models, previous_disabled_models) = {
-        let mut registry = gcx.providers.write().await;
+        let mut registry = ctx.model.providers.write().await;
 
         let provider = registry.get_mut(provider_name).ok_or_else(|| {
             ScratchError::new(
@@ -1932,7 +1936,7 @@ async fn handle_v1_provider_remove_custom_model_impl(
         provider.set_model_enabled(&request.model_id, false);
 
         (
-            gcx.config_dir.clone(),
+            ctx.paths.config_dir.clone(),
             previous,
             previous_enabled,
             previous_disabled,
@@ -1940,9 +1944,9 @@ async fn handle_v1_provider_remove_custom_model_impl(
     };
 
     // Try to save updated config, rollback on failure
-    if let Err(e) = patch_provider_model_config(gcx.clone(), &config_dir, provider_name).await {
+    if let Err(e) = patch_provider_model_config(ctx, &config_dir, provider_name).await {
         // Rollback in-memory state
-        let mut registry = gcx.providers.write().await;
+        let mut registry = ctx.model.providers.write().await;
         if let Some(provider) = registry.get_mut(provider_name) {
             if let Some(config) = previous_custom_models.get(&request.model_id) {
                 provider.add_custom_model(request.model_id.clone(), config.clone());
@@ -1963,9 +1967,9 @@ async fn handle_v1_provider_remove_custom_model_impl(
         return Err(e);
     }
 
-    reload_provider_from_disk(gcx.clone(), provider_name, &config_dir).await?;
+    reload_provider_from_disk(ctx, provider_name, &config_dir).await?;
 
-    invalidate_caps(gcx).await;
+    invalidate_caps(ctx).await;
 
     json_response(
         StatusCode::OK,
@@ -2253,13 +2257,13 @@ fn apply_model_config_snapshot_for_omitted_fields(
 /// SAFETY: This function will NOT write if the existing config is invalid YAML,
 /// to prevent destroying secrets and other settings.
 async fn patch_provider_model_config(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     config_dir: &std::path::Path,
     provider_name: &str,
 ) -> Result<(), ScratchError> {
     validate_instance_id_for_http(provider_name)?;
     let (identity, model_config) = {
-        let registry = gcx.providers.read().await;
+        let registry = ctx.model.providers.read().await;
         let provider = registry.get(provider_name).ok_or_else(|| {
             ScratchError::new(
                 StatusCode::NOT_FOUND,
@@ -2326,7 +2330,7 @@ async fn patch_provider_model_config(
 }
 
 async fn reload_provider_from_disk(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     provider_name: &str,
     config_dir: &std::path::Path,
 ) -> Result<(), ScratchError> {
@@ -2352,7 +2356,7 @@ async fn reload_provider_from_disk(
         )
     })?;
 
-    let mut registry = gcx.providers.write().await;
+    let mut registry = ctx.model.providers.write().await;
 
     let provider = provider_from_yaml(provider_name, yaml)?;
     registry.add(provider);
@@ -2407,10 +2411,10 @@ struct GitHubCopilotOAuthStartRequest {
 }
 
 async fn oauth_base_provider_for_instance(
-    gcx: &Arc<GlobalContext>,
+    ctx: &ChatCtx,
     provider_name: &str,
 ) -> Result<String, ScratchError> {
-    let identity = resolve_provider_identity(gcx, provider_name).await?;
+    let identity = resolve_provider_identity(ctx, provider_name).await?;
     if !oauth_supported_for_base(&identity.base_provider) {
         return Err(ScratchError::new(
             StatusCode::BAD_REQUEST,
@@ -2425,9 +2429,10 @@ pub async fn handle_v1_provider_oauth_start(
     Path(params): Path<ProviderPathParams>,
     body_bytes: hyper::body::Bytes,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
+    let ctx = app.chat_ctx();
+    let quota_cache = app.gcx.quota_cache.clone();
     validate_instance_id_for_http(&params.name)?;
-    let base_provider = oauth_base_provider_for_instance(&gcx, &params.name).await?;
+    let base_provider = oauth_base_provider_for_instance(&ctx, &params.name).await?;
     match base_provider.as_str() {
         "claude_code" => {
             let mode = crate::providers::claude_code_oauth::OAuthMode::Max;
@@ -2443,19 +2448,22 @@ pub async fn handle_v1_provider_oauth_start(
                 )
                 .await;
 
-            let http_client = gcx.http_client.clone();
-            let gcx_for_save = gcx.clone();
+            let http_client = ctx.runtime.http_client.clone();
+            let ctx_for_save = ctx.clone();
+            let quota_cache_for_save = quota_cache.clone();
             let listener_handle = crate::providers::claude_code_oauth::start_callback_listener(
                 callback_listener,
                 http_client,
                 move |tokens, provider_instance_id| {
-                    let gcx_for_save = gcx_for_save.clone();
+                    let ctx_for_save = ctx_for_save.clone();
+                    let quota_cache_for_save = quota_cache_for_save.clone();
                     async move {
-                        let config_dir = gcx_for_save.config_dir.clone();
+                        let config_dir = ctx_for_save.paths.config_dir.clone();
                         let tokens_value = serde_yaml::to_value(&tokens)
                             .map_err(|e| format!("Failed to serialize tokens: {}", e))?;
                         save_provider_oauth_tokens(
-                            &gcx_for_save,
+                            &ctx_for_save,
+                            &quota_cache_for_save,
                             &config_dir,
                             &provider_instance_id,
                             "claude_code",
@@ -2493,15 +2501,17 @@ pub async fn handle_v1_provider_oauth_start(
 
             let listener_handle = crate::providers::openai_codex_oauth::start_callback_listener(
                 listener,
-                gcx.http_client.clone(),
+                ctx.runtime.http_client.clone(),
             );
-            let gcx_clone = gcx.clone();
+            let ctx_clone = ctx.clone();
+            let quota_cache_clone = quota_cache.clone();
             tokio::spawn(async move {
                 if let Some((tokens, provider_instance_id)) = listener_handle.await.ok().flatten() {
-                    let config_dir = gcx_clone.config_dir.clone();
+                    let config_dir = ctx_clone.paths.config_dir.clone();
                     if let Ok(tokens_value) = serde_yaml::to_value(&tokens) {
                         if let Err(e) = save_provider_oauth_tokens(
-                            &gcx_clone,
+                            &ctx_clone,
+                            &quota_cache_clone,
                             &config_dir,
                             &provider_instance_id,
                             "openai_codex",
@@ -2533,15 +2543,17 @@ pub async fn handle_v1_provider_oauth_start(
 
             let listener_handle = crate::providers::xai_oauth_flow::start_callback_listener(
                 listener,
-                gcx.http_client.clone(),
+                ctx.runtime.http_client.clone(),
             );
-            let gcx_clone = gcx.clone();
+            let ctx_clone = ctx.clone();
+            let quota_cache_clone = quota_cache.clone();
             tokio::spawn(async move {
                 if let Some((tokens, provider_instance_id)) = listener_handle.await.ok().flatten() {
-                    let config_dir = gcx_clone.config_dir.clone();
+                    let config_dir = ctx_clone.paths.config_dir.clone();
                     if let Ok(tokens_value) = serde_yaml::to_value(&tokens) {
                         if let Err(e) = save_provider_oauth_tokens(
-                            &gcx_clone,
+                            &ctx_clone,
+                            &quota_cache_clone,
                             &config_dir,
                             &provider_instance_id,
                             "xai_oauth",
@@ -2581,15 +2593,17 @@ pub async fn handle_v1_provider_oauth_start(
             let listener_handle =
                 crate::providers::google_antigravity_oauth::start_callback_listener(
                     listener,
-                    gcx.http_client.clone(),
+                    ctx.runtime.http_client.clone(),
                 );
-            let gcx_clone = gcx.clone();
+            let ctx_clone = ctx.clone();
+            let quota_cache_clone = quota_cache.clone();
             tokio::spawn(async move {
                 if let Some((tokens, provider_instance_id)) = listener_handle.await.ok().flatten() {
-                    let config_dir = gcx_clone.config_dir.clone();
+                    let config_dir = ctx_clone.paths.config_dir.clone();
                     if let Ok(tokens_value) = serde_yaml::to_value(&tokens) {
                         if let Err(e) = save_provider_oauth_tokens(
-                            &gcx_clone,
+                            &ctx_clone,
+                            &quota_cache_clone,
                             &config_dir,
                             &provider_instance_id,
                             "google_antigravity",
@@ -2647,7 +2661,7 @@ pub async fn handle_v1_provider_oauth_start(
                     "GitHub Enterprise login requires enterprise_url".to_string(),
                 ));
             }
-            let http_client = gcx.http_client.clone();
+            let http_client = ctx.runtime.http_client.clone();
             let start = crate::providers::github_copilot_oauth::start_oauth_session(
                 &http_client,
                 request.enterprise_url.as_deref(),
@@ -2675,7 +2689,8 @@ pub async fn handle_v1_provider_oauth_exchange(
     Path(params): Path<ProviderPathParams>,
     body_bytes: hyper::body::Bytes,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
+    let ctx = app.chat_ctx();
+    let quota_cache = app.gcx.quota_cache.clone();
     let request: OAuthExchangeRequest = serde_json::from_slice(&body_bytes).map_err(|e| {
         ScratchError::new(
             StatusCode::UNPROCESSABLE_ENTITY,
@@ -2684,9 +2699,9 @@ pub async fn handle_v1_provider_oauth_exchange(
     })?;
 
     validate_instance_id_for_http(&params.name)?;
-    let base_provider = oauth_base_provider_for_instance(&gcx, &params.name).await?;
-    let http_client = gcx.http_client.clone();
-    let config_dir = gcx.config_dir.clone();
+    let base_provider = oauth_base_provider_for_instance(&ctx, &params.name).await?;
+    let http_client = ctx.runtime.http_client.clone();
+    let config_dir = ctx.paths.config_dir.clone();
 
     match base_provider.as_str() {
         "claude_code" => {
@@ -2710,7 +2725,8 @@ pub async fn handle_v1_provider_oauth_exchange(
             }
 
             save_provider_oauth_tokens(
-                &gcx,
+                &ctx,
+                &quota_cache,
                 &config_dir,
                 &session_provider_name,
                 "claude_code",
@@ -2743,7 +2759,8 @@ pub async fn handle_v1_provider_oauth_exchange(
             }
 
             save_provider_oauth_tokens(
-                &gcx,
+                &ctx,
+                &quota_cache,
                 &config_dir,
                 &session_provider_name,
                 "openai_codex",
@@ -2776,7 +2793,8 @@ pub async fn handle_v1_provider_oauth_exchange(
             }
 
             save_provider_oauth_tokens(
-                &gcx,
+                &ctx,
+                &quota_cache,
                 &config_dir,
                 &session_provider_name,
                 "xai_oauth",
@@ -2809,7 +2827,8 @@ pub async fn handle_v1_provider_oauth_exchange(
             }
 
             save_provider_oauth_tokens(
-                &gcx,
+                &ctx,
+                &quota_cache,
                 &config_dir,
                 &session_provider_name,
                 "google_antigravity",
@@ -2832,7 +2851,8 @@ pub async fn handle_v1_provider_oauth_exchange(
             match outcome {
                 crate::providers::github_copilot_oauth::DevicePollOutcome::Success(tokens) => {
                     save_provider_oauth_tokens(
-                        &gcx,
+                        &ctx,
+                        &quota_cache,
                         &config_dir,
                         &params.name,
                         "github_copilot",
@@ -2901,10 +2921,11 @@ pub async fn handle_v1_provider_oauth_logout(
     State(app): State<AppState>,
     Path(params): Path<ProviderPathParams>,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
+    let ctx = app.chat_ctx();
+    let quota_cache = app.gcx.quota_cache.clone();
     validate_instance_id_for_http(&params.name)?;
-    let base_provider = oauth_base_provider_for_instance(&gcx, &params.name).await?;
-    let config_dir = gcx.config_dir.clone();
+    let base_provider = oauth_base_provider_for_instance(&ctx, &params.name).await?;
+    let config_dir = ctx.paths.config_dir.clone();
 
     match base_provider.as_str() {
         "claude_code" => {
@@ -2916,8 +2937,15 @@ pub async fn handle_v1_provider_oauth_logout(
                             format!("Failed to serialize: {}", e),
                         )
                     })?;
-            save_provider_oauth_tokens(&gcx, &config_dir, &params.name, "claude_code", &empty)
-                .await?;
+            save_provider_oauth_tokens(
+                &ctx,
+                &quota_cache,
+                &config_dir,
+                &params.name,
+                "claude_code",
+                &empty,
+            )
+            .await?;
         }
         "openai_codex" => {
             let empty =
@@ -2928,8 +2956,15 @@ pub async fn handle_v1_provider_oauth_logout(
                             format!("Failed to serialize: {}", e),
                         )
                     })?;
-            save_provider_oauth_tokens(&gcx, &config_dir, &params.name, "openai_codex", &empty)
-                .await?;
+            save_provider_oauth_tokens(
+                &ctx,
+                &quota_cache,
+                &config_dir,
+                &params.name,
+                "openai_codex",
+                &empty,
+            )
+            .await?;
         }
         "xai_oauth" => {
             let empty =
@@ -2940,8 +2975,15 @@ pub async fn handle_v1_provider_oauth_logout(
                             format!("Failed to serialize: {}", e),
                         )
                     })?;
-            save_provider_oauth_tokens(&gcx, &config_dir, &params.name, "xai_oauth", &empty)
-                .await?;
+            save_provider_oauth_tokens(
+                &ctx,
+                &quota_cache,
+                &config_dir,
+                &params.name,
+                "xai_oauth",
+                &empty,
+            )
+            .await?;
         }
         "google_antigravity" => {
             let empty = serde_yaml::to_value(
@@ -2954,7 +2996,8 @@ pub async fn handle_v1_provider_oauth_logout(
                 )
             })?;
             save_provider_oauth_tokens(
-                &gcx,
+                &ctx,
+                &quota_cache,
                 &config_dir,
                 &params.name,
                 "google_antigravity",
@@ -2972,8 +3015,15 @@ pub async fn handle_v1_provider_oauth_logout(
                     format!("Failed to serialize: {}", e),
                 )
             })?;
-            save_provider_oauth_tokens(&gcx, &config_dir, &params.name, "github_copilot", &empty)
-                .await?;
+            save_provider_oauth_tokens(
+                &ctx,
+                &quota_cache,
+                &config_dir,
+                &params.name,
+                "github_copilot",
+                &empty,
+            )
+            .await?;
         }
         _ => {
             return Err(ScratchError::new(
@@ -3042,7 +3092,8 @@ fn html_response(
 }
 
 async fn handle_openai_codex_oauth_callback_impl(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
+    quota_cache: &Arc<AMutex<ProviderQuotaCache>>,
     query: OAuthCallbackParams,
     expected_provider_name: Option<String>,
 ) -> Result<Response<Body>, ScratchError> {
@@ -3084,8 +3135,8 @@ async fn handle_openai_codex_oauth_callback_impl(
         }
     };
 
-    let http_client = gcx.http_client.clone();
-    let config_dir = gcx.config_dir.clone();
+    let http_client = ctx.runtime.http_client.clone();
+    let config_dir = ctx.paths.config_dir.clone();
 
     let (tokens, provider_instance_id) =
         match crate::providers::openai_codex_oauth::exchange_code_for_session(
@@ -3122,7 +3173,8 @@ async fn handle_openai_codex_oauth_callback_impl(
     }
 
     if let Err(e) = save_provider_oauth_tokens(
-        &gcx,
+        ctx,
+        quota_cache,
         &config_dir,
         &provider_instance_id,
         "openai_codex",
@@ -3157,9 +3209,10 @@ pub async fn handle_v1_provider_oauth_callback(
     Path(params): Path<ProviderPathParams>,
     Query(query): Query<OAuthCallbackParams>,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
+    let ctx = app.chat_ctx();
+    let quota_cache = app.gcx.quota_cache.clone();
     validate_instance_id_for_http(&params.name)?;
-    let base_provider = oauth_base_provider_for_instance(&gcx, &params.name).await?;
+    let base_provider = oauth_base_provider_for_instance(&ctx, &params.name).await?;
     if base_provider != "openai_codex" {
         return Err(ScratchError::new(
             StatusCode::BAD_REQUEST,
@@ -3169,22 +3222,24 @@ pub async fn handle_v1_provider_oauth_callback(
             ),
         ));
     }
-    handle_openai_codex_oauth_callback_impl(gcx, query, Some(params.name)).await
+    handle_openai_codex_oauth_callback_impl(&ctx, &quota_cache, query, Some(params.name)).await
 }
 
 pub async fn handle_openai_codex_auth_callback(
     State(app): State<AppState>,
     Query(query): Query<OAuthCallbackParams>,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
-    handle_openai_codex_oauth_callback_impl(gcx, query, None).await
+    let ctx = app.chat_ctx();
+    let quota_cache = app.gcx.quota_cache.clone();
+    handle_openai_codex_oauth_callback_impl(&ctx, &quota_cache, query, None).await
 }
 
 async fn claude_code_usage_response(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
+    gcx: &Arc<GlobalContext>,
     provider_name: &str,
 ) -> Result<Response<Body>, ScratchError> {
-    let result = fetch_claude_code_usage_with_refresh(gcx, provider_name).await;
+    let result = fetch_claude_code_usage_with_refresh(ctx, gcx, provider_name).await;
 
     match result {
         Ok(usage) => json_response(StatusCode::OK, &json!({"data": usage})),
@@ -3193,12 +3248,13 @@ async fn claude_code_usage_response(
 }
 
 async fn fetch_claude_code_usage_with_refresh(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
+    gcx: &Arc<GlobalContext>,
     provider_name: &str,
 ) -> Result<crate::providers::claude_code::ClaudeCodeUsage, String> {
     use crate::providers::claude_code::ClaudeCodeUsageRequestError;
 
-    let (provider, http_client) = resolve_provider_for_base(&gcx, provider_name, "claude_code")
+    let (provider, http_client) = resolve_provider_for_base(ctx, provider_name, "claude_code")
         .await
         .map_err(|error| error.message)?;
     let mut request_provider =
@@ -3213,7 +3269,7 @@ async fn fetch_claude_code_usage_with_refresh(
             refresh_attempted = true;
             let rejected_access_token = request_provider.oauth_tokens.access_token.clone();
             request_provider = crate::providers::oauth_refresh::force_refresh_claude_code_for_retry(
-                &gcx,
+                gcx,
                 &http_client,
                 provider_name,
                 &rejected_access_token,
@@ -3243,7 +3299,7 @@ async fn fetch_claude_code_usage_with_refresh(
             ) =>
         {
             let retry_provider = crate::providers::oauth_refresh::force_refresh_claude_code_for_retry(
-                &gcx,
+                gcx,
                 &http_client,
                 provider_name,
                 &access_token,
@@ -3266,10 +3322,10 @@ async fn fetch_claude_code_usage_with_refresh(
 }
 
 async fn openai_codex_usage_response(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     provider_name: &str,
 ) -> Result<Response<Body>, ScratchError> {
-    let result = fetch_openai_codex_usage_with_refresh(gcx, provider_name).await;
+    let result = fetch_openai_codex_usage_with_refresh(ctx, provider_name).await;
 
     match result {
         Ok(usage) => json_response(StatusCode::OK, &json!({"data": usage})),
@@ -3278,11 +3334,11 @@ async fn openai_codex_usage_response(
 }
 
 async fn opencode_usage_response(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     provider_name: &str,
 ) -> Result<Response<Body>, ScratchError> {
     let (provider, http_client) =
-        resolve_provider_for_base(&gcx, provider_name, "opencode").await?;
+        resolve_provider_for_base(ctx, provider_name, "opencode").await?;
     let opencode = downcast_provider::<OpenCodeProvider>(provider.as_ref(), "OpenCode")?;
 
     if opencode.usage_endpoint.trim().is_empty() {
@@ -3296,10 +3352,11 @@ async fn opencode_usage_response(
 }
 
 async fn google_antigravity_usage_response(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
+    quota_cache: &Arc<AMutex<ProviderQuotaCache>>,
     provider_name: &str,
 ) -> Result<Response<Body>, ScratchError> {
-    let result = fetch_google_antigravity_usage_with_refresh(gcx, provider_name).await;
+    let result = fetch_google_antigravity_usage_with_refresh(ctx, quota_cache, provider_name).await;
     match result {
         Ok(usage) => json_response(StatusCode::OK, &json!({"data": usage})),
         Err(error) => json_response(StatusCode::OK, &json!({"error": error})),
@@ -3307,11 +3364,12 @@ async fn google_antigravity_usage_response(
 }
 
 async fn fetch_google_antigravity_usage_with_refresh(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
+    quota_cache: &Arc<AMutex<ProviderQuotaCache>>,
     provider_name: &str,
 ) -> Result<crate::providers::google_antigravity::GoogleAntigravityQuotaSummary, String> {
     let (provider, http_client) =
-        resolve_provider_for_base(&gcx, provider_name, "google_antigravity")
+        resolve_provider_for_base(ctx, provider_name, "google_antigravity")
             .await
             .map_err(|error| error.message)?;
     let request_provider =
@@ -3331,7 +3389,7 @@ async fn fetch_google_antigravity_usage_with_refresh(
         {
             let _guard = GoogleAntigravityProvider::lock_refresh_guard().await?;
             let (current_provider, _) =
-                resolve_provider_for_base(&gcx, provider_name, "google_antigravity")
+                resolve_provider_for_base(ctx, provider_name, "google_antigravity")
                     .await
                     .map_err(|error| error.message)?;
             let current_provider = downcast_provider::<GoogleAntigravityProvider>(
@@ -3359,11 +3417,12 @@ async fn fetch_google_antigravity_usage_with_refresh(
             if refreshed.project_id.is_empty() {
                 refreshed.project_id = current_provider.oauth_tokens.project_id.clone();
             }
-            let config_dir = gcx.config_dir.clone();
+            let config_dir = ctx.paths.config_dir.clone();
             let tokens_value = serde_yaml::to_value(&refreshed)
                 .map_err(|error| format!("Failed to serialize refreshed OAuth tokens: {error}"))?;
             save_provider_oauth_tokens(
-                &gcx,
+                ctx,
+                quota_cache,
                 &config_dir,
                 provider_name,
                 "google_antigravity",
@@ -3385,10 +3444,10 @@ async fn fetch_google_antigravity_usage_with_refresh(
 }
 
 async fn xai_oauth_usage_response(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     provider_name: &str,
 ) -> Result<Response<Body>, ScratchError> {
-    let (provider, _) = resolve_provider_for_base(&gcx, provider_name, "xai_oauth").await?;
+    let (provider, _) = resolve_provider_for_base(ctx, provider_name, "xai_oauth").await?;
     let xai = downcast_provider::<XAIOAuthProvider>(provider.as_ref(), "xAI OAuth")?;
     match xai.fetch_usage().await {
         Ok(usage) => json_response(StatusCode::OK, &json!({"data": usage})),
@@ -3679,21 +3738,23 @@ fn quota_snapshot_from_details(
 }
 
 async fn fetch_provider_quota(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
+    gcx: &Arc<GlobalContext>,
+    quota_cache: &Arc<AMutex<ProviderQuotaCache>>,
     provider_name: &str,
     base_provider: &str,
 ) -> ProviderQuotaSnapshot {
     let result: Result<(ProviderQuotaSource, Value), String> = match base_provider {
-        "claude_code" => fetch_claude_code_usage_with_refresh(gcx, provider_name)
+        "claude_code" => fetch_claude_code_usage_with_refresh(ctx, gcx, provider_name)
             .await
             .and_then(|value| serde_json::to_value(value).map_err(|error| error.to_string()))
             .map(|value| (ProviderQuotaSource::ClaudeCode, value)),
-        "openai_codex" => fetch_openai_codex_usage_with_refresh(gcx, provider_name)
+        "openai_codex" => fetch_openai_codex_usage_with_refresh(ctx, provider_name)
             .await
             .and_then(|value| serde_json::to_value(value).map_err(|error| error.to_string()))
             .map(|value| (ProviderQuotaSource::OpenaiCodex, value)),
         "openrouter" => {
-            let resolved = resolve_provider_for_base(&gcx, provider_name, "openrouter").await;
+            let resolved = resolve_provider_for_base(ctx, provider_name, "openrouter").await;
             match resolved {
                 Ok((provider, client)) => {
                     match downcast_provider::<OpenRouterProvider>(provider.as_ref(), "OpenRouter") {
@@ -3710,12 +3771,14 @@ async fn fetch_provider_quota(
                 Err(error) => Err(error.message),
             }
         }
-        "google_antigravity" => fetch_google_antigravity_usage_with_refresh(gcx, provider_name)
-            .await
-            .and_then(|value| serde_json::to_value(value).map_err(|error| error.to_string()))
-            .map(|value| (ProviderQuotaSource::GoogleAntigravity, value)),
+        "google_antigravity" => {
+            fetch_google_antigravity_usage_with_refresh(ctx, quota_cache, provider_name)
+                .await
+                .and_then(|value| serde_json::to_value(value).map_err(|error| error.to_string()))
+                .map(|value| (ProviderQuotaSource::GoogleAntigravity, value))
+        }
         "opencode" => {
-            let resolved = resolve_provider_for_base(&gcx, provider_name, "opencode").await;
+            let resolved = resolve_provider_for_base(ctx, provider_name, "opencode").await;
             match resolved {
                 Ok((provider, client)) => {
                     match downcast_provider::<OpenCodeProvider>(provider.as_ref(), "OpenCode") {
@@ -3740,7 +3803,7 @@ async fn fetch_provider_quota(
         }
         "xai_oauth" => {
             let provider = {
-                let registry = gcx.providers.read().await;
+                let registry = ctx.model.providers.read().await;
                 registry
                     .get(provider_name)
                     .map(|provider| provider.clone_box())
@@ -3763,7 +3826,7 @@ async fn fetch_provider_quota(
         }
         "litellm" => {
             let provider = {
-                let registry = gcx.providers.read().await;
+                let registry = ctx.model.providers.read().await;
                 registry
                     .get(provider_name)
                     .map(|provider| provider.clone_box())
@@ -3771,7 +3834,7 @@ async fn fetch_provider_quota(
             match provider
                 .and_then(|provider| provider.as_any().downcast_ref::<LiteLLMProvider>().cloned())
             {
-                Some(provider) => match provider.query_budget(&gcx.http_client).await {
+                Some(provider) => match provider.query_budget(&ctx.runtime.http_client).await {
                     LiteLLMBudgetQueryResult::Available(value) => serde_json::to_value(value)
                         .map(|value| (ProviderQuotaSource::Litellm, value))
                         .map_err(|error| error.to_string()),
@@ -3810,13 +3873,15 @@ async fn fetch_provider_quota(
 }
 
 async fn provider_quota_cached(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
+    gcx: &Arc<GlobalContext>,
+    quota_cache: &Arc<AMutex<ProviderQuotaCache>>,
     provider_name: &str,
     base_provider: &str,
     refresh: bool,
 ) -> ProviderQuotaSnapshot {
     let (cached, prior) = {
-        let cache = gcx.quota_cache.lock().await;
+        let cache = quota_cache.lock().await;
         (
             if refresh {
                 None
@@ -3831,11 +3896,11 @@ async fn provider_quota_cached(
             return snapshot;
         }
     }
-    let snapshot = fetch_provider_quota(gcx.clone(), provider_name, base_provider).await;
+    let snapshot = fetch_provider_quota(ctx, gcx, quota_cache, provider_name, base_provider).await;
     if let Some(fallback) = stale_quota_fallback(&snapshot, prior) {
         return fallback;
     }
-    gcx.quota_cache
+    quota_cache
         .lock()
         .await
         .insert(provider_name.to_string(), snapshot.clone());
@@ -3856,8 +3921,11 @@ fn stale_quota_fallback(
     Some(prior)
 }
 
-async fn invalidate_provider_quota(gcx: &Arc<GlobalContext>, provider_name: &str) {
-    gcx.quota_cache.lock().await.invalidate(provider_name);
+async fn invalidate_provider_quota(
+    quota_cache: &Arc<AMutex<ProviderQuotaCache>>,
+    provider_name: &str,
+) {
+    quota_cache.lock().await.invalidate(provider_name);
 }
 
 pub async fn handle_v1_provider_quota(
@@ -3865,10 +3933,14 @@ pub async fn handle_v1_provider_quota(
     Path(params): Path<ProviderPathParams>,
     Query(query): Query<ProviderQuotaQuery>,
 ) -> Result<Response<Body>, ScratchError> {
+    let ctx = app.chat_ctx();
+    let quota_cache = app.gcx.quota_cache.clone();
     validate_instance_id_for_http(&params.name)?;
-    let identity = resolve_provider_identity(&app.gcx, &params.name).await?;
+    let identity = resolve_provider_identity(&ctx, &params.name).await?;
     let snapshot = provider_quota_cached(
-        app.gcx.clone(),
+        &ctx,
+        &app.gcx,
+        &quota_cache,
         &identity.instance_id,
         &identity.base_provider,
         query.refresh,
@@ -3881,8 +3953,10 @@ pub async fn handle_v1_provider_quotas(
     State(app): State<AppState>,
     Query(query): Query<ProviderQuotaQuery>,
 ) -> Result<Response<Body>, ScratchError> {
+    let ctx = app.chat_ctx();
+    let quota_cache = app.gcx.quota_cache.clone();
     let providers = {
-        let registry = app.gcx.providers.read().await;
+        let registry = ctx.model.providers.read().await;
         let mut providers = registry
             .iter()
             .filter(|(_, provider)| !provider.is_hidden_from_list())
@@ -3897,13 +3971,16 @@ pub async fn handle_v1_provider_quotas(
     while next < providers.len() || !tasks.is_empty() {
         while next < providers.len() && tasks.len() < 8 {
             let (name, base_provider) = providers[next].clone();
+            let ctx = ctx.clone();
             let gcx = app.gcx.clone();
+            let quota_cache = quota_cache.clone();
             let refresh = query.refresh;
             let index = next;
             tasks.spawn(async move {
                 (
                     index,
-                    provider_quota_cached(gcx, &name, &base_provider, refresh).await,
+                    provider_quota_cached(&ctx, &gcx, &quota_cache, &name, &base_provider, refresh)
+                        .await,
                 )
             });
             next += 1;
@@ -3929,12 +4006,12 @@ pub async fn handle_v1_provider_quotas(
 }
 
 async fn openai_codex_redeem_response(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     provider_name: &str,
     redeem_request_id: &str,
 ) -> Result<Response<Body>, ScratchError> {
     let result =
-        redeem_openai_codex_reset_credit_with_refresh(gcx, provider_name, redeem_request_id).await;
+        redeem_openai_codex_reset_credit_with_refresh(ctx, provider_name, redeem_request_id).await;
 
     match result {
         Ok(redeem) => json_response(StatusCode::OK, &json!({"data": redeem})),
@@ -3946,9 +4023,10 @@ pub async fn handle_v1_provider_usage(
     State(app): State<AppState>,
     Path(params): Path<ProviderPathParams>,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
+    let ctx = app.chat_ctx();
+    let quota_cache = app.gcx.quota_cache.clone();
     validate_instance_id_for_http(&params.name)?;
-    let identity = resolve_provider_identity(&gcx, &params.name).await?;
+    let identity = resolve_provider_identity(&ctx, &params.name).await?;
     if !usage_base_provider_supported(&identity.base_provider) {
         return Err(ScratchError::new(
             StatusCode::BAD_REQUEST,
@@ -3956,11 +4034,13 @@ pub async fn handle_v1_provider_usage(
         ));
     }
     match identity.base_provider.as_str() {
-        "claude_code" => claude_code_usage_response(gcx, &params.name).await,
-        "openai_codex" => openai_codex_usage_response(gcx, &params.name).await,
-        "opencode" => opencode_usage_response(gcx, &params.name).await,
-        "google_antigravity" => google_antigravity_usage_response(gcx, &params.name).await,
-        "xai_oauth" => xai_oauth_usage_response(gcx, &params.name).await,
+        "claude_code" => claude_code_usage_response(&ctx, &app.gcx, &params.name).await,
+        "openai_codex" => openai_codex_usage_response(&ctx, &params.name).await,
+        "opencode" => opencode_usage_response(&ctx, &params.name).await,
+        "google_antigravity" => {
+            google_antigravity_usage_response(&ctx, &quota_cache, &params.name).await
+        }
+        "xai_oauth" => xai_oauth_usage_response(&ctx, &params.name).await,
         _ => Err(ScratchError::new(
             StatusCode::BAD_REQUEST,
             format!("Provider '{}' does not support usage", params.name),
@@ -3979,7 +4059,7 @@ pub async fn handle_v1_provider_usage_redeem(
     Path(params): Path<ProviderPathParams>,
     body_bytes: hyper::body::Bytes,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
+    let ctx = app.chat_ctx();
     validate_instance_id_for_http(&params.name)?;
     let request: ResetRedeemRequest = if body_bytes.is_empty() {
         ResetRedeemRequest::default()
@@ -3991,7 +4071,7 @@ pub async fn handle_v1_provider_usage_redeem(
             )
         })?
     };
-    let identity = resolve_provider_identity(&gcx, &params.name).await?;
+    let identity = resolve_provider_identity(&ctx, &params.name).await?;
     if identity.base_provider != "openai_codex" {
         return Err(ScratchError::new(
             StatusCode::BAD_REQUEST,
@@ -4006,21 +4086,21 @@ pub async fn handle_v1_provider_usage_redeem(
         .map(|id| id.trim().to_string())
         .filter(|id| !id.is_empty())
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-    openai_codex_redeem_response(gcx, &params.name, &redeem_request_id).await
+    openai_codex_redeem_response(&ctx, &params.name, &redeem_request_id).await
 }
 
 async fn current_openai_codex_provider(
-    gcx: &Arc<GlobalContext>,
+    ctx: &ChatCtx,
     provider_name: &str,
 ) -> Result<(OpenAICodexProvider, reqwest::Client, std::path::PathBuf), String> {
     let (provider, http_client, config_dir) = {
-        let registry = gcx.providers.read().await;
+        let registry = ctx.model.providers.read().await;
         (
             registry
                 .get(provider_name)
                 .map(|provider| provider.clone_box()),
-            gcx.http_client.clone(),
-            gcx.config_dir.clone(),
+            ctx.runtime.http_client.clone(),
+            ctx.paths.config_dir.clone(),
         )
     };
     let provider = if let Some(provider) = provider {
@@ -4053,14 +4133,14 @@ async fn current_openai_codex_provider(
 }
 
 async fn force_refresh_openai_codex_usage_for_retry(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     http_client: &reqwest::Client,
     provider_name: &str,
     rejected_access_token: &str,
     rejected_status: Option<reqwest::StatusCode>,
 ) -> Result<Option<OpenAICodexProvider>, String> {
     let _guard = OpenAICodexProvider::lock_refresh_guard().await?;
-    let (mut provider, _, config_dir) = current_openai_codex_provider(&gcx, provider_name).await?;
+    let (mut provider, _, config_dir) = current_openai_codex_provider(ctx, provider_name).await?;
 
     if provider
         .access_token_changed_since_rejection(rejected_access_token)
@@ -4089,7 +4169,7 @@ async fn force_refresh_openai_codex_usage_for_retry(
 
     if !provider.auth_state_matches(&previous_tokens, &previous_session_id) {
         if sync_openai_codex_auth_state(
-            gcx.clone(),
+            ctx,
             provider_name,
             &provider,
             &previous_tokens,
@@ -4098,7 +4178,7 @@ async fn force_refresh_openai_codex_usage_for_retry(
         .await
         .map_err(|e| e.message)?
         {
-            invalidate_caps(gcx.clone()).await;
+            invalidate_caps(ctx).await;
         }
     }
 
@@ -4106,11 +4186,11 @@ async fn force_refresh_openai_codex_usage_for_retry(
 }
 
 async fn fetch_openai_codex_usage_with_refresh(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     provider_name: &str,
 ) -> Result<crate::providers::openai_codex::OpenAICodexUsage, String> {
     let (mut request_provider, http_client, _) =
-        current_openai_codex_provider(&gcx, provider_name).await?;
+        current_openai_codex_provider(ctx, provider_name).await?;
     if !request_provider.oauth_tokens.has_refresh_token() {
         return request_provider.fetch_usage(&http_client).await;
     }
@@ -4122,7 +4202,7 @@ async fn fetch_openai_codex_usage_with_refresh(
             refresh_attempted = true;
             let rejected_access_token = request_provider.oauth_tokens.access_token.clone();
             request_provider = force_refresh_openai_codex_usage_for_retry(
-                gcx.clone(),
+                ctx,
                 &http_client,
                 provider_name,
                 &rejected_access_token,
@@ -4155,7 +4235,7 @@ async fn fetch_openai_codex_usage_with_refresh(
             ) =>
         {
             let Some(retry_provider) = force_refresh_openai_codex_usage_for_retry(
-                gcx,
+                ctx,
                 &http_client,
                 provider_name,
                 &context.access_token,
@@ -4188,12 +4268,12 @@ async fn fetch_openai_codex_usage_with_refresh(
 }
 
 async fn redeem_openai_codex_reset_credit_with_refresh(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     provider_name: &str,
     redeem_request_id: &str,
 ) -> Result<crate::providers::openai_codex::OpenAICodexResetRedeem, String> {
     let (mut request_provider, http_client, _) =
-        current_openai_codex_provider(&gcx, provider_name).await?;
+        current_openai_codex_provider(ctx, provider_name).await?;
     if !request_provider.oauth_tokens.has_refresh_token() {
         return request_provider
             .redeem_reset_credit(&http_client, redeem_request_id)
@@ -4207,7 +4287,7 @@ async fn redeem_openai_codex_reset_credit_with_refresh(
             refresh_attempted = true;
             let rejected_access_token = request_provider.oauth_tokens.access_token.clone();
             request_provider = force_refresh_openai_codex_usage_for_retry(
-                gcx.clone(),
+                ctx,
                 &http_client,
                 provider_name,
                 &rejected_access_token,
@@ -4241,7 +4321,7 @@ async fn redeem_openai_codex_reset_credit_with_refresh(
             ) =>
         {
             let Some(retry_provider) = force_refresh_openai_codex_usage_for_retry(
-                gcx,
+                ctx,
                 &http_client,
                 provider_name,
                 &context.access_token,
@@ -4275,7 +4355,7 @@ async fn redeem_openai_codex_reset_credit_with_refresh(
 }
 
 async fn sync_openai_codex_auth_state(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     provider_name: &str,
     source: &OpenAICodexProvider,
     previous_tokens: &crate::providers::openai_codex_oauth::OAuthTokens,
@@ -4285,7 +4365,7 @@ async fn sync_openai_codex_auth_state(
         return Ok(false);
     }
 
-    let mut registry = gcx.providers.write().await;
+    let mut registry = ctx.model.providers.write().await;
     let provider = registry.get_mut(provider_name).ok_or_else(|| {
         ScratchError::new(
             StatusCode::NOT_FOUND,
@@ -4316,7 +4396,8 @@ fn ensure_openai_codex_session_id(yaml_map: &mut serde_yaml::Mapping) -> String 
 }
 
 async fn save_provider_oauth_tokens(
-    gcx: &Arc<GlobalContext>,
+    ctx: &ChatCtx,
+    quota_cache: &Arc<AMutex<ProviderQuotaCache>>,
     config_dir: &std::path::Path,
     provider_name: &str,
     base_provider: &str,
@@ -4394,7 +4475,7 @@ async fn save_provider_oauth_tokens(
     )
     .await?;
 
-    reload_provider_from_disk(gcx.clone(), provider_name, config_dir).await?;
+    reload_provider_from_disk(ctx, provider_name, config_dir).await?;
 
     let refresh_token =
         match base_provider {
@@ -4424,8 +4505,8 @@ async fn save_provider_oauth_tokens(
         crate::providers::oauth_refresh::clear_invalid_refresh_token(provider_name, &refresh_token);
     }
 
-    invalidate_provider_quota(gcx, provider_name).await;
-    invalidate_caps(gcx.clone()).await;
+    invalidate_provider_quota(quota_cache, provider_name).await;
+    invalidate_caps(ctx).await;
     Ok(())
 }
 
@@ -5168,7 +5249,7 @@ oauth_tokens:
         )
         .await
         .unwrap();
-        reload_provider_from_disk(gcx.clone(), "openai", &config_dir)
+        reload_provider_from_disk(&gcx.chat_ctx(gcx.clone()), "openai", &config_dir)
             .await
             .unwrap();
         handle_v1_provider_update(
@@ -5361,7 +5442,7 @@ extra_headers:
         )
         .await
         .unwrap();
-        reload_provider_from_disk(gcx.clone(), "openai", &config_dir)
+        reload_provider_from_disk(&gcx.chat_ctx(gcx.clone()), "openai", &config_dir)
             .await
             .unwrap();
         handle_v1_provider_update(
@@ -5419,7 +5500,7 @@ extra_headers:
         )
         .await
         .unwrap();
-        reload_provider_from_disk(gcx.clone(), "claude_code_2", &config_dir)
+        reload_provider_from_disk(&gcx.chat_ctx(gcx.clone()), "claude_code_2", &config_dir)
             .await
             .unwrap();
         let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
@@ -5629,7 +5710,7 @@ extra_headers:
             serde_yaml::to_value(&crate::providers::openai_codex_oauth::OAuthTokens::default())
                 .unwrap();
 
-        save_provider_oauth_tokens(&gcx, &config_dir, "openai_codex", "openai_codex", &empty)
+        save_provider_oauth_tokens(&gcx.chat_ctx(gcx.clone()), &gcx.quota_cache, &config_dir, "openai_codex", "openai_codex", &empty)
             .await
             .unwrap();
 
@@ -5658,7 +5739,8 @@ extra_headers:
         let tokens_value = serde_yaml::to_value(&tokens).unwrap();
 
         save_provider_oauth_tokens(
-            &gcx,
+            &gcx.chat_ctx(gcx.clone()),
+            &gcx.quota_cache,
             &config_dir,
             "github_copilot",
             "github_copilot",
@@ -5712,7 +5794,8 @@ extra_headers:
                 .unwrap();
 
         save_provider_oauth_tokens(
-            &gcx,
+            &gcx.chat_ctx(gcx.clone()),
+            &gcx.quota_cache,
             &config_dir,
             "github_copilot",
             "github_copilot",
@@ -5767,7 +5850,8 @@ extra_headers:
         ));
 
         save_provider_oauth_tokens(
-            &gcx,
+            &gcx.chat_ctx(gcx.clone()),
+            &gcx.quota_cache,
             &config_dir,
             "openai_codex_2",
             "openai_codex",
@@ -5834,7 +5918,8 @@ extra_headers:
         ));
 
         save_provider_oauth_tokens(
-            &gcx,
+            &gcx.chat_ctx(gcx.clone()),
+            &gcx.quota_cache,
             &config_dir,
             "claude_code_2",
             "claude_code",
@@ -5865,7 +5950,7 @@ extra_headers:
         )
         .await
         .unwrap();
-        reload_provider_from_disk(gcx.clone(), "openai_codex_2", &config_dir)
+        reload_provider_from_disk(&gcx.chat_ctx(gcx.clone()), "openai_codex_2", &config_dir)
             .await
             .unwrap();
         let tokens = crate::providers::openai_codex_oauth::OAuthTokens {
@@ -5875,16 +5960,22 @@ extra_headers:
             ..Default::default()
         };
         let tokens_value = serde_yaml::to_value(&tokens).unwrap();
+        let ctx = gcx.chat_ctx(gcx.clone());
 
         let save = save_provider_oauth_tokens(
-            &gcx,
+            &ctx,
+            &gcx.quota_cache,
             &config_dir,
             "openai_codex_2",
             "openai_codex",
             &tokens_value,
         );
-        let toggle =
-            update_model_enabled_state(gcx.clone(), "openai_codex_2", "gpt-5.6-codex", true);
+        let toggle = update_model_enabled_state(
+            &ctx,
+            "openai_codex_2",
+            "gpt-5.6-codex",
+            true,
+        );
         let (save_result, toggle_result) = tokio::join!(save, toggle);
         save_result.unwrap();
         toggle_result.unwrap();
@@ -5949,7 +6040,8 @@ extra_headers:
                 .unwrap(),
             ),
         );
-        let patch_model = patch_provider_model_config(gcx.clone(), &config_dir, "custom_2");
+        let ctx = gcx.chat_ctx(gcx.clone());
+        let patch_model = patch_provider_model_config(&ctx, &config_dir, "custom_2");
         let (auth_result, model_result) = tokio::join!(update_auth, patch_model);
         auth_result.unwrap();
         model_result.unwrap();
@@ -5974,7 +6066,8 @@ extra_headers:
         };
 
         save_provider_oauth_tokens(
-            &gcx,
+            &gcx.chat_ctx(gcx.clone()),
+            &gcx.quota_cache,
             &config_dir,
             "openai_codex",
             "openai_codex",
@@ -5998,7 +6091,8 @@ extra_headers:
         };
 
         save_provider_oauth_tokens(
-            &gcx,
+            &gcx.chat_ctx(gcx.clone()),
+            &gcx.quota_cache,
             &config_dir,
             "github_copilot_2",
             "github_copilot",
@@ -6095,7 +6189,7 @@ extra_headers:
         }
 
         handle_v1_provider_remove_custom_model_impl(
-            gcx.clone(),
+            &gcx.chat_ctx(gcx.clone()),
             provider_name,
             hyper::body::Bytes::from(r#"{"model_id":"stale-custom"}"#),
         )
@@ -6187,7 +6281,7 @@ extra_headers:
         source.session_id = previous_session_id.clone();
 
         let changed = sync_openai_codex_auth_state(
-            gcx.clone(),
+            &gcx.chat_ctx(gcx.clone()),
             "openai_codex",
             &source,
             &previous_tokens,
@@ -6234,7 +6328,7 @@ extra_headers:
         source.session_id = "stale-refresh-session".to_string();
 
         let changed = sync_openai_codex_auth_state(
-            gcx.clone(),
+            &gcx.chat_ctx(gcx.clone()),
             "openai_codex",
             &source,
             &previous_tokens,
@@ -6273,7 +6367,7 @@ extra_headers:
         let http_client = gcx.http_client.clone();
 
         let refreshed = force_refresh_openai_codex_usage_for_retry(
-            gcx,
+            &gcx.chat_ctx(gcx.clone()),
             &http_client,
             "openai_codex",
             "stale-access",
@@ -6314,7 +6408,7 @@ extra_headers:
         source.session_id = "new-session".to_string();
 
         let changed = sync_openai_codex_auth_state(
-            gcx.clone(),
+            &gcx.chat_ctx(gcx.clone()),
             "openai_codex",
             &source,
             &previous_tokens,

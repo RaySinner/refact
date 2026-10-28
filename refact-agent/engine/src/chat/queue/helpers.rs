@@ -284,6 +284,8 @@ pub fn find_allowed_command_while_waiting_ide(queue: &VecDeque<CommandRequest>) 
     None
 }
 
+// dead: keep until test-only priority draining is retired
+#[allow(dead_code)]
 pub fn drain_priority_user_messages(queue: &mut VecDeque<CommandRequest>) -> Vec<CommandRequest> {
     let mut priority_messages = Vec::new();
     let mut i = 0;

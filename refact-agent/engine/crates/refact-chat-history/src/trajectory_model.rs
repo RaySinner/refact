@@ -7,7 +7,6 @@ use refact_chat_api::{
     TrajectorySourceIdentity, WorktreeMeta,
 };
 use crate::trajectory_event::TrajectoryEvent;
-use crate::trajectory_metrics::trajectory_meta_title;
 
 pub const INTERNAL_TRACE_LINK_PREFIX: &str = "internal:";
 

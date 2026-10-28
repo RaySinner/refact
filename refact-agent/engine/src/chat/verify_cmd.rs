@@ -34,6 +34,8 @@ pub(crate) struct VerifyCommandPolicy {
 }
 
 impl VerifyCommandPolicy {
+    // dead: keep until gcx-based callers are confirmed gone
+    #[allow(dead_code)]
     pub(crate) async fn load(gcx: Arc<GlobalContext>) -> Self {
         Self::from_shell_policy(&crate::tools::shell_gate::load_policy(gcx).await)
     }

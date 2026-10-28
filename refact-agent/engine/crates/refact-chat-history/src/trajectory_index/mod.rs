@@ -38,8 +38,7 @@ pub use refact_perf::listing_counters::{
     trajectory_index_listing_counters, TrajectoryIndexListingCaller, TrajectoryIndexListingCounters,
 };
 use refact_perf::listing_counters::{
-    listing_counters, TrajectoryIndexListingCounterScope, TrajectoryIndexListingCounterState,
-    GLOBAL_TRAJECTORY_INDEX_LISTING_COUNTER_SCOPE,
+    TrajectoryIndexListingCounterScope, GLOBAL_TRAJECTORY_INDEX_LISTING_COUNTER_SCOPE,
 };
 
 mod coordinator;

@@ -1,51 +1,26 @@
 use super::*;
 
-use super::actions::{element_drag_point};
+use super::actions::element_drag_point;
 use super::single_step::{perform_locator_handlers_checkpoint, wait_for_pending_navigation};
 
-use std::cmp::Ordering;
-use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use base64::Engine;
 use headless_chrome::Tab;
-use headless_chrome::protocol::cdp::{DOM, Emulation, IO, Page, Runtime, types::Event};
 use serde_json::Value;
-use tokio::sync::Mutex as AMutex;
 
-use refact_integrations::browser_locators::{
-    self, js_string_literal, parse_element_info, INSPECT_ELEMENT_JS,
-};
+use refact_integrations::browser_locators::{self, parse_element_info, INSPECT_ELEMENT_JS};
 use refact_integrations::browser_models::*;
 use crate::BrowserRuntime;
-use refact_integrations::browser_types::{ConsoleEntry, NetworkEntry};
 use refact_browser::{
-    ActionKind, ActionabilityDiagnostic, ActionabilityDriver, ActionabilityEngine,
-    ActionabilityExecutionMode, ActionabilityTimeouts, CDP_INLINE_RESULT_LIMIT_BYTES,
-    CdpDragObserver, CdpGuardrail, CdpKeyboardDispatcher, CdpMouseDispatcher, ClockOp,
-    DEFAULT_DISMISS_OVERLAYS_HANDLER, ElementHandle, ElementStateName, ExpectPollResult,
-    FUNCTION_POLL_BACKOFF_MS, HitTargetController, HitTargetPoint, HitTargetResult, Keyboard,
-    KeyboardDispatcher, LocatorGenerationOptions, LocatorHandler, LocatorHandlerLease,
-    LocatorHandlerOperation, LocatorHandlerProbe, LocatorHandlerRegistry, LocatorOutcome,
-    MainFrameCssPoint, Mouse, MouseButton, MouseDispatcher, MouseState, NetworkLoadState,
-    NetworkMonitorHandle, NetworkWaitFilters, Ref, ScrollStrategy, SnapshotMode, SnapshotOptions,
-    SystemClock, TabScopedHandle, UrlMatcher, WebSocketRegistry, WorldManager,
-    apply_network_report_mode, classify_cdp_command, current_wall_ms, parse_clock_ticks,
-    parse_clock_time, redact_cdp_result, required_states,
+    ActionKind, ActionabilityDiagnostic, ActionabilityDriver, CdpKeyboardDispatcher,
+    CdpMouseDispatcher, ElementHandle, HitTargetController, HitTargetPoint, HitTargetResult,
+    Keyboard, KeyboardDispatcher, LocatorGenerationOptions, LocatorHandlerRegistry, LocatorOutcome,
+    MainFrameCssPoint, Mouse, MouseButton, MouseDispatcher, Ref, ScrollStrategy, TabScopedHandle,
+    WorldManager,
 };
-use refact_browser::artifacts::{
-    ComposeLayout, ElementStateAction, ScreenshotMetrics, compose_sheet, element_state_sequence,
-    pdf_payload, screenshot_capture,
-};
-use refact_browser::screencast::{
-    build_filmstrip, capture_screencast_burst, capture_timed_frames, select_evenly_spaced,
-    CapturedFrame, FilmstripResult, FrameBurstPlan, ScreencastSessionOptions,
-    DEFAULT_SCREENCAST_QUALITY, MAX_FRAME_COUNT, MAX_SESSION_DURATION_MS, MAX_SESSION_FRAMES,
-};
-use refact_browser::http_client;
-use refact_core::image_policy::{resize_to_policy, ImageFormat, ImagePolicy};
+use refact_core::image_policy::ImagePolicy;
 
 use crate::settings as browser_settings;
 

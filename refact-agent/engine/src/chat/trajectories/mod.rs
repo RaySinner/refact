@@ -135,9 +135,7 @@ pub(crate) use model::{
     trajectory_list_data_is_displayable_chat, trajectory_snapshot_from_session,
     TrajectoryListCandidate, TrajectoryListData,
 };
-use model::{
-    clamp_goal_snapshot_for_load, epoch_ms_now, get_session_runtime_for_trajectory_source,
-};
+use model::{clamp_goal_snapshot_for_load, get_session_runtime_for_trajectory_source};
 
 // Re-exports from paths
 pub use paths::{

@@ -97,7 +97,7 @@ pub async fn enrich_task_with_session_state_for_services(
     enrich_task_meta_with_session_state(&chat.sessions, task).await;
 }
 
-pub async fn emit_task_updated(gcx: Arc<GlobalContext>, task_id: String, mut meta: TaskMeta) {
+pub async fn emit_task_updated(gcx: Arc<GlobalContext>, task_id: String, meta: TaskMeta) {
     emit_task_updated_via(
         &gcx.chat_sessions,
         &gcx.task_events_tx,

@@ -12,7 +12,7 @@ use tokio::sync::{Mutex as AMutex, RwLock as ARwLock};
 
 use crate::agents::registry::BackgroundAgentRegistry;
 use crate::app_state::{
-    AtCommandsPreviewCache, BuddyServices, ChatServices, CommandLine, ModelServices, PathServices,
+    AtCommandsPreviewCache, BuddyServices, ChatServices, ModelServices, PathServices,
     RuntimeServices, ToolCatalogGenerations,
 };
 use crate::caps::CodeAssistantCaps;

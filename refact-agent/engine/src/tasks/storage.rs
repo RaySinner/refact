@@ -13,8 +13,7 @@ use crate::global_context::GlobalContext;
 use crate::files_correction::get_project_dirs;
 use super::types::{BoardCard, TaskBoard, TaskMeta, TaskStatus, TrajectoryInfo};
 use super::events::{
-    emit_task_event, emit_task_event_for_services, emit_task_event_via, emit_task_updated_via,
-    TaskEvent,
+    emit_task_event_for_services, emit_task_event_via, emit_task_updated_via, TaskEvent,
 };
 
 const TASKS_DIR: &str = "tasks";

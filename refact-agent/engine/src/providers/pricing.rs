@@ -41,6 +41,8 @@ pub async fn lookup_model_pricing_for_ctx(
     standard_model_pricing_from_caps(&caps.model_caps, model_id)
 }
 
+// dead: keep until provider custom pricing callers are confirmed
+#[allow(dead_code)]
 async fn lookup_provider_custom_pricing(
     gcx: &Arc<GlobalContext>,
     model_id: &str,

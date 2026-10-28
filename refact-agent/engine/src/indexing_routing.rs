@@ -10,7 +10,17 @@ pub async fn memory_plane_roots(gcx: Arc<GlobalContext>) -> MemoryPlaneRoots {
     MemoryPlaneRoots::new(
         get_project_dirs(gcx.clone()).await,
         Some(crate::memories::get_global_knowledge_dir(gcx.clone()).await),
-        Some(crate::chat::trajectories::get_global_trajectories_dir(gcx).await),
+        Some(crate::chat::trajectories::global_trajectories_dir_path(
+            &gcx.config_dir,
+        )),
+    )
+}
+
+pub async fn memory_plane_roots_for_ctx(ctx: &crate::chat::ctx::ChatCtx) -> MemoryPlaneRoots {
+    MemoryPlaneRoots::new(
+        crate::files_correction::get_unscoped_project_dirs_for_ctx(ctx).await,
+        Some(crate::memories::get_global_knowledge_dir_for_ctx(ctx)),
+        Some(crate::chat::trajectories::get_global_trajectories_dir(ctx).await),
     )
 }
 

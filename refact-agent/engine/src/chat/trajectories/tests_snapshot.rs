@@ -356,7 +356,7 @@ use super::test_support::*;
             .await
             .unwrap();
 
-        let loaded = load_trajectory_for_chat(gcx, "plan-reopen").await.unwrap();
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), "plan-reopen").await.unwrap();
         let plans: Vec<_> = loaded
             .messages
             .iter()
@@ -430,7 +430,7 @@ use super::test_support::*;
         .await
         .unwrap();
 
-        let loaded = load_trajectory_for_chat(gcx, "legacy-hidden-events")
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), "legacy-hidden-events")
             .await
             .unwrap();
 
@@ -468,7 +468,7 @@ use super::test_support::*;
 
         drop(session);
 
-        let loaded = load_trajectory_for_chat(gcx, "wake-roundtrip")
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), "wake-roundtrip")
             .await
             .unwrap();
         assert_eq!(loaded.wake_up_at, Some(wake_up_at));
@@ -665,7 +665,7 @@ use super::test_support::*;
             .await
             .unwrap();
 
-        let loaded = load_trajectory_for_chat(gcx, "goal-roundtrip")
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), "goal-roundtrip")
             .await
             .unwrap();
         let loaded_goal = loaded.goal.clone().expect("loaded goal");
@@ -734,7 +734,7 @@ use super::test_support::*;
         .await
         .unwrap();
 
-        let loaded = load_trajectory_for_chat(gcx, "legacy-wake").await.unwrap();
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), "legacy-wake").await.unwrap();
         assert!(loaded.wake_up_at.is_none());
     }
 
@@ -766,7 +766,7 @@ use super::test_support::*;
             .await
             .unwrap();
 
-        let loaded = load_trajectory_for_chat(gcx, "goal-ledger-roundtrip")
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), "goal-ledger-roundtrip")
             .await
             .unwrap();
         assert!(!loaded.goal_ledger.is_empty());
@@ -806,7 +806,7 @@ use super::test_support::*;
             .await
             .unwrap();
 
-        let loaded = load_trajectory_for_chat(gcx, "wait-card-roundtrip")
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), "wait-card-roundtrip")
             .await
             .unwrap();
         assert_eq!(loaded.waiting_for_card_ids, card_ids);
@@ -1131,7 +1131,7 @@ use super::test_support::*;
         assert_eq!(raw_json["worktree"]["id"], worktree.id);
         assert_eq!(raw_json["worktree"]["branch"], "refact/chat/roundtrip");
 
-        let loaded = load_trajectory_for_chat(gcx.clone(), &chat_id)
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), &chat_id)
             .await
             .unwrap();
         assert_eq!(loaded.thread.worktree, Some(worktree.clone()));
@@ -1193,7 +1193,7 @@ use super::test_support::*;
         );
         assert_eq!(raw["claude_code_identity"]["device_id"], "device-123");
 
-        let loaded = load_trajectory_for_chat(gcx, "frozen-prefix-roundtrip")
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), "frozen-prefix-roundtrip")
             .await
             .unwrap();
         assert_eq!(

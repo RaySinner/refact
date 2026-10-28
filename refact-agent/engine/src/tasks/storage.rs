@@ -71,6 +71,10 @@ pub async fn get_global_tasks_dir(gcx: Arc<GlobalContext>) -> PathBuf {
     config_dir.join(TASKS_DIR)
 }
 
+pub fn get_global_tasks_dir_for_ctx(ctx: &crate::chat::ctx::ChatCtx) -> PathBuf {
+    ctx.paths.config_dir.join(TASKS_DIR)
+}
+
 pub async fn get_all_tasks_dirs(gcx: Arc<GlobalContext>) -> Vec<PathBuf> {
     let mut dirs: Vec<PathBuf> = get_project_dirs(gcx.clone())
         .await

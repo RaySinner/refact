@@ -635,7 +635,7 @@ async fn cache_stability_claude_code_identity_survives_reload_and_reuses_bytes()
     save_trajectory_snapshot(gcx.clone(), snapshot)
         .await
         .unwrap();
-    let loaded = load_trajectory_for_chat(gcx, "cc-cache-identity")
+    let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), "cc-cache-identity")
         .await
         .unwrap();
     assert_eq!(loaded.thread.claude_code_identity, Some(identity.clone()));

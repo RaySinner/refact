@@ -310,7 +310,7 @@ mod tests {
             .await
             .unwrap();
 
-        let loaded = load_trajectory_for_chat(gcx, chat_id).await.unwrap();
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), chat_id).await.unwrap();
         let loaded_session =
             session_from_snapshot(chat_id.to_string(), loaded.thread, loaded.messages);
         let loaded_plans: Vec<_> = loaded_session

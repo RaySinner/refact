@@ -15,7 +15,7 @@ use crate::global_context::GlobalContext;
 
 use super::model::get_session_runtime_for_trajectory_source;
 use super::paths::{
-    get_all_task_roots_from_weak, get_all_trajectories_dirs_from_weak, stale_entry_cleanup_allowed,
+    get_all_trajectories_dirs, get_or_create_all_task_roots, stale_entry_cleanup_allowed,
 };
 use super::queries::{
     deleted_trajectory_event, is_real_dir, is_real_dir_sync, loaded_trajectory_to_meta,
@@ -583,8 +583,13 @@ pub fn start_trajectory_watcher(gcx: Arc<GlobalContext>) {
     let dropped_events = Arc::new(AtomicUsize::new(0));
 
     let handle = tokio::spawn(async move {
-        let trajectories_dirs = get_all_trajectories_dirs_from_weak(&gcx_weak).await;
-        let task_roots = get_all_task_roots_from_weak(&gcx_weak).await;
+        let Some(gcx) = gcx_weak.upgrade() else {
+            return;
+        };
+        let ctx = gcx.chat_ctx(gcx.clone());
+        drop(gcx);
+        let trajectories_dirs = get_all_trajectories_dirs(&ctx).await;
+        let task_roots = get_or_create_all_task_roots(&ctx).await;
         if trajectories_dirs.is_empty() && task_roots.is_empty() {
             warn!("No trajectories directories found, trajectory watcher not started");
             return;

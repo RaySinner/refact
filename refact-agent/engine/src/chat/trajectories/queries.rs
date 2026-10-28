@@ -985,7 +985,7 @@ pub(super) async fn hydrate_trajectory_list_candidate(
     }
     if let Some(mut meta) = candidate.indexed_meta.clone() {
         if let Some(worktree) = meta.worktree.clone() {
-            meta.worktree = validate_loaded_worktree_strict(app.clone(), &meta.id, worktree).await;
+            meta.worktree = validate_loaded_worktree_strict(&app.chat_ctx(), &meta.id, worktree).await;
         }
         apply_task_trajectory_context(&candidate.path, task_roots, &mut meta);
         return Some(meta);
@@ -1400,7 +1400,7 @@ pub async fn list_all_trajectories_meta(
                 let mut meta = trajectory_index::meta_from_entry(&trajectories_dir, &entry);
                 if let Some(worktree) = meta.worktree.clone() {
                     meta.worktree =
-                        validate_loaded_worktree_strict(app.clone(), &meta.id, worktree).await;
+                        validate_loaded_worktree_strict(&app.chat_ctx(), &meta.id, worktree).await;
                 }
                 apply_task_trajectory_context(
                     &trajectory_index::trajectory_file_path_for_entry(&trajectories_dir, &entry),
@@ -1548,7 +1548,7 @@ pub async fn handle_v1_trajectories_save(
     let should_generate_title =
         is_placeholder_title(&data.title) && !is_title_generated && !data.messages.is_empty();
     let worktree = if let Some(candidate) = sanitize_worktree_extra(&mut data.extra) {
-        match validate_loaded_worktree_strict(app.clone(), &id, candidate).await {
+        match validate_loaded_worktree_strict(&app.chat_ctx(), &id, candidate).await {
             Some(validated) => {
                 data.extra.insert(
                     "worktree".to_string(),

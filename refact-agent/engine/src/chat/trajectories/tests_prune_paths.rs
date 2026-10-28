@@ -97,7 +97,7 @@ use super::test_support::*;
             .join("trajectories")
             .join(format!("{chat_id}.json"));
         assert!(!tokio::fs::try_exists(&flat).await.unwrap());
-        assert!(load_trajectory_for_chat(gcx, chat_id).await.is_some());
+        assert!(load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), chat_id).await.is_some());
     }
 
     #[serial(trajectory_perf)]
@@ -309,7 +309,7 @@ use super::test_support::*;
         let saved: serde_json::Value =
             serde_json::from_str(&tokio::fs::read_to_string(path).await.unwrap()).unwrap();
         assert_eq!(saved["messages"], expected);
-        let loaded = load_trajectory_for_chat(gcx, chat_id).await.unwrap();
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), chat_id).await.unwrap();
         let tool_call = loaded.messages[1]
             .tool_calls
             .as_ref()
@@ -344,7 +344,7 @@ use super::test_support::*;
             tokio::fs::try_exists(&nested).await.unwrap(),
             "child must live in the root chat folder"
         );
-        assert!(load_trajectory_for_chat(gcx, child_id).await.is_some());
+        assert!(load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), child_id).await.is_some());
     }
 
     #[tokio::test]
@@ -422,7 +422,7 @@ use super::test_support::*;
             "a re-save without root_chat_id must update in place, not fork a duplicate file"
         );
 
-        let loaded = load_trajectory_for_chat(gcx, child_id)
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), child_id)
             .await
             .expect("child must still resolve");
         assert_eq!(loaded.messages.len(), 2);

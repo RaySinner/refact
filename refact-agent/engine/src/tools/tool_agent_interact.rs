@@ -771,7 +771,7 @@ mod tests {
     }
 
     async fn assert_parent_notice_persisted(app: &AppState, chat_id: &str, text: &str) {
-        let saved = crate::chat::trajectories::load_trajectory_for_chat(app.gcx.clone(), chat_id)
+        let saved = crate::chat::trajectories::load_trajectory_for_chat(&app.chat_ctx(), chat_id)
             .await
             .expect("parent notice trajectory persisted");
         assert!(saved
@@ -1160,8 +1160,7 @@ mod tests {
             .await
             .thread
             .clone();
-        crate::chat::trajectories::save_trajectory_as_with_intent(
-            gcx.clone(),
+        crate::chat::trajectories::save_trajectory_as_with_intent(&gcx.chat_ctx(gcx.clone()),
             &thread,
             &[],
             crate::chat::types::TrajectoryCommitIntent::Required,
@@ -1169,8 +1168,7 @@ mod tests {
         .await;
         tokio::time::timeout(std::time::Duration::from_secs(30), async {
             loop {
-                if crate::chat::trajectories::load_trajectory_for_chat(
-                    gcx.clone(),
+                if crate::chat::trajectories::load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()),
                     "subchat-child-chat",
                 )
                 .await

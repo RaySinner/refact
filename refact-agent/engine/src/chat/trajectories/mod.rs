@@ -143,9 +143,9 @@ use model::{
 pub use paths::{
     chat_folder_name, find_trajectory_or_buddy_path, find_trajectory_path,
     find_trajectory_path_for_active_chat, get_all_trajectories_dirs, get_buddy_conversations_dir,
-    get_global_trajectories_dir, get_trajectories_dir, internal_trace_link_type,
-    is_internal_trace_link_type, validate_trajectory_id, TrajectoryVectorizationQueue,
-    INTERNAL_TRACE_LINK_PREFIX, UNATTRIBUTED_TRACES_DIR,
+    get_global_trajectories_dir, get_trajectories_dir, global_trajectories_dir_path,
+    internal_trace_link_type, is_internal_trace_link_type, validate_trajectory_id,
+    TrajectoryVectorizationQueue, INTERNAL_TRACE_LINK_PREFIX, UNATTRIBUTED_TRACES_DIR,
 };
 pub(crate) use paths::{
     enqueue_trajectory_vectorization, find_normal_trajectory_path, find_trajectory_file,
@@ -156,7 +156,6 @@ pub(crate) use paths::{
 };
 use paths::{
     ensure_existing_trajectory_file_matches, find_normal_trajectory_file, fix_tool_call_indexes,
-    get_all_task_roots_from_weak, get_all_trajectories_dirs_from_weak,
     get_or_create_buddy_conversations_dir, normal_trajectory_candidate_paths, parse_stored_messages,
     prune_internal_traces_throttled, read_existing_trajectory_object, read_valid_trajectory_candidate,
     should_vectorize_trajectory, trajectory_candidate_paths, PruneThrottle, ValidTrajectoryCandidate,

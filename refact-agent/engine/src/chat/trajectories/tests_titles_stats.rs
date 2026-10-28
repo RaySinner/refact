@@ -377,7 +377,7 @@ use super::test_support::*;
             .await
             .unwrap();
 
-        assert!(load_trajectory_for_chat(gcx, "missing-id").await.is_none());
+        assert!(load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), "missing-id").await.is_none());
     }
 
     #[tokio::test]

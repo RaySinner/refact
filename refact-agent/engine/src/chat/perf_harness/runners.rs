@@ -1092,7 +1092,10 @@ async fn run_full_soak_sample(
         if tool_messages != 1 {
             counters.ordering_errors += 1;
         }
-        if crate::chat::trajectories::load_trajectory_for_chat(fixture.base.gcx.clone(), &chat_id)
+        if crate::chat::trajectories::load_trajectory_for_chat(
+            &fixture.base.app.chat_ctx(),
+            &chat_id,
+        )
             .await
             .is_none()
         {
@@ -1179,7 +1182,7 @@ async fn enqueue_repeated_vecdb_paths(
     session: &Arc<AMutex<ChatSession>>,
 ) -> Result<(), String> {
     let chat_id = session.lock().await.chat_id.clone();
-    let path = find_trajectory_path(fixture.base.gcx.clone(), &chat_id)
+    let path = find_trajectory_path(&fixture.base.app.chat_ctx(), &chat_id)
         .await
         .ok_or_else(|| "full soak trajectory path was unavailable for VecDB fixture".to_string())?
         .to_string_lossy()
@@ -1704,7 +1707,7 @@ async fn save_workload_trajectories(
     .await?;
     let background_flush_elapsed_us = elapsed_us(flush_started);
 
-    let file_path = find_trajectory_path(fixture.gcx.clone(), &chat_id)
+    let file_path = find_trajectory_path(&fixture.app.chat_ctx(), &chat_id)
         .await
         .ok_or_else(|| "real trajectory save did not expose a trajectory path".to_string())?;
     let value = serde_json::from_str(
@@ -1716,7 +1719,7 @@ async fn save_workload_trajectories(
     let index_dir = fixture.workspace.join(".refact").join("trajectories");
     upsert_trajectory_index_entry_from_owned_value(&index_dir, &file_path, value, None).await?;
 
-    let loaded = load_trajectory_for_chat(fixture.gcx.clone(), &chat_id)
+    let loaded = load_trajectory_for_chat(&fixture.app.chat_ctx(), &chat_id)
         .await
         .ok_or_else(|| "real trajectory fixture could not be reloaded".to_string())?;
     if loaded.messages.len() != 1 {

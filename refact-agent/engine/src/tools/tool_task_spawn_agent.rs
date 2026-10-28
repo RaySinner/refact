@@ -849,7 +849,7 @@ pub(crate) async fn resolve_invoking_planner_chat_id(
             return root_chat_id.to_string();
         }
     }
-    resolve_task_planner_controller_chat_id(gcx, chat_id, Some(root_chat_id), task_meta).await
+    resolve_task_planner_controller_chat_id(&gcx.chat_ctx(gcx.clone()), chat_id, Some(root_chat_id), task_meta).await
 }
 
 async fn root_chat_is_planner_for_task(
@@ -872,7 +872,7 @@ async fn root_chat_is_planner_for_task(
             return true;
         }
     }
-    crate::chat::trajectories::load_trajectory_for_chat(gcx, root_chat_id)
+    crate::chat::trajectories::load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), root_chat_id)
         .await
         .is_some_and(|loaded| {
             loaded

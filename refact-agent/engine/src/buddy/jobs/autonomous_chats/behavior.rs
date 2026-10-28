@@ -671,7 +671,7 @@ pub(super) fn collect_behavior_task_trajectory_dirs(
 pub(super) async fn collect_behavior_trajectory_metas(
     gcx: AppState,
 ) -> Vec<BehaviorTrajectoryMeta> {
-    let mut dirs = crate::chat::trajectories::get_all_trajectories_dirs(gcx.gcx.clone()).await;
+    let mut dirs = crate::chat::trajectories::get_all_trajectories_dirs(&gcx.chat_ctx()).await;
     let tasks_dirs = crate::tasks::storage::get_all_tasks_dirs(gcx.gcx.clone()).await;
     tokio::task::spawn_blocking(move || {
         dirs.extend(collect_behavior_task_trajectory_dirs(

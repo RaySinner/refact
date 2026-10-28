@@ -418,7 +418,7 @@ use super::test_support::*;
             false,
             Some(trajectory_source_identity_from_path(
                 &task_path,
-                &get_all_task_roots(gcx).await,
+                &get_all_task_roots(&gcx.chat_ctx(gcx.clone())).await,
             )),
         )
         .await;
@@ -463,7 +463,7 @@ use super::test_support::*;
         tokio::fs::write(&task_path, "{}").await.unwrap();
 
         let source =
-            trajectory_source_identity_from_path(&task_path, &get_all_task_roots(gcx).await);
+            trajectory_source_identity_from_path(&task_path, &get_all_task_roots(&gcx.chat_ctx(gcx.clone())).await);
 
         assert_eq!(
             source,
@@ -512,8 +512,7 @@ use super::test_support::*;
         .await;
 
         assert_eq!(
-            verified_planner_linked_root_chat_id(
-                gcx.clone(),
+            verified_planner_linked_root_chat_id(&gcx.chat_ctx(gcx.clone()),
                 "child-root-check",
                 Some("normal-root"),
                 &child_meta,
@@ -522,8 +521,7 @@ use super::test_support::*;
             None
         );
         assert_eq!(
-            verified_planner_linked_root_chat_id(
-                gcx,
+            verified_planner_linked_root_chat_id(&gcx.chat_ctx(gcx.clone()),
                 "child-root-check",
                 Some("planner-root-check"),
                 &child_meta,

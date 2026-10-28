@@ -115,8 +115,7 @@ async fn ensure_task_for_planner_handoff(
     }
     if let Some(task_meta) = existing_task_meta {
         if task_meta.role == "planner" {
-            let planner_chat_id = resolve_task_planner_controller_chat_id(
-                gcx.clone(),
+            let planner_chat_id = resolve_task_planner_controller_chat_id(&gcx.chat_ctx(gcx.clone()),
                 current_chat_id,
                 current_root_chat_id,
                 Some(&task_meta),
@@ -130,8 +129,7 @@ async fn ensure_task_for_planner_handoff(
                 planner_chat_id: Some(planner_chat_id),
             }));
         }
-        if let Some(planner_chat_id) = verified_planner_linked_root_chat_id(
-            gcx.clone(),
+        if let Some(planner_chat_id) = verified_planner_linked_root_chat_id(&gcx.chat_ctx(gcx.clone()),
             current_chat_id,
             current_root_chat_id,
             &task_meta,
@@ -151,7 +149,7 @@ async fn ensure_task_for_planner_handoff(
             .clone()
             .filter(|id| !id.is_empty())
         {
-            if chat_id_is_planner_for_task(gcx.clone(), &planner_chat_id, &task_meta.task_id).await
+            if chat_id_is_planner_for_task(&gcx.chat_ctx(gcx.clone()), &planner_chat_id, &task_meta.task_id).await
             {
                 return Ok(Some(refact_chat_api::TaskMeta {
                     task_id: task_meta.task_id,

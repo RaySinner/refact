@@ -1,14 +1,13 @@
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use tokio::fs;
 use tracing::{debug, warn};
 use uuid::Uuid;
 
 use crate::app_state::AppState;
 use crate::call_validation::{ChatContent, ChatMessage};
+use crate::chat::ctx::ChatCtx;
 use crate::chat::types::{TaskMeta, ThreadParams, TrajectoryCommitIntent, TrajectorySourceIdentity};
-use crate::files_correction::get_project_dirs;
-use crate::global_context::GlobalContext;
+use crate::files_correction::get_unscoped_project_dirs_for_ctx;
 use crate::worktrees::service::WorktreeService;
 use crate::worktrees::types::WorktreeMeta;
 use refact_chat_api::{GoalLedgerEntry, GoalSnapshot};
@@ -29,7 +28,7 @@ use super::{
 };
 use super::reload::{parsed_rfc3339_utc, raw_frozen_prefix_has_tools, repair_transition_frozen_prefix};
 use super::store::{
-    persist_trajectory_snapshot_with_intent, save_trajectory_snapshot,
+    persist_trajectory_snapshot_with_intent_ctx, save_trajectory_snapshot_for_ctx,
     try_save_trajectory_with_intent,
 };
 use super::watcher::trajectory_source_identity_from_path;
@@ -118,9 +117,9 @@ pub(super) fn validate_task_agent_id(agent_id: Option<&str>) -> Result<(), Strin
     Ok(())
 }
 
-pub(super) async fn safe_task_dir(gcx: Arc<GlobalContext>, task_id: &str) -> Result<PathBuf, String> {
+pub(super) async fn safe_task_dir(ctx: &ChatCtx, task_id: &str) -> Result<PathBuf, String> {
     crate::tasks::storage::validate_task_id(task_id)?;
-    for tasks_dir in get_all_task_roots(gcx).await {
+    for tasks_dir in get_all_task_roots(ctx).await {
         let candidate = tasks_dir.join(task_id);
         if is_real_dir(&candidate).await {
             return Ok(candidate);
@@ -130,12 +129,12 @@ pub(super) async fn safe_task_dir(gcx: Arc<GlobalContext>, task_id: &str) -> Res
 }
 
 pub(super) async fn safe_task_trajectory_dir(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     task_meta: &crate::chat::types::TaskMeta,
 ) -> Result<PathBuf, String> {
     validate_task_trajectory_role(&task_meta.role)?;
     validate_task_agent_id(task_meta.agent_id.as_deref())?;
-    let task_dir = safe_task_dir(gcx, &task_meta.task_id).await?;
+    let task_dir = safe_task_dir(ctx, &task_meta.task_id).await?;
     let traj_dir = crate::tasks::storage::get_task_trajectory_dir(
         &task_dir,
         &task_meta.role,
@@ -146,27 +145,27 @@ pub(super) async fn safe_task_trajectory_dir(
 }
 
 pub(crate) async fn safe_new_task_trajectory_file(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     task_meta: &crate::chat::types::TaskMeta,
     chat_id: &str,
 ) -> Result<PathBuf, String> {
-    let traj_dir = safe_task_trajectory_dir(gcx, task_meta).await?;
+    let traj_dir = safe_task_trajectory_dir(ctx, task_meta).await?;
     safe_new_trajectory_file_in_dir(&traj_dir, chat_id).await
 }
 
 pub(crate) async fn safe_new_buddy_trajectory_file(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     chat_id: &str,
 ) -> Result<PathBuf, String> {
-    let buddy_dir = get_or_create_buddy_conversations_dir(gcx).await?;
+    let buddy_dir = get_or_create_buddy_conversations_dir(ctx).await?;
     safe_new_trajectory_file_in_dir(&buddy_dir, chat_id).await
 }
 
 pub(super) async fn ensure_legacy_flat_slot_is_safe(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     chat_id: &str,
 ) -> Result<(), String> {
-    let trajectories_dir = get_trajectories_dir(gcx).await?;
+    let trajectories_dir = get_trajectories_dir(ctx).await?;
     let legacy_path = safe_new_trajectory_file_in_dir(&trajectories_dir, chat_id).await?;
     if is_real_file(&legacy_path).await {
         read_existing_trajectory_object(&legacy_path, chat_id).await?;
@@ -175,38 +174,38 @@ pub(super) async fn ensure_legacy_flat_slot_is_safe(
 }
 
 pub(crate) async fn safe_new_nested_trajectory_file(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     chat_id: &str,
     root_chat_id: Option<&str>,
 ) -> Result<PathBuf, String> {
     validate_trajectory_id(chat_id).map_err(|e| e.message)?;
-    ensure_legacy_flat_slot_is_safe(gcx.clone(), chat_id).await?;
+    ensure_legacy_flat_slot_is_safe(ctx, chat_id).await?;
     let folder = chat_folder_name(chat_id, root_chat_id);
-    let base = get_trajectories_dir(gcx).await?;
+    let base = get_trajectories_dir(ctx).await?;
     let dir = base.join(folder);
     ensure_real_dir_tree(&dir).await?;
     safe_new_trajectory_file_in_dir(&dir, chat_id).await
 }
 
 pub(crate) async fn trajectory_source_path_is_allowed(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     path: &Path,
 ) -> bool {
     if !is_real_file(path).await {
         return false;
     }
 
-    for root in get_all_trajectories_dirs(gcx.clone()).await {
+    for root in get_all_trajectories_dirs(ctx).await {
         if canonical_child_path_under_root(&root, path).await.is_ok() {
             return true;
         }
     }
-    for root in list_task_trajectory_dirs(&gcx).await {
+    for root in list_task_trajectory_dirs(ctx).await {
         if canonical_child_path_under_root(&root, path).await.is_ok() {
             return true;
         }
     }
-    if let Ok(root) = get_buddy_conversations_dir(gcx).await {
+    if let Ok(root) = get_buddy_conversations_dir(ctx).await {
         if is_real_dir(&root).await && canonical_child_path_under_root(&root, path).await.is_ok() {
             return true;
         }
@@ -215,7 +214,7 @@ pub(crate) async fn trajectory_source_path_is_allowed(
 }
 
 pub(crate) async fn resolve_trajectory_data_save_path(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     id: &str,
     data: &TrajectoryData,
 ) -> Result<PathBuf, String> {
@@ -237,14 +236,14 @@ pub(crate) async fn resolve_trajectory_data_save_path(
     if let Some(value) = task_meta_value {
         let task_meta = serde_json::from_value::<crate::chat::types::TaskMeta>(value.clone())
             .map_err(|e| format!("Invalid task_meta: {}", e))?;
-        return safe_new_task_trajectory_file(gcx.clone(), &task_meta, id).await;
+        return safe_new_task_trajectory_file(ctx, &task_meta, id).await;
     }
 
     if buddy_meta_present {
-        return safe_new_buddy_trajectory_file(gcx.clone(), id).await;
+        return safe_new_buddy_trajectory_file(ctx, id).await;
     }
 
-    if let Some(candidate) = find_normal_trajectory_file(gcx.clone(), id).await {
+    if let Some(candidate) = find_normal_trajectory_file(ctx, id).await {
         return Ok(candidate.path);
     }
     let root_chat_id = data
@@ -252,7 +251,7 @@ pub(crate) async fn resolve_trajectory_data_save_path(
         .get("root_chat_id")
         .and_then(|value| value.as_str())
         .map(|value| value.to_string());
-    safe_new_nested_trajectory_file(gcx.clone(), id, root_chat_id.as_deref()).await
+    safe_new_nested_trajectory_file(ctx, id, root_chat_id.as_deref()).await
 }
 
 pub(super) async fn title_generation_backing_file_matches(
@@ -365,12 +364,12 @@ pub(super) fn sanitize_worktree_extra(
     }
 }
 
-pub(super) async fn worktree_service_from_gcx(
-    app: AppState,
+pub(super) async fn worktree_service_for_ctx(
+    ctx: &ChatCtx,
     requested_source_root: Option<&Path>,
 ) -> Result<WorktreeService, String> {
-    let cache_dir = app.paths.cache_dir.clone();
-    let project_dirs = get_project_dirs(app.gcx.clone()).await;
+    let cache_dir = ctx.paths.cache_dir.clone();
+    let project_dirs = get_unscoped_project_dirs_for_ctx(ctx).await;
     if project_dirs.is_empty() {
         return Err("No project root available".to_string());
     }
@@ -406,12 +405,12 @@ pub(super) async fn worktree_service_from_gcx(
 }
 
 pub(crate) async fn validate_loaded_worktree_strict(
-    app: AppState,
+    ctx: &ChatCtx,
     chat_id: &str,
     worktree: WorktreeMeta,
 ) -> Option<WorktreeMeta> {
     let service =
-        match worktree_service_from_gcx(app.clone(), Some(&worktree.source_workspace_root)).await {
+        match worktree_service_for_ctx(ctx, Some(&worktree.source_workspace_root)).await {
             Ok(service) => service,
             Err(e) => {
                 warn!(
@@ -434,12 +433,12 @@ pub(crate) async fn validate_loaded_worktree_strict(
 }
 
 pub(super) async fn validate_loaded_legacy_task_agent_worktree(
-    app: AppState,
+    ctx: &ChatCtx,
     chat_id: &str,
     worktree: WorktreeMeta,
 ) -> Option<WorktreeMeta> {
     let service =
-        match worktree_service_from_gcx(app.clone(), Some(&worktree.source_workspace_root)).await {
+        match worktree_service_for_ctx(ctx, Some(&worktree.source_workspace_root)).await {
             Ok(service) => service,
             Err(e) => {
                 warn!(
@@ -465,7 +464,7 @@ pub(super) async fn validate_loaded_legacy_task_agent_worktree(
 }
 
 pub(super) async fn synthesize_legacy_task_agent_worktree(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     chat_id: &str,
     task_meta: Option<&crate::chat::types::TaskMeta>,
 ) -> Option<WorktreeMeta> {
@@ -474,11 +473,14 @@ pub(super) async fn synthesize_legacy_task_agent_worktree(
         return None;
     }
 
-    let source_workspace_root = get_project_dirs(gcx.clone()).await.into_iter().next();
-    let task_record = crate::tasks::storage::load_task_meta(gcx.clone(), &task_meta.task_id)
+    let source_workspace_root = get_unscoped_project_dirs_for_ctx(ctx)
+        .await
+        .into_iter()
+        .next();
+    let task_record = crate::tasks::storage::load_task_meta_for_ctx(ctx, &task_meta.task_id)
         .await
         .ok();
-    let board = crate::tasks::storage::load_board(gcx, &task_meta.task_id)
+    let board = crate::tasks::storage::load_board_for_ctx(ctx, &task_meta.task_id)
         .await
         .ok()?;
 
@@ -613,11 +615,10 @@ pub(crate) fn trajectory_path_stem_matches_id(path: &Path, id: &str) -> bool {
 }
 
 pub(crate) async fn load_trajectory_candidate(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     chat_id: &str,
     candidate: ValidTrajectoryCandidate,
 ) -> Option<LoadedTrajectory> {
-    let app = AppState::from_gcx(gcx.clone()).await;
     let traj_path = candidate.path;
     let mut t = candidate.json;
 
@@ -739,11 +740,11 @@ pub(crate) async fn load_trajectory_candidate(
         .and_then(|v| serde_json::from_value(v.clone()).ok());
 
     let worktree = if let Some(candidate) = t.get("worktree").and_then(parse_worktree_meta) {
-        validate_loaded_worktree_strict(app.clone(), chat_id, candidate).await
+        validate_loaded_worktree_strict(ctx, chat_id, candidate).await
     } else if let Some(candidate) =
-        synthesize_legacy_task_agent_worktree(gcx.clone(), chat_id, task_meta.as_ref()).await
+        synthesize_legacy_task_agent_worktree(ctx, chat_id, task_meta.as_ref()).await
     {
-        validate_loaded_legacy_task_agent_worktree(app.clone(), chat_id, candidate).await
+        validate_loaded_legacy_task_agent_worktree(ctx, chat_id, candidate).await
     } else {
         None
     };
@@ -937,8 +938,8 @@ pub(crate) async fn load_trajectory_candidate(
         .to_string();
 
     let pending_deliveries =
-        if let Some(agent_id) = app.agents.find_agent_id_by_child_chat_id(chat_id).await {
-            if app.agents.has_runtime(&agent_id).await {
+        if let Some(agent_id) = ctx.agents.find_agent_id_by_child_chat_id(chat_id).await {
+            if ctx.agents.has_runtime(&agent_id).await {
                 Vec::new()
             } else {
                 pending_deliveries
@@ -966,11 +967,11 @@ pub(crate) async fn load_trajectory_candidate(
 }
 
 pub async fn load_trajectory_for_chat(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     chat_id: &str,
 ) -> Option<LoadedTrajectory> {
-    let candidate = find_trajectory_or_buddy_file(gcx.clone(), chat_id).await?;
-    load_trajectory_candidate(gcx, chat_id, candidate).await
+    let candidate = find_trajectory_or_buddy_file(ctx, chat_id).await?;
+    load_trajectory_candidate(ctx, chat_id, candidate).await
 }
 
 pub fn validate_trajectory_label(label: &str) -> Result<String, String> {
@@ -1007,11 +1008,11 @@ pub async fn set_trajectory_label(app: AppState, chat_id: &str, label: &str) -> 
 }
 
 pub async fn load_generic_trajectory_for_chat(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     chat_id: &str,
 ) -> Option<LoadedTrajectory> {
-    let candidate = find_trajectory_file(gcx.clone(), chat_id).await?;
-    load_trajectory_candidate(gcx, chat_id, candidate).await
+    let candidate = find_trajectory_file(ctx, chat_id).await?;
+    load_trajectory_candidate(ctx, chat_id, candidate).await
 }
 
 pub(super) fn task_meta_is_planner_for_task(task_meta: Option<&TaskMeta>, task_id: &str) -> bool {
@@ -1019,12 +1020,12 @@ pub(super) fn task_meta_is_planner_for_task(task_meta: Option<&TaskMeta>, task_i
 }
 
 pub(crate) async fn chat_id_is_planner_for_task(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     chat_id: &str,
     task_id: &str,
 ) -> bool {
     let session_arc = {
-        let sessions = gcx.chat_sessions.read().await;
+        let sessions = ctx.chat.sessions.read().await;
         sessions.get(chat_id).cloned()
     };
     if let Some(session_arc) = session_arc {
@@ -1034,7 +1035,7 @@ pub(crate) async fn chat_id_is_planner_for_task(
         }
     }
 
-    load_trajectory_for_chat(gcx, chat_id)
+    load_trajectory_for_chat(ctx, chat_id)
         .await
         .is_some_and(|loaded| {
             task_meta_is_planner_for_task(loaded.thread.task_meta.as_ref(), task_id)
@@ -1042,7 +1043,7 @@ pub(crate) async fn chat_id_is_planner_for_task(
 }
 
 pub(crate) async fn verified_planner_linked_root_chat_id(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     current_chat_id: &str,
     current_root_chat_id: Option<&str>,
     task_meta: &TaskMeta,
@@ -1055,14 +1056,14 @@ pub(crate) async fn verified_planner_linked_root_chat_id(
     if task_meta.planner_chat_id.as_deref() == Some(root_chat_id) {
         return Some(root_chat_id.to_string());
     }
-    if chat_id_is_planner_for_task(gcx, root_chat_id, &task_meta.task_id).await {
+    if chat_id_is_planner_for_task(ctx, root_chat_id, &task_meta.task_id).await {
         return Some(root_chat_id.to_string());
     }
     None
 }
 
 pub(crate) async fn resolve_task_planner_controller_chat_id(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     current_chat_id: &str,
     current_root_chat_id: Option<&str>,
     task_meta: Option<&TaskMeta>,
@@ -1071,7 +1072,7 @@ pub(crate) async fn resolve_task_planner_controller_chat_id(
         return current_chat_id.to_string();
     };
     if let Some(root_chat_id) =
-        verified_planner_linked_root_chat_id(gcx, current_chat_id, current_root_chat_id, task_meta)
+        verified_planner_linked_root_chat_id(ctx, current_chat_id, current_root_chat_id, task_meta)
             .await
     {
         return root_chat_id;
@@ -1149,13 +1150,13 @@ pub(super) fn effective_trajectory_source_for_path(
 }
 
 pub(crate) async fn load_generic_trajectory_for_chat_matching_source(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     chat_id: &str,
     source: &TrajectorySourceIdentity,
 ) -> Option<LoadedTrajectory> {
     validate_trajectory_id(chat_id).ok()?;
-    let task_roots = get_all_task_roots(gcx.clone()).await;
-    let paths = trajectory_candidate_paths(gcx.clone(), chat_id).await;
+    let task_roots = get_all_task_roots(ctx).await;
+    let paths = trajectory_candidate_paths(ctx, chat_id).await;
     for path in paths {
         let Some(candidate) = read_valid_trajectory_candidate(path, chat_id).await else {
             continue;
@@ -1177,13 +1178,13 @@ pub(crate) async fn load_generic_trajectory_for_chat_matching_source(
         if !trajectory_source_matches_hint(&candidate_source, source) {
             continue;
         }
-        return load_trajectory_candidate(gcx, chat_id, candidate).await;
+        return load_trajectory_candidate(ctx, chat_id, candidate).await;
     }
     None
 }
 
 pub async fn save_initial_task_chat_trajectory(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     task_id: &str,
     chat_id: &str,
     mode: &str,
@@ -1278,30 +1279,30 @@ I'm your **Task Planner**. I handle the complete task lifecycle - from investiga
         waiting_for_card_ids: Vec::new(),
     };
 
-    save_trajectory_snapshot(gcx, snapshot).await
+    save_trajectory_snapshot_for_ctx(ctx, snapshot).await
 }
 
 pub async fn save_trajectory_as(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     thread: &ThreadParams,
     messages: &[ChatMessage],
 ) {
-    save_trajectory_as_with_intent(gcx, thread, messages, TrajectoryCommitIntent::Required).await;
+    save_trajectory_as_with_intent(ctx, thread, messages, TrajectoryCommitIntent::Required).await;
 }
 
 pub async fn save_trajectory_as_with_intent(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     thread: &ThreadParams,
     messages: &[ChatMessage],
     intent: TrajectoryCommitIntent,
 ) {
-    if let Err(e) = save_trajectory_as_with_intent_checked(gcx, thread, messages, intent).await {
+    if let Err(e) = save_trajectory_as_with_intent_checked(ctx, thread, messages, intent).await {
         warn!("Failed to save trajectory: {}", e);
     }
 }
 
 pub async fn save_trajectory_as_with_intent_checked(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     thread: &ThreadParams,
     messages: &[ChatMessage],
     intent: TrajectoryCommitIntent,
@@ -1354,5 +1355,5 @@ pub async fn save_trajectory_as_with_intent_checked(
         wake_up_at: None,
         waiting_for_card_ids: Vec::new(),
     };
-    persist_trajectory_snapshot_with_intent(gcx, snapshot, intent).await
+    persist_trajectory_snapshot_with_intent_ctx(ctx, snapshot, intent).await
 }

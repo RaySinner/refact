@@ -993,8 +993,7 @@ pub async fn handle_create_planner_chat(
     let chat_id = storage::next_planner_chat_id(gcx.clone(), &task_id)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
-    crate::chat::trajectories::save_initial_task_chat_trajectory(
-        gcx.clone(),
+    crate::chat::trajectories::save_initial_task_chat_trajectory(&gcx.chat_ctx(gcx.clone()),
         &task_id,
         &chat_id,
         &mode,
@@ -1216,7 +1215,7 @@ pub async fn handle_delete_planner_chat(
     let file_path = if expected_file_path.exists() {
         expected_file_path
     } else {
-        match crate::chat::trajectories::find_trajectory_path(gcx.clone(), &chat_id).await {
+        match crate::chat::trajectories::find_trajectory_path(&gcx.chat_ctx(gcx.clone()), &chat_id).await {
             Some(found_path) if found_path.exists() => found_path,
             _ => {
                 return Err(delete_error(

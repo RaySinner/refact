@@ -162,7 +162,7 @@ async fn resolve_root_chat_id(
             return root;
         }
 
-        match crate::chat::trajectories::find_trajectory_parent_id(gcx.clone(), &current).await {
+        match crate::chat::trajectories::find_trajectory_parent_id(&gcx.chat_ctx(gcx.clone()), &current).await {
             Some(Some(parent)) => current = parent,
             Some(None) => {
                 let root = current;
@@ -663,6 +663,10 @@ fn extract_fallback_tags(
 pub async fn get_global_knowledge_dir(gcx: Arc<GlobalContext>) -> PathBuf {
     let config_dir = gcx.config_dir.clone();
     config_dir.join("knowledge")
+}
+
+pub fn get_global_knowledge_dir_for_ctx(ctx: &crate::chat::ctx::ChatCtx) -> PathBuf {
+    ctx.paths.config_dir.join("knowledge")
 }
 
 async fn get_all_knowledge_dirs(gcx: Arc<GlobalContext>) -> Vec<PathBuf> {
@@ -1368,7 +1372,7 @@ async fn memories_search_inner(
 
     // Resolve trajectory dirs before acquiring vec_db lock to avoid holding the
     // mutex across gcx.read() calls (which could deadlock with concurrent gcx.write()).
-    let trajectory_dirs = crate::chat::trajectories::get_all_trajectories_dirs(gcx.clone()).await;
+    let trajectory_dirs = crate::chat::trajectories::get_all_trajectories_dirs(&gcx.chat_ctx(gcx.clone())).await;
 
     let vecdb_arc = {
         let gcx_read = gcx.clone();

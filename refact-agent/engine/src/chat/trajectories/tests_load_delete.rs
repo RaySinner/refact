@@ -48,8 +48,8 @@ use super::test_support::*;
         .await
         .unwrap();
 
-        assert!(find_trajectory_path(gcx.clone(), "../bad").await.is_none());
-        assert!(find_trajectory_or_buddy_path(gcx.clone(), "../bad")
+        assert!(find_trajectory_path(&gcx.chat_ctx(gcx.clone()), "../bad").await.is_none());
+        assert!(find_trajectory_or_buddy_path(&gcx.chat_ctx(gcx.clone()), "../bad")
             .await
             .is_none());
 
@@ -145,12 +145,12 @@ use super::test_support::*;
             .join(format!("{}.json", chat_id));
         write_buddy_conversation_file(&buddy_path, chat_id, "Readable Buddy").await;
 
-        assert!(find_trajectory_path(gcx.clone(), chat_id).await.is_none());
+        assert!(find_trajectory_path(&gcx.chat_ctx(gcx.clone()), chat_id).await.is_none());
         assert_same_optional_path(
-            find_trajectory_or_buddy_path(gcx.clone(), chat_id).await,
+            find_trajectory_or_buddy_path(&gcx.chat_ctx(gcx.clone()), chat_id).await,
             &buddy_path,
         );
-        let loaded = load_trajectory_for_chat(gcx, chat_id).await.unwrap();
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), chat_id).await.unwrap();
 
         assert_eq!(loaded.thread.title, "Readable Buddy");
         assert_eq!(
@@ -170,14 +170,14 @@ use super::test_support::*;
         save_trajectory_snapshot(gcx.clone(), snapshot)
             .await
             .unwrap();
-        let mut loaded = load_trajectory_for_chat(gcx.clone(), chat_id)
+        let mut loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), chat_id)
             .await
             .unwrap();
         assert!(loaded.messages.is_empty());
         assert!(loaded.thread.auto_compression_cap_pending);
         assert!(loaded.thread.resolve_pending_compression_cap(Some(1000)));
         assert_eq!(loaded.thread.auto_compression_cap, Some(900));
-        let path = find_trajectory_path(gcx.clone(), chat_id).await.unwrap();
+        let path = find_trajectory_path(&gcx.chat_ctx(gcx.clone()), chat_id).await.unwrap();
         let mut value: serde_json::Value =
             serde_json::from_slice(&tokio::fs::read(&path).await.unwrap()).unwrap();
         value
@@ -187,7 +187,7 @@ use super::test_support::*;
         tokio::fs::write(path, serde_json::to_vec(&value).unwrap())
             .await
             .unwrap();
-        let mut legacy = load_trajectory_for_chat(gcx, chat_id).await.unwrap();
+        let mut legacy = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), chat_id).await.unwrap();
         assert!(legacy.messages.is_empty());
         assert!(!legacy.thread.resolve_pending_compression_cap(Some(1000)));
         assert_eq!(legacy.thread.auto_compression_cap, None);
@@ -208,12 +208,12 @@ use super::test_support::*;
         save_trajectory_snapshot(gcx.clone(), snapshot)
             .await
             .unwrap();
-        let loaded = load_trajectory_for_chat(gcx.clone(), chat_id)
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), chat_id)
             .await
             .unwrap();
         assert_eq!(loaded.thread.auto_compression_cap, Some(96_000));
 
-        let path = find_trajectory_path(gcx.clone(), chat_id).await.unwrap();
+        let path = find_trajectory_path(&gcx.chat_ctx(gcx.clone()), chat_id).await.unwrap();
         let mut value: serde_json::Value =
             serde_json::from_slice(&tokio::fs::read(&path).await.unwrap()).unwrap();
         value
@@ -227,7 +227,7 @@ use super::test_support::*;
         tokio::fs::write(&path, serde_json::to_vec(&value).unwrap())
             .await
             .unwrap();
-        let mut legacy = load_trajectory_for_chat(gcx, chat_id).await.unwrap();
+        let mut legacy = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), chat_id).await.unwrap();
         assert_eq!(legacy.thread.auto_compression_cap, None);
         assert!(!legacy.thread.auto_compression_cap_pending);
         assert!(!legacy.thread.resolve_pending_compression_cap(Some(128_000)));
@@ -245,7 +245,7 @@ use super::test_support::*;
         save_trajectory_snapshot(gcx.clone(), snapshot)
             .await
             .unwrap();
-        let mut loaded = load_trajectory_for_chat(gcx.clone(), chat_id)
+        let mut loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), chat_id)
             .await
             .unwrap();
         assert!(loaded.messages.is_empty());
@@ -254,8 +254,8 @@ use super::test_support::*;
         assert_eq!(loaded.thread.auto_compression_cap, None);
         assert!(loaded.thread.resolve_pending_compression_cap(Some(80_000)));
         assert_eq!(loaded.thread.auto_compression_cap, Some(72_000));
-        save_trajectory_as(gcx.clone(), &loaded.thread, &loaded.messages).await;
-        let restored = load_trajectory_for_chat(gcx, chat_id).await.unwrap();
+        save_trajectory_as(&gcx.chat_ctx(gcx.clone()), &loaded.thread, &loaded.messages).await;
+        let restored = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), chat_id).await.unwrap();
         assert_eq!(restored.thread.auto_compression_cap, Some(72_000));
         assert!(!restored.thread.auto_compression_cap_pending);
     }
@@ -271,7 +271,7 @@ use super::test_support::*;
         save_trajectory_snapshot(gcx.clone(), snapshot)
             .await
             .unwrap();
-        let mut loaded = load_trajectory_for_chat(gcx.clone(), chat_id)
+        let mut loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), chat_id)
             .await
             .unwrap();
         assert!(loaded.messages.is_empty());
@@ -281,7 +281,7 @@ use super::test_support::*;
         assert_eq!(loaded.thread.auto_compression_cap, Some(72_000));
 
         // An empty legacy file is not evidence that this is a new chat.
-        let path = find_trajectory_path(gcx.clone(), chat_id).await.unwrap();
+        let path = find_trajectory_path(&gcx.chat_ctx(gcx.clone()), chat_id).await.unwrap();
         let mut value: serde_json::Value =
             serde_json::from_slice(&tokio::fs::read(&path).await.unwrap()).unwrap();
         value
@@ -291,7 +291,7 @@ use super::test_support::*;
         tokio::fs::write(path, serde_json::to_vec(&value).unwrap())
             .await
             .unwrap();
-        let mut legacy = load_trajectory_for_chat(gcx, chat_id).await.unwrap();
+        let mut legacy = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), chat_id).await.unwrap();
         assert!(legacy.messages.is_empty());
         assert!(!legacy.thread.resolve_pending_compression_cap(Some(100_000)));
         assert_eq!(legacy.thread.auto_compression_cap, None);
@@ -308,7 +308,7 @@ use super::test_support::*;
         save_trajectory_snapshot(gcx.clone(), snapshot)
             .await
             .unwrap();
-        let loaded = load_trajectory_for_chat(gcx, chat_id).await.unwrap();
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), chat_id).await.unwrap();
         assert!(loaded.messages.is_empty());
         assert_eq!(loaded.thread.auto_compression_cap, Some(64_000));
     }
@@ -327,8 +327,7 @@ use super::test_support::*;
             ..Default::default()
         };
 
-        save_trajectory_as(
-            gcx.clone(),
+        save_trajectory_as(&gcx.chat_ctx(gcx.clone()),
             &thread,
             &[ChatMessage::new(
                 "user".to_string(),
@@ -337,7 +336,7 @@ use super::test_support::*;
         )
         .await;
 
-        let loaded = load_trajectory_for_chat(gcx, &thread.id).await;
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), &thread.id).await;
         assert!(loaded.is_some());
         assert_eq!(
             loaded.unwrap().messages[0].content.content_text_only(),
@@ -357,10 +356,10 @@ use super::test_support::*;
             ..Default::default()
         };
 
-        save_trajectory_as(gcx.clone(), &thread, &[]).await;
+        save_trajectory_as(&gcx.chat_ctx(gcx.clone()), &thread, &[]).await;
         tokio::time::timeout(Duration::from_secs(60), async {
             loop {
-                if load_trajectory_for_chat(gcx.clone(), chat_id)
+                if load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), chat_id)
                     .await
                     .is_some()
                 {
@@ -372,7 +371,7 @@ use super::test_support::*;
         .await
         .expect("checkpoint should persist the empty capped chat");
         assert_eq!(
-            load_trajectory_for_chat(gcx.clone(), chat_id)
+            load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), chat_id)
                 .await
                 .unwrap()
                 .thread
@@ -381,10 +380,10 @@ use super::test_support::*;
         );
 
         thread.auto_compression_cap = None;
-        save_trajectory_as(gcx.clone(), &thread, &[]).await;
+        save_trajectory_as(&gcx.chat_ctx(gcx.clone()), &thread, &[]).await;
         tokio::time::timeout(Duration::from_secs(60), async {
             loop {
-                if load_trajectory_for_chat(gcx.clone(), chat_id)
+                if load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), chat_id)
                     .await
                     .is_some_and(|loaded| loaded.thread.auto_compression_cap.is_none())
                 {
@@ -396,7 +395,7 @@ use super::test_support::*;
         .await
         .expect("checkpoint should clear the persisted cap");
         assert_eq!(
-            load_trajectory_for_chat(gcx, chat_id)
+            load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), chat_id)
                 .await
                 .unwrap()
                 .thread
@@ -419,10 +418,10 @@ use super::test_support::*;
             .join(format!("{chat_id}.json"));
         write_buddy_conversation_file(&buddy_path, chat_id, "Only Buddy").await;
 
-        assert!(load_generic_trajectory_for_chat(gcx.clone(), chat_id)
+        assert!(load_generic_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), chat_id)
             .await
             .is_none());
-        let loaded = load_trajectory_for_chat(gcx, chat_id).await.unwrap();
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), chat_id).await.unwrap();
 
         assert_eq!(loaded.thread.title, "Only Buddy");
         assert!(loaded.thread.buddy_meta.is_some());
@@ -496,7 +495,7 @@ use super::test_support::*;
             .join("safe.json");
         write_trajectory_file(&path, "other-chat", "Mismatched", "2024-01-01T00:00:00Z").await;
 
-        assert!(load_trajectory_for_chat(gcx, "safe").await.is_none());
+        assert!(load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), "safe").await.is_none());
     }
 
     #[cfg(unix)]
@@ -518,8 +517,8 @@ use super::test_support::*;
         )
         .await;
 
-        assert!(find_trajectory_path(gcx.clone(), chat_id).await.is_none());
-        assert!(load_trajectory_for_chat(gcx, chat_id).await.is_none());
+        assert!(find_trajectory_path(&gcx.chat_ctx(gcx.clone()), chat_id).await.is_none());
+        assert!(load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), chat_id).await.is_none());
     }
 
     #[cfg(unix)]
@@ -611,7 +610,7 @@ use super::test_support::*;
         )
         .unwrap();
 
-        assert!(find_trajectory_path(gcx.clone(), chat_id).await.is_none());
+        assert!(find_trajectory_path(&gcx.chat_ctx(gcx.clone()), chat_id).await.is_none());
         let delete_err = handle_v1_trajectories_delete(State(app), AxumPath(chat_id.to_string()))
             .await
             .unwrap_err();
@@ -689,8 +688,8 @@ use super::test_support::*;
         )
         .await;
 
-        assert!(find_trajectory_path(gcx.clone(), chat_id).await.is_none());
-        assert!(load_trajectory_for_chat(gcx, chat_id).await.is_none());
+        assert!(find_trajectory_path(&gcx.chat_ctx(gcx.clone()), chat_id).await.is_none());
+        assert!(load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), chat_id).await.is_none());
         let err = handle_v1_trajectories_delete(State(app), AxumPath(chat_id.to_string()))
             .await
             .unwrap_err();
@@ -723,8 +722,8 @@ use super::test_support::*;
         )
         .await;
 
-        assert!(find_trajectory_path(gcx.clone(), chat_id).await.is_none());
-        assert!(load_trajectory_for_chat(gcx, chat_id).await.is_none());
+        assert!(find_trajectory_path(&gcx.chat_ctx(gcx.clone()), chat_id).await.is_none());
+        assert!(load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), chat_id).await.is_none());
         let err = handle_v1_trajectories_delete(State(app), AxumPath(chat_id.to_string()))
             .await
             .unwrap_err();
@@ -745,10 +744,10 @@ use super::test_support::*;
         let outside_path = outside.path().join(format!("{chat_id}.json"));
         write_buddy_conversation_file(&outside_path, chat_id, "Outside Buddy").await;
 
-        assert!(find_trajectory_or_buddy_path(gcx.clone(), chat_id)
+        assert!(find_trajectory_or_buddy_path(&gcx.chat_ctx(gcx.clone()), chat_id)
             .await
             .is_none());
-        assert!(load_trajectory_for_chat(gcx, chat_id).await.is_none());
+        assert!(load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), chat_id).await.is_none());
     }
 
     #[tokio::test]
@@ -778,8 +777,8 @@ use super::test_support::*;
         .await;
         write_trajectory_file(&task_path, chat_id, "Valid Task", "2024-01-01T00:00:01Z").await;
 
-        assert_same_optional_path(find_trajectory_path(gcx.clone(), chat_id).await, &task_path);
-        let loaded = load_trajectory_for_chat(gcx, chat_id).await.unwrap();
+        assert_same_optional_path(find_trajectory_path(&gcx.chat_ctx(gcx.clone()), chat_id).await, &task_path);
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), chat_id).await.unwrap();
         assert_eq!(loaded.thread.title, "Valid Task");
     }
 
@@ -804,8 +803,8 @@ use super::test_support::*;
         write_schema_incomplete_trajectory_file(&normal_path, chat_id).await;
         write_trajectory_file(&task_path, chat_id, "Valid Task", "2024-01-01T00:00:01Z").await;
 
-        assert_same_optional_path(find_trajectory_path(gcx.clone(), chat_id).await, &task_path);
-        let loaded = load_trajectory_for_chat(gcx, chat_id).await.unwrap();
+        assert_same_optional_path(find_trajectory_path(&gcx.chat_ctx(gcx.clone()), chat_id).await, &task_path);
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), chat_id).await.unwrap();
         assert_eq!(loaded.thread.title, "Valid Task");
     }
 
@@ -821,8 +820,8 @@ use super::test_support::*;
             .join(format!("{chat_id}.json"));
         write_schema_incomplete_trajectory_file(&path, chat_id).await;
 
-        assert!(find_trajectory_path(gcx.clone(), chat_id).await.is_none());
-        assert!(load_trajectory_for_chat(gcx, chat_id).await.is_none());
+        assert!(find_trajectory_path(&gcx.chat_ctx(gcx.clone()), chat_id).await.is_none());
+        assert!(load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), chat_id).await.is_none());
     }
 
     #[tokio::test]
@@ -835,7 +834,7 @@ use super::test_support::*;
             .join(".refact")
             .join("trajectories")
             .join(format!("{chat_id}.json"));
-        let global_dir = get_global_trajectories_dir(gcx.clone()).await;
+        let global_dir = get_global_trajectories_dir(&gcx.chat_ctx(gcx.clone())).await;
         let global_path = global_dir.join(format!("{chat_id}.json"));
         write_trajectory_file(
             &workspace_path,
@@ -853,10 +852,10 @@ use super::test_support::*;
         .await;
 
         assert_same_optional_path(
-            find_trajectory_path(gcx.clone(), chat_id).await,
+            find_trajectory_path(&gcx.chat_ctx(gcx.clone()), chat_id).await,
             &global_path,
         );
-        let loaded = load_trajectory_for_chat(gcx, chat_id).await.unwrap();
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), chat_id).await.unwrap();
         assert_eq!(loaded.thread.title, "Valid Global");
     }
 

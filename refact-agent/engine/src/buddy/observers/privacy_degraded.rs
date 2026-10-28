@@ -135,7 +135,7 @@ mod tests {
             .next()
             .unwrap()
             .expect("winning warning creates a chat");
-        let conversations = crate::chat::trajectories::get_buddy_conversations_dir(gcx.clone())
+        let conversations = crate::chat::trajectories::get_buddy_conversations_dir(&gcx.chat_ctx(gcx.clone()))
             .await
             .unwrap();
         let warnings = std::fs::read_dir(conversations)
@@ -151,7 +151,7 @@ mod tests {
             })
             .count();
         assert_eq!(warnings, 1);
-        let loaded = crate::chat::trajectories::load_trajectory_for_chat(gcx, &first)
+        let loaded = crate::chat::trajectories::load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), &first)
             .await
             .unwrap();
         assert_eq!(

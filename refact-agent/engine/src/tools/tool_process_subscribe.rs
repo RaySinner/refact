@@ -1088,7 +1088,7 @@ mod tests {
         assert!(pending.is_none());
         assert!(events.is_empty());
         let saved =
-            crate::chat::trajectories::load_trajectory_for_chat(gcx.clone(), "retry-subscribe")
+            crate::chat::trajectories::load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), "retry-subscribe")
                 .await
                 .expect("retried batches persisted");
         assert_eq!(

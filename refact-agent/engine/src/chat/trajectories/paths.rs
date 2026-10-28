@@ -1,5 +1,5 @@
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex as StdMutex, OnceLock, Weak};
+use std::sync::{Arc, Mutex as StdMutex, OnceLock};
 use std::sync::atomic::Ordering;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use axum::http::StatusCode;
@@ -10,13 +10,12 @@ use tokio::sync::mpsc;
 use tracing::{info, warn};
 use crate::chat::types::TrajectorySourceIdentitySessionExt;
 
-use crate::app_state::AppState;
 use crate::call_validation::ChatMessage;
+use crate::chat::ctx::ChatCtx;
 use crate::chat::trajectory_index;
 use crate::chat::types::TrajectorySourceIdentity;
 use crate::custom_error::ScratchError;
-use crate::files_correction::get_project_dirs;
-use crate::global_context::GlobalContext;
+use crate::files_correction::get_unscoped_project_dirs_for_ctx;
 
 use super::load::{
     effective_trajectory_source_for_path, trajectory_candidate_has_minimum_schema,
@@ -24,16 +23,18 @@ use super::load::{
 };
 use super::{ensure_real_dir_tree, is_real_dir, safe_trajectory_file_in_dir};
 
-pub async fn get_trajectories_dir(gcx: Arc<GlobalContext>) -> Result<PathBuf, String> {
-    let project_dirs = get_project_dirs(gcx).await;
+pub async fn get_trajectories_dir(ctx: &ChatCtx) -> Result<PathBuf, String> {
+    let project_dirs = get_unscoped_project_dirs_for_ctx(ctx).await;
     let workspace_root = project_dirs.first().ok_or("No workspace folder found")?;
     Ok(workspace_root.join(".refact").join("trajectories"))
 }
 
-pub async fn get_global_trajectories_dir(gcx: Arc<GlobalContext>) -> PathBuf {
-    let app = AppState::from_gcx(gcx).await;
-    let config_dir = app.paths.config_dir.clone();
+pub fn global_trajectories_dir_path(config_dir: &Path) -> PathBuf {
     config_dir.join("trajectories")
+}
+
+pub async fn get_global_trajectories_dir(ctx: &ChatCtx) -> PathBuf {
+    global_trajectories_dir_path(&ctx.paths.config_dir)
 }
 
 pub const INTERNAL_TRACE_LINK_PREFIX: &str = "internal:";
@@ -237,13 +238,13 @@ pub(super) async fn wait_for_trajectory_vectorization_shutdown(
     }
 }
 
-pub(crate) async fn enqueue_trajectory_vectorization(gcx: Arc<GlobalContext>, file_path: PathBuf) {
-    if gcx.shutdown_flag.load(Ordering::Relaxed) {
+pub(crate) async fn enqueue_trajectory_vectorization(ctx: &ChatCtx, file_path: PathBuf) {
+    if ctx.runtime.shutdown_flag.load(Ordering::Relaxed) {
         return;
     }
 
     let finished_worker = {
-        let mut queue = gcx.trajectory_vectorization_queue.lock().await;
+        let mut queue = ctx.trajectory_vectorization_queue.lock().await;
         if queue
             .worker
             .as_ref()
@@ -262,12 +263,12 @@ pub(crate) async fn enqueue_trajectory_vectorization(gcx: Arc<GlobalContext>, fi
     }
 
     let sender = {
-        let mut queue = gcx.trajectory_vectorization_queue.lock().await;
+        let mut queue = ctx.trajectory_vectorization_queue.lock().await;
         if queue.sender.is_none() {
             let (sender, receiver) = mpsc::channel(TRAJECTORY_VECTORIZATION_QUEUE_CAPACITY);
             queue.sender = Some(sender);
             queue.worker = Some(tokio::spawn(run_trajectory_vectorization_queue(
-                Arc::downgrade(&gcx),
+                ctx.clone(),
                 receiver,
             )));
         }
@@ -283,15 +284,10 @@ pub(crate) async fn enqueue_trajectory_vectorization(gcx: Arc<GlobalContext>, fi
 }
 
 pub(super) async fn run_trajectory_vectorization_queue(
-    gcx_weak: Weak<GlobalContext>,
+    ctx: ChatCtx,
     mut receiver: mpsc::Receiver<PathBuf>,
 ) {
-    let Some(gcx) = gcx_weak.upgrade() else {
-        return;
-    };
-    let shutdown_flag = gcx.shutdown_flag.clone();
-    drop(gcx);
-
+    let shutdown_flag = ctx.runtime.shutdown_flag.clone();
     loop {
         let file_path = tokio::select! {
             file_path = receiver.recv() => file_path,
@@ -300,14 +296,11 @@ pub(super) async fn run_trajectory_vectorization_queue(
         let Some(file_path) = file_path else {
             return;
         };
-        let Some(gcx) = gcx_weak.upgrade() else {
-            return;
-        };
-        let roots = crate::indexing_routing::memory_plane_roots(gcx.clone()).await;
+        let roots = crate::indexing_routing::memory_plane_roots_for_ctx(&ctx).await;
         if !roots.is_trajectory_file(&file_path) {
             continue;
         }
-        let vecdb = gcx.vec_db.lock().await.clone();
+        let vecdb = ctx.workspace.vec_db.lock().await.clone();
         if let Some(vecdb) = vecdb {
             let documents = vec![file_path.to_string_lossy().to_string()];
             tokio::select! {
@@ -429,11 +422,11 @@ pub(super) async fn prune_internal_traces_throttled(dir: &Path) -> Result<usize,
 }
 
 pub(crate) async fn index_dir_for_trajectory_file(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     file_path: &Path,
 ) -> Option<PathBuf> {
     let parent = file_path.parent()?;
-    let known_dirs = list_trajectory_dirs(&gcx).await;
+    let known_dirs = list_trajectory_dirs(ctx).await;
     if known_dirs.iter().any(|dir| dir == parent) {
         return Some(parent.to_path_buf());
     }
@@ -462,9 +455,9 @@ pub fn chat_folder_name<'a>(chat_id: &'a str, root_chat_id: Option<&'a str>) -> 
     }
 }
 
-pub(crate) async fn list_chat_folder_dirs(gcx: &Arc<GlobalContext>) -> Vec<PathBuf> {
+pub(crate) async fn list_chat_folder_dirs(ctx: &ChatCtx) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
-    for base in get_all_trajectories_dirs(gcx.clone()).await {
+    for base in get_all_trajectories_dirs(ctx).await {
         let mut entries = match fs::read_dir(&base).await {
             Ok(entries) => entries,
             Err(_) => continue,
@@ -479,9 +472,9 @@ pub(crate) async fn list_chat_folder_dirs(gcx: &Arc<GlobalContext>) -> Vec<PathB
     dirs
 }
 
-pub async fn get_all_trajectories_dirs(gcx: Arc<GlobalContext>) -> Vec<PathBuf> {
+pub async fn get_all_trajectories_dirs(ctx: &ChatCtx) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
-    for dir in get_project_dirs(gcx.clone())
+    for dir in get_unscoped_project_dirs_for_ctx(ctx)
         .await
         .into_iter()
         .map(|p| p.join(".refact").join("trajectories"))
@@ -491,7 +484,7 @@ pub async fn get_all_trajectories_dirs(gcx: Arc<GlobalContext>) -> Vec<PathBuf> 
         }
     }
 
-    let global_dir = get_global_trajectories_dir(gcx).await;
+    let global_dir = get_global_trajectories_dir(ctx).await;
     if is_real_dir(&global_dir).await {
         dirs.push(global_dir);
     }
@@ -499,24 +492,20 @@ pub async fn get_all_trajectories_dirs(gcx: Arc<GlobalContext>) -> Vec<PathBuf> 
     dirs
 }
 
-pub(super) fn task_root_candidates(
-    gcx: Arc<GlobalContext>,
-) -> impl std::future::Future<Output = Vec<PathBuf>> {
-    async move {
-        let mut dirs: Vec<PathBuf> = get_project_dirs(gcx.clone())
-            .await
-            .into_iter()
-            .map(|p| p.join(".refact").join("tasks"))
-            .collect();
+pub(super) async fn task_root_candidates(ctx: &ChatCtx) -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = get_unscoped_project_dirs_for_ctx(ctx)
+        .await
+        .into_iter()
+        .map(|p| p.join(".refact").join("tasks"))
+        .collect();
 
-        dirs.push(crate::tasks::storage::get_global_tasks_dir(gcx).await);
-        dirs
-    }
+    dirs.push(crate::tasks::storage::get_global_tasks_dir_for_ctx(ctx));
+    dirs
 }
 
-pub(crate) async fn get_all_task_roots(gcx: Arc<GlobalContext>) -> Vec<PathBuf> {
+pub(crate) async fn get_all_task_roots(ctx: &ChatCtx) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
-    for dir in task_root_candidates(gcx).await {
+    for dir in task_root_candidates(ctx).await {
         if is_real_dir(&dir).await {
             dirs.push(dir);
         }
@@ -524,9 +513,9 @@ pub(crate) async fn get_all_task_roots(gcx: Arc<GlobalContext>) -> Vec<PathBuf> 
     dirs
 }
 
-pub(super) async fn get_or_create_all_task_roots(gcx: Arc<GlobalContext>) -> Vec<PathBuf> {
+pub(super) async fn get_or_create_all_task_roots(ctx: &ChatCtx) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
-    for dir in task_root_candidates(gcx).await {
+    for dir in task_root_candidates(ctx).await {
         if ensure_real_dir_tree(&dir).await.is_ok() {
             dirs.push(dir);
         }
@@ -534,16 +523,9 @@ pub(super) async fn get_or_create_all_task_roots(gcx: Arc<GlobalContext>) -> Vec
     dirs
 }
 
-pub(super) async fn get_all_task_roots_from_weak(gcx_weak: &Weak<GlobalContext>) -> Vec<PathBuf> {
-    match gcx_weak.upgrade() {
-        Some(gcx) => get_or_create_all_task_roots(gcx).await,
-        None => vec![],
-    }
-}
-
-pub(crate) async fn list_task_trajectory_dirs(gcx: &Arc<GlobalContext>) -> Vec<PathBuf> {
+pub(crate) async fn list_task_trajectory_dirs(ctx: &ChatCtx) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
-    for tasks_dir in get_all_task_roots(gcx.clone()).await {
+    for tasks_dir in get_all_task_roots(ctx).await {
         let mut task_entries = match fs::read_dir(&tasks_dir).await {
             Ok(entries) => entries,
             Err(_) => continue,
@@ -581,23 +563,14 @@ pub(super) async fn collect_existing_dirs(root: PathBuf, dirs: &mut Vec<PathBuf>
     }
 }
 
-pub(crate) async fn list_trajectory_dirs(gcx: &Arc<GlobalContext>) -> Vec<PathBuf> {
-    let mut dirs = get_all_trajectories_dirs(gcx.clone()).await;
-    dirs.extend(list_task_trajectory_dirs(gcx).await);
+pub(crate) async fn list_trajectory_dirs(ctx: &ChatCtx) -> Vec<PathBuf> {
+    let mut dirs = get_all_trajectories_dirs(ctx).await;
+    dirs.extend(list_task_trajectory_dirs(ctx).await);
     dirs
 }
 
-pub(super) async fn get_all_trajectories_dirs_from_weak(
-    gcx_weak: &Weak<GlobalContext>,
-) -> Vec<PathBuf> {
-    match gcx_weak.upgrade() {
-        Some(gcx) => get_all_trajectories_dirs(gcx).await,
-        None => vec![],
-    }
-}
-
-pub async fn get_buddy_conversations_dir(gcx: Arc<GlobalContext>) -> Result<PathBuf, String> {
-    let project_dirs = get_project_dirs(gcx).await;
+pub async fn get_buddy_conversations_dir(ctx: &ChatCtx) -> Result<PathBuf, String> {
+    let project_dirs = get_unscoped_project_dirs_for_ctx(ctx).await;
     let workspace_root = project_dirs.first().ok_or("No workspace folder found")?;
     Ok(workspace_root
         .join(".refact")
@@ -607,9 +580,9 @@ pub async fn get_buddy_conversations_dir(gcx: Arc<GlobalContext>) -> Result<Path
 }
 
 pub(super) async fn get_or_create_buddy_conversations_dir(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
 ) -> Result<PathBuf, String> {
-    let dir = get_buddy_conversations_dir(gcx).await?;
+    let dir = get_buddy_conversations_dir(ctx).await?;
     ensure_real_dir_tree(&dir).await?;
     Ok(dir)
 }
@@ -619,12 +592,12 @@ pub(super) fn buddy_conversation_prune_throttle() -> &'static StdMutex<PruneThro
     LAST_PRUNE_BY_DIR.get_or_init(|| StdMutex::new(PruneThrottle::default()))
 }
 
-pub(crate) async fn prune_buddy_conversations_throttled(gcx: Arc<GlobalContext>) {
+pub(crate) async fn prune_buddy_conversations_throttled(ctx: &ChatCtx) {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|elapsed| elapsed.as_secs())
         .unwrap_or(0);
-    let dir = match get_buddy_conversations_dir(gcx.clone()).await {
+    let dir = match get_buddy_conversations_dir(ctx).await {
         Ok(dir) => dir,
         Err(_) => return,
     };
@@ -640,12 +613,11 @@ pub(crate) async fn prune_buddy_conversations_throttled(gcx: Arc<GlobalContext>)
     {
         return;
     }
-    let app = AppState::from_gcx(gcx.clone()).await;
     match prune_buddy_conversations_in_dir_with_coordinator(
         &dir,
         settings.buddy_conversations_keep,
         settings.buddy_conversations_prune_min_age_secs,
-        Some(&app.chat.trajectory_index_coordinator),
+        Some(&ctx.chat.trajectory_index_coordinator),
     )
     .await
     {
@@ -802,16 +774,15 @@ pub(super) fn extend_unique_paths(
 }
 
 pub(super) async fn indexed_candidate_paths_in_dirs(
-    gcx: &Arc<GlobalContext>,
+    ctx: &ChatCtx,
     dirs: &[PathBuf],
     chat_id: &str,
     caller: trajectory_index::TrajectoryIndexListingCaller,
 ) -> Vec<PathBuf> {
     let mut paths = Vec::new();
-    let app = AppState::from_gcx(gcx.clone()).await;
     for dir in dirs {
         let entries = match trajectory_index::list_trajectory_entries_with_rollout_for(
-            &app.chat.trajectory_index_coordinator,
+            &ctx.chat.trajectory_index_coordinator,
             dir,
             None,
             caller,
@@ -838,12 +809,12 @@ pub(super) async fn indexed_candidate_paths_in_dirs(
 }
 
 pub(super) async fn normal_trajectory_candidate_paths(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     chat_id: &str,
 ) -> Vec<PathBuf> {
     let mut paths = Vec::new();
     let mut seen = std::collections::HashSet::new();
-    let normal_dirs = get_all_trajectories_dirs(gcx.clone()).await;
+    let normal_dirs = get_all_trajectories_dirs(ctx).await;
     for dir in &normal_dirs {
         if let Some(path) = safe_trajectory_file_in_dir(dir, chat_id).await {
             if seen.insert(path.clone()) {
@@ -860,7 +831,7 @@ pub(super) async fn normal_trajectory_candidate_paths(
         }
     }
     let indexed = indexed_candidate_paths_in_dirs(
-        &gcx,
+        ctx,
         &normal_dirs,
         chat_id,
         trajectory_index::TrajectoryIndexListingCaller::ChatPathLookup,
@@ -871,11 +842,11 @@ pub(super) async fn normal_trajectory_candidate_paths(
 }
 
 pub(super) async fn trajectory_candidate_paths(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     chat_id: &str,
 ) -> Vec<PathBuf> {
-    let mut candidates = normal_trajectory_candidate_paths(gcx.clone(), chat_id).await;
-    for dir in list_task_trajectory_dirs(&gcx).await {
+    let mut candidates = normal_trajectory_candidate_paths(ctx, chat_id).await;
+    for dir in list_task_trajectory_dirs(ctx).await {
         if let Some(path) = safe_trajectory_file_in_dir(&dir, chat_id).await {
             candidates.push(path);
         }
@@ -884,11 +855,11 @@ pub(super) async fn trajectory_candidate_paths(
 }
 
 pub(super) async fn nested_chat_folder_candidate_paths(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     chat_id: &str,
 ) -> Vec<PathBuf> {
     let mut paths = Vec::new();
-    for dir in list_chat_folder_dirs(&gcx).await {
+    for dir in list_chat_folder_dirs(ctx).await {
         if let Some(path) = safe_trajectory_file_in_dir(&dir, chat_id).await {
             paths.push(path);
         }
@@ -966,12 +937,12 @@ pub(super) async fn first_valid_trajectory_candidate(
 }
 
 pub(super) async fn find_normal_trajectory_file(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     chat_id: &str,
 ) -> Option<ValidTrajectoryCandidate> {
     validate_trajectory_id(chat_id).ok()?;
-    let task_roots = get_all_task_roots(gcx.clone()).await;
-    for path in normal_trajectory_candidate_paths(gcx, chat_id).await {
+    let task_roots = get_all_task_roots(ctx).await;
+    for path in normal_trajectory_candidate_paths(ctx, chat_id).await {
         let Some(candidate) = read_valid_trajectory_candidate(path, chat_id).await else {
             continue;
         };
@@ -987,53 +958,53 @@ pub(super) async fn find_normal_trajectory_file(
 }
 
 pub(crate) async fn find_trajectory_file(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     chat_id: &str,
 ) -> Option<ValidTrajectoryCandidate> {
     validate_trajectory_id(chat_id).ok()?;
-    let normal = normal_trajectory_candidate_paths(gcx.clone(), chat_id).await;
+    let normal = normal_trajectory_candidate_paths(ctx, chat_id).await;
     let mut seen: std::collections::HashSet<PathBuf> = normal.iter().cloned().collect();
     if let Some(found) = first_valid_trajectory_candidate(normal, chat_id).await {
         return Some(found);
     }
     let mut candidates = Vec::new();
     let indexed = indexed_candidate_paths_in_dirs(
-        &gcx,
-        &list_trajectory_dirs(&gcx).await,
+        ctx,
+        &list_trajectory_dirs(ctx).await,
         chat_id,
         trajectory_index::TrajectoryIndexListingCaller::ChatPathLookup,
     )
     .await;
     extend_unique_paths(&mut candidates, &mut seen, indexed);
-    let task_scoped = trajectory_candidate_paths(gcx.clone(), chat_id).await;
+    let task_scoped = trajectory_candidate_paths(ctx, chat_id).await;
     extend_unique_paths(&mut candidates, &mut seen, task_scoped);
     if let Some(found) = first_valid_trajectory_candidate(candidates, chat_id).await {
         return Some(found);
     }
-    let nested = nested_chat_folder_candidate_paths(gcx, chat_id).await;
+    let nested = nested_chat_folder_candidate_paths(ctx, chat_id).await;
     first_valid_trajectory_candidate(nested, chat_id).await
 }
 
 pub(crate) async fn find_normal_trajectory_path(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     chat_id: &str,
 ) -> Option<PathBuf> {
-    find_normal_trajectory_file(gcx, chat_id)
+    find_normal_trajectory_file(ctx, chat_id)
         .await
         .map(|candidate| candidate.path)
 }
 
-pub async fn find_trajectory_path(gcx: Arc<GlobalContext>, chat_id: &str) -> Option<PathBuf> {
-    find_trajectory_file(gcx, chat_id)
+pub async fn find_trajectory_path(ctx: &ChatCtx, chat_id: &str) -> Option<PathBuf> {
+    find_trajectory_file(ctx, chat_id)
         .await
         .map(|candidate| candidate.path)
 }
 
 pub(crate) async fn find_trajectory_parent_id(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     chat_id: &str,
 ) -> Option<Option<String>> {
-    let candidate = find_trajectory_file(gcx, chat_id).await?;
+    let candidate = find_trajectory_file(ctx, chat_id).await?;
     let trajectory = candidate.json.as_object()?;
     Some(
         trajectory
@@ -1044,10 +1015,10 @@ pub(crate) async fn find_trajectory_parent_id(
 }
 
 pub async fn find_trajectory_or_buddy_path(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     chat_id: &str,
 ) -> Option<PathBuf> {
-    find_trajectory_or_buddy_file(gcx, chat_id)
+    find_trajectory_or_buddy_file(ctx, chat_id)
         .await
         .map(|candidate| candidate.path)
 }
@@ -1070,14 +1041,14 @@ pub(super) async fn find_validated_trajectory_path_in_dirs(
 }
 
 pub(super) async fn find_validated_trajectory_path_for_source(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     chat_id: &str,
     source: &TrajectorySourceIdentity,
 ) -> Option<PathBuf> {
     match source {
-        TrajectorySourceIdentity::Normal => find_normal_trajectory_path(gcx, chat_id).await,
+        TrajectorySourceIdentity::Normal => find_normal_trajectory_path(ctx, chat_id).await,
         TrajectorySourceIdentity::Buddy => {
-            let dirs = get_buddy_conversations_dir(gcx)
+            let dirs = get_buddy_conversations_dir(ctx)
                 .await
                 .ok()
                 .into_iter()
@@ -1085,14 +1056,14 @@ pub(super) async fn find_validated_trajectory_path_for_source(
             find_validated_trajectory_path_in_dirs(chat_id, dirs).await
         }
         TrajectorySourceIdentity::Task { .. } => {
-            let dirs = list_task_trajectory_dirs(&gcx).await;
+            let dirs = list_task_trajectory_dirs(ctx).await;
             find_validated_trajectory_path_in_dirs(chat_id, dirs).await
         }
     }
 }
 
 pub async fn find_trajectory_path_for_active_chat(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     sessions: &crate::chat::SessionsMap,
     chat_id: &str,
 ) -> Option<PathBuf> {
@@ -1105,20 +1076,20 @@ pub async fn find_trajectory_path_for_active_chat(
                 TrajectorySourceIdentity::from_session(&session)
             }
             None => {
-                return find_trajectory_or_buddy_path(gcx, chat_id).await;
+                return find_trajectory_or_buddy_path(ctx, chat_id).await;
             }
         }
     };
-    find_validated_trajectory_path_for_source(gcx, chat_id, &source).await
+    find_validated_trajectory_path_for_source(ctx, chat_id, &source).await
 }
 
 pub(crate) async fn find_trajectory_or_buddy_file(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     chat_id: &str,
 ) -> Option<ValidTrajectoryCandidate> {
     validate_trajectory_id(chat_id).ok()?;
-    let mut candidates = trajectory_candidate_paths(gcx.clone(), chat_id).await;
-    if let Ok(buddy_dir) = get_buddy_conversations_dir(gcx.clone()).await {
+    let mut candidates = trajectory_candidate_paths(ctx, chat_id).await;
+    if let Ok(buddy_dir) = get_buddy_conversations_dir(ctx).await {
         if let Some(buddy_path) = safe_trajectory_file_in_dir(&buddy_dir, chat_id).await {
             candidates.push(buddy_path);
         }
@@ -1126,7 +1097,7 @@ pub(crate) async fn find_trajectory_or_buddy_file(
     if let Some(found) = first_valid_trajectory_candidate(candidates, chat_id).await {
         return Some(found);
     }
-    let nested = nested_chat_folder_candidate_paths(gcx, chat_id).await;
+    let nested = nested_chat_folder_candidate_paths(ctx, chat_id).await;
     first_valid_trajectory_candidate(nested, chat_id).await
 }
 

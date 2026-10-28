@@ -1171,7 +1171,7 @@ mod tests {
         assert!(source.goal.as_ref().unwrap().active);
         let saved: serde_json::Value = serde_json::from_slice(
             &tokio::fs::read(
-                crate::chat::trajectories::find_trajectory_path(gcx.clone(), "staged-target")
+                crate::chat::trajectories::find_trajectory_path(&gcx.chat_ctx(gcx.clone()), "staged-target")
                     .await
                     .unwrap(),
             )
@@ -1283,7 +1283,7 @@ mod tests {
         for (id, active) in [("durable-source", false), ("durable-target", true)] {
             let saved: serde_json::Value = serde_json::from_slice(
                 &tokio::fs::read(
-                    crate::chat::trajectories::find_trajectory_path(gcx.clone(), id)
+                    crate::chat::trajectories::find_trajectory_path(&gcx.chat_ctx(gcx.clone()), id)
                         .await
                         .unwrap(),
                 )

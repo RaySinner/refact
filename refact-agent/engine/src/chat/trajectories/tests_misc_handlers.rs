@@ -112,7 +112,7 @@ use super::test_support::*;
         .await
         .unwrap();
 
-        let mut loaded = load_trajectory_for_chat(gcx.clone(), chat_id)
+        let mut loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), chat_id)
             .await
             .unwrap();
         assert_same_path(&loaded.source_path, &task_path);
@@ -674,7 +674,7 @@ use super::test_support::*;
             .await
             .unwrap();
 
-        let loaded = load_trajectory_for_chat(gcx, "ui-only-roundtrip")
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), "ui-only-roundtrip")
             .await
             .unwrap();
         assert_eq!(loaded.messages.len(), 2);
@@ -742,7 +742,7 @@ use super::test_support::*;
             .await
             .unwrap();
 
-        let loaded = load_trajectory_for_chat(gcx, "reactive-attempts-roundtrip")
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), "reactive-attempts-roundtrip")
             .await
             .unwrap();
         assert_eq!(loaded.thread.reactive_compact_attempts, None);
@@ -768,7 +768,7 @@ use super::test_support::*;
         save_trajectory_snapshot(gcx.clone(), trajectory_snapshot_from_session(&session))
             .await
             .unwrap();
-        let loaded = load_trajectory_for_chat(gcx.clone(), "pending-roundtrip")
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), "pending-roundtrip")
             .await
             .unwrap();
         assert_eq!(loaded.pending_deliveries, vec![delivery.clone()]);
@@ -785,7 +785,7 @@ use super::test_support::*;
         save_trajectory_snapshot(gcx.clone(), trajectory_snapshot_from_session(&restored))
             .await
             .unwrap();
-        assert!(load_trajectory_for_chat(gcx, "pending-roundtrip")
+        assert!(load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), "pending-roundtrip")
             .await
             .unwrap()
             .pending_deliveries
@@ -809,7 +809,7 @@ use super::test_support::*;
             .await
             .unwrap();
 
-        let loaded = load_trajectory_for_chat(gcx, "normal-error-roundtrip")
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), "normal-error-roundtrip")
             .await
             .unwrap();
         assert_eq!(loaded.messages.len(), 2);
@@ -1179,7 +1179,7 @@ use super::test_support::*;
         .await
         .unwrap();
 
-        let loaded = load_trajectory_for_chat(gcx, "old-chat").await.unwrap();
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), "old-chat").await.unwrap();
         assert!(loaded.thread.worktree.is_none());
     }
 
@@ -1228,7 +1228,7 @@ use super::test_support::*;
         .await
         .unwrap();
 
-        let loaded = load_trajectory_for_chat(gcx.clone(), "untrusted-wt-chat")
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), "untrusted-wt-chat")
             .await
             .unwrap();
         assert!(loaded.thread.worktree.is_none());
@@ -1376,7 +1376,7 @@ use super::test_support::*;
         .await
         .unwrap();
 
-        let loaded = load_trajectory_for_chat(gcx, chat_id).await.unwrap();
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), chat_id).await.unwrap();
         let worktree = loaded.thread.worktree.unwrap();
         assert_eq!(worktree.id, "wt-legacy");
         assert_eq!(worktree.kind, "task_agent");
@@ -1518,7 +1518,7 @@ use super::test_support::*;
         .await
         .unwrap();
 
-        let loaded = load_trajectory_for_chat(gcx, chat_id).await.unwrap();
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), chat_id).await.unwrap();
         assert!(loaded.thread.worktree.is_none());
     }
 

@@ -588,7 +588,7 @@ async fn goal_seed_and_projection_survive_trajectory_reload() {
                     root_chat_id: config.root_chat_id.clone(),
                     ..Default::default()
                 };
-                save_trajectory_as(gcx, &thread, &messages).await;
+                save_trajectory_as(&gcx.chat_ctx(gcx.clone()), &thread, &messages).await;
                 Ok(completed_result(messages, config))
             })
         }))
@@ -623,7 +623,7 @@ async fn goal_seed_and_projection_survive_trajectory_reload() {
     let loaded = tokio::time::timeout(Duration::from_secs(30), async {
         loop {
             if let Some(loaded) =
-                load_trajectory_for_chat(fixture.app.gcx.clone(), child_chat_id).await
+                load_trajectory_for_chat(&fixture.app.chat_ctx(), child_chat_id).await
             {
                 if loaded.goal.is_some() {
                     return loaded;

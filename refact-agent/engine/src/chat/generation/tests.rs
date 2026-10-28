@@ -802,7 +802,7 @@ async fn resolved_new_chat_default_persists_through_checkpoint_writer() {
     crate::chat::trajectories::flush_trajectory_for_session(app, session.clone())
         .await
         .unwrap();
-    let restored = crate::chat::trajectories::load_trajectory_for_chat(gcx, &thread.id)
+    let restored = crate::chat::trajectories::load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), &thread.id)
         .await
         .unwrap();
     assert_eq!(restored.thread.auto_compression_cap, Some(90_000));

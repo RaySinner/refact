@@ -53,7 +53,7 @@ use super::test_support::*;
             .join("agent-7");
         tokio::fs::create_dir_all(&agent_dir).await.unwrap();
 
-        let resolved = index_dir_for_trajectory_file(gcx, &agent_dir.join("agent-chat.json"))
+        let resolved = index_dir_for_trajectory_file(&gcx.chat_ctx(gcx.clone()), &agent_dir.join("agent-chat.json"))
             .await
             .expect("index dir must resolve");
 
@@ -88,15 +88,15 @@ use super::test_support::*;
         save_trajectory_snapshot(gcx.clone(), child).await.unwrap();
 
         assert_eq!(
-            find_trajectory_parent_id(gcx.clone(), "root-parent-id-chat").await,
+            find_trajectory_parent_id(&gcx.chat_ctx(gcx.clone()), "root-parent-id-chat").await,
             Some(None)
         );
         assert_eq!(
-            find_trajectory_parent_id(gcx.clone(), "child-parent-id-chat").await,
+            find_trajectory_parent_id(&gcx.chat_ctx(gcx.clone()), "child-parent-id-chat").await,
             Some(Some("root-parent-id-chat".to_string()))
         );
         assert_eq!(
-            find_trajectory_parent_id(gcx, "missing-parent-id-chat").await,
+            find_trajectory_parent_id(&gcx.chat_ctx(gcx.clone()), "missing-parent-id-chat").await,
             None
         );
     }
@@ -313,7 +313,7 @@ use super::test_support::*;
                 false,
                 Some(trajectory_source_identity_from_path(
                     &path,
-                    &get_all_task_roots(gcx.clone()).await,
+                    &get_all_task_roots(&gcx.chat_ctx(gcx.clone())).await,
                 )),
             )
             .await;
@@ -402,7 +402,7 @@ use super::test_support::*;
                 false,
                 Some(trajectory_source_identity_from_path(
                     &path,
-                    &get_all_task_roots(gcx.clone()).await,
+                    &get_all_task_roots(&gcx.chat_ctx(gcx.clone())).await,
                 )),
             )
             .await;

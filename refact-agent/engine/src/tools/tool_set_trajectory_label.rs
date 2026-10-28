@@ -136,7 +136,7 @@ mod tests {
         assert_eq!(session.thread.title, "Focused label");
         assert!(!session.thread.is_title_generated);
         drop(session);
-        let loaded = load_trajectory_for_chat(gcx, chat_id).await.unwrap();
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), chat_id).await.unwrap();
         assert_eq!(loaded.thread.title, "Focused label");
         assert!(!loaded.thread.is_title_generated);
     }

@@ -551,7 +551,7 @@ use super::test_support::*;
         let dir = tempfile::tempdir().unwrap();
         let (gcx, app) = make_app_with_workspace(dir.path()).await;
         let chat_id = "http-save-global-original";
-        let global_dir = get_global_trajectories_dir(gcx).await;
+        let global_dir = get_global_trajectories_dir(&gcx.chat_ctx(gcx.clone())).await;
         let global_path = global_dir.join(format!("{chat_id}.json"));
         write_trajectory_file(
             &global_path,

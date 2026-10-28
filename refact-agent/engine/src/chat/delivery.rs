@@ -278,7 +278,7 @@ mod tests {
                 deliver_to_chat(app.clone(), id, delivery).await.unwrap(),
                 DeliveryOutcome::Duplicate
             );
-            let saved = crate::chat::trajectories::load_trajectory_for_chat(app.gcx.clone(), id)
+            let saved = crate::chat::trajectories::load_trajectory_for_chat(&app.chat_ctx(), id)
                 .await
                 .unwrap();
             assert_eq!(saved.pending_deliveries.len(), usize::from(queued));

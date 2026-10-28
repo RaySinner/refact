@@ -108,7 +108,7 @@ impl Tool for ToolTrajectoryContext {
         let gcx = ccx.lock().await.app.gcx.clone();
         crate::chat::trajectories::validate_trajectory_id(&trajectory_id).map_err(|e| e.message)?;
         let traj_path =
-            crate::chat::trajectories::find_trajectory_path(gcx.clone(), &trajectory_id)
+            crate::chat::trajectories::find_trajectory_path(&gcx.chat_ctx(gcx.clone()), &trajectory_id)
                 .await
                 .ok_or(format!(
             "⚠️ Trajectory '{}' not found. 💡 Check trajectory lists or use knowledge() to search",

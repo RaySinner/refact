@@ -173,7 +173,7 @@ use super::test_support::*;
             SessionTrajectoryCommitOutcome::SkippedStale
         );
 
-        let loaded = load_trajectory_for_chat(gcx, chat_id).await.unwrap();
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), chat_id).await.unwrap();
         let content = loaded
             .messages
             .iter()
@@ -214,7 +214,7 @@ use super::test_support::*;
         flush_trajectory_for_session(app, session_arc)
             .await
             .unwrap();
-        let loaded = load_trajectory_for_chat(gcx, chat_id).await.unwrap();
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), chat_id).await.unwrap();
         assert_eq!(
             loaded
                 .messages
@@ -255,7 +255,7 @@ use super::test_support::*;
             session.trajectory_version
         );
         drop(session);
-        let loaded = load_trajectory_for_chat(gcx, chat_id).await.unwrap();
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), chat_id).await.unwrap();
         assert_eq!(loaded.messages.len(), 1);
     }
 
@@ -293,7 +293,7 @@ use super::test_support::*;
             session.trajectory_version
         );
         drop(session);
-        assert!(load_trajectory_for_chat(gcx, chat_id).await.is_some());
+        assert!(load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), chat_id).await.is_some());
     }
 
     #[serial(trajectory_perf)]
@@ -351,7 +351,7 @@ use super::test_support::*;
                 .insert(chat_id.clone(), session_arc);
             flush_all_trajectories(app).await.unwrap();
 
-            let loaded = load_trajectory_for_chat(gcx, &chat_id).await.unwrap();
+            let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), &chat_id).await.unwrap();
             assert_eq!(
                 loaded
                     .messages
@@ -400,7 +400,7 @@ use super::test_support::*;
             session.trajectory_version
         );
         drop(session);
-        let loaded = load_trajectory_for_chat(gcx, chat_id).await.unwrap();
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), chat_id).await.unwrap();
         assert_eq!(loaded.messages.len(), 2);
     }
 
@@ -426,7 +426,7 @@ use super::test_support::*;
         left_result.unwrap();
         right_result.unwrap();
         assert_eq!(
-            load_trajectory_for_chat(gcx.clone(), "writer-left")
+            load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), "writer-left")
                 .await
                 .unwrap()
                 .messages[0]
@@ -435,7 +435,7 @@ use super::test_support::*;
             "left"
         );
         assert_eq!(
-            load_trajectory_for_chat(gcx, "writer-right")
+            load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), "writer-right")
                 .await
                 .unwrap()
                 .messages[0]
@@ -470,7 +470,7 @@ use super::test_support::*;
         tokio::time::timeout(Duration::from_secs(60), enqueue_started.notified())
             .await
             .unwrap();
-        assert!(load_trajectory_for_chat(gcx, "commit-before-enqueue")
+        assert!(load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), "commit-before-enqueue")
             .await
             .is_some());
         tokio::time::timeout(Duration::from_millis(100), &mut save)
@@ -561,7 +561,7 @@ use super::test_support::*;
         tokio::time::timeout(Duration::from_secs(60), enqueue_started.notified())
             .await
             .expect("best-effort VecDB enqueue should have run");
-        assert!(load_trajectory_for_chat(gcx, "enqueue-failure")
+        assert!(load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), "enqueue-failure")
             .await
             .is_some());
     }
@@ -695,7 +695,7 @@ use super::test_support::*;
             session.trajectory_version
         );
         drop(session);
-        let loaded = load_trajectory_for_chat(gcx, chat_id).await.unwrap();
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), chat_id).await.unwrap();
         assert_eq!(loaded.messages.len(), 2);
     }
 
@@ -806,7 +806,7 @@ use super::test_support::*;
         assert_eq!(saved["custom_future_field"]["nested"]["value"], 61);
         assert_eq!(saved["custom_scalar"], "preserve-me");
 
-        let loaded = load_trajectory_for_chat(gcx, chat_id).await.unwrap();
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), chat_id).await.unwrap();
         assert_eq!(loaded.messages.len(), 1);
         assert_eq!(loaded.messages[0].content.content_text_only(), "Second");
     }
@@ -948,7 +948,7 @@ use super::test_support::*;
         assert_eq!(state.error, None);
         assert!(!state.in_flight);
         drop(state);
-        let loaded = load_trajectory_for_chat(gcx, chat_id).await.unwrap();
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), chat_id).await.unwrap();
         assert_eq!(loaded.messages[0].content.content_text_only(), "newer");
     }
 
@@ -990,7 +990,7 @@ use super::test_support::*;
         assert!(!writers.contains_key(&buddy_key));
         drop(writers);
 
-        let normal = load_trajectory_for_chat(gcx.clone(), chat_id)
+        let normal = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), chat_id)
             .await
             .unwrap();
         assert_eq!(normal.thread.title, "Normal");

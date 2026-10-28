@@ -1200,7 +1200,7 @@ async fn parent_thread_worktree(gcx: Arc<GlobalContext>, parent_id: &str) -> Opt
     }
 
     crate::chat::trajectories::validate_trajectory_id(parent_id).ok()?;
-    crate::chat::trajectories::load_trajectory_for_chat(gcx, parent_id)
+    crate::chat::trajectories::load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), parent_id)
         .await
         .and_then(|loaded| loaded.thread.worktree)
 }
@@ -1703,8 +1703,7 @@ async fn persist_subchat_progress(
     } else {
         TrajectoryCommitIntent::Required
     };
-    match crate::chat::trajectories::save_trajectory_as_with_intent_checked(
-        gcx.clone(),
+    match crate::chat::trajectories::save_trajectory_as_with_intent_checked(&gcx.chat_ctx(gcx.clone()),
         &thread,
         messages,
         intent,
@@ -1785,8 +1784,7 @@ async fn save_failed_subchat_trajectory(
     if config.stateful {
         register_stateful_subchat_worktree(gcx.clone(), chat_id, &mut thread).await;
     }
-    save_trajectory_as_with_intent(
-        gcx.clone(),
+    save_trajectory_as_with_intent(&gcx.chat_ctx(gcx.clone()),
         &thread,
         &messages,
         subchat_trajectory_commit_intent(SubchatTrajectoryCommitPhase::Failed),
@@ -1858,8 +1856,7 @@ pub async fn run_subchat(
     let messages = prepare_subchat_messages(&gcx, messages, &config.model)?;
     if should_persist_subchat_trajectory(&config) {
         let thread = trace_thread_from_config(&chat_id, &config);
-        save_trajectory_as_with_intent(
-            gcx.clone(),
+        save_trajectory_as_with_intent(&gcx.chat_ctx(gcx.clone()),
             &thread,
             &messages,
             subchat_trajectory_commit_intent(SubchatTrajectoryCommitPhase::Seed),
@@ -1977,8 +1974,7 @@ pub async fn run_subchat(
     if config.stateful {
         let mut thread = stateful_thread_from_config(&chat_id, &config);
         register_stateful_subchat_worktree(gcx.clone(), &chat_id, &mut thread).await;
-        save_trajectory_as_with_intent(
-            gcx.clone(),
+        save_trajectory_as_with_intent(&gcx.chat_ctx(gcx.clone()),
             &thread,
             &current_messages,
             subchat_trajectory_commit_intent(SubchatTrajectoryCommitPhase::Final),
@@ -1987,8 +1983,7 @@ pub async fn run_subchat(
         mirror_subchat_messages_into_session(&app, &chat_id, &current_messages).await;
     } else if should_persist_subchat_trajectory(&config) {
         let thread = trace_thread_from_config(&chat_id, &config);
-        save_trajectory_as_with_intent(
-            gcx.clone(),
+        save_trajectory_as_with_intent(&gcx.chat_ctx(gcx.clone()),
             &thread,
             &current_messages,
             subchat_trajectory_commit_intent(SubchatTrajectoryCommitPhase::Final),
@@ -3719,7 +3714,7 @@ mod subchat_tests {
         let progress = Arc::new(std::sync::Mutex::new(Vec::new()));
         let gcx = ccx.lock().await.global_context.clone();
         assert_eq!(
-            crate::chat::trajectories::get_trajectories_dir(gcx.clone())
+            crate::chat::trajectories::get_trajectories_dir(&gcx.chat_ctx(gcx.clone()))
                 .await
                 .unwrap_err(),
             "No workspace folder found"
@@ -3744,7 +3739,7 @@ mod subchat_tests {
             let context = ccx.lock().await;
             (context.global_context.clone(), context.chat_id.clone())
         };
-        let saved = crate::chat::trajectories::load_trajectory_for_chat(gcx, &chat_id)
+        let saved = crate::chat::trajectories::load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), &chat_id)
             .await
             .unwrap();
         assert_eq!(saved.messages.len(), messages.len());
@@ -4032,7 +4027,7 @@ mod subchat_tests {
             .await
             .is_empty());
         let gcx = ccx.lock().await.global_context.clone();
-        let saved = crate::chat::trajectories::load_trajectory_for_chat(gcx, &chat_id)
+        let saved = crate::chat::trajectories::load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), &chat_id)
             .await
             .unwrap();
         assert_eq!(
@@ -4499,21 +4494,20 @@ mod subchat_tests {
             "final".to_string(),
         )];
 
-        save_trajectory_as_with_intent(
-            gcx.clone(),
+        save_trajectory_as_with_intent(&gcx.chat_ctx(gcx.clone()),
             &thread,
             &final_messages,
             subchat_trajectory_commit_intent(SubchatTrajectoryCommitPhase::Final),
         )
         .await;
-        let final_saved = crate::chat::trajectories::load_trajectory_for_chat(gcx.clone(), chat_id)
+        let final_saved = crate::chat::trajectories::load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), chat_id)
             .await
             .expect("final subchat snapshot should be durable");
         assert_eq!(final_saved.messages[0].content.content_text_only(), "final");
 
         let progress = Arc::new(StdMutex::new(final_messages));
         save_failed_subchat_trajectory(gcx.clone(), chat_id, &config, &progress, "failed").await;
-        let failed_saved = crate::chat::trajectories::load_trajectory_for_chat(gcx, chat_id)
+        let failed_saved = crate::chat::trajectories::load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), chat_id)
             .await
             .expect("failed subchat snapshot should be durable");
         assert!(failed_saved.messages.iter().any(|message| message
@@ -5291,8 +5285,7 @@ mod subchat_tests {
             ..Default::default()
         };
         let messages = vec![ChatMessage::new("user".to_string(), "hello".to_string())];
-        save_trajectory_as_with_intent(
-            gcx.clone(),
+        save_trajectory_as_with_intent(&gcx.chat_ctx(gcx.clone()),
             &thread,
             &messages,
             TrajectoryCommitIntent::Checkpoint,
@@ -5352,8 +5345,7 @@ mod subchat_tests {
             ..Default::default()
         };
         let messages = vec![ChatMessage::new("user".to_string(), "hello".to_string())];
-        save_trajectory_as_with_intent(
-            gcx.clone(),
+        save_trajectory_as_with_intent(&gcx.chat_ctx(gcx.clone()),
             &persisted_thread,
             &messages,
             TrajectoryCommitIntent::Checkpoint,

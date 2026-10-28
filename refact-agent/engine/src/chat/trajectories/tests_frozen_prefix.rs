@@ -45,7 +45,7 @@ use super::test_support::*;
         .await
         .unwrap();
 
-        let loaded = load_trajectory_for_chat(gcx, "legacy-frozen-prefix")
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), "legacy-frozen-prefix")
             .await
             .unwrap();
         let prefix = loaded.thread.frozen_request_prefix.unwrap();
@@ -95,7 +95,7 @@ use super::test_support::*;
         .await
         .unwrap();
 
-        let loaded = load_trajectory_for_chat(gcx, "transition-stale-frozen")
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), "transition-stale-frozen")
             .await
             .unwrap();
         let prefix = loaded.thread.frozen_request_prefix.unwrap();
@@ -143,7 +143,7 @@ use super::test_support::*;
         .await
         .unwrap();
 
-        let loaded = load_trajectory_for_chat(gcx, "transition-no-prefix-provider")
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), "transition-no-prefix-provider")
             .await
             .unwrap();
         let prefix = loaded.thread.frozen_request_prefix.unwrap();
@@ -192,7 +192,7 @@ use super::test_support::*;
         .await
         .unwrap();
 
-        let loaded = load_trajectory_for_chat(gcx, "transition-stale-tools-timestamp")
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), "transition-stale-tools-timestamp")
             .await
             .unwrap();
         let prefix = loaded.thread.frozen_request_prefix.unwrap();
@@ -246,7 +246,7 @@ use super::test_support::*;
         .await
         .unwrap();
 
-        let loaded = load_trajectory_for_chat(gcx, "transition-malformed-prefix-provider")
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), "transition-malformed-prefix-provider")
             .await
             .unwrap();
         let prefix = loaded.thread.frozen_request_prefix.unwrap();
@@ -300,7 +300,7 @@ use super::test_support::*;
         .await
         .unwrap();
 
-        let loaded = load_trajectory_for_chat(gcx, "transition-invalid-prefix-time-provider")
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), "transition-invalid-prefix-time-provider")
             .await
             .unwrap();
         let prefix = loaded.thread.frozen_request_prefix.unwrap();
@@ -356,7 +356,7 @@ use super::test_support::*;
         .await
         .unwrap();
 
-        let loaded = load_trajectory_for_chat(gcx, "transition-invalid-trajectory-time-provider")
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), "transition-invalid-trajectory-time-provider")
             .await
             .unwrap();
         let prefix = loaded.thread.frozen_request_prefix.unwrap();
@@ -411,7 +411,7 @@ use super::test_support::*;
         .await
         .unwrap();
 
-        let loaded = load_trajectory_for_chat(gcx, "transition-missing-trajectory-time-provider")
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), "transition-missing-trajectory-time-provider")
             .await
             .unwrap();
         let prefix = loaded.thread.frozen_request_prefix.unwrap();
@@ -461,7 +461,7 @@ use super::test_support::*;
         .await
         .unwrap();
 
-        let loaded = load_trajectory_for_chat(gcx, "transition-missing-system-tools")
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), "transition-missing-system-tools")
             .await
             .unwrap();
         let prefix = loaded.thread.frozen_request_prefix.unwrap();
@@ -514,7 +514,7 @@ use super::test_support::*;
         .await
         .unwrap();
 
-        let loaded = load_trajectory_for_chat(gcx, "handoff-stale-frozen-provider")
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), "handoff-stale-frozen-provider")
             .await
             .unwrap();
         let prefix = loaded.thread.frozen_request_prefix.unwrap();
@@ -564,7 +564,7 @@ use super::test_support::*;
         .await
         .unwrap();
 
-        let loaded = load_trajectory_for_chat(gcx, "transition-legitimate-prefix")
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), "transition-legitimate-prefix")
             .await
             .unwrap();
         let prefix = loaded.thread.frozen_request_prefix.unwrap();
@@ -616,7 +616,7 @@ use super::test_support::*;
         .await
         .unwrap();
 
-        let loaded = load_trajectory_for_chat(gcx, "branch-preserve-frozen")
+        let loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), "branch-preserve-frozen")
             .await
             .unwrap();
         let prefix = loaded.thread.frozen_request_prefix.unwrap();
@@ -847,7 +847,7 @@ use super::test_support::*;
         let dir = tempfile::tempdir().unwrap();
         let (gcx, app) = make_app_with_workspace(dir.path()).await;
         let chat_id = "transition-empty-provider-global-open";
-        let global_trajectories_dir = get_global_trajectories_dir(gcx.clone()).await;
+        let global_trajectories_dir = get_global_trajectories_dir(&gcx.chat_ctx(gcx.clone())).await;
         tokio::fs::create_dir_all(&global_trajectories_dir)
             .await
             .unwrap();
@@ -922,7 +922,7 @@ use super::test_support::*;
     async fn mode_transition_global_placeholder_title_save_uses_original_path_without_workspace() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
         let chat_id = "transition-global-placeholder-title-save";
-        let global_trajectories_dir = get_global_trajectories_dir(gcx.clone()).await;
+        let global_trajectories_dir = get_global_trajectories_dir(&gcx.chat_ctx(gcx.clone())).await;
         tokio::fs::create_dir_all(&global_trajectories_dir)
             .await
             .unwrap();
@@ -970,7 +970,7 @@ use super::test_support::*;
             session_id: "source-session".to_string(),
         });
         snapshot.is_title_generated = false;
-        let project_dir_error = get_trajectories_dir(gcx.clone()).await.unwrap_err();
+        let project_dir_error = get_trajectories_dir(&gcx.chat_ctx(gcx.clone())).await.unwrap_err();
         assert_eq!(project_dir_error, "No workspace folder found");
 
         save_trajectory_snapshot(gcx.clone(), snapshot)
@@ -982,10 +982,10 @@ use super::test_support::*;
             serde_json::from_str(&tokio::fs::read_to_string(&path).await.unwrap()).unwrap();
         assert_eq!(raw["messages"].as_array().unwrap().len(), 1);
         assert_same_optional_path(
-            find_trajectory_or_buddy_path(gcx.clone(), chat_id).await,
+            find_trajectory_or_buddy_path(&gcx.chat_ctx(gcx.clone()), chat_id).await,
             &path,
         );
-        let all_dirs = get_all_trajectories_dirs(gcx).await;
+        let all_dirs = get_all_trajectories_dirs(&gcx.chat_ctx(gcx.clone())).await;
         assert_eq!(all_dirs, vec![global_trajectories_dir]);
     }
 
@@ -1024,11 +1024,11 @@ use super::test_support::*;
         assert_eq!(buddy_raw["title"], "Keep Buddy Collision");
         assert!(buddy_raw.get("buddy_meta").is_some());
         assert_same_optional_path(
-            find_trajectory_path(gcx.clone(), chat_id).await,
+            find_trajectory_path(&gcx.chat_ctx(gcx.clone()), chat_id).await,
             &normal_path,
         );
         assert_ne!(
-            find_trajectory_or_buddy_path(gcx, chat_id)
+            find_trajectory_or_buddy_path(&gcx.chat_ctx(gcx.clone()), chat_id)
                 .await
                 .map(|path| normalized_test_path(&path)),
             Some(normalized_test_path(&buddy_path))
@@ -1085,11 +1085,11 @@ use super::test_support::*;
             serde_json::from_str(&tokio::fs::read_to_string(&task_path).await.unwrap()).unwrap();
         assert_eq!(task_raw["title"], "Keep Task Collision");
         assert_same_optional_path(
-            find_trajectory_path(gcx.clone(), chat_id).await,
+            find_trajectory_path(&gcx.chat_ctx(gcx.clone()), chat_id).await,
             &normal_path,
         );
         assert_ne!(
-            find_trajectory_path(gcx, chat_id)
+            find_trajectory_path(&gcx.chat_ctx(gcx.clone()), chat_id)
                 .await
                 .map(|path| normalized_test_path(&path)),
             Some(normalized_test_path(&task_path))
@@ -1418,7 +1418,7 @@ use super::test_support::*;
         .await
         .unwrap();
 
-        let mut loaded = load_trajectory_for_chat(gcx.clone(), chat_id)
+        let mut loaded = load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), chat_id)
             .await
             .unwrap();
         assert!(loaded.transition_identity_repaired);

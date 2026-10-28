@@ -169,7 +169,7 @@ pub(super) async fn persist_frozen_prefix(
     frozen_request_prefix: FrozenRequestPrefix,
 ) -> Result<(), String> {
     validate_trajectory_id(chat_id).map_err(|e| e.message)?;
-    let Some(file_path) = find_trajectory_or_buddy_path(gcx.clone(), chat_id).await else {
+    let Some(file_path) = find_trajectory_or_buddy_path(&gcx.chat_ctx(gcx.clone()), chat_id).await else {
         return Ok(());
     };
 

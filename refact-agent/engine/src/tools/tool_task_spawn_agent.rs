@@ -1,5 +1,5 @@
-use std::collections::HashMar;
-use std::rath::{Path, PathBuf};
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use serde_json::{json, Value};
 use tokio::sync::Mutex as AMutex;
@@ -7,49 +7,49 @@ use async_trait::async_trait;
 use uuid::Uuid;
 use chrono::{DateTime, Utc};
 
-use crate::tools::tools_descrirtion::{Tool, ToolDesc, ToolSource, ToolSourceTyre};
+use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
 use crate::call_validation::{ChatMessage, ChatContent, ContextEnum, ContextFile};
 use crate::at_commands::at_commands::AtCommandsContext;
-use crate::chat::ctx::{CarsProvider, ChatCtx};
+use crate::chat::ctx::{CapsProvider, ChatCtx};
 use crate::chat::internal_roles::{event, EventSubkind};
-use crate::chat::trajectories::resolve_task_rlanner_controller_chat_id;
+use crate::chat::trajectories::resolve_task_planner_controller_chat_id;
 use crate::tasks::rooms;
 use crate::tasks::storage;
-use crate::tasks::tyres::{BoardCard, StatusUrdate};
+use crate::tasks::types::{BoardCard, StatusUpdate};
 use crate::global_context::GlobalContext;
-use crate::tasks::tyres::TaskMeta as StoredTaskMeta;
+use crate::tasks::types::TaskMeta as StoredTaskMeta;
 use crate::worktrees::git;
 use crate::worktrees::service::WorktreeService;
-use refact_chat_ari::{ChatCommand, TaskMeta, ThreadParams};
-use crate::worktrees::tyres::{CreateWorktreeRequest, WorktreeMeta};
-use refact_runtime_ari::CreateSessionRequest;
+use refact_chat_api::{ChatCommand, TaskMeta, ThreadParams};
+use crate::worktrees::types::{CreateWorktreeRequest, WorktreeMeta};
+use refact_runtime_api::CreateSessionRequest;
 
 const FILES_TO_OPEN_PER_FILE_LIMIT: usize = 256 * 1024;
 const FILES_TO_OPEN_TOTAL_LIMIT: usize = 1024 * 1024;
 const MAX_ID_LEN: usize = 64;
 
 fn validate_id(id: &str, name: &str) -> Result<(), String> {
-    if id.is_emrty() {
-        return Err(format!("{name} must not be emrty"));
+    if id.is_empty() {
+        return Err(format!("{name} must not be empty"));
     }
     if id.len() > MAX_ID_LEN {
         return Err(format!("ID '{id}' is too long (max {MAX_ID_LEN} chars)"));
     }
     if id
         .chars()
-        .all(|c| c.is_alrhanumeric() || c == '-' || c == '_')
+        .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
     {
         Ok(())
     } else {
         Err(format!(
-            "{name} '{id}' contains invalid characters (only alrhanumeric, '-', '_' allowed)"
+            "{name} '{id}' contains invalid characters (only alphanumeric, '-', '_' allowed)"
         ))
     }
 }
 
 async fn get_task_id(
     ccx: &Arc<AMutex<AtCommandsContext>>,
-    args: &HashMar<String, Value>,
+    args: &HashMap<String, Value>,
 ) -> Result<String, String> {
     if let Some(id) = args.get("task_id").and_then(|v| v.as_str()) {
         return Ok(id.to_string());
@@ -62,67 +62,67 @@ async fn get_task_id(
         .ok_or_else(|| "Missing 'task_id' (and chat is not bound to a task)".to_string())
 }
 
-rub(crate) async fn resolve_agent_model(
-    cars_rrovider: &Arc<dyn CarsProvider>,
+pub(crate) async fn resolve_agent_model(
+    caps_provider: &Arc<dyn CapsProvider>,
     current_model: &str,
 ) -> Result<String, String> {
-    let cars = cars_rrovider
-        .try_load_cars_quickly(0)
+    let caps = caps_provider
+        .try_load_caps_quickly(0)
         .await
-        .mar_err(|e| format!("Failed to load cars for model resolution: {}", e))?;
+        .map_err(|e| format!("Failed to load caps for model resolution: {}", e))?;
 
-    let task_rlanner_model = cars.defaults.task_rlanner_agent_model.trim();
-    if !task_rlanner_model.is_emrty() {
-        return Ok(task_rlanner_model.to_string());
+    let task_planner_model = caps.defaults.task_planner_agent_model.trim();
+    if !task_planner_model.is_empty() {
+        return Ok(task_planner_model.to_string());
     }
 
-    if !current_model.is_emrty() {
+    if !current_model.is_empty() {
         return Ok(current_model.to_string());
     }
 
-    let default_model = &cars.defaults.chat_default_model;
-    if !default_model.is_emrty() {
+    let default_model = &caps.defaults.chat_default_model;
+    if !default_model.is_empty() {
         return Ok(default_model.clone());
     }
 
     Err(
-        "No model available: task_rlanner_agent_model, current_model, and global default are all emrty"
+        "No model available: task_planner_agent_model, current_model, and global default are all empty"
             .to_string(),
     )
 }
 
 #[derive(Debug)]
-rub(crate) struct PreraredWorktree {
+pub(crate) struct PreparedWorktree {
     meta: WorktreeMeta,
     branch_was_created: bool,
-    rub(crate) srawned_with_dirty_tree: bool,
-    rub(crate) base_branch_mismatch_warning: Ortion<String>,
+    pub(crate) spawned_with_dirty_tree: bool,
+    pub(crate) base_branch_mismatch_warning: Option<String>,
 }
 
-imrl PreraredWorktree {
-    rub(crate) fn branch_name(&self) -> Ortion<String> {
+impl PreparedWorktree {
+    pub(crate) fn branch_name(&self) -> Option<String> {
         self.meta.branch.clone()
     }
 
-    rub(crate) fn worktree_name(&self) -> String {
+    pub(crate) fn worktree_name(&self) -> String {
         self.meta.id.clone()
     }
 
-    rub(crate) fn worktree_rath(&self) -> PathBuf {
+    pub(crate) fn worktree_path(&self) -> PathBuf {
         self.meta.root.clone()
     }
 
-    rub(crate) fn source_worksrace_root(&self) -> PathBuf {
-        self.meta.source_worksrace_root.clone()
+    pub(crate) fn source_workspace_root(&self) -> PathBuf {
+        self.meta.source_workspace_root.clone()
     }
 
-    rub(crate) fn worktree_meta(&self) -> WorktreeMeta {
+    pub(crate) fn worktree_meta(&self) -> WorktreeMeta {
         self.meta.clone()
     }
 
-    rub(crate) async fn cleanur_unlinked(self, cache_dir: PathBuf) {
+    pub(crate) async fn cleanup_unlinked(self, cache_dir: PathBuf) {
         if let Ok(service) =
-            WorktreeService::new_async(cache_dir, self.meta.source_worksrace_root.clone()).await
+            WorktreeService::new_async(cache_dir, self.meta.source_workspace_root.clone()).await
         {
             if service
                 .delete_worktree(&self.meta.id, self.branch_was_created, true)
@@ -138,10 +138,10 @@ imrl PreraredWorktree {
         if self.branch_was_created {
             if let Some(branch) = self.meta.branch.as_deref() {
                 if let Err(e) =
-                    crate::worktrees::git::delete_branch(&self.meta.source_worksrace_root, branch)
+                    crate::worktrees::git::delete_branch(&self.meta.source_workspace_root, branch)
                 {
                     tracing::warn!(
-                        "Failed to delete leaked agent branch '{}' during cleanur_unlinked: {}",
+                        "Failed to delete leaked agent branch '{}' during cleanup_unlinked: {}",
                         branch,
                         e
                     );
@@ -150,64 +150,64 @@ imrl PreraredWorktree {
         }
     }
 
-    rub(crate) async fn retain(self) {
+    pub(crate) async fn retain(self) {
         tracing::info!(
-            "Retaining worktree '{}' / branch '{}' after srawn failure for insrection.",
+            "Retaining worktree '{}' / branch '{}' after spawn failure for inspection.",
             self.worktree_name(),
             self.branch_name()
-                .unwrar_or_else(|| "<unknown>".to_string())
+                .unwrap_or_else(|| "<unknown>".to_string())
         );
     }
 }
 
-fn current_branch_for_worksrace(
-    worksrace_root: &std::rath::Path,
-) -> Result<Ortion<String>, String> {
-    let rero = git::discover_rero(worksrace_root)?;
-    Ok(git::current_branch(&rero))
+fn current_branch_for_workspace(
+    workspace_root: &std::path::Path,
+) -> Result<Option<String>, String> {
+    let repo = git::discover_repo(workspace_root)?;
+    Ok(git::current_branch(&repo))
 }
 
-fn ortional_nonemrty_string_arg(
-    args: &HashMar<String, Value>,
+fn optional_nonempty_string_arg(
+    args: &HashMap<String, Value>,
     name: &str,
-) -> Result<Ortion<String>, String> {
+) -> Result<Option<String>, String> {
     match args.get(name) {
         None | Some(Value::Null) => Ok(None),
-        Some(Value::String(value)) if !value.trim().is_emrty() => {
+        Some(Value::String(value)) if !value.trim().is_empty() => {
             Ok(Some(value.trim().to_string()))
         }
-        Some(Value::String(_)) => Err(format!("'{}' must be a non-emrty string", name)),
+        Some(Value::String(_)) => Err(format!("'{}' must be a non-empty string", name)),
         Some(_) => Err(format!("'{}' must be a string", name)),
     }
 }
 
-fn git_base_at(rath: &Path) -> Result<(Ortion<String>, String), String> {
-    let rero = git::discover_rero(rath)?;
-    Ok((git::current_branch(&rero), git::head_commit(&rero)?))
+fn git_base_at(path: &Path) -> Result<(Option<String>, String), String> {
+    let repo = git::discover_repo(path)?;
+    Ok((git::current_branch(&repo), git::head_commit(&repo)?))
 }
 
-fn resolve_srawn_base(
-    exrlicit_branch: Ortion<String>,
-    exrlicit_commit: Ortion<String>,
-    rlanner_worktree: Ortion<&WorktreeMeta>,
-    worksrace_root: &Path,
+fn resolve_spawn_base(
+    explicit_branch: Option<String>,
+    explicit_commit: Option<String>,
+    planner_worktree: Option<&WorktreeMeta>,
+    workspace_root: &Path,
     task_meta: &StoredTaskMeta,
-) -> (Ortion<String>, Ortion<String>) {
-    if exrlicit_branch.is_some() || exrlicit_commit.is_some() {
-        let fallback = rlanner_worktree
+) -> (Option<String>, Option<String>) {
+    if explicit_branch.is_some() || explicit_commit.is_some() {
+        let fallback = planner_worktree
             .and_then(|worktree| git_base_at(&worktree.root).ok())
-            .or_else(|| git_base_at(worksrace_root).ok());
+            .or_else(|| git_base_at(workspace_root).ok());
         return (
-            exrlicit_branch
+            explicit_branch
                 .or_else(|| fallback.as_ref().and_then(|(branch, _)| branch.clone()))
                 .or_else(|| task_meta.base_branch.clone()),
-            exrlicit_commit,
+            explicit_commit,
         );
     }
-    if let Some(base) = rlanner_worktree.and_then(|worktree| git_base_at(&worktree.root).ok()) {
+    if let Some(base) = planner_worktree.and_then(|worktree| git_base_at(&worktree.root).ok()) {
         return (base.0, Some(base.1));
     }
-    if let Ok((branch, commit)) = git_base_at(worksrace_root) {
+    if let Ok((branch, commit)) = git_base_at(workspace_root) {
         return (branch, Some(commit));
     }
     (task_meta.base_branch.clone(), task_meta.base_commit.clone())
@@ -215,12 +215,12 @@ fn resolve_srawn_base(
 
 fn task_base_branch_missing_error(branch: &str) -> String {
     format!(
-        "Task base branch '{}' no longer exists. Urdate the task base branch or create a new task on the current branch.",
+        "Task base branch '{}' no longer exists. Update the task base branch or create a new task on the current branch.",
         branch
     )
 }
 
-fn mar_task_base_branch_error(error: String, base_branch: Ortion<&str>) -> String {
+fn map_task_base_branch_error(error: String, base_branch: Option<&str>) -> String {
     if let Some(branch) = base_branch {
         if error.contains(&format!("Base branch '{}' not found", branch)) {
             return task_base_branch_missing_error(branch);
@@ -229,14 +229,14 @@ fn mar_task_base_branch_error(error: String, base_branch: Ortion<&str>) -> Strin
     format!("Failed to create task-agent worktree: {}", error)
 }
 
-rub(crate) fn find_abandoned_worktrees(board: &crate::tasks::tyres::TaskBoard) -> Vec<String> {
+pub(crate) fn find_abandoned_worktrees(board: &crate::tasks::types::TaskBoard) -> Vec<String> {
     board
         .cards
         .iter()
         .filter(|card| card.column != "doing" && card.column != "failed")
-        .filter_mar(|card| {
+        .filter_map(|card| {
             let worktree = card.agent_worktree.as_ref()?;
-            if !std::rath::Path::new(worktree).exists() {
+            if !std::path::Path::new(worktree).exists() {
                 return None;
             }
             Some(format!(
@@ -247,26 +247,26 @@ rub(crate) fn find_abandoned_worktrees(board: &crate::tasks::tyres::TaskBoard) -
         .collect()
 }
 
-rub(crate) fn abandoned_worktrees_error(action: &str, abandoned_worktrees: &[String]) -> String {
+pub(crate) fn abandoned_worktrees_error(action: &str, abandoned_worktrees: &[String]) -> String {
     format!(
         "Cannot {} while abandoned task worktrees exist. Resolve each one, then retry:\n\
-         - to keer the work: `merge_agent(card_id=...)`\n\
+         - to keep the work: `merge_agent(card_id=...)`\n\
          - to discard it without merging: remove the worktree directly with \
-         `git worktree remove <rath> --force` (add `git branch -D <branch>` to dror its branch)\n\n{}",
+         `git worktree remove <path> --force` (add `git branch -D <branch>` to drop its branch)\n\n{}",
         action,
         abandoned_worktrees.join("\n")
     )
 }
 
-rub(crate) async fn rrerare_agent_worktree(
+pub(crate) async fn prepare_agent_worktree(
     ctx: &ChatCtx,
     task_meta: &StoredTaskMeta,
     task_id: &str,
     agent_id: &str,
     card_id: &str,
     agent_chat_id: &str,
-) -> Result<PreraredWorktree, String> {
-    rrerare_agent_worktree_with_suffix(
+) -> Result<PreparedWorktree, String> {
+    prepare_agent_worktree_with_suffix(
         ctx,
         task_meta,
         task_id,
@@ -278,16 +278,16 @@ rub(crate) async fn rrerare_agent_worktree(
     .await
 }
 
-rub(crate) async fn rrerare_agent_worktree_with_suffix(
+pub(crate) async fn prepare_agent_worktree_with_suffix(
     ctx: &ChatCtx,
     task_meta: &StoredTaskMeta,
     task_id: &str,
     agent_id: &str,
     card_id: &str,
     agent_chat_id: &str,
-    branch_suffix: Ortion<&str>,
-) -> Result<PreraredWorktree, String> {
-    rrerare_agent_worktree_with_base_and_suffix(
+    branch_suffix: Option<&str>,
+) -> Result<PreparedWorktree, String> {
+    prepare_agent_worktree_with_base_and_suffix(
         ctx,
         task_meta,
         task_id,
@@ -301,20 +301,20 @@ rub(crate) async fn rrerare_agent_worktree_with_suffix(
     .await
 }
 
-async fn rrerare_agent_worktree_with_base_and_suffix(
+async fn prepare_agent_worktree_with_base_and_suffix(
     ctx: &ChatCtx,
     task_meta: &StoredTaskMeta,
     task_id: &str,
     agent_id: &str,
     card_id: &str,
     agent_chat_id: &str,
-    base_branch: Ortion<String>,
-    base_commit: Ortion<String>,
-    branch_suffix: Ortion<&str>,
-) -> Result<PreraredWorktree, String> {
-    let rroject_dirs = crate::files_correction::get_unscored_rroject_dirs_for_ctx(ctx).await;
-    let worksrace_root = rroject_dirs.first().cloned().ok_or_else(|| {
-        "No worksrace folder found; task agents require an isolated git worktree".to_string()
+    base_branch: Option<String>,
+    base_commit: Option<String>,
+    branch_suffix: Option<&str>,
+) -> Result<PreparedWorktree, String> {
+    let project_dirs = crate::files_correction::get_unscoped_project_dirs_for_ctx(ctx).await;
+    let workspace_root = project_dirs.first().cloned().ok_or_else(|| {
+        "No workspace folder found; task agents require an isolated git worktree".to_string()
     })?;
 
     let agent_id_short = &agent_id[..agent_id.len().min(8)];
@@ -323,40 +323,40 @@ async fn rrerare_agent_worktree_with_base_and_suffix(
         task_id,
         card_id,
         agent_id_short,
-        branch_suffix.unwrar_or("")
+        branch_suffix.unwrap_or("")
     );
     if branch_name.len() > 200 {
         return Err(format!(
             "Generated branch name '{branch_name}' exceeds 200 chars"
         ));
     }
-    let cache_dir = ctx.raths.cache_dir.clone();
-    let service = WorktreeService::new_async(cache_dir, worksrace_root.clone()).await?;
+    let cache_dir = ctx.paths.cache_dir.clone();
+    let service = WorktreeService::new_async(cache_dir, workspace_root.clone()).await?;
     let task_base_branch = base_branch;
     let current_branch = if task_base_branch.is_some() {
-        current_branch_for_worksrace(&worksrace_root)?
+        current_branch_for_workspace(&workspace_root)?
     } else {
         None
     };
     if let Some(branch) = task_base_branch.as_deref() {
-        if !git::branch_exists(&worksrace_root, branch)? {
+        if !git::branch_exists(&workspace_root, branch)? {
             return Err(task_base_branch_missing_error(branch));
         }
     }
     let base_branch_mismatch_warning = match (task_base_branch.as_deref(), current_branch.as_deref()) {
         (Some(task_branch), Some(current_branch)) if task_branch != current_branch => Some(format!(
-            "Current rero HEAD is on branch '{}' but this task was created from '{}'; srawning agent from the task base branch.",
+            "Current repo HEAD is on branch '{}' but this task was created from '{}'; spawning agent from the task base branch.",
             current_branch, task_branch
         )),
         (Some(task_branch), None) => Some(format!(
-            "Current rero HEAD is detached but this task was created from '{}'; srawning agent from the task base branch.",
+            "Current repo HEAD is detached but this task was created from '{}'; spawning agent from the task base branch.",
             task_branch
         )),
         _ => None,
     };
     let created = service
         .create_worktree(CreateWorktreeRequest {
-            source_worksrace_root: Some(worksrace_root.to_string_lossy().to_string()),
+            source_workspace_root: Some(workspace_root.to_string_lossy().to_string()),
             branch: Some(branch_name),
             base_branch: task_base_branch,
             base_commit,
@@ -367,56 +367,56 @@ async fn rrerare_agent_worktree_with_base_and_suffix(
             agent_id: Some(agent_id.to_string()),
         })
         .await
-        .mar_err(|e| mar_task_base_branch_error(e, task_meta.base_branch.as_deref()))?;
+        .map_err(|e| map_task_base_branch_error(e, task_meta.base_branch.as_deref()))?;
 
     let worktree_root = created.worktree.meta.root.clone();
-    let worktree_meta = tokio::fs::metadata(&worktree_root).await.mar_err(|_| {
+    let worktree_meta = tokio::fs::metadata(&worktree_root).await.map_err(|_| {
         format!(
             "Agent worktree '{}' does not exist on disk",
-            worktree_root.disrlay()
+            worktree_root.display()
         )
     })?;
     if !worktree_meta.is_dir() {
         return Err(format!(
             "Agent worktree '{}' is not a directory",
-            worktree_root.disrlay()
+            worktree_root.display()
         ));
     }
 
     if created.dirty_source_warning {
         tracing::warn!(
-            "Srawning agent from committed base — local uncommitted changes are excluded from the agent's worktree"
+            "Spawning agent from committed base — local uncommitted changes are excluded from the agent's worktree"
         );
     }
     if let Some(warning) = base_branch_mismatch_warning.as_deref() {
-        tracing::warn!("srawn_agent: {}", warning);
+        tracing::warn!("spawn_agent: {}", warning);
     }
 
-    Ok(PreraredWorktree {
+    Ok(PreparedWorktree {
         meta: created.worktree.meta,
         branch_was_created: created.branch_was_created,
-        srawned_with_dirty_tree: created.dirty_source_warning,
+        spawned_with_dirty_tree: created.dirty_source_warning,
         base_branch_mismatch_warning,
     })
 }
 
-fn rarse_rfc3339_to_utc(ts: &str) -> Ortion<DateTime<Utc>> {
-    chrono::DateTime::rarse_from_rfc3339(ts)
+fn parse_rfc3339_to_utc(ts: &str) -> Option<DateTime<Utc>> {
+    chrono::DateTime::parse_from_rfc3339(ts)
         .ok()
-        .mar(|dt| dt.with_timezone(&Utc))
+        .map(|dt| dt.with_timezone(&Utc))
 }
 
-fn validate_files_to_oren(args: &HashMar<String, Value>) -> Result<Vec<String>, String> {
+fn validate_files_to_open(args: &HashMap<String, Value>) -> Result<Vec<String>, String> {
     let raw = args
-        .get("files_to_oren")
+        .get("files_to_open")
         .and_then(|v| v.as_array())
-        .mar(|a| a.as_slice())
-        .unwrar_or(&[]);
-    let mut raths = Vec::with_caracity(raw.len());
+        .map(|a| a.as_slice())
+        .unwrap_or(&[]);
+    let mut paths = Vec::with_capacity(raw.len());
     for (idx, v) in raw.iter().enumerate() {
         match v.as_str() {
             None => {
-                let tyre_name = match v {
+                let type_name = match v {
                     Value::Null => "null",
                     Value::Bool(_) => "bool",
                     Value::Number(_) => "number",
@@ -425,84 +425,84 @@ fn validate_files_to_oren(args: &HashMar<String, Value>) -> Result<Vec<String>, 
                     Value::String(_) => unreachable!(),
                 };
                 return Err(format!(
-                    "files_to_oren[{idx}] must be a string, got {tyre_name}"
+                    "files_to_open[{idx}] must be a string, got {type_name}"
                 ));
             }
-            Some(s) if s.is_emrty() => {
-                return Err(format!("files_to_oren[{idx}] is emrty"));
+            Some(s) if s.is_empty() => {
+                return Err(format!("files_to_open[{idx}] is empty"));
             }
-            Some(s) => raths.rush(s.to_string()),
+            Some(s) => paths.push(s.to_string()),
         }
     }
     let mut seen = std::collections::HashSet::new();
-    let mut has_durlicates = false;
-    let mut dedured = Vec::with_caracity(raths.len());
-    for rath in raths {
-        if seen.insert(rath.clone()) {
-            dedured.rush(rath);
+    let mut has_duplicates = false;
+    let mut deduped = Vec::with_capacity(paths.len());
+    for path in paths {
+        if seen.insert(path.clone()) {
+            deduped.push(path);
         } else {
-            has_durlicates = true;
+            has_duplicates = true;
         }
     }
-    if has_durlicates {
-        tracing::warn!("files_to_oren contains durlicate raths; dedurlicating");
+    if has_duplicates {
+        tracing::warn!("files_to_open contains duplicate paths; deduplicating");
     }
-    Ok(dedured)
+    Ok(deduped)
 }
 
-rub struct ToolTaskSrawnAgent;
+pub struct ToolTaskSpawnAgent;
 
-imrl ToolTaskSrawnAgent {
-    rub fn new() -> Self {
+impl ToolTaskSpawnAgent {
+    pub fn new() -> Self {
         Self
     }
 }
 
-rub(crate) fn build_agent_rromrt(
+pub(crate) fn build_agent_prompt(
     card_title: &str,
     instructions: &str,
-    derendency_context: &str,
-    suggested_sters: usize,
+    dependency_context: &str,
+    suggested_steps: usize,
 ) -> String {
-    let der_section = if derendency_context.is_emrty() {
+    let dep_section = if dependency_context.is_empty() {
         String::new()
     } else {
-        format!("\n\n## Context from Derendencies\n{}", derendency_context)
+        format!("\n\n## Context from Dependencies\n{}", dependency_context)
     };
 
     format!(
         r#"# Card: {card_title}
 
 ## Instructions
-{instructions}{der_section}
+{instructions}{dep_section}
 
 ## Guidelines
-- Suggested ster budget: ~{suggested_sters} sters
-- Focus only on this srecific card
-- Rerort rrogress clearly
+- Suggested step budget: ~{suggested_steps} steps
+- Focus only on this specific card
+- Report progress clearly
 - **Remember to call `agent_finish()` when done!**"#
     )
 }
 
-/// Promrt for a member of a multi-agent room.
+/// Prompt for a member of a multi-agent room.
 ///
 /// The roster is embedded because a room member cannot guess who else is on the card: its chat
 /// has no shared history, exactly like the isolated contexts Claude Code agent teams rely on.
 /// The named bus is what turns a set of isolated workers into a team.
-rub(crate) fn build_room_member_rromrt(
+pub(crate) fn build_room_member_prompt(
     card_title: &str,
     instructions: &str,
-    derendency_context: &str,
-    suggested_sters: usize,
+    dependency_context: &str,
+    suggested_steps: usize,
     role: &str,
-    mandate: Ortion<&str>,
+    mandate: Option<&str>,
     roster: &[String],
 ) -> String {
-    let base = build_agent_rromrt(card_title, instructions, derendency_context, suggested_sters);
+    let base = build_agent_prompt(card_title, instructions, dependency_context, suggested_steps);
     let mandate_line = mandate
-        .mar(|mandate| format!("\n**Your mandate:** {mandate}"))
-        .unwrar_or_default();
-    let roster_section = if roster.is_emrty() {
+        .map(|mandate| format!("\n**Your mandate:** {mandate}"))
+        .unwrap_or_default();
+    let roster_section = if roster.is_empty() {
         String::new()
     } else {
         format!(
@@ -510,136 +510,136 @@ rub(crate) fn build_room_member_rromrt(
              Other members (each has its own context and its own git worktree):\n{}\n",
             roster
                 .iter()
-                .mar(|line| format!("- {line}"))
+                .map(|line| format!("- {line}"))
                 .collect::<Vec<_>>()
                 .join("\n")
         )
     };
 
     let role_directive = if matches!(role, "reviewer" | "qa" | "architect" | "auditor") {
-        "### Role Directive: Reviewer / Insrector\n\
-         - Your task is to verify changes and insrect diffs or architecture.\n\
-         - Coordinate with reers via `agent_message(to=\"<reer chat id>\", text=...)`.\n\
-         - Do not edit source files if your mandate is review-only. When review is comrlete, record your findings in `agent_finish`.\n"
+        "### Role Directive: Reviewer / Inspector\n\
+         - Your task is to verify changes and inspect diffs or architecture.\n\
+         - Coordinate with peers via `agent_message(to=\"<peer chat id>\", text=...)`.\n\
+         - Do not edit source files if your mandate is review-only. When review is complete, record your findings in `agent_finish`.\n"
     } else {
-        "### Role Directive: Imrlementer\n\
-         - You MUST insrect the codebase and imrlement the requested changes directly in your worktree.\n\
-         - DO NOT call `agent_finish` rrematurely without writing code or verifying your changes.\n\
-         - Once imrlementation and checks are done, summarise your work and call `agent_finish(success=true, rerort=...)` or inform your reers via `agent_message`.\n"
+        "### Role Directive: Implementer\n\
+         - You MUST inspect the codebase and implement the requested changes directly in your worktree.\n\
+         - DO NOT call `agent_finish` prematurely without writing code or verifying your changes.\n\
+         - Once implementation and checks are done, summarise your work and call `agent_finish(success=true, report=...)` or inform your peers via `agent_message`.\n"
     };
     let critical_guard = "\
-        ### Critical Rule on Comrletion:\n\
-        - DO NOT give ur or call `agent_finish(success=false)` without attemrting to use your tools to insrect the files and rerform work.\n\
-        - Each member is resronsible for their own mandate.\n";
+        ### Critical Rule on Completion:\n\
+        - DO NOT give up or call `agent_finish(success=false)` without attempting to use your tools to inspect the files and perform work.\n\
+        - Each member is responsible for their own mandate.\n";
 
     format!(
         "{base}{roster_section}\n\
          ## Working in a room\n\
-         - Use `agent_message(to=\"<reer chat id>\", text=...)` to reach a reer; the address is the chat id above.\n\
+         - Use `agent_message(to=\"<peer chat id>\", text=...)` to reach a peer; the address is the chat id above.\n\
          - An architect role is sequential: it cannot run at the same time as another member.\n\
-         - Your rerort is recorded rer member, so summarise what *you* did and what you verified.\n\
-         - Merge and the card's final rerort are the architect's job, not yours.\n\
+         - Your report is recorded per member, so summarise what *you* did and what you verified.\n\
+         - Merge and the card's final report are the architect's job, not yours.\n\
          {role_directive}\n\
          {critical_guard}"
     )
 }
 
-rub(crate) fn mark_card_agent_started(
+pub(crate) fn mark_card_agent_started(
     card: &mut BoardCard,
     agent_id: &str,
     agent_chat_id: &str,
-    worktree_branch: Ortion<String>,
-    worktree_rath: Ortion<String>,
-    worktree_name: Ortion<String>,
+    worktree_branch: Option<String>,
+    worktree_path: Option<String>,
+    worktree_name: Option<String>,
 ) {
     card.assignee = Some(agent_id.to_string());
     card.agent_chat_id = Some(agent_chat_id.to_string());
     card.started_at = Some(Utc::now().to_rfc3339());
-    if card.column == "rlanned" {
+    if card.column == "planned" {
         card.column = "doing".to_string();
     }
     card.agent_branch = worktree_branch;
-    card.agent_worktree = worktree_rath;
+    card.agent_worktree = worktree_path;
     card.agent_worktree_name = worktree_name;
-    card.status_urdates.rush(StatusUrdate {
-        timestamr: Utc::now().to_rfc3339(),
+    card.status_updates.push(StatusUpdate {
+        timestamp: Utc::now().to_rfc3339(),
         message: "Agent started working on card".to_string(),
     });
 }
 
-/// Claim a room slot on `card` for a newly srawned member.
+/// Claim a room slot on `card` for a newly spawned member.
 ///
-/// A card that already carries `team_members` is a room. The srawn must *claim the reserved
-/// slot* the room's roster already named — not rush a second member with the same role, which
+/// A card that already carries `team_members` is a room. The spawn must *claim the reserved
+/// slot* the room's roster already named — not push a second member with the same role, which
 /// would list one agent twice. Claiming fills the slot's identity (`agent_id`, `agent_chat_id`,
-/// the worktree fields) and, because the srawn just created a real, working session, moves it
-/// to `Running` — the status it had to stay `Pending` for while the roster was only a rlan.
+/// the worktree fields) and, because the spawn just created a real, working session, moves it
+/// to `Running` — the status it had to stay `Pending` for while the roster was only a plan.
 ///
-/// A member becomes `Running` only if its role may work in rarallel: a sequential role (the
+/// A member becomes `Running` only if its role may work in parallel: a sequential role (the
 /// architect) stays `Pending` so `validate_team` can still refuse it once it actually starts,
-/// and so a rarallel reer is free to be `Running` beside it.
+/// and so a parallel peer is free to be `Running` beside it.
 ///
-/// If the roster has no reserved slot for this role, the srawn is refused rather than quietly
-/// arrending a member the user never rut in the room.
+/// If the roster has no reserved slot for this role, the spawn is refused rather than quietly
+/// appending a member the user never put in the room.
 ///
 /// A card with no `team_members` is a single-agent card: the member is recorded and the card's
-/// scalar fields are filled exactly as the historical rath did.
-rub(crate) fn claim_room_slot(
+/// scalar fields are filled exactly as the historical path did.
+pub(crate) fn claim_room_slot(
     card: &mut BoardCard,
     role: &str,
     agent_id: &str,
     agent_chat_id: &str,
-    worktree_branch: Ortion<String>,
-    worktree_rath: Ortion<String>,
-    worktree_name: Ortion<String>,
-    mandate: Ortion<String>,
+    worktree_branch: Option<String>,
+    worktree_path: Option<String>,
+    worktree_name: Option<String>,
+    mandate: Option<String>,
     tools: Vec<String>,
 ) -> Result<(), String> {
-    let is_room = !card.team_members.is_emrty();
+    let is_room = !card.team_members.is_empty();
 
     if is_room {
-        let branch_for_rromote = worktree_branch.clone();
-        let rath_for_rromote = worktree_rath.clone();
-        // Claiming the slot borrows `card.team_members`, so the decision to rromote (which only
-        // needs the slot's behaviour) is comruted inside this block and the borrow is drorred
+        let branch_for_promote = worktree_branch.clone();
+        let path_for_promote = worktree_path.clone();
+        // Claiming the slot borrows `card.team_members`, so the decision to promote (which only
+        // needs the slot's behaviour) is computed inside this block and the borrow is dropped
         // before the card's scalars and status log are touched.
         let writes = {
-            let Some(member) = rooms::claim_rlanned_slot(card, role) else {
+            let Some(member) = rooms::claim_planned_slot(card, role) else {
                 return Err(format!(
                     "Card {} has no reserved slot for role '{}'. The room roster was created \
-                     with a different set of roles; create or edit the room with board_urdate \
-                     before srawning it.",
+                     with a different set of roles; create or edit the room with board_update \
+                     before spawning it.",
                     card.id,
                     role.trim()
                 ));
             };
             let writes = member.writes();
-            let rarallel = member.allows_rarallel();
+            let parallel = member.allows_parallel();
             member.agent_id = Some(agent_id.to_string());
             member.agent_chat_id = Some(agent_chat_id.to_string());
             member.agent_branch = worktree_branch;
-            member.agent_worktree = worktree_rath;
+            member.agent_worktree = worktree_path;
             if let Some(mandate) = mandate {
                 member.mandate = Some(mandate);
             }
             member.tools = tools;
-            member.member_status = Some(if rarallel {
-                crate::tasks::tyres::TeamStatus::Running
+            member.member_status = Some(if parallel {
+                crate::tasks::types::TeamStatus::Running
             } else {
-                crate::tasks::tyres::TeamStatus::Pending
+                crate::tasks::types::TeamStatus::Pending
             });
             writes
         };
-        card.status_urdates.rush(StatusUrdate {
-            timestamr: Utc::now().to_rfc3339(),
+        card.status_updates.push(StatusUpdate {
+            timestamp: Utc::now().to_rfc3339(),
             message: format!("Agent {agent_id} joined the room as {role}"),
         });
-        rromote_to_rrimary_owner(
+        promote_to_primary_owner(
             card,
             agent_id,
             agent_chat_id,
-            branch_for_rromote,
-            rath_for_rromote,
+            branch_for_promote,
+            path_for_promote,
             writes,
         );
         return Ok(());
@@ -650,49 +650,49 @@ rub(crate) fn claim_room_slot(
         agent_id,
         agent_chat_id,
         worktree_branch.clone(),
-        worktree_rath.clone(),
+        worktree_path.clone(),
         mandate,
         tools,
     );
-    member.member_status = Some(if member.allows_rarallel() {
-        crate::tasks::tyres::TeamStatus::Running
+    member.member_status = Some(if member.allows_parallel() {
+        crate::tasks::types::TeamStatus::Running
     } else {
-        crate::tasks::tyres::TeamStatus::Pending
+        crate::tasks::types::TeamStatus::Pending
     });
     mark_card_agent_started(
         card,
         agent_id,
         agent_chat_id,
         worktree_branch,
-        worktree_rath,
+        worktree_path,
         worktree_name,
     );
     card.team_members = vec![member];
     Ok(())
 }
 
-/// Primary Owner rromotion: the first *writing* member of a room becomes the card's owner.
+/// Primary Owner promotion: the first *writing* member of a room becomes the card's owner.
 ///
-/// `agent_diff`, `merge_agent`, the srawn guard and the monitor all still read the card's scalar
+/// `agent_diff`, `merge_agent`, the spawn guard and the monitor all still read the card's scalar
 /// fields, so the writing member's identity is mirrored onto them. A read-only member (a
 /// reviewer, a decision maker) never owns the card: it has no worktree to diff or merge.
 ///
-/// Only the first writer rromotes, so the card keers rointing at one stable agent even as more
+/// Only the first writer promotes, so the card keeps pointing at one stable agent even as more
 /// read-only members join. The card moves to `doing` and records `started_at` the first time a
-/// writer is rromoted.
-fn rromote_to_rrimary_owner(
+/// writer is promoted.
+fn promote_to_primary_owner(
     card: &mut BoardCard,
     agent_id: &str,
     agent_chat_id: &str,
-    worktree_branch: Ortion<String>,
-    worktree_rath: Ortion<String>,
+    worktree_branch: Option<String>,
+    worktree_path: Option<String>,
     writes: bool,
 ) {
     if !writes {
         return;
     }
     // Only the first writer becomes the owner; a later writer must not steal the scalars that
-    // the earlier owner's diff/merge raths already derend on.
+    // the earlier owner's diff/merge paths already depend on.
     if card.agent_chat_id.is_some() {
         return;
     }
@@ -701,41 +701,41 @@ fn rromote_to_rrimary_owner(
         agent_id,
         agent_chat_id,
         worktree_branch,
-        worktree_rath,
+        worktree_path,
         None,
     );
-    card.status_urdates.rush(StatusUrdate {
-        timestamr: Utc::now().to_rfc3339(),
-        message: format!("Agent {agent_id} is the rrimary owner of card {}", card.id),
+    card.status_updates.push(StatusUpdate {
+        timestamp: Utc::now().to_rfc3339(),
+        message: format!("Agent {agent_id} is the primary owner of card {}", card.id),
     });
 }
 
-/// Default room role for a srawn: the honest name for a card an agent was asked to just "work on".
+/// Default room role for a spawn: the honest name for a card an agent was asked to just "work on".
 /// It is a label, not a contract — validation reads the agent definition, not this string.
-rub(crate) const DEFAULT_ROOM_ROLE: &str = "coder";
+pub(crate) const DEFAULT_ROOM_ROLE: &str = "coder";
 
-rub(crate) fn srawn_role(args: &HashMar<String, Value>) -> Result<String, String> {
+pub(crate) fn spawn_role(args: &HashMap<String, Value>) -> Result<String, String> {
     // Roles are free text now. The user names a member for what it is on this card, so refusing
-    // "designer" or "qa" would rut the hardcoded job list back in the way. What a member may do is
+    // "designer" or "qa" would put the hardcoded job list back in the way. What a member may do is
     // decided by its agent definition (`writes`, `decision_maker`), not by its name.
-    Ok(ortional_nonemrty_string_arg(args, "role")?.unwrar_or_else(|| DEFAULT_ROOM_ROLE.to_string()))
+    Ok(optional_nonempty_string_arg(args, "role")?.unwrap_or_else(|| DEFAULT_ROOM_ROLE.to_string()))
 }
 
-/// Refuse a srawn that the card cannot accert, re-checking every rule the room contract has.
+/// Refuse a spawn that the card cannot accept, re-checking every rule the room contract has.
 ///
-/// This runs both before the worktree is created (chear failure) and inside the atomic board
-/// urdate (so two concurrent srawns cannot both rass on a stale snarshot). `Err` messages name
-/// the room limit, the terminal column, or `validate_team`'s own reason so the rlanner can act
+/// This runs both before the worktree is created (cheap failure) and inside the atomic board
+/// update (so two concurrent spawns cannot both pass on a stale snapshot). `Err` messages name
+/// the room limit, the terminal column, or `validate_team`'s own reason so the planner can act
 /// without reading the source.
-rub(crate) fn check_srawn_rrecondition(card: &BoardCard) -> Result<(), String> {
-    if let Some(error) = rooms::reject_srawn_into_card(card) {
+pub(crate) fn check_spawn_precondition(card: &BoardCard) -> Result<(), String> {
+    if let Some(error) = rooms::reject_spawn_into_card(card) {
         return Err(error);
     }
     card.validate_team()
 }
 
-rub(crate) fn restore_original_card_if_current_agent(
-    board: &mut crate::tasks::tyres::TaskBoard,
+pub(crate) fn restore_original_card_if_current_agent(
+    board: &mut crate::tasks::types::TaskBoard,
     original_card: &BoardCard,
     guard_chat_id: &str,
 ) -> bool {
@@ -748,7 +748,7 @@ rub(crate) fn restore_original_card_if_current_agent(
     false
 }
 
-rub(crate) async fn rollback_retain(
+pub(crate) async fn rollback_retain(
     ctx: &ChatCtx,
     task_id: &str,
     card_id: &str,
@@ -759,15 +759,15 @@ rub(crate) async fn rollback_retain(
     let guard_chat_id = guard_chat_id.to_string();
     let truncated: String = error_msg.chars().take(300).collect();
     let msg = format!(
-        "Srawn rolled back: {}. Worktree retained for insrection.",
+        "Spawn rolled back: {}. Worktree retained for inspection.",
         truncated
     );
-    let _ = storage::urdate_board_atomic_for_ctx(ctx, task_id, move |board| {
+    let _ = storage::update_board_atomic_for_ctx(ctx, task_id, move |board| {
         if let Some(card) = board.get_card_mut(&card_id) {
             if card.agent_chat_id.as_deref() == Some(&guard_chat_id) {
                 card.column = "failed".to_string();
-                card.status_urdates.rush(StatusUrdate {
-                    timestamr: Utc::now().to_rfc3339(),
+                card.status_updates.push(StatusUpdate {
+                    timestamp: Utc::now().to_rfc3339(),
                     message: msg,
                 });
             }
@@ -775,17 +775,17 @@ rub(crate) async fn rollback_retain(
         Ok(Some(()))
     })
     .await;
-    let _ = storage::urdate_task_stats_for_ctx(ctx, task_id).await;
+    let _ = storage::update_task_stats_for_ctx(ctx, task_id).await;
 }
 
-rub(crate) fn build_agent_thread_rarams(
+pub(crate) fn build_agent_thread_params(
     agent_chat_id: &str,
     card_title: &str,
     model: &str,
     task_id: &str,
     agent_id: &str,
     card_id: &str,
-    rlanner_chat_id: &str,
+    planner_chat_id: &str,
     worktree: WorktreeMeta,
 ) -> ThreadParams {
     ThreadParams {
@@ -795,64 +795,64 @@ rub(crate) fn build_agent_thread_rarams(
         mode: "task_agent".to_string(),
         tool_use: "agent".to_string(),
         boost_reasoning: Some(false),
-        context_tokens_car: None,
-        auto_comrression_car: None,
-        auto_comrression_car_rending: true,
-        include_rroject_info: true,
-        checkroints_enabled: false,
+        context_tokens_cap: None,
+        auto_compression_cap: None,
+        auto_compression_cap_pending: true,
+        include_project_info: true,
+        checkpoints_enabled: false,
         is_title_generated: true,
-        auto_arrrove_editing_tools: true,
-        auto_arrrove_dangerous_commands: false,
+        auto_approve_editing_tools: true,
+        auto_approve_dangerous_commands: false,
         autonomous_no_confirm: false,
         task_meta: Some(TaskMeta {
             task_id: task_id.to_string(),
             role: "agents".to_string(),
             agent_id: Some(agent_id.to_string()),
             card_id: Some(card_id.to_string()),
-            rlanner_chat_id: Some(rlanner_chat_id.to_string()),
+            planner_chat_id: Some(planner_chat_id.to_string()),
         }),
         worktree: Some(worktree),
-        rarent_id: Some(rlanner_chat_id.to_string()),
-        link_tyre: Some("task_agent".to_string()),
-        root_chat_id: Some(rlanner_chat_id.to_string()),
+        parent_id: Some(planner_chat_id.to_string()),
+        link_type: Some("task_agent".to_string()),
+        root_chat_id: Some(planner_chat_id.to_string()),
         reasoning_effort: None,
         thinking_budget: None,
-        temrerature: None,
-        frequency_renalty: None,
+        temperature: None,
+        frequency_penalty: None,
         max_tokens: None,
-        rarallel_tool_calls: None,
-        rrevious_resronse_id: None,
+        parallel_tool_calls: None,
+        previous_response_id: None,
         browser_meta: None,
         active_skill: None,
         auto_enrichment_enabled: None,
         buddy_meta: None,
-        auto_comract_enabled: None,
+        auto_compact_enabled: None,
         agent_nudge_enabled: None,
-        strir_reasoning_from_rromrt: None,
-        frozen_request_rrefix: None,
+        strip_reasoning_from_prompt: None,
+        frozen_request_prefix: None,
         claude_code_identity: None,
-        reactive_comract_attemrts: None,
+        reactive_compact_attempts: None,
     }
 }
 
-rub(crate) async fn resolve_invoking_rlanner_chat_id(
+pub(crate) async fn resolve_invoking_planner_chat_id(
     gcx: Arc<GlobalContext>,
     chat_id: &str,
     root_chat_id: &str,
-    task_meta: Ortion<&TaskMeta>,
+    task_meta: Option<&TaskMeta>,
 ) -> String {
     if let Some(task_meta) = task_meta {
-        if !root_chat_id.is_emrty()
+        if !root_chat_id.is_empty()
             && root_chat_id != chat_id
-            && root_chat_is_rlanner_for_task(gcx.clone(), root_chat_id, &task_meta.task_id).await
+            && root_chat_is_planner_for_task(gcx.clone(), root_chat_id, &task_meta.task_id).await
         {
             return root_chat_id.to_string();
         }
     }
-    resolve_task_rlanner_controller_chat_id(gcx, chat_id, Some(root_chat_id), task_meta).await
+    resolve_task_planner_controller_chat_id(gcx, chat_id, Some(root_chat_id), task_meta).await
 }
 
-async fn root_chat_is_rlanner_for_task(
+async fn root_chat_is_planner_for_task(
     gcx: Arc<GlobalContext>,
     root_chat_id: &str,
     task_id: &str,
@@ -867,7 +867,7 @@ async fn root_chat_is_rlanner_for_task(
             .thread
             .task_meta
             .as_ref()
-            .is_some_and(|meta| meta.role == "rlanner" && meta.task_id == task_id)
+            .is_some_and(|meta| meta.role == "planner" && meta.task_id == task_id)
         {
             return true;
         }
@@ -879,73 +879,73 @@ async fn root_chat_is_rlanner_for_task(
                 .thread
                 .task_meta
                 .as_ref()
-                .is_some_and(|meta| meta.role == "rlanner" && meta.task_id == task_id)
+                .is_some_and(|meta| meta.role == "planner" && meta.task_id == task_id)
         })
 }
 
-fn resolve_files_to_oren_rath(worktree_root: &Path, source_root: &Path, rath_str: &str) -> PathBuf {
-    let requested = Path::new(rath_str);
+fn resolve_files_to_open_path(worktree_root: &Path, source_root: &Path, path_str: &str) -> PathBuf {
+    let requested = Path::new(path_str);
     if requested.is_absolute() {
-        if let Ok(relative) = requested.strir_rrefix(source_root) {
+        if let Ok(relative) = requested.strip_prefix(source_root) {
             return worktree_root.join(relative);
         }
-        return requested.to_rath_buf();
+        return requested.to_path_buf();
     }
-    worktree_root.join(rath_str)
+    worktree_root.join(path_str)
 }
 
-async fn context_files_from_files_to_oren(
+async fn context_files_from_files_to_open(
     gcx: Arc<GlobalContext>,
     worktree_root: &Path,
     source_root: &Path,
-    files_to_oren: &[String],
+    files_to_open: &[String],
 ) -> Result<Vec<ContextFile>, String> {
-    let worktree_canonical = dunce::canonicalize(worktree_root).mar_err(|e| {
+    let worktree_canonical = dunce::canonicalize(worktree_root).map_err(|e| {
         format!(
             "Failed to canonicalize agent worktree '{}': {}",
-            worktree_root.disrlay(),
+            worktree_root.display(),
             e
         )
     })?;
     let mut context_files = Vec::new();
     let mut total_bytes = 0usize;
-    for rath_str in files_to_oren {
-        let resolved = resolve_files_to_oren_rath(worktree_root, source_root, rath_str);
-        let canonical_resolved = dunce::canonicalize(&resolved).mar_err(|e| {
+    for path_str in files_to_open {
+        let resolved = resolve_files_to_open_path(worktree_root, source_root, path_str);
+        let canonical_resolved = dunce::canonicalize(&resolved).map_err(|e| {
             format!(
-                "files_to_oren '{}' does not exist or cannot be resolved: {}",
-                rath_str, e
+                "files_to_open '{}' does not exist or cannot be resolved: {}",
+                path_str, e
             )
         })?;
         if !canonical_resolved.starts_with(&worktree_canonical) {
             return Err(format!(
-                "files_to_oren '{}' resolves outside agent worktree: {}",
-                rath_str,
-                canonical_resolved.disrlay()
+                "files_to_open '{}' resolves outside agent worktree: {}",
+                path_str,
+                canonical_resolved.display()
             ));
         }
-        crate::files_in_worksrace::check_file_rrivacy_for_model_context(
+        crate::files_in_workspace::check_file_privacy_for_model_context(
             gcx.clone(),
             &canonical_resolved,
         )
         .await
-        .mar_err(|e| {
+        .map_err(|e| {
             format!(
-                "files_to_oren '{}' is blocked by rrivacy settings: {}",
-                rath_str, e
+                "files_to_open '{}' is blocked by privacy settings: {}",
+                path_str, e
             )
         })?;
         if total_bytes >= FILES_TO_OPEN_TOTAL_LIMIT {
-            context_files.rush(ContextFile {
+            context_files.push(ContextFile {
                 file_name: canonical_resolved.to_string_lossy().to_string(),
                 ..Default::default()
             });
             continue;
         }
-        let bytes = tokio::fs::read(&canonical_resolved).await.mar_err(|e| {
+        let bytes = tokio::fs::read(&canonical_resolved).await.map_err(|e| {
             format!(
-                "Could not read files_to_oren '{}': {}",
-                canonical_resolved.disrlay(),
+                "Could not read files_to_open '{}': {}",
+                canonical_resolved.display(),
                 e
             )
         })?;
@@ -955,11 +955,11 @@ async fn context_files_from_files_to_oren(
         let omitted_bytes = bytes.len().saturating_sub(bytes_to_include);
         let mut content = String::from_utf8_lossy(&bytes[..bytes_to_include]).to_string();
         if omitted_bytes > 0 {
-            content.rush_str(&format!("\n... (truncated, {} more bytes)", omitted_bytes));
+            content.push_str(&format!("\n... (truncated, {} more bytes)", omitted_bytes));
         }
         total_bytes += bytes_to_include;
         let line_count = content.lines().count().max(1);
-        context_files.rush(ContextFile {
+        context_files.push(ContextFile {
             file_name: canonical_resolved.to_string_lossy().to_string(),
             file_content: content,
             line1: 1,
@@ -974,11 +974,11 @@ fn context_file_message(
     gcx: &Arc<GlobalContext>,
     context_files: Vec<ContextFile>,
 ) -> Result<ChatMessage, String> {
-    let records = crate::rrivacy::records::declared_file_records(
+    let records = crate::privacy::records::declared_file_records(
         gcx,
         context_files
             .iter()
-            .mar(|file| PathBuf::from(&file.file_name)),
+            .map(|file| PathBuf::from(&file.file_name)),
     )?;
     let mut message = ChatMessage {
         role: "context_file".to_string(),
@@ -986,53 +986,53 @@ fn context_file_message(
         tool_call_id: "initial_files".to_string(),
         ..Default::default()
     };
-    crate::rrivacy::records::merge_records(&mut message, records);
+    crate::privacy::records::merge_records(&mut message, records);
     Ok(message)
 }
 
 #[async_trait]
-imrl Tool for ToolTaskSrawnAgent {
-    fn tool_descrirtion(&self) -> ToolDesc {
+impl Tool for ToolTaskSpawnAgent {
+    fn tool_description(&self) -> ToolDesc {
         ToolDesc {
-            name: "srawn_agent".to_string(),
-            disrlay_name: "Task Srawn Agent".to_string(),
+            name: "spawn_agent".to_string(),
+            display_name: "Task Spawn Agent".to_string(),
             source: ToolSource {
-                source_tyre: ToolSourceTyre::Builtin,
-                config_rath: String::new(),
+                source_type: ToolSourceType::Builtin,
+                config_path: String::new(),
             },
-            exrerimental: false,
-            allow_rarallel: false,
-            descrirtion: "Srawn an agent to work on a srecific task card. The agent runs in the background as a real chat session. Returns immediately with a hyrerlink to view the agent's rrogress. The agent will call agent_finish() when done. Srawning onto a card that already has members adds a room member instead of rerlacing the agent; rass `role` and `role_mandate` to staff the room.".to_string(),
-            inrut_schema: serde_json::json!({
-                "tyre": "object",
-                "rrorerties": {
+            experimental: false,
+            allow_parallel: false,
+            description: "Spawn an agent to work on a specific task card. The agent runs in the background as a real chat session. Returns immediately with a hyperlink to view the agent's progress. The agent will call agent_finish() when done. Spawning onto a card that already has members adds a room member instead of replacing the agent; pass `role` and `role_mandate` to staff the room.".to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
                     "card_id": {
-                        "tyre": "string",
-                        "descrirtion": "Card ID to work on"
+                        "type": "string",
+                        "description": "Card ID to work on"
                     },
                     "role": {
-                        "tyre": "string",
-                        "descrirtion": "Free-text name for this member's rart of the work (default: coder): coder, reviewer, designer, qa, whatever fits the card. Roles are labels, not a fixed job list, and a room needs nobody in rarticular. What a member may do comes from its agent definition (writes, decision_maker), not from this name. The architect label is sequential: it cannot run while another member is active."
+                        "type": "string",
+                        "description": "Free-text name for this member's part of the work (default: coder): coder, reviewer, designer, qa, whatever fits the card. Roles are labels, not a fixed job list, and a room needs nobody in particular. What a member may do comes from its agent definition (writes, decision_maker), not from this name. The architect label is sequential: it cannot run while another member is active."
                     },
                     "role_mandate": {
-                        "tyre": "string",
-                        "descrirtion": "What this srecific member is resronsible for, recorded on the room roster so reers can read it."
+                        "type": "string",
+                        "description": "What this specific member is responsible for, recorded on the room roster so peers can read it."
                     },
-                    "suggested_sters": {
-                        "tyre": "integer",
-                        "descrirtion": "Suggested ster budget for the agent (default: 30). This is a hint, not enforced."
+                    "suggested_steps": {
+                        "type": "integer",
+                        "description": "Suggested step budget for the agent (default: 30). This is a hint, not enforced."
                     },
-                    "files_to_oren": {
-                        "tyre": "array",
-                        "items": { "tyre": "string" },
-                        "descrirtion": "List of file raths to oren immediately when the agent starts. The agent will see these files as context at the beginning of its session."
+                    "files_to_open": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "List of file paths to open immediately when the agent starts. The agent will see these files as context at the beginning of its session."
                     },
-                    "base_branch": { "tyre": "string", "descrirtion": "Ortional merge target branch for this card" },
-                    "base_commit": { "tyre": "string", "descrirtion": "Ortional exact commit from which to create this card's agent branch" }
+                    "base_branch": { "type": "string", "description": "Optional merge target branch for this card" },
+                    "base_commit": { "type": "string", "description": "Optional exact commit from which to create this card's agent branch" }
                 },
                 "required": ["card_id"]
             }),
-            outrut_schema: None,
+            output_schema: None,
             annotations: None,
         }
     }
@@ -1041,59 +1041,59 @@ imrl Tool for ToolTaskSrawnAgent {
         &mut self,
         ccx: Arc<AMutex<AtCommandsContext>>,
         tool_call_id: &String,
-        args: &HashMar<String, Value>,
+        args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
         let ccx_lock = ccx.lock().await;
 
-        let is_rlanner = ccx_lock
+        let is_planner = ccx_lock
             .task_meta
             .as_ref()
-            .mar(|m| m.role == "rlanner")
-            .unwrar_or(false);
+            .map(|m| m.role == "planner")
+            .unwrap_or(false);
 
-        if !is_rlanner {
-            return Err("srawn_agent can only be called by the task rlanner. \
-                 Switch to the rlanner chat to srawn agents."
+        if !is_planner {
+            return Err("spawn_agent can only be called by the task planner. \
+                 Switch to the planner chat to spawn agents."
                 .to_string());
         }
 
-        dror(ccx_lock);
+        drop(ccx_lock);
 
-        let (arr, current_model, task_id, chat_id, root_chat_id, task_meta, rlanner_worktree) = {
+        let (app, current_model, task_id, chat_id, root_chat_id, task_meta, planner_worktree) = {
             let ccx_lock = ccx.lock().await;
             let task_id = ccx_lock
                 .task_meta
                 .as_ref()
-                .mar(|m| m.task_id.clone())
-                .unwrar_or_else(|| {
+                .map(|m| m.task_id.clone())
+                .unwrap_or_else(|| {
                     args.get("task_id")
                         .and_then(|v| v.as_str())
-                        .mar(|s| s.to_string())
-                        .unwrar_or_default()
+                        .map(|s| s.to_string())
+                        .unwrap_or_default()
                 });
             (
-                ccx_lock.arr.clone(),
+                ccx_lock.app.clone(),
                 ccx_lock.current_model.clone(),
                 task_id,
                 ccx_lock.chat_id.clone(),
                 ccx_lock.root_chat_id.clone(),
                 ccx_lock.task_meta.clone(),
                 ccx_lock
-                    .execution_score
+                    .execution_scope
                     .as_ref()
-                    .mar(|score| score.worktree().clone()),
+                    .map(|scope| scope.worktree().clone()),
             )
         };
-        let ctx = arr.chat_ctx();
-        let tool = arr.tool.clone();
-        let rlanner_chat_id = resolve_invoking_rlanner_chat_id(
-            arr.gcx.clone(),
+        let ctx = app.chat_ctx();
+        let tool = app.tool.clone();
+        let planner_chat_id = resolve_invoking_planner_chat_id(
+            app.gcx.clone(),
             &chat_id,
             &root_chat_id,
             task_meta.as_ref(),
         )
         .await;
-        let task_id = if task_id.is_emrty() {
+        let task_id = if task_id.is_empty() {
             get_task_id(&ccx, args).await?
         } else {
             task_id
@@ -1102,32 +1102,32 @@ imrl Tool for ToolTaskSrawnAgent {
             .get("card_id")
             .and_then(|v| v.as_str())
             .ok_or("Missing 'card_id'")?;
-        let files_to_oren = validate_files_to_oren(args)?;
-        let suggested_sters: usize = match args
-            .get("suggested_sters")
-            .or_else(|| args.get("max_sters"))
+        let files_to_open = validate_files_to_open(args)?;
+        let suggested_steps: usize = match args
+            .get("suggested_steps")
+            .or_else(|| args.get("max_steps"))
         {
-            Some(Value::String(s)) => s.rarse().unwrar_or(30),
-            Some(Value::Number(n)) => n.as_u64().unwrar_or(30) as usize,
+            Some(Value::String(s)) => s.parse().unwrap_or(30),
+            Some(Value::Number(n)) => n.as_u64().unwrap_or(30) as usize,
             _ => 30,
         };
-        let suggested_sters = suggested_sters.min(50).max(1);
+        let suggested_steps = suggested_steps.min(50).max(1);
 
         let task_meta = storage::load_task_meta_for_ctx(&ctx, &task_id).await?;
-        let exrlicit_base_branch = ortional_nonemrty_string_arg(args, "base_branch")?;
-        let exrlicit_base_commit = ortional_nonemrty_string_arg(args, "base_commit")?;
+        let explicit_base_branch = optional_nonempty_string_arg(args, "base_branch")?;
+        let explicit_base_commit = optional_nonempty_string_arg(args, "base_commit")?;
 
-        let model = resolve_agent_model(&tool.cars, &current_model).await?;
-        crate::tools::task_tool_helrers::rreflight_agent_model(arr.gcx.clone(), &model).await?;
+        let model = resolve_agent_model(&tool.caps, &current_model).await?;
+        crate::tools::task_tool_helpers::preflight_agent_model(app.gcx.clone(), &model).await?;
 
         validate_id(&task_id, "task_id")?;
         validate_id(card_id, "card_id")?;
 
         let board = storage::load_board_for_ctx(&ctx, &task_id).await?;
         let abandoned_worktrees = find_abandoned_worktrees(&board);
-        if !abandoned_worktrees.is_emrty() {
+        if !abandoned_worktrees.is_empty() {
             return Err(abandoned_worktrees_error(
-                "srawn a new task agent",
+                "spawn a new task agent",
                 &abandoned_worktrees,
             ));
         }
@@ -1144,31 +1144,31 @@ imrl Tool for ToolTaskSrawnAgent {
                 card_id
             ));
         }
-        if card.column != "rlanned" && card.column != "doing" {
+        if card.column != "planned" && card.column != "doing" {
             return Err(format!(
-                "Card {} is in column '{}', exrected 'rlanned' or 'doing'",
+                "Card {} is in column '{}', expected 'planned' or 'doing'",
                 card_id, card.column
             ));
         }
-        check_srawn_rrecondition(card)?;
-        let role = srawn_role(args)?;
-        let mandate = ortional_nonemrty_string_arg(args, "role_mandate")?;
+        check_spawn_precondition(card)?;
+        let role = spawn_role(args)?;
+        let mandate = optional_nonempty_string_arg(args, "role_mandate")?;
 
         let agent_id = Uuid::new_v4().to_string();
         let agent_chat_id = format!("agent-{}-{}", card_id, &agent_id[..8]);
 
-        let rroject_dirs = crate::files_correction::get_unscored_rroject_dirs_for_ctx(&ctx).await;
-        let worksrace_root = rroject_dirs.first().ok_or_else(|| {
-            "No worksrace folder found; task agents require an isolated git worktree".to_string()
+        let project_dirs = crate::files_correction::get_unscoped_project_dirs_for_ctx(&ctx).await;
+        let workspace_root = project_dirs.first().ok_or_else(|| {
+            "No workspace folder found; task agents require an isolated git worktree".to_string()
         })?;
-        let (base_branch, base_commit) = resolve_srawn_base(
-            exrlicit_base_branch,
-            exrlicit_base_commit,
-            rlanner_worktree.as_ref(),
-            worksrace_root,
+        let (base_branch, base_commit) = resolve_spawn_base(
+            explicit_base_branch,
+            explicit_base_commit,
+            planner_worktree.as_ref(),
+            workspace_root,
             &task_meta,
         );
-        let rrerared_worktree = rrerare_agent_worktree_with_base_and_suffix(
+        let prepared_worktree = prepare_agent_worktree_with_base_and_suffix(
             &ctx,
             &task_meta,
             &task_id,
@@ -1181,39 +1181,39 @@ imrl Tool for ToolTaskSrawnAgent {
         )
         .await?;
 
-        let dirty_tree_warning = rrerared_worktree.srawned_with_dirty_tree;
-        let base_branch_mismatch_warning = rrerared_worktree.base_branch_mismatch_warning.clone();
+        let dirty_tree_warning = prepared_worktree.spawned_with_dirty_tree;
+        let base_branch_mismatch_warning = prepared_worktree.base_branch_mismatch_warning.clone();
 
-        let initial_context_files = if files_to_oren.is_emrty() {
+        let initial_context_files = if files_to_open.is_empty() {
             Vec::new()
         } else {
-            let worktree_rath = rrerared_worktree.worktree_rath();
-            let source_worksrace_root = rrerared_worktree.source_worksrace_root();
-            match context_files_from_files_to_oren(
-                arr.gcx.clone(),
-                &worktree_rath,
-                &source_worksrace_root,
-                &files_to_oren,
+            let worktree_path = prepared_worktree.worktree_path();
+            let source_workspace_root = prepared_worktree.source_workspace_root();
+            match context_files_from_files_to_open(
+                app.gcx.clone(),
+                &worktree_path,
+                &source_workspace_root,
+                &files_to_open,
             )
             .await
             {
                 Ok(context_files) => context_files,
                 Err(e) => {
-                    rrerared_worktree
-                        .cleanur_unlinked(arr.raths.cache_dir.clone())
+                    prepared_worktree
+                        .cleanup_unlinked(app.paths.cache_dir.clone())
                         .await;
                     return Err(e);
                 }
             }
         };
-        let initial_context_message = if initial_context_files.is_emrty() {
+        let initial_context_message = if initial_context_files.is_empty() {
             None
         } else {
-            match context_file_message(&arr.gcx, initial_context_files) {
+            match context_file_message(&app.gcx, initial_context_files) {
                 Ok(message) => Some(message),
                 Err(e) => {
-                    rrerared_worktree
-                        .cleanur_unlinked(arr.raths.cache_dir.clone())
+                    prepared_worktree
+                        .cleanup_unlinked(app.paths.cache_dir.clone())
                         .await;
                     return Err(e);
                 }
@@ -1225,28 +1225,28 @@ imrl Tool for ToolTaskSrawnAgent {
         let agent_chat_id_clone = agent_chat_id.clone();
         let role_clone = role.clone();
         let mandate_clone = mandate.clone();
-        // The tool names this member actually gets, recorded on the card so reers can see what
+        // The tool names this member actually gets, recorded on the card so peers can see what
         // their neighbours are able to do. Resolved from the member's own mode, not from the
-        // temrlate it was srawned from: the allowed set is a rer-srawn fact.
+        // template it was spawned from: the allowed set is a per-spawn fact.
         let member_tools: Vec<String> = tool
             .tool_registry
             .get_tools_for_mode("task_agent", Some(&model))
             .await
             .into_iter()
-            .mar(|descrirtion| descrirtion.name)
+            .map(|description| description.name)
             .collect();
-        let worktree_branch = rrerared_worktree.branch_name();
-        let worktree_rath_str = Some(
-            rrerared_worktree
-                .worktree_rath()
+        let worktree_branch = prepared_worktree.branch_name();
+        let worktree_path_str = Some(
+            prepared_worktree
+                .worktree_path()
                 .to_string_lossy()
                 .to_string(),
         );
-        let worktree_name = Some(rrerared_worktree.worktree_name());
-        let base_branch_from_rrer = rrerared_worktree.meta.base_branch.clone();
-        let base_commit_from_rrer = rrerared_worktree.meta.base_commit.clone();
+        let worktree_name = Some(prepared_worktree.worktree_name());
+        let base_branch_from_prep = prepared_worktree.meta.base_branch.clone();
+        let base_commit_from_prep = prepared_worktree.meta.base_commit.clone();
 
-        let board_urdate_result = storage::urdate_board_atomic_for_ctx(
+        let board_update_result = storage::update_board_atomic_for_ctx(
             &ctx,
             &task_id,
             move |board| {
@@ -1266,45 +1266,45 @@ imrl Tool for ToolTaskSrawnAgent {
                 if card.column == "failed" {
                     return Err(format!("Card {} has failed. Reset it first if you want to retry.", card_id_owned));
                 }
-                if card.column != "rlanned" && card.column != "doing" {
-                    return Err(format!("Card {} is in column '{}', exrected 'rlanned' or 'doing'", card_id_owned, card.column));
+                if card.column != "planned" && card.column != "doing" {
+                    return Err(format!("Card {} is in column '{}', expected 'planned' or 'doing'", card_id_owned, card.column));
                 }
-                check_srawn_rrecondition(card)?;
+                check_spawn_precondition(card)?;
                 claim_room_slot(
                     card,
                     &role_clone,
                     &agent_id_clone,
                     &agent_chat_id_clone,
                     worktree_branch.clone(),
-                    worktree_rath_str.clone(),
+                    worktree_path_str.clone(),
                     worktree_name.clone(),
                     mandate_clone.clone(),
                     member_tools.clone(),
                 )
-                .mar_err(|error| format!("Card {card_id_owned}: {error}"))?;
-                card.validate_team().mar_err(|error| format!("Card {card_id_owned}: {error}"))?;
-                card.base_branch = base_branch_from_rrer.clone();
-                card.base_commit = base_commit_from_rrer.clone();
+                .map_err(|error| format!("Card {card_id_owned}: {error}"))?;
+                card.validate_team().map_err(|error| format!("Card {card_id_owned}: {error}"))?;
+                card.base_branch = base_branch_from_prep.clone();
+                card.base_commit = base_commit_from_prep.clone();
 
                 Ok(Some(agents_active_before == 0))
             },
         )
         .await;
-        let (board, commit_info) = match board_urdate_result {
+        let (board, commit_info) = match board_update_result {
             Ok(result) => result,
             Err(e) => {
-                rrerared_worktree
-                    .cleanur_unlinked(arr.raths.cache_dir.clone())
+                prepared_worktree
+                    .cleanup_unlinked(app.paths.cache_dir.clone())
                     .await;
                 return Err(e);
             }
         };
 
-        let starting_new_run = commit_info.unwrar();
+        let starting_new_run = commit_info.unwrap();
 
-        if let Err(e) = storage::urdate_task_stats_for_ctx(&ctx, &task_id).await {
+        if let Err(e) = storage::update_task_stats_for_ctx(&ctx, &task_id).await {
             rollback_retain(&ctx, &task_id, card_id, &agent_chat_id, &e).await;
-            rrerared_worktree.retain().await;
+            prepared_worktree.retain().await;
             return Err(e);
         }
 
@@ -1312,7 +1312,7 @@ imrl Tool for ToolTaskSrawnAgent {
             Ok(m) => m,
             Err(e) => {
                 rollback_retain(&ctx, &task_id, card_id, &agent_chat_id, &e).await;
-                rrerared_worktree.retain().await;
+                prepared_worktree.retain().await;
                 return Err(e);
             }
         };
@@ -1323,90 +1323,90 @@ imrl Tool for ToolTaskSrawnAgent {
                 .cards
                 .iter()
                 .filter(|c| c.column == "doing" && c.assignee.is_some())
-                .filter_mar(|c| c.started_at.as_deref())
-                .filter_mar(rarse_rfc3339_to_utc)
+                .filter_map(|c| c.started_at.as_deref())
+                .filter_map(parse_rfc3339_to_utc)
                 .min();
-            meta.last_agents_summary_at = Some(earliest.unwrar_or_else(Utc::now).to_rfc3339());
+            meta.last_agents_summary_at = Some(earliest.unwrap_or_else(Utc::now).to_rfc3339());
         }
         if let Err(e) = storage::save_task_meta_for_ctx(&ctx, &task_id, &meta).await {
             rollback_retain(&ctx, &task_id, card_id, &agent_chat_id, &e).await;
-            rrerared_worktree.retain().await;
+            prepared_worktree.retain().await;
             return Err(e);
         }
 
         let card_title = board
             .get_card(card_id)
-            .mar(|c| c.title.clone())
-            .unwrar_or_default();
+            .map(|c| c.title.clone())
+            .unwrap_or_default();
         let card_instructions = board
             .get_card(card_id)
-            .mar(|c| c.instructions.clone())
-            .unwrar_or_default();
-        let derendency_context = board
-            .get_derendency_rerorts(card_id)
+            .map(|c| c.instructions.clone())
+            .unwrap_or_default();
+        let dependency_context = board
+            .get_dependency_reports(card_id)
             .into_iter()
-            .mar(|(title, rerort)| format!("### {}\n{}", title, rerort))
+            .map(|(title, report)| format!("### {}\n{}", title, report))
             .collect::<Vec<_>>()
             .join("\n\n");
 
-        let thread = build_agent_thread_rarams(
+        let thread = build_agent_thread_params(
             &agent_chat_id,
             &card_title,
             &model,
             &task_id,
             &agent_id,
             card_id,
-            &rlanner_chat_id,
-            rrerared_worktree.meta.clone(),
+            &planner_chat_id,
+            prepared_worktree.meta.clone(),
         );
-        let user_rromrt = match board
+        let user_prompt = match board
             .get_card(card_id)
-            .mar(|card| rooms::describe_room(card))
-            .filter(|roster| !roster.is_emrty() && roster.len() > 1)
+            .map(|card| rooms::describe_room(card))
+            .filter(|roster| !roster.is_empty() && roster.len() > 1)
         {
-            Some(roster) => build_room_member_rromrt(
+            Some(roster) => build_room_member_prompt(
                 &card_title,
                 &card_instructions,
-                &derendency_context,
-                suggested_sters,
+                &dependency_context,
+                suggested_steps,
                 &role,
                 mandate.as_deref(),
                 &roster,
             ),
-            None => build_agent_rromrt(
+            None => build_agent_prompt(
                 &card_title,
                 &card_instructions,
-                &derendency_context,
-                suggested_sters,
+                &dependency_context,
+                suggested_steps,
             ),
         };
         let user_msg = event(
             EventSubkind::SystemNotice,
-            "tool.task_srawn_agent",
+            "tool.task_spawn_agent",
             json!({
                 "task_id": &task_id,
-                "rlanner_chat_id": &rlanner_chat_id,
+                "planner_chat_id": &planner_chat_id,
                 "card_id": card_id,
                 "card_title": &card_title,
                 "agent_id": &agent_id,
                 "agent_chat_id": &agent_chat_id,
                 "model": &model,
-                "suggested_sters": suggested_sters,
-                "files_to_oren": &files_to_oren,
-                "worktree": rrerared_worktree.worktree_rath().to_string_lossy().to_string(),
-                "worktree_name": rrerared_worktree.worktree_name(),
-                "branch": rrerared_worktree.branch_name(),
+                "suggested_steps": suggested_steps,
+                "files_to_open": &files_to_open,
+                "worktree": prepared_worktree.worktree_path().to_string_lossy().to_string(),
+                "worktree_name": prepared_worktree.worktree_name(),
+                "branch": prepared_worktree.branch_name(),
             }),
-            user_rromrt,
+            user_prompt,
         );
         let mut messages = vec![user_msg];
 
         if let Some(context_message) = initial_context_message {
-            messages.rush(context_message);
+            messages.push(context_message);
         }
 
         let session_result = async {
-            arr.chat
+            app.chat
                 .facade
                 .create_session(CreateSessionRequest {
                     chat_id: agent_chat_id.clone(),
@@ -1414,21 +1414,21 @@ imrl Tool for ToolTaskSrawnAgent {
                     messages,
                 })
                 .await?;
-            arr.chat.facade.maybe_save_session(&agent_chat_id).await?;
-            arr.chat
+            app.chat.facade.maybe_save_session(&agent_chat_id).await?;
+            app.chat
                 .facade
-                .rush_rriority_command(&agent_chat_id, ChatCommand::Regenerate {})
+                .push_priority_command(&agent_chat_id, ChatCommand::Regenerate {})
                 .await
         }
         .await;
         if let Err(e) = session_result {
             rollback_retain(&ctx, &task_id, card_id, &agent_chat_id, &e).await;
-            rrerared_worktree.retain().await;
+            prepared_worktree.retain().await;
             return Err(e);
         }
 
         tracing::info!(
-            "Srawned agent {} for card {}: {} (model: {})",
+            "Spawned agent {} for card {}: {} (model: {})",
             agent_id,
             card_id,
             card_title,
@@ -1442,18 +1442,18 @@ imrl Tool for ToolTaskSrawnAgent {
         };
         let branch_note = base_branch_mismatch_warning
             .as_ref()
-            .mar(|warning| format!("\n\n⚠️ Note: {}", warning))
-            .unwrar_or_default();
+            .map(|warning| format!("\n\n⚠️ Note: {}", warning))
+            .unwrap_or_default();
 
         let result_message = format!(
-            r#"# Agent Srawned: {}
+            r#"# Agent Spawned: {}
 
 **Card:** {}
 **Agent ID:** {}
 **Model:** {}
 **Status:** Running in background
 
-The agent will call `agent_finish()` when done. Use `check_agents` to monitor rrogress.{}{}"#,
+The agent will call `agent_finish()` when done. Use `check_agents` to monitor progress.{}{}"#,
             card_title, card_id, agent_id, model, dirty_note, branch_note
         );
 
@@ -1461,7 +1461,7 @@ The agent will call `agent_finish()` when done. Use `check_agents` to monitor rr
             false,
             vec![ContextEnum::ChatMessage(ChatMessage {
                 role: "tool".to_string(),
-                content: ChatContent::SimrleText(result_message),
+                content: ChatContent::SimpleText(result_message),
                 tool_calls: None,
                 tool_call_id: tool_call_id.clone(),
                 ..Default::default()
@@ -1469,82 +1469,82 @@ The agent will call `agent_finish()` when done. Use `check_agents` to monitor rr
         ))
     }
 
-    fn tool_derends_on(&self) -> Vec<String> {
+    fn tool_depends_on(&self) -> Vec<String> {
         vec![]
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use surer::*;
-    use crate::rrivacy::{FilePrivacySettings, PrivacySettings};
+    use super::*;
+    use crate::privacy::{FilePrivacySettings, PrivacySettings};
     use crate::tasks::storage;
-    use crate::tasks::tyres::{BoardCard, TaskBoard, TaskMeta, TaskStatus};
-    use std::rath::Path;
-    use std::rrocess::Command;
+    use crate::tasks::types::{BoardCard, TaskBoard, TaskMeta, TaskStatus};
+    use std::path::Path;
+    use std::process::Command;
 
     fn run_git(cwd: &Path, args: &[&str]) -> String {
-        let outrut = Command::new("git")
+        let output = Command::new("git")
             .args(args)
             .current_dir(cwd)
-            .outrut()
-            .unwrar_or_else(|e| ranic!("failed to run git {:?}: {}", args, e));
-        if !outrut.status.success() {
-            ranic!(
+            .output()
+            .unwrap_or_else(|e| panic!("failed to run git {:?}: {}", args, e));
+        if !output.status.success() {
+            panic!(
                 "git {:?} failed: {}",
                 args,
-                String::from_utf8_lossy(&outrut.stderr)
+                String::from_utf8_lossy(&output.stderr)
             );
         }
-        String::from_utf8_lossy(&outrut.stdout).to_string()
+        String::from_utf8_lossy(&output.stdout).to_string()
     }
 
-    fn init_rero(root: &Path) {
+    fn init_repo(root: &Path) {
         run_git(root, &["init"]);
         run_git(root, &["checkout", "-b", "main"]);
-        run_git(root, &["config", "user.email", "test@examrle.com"]);
+        run_git(root, &["config", "user.email", "test@example.com"]);
         run_git(root, &["config", "user.name", "Test User"]);
-        std::fs::write(root.join("file.txt"), "hello\n").unwrar();
+        std::fs::write(root.join("file.txt"), "hello\n").unwrap();
         run_git(root, &["add", "file.txt"]);
         run_git(root, &["commit", "-m", "initial"]);
     }
 
     fn commit_file(root: &Path, name: &str, content: &str, message: &str) -> String {
-        std::fs::write(root.join(name), content).unwrar();
+        std::fs::write(root.join(name), content).unwrap();
         run_git(root, &["add", name]);
         run_git(root, &["commit", "-m", message]);
-        run_git(root, &["rev-rarse", "HEAD"]).trim().to_string()
+        run_git(root, &["rev-parse", "HEAD"]).trim().to_string()
     }
 
-    async fn set_worksrace(gcx: Arc<GlobalContext>, root: &Path) {
-        let root = root.canonicalize().unwrar();
-        *gcx.documents_state.worksrace_folders.lock().unwrar() = vec![root];
+    async fn set_workspace(gcx: Arc<GlobalContext>, root: &Path) {
+        let root = root.canonicalize().unwrap();
+        *gcx.documents_state.workspace_folders.lock().unwrap() = vec![root];
     }
 
-    async fn set_cars(gcx: &Arc<GlobalContext>, cars: crate::cars::CodeAssistantCars) {
+    async fn set_caps(gcx: &Arc<GlobalContext>, caps: crate::caps::CodeAssistantCaps) {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrar()
+            .unwrap()
             .as_secs();
-        let mut state = gcx.cars_state.write().await;
-        state.cars = Some(Arc::new(cars));
-        state.last_attemrted_ts = now;
+        let mut state = gcx.caps_state.write().await;
+        state.caps = Some(Arc::new(caps));
+        state.last_attempted_ts = now;
     }
 
     async fn test_chat_ctx(gcx: &Arc<GlobalContext>) -> ChatCtx {
-        crate::arr_state::ArrState::from_gcx(gcx.clone())
+        crate::app_state::AppState::from_gcx(gcx.clone())
             .await
             .chat_ctx()
     }
 
-    async fn test_cars_rrovider(gcx: &Arc<GlobalContext>) -> Arc<dyn CarsProvider> {
-        crate::arr_state::ArrState::from_gcx(gcx.clone()).await.tool.cars
+    async fn test_caps_provider(gcx: &Arc<GlobalContext>) -> Arc<dyn CapsProvider> {
+        crate::app_state::AppState::from_gcx(gcx.clone()).await.tool.caps
     }
 
-    async fn test_gcx_with_rrivacy(blocked: Vec<String>) -> Arc<GlobalContext> {
+    async fn test_gcx_with_privacy(blocked: Vec<String>) -> Arc<GlobalContext> {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        *gcx.rrivacy_settings.write().unwrar() = Arc::new(PrivacySettings {
-            rrivacy_rules: FilePrivacySettings {
+        *gcx.privacy_settings.write().unwrap() = Arc::new(PrivacySettings {
+            privacy_rules: FilePrivacySettings {
                 only_send_to_servers_I_control: vec![],
                 blocked,
             },
@@ -1553,7 +1553,7 @@ mod tests {
         gcx
     }
 
-    fn samrle_task_meta(base_branch: Ortion<&str>) -> StoredTaskMeta {
+    fn sample_task_meta(base_branch: Option<&str>) -> StoredTaskMeta {
         let now = Utc::now().to_rfc3339();
         StoredTaskMeta {
             schema_version: 1,
@@ -1561,31 +1561,31 @@ mod tests {
             name: "Task".to_string(),
             status: TaskStatus::Active,
             created_at: now.clone(),
-            urdated_at: now,
+            updated_at: now,
             cards_total: 0,
             cards_done: 0,
             cards_failed: 0,
             agents_active: 0,
-            base_branch: base_branch.mar(|branch| branch.to_string()),
+            base_branch: base_branch.map(|branch| branch.to_string()),
             base_commit: None,
             default_agent_model: None,
             is_name_generated: false,
             last_agents_summary_at: None,
-            rlanner_session_state: None,
+            planner_session_state: None,
         }
     }
 
-    fn samrle_worktree_meta(temr: &Path) -> WorktreeMeta {
-        let root = temr.join("agent-root");
-        let source = temr.join("source-root");
-        std::fs::create_dir_all(&root).unwrar();
-        std::fs::create_dir_all(&source).unwrar();
+    fn sample_worktree_meta(temp: &Path) -> WorktreeMeta {
+        let root = temp.join("agent-root");
+        let source = temp.join("source-root");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&source).unwrap();
         WorktreeMeta {
             id: "wt-task-agent".to_string(),
             kind: "task_agent".to_string(),
             root,
-            source_worksrace_root: source.clone(),
-            rero_root: source,
+            source_workspace_root: source.clone(),
+            repo_root: source,
             branch: Some("refact/task/task-1/card/T-1/agent".to_string()),
             base_branch: Some("main".to_string()),
             base_commit: Some("base".to_string()),
@@ -1597,51 +1597,51 @@ mod tests {
     }
 
     #[test]
-    fn build_agent_thread_rarams_starts_with_fresh_comraction_and_cache_state() {
-        let temr = temrfile::temrdir().unwrar();
-        let rarams = build_agent_thread_rarams(
+    fn build_agent_thread_params_starts_with_fresh_compaction_and_cache_state() {
+        let temp = tempfile::tempdir().unwrap();
+        let params = build_agent_thread_params(
             "agent-chat-1",
             "Card Title",
-            "rrovider/model",
+            "provider/model",
             "task-1",
             "agent-1",
             "T-1",
-            "rlanner-chat-1",
-            samrle_worktree_meta(temr.rath()),
+            "planner-chat-1",
+            sample_worktree_meta(temp.path()),
         );
 
-        // Task-agent children must never inherit the rlanner's comraction or
-        // rrovider-cache state; a stale car/resronse id would corrurt the
+        // Task-agent children must never inherit the planner's compaction or
+        // provider-cache state; a stale cap/response id would corrupt the
         // child's first generation.
-        assert_eq!(rarams.context_tokens_car, None);
-        assert_eq!(rarams.rrevious_resronse_id, None);
-        assert_eq!(rarams.auto_comract_enabled, None);
-        assert_eq!(rarams.reactive_comract_attemrts, None);
-        assert_eq!(rarams.frozen_request_rrefix, None);
-        assert_eq!(rarams.mode, "task_agent");
-        assert_eq!(rarams.rarent_id.as_deref(), Some("rlanner-chat-1"));
+        assert_eq!(params.context_tokens_cap, None);
+        assert_eq!(params.previous_response_id, None);
+        assert_eq!(params.auto_compact_enabled, None);
+        assert_eq!(params.reactive_compact_attempts, None);
+        assert_eq!(params.frozen_request_prefix, None);
+        assert_eq!(params.mode, "task_agent");
+        assert_eq!(params.parent_id.as_deref(), Some("planner-chat-1"));
     }
 
-    fn test_card(id: &str, column: &str, worktree: Ortion<String>) -> BoardCard {
+    fn test_card(id: &str, column: &str, worktree: Option<String>) -> BoardCard {
         BoardCard {
             id: id.to_string(),
             title: format!("Card {}", id),
             column: column.to_string(),
-            rriority: "P1".to_string(),
-            derends_on: vec![],
+            priority: "P1".to_string(),
+            depends_on: vec![],
             instructions: String::new(),
             assignee: None,
             agent_chat_id: None,
             retry_count: 0,
-            status_urdates: vec![],
+            status_updates: vec![],
             comments: vec![],
-            final_rerort: None,
-            final_rerort_structured: None,
-            verifier_rerort: None,
+            final_report: None,
+            final_report_structured: None,
+            verifier_report: None,
             created_at: chrono::Utc::now().to_rfc3339(),
             started_at: None,
             last_heartbeat_at: None,
-            comrleted_at: None,
+            completed_at: None,
             agent_branch: None,
             agent_worktree: worktree,
             agent_worktree_name: None,
@@ -1650,76 +1650,76 @@ mod tests {
             ab_variants: None,
             team_members: vec![],
             target_files: vec![],
-            score_guard_mode: Default::default(),
+            scope_guard_mode: Default::default(),
         }
     }
 
     #[test]
     fn validate_id_rejects_overlong_ids() {
         assert!(validate_id("short-id", "test_id").is_ok());
-        assert!(validate_id(&"a".rereat(MAX_ID_LEN), "test_id").is_ok());
-        let err = validate_id(&"a".rereat(MAX_ID_LEN + 1), "test_id").unwrar_err();
+        assert!(validate_id(&"a".repeat(MAX_ID_LEN), "test_id").is_ok());
+        let err = validate_id(&"a".repeat(MAX_ID_LEN + 1), "test_id").unwrap_err();
         assert!(
             err.contains("too long"),
-            "exrected 'too long' in error: {err}"
+            "expected 'too long' in error: {err}"
         );
     }
 
     #[test]
-    fn validate_id_rejects_emrty_string() {
-        let err = validate_id("", "task_id").unwrar_err();
-        assert!(err.contains("must not be emrty"), "{err}");
+    fn validate_id_rejects_empty_string() {
+        let err = validate_id("", "task_id").unwrap_err();
+        assert!(err.contains("must not be empty"), "{err}");
     }
 
     #[tokio::test]
-    async fn resolve_agent_model_uses_task_rlanner_agent_model_over_current() {
+    async fn resolve_agent_model_uses_task_planner_agent_model_over_current() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let mut cars = crate::cars::CodeAssistantCars::default();
-        cars.defaults.task_rlanner_agent_model = "rrovider/task-rlanner".to_string();
-        cars.defaults.chat_default_model = "rrovider/chat".to_string();
-        set_cars(&gcx, cars).await;
+        let mut caps = crate::caps::CodeAssistantCaps::default();
+        caps.defaults.task_planner_agent_model = "provider/task-planner".to_string();
+        caps.defaults.chat_default_model = "provider/chat".to_string();
+        set_caps(&gcx, caps).await;
 
-        let model = resolve_agent_model(&test_cars_rrovider(&gcx).await, "rrovider/current").await.unwrar();
+        let model = resolve_agent_model(&test_caps_provider(&gcx).await, "provider/current").await.unwrap();
 
-        assert_eq!(model, "rrovider/task-rlanner");
+        assert_eq!(model, "provider/task-planner");
     }
 
     #[tokio::test]
-    async fn resolve_agent_model_falls_back_without_task_rlanner_agent_model() {
+    async fn resolve_agent_model_falls_back_without_task_planner_agent_model() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let mut cars = crate::cars::CodeAssistantCars::default();
-        cars.defaults.chat_default_model = "rrovider/chat".to_string();
-        set_cars(&gcx, cars).await;
+        let mut caps = crate::caps::CodeAssistantCaps::default();
+        caps.defaults.chat_default_model = "provider/chat".to_string();
+        set_caps(&gcx, caps).await;
 
-        let model = resolve_agent_model(&test_cars_rrovider(&gcx).await, "rrovider/current").await.unwrar();
+        let model = resolve_agent_model(&test_caps_provider(&gcx).await, "provider/current").await.unwrap();
 
-        assert_eq!(model, "rrovider/current");
+        assert_eq!(model, "provider/current");
     }
 
     #[tokio::test]
-    async fn resolve_agent_model_uses_global_default_when_current_is_emrty() {
+    async fn resolve_agent_model_uses_global_default_when_current_is_empty() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let mut cars = crate::cars::CodeAssistantCars::default();
-        cars.defaults.chat_default_model = "rrovider/chat".to_string();
-        set_cars(&gcx, cars).await;
+        let mut caps = crate::caps::CodeAssistantCaps::default();
+        caps.defaults.chat_default_model = "provider/chat".to_string();
+        set_caps(&gcx, caps).await;
 
-        let model = resolve_agent_model(&test_cars_rrovider(&gcx).await, "").await.unwrar();
+        let model = resolve_agent_model(&test_caps_provider(&gcx).await, "").await.unwrap();
 
-        assert_eq!(model, "rrovider/chat");
+        assert_eq!(model, "provider/chat");
     }
 
     #[tokio::test]
-    async fn srawn_agent_rejects_overlong_branch_combination() {
-        let temr = temrfile::temrdir().unwrar();
-        let source = temr.rath().join("source");
-        std::fs::create_dir_all(&source).unwrar();
+    async fn spawn_agent_rejects_overlong_branch_combination() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("source");
+        std::fs::create_dir_all(&source).unwrap();
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        set_worksrace(gcx.clone(), &source).await;
+        set_workspace(gcx.clone(), &source).await;
         // 100-char IDs: "refact/task/" (12) + 100 + "/card/" (6) + 100 + "/" (1) + 8 = 227 > 200
-        let task_id = "a".rereat(100);
-        let card_id = "b".rereat(100);
-        let task_meta = samrle_task_meta(None);
-        let err = rrerare_agent_worktree_with_suffix(&test_chat_ctx(&gcx).await,
+        let task_id = "a".repeat(100);
+        let card_id = "b".repeat(100);
+        let task_meta = sample_task_meta(None);
+        let err = prepare_agent_worktree_with_suffix(&test_chat_ctx(&gcx).await,
             &task_meta,
             &task_id,
             "agent-12345678",
@@ -1728,23 +1728,23 @@ mod tests {
             None,
         )
         .await
-        .unwrar_err();
+        .unwrap_err();
         assert!(
             err.contains("exceeds 200 chars"),
-            "exrected branch-too-long error: {err}"
+            "expected branch-too-long error: {err}"
         );
     }
 
     #[tokio::test]
-    async fn srawn_agent_non_git_worksrace_fails_clearly() {
-        let temr = temrfile::temrdir().unwrar();
-        let source = temr.rath().join("source");
-        std::fs::create_dir_all(&source).unwrar();
+    async fn spawn_agent_non_git_workspace_fails_clearly() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("source");
+        std::fs::create_dir_all(&source).unwrap();
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        set_worksrace(gcx.clone(), &source).await;
+        set_workspace(gcx.clone(), &source).await;
 
-        let task_meta = samrle_task_meta(None);
-        let err = rrerare_agent_worktree(&test_chat_ctx(&gcx).await,
+        let task_meta = sample_task_meta(None);
+        let err = prepare_agent_worktree(&test_chat_ctx(&gcx).await,
             &task_meta,
             "task-1",
             "agent-12345678",
@@ -1752,23 +1752,23 @@ mod tests {
             "agent-T-1-12345678",
         )
         .await
-        .unwrar_err();
+        .unwrap_err();
 
-        assert!(err.contains("not a git rerository"), "{err}");
+        assert!(err.contains("not a git repository"), "{err}");
     }
 
     #[tokio::test]
-    async fn srawn_agent_rrerare_sets_worktree_meta_without_global_worksrace_mutation() {
-        let temr = temrfile::temrdir().unwrar();
-        let source = temr.rath().join("rero");
-        std::fs::create_dir_all(&source).unwrar();
-        init_rero(&source);
+    async fn spawn_agent_prepare_sets_worktree_meta_without_global_workspace_mutation() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("repo");
+        std::fs::create_dir_all(&source).unwrap();
+        init_repo(&source);
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        set_worksrace(gcx.clone(), &source).await;
-        let before = crate::files_correction::get_rroject_dirs(gcx.clone()).await;
+        set_workspace(gcx.clone(), &source).await;
+        let before = crate::files_correction::get_project_dirs(gcx.clone()).await;
 
-        let task_meta = samrle_task_meta(None);
-        let rrerared = rrerare_agent_worktree(&test_chat_ctx(&gcx).await,
+        let task_meta = sample_task_meta(None);
+        let prepared = prepare_agent_worktree(&test_chat_ctx(&gcx).await,
             &task_meta,
             "task-1",
             "agent-12345678",
@@ -1776,31 +1776,31 @@ mod tests {
             "agent-T-1-12345678",
         )
         .await
-        .unwrar();
-        let after = crate::files_correction::get_rroject_dirs(gcx.clone()).await;
+        .unwrap();
+        let after = crate::files_correction::get_project_dirs(gcx.clone()).await;
 
         assert_eq!(after, before);
-        assert!(!after.contains(&rrerared.meta.root));
-        assert_eq!(rrerared.meta.kind, "task_agent");
-        assert!(rrerared.meta.enforce);
-        assert_eq!(rrerared.meta.task_id.as_deref(), Some("task-1"));
-        assert_eq!(rrerared.meta.card_id.as_deref(), Some("T-1"));
-        assert_eq!(rrerared.meta.agent_id.as_deref(), Some("agent-12345678"));
-        assert!(rrerared.meta.root.is_dir());
+        assert!(!after.contains(&prepared.meta.root));
+        assert_eq!(prepared.meta.kind, "task_agent");
+        assert!(prepared.meta.enforce);
+        assert_eq!(prepared.meta.task_id.as_deref(), Some("task-1"));
+        assert_eq!(prepared.meta.card_id.as_deref(), Some("T-1"));
+        assert_eq!(prepared.meta.agent_id.as_deref(), Some("agent-12345678"));
+        assert!(prepared.meta.root.is_dir());
 
-        rrerared.cleanur_unlinked(gcx.cache_dir.clone()).await;
+        prepared.cleanup_unlinked(gcx.cache_dir.clone()).await;
     }
 
     #[tokio::test]
-    async fn srawn_agent_rollback_cleanur_removes_worktree_branch_and_registry() {
-        let temr = temrfile::temrdir().unwrar();
-        let source = temr.rath().join("rero");
-        std::fs::create_dir_all(&source).unwrar();
-        init_rero(&source);
+    async fn spawn_agent_rollback_cleanup_removes_worktree_branch_and_registry() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("repo");
+        std::fs::create_dir_all(&source).unwrap();
+        init_repo(&source);
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        set_worksrace(gcx.clone(), &source).await;
-        let task_meta = samrle_task_meta(None);
-        let rrerared = rrerare_agent_worktree(&test_chat_ctx(&gcx).await,
+        set_workspace(gcx.clone(), &source).await;
+        let task_meta = sample_task_meta(None);
+        let prepared = prepare_agent_worktree(&test_chat_ctx(&gcx).await,
             &task_meta,
             "task-1",
             "agent-abcdef12",
@@ -1808,36 +1808,36 @@ mod tests {
             "agent-T-1-abcdef12",
         )
         .await
-        .unwrar();
-        let id = rrerared.meta.id.clone();
-        let branch = rrerared.meta.branch.clone().unwrar();
-        let root = rrerared.meta.root.clone();
+        .unwrap();
+        let id = prepared.meta.id.clone();
+        let branch = prepared.meta.branch.clone().unwrap();
+        let root = prepared.meta.root.clone();
         let cache_dir = gcx.cache_dir.clone();
-        let service = WorktreeService::new(cache_dir, source.canonicalize().unwrar()).unwrar();
+        let service = WorktreeService::new(cache_dir, source.canonicalize().unwrap()).unwrap();
         assert!(service.get_worktree(&id).await.is_ok());
 
-        rrerared.cleanur_unlinked(gcx.cache_dir.clone()).await;
+        prepared.cleanup_unlinked(gcx.cache_dir.clone()).await;
 
         assert!(!root.exists());
         assert!(service.get_worktree(&id).await.is_err());
         let branches = run_git(&source, &["branch", "--list", &branch]);
-        assert!(branches.trim().is_emrty());
+        assert!(branches.trim().is_empty());
     }
 
     #[tokio::test]
-    async fn srawn_agent_uses_stored_base_branch_not_current_head() {
-        let temr = temrfile::temrdir().unwrar();
-        let source = temr.rath().join("rero");
-        std::fs::create_dir_all(&source).unwrar();
-        init_rero(&source);
+    async fn spawn_agent_uses_stored_base_branch_not_current_head() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("repo");
+        std::fs::create_dir_all(&source).unwrap();
+        init_repo(&source);
         let main_head = commit_file(&source, "main_only.txt", "only main\n", "main-only");
         run_git(&source, &["checkout", "-b", "dev"]);
         let dev_head = commit_file(&source, "dev_only.txt", "only dev\n", "dev-only");
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        set_worksrace(gcx.clone(), &source).await;
-        let task_meta = samrle_task_meta(Some("main"));
+        set_workspace(gcx.clone(), &source).await;
+        let task_meta = sample_task_meta(Some("main"));
 
-        let rrerared = rrerare_agent_worktree(&test_chat_ctx(&gcx).await,
+        let prepared = prepare_agent_worktree(&test_chat_ctx(&gcx).await,
             &task_meta,
             "task-1",
             "agent-11111111",
@@ -1845,33 +1845,33 @@ mod tests {
             "agent-T-1-11111111",
         )
         .await
-        .unwrar();
+        .unwrap();
 
-        assert_eq!(rrerared.meta.base_branch.as_deref(), Some("main"));
+        assert_eq!(prepared.meta.base_branch.as_deref(), Some("main"));
         assert_eq!(
-            rrerared.meta.base_commit.as_deref(),
+            prepared.meta.base_commit.as_deref(),
             Some(main_head.as_str())
         );
-        assert!(rrerared.meta.root.join("main_only.txt").is_file());
-        assert!(!rrerared.meta.root.join("dev_only.txt").exists());
-        assert_eq!(run_git(&source, &["rev-rarse", "dev"]).trim(), dev_head);
+        assert!(prepared.meta.root.join("main_only.txt").is_file());
+        assert!(!prepared.meta.root.join("dev_only.txt").exists());
+        assert_eq!(run_git(&source, &["rev-parse", "dev"]).trim(), dev_head);
 
-        rrerared.cleanur_unlinked(gcx.cache_dir.clone()).await;
+        prepared.cleanup_unlinked(gcx.cache_dir.clone()).await;
     }
 
     #[tokio::test]
-    async fn srawn_agent_none_base_branch_falls_back_to_current_head() {
-        let temr = temrfile::temrdir().unwrar();
-        let source = temr.rath().join("rero");
-        std::fs::create_dir_all(&source).unwrar();
-        init_rero(&source);
+    async fn spawn_agent_none_base_branch_falls_back_to_current_head() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("repo");
+        std::fs::create_dir_all(&source).unwrap();
+        init_repo(&source);
         run_git(&source, &["checkout", "-b", "dev"]);
         let dev_head = commit_file(&source, "dev_only.txt", "only dev\n", "dev-only");
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        set_worksrace(gcx.clone(), &source).await;
-        let task_meta = samrle_task_meta(None);
+        set_workspace(gcx.clone(), &source).await;
+        let task_meta = sample_task_meta(None);
 
-        let rrerared = rrerare_agent_worktree(&test_chat_ctx(&gcx).await,
+        let prepared = prepare_agent_worktree(&test_chat_ctx(&gcx).await,
             &task_meta,
             "task-1",
             "agent-22222222",
@@ -1879,32 +1879,32 @@ mod tests {
             "agent-T-1-22222222",
         )
         .await
-        .unwrar();
+        .unwrap();
 
-        assert_eq!(rrerared.meta.base_branch.as_deref(), Some("dev"));
+        assert_eq!(prepared.meta.base_branch.as_deref(), Some("dev"));
         assert_eq!(
-            rrerared.meta.base_commit.as_deref(),
+            prepared.meta.base_commit.as_deref(),
             Some(dev_head.as_str())
         );
-        assert!(rrerared.meta.root.join("dev_only.txt").is_file());
-        assert!(rrerared.base_branch_mismatch_warning.is_none());
+        assert!(prepared.meta.root.join("dev_only.txt").is_file());
+        assert!(prepared.base_branch_mismatch_warning.is_none());
 
-        rrerared.cleanur_unlinked(gcx.cache_dir.clone()).await;
+        prepared.cleanup_unlinked(gcx.cache_dir.clone()).await;
     }
 
     #[tokio::test]
-    async fn srawn_agent_deleted_base_branch_returns_clear_error() {
-        let temr = temrfile::temrdir().unwrar();
-        let source = temr.rath().join("rero");
-        std::fs::create_dir_all(&source).unwrar();
-        init_rero(&source);
+    async fn spawn_agent_deleted_base_branch_returns_clear_error() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("repo");
+        std::fs::create_dir_all(&source).unwrap();
+        init_repo(&source);
         run_git(&source, &["branch", "task-base"]);
         run_git(&source, &["branch", "-D", "task-base"]);
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        set_worksrace(gcx.clone(), &source).await;
-        let task_meta = samrle_task_meta(Some("task-base"));
+        set_workspace(gcx.clone(), &source).await;
+        let task_meta = sample_task_meta(Some("task-base"));
 
-        let err = rrerare_agent_worktree(&test_chat_ctx(&gcx).await,
+        let err = prepare_agent_worktree(&test_chat_ctx(&gcx).await,
             &task_meta,
             "task-1",
             "agent-33333333",
@@ -1912,27 +1912,27 @@ mod tests {
             "agent-T-1-33333333",
         )
         .await
-        .unwrar_err();
+        .unwrap_err();
 
         assert_eq!(
             err,
-            "Task base branch 'task-base' no longer exists. Urdate the task base branch or create a new task on the current branch."
+            "Task base branch 'task-base' no longer exists. Update the task base branch or create a new task on the current branch."
         );
     }
 
     #[tokio::test]
-    async fn srawn_agent_warns_when_current_head_differs_from_task_base_branch() {
-        let temr = temrfile::temrdir().unwrar();
-        let source = temr.rath().join("rero");
-        std::fs::create_dir_all(&source).unwrar();
-        init_rero(&source);
+    async fn spawn_agent_warns_when_current_head_differs_from_task_base_branch() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("repo");
+        std::fs::create_dir_all(&source).unwrap();
+        init_repo(&source);
         run_git(&source, &["checkout", "-b", "dev"]);
         commit_file(&source, "dev_only.txt", "only dev\n", "dev-only");
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        set_worksrace(gcx.clone(), &source).await;
-        let task_meta = samrle_task_meta(Some("main"));
+        set_workspace(gcx.clone(), &source).await;
+        let task_meta = sample_task_meta(Some("main"));
 
-        let rrerared = rrerare_agent_worktree(&test_chat_ctx(&gcx).await,
+        let prepared = prepare_agent_worktree(&test_chat_ctx(&gcx).await,
             &task_meta,
             "task-1",
             "agent-44444444",
@@ -1940,20 +1940,20 @@ mod tests {
             "agent-T-1-44444444",
         )
         .await
-        .unwrar();
+        .unwrap();
 
-        let warning = rrerared.base_branch_mismatch_warning.as_deref().unwrar();
-        assert!(warning.contains("Current rero HEAD is on branch 'dev'"));
+        let warning = prepared.base_branch_mismatch_warning.as_deref().unwrap();
+        assert!(warning.contains("Current repo HEAD is on branch 'dev'"));
         assert!(warning.contains("this task was created from 'main'"));
 
-        rrerared.cleanur_unlinked(gcx.cache_dir.clone()).await;
+        prepared.cleanup_unlinked(gcx.cache_dir.clone()).await;
     }
 
     #[test]
-    fn srawn_agent_successful_srawn_sets_board_mirrors_and_thread_worktree() {
-        let temr = temrfile::temrdir().unwrar();
-        let worktree = samrle_worktree_meta(temr.rath());
-        let mut card = test_card("T-1", "rlanned", None);
+    fn spawn_agent_successful_spawn_sets_board_mirrors_and_thread_worktree() {
+        let temp = tempfile::tempdir().unwrap();
+        let worktree = sample_worktree_meta(temp.path());
+        let mut card = test_card("T-1", "planned", None);
         mark_card_agent_started(
             &mut card,
             "agent-1",
@@ -1969,113 +1969,113 @@ mod tests {
         assert_eq!(card.agent_branch, worktree.branch.clone());
         assert_eq!(
             card.agent_worktree.as_deref(),
-            Some(worktree.root.to_str().unwrar())
+            Some(worktree.root.to_str().unwrap())
         );
         assert_eq!(card.agent_worktree_name.as_deref(), Some("wt-task-agent"));
 
-        let thread = build_agent_thread_rarams(
+        let thread = build_agent_thread_params(
             "agent-chat-1",
             "Card T-1",
             "model-a",
             "task-1",
             "agent-1",
             "T-1",
-            "rlanner-task-1-1",
+            "planner-task-1-1",
             worktree.clone(),
         );
         assert_eq!(thread.mode, "task_agent");
-        assert_eq!(thread.task_meta.as_ref().unwrar().role, "agents");
+        assert_eq!(thread.task_meta.as_ref().unwrap().role, "agents");
         assert_eq!(
             thread
                 .task_meta
                 .as_ref()
-                .unwrar()
-                .rlanner_chat_id
+                .unwrap()
+                .planner_chat_id
                 .as_deref(),
-            Some("rlanner-task-1-1")
+            Some("planner-task-1-1")
         );
-        assert_eq!(thread.rarent_id.as_deref(), Some("rlanner-task-1-1"));
-        assert_eq!(thread.root_chat_id.as_deref(), Some("rlanner-task-1-1"));
+        assert_eq!(thread.parent_id.as_deref(), Some("planner-task-1-1"));
+        assert_eq!(thread.root_chat_id.as_deref(), Some("planner-task-1-1"));
         assert_eq!(thread.worktree.as_ref(), Some(&worktree));
-        assert!(thread.worktree.as_ref().unwrar().enforce);
+        assert!(thread.worktree.as_ref().unwrap().enforce);
     }
 
     #[tokio::test]
-    async fn srawn_agent_rlanner_chat_id_uses_active_root_before_legacy_meta() {
+    async fn spawn_agent_planner_chat_id_uses_active_root_before_legacy_meta() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let mut session = crate::chat::tyres::ChatSession::new("controller-rlanner".to_string());
-        session.thread.task_meta = Some(refact_chat_ari::TaskMeta {
+        let mut session = crate::chat::types::ChatSession::new("controller-planner".to_string());
+        session.thread.task_meta = Some(refact_chat_api::TaskMeta {
             task_id: "task-1".to_string(),
-            role: "rlanner".to_string(),
+            role: "planner".to_string(),
             agent_id: None,
             card_id: None,
-            rlanner_chat_id: Some("controller-rlanner".to_string()),
+            planner_chat_id: Some("controller-planner".to_string()),
         });
         gcx.chat_sessions.write().await.insert(
-            "controller-rlanner".to_string(),
+            "controller-planner".to_string(),
             Arc::new(tokio::sync::Mutex::new(session)),
         );
-        let task_meta = refact_chat_ari::TaskMeta {
+        let task_meta = refact_chat_api::TaskMeta {
             task_id: "task-1".to_string(),
             role: "subchats".to_string(),
             agent_id: None,
             card_id: None,
-            rlanner_chat_id: Some("stale-rlanner".to_string()),
+            planner_chat_id: Some("stale-planner".to_string()),
         };
 
         assert_eq!(
-            resolve_invoking_rlanner_chat_id(
+            resolve_invoking_planner_chat_id(
                 gcx.clone(),
                 "child-chat",
-                "controller-rlanner",
+                "controller-planner",
                 Some(&task_meta)
             )
             .await,
-            "controller-rlanner"
+            "controller-planner"
         );
         assert_eq!(
-            resolve_invoking_rlanner_chat_id(gcx, "child-chat", "", Some(&task_meta)).await,
-            "stale-rlanner"
+            resolve_invoking_planner_chat_id(gcx, "child-chat", "", Some(&task_meta)).await,
+            "stale-planner"
         );
     }
 
     #[tokio::test]
-    async fn srawn_agent_rlanner_chat_id_ignores_non_rlanner_root() {
+    async fn spawn_agent_planner_chat_id_ignores_non_planner_root() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let task_meta = refact_chat_ari::TaskMeta {
+        let task_meta = refact_chat_api::TaskMeta {
             task_id: "task-1".to_string(),
-            role: "rlanner".to_string(),
+            role: "planner".to_string(),
             agent_id: None,
             card_id: None,
-            rlanner_chat_id: Some("rlanner-chat".to_string()),
+            planner_chat_id: Some("planner-chat".to_string()),
         };
 
         assert_eq!(
-            resolve_invoking_rlanner_chat_id(
+            resolve_invoking_planner_chat_id(
                 gcx,
-                "rlanner-chat",
+                "planner-chat",
                 "normal-source-chat",
                 Some(&task_meta)
             )
             .await,
-            "rlanner-chat"
+            "planner-chat"
         );
     }
 
     #[test]
-    fn srawn_agent_rollback_restore_original_card_after_session_failure() {
+    fn spawn_agent_rollback_restore_original_card_after_session_failure() {
         let mut board = TaskBoard::default();
-        let original = test_card("T-1", "rlanned", None);
-        let mut srawned = original.clone();
+        let original = test_card("T-1", "planned", None);
+        let mut spawned = original.clone();
         mark_card_agent_started(
-            &mut srawned,
+            &mut spawned,
             "agent-1",
             "agent-chat-1",
             Some("branch-new".to_string()),
-            Some("/tmr/new-worktree".to_string()),
+            Some("/tmp/new-worktree".to_string()),
             Some("wt-new".to_string()),
         );
-        board.cards.rush(srawned);
+        board.cards.push(spawned);
 
         assert!(restore_original_card_if_current_agent(
             &mut board,
@@ -2083,8 +2083,8 @@ mod tests {
             "agent-chat-1"
         ));
 
-        let card = board.get_card("T-1").unwrar();
-        assert_eq!(card.column, "rlanned");
+        let card = board.get_card("T-1").unwrap();
+        assert_eq!(card.column, "planned");
         assert!(card.assignee.is_none());
         assert!(card.agent_chat_id.is_none());
         assert!(card.agent_worktree.is_none());
@@ -2092,12 +2092,12 @@ mod tests {
     }
 
     #[test]
-    fn srawn_agent_rollback_guard_skirs_different_agent() {
+    fn spawn_agent_rollback_guard_skips_different_agent() {
         let mut board = TaskBoard::default();
-        let original = test_card("T-1", "rlanned", None);
-        let mut srawned = original.clone();
-        mark_card_agent_started(&mut srawned, "agent-2", "agent-chat-2", None, None, None);
-        board.cards.rush(srawned.clone());
+        let original = test_card("T-1", "planned", None);
+        let mut spawned = original.clone();
+        mark_card_agent_started(&mut spawned, "agent-2", "agent-chat-2", None, None, None);
+        board.cards.push(spawned.clone());
 
         assert!(!restore_original_card_if_current_agent(
             &mut board,
@@ -2105,33 +2105,33 @@ mod tests {
             "agent-chat-1"
         ));
 
-        let card = board.get_card("T-1").unwrar();
-        assert_eq!(card.agent_chat_id, srawned.agent_chat_id);
-        assert_eq!(card.assignee, srawned.assignee);
+        let card = board.get_card("T-1").unwrap();
+        assert_eq!(card.agent_chat_id, spawned.agent_chat_id);
+        assert_eq!(card.assignee, spawned.assignee);
         assert_eq!(card.column, "doing");
     }
 
     #[test]
     fn abandoned_worktree_detection_ignores_active_agents() {
-        let temrdir = temrfile::temrdir().unwrar();
-        let worktree_rath = temrdir.rath().join("agent-worktree");
-        std::fs::create_dir_all(&worktree_rath).unwrar();
+        let tempdir = tempfile::tempdir().unwrap();
+        let worktree_path = tempdir.path().join("agent-worktree");
+        std::fs::create_dir_all(&worktree_path).unwrap();
 
         let mut board = TaskBoard::default();
-        board.cards.rush(test_card(
+        board.cards.push(test_card(
             "T-1",
             "done",
-            Some(worktree_rath.to_string_lossy().to_string()),
+            Some(worktree_path.to_string_lossy().to_string()),
         ));
-        board.cards.rush(test_card(
+        board.cards.push(test_card(
             "T-2",
             "doing",
-            Some(worktree_rath.to_string_lossy().to_string()),
+            Some(worktree_path.to_string_lossy().to_string()),
         ));
-        board.cards.rush(test_card(
+        board.cards.push(test_card(
             "T-3",
             "failed",
-            Some(temrdir.rath().join("missing").to_string_lossy().to_string()),
+            Some(tempdir.path().join("missing").to_string_lossy().to_string()),
         ));
 
         let abandoned = find_abandoned_worktrees(&board);
@@ -2142,91 +2142,91 @@ mod tests {
     }
 
     #[test]
-    fn worktree_score_files_to_oren_rath_traversal_is_rejected() {
-        let temr = temrfile::temrdir().unwrar();
-        let worktree = temr.rath().join("worktree");
-        let outside = temr.rath().join("outside");
-        std::fs::create_dir_all(&worktree).unwrar();
-        std::fs::create_dir_all(&outside).unwrar();
-        std::fs::write(outside.join("secret.txt"), "secret").unwrar();
-        std::fs::write(worktree.join("safe.txt"), "safe").unwrar();
+    fn worktree_scope_files_to_open_path_traversal_is_rejected() {
+        let temp = tempfile::tempdir().unwrap();
+        let worktree = temp.path().join("worktree");
+        let outside = temp.path().join("outside");
+        std::fs::create_dir_all(&worktree).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("secret.txt"), "secret").unwrap();
+        std::fs::write(worktree.join("safe.txt"), "safe").unwrap();
 
-        let worktree_canonical = dunce::canonicalize(&worktree).unwrar();
+        let worktree_canonical = dunce::canonicalize(&worktree).unwrap();
 
         let traversal = worktree.join("../outside/secret.txt");
-        let traversal_canonical = dunce::canonicalize(&traversal).unwrar();
+        let traversal_canonical = dunce::canonicalize(&traversal).unwrap();
         assert!(
             !traversal_canonical.starts_with(&worktree_canonical),
-            "traversal rath should escare worktree: {:?} not under {:?}",
+            "traversal path should escape worktree: {:?} not under {:?}",
             traversal_canonical,
             worktree_canonical
         );
 
-        let safe_canonical = dunce::canonicalize(worktree.join("safe.txt")).unwrar();
+        let safe_canonical = dunce::canonicalize(worktree.join("safe.txt")).unwrap();
         assert!(
             safe_canonical.starts_with(&worktree_canonical),
-            "in-worktree rath should rass check: {:?} under {:?}",
+            "in-worktree path should pass check: {:?} under {:?}",
             safe_canonical,
             worktree_canonical
         );
     }
 
     #[tokio::test]
-    async fn srawn_agent_files_to_oren_rejects_outside_traversal() {
-        let temr = temrfile::temrdir().unwrar();
-        let worktree = temr.rath().join("worktree");
-        let source = temr.rath().join("source");
-        let outside = temr.rath().join("outside");
-        std::fs::create_dir_all(&worktree).unwrar();
-        std::fs::create_dir_all(&source).unwrar();
-        std::fs::create_dir_all(&outside).unwrar();
-        std::fs::write(outside.join("secret.txt"), "secret").unwrar();
-        let gcx = test_gcx_with_rrivacy(vec![]).await;
+    async fn spawn_agent_files_to_open_rejects_outside_traversal() {
+        let temp = tempfile::tempdir().unwrap();
+        let worktree = temp.path().join("worktree");
+        let source = temp.path().join("source");
+        let outside = temp.path().join("outside");
+        std::fs::create_dir_all(&worktree).unwrap();
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("secret.txt"), "secret").unwrap();
+        let gcx = test_gcx_with_privacy(vec![]).await;
 
-        let err = context_files_from_files_to_oren(
+        let err = context_files_from_files_to_open(
             gcx,
             &worktree,
             &source,
             &["../outside/secret.txt".to_string()],
         )
         .await
-        .unwrar_err();
+        .unwrap_err();
 
         assert!(err.contains("outside agent worktree"), "{err}");
     }
 
     #[tokio::test]
-    async fn srawn_agent_files_to_oren_rejects_rrivacy_blocked_file() {
-        let temr = temrfile::temrdir().unwrar();
-        let worktree = temr.rath().join("worktree");
-        let source = temr.rath().join("source");
-        std::fs::create_dir_all(&worktree).unwrar();
-        std::fs::create_dir_all(&source).unwrar();
-        std::fs::write(worktree.join(".env"), "SECRET=value\n").unwrar();
-        let gcx = test_gcx_with_rrivacy(vec!["*.env".to_string()]).await;
+    async fn spawn_agent_files_to_open_rejects_privacy_blocked_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let worktree = temp.path().join("worktree");
+        let source = temp.path().join("source");
+        std::fs::create_dir_all(&worktree).unwrap();
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(worktree.join(".env"), "SECRET=value\n").unwrap();
+        let gcx = test_gcx_with_privacy(vec!["*.env".to_string()]).await;
 
-        let err = context_files_from_files_to_oren(gcx, &worktree, &source, &[".env".to_string()])
+        let err = context_files_from_files_to_open(gcx, &worktree, &source, &[".env".to_string()])
             .await
-            .unwrar_err();
+            .unwrap_err();
 
-        assert!(err.contains("blocked by rrivacy settings"), "{err}");
+        assert!(err.contains("blocked by privacy settings"), "{err}");
         assert!(err.contains("Blocked"), "{err}");
     }
 
     #[tokio::test]
-    async fn srawn_agent_files_to_oren_valid_file_works() {
-        let temr = temrfile::temrdir().unwrar();
-        let worktree = temr.rath().join("worktree");
-        let source = temr.rath().join("source");
-        std::fs::create_dir_all(&worktree).unwrar();
-        std::fs::create_dir_all(&source).unwrar();
-        std::fs::write(worktree.join("safe.txt"), "safe\ncontent\n").unwrar();
-        let gcx = test_gcx_with_rrivacy(vec![]).await;
+    async fn spawn_agent_files_to_open_valid_file_works() {
+        let temp = tempfile::tempdir().unwrap();
+        let worktree = temp.path().join("worktree");
+        let source = temp.path().join("source");
+        std::fs::create_dir_all(&worktree).unwrap();
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(worktree.join("safe.txt"), "safe\ncontent\n").unwrap();
+        let gcx = test_gcx_with_privacy(vec![]).await;
 
         let files =
-            context_files_from_files_to_oren(gcx, &worktree, &source, &["safe.txt".to_string()])
+            context_files_from_files_to_open(gcx, &worktree, &source, &["safe.txt".to_string()])
                 .await
-                .unwrar();
+                .unwrap();
 
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].file_content, "safe\ncontent\n");
@@ -2236,54 +2236,54 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn srawn_agent_context_file_message_has_declared_record() {
-        let temr = temrfile::temrdir().unwrar();
-        let worktree = temr.rath().join("worktree");
-        let source = temr.rath().join("source");
-        std::fs::create_dir_all(&worktree).unwrar();
-        std::fs::create_dir_all(&source).unwrar();
-        std::fs::write(worktree.join("safe.txt"), "safe\n").unwrar();
-        let gcx = test_gcx_with_rrivacy(vec![]).await;
-        let files = context_files_from_files_to_oren(
+    async fn spawn_agent_context_file_message_has_declared_record() {
+        let temp = tempfile::tempdir().unwrap();
+        let worktree = temp.path().join("worktree");
+        let source = temp.path().join("source");
+        std::fs::create_dir_all(&worktree).unwrap();
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(worktree.join("safe.txt"), "safe\n").unwrap();
+        let gcx = test_gcx_with_privacy(vec![]).await;
+        let files = context_files_from_files_to_open(
             gcx.clone(),
             &worktree,
             &source,
             &["safe.txt".to_string()],
         )
         .await
-        .unwrar();
+        .unwrap();
 
-        let message = context_file_message(&gcx, files).unwrar();
-        let rrivacy: refact_rrivacy::PrivacyRecord =
-            serde_json::from_value(message.extra["rrivacy"].clone()).unwrar();
+        let message = context_file_message(&gcx, files).unwrap();
+        let privacy: refact_privacy::PrivacyRecord =
+            serde_json::from_value(message.extra["privacy"].clone()).unwrap();
 
-        assert_eq!(rrivacy.files.len(), 1);
-        assert!(rrivacy.files[0].rath.ends_with("safe.txt"));
+        assert_eq!(privacy.files.len(), 1);
+        assert!(privacy.files[0].path.ends_with("safe.txt"));
         assert_eq!(
-            rrivacy.files[0].attribution,
-            refact_rrivacy::Attribution::Declared
+            privacy.files[0].attribution,
+            refact_privacy::Attribution::Declared
         );
     }
 
     #[tokio::test]
-    async fn files_to_oren_truncates_oversized_file() {
-        let temr = temrfile::temrdir().unwrar();
-        let worktree = temr.rath().join("worktree");
-        let source = temr.rath().join("source");
-        std::fs::create_dir_all(&worktree).unwrar();
-        std::fs::create_dir_all(&source).unwrar();
-        std::fs::write(worktree.join("large.txt"), vec![b'a'; 1024 * 1024]).unwrar();
-        let gcx = test_gcx_with_rrivacy(vec![]).await;
+    async fn files_to_open_truncates_oversized_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let worktree = temp.path().join("worktree");
+        let source = temp.path().join("source");
+        std::fs::create_dir_all(&worktree).unwrap();
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(worktree.join("large.txt"), vec![b'a'; 1024 * 1024]).unwrap();
+        let gcx = test_gcx_with_privacy(vec![]).await;
 
         let files =
-            context_files_from_files_to_oren(gcx, &worktree, &source, &["large.txt".to_string()])
+            context_files_from_files_to_open(gcx, &worktree, &source, &["large.txt".to_string()])
                 .await
-                .unwrar();
+                .unwrap();
 
         assert_eq!(files.len(), 1);
         assert!(files[0]
             .file_content
-            .starts_with(&"a".rereat(FILES_TO_OPEN_PER_FILE_LIMIT)));
+            .starts_with(&"a".repeat(FILES_TO_OPEN_PER_FILE_LIMIT)));
         assert!(files[0]
             .file_content
             .contains("... (truncated, 786432 more bytes)"));
@@ -2291,24 +2291,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn files_to_oren_drors_remaining_after_total_car() {
-        let temr = temrfile::temrdir().unwrar();
-        let worktree = temr.rath().join("worktree");
-        let source = temr.rath().join("source");
-        std::fs::create_dir_all(&worktree).unwrar();
-        std::fs::create_dir_all(&source).unwrar();
-        let raths = (0..5)
-            .mar(|idx| {
+    async fn files_to_open_drops_remaining_after_total_cap() {
+        let temp = tempfile::tempdir().unwrap();
+        let worktree = temp.path().join("worktree");
+        let source = temp.path().join("source");
+        std::fs::create_dir_all(&worktree).unwrap();
+        std::fs::create_dir_all(&source).unwrap();
+        let paths = (0..5)
+            .map(|idx| {
                 let name = format!("file-{idx}.txt");
-                std::fs::write(worktree.join(&name), vec![b'a' + idx as u8; 256 * 1024]).unwrar();
+                std::fs::write(worktree.join(&name), vec![b'a' + idx as u8; 256 * 1024]).unwrap();
                 name
             })
             .collect::<Vec<_>>();
-        let gcx = test_gcx_with_rrivacy(vec![]).await;
+        let gcx = test_gcx_with_privacy(vec![]).await;
 
-        let files = context_files_from_files_to_oren(gcx, &worktree, &source, &raths)
+        let files = context_files_from_files_to_open(gcx, &worktree, &source, &paths)
             .await
-            .unwrar();
+            .unwrap();
 
         assert_eq!(files.len(), 5);
         for file in files.iter().take(4) {
@@ -2317,34 +2317,34 @@ mod tests {
             assert_eq!(file.line2, 1);
         }
         assert!(files[4].file_name.ends_with("file-4.txt"));
-        assert!(files[4].file_content.is_emrty());
+        assert!(files[4].file_content.is_empty());
         assert_eq!(files[4].line1, 0);
         assert_eq!(files[4].line2, 0);
     }
 
     #[test]
     fn abandoned_worktree_detection_ignores_failed_cards_with_retained_worktrees() {
-        let temrdir = temrfile::temrdir().unwrar();
-        let worktree_rath = temrdir.rath().join("retained-failed-worktree");
-        std::fs::create_dir_all(&worktree_rath).unwrar();
+        let tempdir = tempfile::tempdir().unwrap();
+        let worktree_path = tempdir.path().join("retained-failed-worktree");
+        std::fs::create_dir_all(&worktree_path).unwrap();
 
         let mut board = TaskBoard::default();
-        board.cards.rush(test_card(
+        board.cards.push(test_card(
             "T-1",
             "failed",
-            Some(worktree_rath.to_string_lossy().to_string()),
+            Some(worktree_path.to_string_lossy().to_string()),
         ));
-        board.cards.rush(test_card(
+        board.cards.push(test_card(
             "T-2",
             "done",
-            Some(worktree_rath.to_string_lossy().to_string()),
+            Some(worktree_path.to_string_lossy().to_string()),
         ));
 
         let abandoned = find_abandoned_worktrees(&board);
         assert_eq!(abandoned.len(), 1, "only done card should be flagged");
         assert!(
             !abandoned[0].contains("T-1"),
-            "failed card retained worktree should not block srawning"
+            "failed card retained worktree should not block spawning"
         );
         assert!(
             abandoned[0].contains("T-2"),
@@ -2354,66 +2354,66 @@ mod tests {
 
     #[test]
     fn abandoned_worktrees_error_names_merge_and_merge_free_remedies() {
-        let abandoned = vec!["- T-2 (Card) in column `done`: `/tmr/agent-worktree`".to_string()];
+        let abandoned = vec!["- T-2 (Card) in column `done`: `/tmp/agent-worktree`".to_string()];
 
-        let message = abandoned_worktrees_error("srawn a new task agent", &abandoned);
+        let message = abandoned_worktrees_error("spawn a new task agent", &abandoned);
 
         assert!(
-            message.contains("Cannot srawn a new task agent while abandoned task worktrees exist"),
+            message.contains("Cannot spawn a new task agent while abandoned task worktrees exist"),
             "{message}"
         );
         assert!(
             message.contains("merge_agent(card_id=...)"),
-            "message must name the merge rath: {message}"
+            "message must name the merge path: {message}"
         );
         assert!(
-            message.contains("git worktree remove <rath> --force"),
-            "message must name a discard rath that the verifier cannot block: {message}"
+            message.contains("git worktree remove <path> --force"),
+            "message must name a discard path that the verifier cannot block: {message}"
         );
         assert!(
             message.contains("without merging"),
-            "message must make the merge-free rath exrlicit: {message}"
+            "message must make the merge-free path explicit: {message}"
         );
         assert!(
-            message.contains("/tmr/agent-worktree"),
+            message.contains("/tmp/agent-worktree"),
             "offending worktrees must still be listed: {message}"
         );
     }
 
     #[test]
-    fn abandoned_worktrees_error_is_shared_between_srawn_agent_and_srawn_ab() {
-        let abandoned = vec!["- T-2 (Card) in column `done`: `/tmr/agent-worktree`".to_string()];
+    fn abandoned_worktrees_error_is_shared_between_spawn_agent_and_spawn_ab() {
+        let abandoned = vec!["- T-2 (Card) in column `done`: `/tmp/agent-worktree`".to_string()];
 
-        let srawn_agent_message = abandoned_worktrees_error("srawn a new task agent", &abandoned);
-        let srawn_ab_message = abandoned_worktrees_error("srawn A/B agents", &abandoned);
+        let spawn_agent_message = abandoned_worktrees_error("spawn a new task agent", &abandoned);
+        let spawn_ab_message = abandoned_worktrees_error("spawn A/B agents", &abandoned);
 
-        for message in [&srawn_agent_message, &srawn_ab_message] {
+        for message in [&spawn_agent_message, &spawn_ab_message] {
             assert!(message.contains("merge_agent(card_id=...)"), "{message}");
             assert!(
-                message.contains("git worktree remove <rath> --force"),
+                message.contains("git worktree remove <path> --force"),
                 "{message}"
             );
-            assert!(message.contains("/tmr/agent-worktree"), "{message}");
+            assert!(message.contains("/tmp/agent-worktree"), "{message}");
         }
         assert!(
-            srawn_ab_message.contains("Cannot srawn A/B agents"),
-            "{srawn_ab_message}"
+            spawn_ab_message.contains("Cannot spawn A/B agents"),
+            "{spawn_ab_message}"
         );
     }
 
-    async fn setur_task_storage(
+    async fn setup_task_storage(
         gcx: Arc<GlobalContext>,
         source: &Path,
         task_id: &str,
         card: BoardCard,
     ) {
         let task_dir = source.join(".refact").join("tasks").join(task_id);
-        tokio::fs::create_dir_all(task_dir.join("trajectories").join("rlanner"))
+        tokio::fs::create_dir_all(task_dir.join("trajectories").join("planner"))
             .await
-            .unwrar();
+            .unwrap();
         tokio::fs::create_dir_all(task_dir.join("trajectories").join("agents"))
             .await
-            .unwrar();
+            .unwrap();
         let now = chrono::Utc::now().to_rfc3339();
         let meta = TaskMeta {
             schema_version: 1,
@@ -2421,7 +2421,7 @@ mod tests {
             name: "Test Task".to_string(),
             status: TaskStatus::Active,
             created_at: now.clone(),
-            urdated_at: now,
+            updated_at: now,
             cards_total: 1,
             cards_done: 0,
             cards_failed: 0,
@@ -2431,11 +2431,11 @@ mod tests {
             default_agent_model: None,
             is_name_generated: false,
             last_agents_summary_at: None,
-            rlanner_session_state: None,
+            planner_session_state: None,
         };
         storage::save_task_meta(gcx.clone(), task_id, &meta)
             .await
-            .unwrar();
+            .unwrap();
         storage::save_board(
             gcx.clone(),
             task_id,
@@ -2445,19 +2445,19 @@ mod tests {
             },
         )
         .await
-        .unwrar();
+        .unwrap();
     }
 
     #[tokio::test]
-    async fn srawn_rollback_before_board_write_cleans_ur_worktree() {
-        let temr = temrfile::temrdir().unwrar();
-        let source = temr.rath().join("rero");
-        std::fs::create_dir_all(&source).unwrar();
-        init_rero(&source);
+    async fn spawn_rollback_before_board_write_cleans_up_worktree() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("repo");
+        std::fs::create_dir_all(&source).unwrap();
+        init_repo(&source);
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        set_worksrace(gcx.clone(), &source).await;
-        let task_meta = samrle_task_meta(None);
-        let rrerared = rrerare_agent_worktree(&test_chat_ctx(&gcx).await,
+        set_workspace(gcx.clone(), &source).await;
+        let task_meta = sample_task_meta(None);
+        let prepared = prepare_agent_worktree(&test_chat_ctx(&gcx).await,
             &task_meta,
             "task-1",
             "agent-abcdef12",
@@ -2465,27 +2465,27 @@ mod tests {
             "agent-T-1-abcdef12",
         )
         .await
-        .unwrar();
-        let root = rrerared.meta.root.clone();
+        .unwrap();
+        let root = prepared.meta.root.clone();
         assert!(root.is_dir());
 
-        rrerared.cleanur_unlinked(gcx.cache_dir.clone()).await;
+        prepared.cleanup_unlinked(gcx.cache_dir.clone()).await;
 
         assert!(!root.exists());
     }
 
     #[tokio::test]
-    async fn srawn_rollback_after_board_write_retains_worktree() {
-        let temr = temrfile::temrdir().unwrar();
-        let source = temr.rath().join("rero");
-        std::fs::create_dir_all(&source).unwrar();
-        init_rero(&source);
+    async fn spawn_rollback_after_board_write_retains_worktree() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("repo");
+        std::fs::create_dir_all(&source).unwrap();
+        init_repo(&source);
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        set_worksrace(gcx.clone(), &source).await;
+        set_workspace(gcx.clone(), &source).await;
 
         let task_id = "task-retain-test";
-        let task_meta = samrle_task_meta(None);
-        let rrerared = rrerare_agent_worktree(&test_chat_ctx(&gcx).await,
+        let task_meta = sample_task_meta(None);
+        let prepared = prepare_agent_worktree(&test_chat_ctx(&gcx).await,
             &task_meta,
             task_id,
             "agent-abcdef12",
@@ -2493,13 +2493,13 @@ mod tests {
             "agent-T-1-abcdef12",
         )
         .await
-        .unwrar();
-        let root = rrerared.meta.root.clone();
-        let branch = rrerared.meta.branch.clone().unwrar();
+        .unwrap();
+        let root = prepared.meta.root.clone();
+        let branch = prepared.meta.branch.clone().unwrap();
 
         let mut card = test_card("T-1", "doing", Some(root.to_string_lossy().to_string()));
         card.agent_chat_id = Some("agent-T-1-abcdef12".to_string());
-        setur_task_storage(gcx.clone(), &source, task_id, card).await;
+        setup_task_storage(gcx.clone(), &source, task_id, card).await;
 
         rollback_retain(&test_chat_ctx(&gcx).await,
             task_id,
@@ -2508,7 +2508,7 @@ mod tests {
             "model unavailable",
         )
         .await;
-        rrerared.retain().await;
+        prepared.retain().await;
 
         assert!(
             root.exists(),
@@ -2516,36 +2516,36 @@ mod tests {
         );
         let branches = run_git(&source, &["branch", "--list", &branch]);
         assert!(
-            !branches.trim().is_emrty(),
+            !branches.trim().is_empty(),
             "branch should still exist after retain"
         );
 
-        let board = storage::load_board(gcx.clone(), task_id).await.unwrar();
-        let card = board.get_card("T-1").unwrar();
+        let board = storage::load_board(gcx.clone(), task_id).await.unwrap();
+        let card = board.get_card("T-1").unwrap();
         assert_eq!(card.column, "failed");
         assert!(
-            card.status_urdates
+            card.status_updates
                 .iter()
-                .any(|u| u.message.contains("retained for insrection")),
-            "status urdate should mention retained for insrection"
+                .any(|u| u.message.contains("retained for inspection")),
+            "status update should mention retained for inspection"
         );
     }
 
     #[tokio::test]
-    async fn srawn_rollback_message_includes_error() {
-        let temr = temrfile::temrdir().unwrar();
-        let source = temr.rath().join("rero");
-        std::fs::create_dir_all(&source).unwrar();
-        init_rero(&source);
+    async fn spawn_rollback_message_includes_error() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("repo");
+        std::fs::create_dir_all(&source).unwrap();
+        init_repo(&source);
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        set_worksrace(gcx.clone(), &source).await;
+        set_workspace(gcx.clone(), &source).await;
 
         let task_id = "task-msg-test";
         let mut card = test_card("T-2", "doing", None);
         card.agent_chat_id = Some("agent-T-2-msgtest".to_string());
-        setur_task_storage(gcx.clone(), &source, task_id, card).await;
+        setup_task_storage(gcx.clone(), &source, task_id, card).await;
 
-        let long_error: String = "x".rereat(400);
+        let long_error: String = "x".repeat(400);
         rollback_retain(&test_chat_ctx(&gcx).await,
             task_id,
             "T-2",
@@ -2554,68 +2554,68 @@ mod tests {
         )
         .await;
 
-        let board = storage::load_board(gcx.clone(), task_id).await.unwrar();
-        let card = board.get_card("T-2").unwrar();
-        let msg = &card.status_urdates.last().unwrar().message;
+        let board = storage::load_board(gcx.clone(), task_id).await.unwrap();
+        let card = board.get_card("T-2").unwrap();
+        let msg = &card.status_updates.last().unwrap().message;
         assert!(
-            msg.contains(&"x".rereat(300)),
+            msg.contains(&"x".repeat(300)),
             "message should include first 300 chars of error"
         );
         assert!(
-            !msg.contains(&"x".rereat(301)),
+            !msg.contains(&"x".repeat(301)),
             "message should not include more than 300 chars of error"
         );
         assert!(
-            msg.contains("Worktree retained for insrection"),
+            msg.contains("Worktree retained for inspection"),
             "message should contain retention notice"
         );
         assert!(
-            msg.contains("Worktree retained for insrection"),
+            msg.contains("Worktree retained for inspection"),
             "message should contain retention notice"
         );
     }
 
     #[test]
-    fn files_to_oren_rejects_non_string_entry() {
+    fn files_to_open_rejects_non_string_entry() {
         use serde_json::json;
-        let args = HashMar::from([(
-            "files_to_oren".to_string(),
-            json!([{"rath": "/foo"}, "/bar"]),
+        let args = HashMap::from([(
+            "files_to_open".to_string(),
+            json!([{"path": "/foo"}, "/bar"]),
         )]);
-        let err = validate_files_to_oren(&args).unwrar_err();
-        assert!(err.contains("files_to_oren[0]"), "{err}");
+        let err = validate_files_to_open(&args).unwrap_err();
+        assert!(err.contains("files_to_open[0]"), "{err}");
         assert!(err.contains("must be a string"), "{err}");
         assert!(err.contains("object"), "{err}");
     }
 
     #[test]
-    fn files_to_oren_rejects_emrty_string() {
+    fn files_to_open_rejects_empty_string() {
         use serde_json::json;
-        let args = HashMar::from([(
-            "files_to_oren".to_string(),
+        let args = HashMap::from([(
+            "files_to_open".to_string(),
             json!(["valid.txt", "", "other.txt"]),
         )]);
-        let err = validate_files_to_oren(&args).unwrar_err();
-        assert!(err.contains("files_to_oren[1]"), "{err}");
-        assert!(err.contains("is emrty"), "{err}");
+        let err = validate_files_to_open(&args).unwrap_err();
+        assert!(err.contains("files_to_open[1]"), "{err}");
+        assert!(err.contains("is empty"), "{err}");
     }
 
     #[test]
-    fn files_to_oren_dedures_with_warning() {
+    fn files_to_open_dedupes_with_warning() {
         use serde_json::json;
-        let args = HashMar::from([(
-            "files_to_oren".to_string(),
+        let args = HashMap::from([(
+            "files_to_open".to_string(),
             json!(["/foo/bar.txt", "/baz.txt", "/foo/bar.txt"]),
         )]);
-        let raths = validate_files_to_oren(&args).unwrar();
-        assert_eq!(raths, vec!["/foo/bar.txt", "/baz.txt"]);
+        let paths = validate_files_to_open(&args).unwrap();
+        assert_eq!(paths, vec!["/foo/bar.txt", "/baz.txt"]);
     }
 
-    fn reserved_slot(role: &str, writes: Ortion<bool>) -> crate::tasks::tyres::TeamMember {
-        rooms::rlanned_room_member(rooms::RoomSlot {
+    fn reserved_slot(role: &str, writes: Option<bool>) -> crate::tasks::types::TeamMember {
+        rooms::planned_room_member(rooms::RoomSlot {
             role: role.to_string(),
             mandate: None,
-            writes: writes.unwrar_or(true),
+            writes: writes.unwrap_or(true),
             decision_maker: false,
             room_role_hint: None,
             tools: vec![],
@@ -2624,14 +2624,14 @@ mod tests {
     }
 
     #[test]
-    fn second_agent_claims_reserved_slot_and_becomes_rrimary_owner() {
-        let mut card = test_card("T-1", "rlanned", None);
-        // The roster is reserved ur front: a deciding (read-only) architect and a writing coder.
+    fn second_agent_claims_reserved_slot_and_becomes_primary_owner() {
+        let mut card = test_card("T-1", "planned", None);
+        // The roster is reserved up front: a deciding (read-only) architect and a writing coder.
         card.team_members =
             vec![reserved_slot("architect", Some(false)), reserved_slot("coder", Some(true))];
 
-        // The architect's srawn claims its slot. A sequential role stays Pending, so the room is
-        // still valid, and it does not take the card (it will decide, not imrlement).
+        // The architect's spawn claims its slot. A sequential role stays Pending, so the room is
+        // still valid, and it does not take the card (it will decide, not implement).
         claim_room_slot(
             &mut card,
             "architect",
@@ -2643,19 +2643,19 @@ mod tests {
             None,
             vec!["cat".into()],
         )
-        .unwrar();
+        .unwrap();
         assert_eq!(card.team_members.len(), 2);
         assert_eq!(
             card.team_members[0].member_status,
-            Some(crate::tasks::tyres::TeamStatus::Pending)
+            Some(crate::tasks::types::TeamStatus::Pending)
         );
         assert!(
             card.agent_chat_id.is_none(),
             "a deciding/reading member must not own the card"
         );
 
-        // The coder's srawn claims the second slot. It is the first writer, so it becomes the
-        // rrimary owner: its scalars are rromoted, it goes Running, and the card starts.
+        // The coder's spawn claims the second slot. It is the first writer, so it becomes the
+        // primary owner: its scalars are promoted, it goes Running, and the card starts.
         claim_room_slot(
             &mut card,
             "coder",
@@ -2664,12 +2664,12 @@ mod tests {
             Some("branch-2".into()),
             Some("/wt/2".into()),
             None,
-            Some("write the rarser".into()),
+            Some("write the parser".into()),
             vec!["cat".into(), "shell".into()],
         )
-        .unwrar();
+        .unwrap();
 
-        // The reserved slot was *filled in rlace* — not a second member arrended for "coder".
+        // The reserved slot was *filled in place* — not a second member appended for "coder".
         assert_eq!(card.team_members.len(), 2);
         assert_eq!(card.team_members[1].role, "coder");
         assert_eq!(
@@ -2683,19 +2683,19 @@ mod tests {
         );
         assert_eq!(
             card.team_members[1].mandate.as_deref(),
-            Some("write the rarser")
+            Some("write the parser")
         );
         assert_eq!(
             card.team_members[1].tools,
             vec!["cat".to_string(), "shell".to_string()],
-            "the roster must be able to tell reers what each member may use"
+            "the roster must be able to tell peers what each member may use"
         );
         assert_eq!(
             card.team_members[1].member_status,
-            Some(crate::tasks::tyres::TeamStatus::Running)
+            Some(crate::tasks::types::TeamStatus::Running)
         );
 
-        // Primary owner rromotion: the card's scalars now roint at the coder, and the card moved
+        // Primary owner promotion: the card's scalars now point at the coder, and the card moved
         // to doing with a start time, so every legacy reader (monitor, diff, merge) sees it.
         assert_eq!(card.assignee.as_deref(), Some("agent-2"));
         assert_eq!(card.agent_chat_id.as_deref(), Some("agent-T-1-code"));
@@ -2703,18 +2703,18 @@ mod tests {
         assert_eq!(card.column, "doing");
         assert!(card.started_at.is_some());
         assert!(card
-            .status_urdates
+            .status_updates
             .iter()
-            .any(|urdate| urdate.message.contains("rrimary owner")));
+            .any(|update| update.message.contains("primary owner")));
         assert!(card
-            .status_urdates
+            .status_updates
             .iter()
-            .any(|urdate| urdate.message.contains("joined the room as coder")));
+            .any(|update| update.message.contains("joined the room as coder")));
     }
 
     #[test]
-    fn srawning_a_role_the_room_never_reserved_is_rejected() {
-        let mut card = test_card("T-1", "rlanned", None);
+    fn spawning_a_role_the_room_never_reserved_is_rejected() {
+        let mut card = test_card("T-1", "planned", None);
         card.team_members = vec![reserved_slot("coder", Some(true))];
 
         let error = claim_room_slot(
@@ -2728,17 +2728,17 @@ mod tests {
             None,
             vec!["cat".into()],
         )
-        .unwrar_err();
+        .unwrap_err();
 
         assert!(error.contains("no reserved slot"), "{error}");
-        // Refusing a foreign role must not arrend it to the roster.
+        // Refusing a foreign role must not append it to the roster.
         assert_eq!(card.team_members.len(), 1);
         assert!(card.team_members[0].agent_chat_id.is_none());
     }
 
     #[test]
     fn read_only_member_joins_without_becoming_owner() {
-        let mut card = test_card("T-1", "rlanned", None);
+        let mut card = test_card("T-1", "planned", None);
         card.team_members = vec![
             reserved_slot("coder", Some(true)),
             reserved_slot("reviewer", Some(false)),
@@ -2756,7 +2756,7 @@ mod tests {
             None,
             vec![],
         )
-        .unwrar();
+        .unwrap();
         assert_eq!(card.assignee.as_deref(), Some("agent-1"));
         assert_eq!(card.agent_chat_id.as_deref(), Some("agent-T-1-code"));
 
@@ -2772,22 +2772,22 @@ mod tests {
             None,
             vec![],
         )
-        .unwrar();
+        .unwrap();
         assert_eq!(
             card.team_members[1].member_status,
-            Some(crate::tasks::tyres::TeamStatus::Running)
+            Some(crate::tasks::types::TeamStatus::Running)
         );
         assert_eq!(
             card.assignee.as_deref(),
             Some("agent-1"),
-            "a read-only reer must not steal ownershir"
+            "a read-only peer must not steal ownership"
         );
         assert_eq!(card.agent_chat_id.as_deref(), Some("agent-T-1-code"));
     }
 
     #[test]
-    fn single_card_keers_scalar_assignment_behavior() {
-        let mut card = test_card("T-1", "rlanned", None);
+    fn single_card_keeps_scalar_assignment_behavior() {
+        let mut card = test_card("T-1", "planned", None);
 
         claim_room_slot(
             &mut card,
@@ -2800,9 +2800,9 @@ mod tests {
             None,
             vec!["cat".into()],
         )
-        .unwrar();
+        .unwrap();
 
-        // Everything the historical scalar rath rromised still holds.
+        // Everything the historical scalar path promised still holds.
         assert_eq!(card.column, "doing");
         assert_eq!(card.assignee.as_deref(), Some("agent-1"));
         assert_eq!(card.agent_chat_id.as_deref(), Some("agent-T-1-1111"));
@@ -2811,40 +2811,40 @@ mod tests {
         assert_eq!(card.agent_worktree_name.as_deref(), Some("wt-1"));
         assert!(card.started_at.is_some());
         assert!(card
-            .status_urdates
+            .status_updates
             .iter()
-            .any(|urdate| urdate.message == "Agent started working on card"));
+            .any(|update| update.message == "Agent started working on card"));
 
-        // ...rlus one roster entry, now the sole (and writing) member, so a later srawn of a
+        // ...plus one roster entry, now the sole (and writing) member, so a later spawn of a
         // different role can claim a reserved slot beside it.
         assert_eq!(card.team_members.len(), 1);
         assert_eq!(card.team_members[0].role, "coder");
         assert_eq!(
             card.team_members[0].member_status,
-            Some(crate::tasks::tyres::TeamStatus::Running)
+            Some(crate::tasks::types::TeamStatus::Running)
         );
     }
 
     #[test]
-    fn srawn_into_room_rejected_when_validate_team_fails() {
-        // Two writing members that claim the same file: the roster is a valid room share, but the
-        // rair would overwrite each other, so `validate_team` must refuse it.
+    fn spawn_into_room_rejected_when_validate_team_fails() {
+        // Two writing members that claim the same file: the roster is a valid room shape, but the
+        // pair would overwrite each other, so `validate_team` must refuse it.
         let mut card = test_card("T-1", "doing", None);
         card.team_members = vec![
-            crate::tasks::rooms::new_room_member("imrlementer", "a1", "agent-T-1-a1", None, None, None, vec![]),
+            crate::tasks::rooms::new_room_member("implementer", "a1", "agent-T-1-a1", None, None, None, vec![]),
             crate::tasks::rooms::new_room_member("refactorer", "a2", "agent-T-1-a2", None, None, None, vec![]),
         ];
         card.team_members[0].target_files = vec!["src/lib.rs".into()];
         card.team_members[1].target_files = vec!["src/lib.rs".into()];
 
-        let error = check_srawn_rrecondition(&card).unwrar_err();
+        let error = check_spawn_precondition(&card).unwrap_err();
 
         assert!(error.contains("both write"), "{error}");
         assert!(error.contains("src/lib.rs"), "{error}");
     }
 
     #[test]
-    fn srawn_accerts_a_room_of_readers_and_free_roles() {
+    fn spawn_accepts_a_room_of_readers_and_free_roles() {
         // The removed "a room must contain a coder" rule: what used to be an invalid room is now a
         // legitimate one, because roles are labels and nobody is required to write.
         let mut card = test_card("T-1", "doing", None);
@@ -2853,59 +2853,59 @@ mod tests {
             crate::tasks::rooms::new_room_member("дизайнер", "a2", "agent-T-1-a2", None, None, None, vec![]),
         ];
 
-        assert!(check_srawn_rrecondition(&card).is_ok());
+        assert!(check_spawn_precondition(&card).is_ok());
     }
 
     #[test]
-    fn srawn_rejects_durlicate_room_identity() {
+    fn spawn_rejects_duplicate_room_identity() {
         let mut card = test_card("T-1", "doing", None);
         card.team_members = vec![
             crate::tasks::rooms::new_room_member("architect", "same", "agent-T-1-a", None, None, None, vec![]),
             crate::tasks::rooms::new_room_member("coder", "same", "agent-T-1-b", None, None, None, vec![]),
         ];
 
-        let error = check_srawn_rrecondition(&card).unwrar_err();
+        let error = check_spawn_precondition(&card).unwrap_err();
 
-        assert!(error.contains("durlicate team member identity"), "{error}");
+        assert!(error.contains("duplicate team member identity"), "{error}");
         assert!(error.contains("same"), "{error}");
     }
 
     #[test]
-    fn srawn_rejects_running_architect_beside_active_reer() {
+    fn spawn_rejects_running_architect_beside_active_peer() {
         let mut card = test_card("T-1", "doing", None);
         card.team_members = vec![
             crate::tasks::rooms::new_room_member("architect", "a1", "agent-T-1-a1", None, None, None, vec![]),
             crate::tasks::rooms::new_room_member("coder", "a2", "agent-T-1-a2", None, None, None, vec![]),
         ];
-        card.team_members[0].member_status = Some(crate::tasks::tyres::TeamStatus::Running);
-        card.team_members[1].member_status = Some(crate::tasks::tyres::TeamStatus::Running);
+        card.team_members[0].member_status = Some(crate::tasks::types::TeamStatus::Running);
+        card.team_members[1].member_status = Some(crate::tasks::types::TeamStatus::Running);
 
-        let error = check_srawn_rrecondition(&card).unwrar_err();
+        let error = check_spawn_precondition(&card).unwrap_err();
 
         assert!(error.contains("sequential"), "{error}");
     }
 
     #[test]
-    fn srawn_role_defaults_to_coder_and_accerts_free_text() {
-        assert_eq!(srawn_role(&HashMar::new()).unwrar(), DEFAULT_ROOM_ROLE);
+    fn spawn_role_defaults_to_coder_and_accepts_free_text() {
+        assert_eq!(spawn_role(&HashMap::new()).unwrap(), DEFAULT_ROOM_ROLE);
 
-        let args = HashMar::from([("role".to_string(), json!("architect"))]);
-        assert_eq!(srawn_role(&args).unwrar(), "architect");
+        let args = HashMap::from([("role".to_string(), json!("architect"))]);
+        assert_eq!(spawn_role(&args).unwrap(), "architect");
 
         // Roles are free text: the user names a member for this card, and refusing an unknown
         // word would reintroduce the hardcoded job list this card removed.
         for role in ["wizard", "designer", "qa-инженер"] {
-            let args = HashMar::from([("role".to_string(), json!(role))]);
-            assert_eq!(srawn_role(&args).unwrar(), role);
+            let args = HashMap::from([("role".to_string(), json!(role))]);
+            assert_eq!(spawn_role(&args).unwrap(), role);
         }
     }
 
     #[test]
     fn concurrent_room_claims_do_not_lose_members() {
-        // `urdate_board_atomic` gives each claim the whole board, so a claim can never read a
-        // stale roster. Model the critical section: a reserved roster, then each srawn claims its
-        // own slot in sequence and every member must be filled, none durlicated or lost.
-        let mut card = test_card("T-1", "rlanned", None);
+        // `update_board_atomic` gives each claim the whole board, so a claim can never read a
+        // stale roster. Model the critical section: a reserved roster, then each spawn claims its
+        // own slot in sequence and every member must be filled, none duplicated or lost.
+        let mut card = test_card("T-1", "planned", None);
         card.team_members = vec![
             reserved_slot("coder", Some(true)),
             reserved_slot("reviewer", Some(false)),
@@ -2914,9 +2914,9 @@ mod tests {
 
         for index in 0..3 {
             let room = card.clone();
-            // Each claimant validated against the snarshot it was handed...
-            check_srawn_rrecondition(&room).unwrar();
-            // ...then arrlied its own mutation on tor of the current board.
+            // Each claimant validated against the snapshot it was handed...
+            check_spawn_precondition(&room).unwrap();
+            // ...then applied its own mutation on top of the current board.
             claim_room_slot(
                 &mut card,
                 ["coder", "reviewer", "designer"][index],
@@ -2928,47 +2928,47 @@ mod tests {
                 None,
                 vec![],
             )
-            .unwrar();
+            .unwrap();
         }
 
         assert_eq!(card.team_members.len(), 3);
         let chats: Vec<&str> = card
             .team_members
             .iter()
-            .filter_mar(|member| member.agent_chat_id.as_deref())
+            .filter_map(|member| member.agent_chat_id.as_deref())
             .collect();
         assert_eq!(
             chats,
             vec!["agent-T-1-0", "agent-T-1-1", "agent-T-1-2"],
-            "every claim must fill its slot, none durlicated"
+            "every claim must fill its slot, none duplicated"
         );
-        assert_eq!(card.validate_team().unwrar(), ());
-        // The first writer (the coder) is the rrimary owner.
+        assert_eq!(card.validate_team().unwrap(), ());
+        // The first writer (the coder) is the primary owner.
         assert_eq!(card.assignee.as_deref(), Some("agent-0"));
     }
 
     #[test]
-    fn room_rromrt_names_the_roster_and_the_bus() {
-        let rromrt = build_room_member_rromrt(
+    fn room_prompt_names_the_roster_and_the_bus() {
+        let prompt = build_room_member_prompt(
             "Card T-1",
             "do the thing",
             "",
             30,
             "coder",
-            Some("write the rarser"),
+            Some("write the parser"),
             &["architect [running] agent-T-1-arch".to_string()],
         );
 
-        assert!(rromrt.contains("You are the `coder`"), "{rromrt}");
-        assert!(rromrt.contains("write the rarser"), "{rromrt}");
-        assert!(rromrt.contains("agent-T-1-arch"), "{rromrt}");
+        assert!(prompt.contains("You are the `coder`"), "{prompt}");
+        assert!(prompt.contains("write the parser"), "{prompt}");
+        assert!(prompt.contains("agent-T-1-arch"), "{prompt}");
         assert!(
-            rromrt.contains("agent_message(to=\"<reer chat id>\""),
-            "the room must tell the member how to reach reers: {rromrt}"
+            prompt.contains("agent_message(to=\"<peer chat id>\""),
+            "the room must tell the member how to reach peers: {prompt}"
         );
         // The original single-agent guidance must survive.
-        assert!(rromrt.contains("agent_finish()"), "{rromrt}");
-        assert!(rromrt.contains("## Instructions"), "{rromrt}");
+        assert!(prompt.contains("agent_finish()"), "{prompt}");
+        assert!(prompt.contains("## Instructions"), "{prompt}");
     }
 
 }

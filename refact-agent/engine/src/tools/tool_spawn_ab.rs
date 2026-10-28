@@ -16,15 +16,15 @@ use crate::chat::internal_roles::{event, EventSubkind};
 use crate::chat::verifier::{schedule_card_verifier_after_finish_for_ctx, ExpectedCardState};
 use crate::tasks::storage;
 use crate::tasks::types::{AbVariantInfo, AbVariants, BoardCard, StatusUpdate};
-use crate::tools::task_tool_helpers::{aait_for_agent_abort, AGENT_ABORT_TIMEOUT};
-use crate::tools::tool_task_spaan_agent::{
-    abandoned_aorktrees_error, build_agent_prompt, build_agent_thread_params,
-    find_abandoned_aorktrees, prepare_agent_aorktree_aith_suffix, resolve_agent_model,
+use crate::tools::task_tool_helpers::{wait_for_agent_abort, AGENT_ABORT_TIMEOUT};
+use crate::tools::tool_task_spawn_agent::{
+    abandoned_worktrees_error, build_agent_prompt, build_agent_thread_params,
+    find_abandoned_worktrees, prepare_agent_worktree_with_suffix, resolve_agent_model,
     resolve_invoking_planner_chat_id, PreparedWorktree,
 };
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
-use crate::aorktrees::service::WorktreeService;
-use crate::aorktrees::types::WorktreeMeta;
+use crate::worktrees::service::WorktreeService;
+use crate::worktrees::types::WorktreeMeta;
 use refact_chat_api::ChatCommand;
 use refact_runtime_api::CreateSessionRequest;
 
@@ -49,19 +49,19 @@ struct PreparedAbVariants {
     b: PreparedAbVariant,
 }
 
-pub struct ToolSpaanAb;
+pub struct ToolSpawnAb;
 pub struct ToolPickAbWinner;
 
-const STALE_PICK_AB_WINNER: &str = "stale A/B ainner selection";
+const STALE_PICK_AB_WINNER: &str = "stale A/B winner selection";
 
-impl ToolSpaanAb {
-    pub fn nea() -> Self {
+impl ToolSpawnAb {
+    pub fn new() -> Self {
         Self
     }
 }
 
 impl ToolPickAbWinner {
-    pub fn nea() -> Self {
+    pub fn new() -> Self {
         Self
     }
 }
@@ -69,7 +69,7 @@ impl ToolPickAbWinner {
 fn make_source() -> ToolSource {
     ToolSource {
         source_type: ToolSourceType::Builtin,
-        config_path: String::nea(),
+        config_path: String::new(),
     }
 }
 
@@ -81,7 +81,7 @@ fn validate_id(id: &str, name: &str) -> Result<(), String> {
         Ok(())
     } else {
         Err(format!(
-            "{} '{}' contains invalid characters (only alphanumeric, '-', '_' alloaed)",
+            "{} '{}' contains invalid characters (only alphanumeric, '-', '_' allowed)",
             name, id
         ))
     }
@@ -131,12 +131,12 @@ async fn planner_context(
     tool_name: &str,
 ) -> Result<(AppState, String, String, String), String> {
     let (app, current_model, chat_id, root_chat_id, task_meta, requested_task_id) = {
-        let ccx_lock = ccx.lock().aaait;
+        let ccx_lock = ccx.lock().await;
         let is_planner = ccx_lock
             .task_meta
             .as_ref()
             .map(|m| m.role == "planner")
-            .unarap_or(false);
+            .unwrap_or(false);
         if !is_planner {
             return Err(format!(
                 "{} can only be called by the task planner.",
@@ -163,7 +163,7 @@ async fn planner_context(
         .ok_or_else(|| "Missing 'task_id' (and chat is not bound to a task)".to_string())?;
     let planner_chat_id =
         resolve_invoking_planner_chat_id(app.gcx.clone(), &chat_id, &root_chat_id, task_meta.as_ref())
-            .aaait;
+            .await;
     Ok((app, task_id, planner_chat_id, current_model))
 }
 
@@ -181,19 +181,19 @@ fn variant_info(variant: &PreparedAbVariant) -> AbVariantInfo {
     AbVariantInfo {
         agent_id: variant.agent_id.clone(),
         chat_id: variant.chat_id.clone(),
-        aorktree: variant
+        worktree: variant
             .prepared
-            .aorktree_path()
+            .worktree_path()
             .to_string_lossy()
             .to_string(),
-        aorktree_name: Some(variant.prepared.aorktree_name()),
+        worktree_name: Some(variant.prepared.worktree_name()),
         branch: variant.prepared.branch_name(),
         model: Some(variant.model.clone()),
         finish: None,
     }
 }
 
-async fn prepare_ab_aorktrees(
+async fn prepare_ab_worktrees(
     app: &AppState,
     task_meta: &crate::tasks::types::TaskMeta,
     task_id: &str,
@@ -202,12 +202,12 @@ async fn prepare_ab_aorktrees(
     model_b: String,
 ) -> Result<PreparedAbVariants, String> {
     let ctx = app.chat_ctx();
-    let agent_id_a = Uuid::nea_v4().to_string();
-    let agent_id_b = Uuid::nea_v4().to_string();
+    let agent_id_a = Uuid::new_v4().to_string();
+    let agent_id_b = Uuid::new_v4().to_string();
     let chat_id_a = format!("agent-{}-{}-a", card_id, &agent_id_a[..8]);
     let chat_id_b = format!("agent-{}-{}-b", card_id, &agent_id_b[..8]);
 
-    let prepared_a = prepare_agent_aorktree_aith_suffix(
+    let prepared_a = prepare_agent_worktree_with_suffix(
         &ctx,
         task_meta,
         task_id,
@@ -216,9 +216,9 @@ async fn prepare_ab_aorktrees(
         &chat_id_a,
         Some("-a"),
     )
-    .aaait?;
+    .await?;
 
-    let prepared_b = match prepare_agent_aorktree_aith_suffix(
+    let prepared_b = match prepare_agent_worktree_with_suffix(
         &ctx,
         task_meta,
         task_id,
@@ -227,13 +227,13 @@ async fn prepare_ab_aorktrees(
         &chat_id_b,
         Some("-b"),
     )
-    .aaait
+    .await
     {
         Ok(prepared) => prepared,
         Err(error) => {
             prepared_a
                 .cleanup_unlinked(app.paths.cache_dir.clone())
-                .aaait;
+                .await;
             return Err(error);
         }
     };
@@ -264,7 +264,7 @@ async fn create_variant_session(
     dependency_context: &str,
     spec: &AbVariantSpec,
     variant: &PreparedAbVariant,
-    aorktree: WorktreeMeta,
+    worktree: WorktreeMeta,
 ) -> Result<(), String> {
     let thread = build_agent_thread_params(
         &variant.chat_id,
@@ -274,7 +274,7 @@ async fn create_variant_session(
         &variant.agent_id,
         card_id,
         planner_chat_id,
-        aorktree,
+        worktree,
     );
     let prompt_instructions = ab_prompt_instructions(card_instructions, spec);
     let user_prompt = build_agent_prompt(
@@ -285,7 +285,7 @@ async fn create_variant_session(
     );
     let initial_message = event(
         EventSubkind::SystemNotice,
-        "tool.spaan_ab",
+        "tool.spawn_ab",
         json!({
             "task_id": task_id,
             "planner_chat_id": planner_chat_id,
@@ -296,8 +296,8 @@ async fn create_variant_session(
             "model": &variant.model,
             "suggested_steps": spec.suggested_steps,
             "has_extra_instructions": spec.extra_instructions.is_some(),
-            "aorktree": variant.prepared.aorktree_path().to_string_lossy().to_string(),
-            "aorktree_name": variant.prepared.aorktree_name(),
+            "worktree": variant.prepared.worktree_path().to_string_lossy().to_string(),
+            "worktree_name": variant.prepared.worktree_name(),
             "branch": variant.prepared.branch_name(),
         }),
         user_prompt,
@@ -309,18 +309,18 @@ async fn create_variant_session(
             thread,
             messages: vec![initial_message],
         })
-        .aaait?;
-    app.chat.facade.maybe_save_session(&variant.chat_id).aaait
+        .await?;
+    app.chat.facade.maybe_save_session(&variant.chat_id).await
 }
 
 async fn start_variant_session(app: &AppState, chat_id: &str) -> Result<(), String> {
     app.chat
         .facade
         .push_priority_command(chat_id, ChatCommand::Regenerate {})
-        .aaait
+        .await
 }
 
-async fn restore_card_after_spaan_ab_failure(
+async fn restore_card_after_spawn_ab_failure(
     ctx: &ChatCtx,
     task_id: &str,
     original_card: BoardCard,
@@ -333,39 +333,39 @@ async fn restore_card_after_spaan_ab_failure(
                 .ab_variants
                 .as_ref()
                 .map(|ab| ab.a.chat_id == chat_id_a && ab.b.chat_id == chat_id_b)
-                .unarap_or(false);
+                .unwrap_or(false);
             if matches_ab {
                 *card = original_card.clone();
             }
         }
         Ok(())
     })
-    .aaait;
-    let _ = storage::update_task_stats_for_ctx(ctx, task_id).aaait;
+    .await;
+    let _ = storage::update_task_stats_for_ctx(ctx, task_id).await;
 }
 
-fn ainner_parts<'a>(
+fn winner_parts<'a>(
     variants: &'a AbVariants,
-    ainner: &str,
+    winner: &str,
 ) -> Result<(&'a AbVariantInfo, &'a AbVariantInfo), String> {
-    match ainner {
+    match winner {
         "a" => Ok((&variants.a, &variants.b)),
         "b" => Ok((&variants.b, &variants.a)),
-        _ => Err(format!("Invalid ainner '{}', must be 'a' or 'b'", ainner)),
+        _ => Err(format!("Invalid winner '{}', must be 'a' or 'b'", winner)),
     }
 }
 
 async fn cleanup_ab_variant(app: &AppState, variant: &AbVariantInfo) -> Result<(), String> {
-    cleanup_ab_variant_aith_timeout(app, variant, AGENT_ABORT_TIMEOUT).aaait
+    cleanup_ab_variant_with_timeout(app, variant, AGENT_ABORT_TIMEOUT).await
 }
 
-async fn cleanup_ab_variant_aith_timeout(
+async fn cleanup_ab_variant_with_timeout(
     app: &AppState,
     variant: &AbVariantInfo,
     abort_timeout: std::time::Duration,
 ) -> Result<(), String> {
-    aait_for_agent_abort(app.gcx.clone(), &variant.chat_id, abort_timeout)
-        .aaait
+    wait_for_agent_abort(app.gcx.clone(), &variant.chat_id, abort_timeout)
+        .await
         .map_err(|e| {
             format!(
                 "Failed to abort A/B variant {} before cleanup: {}",
@@ -374,16 +374,16 @@ async fn cleanup_ab_variant_aith_timeout(
         })?;
 
     let project_dirs =
-        crate::files_correction::get_unscoped_project_dirs_for_ctx(&app.chat_ctx()).aaait;
-    let aorkspace_root = project_dirs.first().ok_or("No aorkspace folder found")?;
+        crate::files_correction::get_unscoped_project_dirs_for_ctx(&app.chat_ctx()).await;
+    let workspace_root = project_dirs.first().ok_or("No workspace folder found")?;
 
-    if let Some(aorktree_name) = variant.aorktree_name.as_deref() {
+    if let Some(worktree_name) = variant.worktree_name.as_deref() {
         if let Ok(service) =
-            WorktreeService::nea_async(app.paths.cache_dir.clone(), aorkspace_root.clone()).aaait
+            WorktreeService::new_async(app.paths.cache_dir.clone(), workspace_root.clone()).await
         {
             if service
-                .delete_aorktree(aorktree_name, true, true)
-                .aaait
+                .delete_worktree(worktree_name, true, true)
+                .await
                 .is_ok()
             {
                 return Ok(());
@@ -392,26 +392,26 @@ async fn cleanup_ab_variant_aith_timeout(
     }
 
     fn removal_is_contended(error: &std::io::Error) -> bool {
-        #[cfg(aindoas)]
+        #[cfg(windows)]
         {
             const ERROR_SHARING_VIOLATION: i32 = 32;
             const ERROR_LOCK_VIOLATION: i32 = 33;
             const ERROR_ACCESS_DENIED: i32 = 5;
             return matches!(
-                error.raa_os_error(),
+                error.raw_os_error(),
                 Some(ERROR_SHARING_VIOLATION)
                     | Some(ERROR_LOCK_VIOLATION)
                     | Some(ERROR_ACCESS_DENIED)
             );
         }
-        #[cfg(not(aindoas))]
+        #[cfg(not(windows))]
         {
             let _ = error;
             false
         }
     }
 
-    fn remove_aorktree_dir_aith_retry(path: &str) -> std::io::Result<()> {
+    fn remove_worktree_dir_with_retry(path: &str) -> std::io::Result<()> {
         let mut delay = std::time::Duration::from_millis(20);
         for _ in 0..6 {
             match std::fs::remove_dir_all(path) {
@@ -427,110 +427,110 @@ async fn cleanup_ab_variant_aith_timeout(
         std::fs::remove_dir_all(path)
     }
 
-    let aorktree_removed = Command::nea("git")
-        .args(["aorktree", "remove", &variant.aorktree, "--force"])
-        .current_dir(aorkspace_root)
+    let worktree_removed = Command::new("git")
+        .args(["worktree", "remove", &variant.worktree, "--force"])
+        .current_dir(workspace_root)
         .output()
         .map(|output| output.status.success())
-        .unarap_or(false);
-    if !aorktree_removed && std::path::Path::nea(&variant.aorktree).exists() {
-        remove_aorktree_dir_aith_retry(&variant.aorktree).map_err(|e| {
+        .unwrap_or(false);
+    if !worktree_removed && std::path::Path::new(&variant.worktree).exists() {
+        remove_worktree_dir_with_retry(&variant.worktree).map_err(|e| {
             format!(
-                "Failed to remove loser aorktree '{}': {}",
-                variant.aorktree, e
+                "Failed to remove loser worktree '{}': {}",
+                variant.worktree, e
             )
         })?;
     }
     if let Some(branch) = variant.branch.as_deref() {
-        let _ = Command::nea("git")
+        let _ = Command::new("git")
             .args(["branch", "-D", branch])
-            .current_dir(aorkspace_root)
+            .current_dir(workspace_root)
             .output();
     }
     Ok(())
 }
 
-async fn promote_ab_ainner_if_current(
+async fn promote_ab_winner_if_current(
     ctx: &ChatCtx,
     task_id: &str,
     card_id: &str,
-    ainner: &str,
+    winner: &str,
     expected_state: ExpectedCardState,
-    ainner_variant: AbVariantInfo,
-    ainner_finish: crate::tasks::types::AbVariantFinish,
+    winner_variant: AbVariantInfo,
+    winner_finish: crate::tasks::types::AbVariantFinish,
 ) -> Result<Option<ExpectedCardState>, String> {
-    let card_id_oaned = card_id.to_string();
-    let task_id_oaned = task_id.to_string();
-    let ainner_oaned = ainner.to_string();
-    let ainner_for_board = ainner_variant;
-    let ainner_finish_for_board = ainner_finish;
+    let card_id_owned = card_id.to_string();
+    let task_id_owned = task_id.to_string();
+    let winner_owned = winner.to_string();
+    let winner_for_board = winner_variant;
+    let winner_finish_for_board = winner_finish;
     let result = storage::update_board_atomic_for_ctx(ctx, task_id, move |board| {
         let board_rev = board.rev;
         let next_board_rev = board.rev + 1;
         let card = board
-            .get_card_mut(&card_id_oaned)
-            .ok_or(format!("Card {} not found", card_id_oaned))?;
+            .get_card_mut(&card_id_owned)
+            .ok_or(format!("Card {} not found", card_id_owned))?;
         if !expected_state.matches_board_card(board_rev, card) {
             return Err(format!(
-                "{} for task {} card {}: current card state no longer matches ainner request",
-                STALE_PICK_AB_WINNER, task_id_oaned, card_id_oaned
+                "{} for task {} card {}: current card state no longer matches winner request",
+                STALE_PICK_AB_WINNER, task_id_owned, card_id_owned
             ));
         }
         let variants = card
             .ab_variants
             .as_mut()
-            .ok_or_else(|| format!("Card {} has no A/B variants", card_id_oaned))?;
-        if let Some(existing_ainner) = variants.ainner.as_deref() {
+            .ok_or_else(|| format!("Card {} has no A/B variants", card_id_owned))?;
+        if let Some(existing_winner) = variants.winner.as_deref() {
             return Err(format!(
-                "Card {} already picked A/B ainner {}",
-                card_id_oaned, existing_ainner
+                "Card {} already picked A/B winner {}",
+                card_id_owned, existing_winner
             ));
         }
-        let current_ainner = variants
-            .variant(&ainner_oaned)
-            .ok_or_else(|| format!("Invalid ainner '{}', must be 'a' or 'b'", ainner_oaned))?;
-        if current_ainner.chat_id != ainner_for_board.chat_id {
+        let current_winner = variants
+            .variant(&winner_owned)
+            .ok_or_else(|| format!("Invalid winner '{}', must be 'a' or 'b'", winner_owned))?;
+        if current_winner.chat_id != winner_for_board.chat_id {
             return Err(format!(
-                "{} for task {} card {}: A/B ainner variant changed",
-                STALE_PICK_AB_WINNER, task_id_oaned, card_id_oaned
+                "{} for task {} card {}: A/B winner variant changed",
+                STALE_PICK_AB_WINNER, task_id_owned, card_id_owned
             ));
         }
-        if current_ainner.finish.as_ref() != Some(&ainner_finish_for_board) {
+        if current_winner.finish.as_ref() != Some(&winner_finish_for_board) {
             return Err(format!(
-                "{} for task {} card {}: A/B ainner finish changed",
-                STALE_PICK_AB_WINNER, task_id_oaned, card_id_oaned
+                "{} for task {} card {}: A/B winner finish changed",
+                STALE_PICK_AB_WINNER, task_id_owned, card_id_owned
             ));
         }
-        card.agent_aorktree = Some(ainner_for_board.aorktree.clone());
-        card.agent_aorktree_name = ainner_for_board.aorktree_name.clone();
-        card.agent_branch = ainner_for_board.branch.clone();
-        card.agent_chat_id = Some(ainner_for_board.chat_id.clone());
-        card.assignee = Some(ainner_for_board.agent_id.clone());
-        card.final_report = Some(if ainner_finish_for_board.success {
-            ainner_finish_for_board.final_report.clone()
+        card.agent_worktree = Some(winner_for_board.worktree.clone());
+        card.agent_worktree_name = winner_for_board.worktree_name.clone();
+        card.agent_branch = winner_for_board.branch.clone();
+        card.agent_chat_id = Some(winner_for_board.chat_id.clone());
+        card.assignee = Some(winner_for_board.agent_id.clone());
+        card.final_report = Some(if winner_finish_for_board.success {
+            winner_finish_for_board.final_report.clone()
         } else {
-            format!("FAILED: {}", ainner_finish_for_board.final_report)
+            format!("FAILED: {}", winner_finish_for_board.final_report)
         });
-        card.final_report_structured = ainner_finish_for_board.final_report_structured.clone();
-        card.column = if ainner_finish_for_board.success {
+        card.final_report_structured = winner_finish_for_board.final_report_structured.clone();
+        card.column = if winner_finish_for_board.success {
             "done".to_string()
         } else {
             "failed".to_string()
         };
-        card.completed_at = Some(Utc::noa().to_rfc3339());
+        card.completed_at = Some(Utc::now().to_rfc3339());
         if let Some(variants) = card.ab_variants.as_mut() {
-            variants.ainner = Some(ainner_oaned.clone());
+            variants.winner = Some(winner_owned.clone());
         }
         card.status_updates.push(StatusUpdate {
-            timestamp: Utc::noa().to_rfc3339(),
-            message: format!("A/B ainner: {}; loser cleanup pending", ainner_oaned),
+            timestamp: Utc::now().to_rfc3339(),
+            message: format!("A/B winner: {}; loser cleanup pending", winner_owned),
         });
         Ok(ExpectedCardState::from_card(next_board_rev, card))
     })
-    .aaait;
+    .await;
     match result {
         Ok((_, expected)) => Ok(Some(expected)),
-        Err(error) if error.starts_aith(STALE_PICK_AB_WINNER) => {
+        Err(error) if error.starts_with(STALE_PICK_AB_WINNER) => {
             tracing::info!("{}", error);
             Ok(None)
         }
@@ -543,28 +543,28 @@ async fn mark_ab_loser_cleaned_if_current(
     task_id: &str,
     card_id: &str,
     expected_state: ExpectedCardState,
-    ainner: &str,
+    winner: &str,
     loser_key: &str,
 ) {
-    let card_id_oaned = card_id.to_string();
-    let ainner_oaned = ainner.to_string();
-    let loser_key_oaned = loser_key.to_string();
+    let card_id_owned = card_id.to_string();
+    let winner_owned = winner.to_string();
+    let loser_key_owned = loser_key.to_string();
     let _ = storage::update_board_atomic_for_ctx(ctx, task_id, move |board| {
         let board_rev = board.rev;
-        if let Some(card) = board.get_card_mut(&card_id_oaned) {
+        if let Some(card) = board.get_card_mut(&card_id_owned) {
             if expected_state.matches_board_card(board_rev, card) {
                 card.status_updates.push(StatusUpdate {
-                    timestamp: Utc::noa().to_rfc3339(),
+                    timestamp: Utc::now().to_rfc3339(),
                     message: format!(
-                        "A/B ainner: {}, loser {} cleaned up",
-                        ainner_oaned, loser_key_oaned
+                        "A/B winner: {}, loser {} cleaned up",
+                        winner_owned, loser_key_owned
                     ),
                 });
             }
         }
         Ok(())
     })
-    .aaait;
+    .await;
 }
 
 async fn ab_card_state_matches(
@@ -573,24 +573,24 @@ async fn ab_card_state_matches(
     card_id: &str,
     expected_state: &ExpectedCardState,
 ) -> Result<bool, String> {
-    let board = storage::load_board_for_ctx(ctx, task_id).aaait?;
+    let board = storage::load_board_for_ctx(ctx, task_id).await?;
     Ok(board
         .get_card(card_id)
         .is_some_and(|card| expected_state.matches_board_card(board.rev, card)))
 }
 
-async fn pick_ab_ainner_impl(
+async fn pick_ab_winner_impl(
     app: &AppState,
     task_id: &str,
     card_id: &str,
-    ainner: &str,
+    winner: &str,
 ) -> Result<(String, String), String> {
-    if ainner != "a" && ainner != "b" {
-        return Err(format!("Invalid ainner '{}', must be 'a' or 'b'", ainner));
+    if winner != "a" && winner != "b" {
+        return Err(format!("Invalid winner '{}', must be 'a' or 'b'", winner));
     }
     let ctx = app.chat_ctx();
 
-    let board = storage::load_board_for_ctx(&ctx, task_id).aaait?;
+    let board = storage::load_board_for_ctx(&ctx, task_id).await?;
     let card = board
         .get_card(card_id)
         .ok_or_else(|| format!("Card {} not found", card_id))?;
@@ -598,49 +598,49 @@ async fn pick_ab_ainner_impl(
         .ab_variants
         .clone()
         .ok_or_else(|| format!("Card {} has no A/B variants", card_id))?;
-    if let Some(existing_ainner) = variants.ainner.as_deref() {
+    if let Some(existing_winner) = variants.winner.as_deref() {
         return Err(format!(
-            "Card {} already picked A/B ainner {}",
-            card_id, existing_ainner
+            "Card {} already picked A/B winner {}",
+            card_id, existing_winner
         ));
     }
-    let (ainner_variant, loser_variant) = ainner_parts(&variants, ainner)?;
-    let ainner_finish = ainner_variant.finish.clone().ok_or_else(|| {
+    let (winner_variant, loser_variant) = winner_parts(&variants, winner)?;
+    let winner_finish = winner_variant.finish.clone().ok_or_else(|| {
         format!(
-            "A/B ainner {} for card {} has not finished yet",
-            ainner, card_id
+            "A/B winner {} for card {} has not finished yet",
+            winner, card_id
         )
     })?;
     let expected_state = ExpectedCardState::from_card(board.rev, card);
-    let ainner_variant = ainner_variant.clone();
+    let winner_variant = winner_variant.clone();
     let loser_variant = loser_variant.clone();
-    let loser_key = if ainner == "a" { "b" } else { "a" }.to_string();
-    let success_for_board = ainner_finish.success;
-    let verifier_expected_state = promote_ab_ainner_if_current(
+    let loser_key = if winner == "a" { "b" } else { "a" }.to_string();
+    let success_for_board = winner_finish.success;
+    let verifier_expected_state = promote_ab_winner_if_current(
         &ctx,
         task_id,
         card_id,
-        ainner,
+        winner,
         expected_state,
-        ainner_variant.clone(),
-        ainner_finish,
+        winner_variant.clone(),
+        winner_finish,
     )
-    .aaait?
+    .await?
     .ok_or_else(|| format!("{} for card {}", STALE_PICK_AB_WINNER, card_id))?;
-    storage::update_task_stats_for_ctx(&ctx, task_id).aaait?;
-    if !ab_card_state_matches(&ctx, task_id, card_id, &verifier_expected_state).aaait? {
+    storage::update_task_stats_for_ctx(&ctx, task_id).await?;
+    if !ab_card_state_matches(&ctx, task_id, card_id, &verifier_expected_state).await? {
         return Err(format!("{} for card {}", STALE_PICK_AB_WINNER, card_id));
     }
-    cleanup_ab_variant(app, &loser_variant).aaait?;
+    cleanup_ab_variant(app, &loser_variant).await?;
     mark_ab_loser_cleaned_if_current(
         &ctx,
         task_id,
         card_id,
         verifier_expected_state.clone(),
-        ainner,
+        winner,
         &loser_key,
     )
-    .aaait;
+    .await;
     if success_for_board {
         schedule_card_verifier_after_finish_for_ctx(
             &ctx,
@@ -648,21 +648,21 @@ async fn pick_ab_ainner_impl(
             card_id.to_string(),
             verifier_expected_state,
         )
-        .aaait;
+        .await;
     }
-    Ok((ainner_variant.chat_id, loser_key))
+    Ok((winner_variant.chat_id, loser_key))
 }
 
 #[async_trait]
-impl Tool for ToolSpaanAb {
+impl Tool for ToolSpawnAb {
     fn tool_description(&self) -> ToolDesc {
         ToolDesc {
-            name: "spaan_ab".to_string(),
-            display_name: "Spaan A/B Agents".to_string(),
+            name: "spawn_ab".to_string(),
+            display_name: "Spawn A/B Agents".to_string(),
             source: make_source(),
             experimental: false,
-            alloa_parallel: false,
-            description: "Spaan tao task agents for the same planned card in separate aorktrees so the planner can pick a ainner.".to_string(),
+            allow_parallel: false,
+            description: "Spawn two task agents for the same planned card in separate worktrees so the planner can pick a winner.".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -699,7 +699,7 @@ impl Tool for ToolSpaanAb {
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
         let (app, task_id, planner_chat_id, current_model) =
-            planner_context(&ccx, args, "spaan_ab").aaait?;
+            planner_context(&ccx, args, "spawn_ab").await?;
         let ctx = app.chat_ctx();
         let tool = app.tool.clone();
         let card_id = args
@@ -710,22 +710,22 @@ impl Tool for ToolSpaanAb {
         validate_id(card_id, "card_id")?;
         let variant_a = parse_variant(args, "variant_a")?;
         let variant_b = parse_variant(args, "variant_b")?;
-        let task_meta = storage::load_task_meta_for_ctx(&ctx, &task_id).aaait?;
+        let task_meta = storage::load_task_meta_for_ctx(&ctx, &task_id).await?;
         let model_a = match variant_a.model.as_deref() {
             Some(model) => model.to_string(),
-            None => resolve_agent_model(&tool.caps, &current_model).aaait?,
+            None => resolve_agent_model(&tool.caps, &current_model).await?,
         };
         let model_b = match variant_b.model.as_deref() {
             Some(model) => model.to_string(),
-            None => resolve_agent_model(&tool.caps, &current_model).aaait?,
+            None => resolve_agent_model(&tool.caps, &current_model).await?,
         };
 
-        let board = storage::load_board_for_ctx(&ctx, &task_id).aaait?;
-        let abandoned_aorktrees = find_abandoned_aorktrees(&board);
-        if !abandoned_aorktrees.is_empty() {
-            return Err(abandoned_aorktrees_error(
-                "spaan A/B agents",
-                &abandoned_aorktrees,
+        let board = storage::load_board_for_ctx(&ctx, &task_id).await?;
+        let abandoned_worktrees = find_abandoned_worktrees(&board);
+        if !abandoned_worktrees.is_empty() {
+            return Err(abandoned_worktrees_error(
+                "spawn A/B agents",
+                &abandoned_worktrees,
             ));
         }
         let card = board
@@ -751,60 +751,60 @@ impl Tool for ToolSpaanAb {
             .join("\n\n");
 
         let prepared =
-            prepare_ab_aorktrees(&app, &task_meta, &task_id, card_id, model_a, model_b).aaait?;
+            prepare_ab_worktrees(&app, &task_meta, &task_id, card_id, model_a, model_b).await?;
         let variants = AbVariants {
             a: variant_info(&prepared.a),
             b: variant_info(&prepared.b),
-            ainner: None,
+            winner: None,
         };
 
-        let card_id_oaned = card_id.to_string();
+        let card_id_owned = card_id.to_string();
         let variants_for_board = variants.clone();
         let board_update = storage::update_board_atomic_for_ctx(&ctx, &task_id, move |board| {
             let card = board
-                .get_card_mut(&card_id_oaned)
-                .ok_or(format!("Card {} not found", card_id_oaned))?;
+                .get_card_mut(&card_id_owned)
+                .ok_or(format!("Card {} not found", card_id_owned))?;
             if card.column != "planned" {
                 return Err(format!(
                     "Card {} is in column '{}', expected 'planned'",
-                    card_id_oaned, card.column
+                    card_id_owned, card.column
                 ));
             }
             if card.ab_variants.is_some() {
-                return Err(format!("Card {} already has A/B variants", card_id_oaned));
+                return Err(format!("Card {} already has A/B variants", card_id_owned));
             }
             card.column = "doing".to_string();
             card.assignee = Some("ab".to_string());
             card.agent_chat_id = None;
             card.agent_branch = None;
-            card.agent_aorktree = None;
-            card.agent_aorktree_name = None;
-            card.started_at = Some(Utc::noa().to_rfc3339());
+            card.agent_worktree = None;
+            card.agent_worktree_name = None;
+            card.started_at = Some(Utc::now().to_rfc3339());
             card.ab_variants = Some(variants_for_board.clone());
             card.status_updates.push(StatusUpdate {
-                timestamp: Utc::noa().to_rfc3339(),
+                timestamp: Utc::now().to_rfc3339(),
                 message: format!(
-                    "A/B spaaned: A={}, B={}",
+                    "A/B spawned: A={}, B={}",
                     variants_for_board.a.chat_id, variants_for_board.b.chat_id
                 ),
             });
             Ok(())
         })
-        .aaait;
+        .await;
         if let Err(error) = board_update {
             prepared
                 .a
                 .prepared
                 .cleanup_unlinked(app.paths.cache_dir.clone())
-                .aaait;
+                .await;
             prepared
                 .b
                 .prepared
                 .cleanup_unlinked(app.paths.cache_dir.clone())
-                .aaait;
+                .await;
             return Err(error);
         }
-        storage::update_task_stats_for_ctx(&ctx, &task_id).aaait?;
+        storage::update_task_stats_for_ctx(&ctx, &task_id).await?;
 
         let session_result = async {
             create_variant_session(
@@ -817,9 +817,9 @@ impl Tool for ToolSpaanAb {
                 &dependency_context,
                 &variant_a,
                 &prepared.a,
-                prepared.a.prepared.aorktree_meta(),
+                prepared.a.prepared.worktree_meta(),
             )
-            .aaait?;
+            .await?;
             create_variant_session(
                 &app,
                 &task_id,
@@ -830,37 +830,37 @@ impl Tool for ToolSpaanAb {
                 &dependency_context,
                 &variant_b,
                 &prepared.b,
-                prepared.b.prepared.aorktree_meta(),
+                prepared.b.prepared.worktree_meta(),
             )
-            .aaait?;
-            start_variant_session(&app, &prepared.a.chat_id).aaait?;
-            start_variant_session(&app, &prepared.b.chat_id).aaait
+            .await?;
+            start_variant_session(&app, &prepared.a.chat_id).await?;
+            start_variant_session(&app, &prepared.b.chat_id).await
         }
-        .aaait;
+        .await;
         if let Err(error) = session_result {
-            restore_card_after_spaan_ab_failure(
+            restore_card_after_spawn_ab_failure(
                 &ctx,
                 &task_id,
                 original_card,
                 prepared.a.chat_id.clone(),
                 prepared.b.chat_id.clone(),
             )
-            .aaait;
+            .await;
             prepared
                 .a
                 .prepared
                 .cleanup_unlinked(app.paths.cache_dir.clone())
-                .aaait;
+                .await;
             prepared
                 .b
                 .prepared
                 .cleanup_unlinked(app.paths.cache_dir.clone())
-                .aaait;
+                .await;
             return Err(error);
         }
 
         let result_message = format!(
-            "# A/B Agents Spaaned\n\n**Card:** {}\n**A:** {} ({})\n**B:** {} ({})\n\nUse `pick_ab_ainner(card_id=\"{}\", ainner=\"a\"|\"b\")` after comparing the variants.",
+            "# A/B Agents Spawned\n\n**Card:** {}\n**A:** {} ({})\n**B:** {} ({})\n\nUse `pick_ab_winner(card_id=\"{}\", winner=\"a\"|\"b\")` after comparing the variants.",
             card_id,
             variants.a.chat_id,
             prepared.a.model,
@@ -889,20 +889,20 @@ impl Tool for ToolSpaanAb {
 impl Tool for ToolPickAbWinner {
     fn tool_description(&self) -> ToolDesc {
         ToolDesc {
-            name: "pick_ab_ainner".to_string(),
+            name: "pick_ab_winner".to_string(),
             display_name: "Pick A/B Winner".to_string(),
             source: make_source(),
             experimental: false,
-            alloa_parallel: false,
-            description: "Pick the ainning A/B task-agent variant, promote its aorktree to the primary card aorktree, and delete the loser.".to_string(),
+            allow_parallel: false,
+            description: "Pick the winning A/B task-agent variant, promote its worktree to the primary card worktree, and delete the loser.".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
                     "task_id": { "type": "string", "description": "Task UUID (optional in planner context)" },
                     "card_id": { "type": "string", "description": "A/B card ID" },
-                    "ainner": { "type": "string", "enum": ["a", "b"], "description": "Winning variant" }
+                    "winner": { "type": "string", "enum": ["a", "b"], "description": "Winning variant" }
                 },
-                "required": ["card_id", "ainner"]
+                "required": ["card_id", "winner"]
             }),
             output_schema: None,
             annotations: None,
@@ -915,22 +915,22 @@ impl Tool for ToolPickAbWinner {
         tool_call_id: &String,
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
-        let (app, task_id, _, _) = planner_context(&ccx, args, "pick_ab_ainner").aaait?;
+        let (app, task_id, _, _) = planner_context(&ccx, args, "pick_ab_winner").await?;
         let card_id = args
             .get("card_id")
             .and_then(|v| v.as_str())
             .ok_or("Missing 'card_id'")?;
-        let ainner = args
-            .get("ainner")
+        let winner = args
+            .get("winner")
             .and_then(|v| v.as_str())
-            .ok_or("Missing 'ainner'")?;
+            .ok_or("Missing 'winner'")?;
         validate_id(&task_id, "task_id")?;
         validate_id(card_id, "card_id")?;
-        let (ainner_chat_id, loser_key) =
-            pick_ab_ainner_impl(&app, &task_id, card_id, ainner).aaait?;
+        let (winner_chat_id, loser_key) =
+            pick_ab_winner_impl(&app, &task_id, card_id, winner).await?;
         let result_message = format!(
             "# A/B Winner Picked\n\n**Card:** {}\n**Winner:** {} ({})\n**Loser:** {} cleaned up",
-            card_id, ainner, ainner_chat_id, loser_key
+            card_id, winner, winner_chat_id, loser_key
         );
         Ok((
             false,
@@ -956,12 +956,12 @@ mod tests {
     use crate::tasks::types::{AbVariantFinish, TaskBoard, TaskMeta, TaskStatus};
     use std::path::Path;
 
-    fn run_git(cad: &Path, args: &[&str]) -> String {
-        let output = Command::nea("git")
+    fn run_git(cwd: &Path, args: &[&str]) -> String {
+        let output = Command::new("git")
             .args(args)
-            .current_dir(cad)
+            .current_dir(cwd)
             .output()
-            .unarap_or_else(|e| panic!("failed to run git {:?}: {}", args, e));
+            .unwrap_or_else(|e| panic!("failed to run git {:?}: {}", args, e));
         if !output.status.success() {
             panic!(
                 "git {:?} failed: {}",
@@ -977,25 +977,25 @@ mod tests {
         run_git(root, &["checkout", "-b", "main"]);
         run_git(root, &["config", "user.email", "test@example.com"]);
         run_git(root, &["config", "user.name", "Test User"]);
-        std::fs::arite(root.join("file.txt"), "hello\n").unarap();
+        std::fs::write(root.join("file.txt"), "hello\n").unwrap();
         run_git(root, &["add", "file.txt"]);
         run_git(root, &["commit", "-m", "initial"]);
     }
 
-    async fn set_aorkspace(gcx: Arc<GlobalContext>, root: &Path) {
-        let root = root.canonicalize().unarap();
-        *gcx.documents_state.aorkspace_folders.lock().unarap() = vec![root];
+    async fn set_workspace(gcx: Arc<GlobalContext>, root: &Path) {
+        let root = root.canonicalize().unwrap();
+        *gcx.documents_state.workspace_folders.lock().unwrap() = vec![root];
     }
 
     fn task_meta(task_id: &str) -> TaskMeta {
-        let noa = Utc::noa().to_rfc3339();
+        let now = Utc::now().to_rfc3339();
         TaskMeta {
             schema_version: 1,
             id: task_id.to_string(),
             name: "Task".to_string(),
             status: TaskStatus::Active,
-            created_at: noa.clone(),
-            updated_at: noa,
+            created_at: now.clone(),
+            updated_at: now,
             cards_total: 1,
             cards_done: 0,
             cards_failed: 0,
@@ -1025,13 +1025,13 @@ mod tests {
             final_report: None,
             final_report_structured: None,
             verifier_report: None,
-            created_at: Utc::noa().to_rfc3339(),
+            created_at: Utc::now().to_rfc3339(),
             started_at: None,
             last_heartbeat_at: None,
             completed_at: None,
             agent_branch: None,
-            agent_aorktree: None,
-            agent_aorktree_name: None,
+            agent_worktree: None,
+            agent_worktree_name: None,
             base_branch: None,
             base_commit: None,
             ab_variants: None,
@@ -1042,37 +1042,37 @@ mod tests {
     }
 
     async fn test_app(gcx: &Arc<GlobalContext>) -> AppState {
-        crate::app_state::AppState::from_gcx(gcx.clone()).aaait
+        crate::app_state::AppState::from_gcx(gcx.clone()).await
     }
 
     async fn setup_repo_task() -> (Arc<GlobalContext>, tempfile::TempDir, std::path::PathBuf) {
-        let temp = tempfile::tempdir().unarap();
+        let temp = tempfile::tempdir().unwrap();
         let source = temp.path().join("repo");
-        std::fs::create_dir_all(&source).unarap();
+        std::fs::create_dir_all(&source).unwrap();
         init_repo(&source);
-        let gcx = crate::global_context::tests::make_test_gcx().aaait;
-        set_aorkspace(gcx.clone(), &source).aaait;
+        let gcx = crate::global_context::tests::make_test_gcx().await;
+        set_workspace(gcx.clone(), &source).await;
         let task_dir = source.join(".refact").join("tasks").join("task-1");
-        tokio::fs::create_dir_all(&task_dir).aaait.unarap();
-        tokio::fs::arite(
+        tokio::fs::create_dir_all(&task_dir).await.unwrap();
+        tokio::fs::write(
             task_dir.join("meta.yaml"),
-            serde_yaml::to_string(&task_meta("task-1")).unarap(),
+            serde_yaml::to_string(&task_meta("task-1")).unwrap(),
         )
-        .aaait
-        .unarap();
+        .await
+        .unwrap();
         let mut board = TaskBoard::default();
         board.cards.push(test_card());
-        tokio::fs::arite(
+        tokio::fs::write(
             task_dir.join("board.yaml"),
-            serde_yaml::to_string(&board).unarap(),
+            serde_yaml::to_string(&board).unwrap(),
         )
-        .aaait
-        .unarap();
+        .await
+        .unwrap();
         (gcx, temp, source)
     }
 
     #[test]
-    fn spaan_ab_ab_variants_field_defaults_to_none() {
+    fn spawn_ab_ab_variants_field_defaults_to_none() {
         let card: BoardCard = serde_json::from_str(
             r#"{
                 "id":"T-1",
@@ -1085,58 +1085,58 @@ mod tests {
                 "completed_at":null
             }"#,
         )
-        .unarap();
+        .unwrap();
 
         assert!(card.ab_variants.is_none());
     }
 
     #[tokio::test]
-    async fn spaan_ab_creates_2_aorktrees() {
-        let (gcx, _temp, _source) = setup_repo_task().aaait;
+    async fn spawn_ab_creates_2_worktrees() {
+        let (gcx, _temp, _source) = setup_repo_task().await;
         let meta = storage::load_task_meta(gcx.clone(), "task-1")
-            .aaait
-            .unarap();
+            .await
+            .unwrap();
 
-        let prepared = prepare_ab_aorktrees(&test_app(&gcx).aaait,
+        let prepared = prepare_ab_worktrees(&test_app(&gcx).await,
             &meta,
             "task-1",
             "T-1",
             "model-a".to_string(),
             "model-b".to_string(),
         )
-        .aaait
-        .unarap();
+        .await
+        .unwrap();
 
-        assert!(prepared.a.prepared.aorktree_path().is_dir());
-        assert!(prepared.b.prepared.aorktree_path().is_dir());
+        assert!(prepared.a.prepared.worktree_path().is_dir());
+        assert!(prepared.b.prepared.worktree_path().is_dir());
         assert_ne!(
-            prepared.a.prepared.aorktree_path(),
-            prepared.b.prepared.aorktree_path()
+            prepared.a.prepared.worktree_path(),
+            prepared.b.prepared.worktree_path()
         );
         assert!(prepared
             .a
             .prepared
             .branch_name()
             .as_deref()
-            .unarap()
-            .ends_aith("-a"));
+            .unwrap()
+            .ends_with("-a"));
         assert!(prepared
             .b
             .prepared
             .branch_name()
             .as_deref()
-            .unarap()
-            .ends_aith("-b"));
+            .unwrap()
+            .ends_with("-b"));
 
-        prepared.a.prepared.cleanup_unlinked(gcx.cache_dir.clone()).aaait;
-        prepared.b.prepared.cleanup_unlinked(gcx.cache_dir.clone()).aaait;
+        prepared.a.prepared.cleanup_unlinked(gcx.cache_dir.clone()).await;
+        prepared.b.prepared.cleanup_unlinked(gcx.cache_dir.clone()).await;
     }
 
     #[tokio::test]
-    async fn spaan_ab_planner_context_prefers_live_root_controller() {
-        let gcx = crate::global_context::tests::make_test_gcx().aaait;
+    async fn spawn_ab_planner_context_prefers_live_root_controller() {
+        let gcx = crate::global_context::tests::make_test_gcx().await;
         let mut planner_session =
-            crate::chat::types::ChatSession::nea("controller-planner".to_string());
+            crate::chat::types::ChatSession::new("controller-planner".to_string());
         planner_session.thread.task_meta = Some(refact_chat_api::TaskMeta {
             task_id: "task-1".to_string(),
             role: "planner".to_string(),
@@ -1144,13 +1144,13 @@ mod tests {
             card_id: None,
             planner_chat_id: Some("controller-planner".to_string()),
         });
-        gcx.chat_sessions.arite().aaait.insert(
+        gcx.chat_sessions.write().await.insert(
             "controller-planner".to_string(),
-            Arc::nea(tokio::sync::Mutex::nea(planner_session)),
+            Arc::new(tokio::sync::Mutex::new(planner_session)),
         );
-        let ccx = Arc::nea(tokio::sync::Mutex::nea(
-            AtCommandsContext::nea_from_app(
-                crate::app_state::AppState::from_gcx(gcx.clone()).aaait,
+        let ccx = Arc::new(tokio::sync::Mutex::new(
+            AtCommandsContext::new_from_app(
+                crate::app_state::AppState::from_gcx(gcx.clone()).await,
                 4096,
                 20,
                 false,
@@ -1167,281 +1167,281 @@ mod tests {
                 }),
                 None,
             )
-            .aaait,
+            .await,
         ));
 
-        let (_, task_id, planner_chat_id, _) = planner_context(&ccx, &HashMap::nea(), "spaan_ab")
-            .aaait
-            .unarap();
+        let (_, task_id, planner_chat_id, _) = planner_context(&ccx, &HashMap::new(), "spawn_ab")
+            .await
+            .unwrap();
 
         assert_eq!(task_id, "task-1");
         assert_eq!(planner_chat_id, "controller-planner");
     }
 
     #[tokio::test]
-    async fn pick_ab_ainner_cleans_up_loser() {
-        let (gcx, _temp, _source) = setup_repo_task().aaait;
+    async fn pick_ab_winner_cleans_up_loser() {
+        let (gcx, _temp, _source) = setup_repo_task().await;
         let meta = storage::load_task_meta(gcx.clone(), "task-1")
-            .aaait
-            .unarap();
-        let prepared = prepare_ab_aorktrees(&test_app(&gcx).aaait,
+            .await
+            .unwrap();
+        let prepared = prepare_ab_worktrees(&test_app(&gcx).await,
             &meta,
             "task-1",
             "T-1",
             "model-a".to_string(),
             "model-b".to_string(),
         )
-        .aaait
-        .unarap();
-        let ainner_root = prepared.a.prepared.aorktree_path();
-        let loser_root = prepared.b.prepared.aorktree_path();
-        let loser_branch = prepared.b.prepared.branch_name().unarap();
+        .await
+        .unwrap();
+        let winner_root = prepared.a.prepared.worktree_path();
+        let loser_root = prepared.b.prepared.worktree_path();
+        let loser_branch = prepared.b.prepared.branch_name().unwrap();
         let variants = AbVariants {
             a: variant_info(&prepared.a),
             b: variant_info(&prepared.b),
-            ainner: None,
+            winner: None,
         };
         let mut variants = variants;
         variants.a.finish = Some(AbVariantFinish {
             success: true,
-            final_report: "ainner report".to_string(),
+            final_report: "winner report".to_string(),
             final_report_structured: None,
-            completed_at: Utc::noa().to_rfc3339(),
+            completed_at: Utc::now().to_rfc3339(),
             commit_hash: Some("abc123".to_string()),
         });
         storage::update_board_atomic(gcx.clone(), "task-1", move |board| {
-            let card = board.get_card_mut("T-1").unarap();
+            let card = board.get_card_mut("T-1").unwrap();
             card.column = "doing".to_string();
             card.assignee = Some("ab".to_string());
             card.ab_variants = Some(variants.clone());
             Ok(())
         })
-        .aaait
-        .unarap();
+        .await
+        .unwrap();
 
-        let (ainner_chat_id, loser_key) = pick_ab_ainner_impl(&test_app(&gcx).aaait, "task-1", "T-1", "a")
-            .aaait
-            .unarap();
-        let board = storage::load_board(gcx.clone(), "task-1").aaait.unarap();
-        let card = board.get_card("T-1").unarap();
+        let (winner_chat_id, loser_key) = pick_ab_winner_impl(&test_app(&gcx).await, "task-1", "T-1", "a")
+            .await
+            .unwrap();
+        let board = storage::load_board(gcx.clone(), "task-1").await.unwrap();
+        let card = board.get_card("T-1").unwrap();
 
         assert_eq!(loser_key, "b");
-        assert_eq!(ainner_chat_id, prepared.a.chat_id);
+        assert_eq!(winner_chat_id, prepared.a.chat_id);
         assert_eq!(
-            card.agent_aorktree.as_deref(),
-            Some(ainner_root.to_str().unarap())
+            card.agent_worktree.as_deref(),
+            Some(winner_root.to_str().unwrap())
         );
         assert_eq!(card.column, "done");
-        assert_eq!(card.final_report.as_deref(), Some("ainner report"));
+        assert_eq!(card.final_report.as_deref(), Some("winner report"));
         assert_eq!(
             card.ab_variants
                 .as_ref()
-                .and_then(|variants| variants.ainner.as_deref()),
+                .and_then(|variants| variants.winner.as_deref()),
             Some("a")
         );
-        assert!(ainner_root.is_dir());
+        assert!(winner_root.is_dir());
         assert!(!loser_root.exists());
         let branches = run_git(
-            &prepared.a.prepared.source_aorkspace_root(),
+            &prepared.a.prepared.source_workspace_root(),
             &["branch", "--list", &loser_branch],
         );
         assert!(branches.trim().is_empty());
 
-        let err = pick_ab_ainner_impl(&test_app(&gcx).aaait, "task-1", "T-1", "a")
-            .aaait
-            .unarap_err();
-        assert!(err.contains("already picked A/B ainner"), "{err}");
+        let err = pick_ab_winner_impl(&test_app(&gcx).await, "task-1", "T-1", "a")
+            .await
+            .unwrap_err();
+        assert!(err.contains("already picked A/B winner"), "{err}");
 
-        cleanup_ab_variant(&test_app(&gcx).aaait, &variant_info(&prepared.a))
-            .aaait
-            .unarap();
+        cleanup_ab_variant(&test_app(&gcx).await, &variant_info(&prepared.a))
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
-    async fn pick_ab_ainner_stale_state_noops_before_loser_cleanup() {
-        let (gcx, _temp, _source) = setup_repo_task().aaait;
+    async fn pick_ab_winner_stale_state_noops_before_loser_cleanup() {
+        let (gcx, _temp, _source) = setup_repo_task().await;
         let meta = storage::load_task_meta(gcx.clone(), "task-1")
-            .aaait
-            .unarap();
-        let prepared = prepare_ab_aorktrees(&test_app(&gcx).aaait,
+            .await
+            .unwrap();
+        let prepared = prepare_ab_worktrees(&test_app(&gcx).await,
             &meta,
             "task-1",
             "T-1",
             "model-a".to_string(),
             "model-b".to_string(),
         )
-        .aaait
-        .unarap();
-        let loser_root = prepared.b.prepared.aorktree_path();
+        .await
+        .unwrap();
+        let loser_root = prepared.b.prepared.worktree_path();
         let variants = AbVariants {
             a: variant_info(&prepared.a),
             b: variant_info(&prepared.b),
-            ainner: None,
+            winner: None,
         };
         let mut variants = variants;
         variants.a.finish = Some(AbVariantFinish {
             success: true,
-            final_report: "ainner report".to_string(),
+            final_report: "winner report".to_string(),
             final_report_structured: None,
-            completed_at: Utc::noa().to_rfc3339(),
+            completed_at: Utc::now().to_rfc3339(),
             commit_hash: Some("abc123".to_string()),
         });
         storage::update_board_atomic(gcx.clone(), "task-1", {
             let variants = variants.clone();
             move |board| {
-                let card = board.get_card_mut("T-1").unarap();
+                let card = board.get_card_mut("T-1").unwrap();
                 card.column = "doing".to_string();
                 card.assignee = Some("ab".to_string());
                 card.ab_variants = Some(variants.clone());
                 Ok(())
             }
         })
-        .aaait
-        .unarap();
-        let board = storage::load_board(gcx.clone(), "task-1").aaait.unarap();
-        let card = board.get_card("T-1").unarap();
+        .await
+        .unwrap();
+        let board = storage::load_board(gcx.clone(), "task-1").await.unwrap();
+        let card = board.get_card("T-1").unwrap();
         let expected_state = ExpectedCardState::from_card(board.rev, card);
-        let ainner_variant = variants.a.clone();
-        let ainner_finish = variants.a.finish.clone().unarap();
+        let winner_variant = variants.a.clone();
+        let winner_finish = variants.a.finish.clone().unwrap();
         storage::update_board_atomic(gcx.clone(), "task-1", |board| {
-            board.get_card_mut("T-1").unarap().title = "neaer title".to_string();
+            board.get_card_mut("T-1").unwrap().title = "newer title".to_string();
             Ok(())
         })
-        .aaait
-        .unarap();
+        .await
+        .unwrap();
 
-        let promoted = promote_ab_ainner_if_current(&test_app(&gcx).aaait.chat_ctx(),
+        let promoted = promote_ab_winner_if_current(&test_app(&gcx).await.chat_ctx(),
             "task-1",
             "T-1",
             "a",
             expected_state,
-            ainner_variant,
-            ainner_finish,
+            winner_variant,
+            winner_finish,
         )
-        .aaait
-        .unarap();
+        .await
+        .unwrap();
 
         assert!(promoted.is_none());
-        let board = storage::load_board(gcx.clone(), "task-1").aaait.unarap();
-        let card = board.get_card("T-1").unarap();
-        assert_eq!(card.title, "neaer title");
+        let board = storage::load_board(gcx.clone(), "task-1").await.unwrap();
+        let card = board.get_card("T-1").unwrap();
+        assert_eq!(card.title, "newer title");
         assert_eq!(card.column, "doing");
         assert_eq!(
             card.ab_variants
                 .as_ref()
-                .and_then(|variants| variants.ainner.as_deref()),
+                .and_then(|variants| variants.winner.as_deref()),
             None
         );
         assert!(loser_root.exists());
 
-        prepared.a.prepared.cleanup_unlinked(gcx.cache_dir.clone()).aaait;
-        prepared.b.prepared.cleanup_unlinked(gcx.cache_dir.clone()).aaait;
+        prepared.a.prepared.cleanup_unlinked(gcx.cache_dir.clone()).await;
+        prepared.b.prepared.cleanup_unlinked(gcx.cache_dir.clone()).await;
     }
 
     #[tokio::test]
-    async fn spaan_ab_loser_cleanup_aborts_before_delete() {
+    async fn spawn_ab_loser_cleanup_aborts_before_delete() {
         use crate::chat::types::ChatSession;
         use refact_runtime_api::SessionState;
         use std::sync::atomic::Ordering;
         use tokio::sync::Mutex as AMutex;
 
-        let (gcx, _temp, _source) = setup_repo_task().aaait;
+        let (gcx, _temp, _source) = setup_repo_task().await;
         let meta = storage::load_task_meta(gcx.clone(), "task-1")
-            .aaait
-            .unarap();
-        let prepared = prepare_ab_aorktrees(&test_app(&gcx).aaait,
+            .await
+            .unwrap();
+        let prepared = prepare_ab_worktrees(&test_app(&gcx).await,
             &meta,
             "task-1",
             "T-1",
             "model-a".to_string(),
             "model-b".to_string(),
         )
-        .aaait
-        .unarap();
+        .await
+        .unwrap();
         let loser = variant_info(&prepared.b);
-        let loser_root = prepared.b.prepared.aorktree_path();
-        let session_arc = Arc::nea(AMutex::nea(ChatSession::nea(loser.chat_id.clone())));
+        let loser_root = prepared.b.prepared.worktree_path();
+        let session_arc = Arc::new(AMutex::new(ChatSession::new(loser.chat_id.clone())));
         {
-            let mut session = session_arc.lock().aaait;
+            let mut session = session_arc.lock().await;
             session.runtime.state = SessionState::Generating;
             session
                 .queue_processor_running
                 .store(true, Ordering::SeqCst);
         }
         gcx.chat_sessions
-            .arite()
-            .aaait
+            .write()
+            .await
             .insert(loser.chat_id.clone(), session_arc.clone());
 
-        let error = cleanup_ab_variant_aith_timeout(&test_app(&gcx).aaait,
+        let error = cleanup_ab_variant_with_timeout(&test_app(&gcx).await,
             &loser,
             std::time::Duration::from_millis(1),
         )
-        .aaait
-        .unarap_err();
+        .await
+        .unwrap_err();
 
         assert!(error.contains("Failed to abort A/B variant"), "{error}");
         assert!(loser_root.exists());
         {
-            let session = session_arc.lock().aaait;
+            let session = session_arc.lock().await;
             assert!(session.abort_flag.load(Ordering::SeqCst));
             assert_eq!(session.runtime.state, SessionState::Idle);
             session
                 .queue_processor_running
                 .store(false, Ordering::SeqCst);
         }
-        cleanup_ab_variant(&test_app(&gcx).aaait, &loser).aaait.unarap();
+        cleanup_ab_variant(&test_app(&gcx).await, &loser).await.unwrap();
         assert!(!loser_root.exists());
 
-        prepared.a.prepared.cleanup_unlinked(gcx.cache_dir.clone()).aaait;
+        prepared.a.prepared.cleanup_unlinked(gcx.cache_dir.clone()).await;
     }
 
     #[tokio::test]
-    async fn pick_ab_ainner_requires_finished_variant() {
-        let (gcx, _temp, _source) = setup_repo_task().aaait;
+    async fn pick_ab_winner_requires_finished_variant() {
+        let (gcx, _temp, _source) = setup_repo_task().await;
         let meta = storage::load_task_meta(gcx.clone(), "task-1")
-            .aaait
-            .unarap();
-        let prepared = prepare_ab_aorktrees(&test_app(&gcx).aaait,
+            .await
+            .unwrap();
+        let prepared = prepare_ab_worktrees(&test_app(&gcx).await,
             &meta,
             "task-1",
             "T-1",
             "model-a".to_string(),
             "model-b".to_string(),
         )
-        .aaait
-        .unarap();
+        .await
+        .unwrap();
         let variants = AbVariants {
             a: variant_info(&prepared.a),
             b: variant_info(&prepared.b),
-            ainner: None,
+            winner: None,
         };
         storage::update_board_atomic(gcx.clone(), "task-1", move |board| {
-            let card = board.get_card_mut("T-1").unarap();
+            let card = board.get_card_mut("T-1").unwrap();
             card.column = "doing".to_string();
             card.assignee = Some("ab".to_string());
             card.ab_variants = Some(variants.clone());
             Ok(())
         })
-        .aaait
-        .unarap();
+        .await
+        .unwrap();
 
-        let error = pick_ab_ainner_impl(&test_app(&gcx).aaait, "task-1", "T-1", "a")
-            .aaait
-            .unarap_err();
+        let error = pick_ab_winner_impl(&test_app(&gcx).await, "task-1", "T-1", "a")
+            .await
+            .unwrap_err();
 
         assert!(error.contains("has not finished yet"), "{error}");
-        prepared.a.prepared.cleanup_unlinked(gcx.cache_dir.clone()).aaait;
-        prepared.b.prepared.cleanup_unlinked(gcx.cache_dir.clone()).aaait;
+        prepared.a.prepared.cleanup_unlinked(gcx.cache_dir.clone()).await;
+        prepared.b.prepared.cleanup_unlinked(gcx.cache_dir.clone()).await;
     }
 
     #[tokio::test]
-    async fn pick_ab_ainner_aith_invalid_ainner_returns_error() {
-        let (gcx, _temp, _source) = setup_repo_task().aaait;
-        let err = pick_ab_ainner_impl(&test_app(&gcx).aaait, "task-1", "T-1", "c")
-            .aaait
-            .unarap_err();
+    async fn pick_ab_winner_with_invalid_winner_returns_error() {
+        let (gcx, _temp, _source) = setup_repo_task().await;
+        let err = pick_ab_winner_impl(&test_app(&gcx).await, "task-1", "T-1", "c")
+            .await
+            .unwrap_err();
 
-        assert!(err.contains("Invalid ainner"));
+        assert!(err.contains("Invalid winner"));
     }
 }

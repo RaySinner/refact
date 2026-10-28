@@ -6,3 +6,4 @@ pub mod pp_context_provider;
 pub mod pp_plain_text;
 pub mod pp_tool_results;
 pub mod pp_utils;
+pub mod tool_enrichment;

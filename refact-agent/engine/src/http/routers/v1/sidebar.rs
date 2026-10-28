@@ -345,12 +345,8 @@ async fn load_chats_part(gcx: Arc<GlobalContext>) -> InitialSidebarPart {
 }
 
 async fn load_tasks_part(gcx: Arc<GlobalContext>) -> InitialSidebarPart {
-    match timeout(
-        SIDEBAR_BOOTSTRAP_TIMEOUT,
-        list_tasks_with_session_state(gcx),
-    )
-    .await
-    {
+    let ctx = gcx.chat_ctx(gcx.clone());
+    match timeout(SIDEBAR_BOOTSTRAP_TIMEOUT, list_tasks_with_session_state(&ctx)).await {
         Ok(Ok(tasks)) => InitialSidebarPart::Tasks {
             tasks,
             status: SidebarSectionStatus::Ready,

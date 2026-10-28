@@ -134,6 +134,20 @@ pub async fn ensure_tasks_dir_for_ctx(ctx: &crate::chat::ctx::ChatCtx) -> Result
     Ok(dir)
 }
 
+async fn get_tasks_dir_for_ctx(ctx: &crate::chat::ctx::ChatCtx) -> Result<PathBuf, String> {
+    let project_dirs = crate::files_correction::get_unscoped_project_dirs_for_ctx(ctx).await;
+    let workspace_root = project_dirs.first().ok_or("No workspace folder found")?;
+    Ok(workspace_root.join(".refact").join(TASKS_DIR))
+}
+
+async fn ensure_tasks_dir_for_ctx(ctx: &crate::chat::ctx::ChatCtx) -> Result<PathBuf, String> {
+    let dir = get_tasks_dir_for_ctx(ctx).await?;
+    if !dir.exists() {
+        fs::create_dir_all(&dir).await.map_err(|e| e.to_string())?;
+    }
+    Ok(dir)
+}
+
 pub fn validate_task_id(task_id: &str) -> Result<(), String> {
     if task_id.is_empty() {
         return Err("Task ID cannot be empty".into());
@@ -357,7 +371,14 @@ pub async fn load_planner_instructions(
     gcx: Arc<GlobalContext>,
     task_id: &str,
 ) -> Result<String, String> {
-    let task_dir = find_task_dir(gcx, task_id).await?;
+    load_planner_instructions_for_ctx(&gcx.chat_ctx(gcx.clone()), task_id).await
+}
+
+pub async fn load_planner_instructions_for_ctx(
+    ctx: &crate::chat::ctx::ChatCtx,
+    task_id: &str,
+) -> Result<String, String> {
+    let task_dir = find_task_dir_for_ctx(ctx, task_id).await?;
     let path = task_dir.join("planner_instructions.md");
     if !path.exists() {
         return Ok(String::new());
@@ -370,7 +391,15 @@ pub async fn save_planner_instructions(
     task_id: &str,
     content: &str,
 ) -> Result<(), String> {
-    let task_dir = find_task_dir(gcx, task_id).await?;
+    save_planner_instructions_for_ctx(&gcx.chat_ctx(gcx.clone()), task_id, content).await
+}
+
+pub async fn save_planner_instructions_for_ctx(
+    ctx: &crate::chat::ctx::ChatCtx,
+    task_id: &str,
+    content: &str,
+) -> Result<(), String> {
+    let task_dir = find_task_dir_for_ctx(ctx, task_id).await?;
     let path = task_dir.join("planner_instructions.md");
     fs::write(&path, content).await.map_err(|e| e.to_string())
 }
@@ -488,7 +517,14 @@ pub async fn create_task_for_ctx(
 }
 
 pub async fn delete_task(gcx: Arc<GlobalContext>, task_id: &str) -> Result<(), String> {
-    let task_dir = find_task_dir(gcx.clone(), task_id).await?;
+    delete_task_for_ctx(&gcx.chat_ctx(gcx.clone()), task_id).await
+}
+
+pub async fn delete_task_for_ctx(
+    ctx: &crate::chat::ctx::ChatCtx,
+    task_id: &str,
+) -> Result<(), String> {
+    let task_dir = find_task_dir_for_ctx(ctx, task_id).await?;
     let tasks_dir = task_dir.parent().map(Path::to_path_buf);
     fs::remove_dir_all(&task_dir)
         .await
@@ -501,8 +537,8 @@ pub async fn delete_task(gcx: Arc<GlobalContext>, task_id: &str) -> Result<(), S
             );
         }
     }
-    emit_task_event(
-        gcx,
+    emit_task_event_for_services(
+        &ctx.chat,
         TaskEvent::TaskDeleted {
             task_id: task_id.to_string(),
         },
@@ -617,8 +653,15 @@ pub async fn next_planner_chat_id(
     gcx: Arc<GlobalContext>,
     task_id: &str,
 ) -> Result<String, String> {
-    let existing = list_task_trajectories_for(
-        gcx,
+    next_planner_chat_id_for_ctx(&gcx.chat_ctx(gcx.clone()), task_id).await
+}
+
+pub async fn next_planner_chat_id_for_ctx(
+    ctx: &crate::chat::ctx::ChatCtx,
+    task_id: &str,
+) -> Result<String, String> {
+    let existing = list_task_trajectories_for_ctx(
+        ctx,
         task_id,
         "planner",
         None,

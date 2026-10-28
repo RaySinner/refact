@@ -13,9 +13,9 @@ use tokio::sync::broadcast;
 use chrono::Utc;
 
 use crate::app_state::AppState;
-use crate::global_context::GlobalContext;
+use crate::chat::ctx::ChatCtx;
 use crate::custom_error::ScratchError;
-use crate::files_correction::get_project_dirs;
+use crate::files_correction::get_unscoped_project_dirs_for_ctx;
 use crate::worktrees::service::WorktreeService;
 use crate::tasks::comments::{self, CreateCardComment};
 use crate::tasks::types::{BoardCard, StatusUpdate, TaskBoard, TaskMeta, TaskStatus, TeamMember, TrajectoryInfo};
@@ -140,16 +140,14 @@ pub enum BoardPatch {
     },
 }
 
-async fn enrich_task_with_session_state(gcx: Arc<GlobalContext>, task: &mut TaskMeta) {
-    crate::tasks::events::enrich_task_with_session_state(gcx, task).await;
+async fn enrich_task_with_session_state(ctx: &ChatCtx, task: &mut TaskMeta) {
+    crate::tasks::events::enrich_task_with_session_state_for_services(&ctx.chat, task).await;
 }
 
-pub async fn list_tasks_with_session_state(
-    gcx: Arc<GlobalContext>,
-) -> Result<Vec<TaskMeta>, String> {
-    let mut tasks = storage::list_tasks(gcx.clone()).await?;
+pub async fn list_tasks_with_session_state(ctx: &ChatCtx) -> Result<Vec<TaskMeta>, String> {
+    let mut tasks = storage::list_tasks_for_ctx(ctx).await?;
     for task in &mut tasks {
-        enrich_task_with_session_state(gcx.clone(), task).await;
+        enrich_task_with_session_state(ctx, task).await;
     }
     Ok(tasks)
 }
@@ -157,8 +155,7 @@ pub async fn list_tasks_with_session_state(
 pub async fn handle_list_tasks(
     State(app): State<AppState>,
 ) -> Result<Json<Vec<TaskMeta>>, (StatusCode, String)> {
-    let gcx = app.gcx.clone();
-    let tasks = list_tasks_with_session_state(gcx)
+    let tasks = list_tasks_with_session_state(&app.chat_ctx())
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     Ok(Json(tasks))
@@ -168,13 +165,13 @@ pub async fn handle_create_task(
     State(app): State<AppState>,
     Json(req): Json<CreateTaskRequest>,
 ) -> Result<Json<TaskMeta>, (StatusCode, String)> {
-    let gcx = app.gcx.clone();
-    let mut meta = storage::create_task(gcx.clone(), &req.name)
+    let ctx = app.chat_ctx();
+    let mut meta = storage::create_task_for_ctx(&ctx, &req.name)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     if !req.target_files.is_empty() {
         let now = Utc::now().to_rfc3339();
-        let mut board = storage::load_board(gcx.clone(), &meta.id)
+        let mut board = storage::load_board_for_ctx(&ctx, &meta.id)
             .await
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
         board.cards.push(BoardCard {
@@ -206,10 +203,10 @@ pub async fn handle_create_task(
             scope_guard_mode: Default::default(),
             team_members: vec![],
         });
-        storage::save_board(gcx.clone(), &meta.id, &board)
+        storage::save_board_for_ctx(&ctx, &meta.id, &board)
             .await
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
-        meta = storage::update_task_stats(gcx.clone(), &meta.id)
+        meta = storage::update_task_stats_for_ctx(&ctx, &meta.id)
             .await
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     }
@@ -220,11 +217,11 @@ pub async fn handle_get_task(
     State(app): State<AppState>,
     Path(task_id): Path<String>,
 ) -> Result<Json<Value>, (StatusCode, String)> {
-    let gcx = app.gcx.clone();
-    let meta = storage::load_task_meta(gcx.clone(), &task_id)
+    let ctx = app.chat_ctx();
+    let meta = storage::load_task_meta_for_ctx(&ctx, &task_id)
         .await
         .map_err(|e| (StatusCode::NOT_FOUND, e))?;
-    let board = storage::load_board(gcx.clone(), &task_id)
+    let board = storage::load_board_for_ctx(&ctx, &task_id)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     let ready = board.get_ready_cards();
@@ -246,10 +243,9 @@ pub struct DeleteTaskQuery {
 }
 
 async fn remove_task_sessions(
-    gcx: &GlobalContext,
+    sessions: &crate::chat::SessionsMap,
     task_id: &str,
 ) -> Vec<(String, Arc<tokio::sync::Mutex<crate::chat::types::ChatSession>>)> {
-    let sessions = gcx.chat_sessions.clone();
     let live_sessions = {
         let read_guard = sessions.read().await;
         read_guard
@@ -322,15 +318,15 @@ async fn remove_task_trajectory_index_entries(app: &AppState, task_dir: &std::pa
 }
 
 async fn delete_task_worktrees(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     task_id: &str,
     card_worktrees: &HashSet<String>,
 ) {
-    let project_dirs = get_project_dirs(gcx.clone()).await;
+    let project_dirs = get_unscoped_project_dirs_for_ctx(ctx).await;
     let Some(project_root) = project_dirs.into_iter().next() else {
         return;
     };
-    let service = match WorktreeService::new_async(gcx.cache_dir.clone(), project_root).await {
+    let service = match WorktreeService::new_async(ctx.paths.cache_dir.clone(), project_root).await {
         Ok(service) => service,
         Err(e) => {
             tracing::warn!(
@@ -377,12 +373,12 @@ pub async fn handle_delete_task(
     Path(task_id): Path<String>,
     Query(query): Query<DeleteTaskQuery>,
 ) -> Result<Json<Value>, (StatusCode, String)> {
-    let gcx = app.gcx.clone();
-    let task_dir = storage::find_task_dir(gcx.clone(), &task_id)
+    let ctx = app.chat_ctx();
+    let task_dir = storage::find_task_dir_for_ctx(&ctx, &task_id)
         .await
         .map_err(|e| (StatusCode::NOT_FOUND, e))?;
 
-    let board = storage::load_board(gcx.clone(), &task_id)
+    let board = storage::load_board_for_ctx(&ctx, &task_id)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
@@ -412,7 +408,7 @@ pub async fn handle_delete_task(
         .filter_map(|c| c.agent_worktree_name.clone())
         .collect();
 
-    let removed_sessions = remove_task_sessions(&gcx, &task_id).await;
+    let removed_sessions = remove_task_sessions(&ctx.chat.sessions, &task_id).await;
     for (chat_id, session_arc) in removed_sessions {
         match tokio::time::timeout(std::time::Duration::from_millis(500), session_arc.lock()).await
         {
@@ -427,11 +423,11 @@ pub async fn handle_delete_task(
         }
     }
 
-    delete_task_worktrees(gcx.clone(), &task_id, &card_worktrees).await;
+    delete_task_worktrees(&ctx, &task_id, &card_worktrees).await;
 
     remove_task_trajectory_index_entries(&app, &task_dir).await;
 
-    storage::delete_task(gcx, &task_id)
+    storage::delete_task_for_ctx(&ctx, &task_id)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     Ok(Json(json!({"deleted": true})))
@@ -532,8 +528,7 @@ pub async fn handle_get_board(
     State(app): State<AppState>,
     Path(task_id): Path<String>,
 ) -> Result<Json<TaskBoard>, (StatusCode, String)> {
-    let gcx = app.gcx.clone();
-    let board = storage::load_board(gcx, &task_id)
+    let board = storage::load_board_for_ctx(&app.chat_ctx(), &task_id)
         .await
         .map_err(|e| (StatusCode::NOT_FOUND, e))?;
     Ok(Json(board))
@@ -544,8 +539,8 @@ pub async fn handle_create_card_comment(
     Path((task_id, card_id)): Path<(String, String)>,
     Json(req): Json<CreateCardCommentRequest>,
 ) -> Result<Json<TaskBoard>, (StatusCode, String)> {
-    let (board, _) = comments::create_card_comment(
-        app.gcx.clone(),
+    let (board, _) = comments::create_card_comment_for_ctx(
+        &app.chat_ctx(),
         &task_id,
         CreateCardComment {
             card_id,
@@ -583,7 +578,7 @@ pub async fn handle_patch_board(
     Path(task_id): Path<String>,
     Json(req): Json<UpdateBoardRequest>,
 ) -> Result<Json<TaskBoard>, (StatusCode, String)> {
-    let gcx = app.gcx.clone();
+    let ctx = app.chat_ctx();
     let expected_rev = req.rev;
     let patch = req.patch;
     let comment_card_id = match &patch {
@@ -592,7 +587,7 @@ pub async fn handle_patch_board(
     };
     let now = Utc::now().to_rfc3339();
 
-    let update_result = storage::update_board_atomic(gcx.clone(), &task_id, move |board| {
+    let update_result = storage::update_board_atomic_for_ctx(&ctx, &task_id, move |board| {
         if board.rev != expected_rev {
             let conflict = storage::BoardConflict {
                 expected: expected_rev,
@@ -770,11 +765,18 @@ pub async fn handle_patch_board(
         Err(e) => return Err(map_patch_board_error(e)),
     };
 
-    storage::update_task_stats(gcx, &task_id)
+    storage::update_task_stats_for_ctx(&ctx, &task_id)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     if let Some(card_id) = comment_card_id {
-        crate::tasks::events::emit_task_comments_changed(app.gcx.clone(), &task_id, &card_id).await;
+        crate::tasks::events::emit_task_event_for_services(
+            &ctx.chat,
+            TaskEvent::TaskCommentsChanged {
+                task_id: task_id.clone(),
+                card_id,
+            },
+        )
+        .await;
     }
 
     Ok(Json(board))
@@ -784,8 +786,7 @@ pub async fn handle_get_planner_instructions(
     State(app): State<AppState>,
     Path(task_id): Path<String>,
 ) -> Result<Json<Value>, (StatusCode, String)> {
-    let gcx = app.gcx.clone();
-    let content = storage::load_planner_instructions(gcx, &task_id)
+    let content = storage::load_planner_instructions_for_ctx(&app.chat_ctx(), &task_id)
         .await
         .map_err(|e| (StatusCode::NOT_FOUND, e))?;
     Ok(Json(json!({"content": content})))
@@ -801,8 +802,7 @@ pub async fn handle_set_planner_instructions(
     Path(task_id): Path<String>,
     Json(req): Json<SetPlannerInstructionsRequest>,
 ) -> Result<Json<Value>, (StatusCode, String)> {
-    let gcx = app.gcx.clone();
-    storage::save_planner_instructions(gcx, &task_id, &req.content)
+    storage::save_planner_instructions_for_ctx(&app.chat_ctx(), &task_id, &req.content)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     Ok(Json(json!({"saved": true})))
@@ -812,8 +812,7 @@ pub async fn handle_get_ready_cards(
     State(app): State<AppState>,
     Path(task_id): Path<String>,
 ) -> Result<Json<Value>, (StatusCode, String)> {
-    let gcx = app.gcx.clone();
-    let board = storage::load_board(gcx, &task_id)
+    let board = storage::load_board_for_ctx(&app.chat_ctx(), &task_id)
         .await
         .map_err(|e| (StatusCode::NOT_FOUND, e))?;
     let ready = board.get_ready_cards();
@@ -825,22 +824,29 @@ pub async fn handle_update_task_status(
     Path(task_id): Path<String>,
     Json(req): Json<UpdateTaskStatusRequest>,
 ) -> Result<Json<TaskMeta>, (StatusCode, String)> {
-    let gcx = app.gcx.clone();
-    let mut meta = storage::load_task_meta(gcx.clone(), &task_id)
+    let ctx = app.chat_ctx();
+    let mut meta = storage::load_task_meta_for_ctx(&ctx, &task_id)
         .await
         .map_err(|e| (StatusCode::NOT_FOUND, e))?;
     let old_status = meta.status;
     meta.status = req.status;
     meta.updated_at = Utc::now().to_rfc3339();
-    storage::save_task_meta(gcx.clone(), &task_id, &meta)
+    storage::save_task_meta_for_ctx(&ctx, &task_id, &meta)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
-    crate::tasks::events::emit_task_updated(gcx.clone(), task_id.clone(), meta.clone()).await;
+    crate::tasks::events::emit_task_updated_via(
+        &ctx.chat.sessions,
+        &Some(ctx.chat.task_events_tx.clone()),
+        &Some(ctx.chat.task_events_seq.clone()),
+        task_id.clone(),
+        meta.clone(),
+    )
+    .await;
     if old_status != meta.status {
         match meta.status {
             TaskStatus::Completed => {
                 crate::buddy::actor::buddy_apply(
-                    crate::app_state::AppState::from_gcx(gcx.clone()).await,
+                    app.clone(),
                     crate::buddy::actor::BuddyMutation {
                         runtime_event: Some(crate::buddy::actor::make_runtime_event(
                             "task_completed",
@@ -868,7 +874,7 @@ pub async fn handle_update_task_status(
             }
             TaskStatus::Abandoned => {
                 crate::buddy::actor::buddy_apply(
-                    crate::app_state::AppState::from_gcx(gcx.clone()).await,
+                    app.clone(),
                     crate::buddy::actor::BuddyMutation {
                         runtime_event: Some(crate::buddy::actor::make_runtime_event(
                             "task_abandoned",
@@ -897,7 +903,7 @@ pub async fn handle_update_task_status(
             _ => {}
         }
     }
-    enrich_task_with_session_state(gcx.clone(), &mut meta).await;
+    enrich_task_with_session_state(&ctx, &mut meta).await;
     Ok(Json(meta))
 }
 
@@ -923,8 +929,8 @@ pub async fn handle_update_task_meta(
     Path(task_id): Path<String>,
     Json(req): Json<UpdateTaskMetaRequest>,
 ) -> Result<Json<TaskMeta>, (StatusCode, String)> {
-    let gcx = app.gcx.clone();
-    let mut meta = storage::load_task_meta(gcx.clone(), &task_id)
+    let ctx = app.chat_ctx();
+    let mut meta = storage::load_task_meta_for_ctx(&ctx, &task_id)
         .await
         .map_err(|e| (StatusCode::NOT_FOUND, e))?;
     if let Some(name) = req.name {
@@ -940,11 +946,18 @@ pub async fn handle_update_task_meta(
         meta.default_agent_model = Some(model);
     }
     meta.updated_at = Utc::now().to_rfc3339();
-    storage::save_task_meta(gcx.clone(), &task_id, &meta)
+    storage::save_task_meta_for_ctx(&ctx, &task_id, &meta)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
-    crate::tasks::events::emit_task_updated(gcx.clone(), task_id, meta.clone()).await;
-    enrich_task_with_session_state(gcx, &mut meta).await;
+    crate::tasks::events::emit_task_updated_via(
+        &ctx.chat.sessions,
+        &Some(ctx.chat.task_events_tx.clone()),
+        &Some(ctx.chat.task_events_seq.clone()),
+        task_id,
+        meta.clone(),
+    )
+    .await;
+    enrich_task_with_session_state(&ctx, &mut meta).await;
     Ok(Json(meta))
 }
 
@@ -952,8 +965,13 @@ pub async fn handle_list_task_trajectories(
     State(app): State<AppState>,
     Path((task_id, role)): Path<(String, String)>,
 ) -> Result<Json<Vec<TrajectoryInfo>>, (StatusCode, String)> {
-    let gcx = app.gcx.clone();
-    let trajectories = storage::list_task_trajectories(gcx, &task_id, &role, None)
+    let trajectories = storage::list_task_trajectories_for_ctx(
+        &app.chat_ctx(),
+        &task_id,
+        &role,
+        None,
+        crate::chat::trajectory_index::TrajectoryIndexListingCaller::TaskTrajectoryApi,
+    )
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     Ok(Json(trajectories))
@@ -970,7 +988,7 @@ pub async fn handle_create_planner_chat(
     Path(task_id): Path<String>,
     body_bytes: hyper::body::Bytes,
 ) -> Result<Json<Value>, (StatusCode, String)> {
-    let gcx = app.gcx.clone();
+    let ctx = app.chat_ctx();
     let req: CreatePlannerChatRequest = if body_bytes.is_empty() {
         CreatePlannerChatRequest::default()
     } else {
@@ -988,14 +1006,15 @@ pub async fn handle_create_planner_chat(
             "task_agent chats cannot be created here".to_string(),
         ));
     }
-    storage::load_task_meta(gcx.clone(), &task_id)
+    storage::load_task_meta_for_ctx(&ctx, &task_id)
         .await
         .map_err(|e| (StatusCode::NOT_FOUND, e))?;
 
-    let chat_id = storage::next_planner_chat_id(gcx.clone(), &task_id)
+    let chat_id = storage::next_planner_chat_id_for_ctx(&ctx, &task_id)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
-    crate::chat::trajectories::save_initial_task_chat_trajectory(&gcx.chat_ctx(gcx.clone()),
+    crate::chat::trajectories::save_initial_task_chat_trajectory(
+        &ctx,
         &task_id,
         &chat_id,
         &mode,
@@ -1122,7 +1141,7 @@ async fn find_planner_referencing_agents(
         }
     }
 
-    let task_dir = storage::find_task_dir(app.gcx.clone(), task_id).await?;
+    let task_dir = storage::find_task_dir_for_ctx(&app.chat_ctx(), task_id).await?;
     let agents_dir = storage::get_task_trajectory_dir(&task_dir, "agents", None);
     if !agents_dir.exists() {
         return Ok(refs);
@@ -1166,7 +1185,7 @@ async fn find_planner_referencing_agents(
 }
 
 async fn add_planner_deleted_status_updates(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     task_id: &str,
     planner_chat_id: &str,
     agent_refs: &[AgentReference],
@@ -1183,7 +1202,7 @@ async fn add_planner_deleted_status_updates(
         "Planner chat {} deleted while this agent still referenced it; planner_chat_id link is now dangling.",
         planner_chat_id
     );
-    storage::update_board_atomic(gcx, task_id, move |board| {
+    storage::update_board_atomic_for_ctx(ctx, task_id, move |board| {
         for card in &mut board.cards {
             if card_ids.contains(&card.id) {
                 card.status_updates.push(StatusUpdate {
@@ -1203,13 +1222,13 @@ pub async fn handle_delete_planner_chat(
     Path((task_id, chat_id)): Path<(String, String)>,
     Query(query): Query<DeletePlannerChatQuery>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    let gcx = app.gcx.clone();
+    let ctx = app.chat_ctx();
     crate::chat::trajectories::validate_trajectory_id(&chat_id)
         .map_err(|e| delete_error(e.status_code, e.message))?;
-    storage::load_task_meta(gcx.clone(), &task_id)
+    storage::load_task_meta_for_ctx(&ctx, &task_id)
         .await
         .map_err(|e| delete_error(StatusCode::NOT_FOUND, e))?;
-    let task_dir = storage::find_task_dir(gcx.clone(), &task_id)
+    let task_dir = storage::find_task_dir_for_ctx(&ctx, &task_id)
         .await
         .map_err(|e| delete_error(StatusCode::NOT_FOUND, e))?;
     let planner_dir = storage::get_task_trajectory_dir(&task_dir, "planner", None);
@@ -1217,7 +1236,7 @@ pub async fn handle_delete_planner_chat(
     let file_path = if expected_file_path.exists() {
         expected_file_path
     } else {
-        match crate::chat::trajectories::find_trajectory_path(&gcx.chat_ctx(gcx.clone()), &chat_id).await {
+        match crate::chat::trajectories::find_trajectory_path(&ctx, &chat_id).await {
             Some(found_path) if found_path.exists() => found_path,
             _ => {
                 return Err(delete_error(
@@ -1261,7 +1280,7 @@ pub async fn handle_delete_planner_chat(
             "Force deleting planner chat {} while task agents still reference it",
             chat_id
         );
-        add_planner_deleted_status_updates(gcx.clone(), &task_id, &chat_id, &agent_refs)
+        add_planner_deleted_status_updates(&ctx, &task_id, &chat_id, &agent_refs)
             .await
             .map_err(|e| delete_error(StatusCode::INTERNAL_SERVER_ERROR, e))?;
     }
@@ -1287,7 +1306,7 @@ pub async fn handle_delete_planner_chat(
     }
 
     let removed_session = {
-        let sessions = gcx.chat_sessions.clone();
+        let sessions = ctx.chat.sessions.clone();
         let mut sessions_guard = sessions.write().await;
         sessions_guard.remove(&chat_id)
     };
@@ -1305,39 +1324,37 @@ pub async fn handle_delete_planner_chat(
         }
     }
 
-    if let Some(tx) = &gcx.trajectory_events_tx {
-        let _ = tx.send(TrajectoryEvent {
-            event_type: "deleted".to_string(),
-            id: chat_id,
-            updated_at: None,
-            title: None,
-            is_title_generated: None,
-            session_state: None,
-            error: None,
-            message_count: None,
-            parent_id: None,
-            link_type: None,
-            root_chat_id: None,
-            task_id: None,
-            task_role: None,
-            agent_id: None,
-            card_id: None,
-            model: None,
-            mode: None,
-            worktree: None,
-            total_lines_added: None,
-            total_lines_removed: None,
-            tasks_total: None,
-            tasks_done: None,
-            tasks_failed: None,
-            total_prompt_tokens: None,
-            total_completion_tokens: None,
-            total_tokens: None,
-            total_cache_read_tokens: None,
-            total_cache_creation_tokens: None,
-            total_cost_usd: None,
-        });
-    }
+    let _ = ctx.chat.trajectory_events_tx.send(TrajectoryEvent {
+        event_type: "deleted".to_string(),
+        id: chat_id,
+        updated_at: None,
+        title: None,
+        is_title_generated: None,
+        session_state: None,
+        error: None,
+        message_count: None,
+        parent_id: None,
+        link_type: None,
+        root_chat_id: None,
+        task_id: None,
+        task_role: None,
+        agent_id: None,
+        card_id: None,
+        model: None,
+        mode: None,
+        worktree: None,
+        total_lines_added: None,
+        total_lines_removed: None,
+        tasks_total: None,
+        tasks_done: None,
+        tasks_failed: None,
+        total_prompt_tokens: None,
+        total_completion_tokens: None,
+        total_tokens: None,
+        total_cache_read_tokens: None,
+        total_cache_creation_tokens: None,
+        total_cost_usd: None,
+    });
 
     Ok(Json(json!({"deleted": true})))
 }
@@ -1345,26 +1362,13 @@ pub async fn handle_delete_planner_chat(
 pub async fn handle_tasks_subscribe(
     State(app): State<AppState>,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
+    let ctx = app.chat_ctx();
     let (tx, rx, seq_counter, snapshot_seq, tasks) = {
-        let tx = match &gcx.task_events_tx {
-            Some(tx) => tx.clone(),
-            None => {
-                return Err(ScratchError::new(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "Task events not available".to_string(),
-                ))
-            }
-        };
-        let seq_counter = gcx.task_events_seq.clone().ok_or_else(|| {
-            ScratchError::new(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "Task events seq not available".to_string(),
-            )
-        })?;
+        let tx = ctx.chat.task_events_tx.clone();
+        let seq_counter = ctx.chat.task_events_seq.clone();
         let snapshot_seq = seq_counter.fetch_add(1, Ordering::SeqCst);
         let rx = tx.subscribe();
-        let tasks = list_tasks_with_session_state(gcx.clone())
+        let tasks = list_tasks_with_session_state(&ctx)
             .await
             .map_err(|e| ScratchError::new(StatusCode::INTERNAL_SERVER_ERROR, e))?;
         (tx, rx, seq_counter, snapshot_seq, tasks)
@@ -1393,7 +1397,7 @@ pub async fn handle_tasks_subscribe(
                         Err(broadcast::error::RecvError::Lagged(_)) => {
                             let seq = seq_counter.fetch_add(1, Ordering::SeqCst);
                             rx = tx.subscribe();
-                            match list_tasks_with_session_state(gcx.clone()).await {
+                            match list_tasks_with_session_state(&ctx).await {
                                 Ok(tasks) => {
                                     let envelope = TaskEventEnvelope { seq, event: TaskEvent::Snapshot { tasks } };
                                     let json = serde_json::to_string(&envelope).unwrap_or_default();
@@ -1421,7 +1425,7 @@ pub async fn handle_tasks_subscribe(
                 }
 
                 _ = async {
-                    let shutdown_flag = gcx.shutdown_flag.clone();
+                    let shutdown_flag = ctx.runtime.shutdown_flag.clone();
                     while !shutdown_flag.load(std::sync::atomic::Ordering::SeqCst) {
                         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
                     }
@@ -1572,6 +1576,7 @@ pub async fn handle_history_task_document(
 mod tests {
     use super::*;
     use crate::chat::trajectories::save_trajectory_snapshot;
+    use crate::global_context::GlobalContext;
     use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
     use refact_chat_api::{ChatMessage, TaskMeta as ChatTaskMeta};
     use refact_chat_history::trajectory_snapshot::TrajectorySnapshot;

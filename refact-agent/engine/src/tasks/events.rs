@@ -90,6 +90,13 @@ pub async fn enrich_task_with_session_state(gcx: Arc<GlobalContext>, task: &mut 
     enrich_task_meta_with_session_state(&gcx.chat_sessions, task).await;
 }
 
+pub async fn enrich_task_with_session_state_for_services(
+    chat: &crate::app_state::ChatServices,
+    task: &mut TaskMeta,
+) {
+    enrich_task_meta_with_session_state(&chat.sessions, task).await;
+}
+
 pub async fn emit_task_updated(gcx: Arc<GlobalContext>, task_id: String, mut meta: TaskMeta) {
     emit_task_updated_via(
         &gcx.chat_sessions,

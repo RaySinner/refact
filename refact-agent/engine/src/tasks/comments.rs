@@ -1,9 +1,6 @@
-use std::sync::Arc;
-
 use chrono::Utc;
 use uuid::Uuid;
 
-use crate::global_context::GlobalContext;
 use crate::tasks::storage;
 use crate::tasks::types::{CardComment, TaskBoard};
 
@@ -54,21 +51,6 @@ pub(crate) fn add_comment_to_board(
     card.last_heartbeat_at = Some(comment.timestamp.clone());
     card.comments.push(comment.clone());
     Ok(comment)
-}
-
-pub(crate) async fn create_card_comment(
-    gcx: Arc<GlobalContext>,
-    task_id: &str,
-    request: CreateCardComment,
-) -> Result<(TaskBoard, CardComment), String> {
-    let card_id = request.card_id.clone();
-    let (board, comment) = storage::update_board_atomic(gcx.clone(), task_id, move |board| {
-        Ok(Some(add_comment_to_board(board, request)?))
-    })
-    .await?;
-    let comment = comment.ok_or_else(|| "comment was not created".to_string())?;
-    crate::tasks::events::emit_task_comments_changed(gcx, task_id, &card_id).await;
-    Ok((board, comment))
 }
 
 pub(crate) async fn create_card_comment_for_ctx(

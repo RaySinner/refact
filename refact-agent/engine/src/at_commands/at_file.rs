@@ -398,7 +398,7 @@ impl AtParam for AtParamFilePath {
                 let res = options
                     .iter()
                     .map(|x| x.to_string_lossy().to_string())
-                    .collect();
+                    .collect::<Vec<String>>();
                 return tool.files.shortify_paths(&res).await;
             }
         }

@@ -5,17 +5,16 @@ use axum::response::Result;
 use hyper::{Body, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 
 use crate::app_state::AppState;
-use crate::global_context::GlobalContext;
+use crate::chat::ctx::ChatCtx;
 use crate::custom_error::ScratchError;
 use crate::ext::config_dirs::{CommandSource, ExtDirs, get_ext_dirs};
 use crate::ext::hooks::{HookConfig, HookEvent, load_hooks};
 use crate::ext::skills::{load_skill_full, load_skill_indices};
 use crate::ext::slash_commands::{load_slash_commands, parse_frontmatter_and_body};
-use crate::files_correction::get_project_dirs;
+use crate::files_correction::get_unscoped_project_dirs_for_ctx;
 use crate::http::routers::v1::at_commands::invalidate_slash_cache;
 use crate::buddy::drafts::{draft_kind_str, DraftTarget, DraftValidationError};
 use crate::buddy::types::DraftKind;
@@ -220,12 +219,12 @@ fn draft_error_response(err: DraftValidationError) -> Result<Response<Body>, Scr
 }
 
 async fn validate_draft_for_target(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     draft_id: &str,
     expected_kind: DraftKind,
     target: DraftTarget<'_>,
 ) -> std::result::Result<(), DraftValidationError> {
-    let buddy_arc = gcx.buddy.clone();
+    let buddy_arc = ctx.buddy.buddy.clone();
     let lock = buddy_arc.lock().await;
     let Some(svc) = lock.as_ref() else {
         return Err(DraftValidationError::NotFound);
@@ -236,12 +235,12 @@ async fn validate_draft_for_target(
 }
 
 async fn consume_draft_for_target(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     draft_id: &str,
     expected_kind: DraftKind,
     target: DraftTarget<'_>,
 ) -> std::result::Result<ConsumedDraft, DraftValidationError> {
-    let buddy_arc = gcx.buddy.clone();
+    let buddy_arc = ctx.buddy.buddy.clone();
     let mut lock = buddy_arc.lock().await;
     let Some(svc) = lock.as_mut() else {
         return Err(DraftValidationError::NotFound);
@@ -370,12 +369,12 @@ pub(crate) async fn write_file_atomic(
 }
 
 async fn resolve_scope_dir(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     scope: Option<&str>,
     require_local: bool,
 ) -> std::result::Result<(PathBuf, String), String> {
-    let config_dir = gcx.config_dir.clone();
-    let project_dirs = get_project_dirs(gcx.clone()).await;
+    let config_dir = ctx.paths.config_dir.clone();
+    let project_dirs = get_unscoped_project_dirs_for_ctx(ctx).await;
     let project_root = project_dirs.into_iter().next();
 
     match scope {
@@ -755,7 +754,9 @@ pub async fn handle_v1_ext_registry(
     let skill_indices = load_skill_indices(&ext_dirs).await;
     let commands = load_slash_commands(&ext_dirs).await;
     let hooks = load_hooks(&ext_dirs).await;
-    let has_project_root = !get_project_dirs(app.gcx.clone()).await.is_empty();
+    let has_project_root = !get_unscoped_project_dirs_for_ctx(&app.chat_ctx())
+        .await
+        .is_empty();
 
     let skills: Vec<RegistrySkillEntry> = skill_indices
         .iter()
@@ -850,14 +851,13 @@ pub async fn handle_v1_ext_skill_get(
     Path(name): Path<String>,
     Query(query): Query<ScopeQuery>,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
     if let Err(e) = validate_name(&name) {
         return json_error(StatusCode::BAD_REQUEST, &e);
     }
 
     if let Some(ref draft_id) = query.draft_id {
         let draft_data = {
-            let buddy_arc = gcx.buddy.clone();
+            let buddy_arc = app.buddy.buddy.clone();
             let lock = buddy_arc.lock().await;
             match lock.as_ref() {
                 Some(svc) => match svc.draft_store.get_validated(
@@ -911,7 +911,7 @@ pub async fn handle_v1_ext_skill_get(
     let config_dir = app.paths.config_dir.clone();
     let ext_dirs = match query.scope.as_deref() {
         Some(s @ "global") | Some(s @ "local") => {
-            match resolve_scope_dir(gcx.clone(), Some(s), true).await {
+            match resolve_scope_dir(&app.chat_ctx(), Some(s), true).await {
                 Ok((dir, scope)) => make_scope_ext_dirs(dir, &scope),
                 Err(e) => return json_error(StatusCode::BAD_REQUEST, &e),
             }
@@ -982,7 +982,6 @@ pub async fn handle_v1_ext_skill_put(
     Path(name): Path<String>,
     body_bytes: hyper::body::Bytes,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
     if let Err(e) = validate_name(&name) {
         return json_error(StatusCode::BAD_REQUEST, &e);
     }
@@ -993,7 +992,7 @@ pub async fn handle_v1_ext_skill_put(
 
     let scope_str_val = req.scope.as_deref().unwrap_or("local");
     let (base_dir, scope_name) =
-        match resolve_scope_dir(gcx.clone(), Some(scope_str_val), true).await {
+        match resolve_scope_dir(&app.chat_ctx(), Some(scope_str_val), true).await {
             Ok(d) => d,
             Err(e) => return json_error(StatusCode::BAD_REQUEST, &e),
         };
@@ -1003,7 +1002,7 @@ pub async fn handle_v1_ext_skill_put(
 
     if let Some(ref draft_id) = req.draft_id {
         if let Err(err) = validate_draft_for_target(
-            gcx.clone(),
+            &app.chat_ctx(),
             draft_id,
             DraftKind::Skill,
             DraftTarget::Id(&name),
@@ -1085,7 +1084,7 @@ pub async fn handle_v1_ext_skill_put(
     }
     let consumed = if let Some(ref draft_id) = req.draft_id {
         match consume_draft_for_target(
-            gcx.clone(),
+            &app.chat_ctx(),
             draft_id,
             DraftKind::Skill,
             DraftTarget::Id(&name),
@@ -1133,7 +1132,6 @@ pub async fn handle_v1_ext_skill_post(
     State(app): State<AppState>,
     body_bytes: hyper::body::Bytes,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
     let req: CreateSkillRequest = match serde_json::from_slice(&body_bytes) {
         Ok(r) => r,
         Err(e) => return json_error(StatusCode::BAD_REQUEST, &e.to_string()),
@@ -1147,7 +1145,7 @@ pub async fn handle_v1_ext_skill_post(
 
     let scope_str_val = req.scope.as_deref().unwrap_or("local");
     let (base_dir, scope_name) =
-        match resolve_scope_dir(gcx.clone(), Some(scope_str_val), true).await {
+        match resolve_scope_dir(&app.chat_ctx(), Some(scope_str_val), true).await {
             Ok(d) => d,
             Err(e) => return json_error(StatusCode::BAD_REQUEST, &e),
         };
@@ -1201,7 +1199,6 @@ pub async fn handle_v1_ext_skill_delete(
     Path(name): Path<String>,
     Query(query): Query<ScopeQuery>,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
     if let Err(e) = validate_name(&name) {
         return json_error(StatusCode::BAD_REQUEST, &e);
     }
@@ -1215,7 +1212,7 @@ pub async fn handle_v1_ext_skill_delete(
         }
     };
     let (base_dir, _scope_name) =
-        match resolve_scope_dir(gcx.clone(), Some(scope_str_val), true).await {
+        match resolve_scope_dir(&app.chat_ctx(), Some(scope_str_val), true).await {
             Ok(d) => d,
             Err(e) => return json_error(StatusCode::BAD_REQUEST, &e),
         };
@@ -1253,14 +1250,13 @@ pub async fn handle_v1_ext_command_get(
     Path(name): Path<String>,
     Query(query): Query<ScopeQuery>,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
     if let Err(e) = validate_name(&name) {
         return json_error(StatusCode::BAD_REQUEST, &e);
     }
 
     if let Some(ref draft_id) = query.draft_id {
         let draft_data = {
-            let buddy_arc = gcx.buddy.clone();
+            let buddy_arc = app.buddy.buddy.clone();
             let lock = buddy_arc.lock().await;
             lock.as_ref().and_then(|svc| {
                 let draft = svc.draft_store.get(draft_id)?;
@@ -1309,7 +1305,7 @@ pub async fn handle_v1_ext_command_get(
 
     let ext_dirs = match query.scope.as_deref() {
         Some(s @ "global") | Some(s @ "local") => {
-            match resolve_scope_dir(gcx.clone(), Some(s), true).await {
+            match resolve_scope_dir(&app.chat_ctx(), Some(s), true).await {
                 Ok((dir, scope)) => make_scope_ext_dirs(dir, &scope),
                 Err(e) => return json_error(StatusCode::BAD_REQUEST, &e),
             }
@@ -1366,7 +1362,6 @@ pub async fn handle_v1_ext_command_put(
     Path(name): Path<String>,
     body_bytes: hyper::body::Bytes,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
     if let Err(e) = validate_name(&name) {
         return json_error(StatusCode::BAD_REQUEST, &e);
     }
@@ -1377,7 +1372,7 @@ pub async fn handle_v1_ext_command_put(
 
     let scope_str_val = req.scope.as_deref().unwrap_or("local");
     let (base_dir, scope_name) =
-        match resolve_scope_dir(gcx.clone(), Some(scope_str_val), true).await {
+        match resolve_scope_dir(&app.chat_ctx(), Some(scope_str_val), true).await {
             Ok(d) => d,
             Err(e) => return json_error(StatusCode::BAD_REQUEST, &e),
         };
@@ -1386,7 +1381,7 @@ pub async fn handle_v1_ext_command_put(
 
     if let Some(ref draft_id) = req.draft_id {
         if let Err(err) = validate_draft_for_target(
-            gcx.clone(),
+            &app.chat_ctx(),
             draft_id,
             DraftKind::Command,
             DraftTarget::Id(&name),
@@ -1453,7 +1448,7 @@ pub async fn handle_v1_ext_command_put(
     }
     let consumed = if let Some(ref draft_id) = req.draft_id {
         match consume_draft_for_target(
-            gcx.clone(),
+            &app.chat_ctx(),
             draft_id,
             DraftKind::Command,
             DraftTarget::Id(&name),
@@ -1494,7 +1489,6 @@ pub async fn handle_v1_ext_command_post(
     State(app): State<AppState>,
     body_bytes: hyper::body::Bytes,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
     let req: CreateCommandRequest = match serde_json::from_slice(&body_bytes) {
         Ok(r) => r,
         Err(e) => return json_error(StatusCode::BAD_REQUEST, &e.to_string()),
@@ -1505,7 +1499,7 @@ pub async fn handle_v1_ext_command_post(
 
     let scope_str_val = req.scope.as_deref().unwrap_or("local");
     let (base_dir, scope_name) =
-        match resolve_scope_dir(gcx.clone(), Some(scope_str_val), true).await {
+        match resolve_scope_dir(&app.chat_ctx(), Some(scope_str_val), true).await {
             Ok(d) => d,
             Err(e) => return json_error(StatusCode::BAD_REQUEST, &e),
         };
@@ -1549,7 +1543,6 @@ pub async fn handle_v1_ext_command_delete(
     Path(name): Path<String>,
     Query(query): Query<ScopeQuery>,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
     if let Err(e) = validate_name(&name) {
         return json_error(StatusCode::BAD_REQUEST, &e);
     }
@@ -1563,7 +1556,7 @@ pub async fn handle_v1_ext_command_delete(
         }
     };
     let (base_dir, _scope_name) =
-        match resolve_scope_dir(gcx.clone(), Some(scope_str_val), true).await {
+        match resolve_scope_dir(&app.chat_ctx(), Some(scope_str_val), true).await {
             Ok(d) => d,
             Err(e) => return json_error(StatusCode::BAD_REQUEST, &e),
         };
@@ -1594,10 +1587,9 @@ pub async fn handle_v1_ext_hooks_get(
     State(app): State<AppState>,
     Query(query): Query<ScopeQuery>,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
     if let Some(ref draft_id) = query.draft_id {
         let draft_data = {
-            let buddy_arc = gcx.buddy.clone();
+            let buddy_arc = app.buddy.buddy.clone();
             let lock = buddy_arc.lock().await;
             lock.as_ref().and_then(|svc| {
                 let draft = svc.draft_store.get(draft_id)?;
@@ -1646,7 +1638,7 @@ pub async fn handle_v1_ext_hooks_get(
 
     let scope_str_val = query.scope.as_deref().unwrap_or("local");
     let (base_dir, scope_name) =
-        match resolve_scope_dir(gcx.clone(), Some(scope_str_val), true).await {
+        match resolve_scope_dir(&app.chat_ctx(), Some(scope_str_val), true).await {
             Ok(d) => d,
             Err(e) => return json_error(StatusCode::BAD_REQUEST, &e),
         };
@@ -1685,7 +1677,6 @@ pub async fn handle_v1_ext_hooks_put(
     Query(query): Query<ScopeQuery>,
     body_bytes: hyper::body::Bytes,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
     let req: SaveHooksRequest = match serde_json::from_slice(&body_bytes) {
         Ok(r) => r,
         Err(e) => return json_error(StatusCode::BAD_REQUEST, &e.to_string()),
@@ -1693,7 +1684,7 @@ pub async fn handle_v1_ext_hooks_put(
 
     let scope_str_val = query.scope.as_deref().unwrap_or("local");
     let (base_dir, scope_name) =
-        match resolve_scope_dir(gcx.clone(), Some(scope_str_val), true).await {
+        match resolve_scope_dir(&app.chat_ctx(), Some(scope_str_val), true).await {
             Ok(d) => d,
             Err(e) => return json_error(StatusCode::BAD_REQUEST, &e),
         };
@@ -1702,7 +1693,7 @@ pub async fn handle_v1_ext_hooks_put(
 
     if let Some(ref draft_id) = req.draft_id {
         if let Err(err) =
-            validate_draft_for_target(gcx.clone(), draft_id, DraftKind::Hook, DraftTarget::Any)
+            validate_draft_for_target(&app.chat_ctx(), draft_id, DraftKind::Hook, DraftTarget::Any)
                 .await
         {
             return draft_error_response(err);
@@ -1742,7 +1733,7 @@ pub async fn handle_v1_ext_hooks_put(
     }
 
     let consumed = if let Some(ref draft_id) = req.draft_id {
-        match consume_draft_for_target(gcx.clone(), draft_id, DraftKind::Hook, DraftTarget::Any)
+        match consume_draft_for_target(&app.chat_ctx(), draft_id, DraftKind::Hook, DraftTarget::Any)
             .await
         {
             Ok(consumed) => Some(consumed),
@@ -1763,7 +1754,6 @@ pub async fn handle_v1_ext_hooks_delete_by_index(
     Path(index): Path<usize>,
     Query(query): Query<ScopeQuery>,
 ) -> Result<Response<Body>, ScratchError> {
-    let gcx = app.gcx.clone();
     let scope_str_val = match query.scope.as_deref() {
         Some(s) => s,
         None => {
@@ -1774,7 +1764,7 @@ pub async fn handle_v1_ext_hooks_delete_by_index(
         }
     };
     let (base_dir, scope_name) =
-        match resolve_scope_dir(gcx.clone(), Some(scope_str_val), true).await {
+        match resolve_scope_dir(&app.chat_ctx(), Some(scope_str_val), true).await {
             Ok(d) => d,
             Err(e) => return json_error(StatusCode::BAD_REQUEST, &e),
         };

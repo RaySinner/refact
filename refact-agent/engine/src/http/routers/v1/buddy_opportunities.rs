@@ -8,7 +8,6 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::{Path as StdPath, PathBuf};
-use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::buddy::drafts::{draft_kind_str, DraftCreateError, DraftTarget, DraftValidationError};
@@ -27,8 +26,8 @@ use crate::ext::extensions_marketplace::{
     MarketplaceKind,
 };
 use crate::ext::slash_commands::parse_frontmatter_and_body;
-use crate::files_correction::get_project_dirs;
-use crate::global_context::GlobalContext;
+use crate::chat::ctx::ChatCtx;
+use crate::files_correction::get_unscoped_project_dirs_for_ctx;
 use refact_chat_history::trajectory_snapshot::TrajectorySnapshot;
 
 #[derive(Debug, Deserialize)]
@@ -95,12 +94,12 @@ fn draft_validation_error(err: DraftValidationError) -> ScratchError {
 }
 
 async fn validate_existing_draft(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     draft_id: &str,
     expected_kind: DraftKind,
     target: DraftTarget<'_>,
 ) -> Result<(), ScratchError> {
-    let buddy_arc = gcx.buddy.clone();
+    let buddy_arc = ctx.buddy.buddy.clone();
     let lock = buddy_arc.lock().await;
     let svc = lock.as_ref().ok_or_else(|| {
         ScratchError::new(
@@ -118,8 +117,7 @@ pub async fn handle_v1_buddy_opportunities_list(
     State(app): State<AppState>,
     Query(query): Query<OpportunitiesQuery>,
 ) -> Result<axum::Json<serde_json::Value>, ScratchError> {
-    let gcx = app.gcx.clone();
-    let buddy_arc = gcx.buddy.clone();
+    let buddy_arc = app.buddy.buddy.clone();
     let lock = buddy_arc.lock().await;
     let svc = lock.as_ref().ok_or_else(|| {
         ScratchError::new(
@@ -146,10 +144,9 @@ pub async fn handle_v1_buddy_opportunity_accept(
     Path(id): Path<String>,
     body: Option<axum::extract::Json<AcceptRequest>>,
 ) -> Result<axum::Json<serde_json::Value>, ScratchError> {
-    let gcx = app.gcx.clone();
     let req = body.map(|b| b.0).unwrap_or_default();
 
-    let buddy_arc = gcx.buddy.clone();
+    let buddy_arc = app.buddy.buddy.clone();
     let (action, cooldown_key, opp_kind) = {
         let mut lock = buddy_arc.lock().await;
         let svc = lock.as_mut().ok_or_else(|| {
@@ -207,12 +204,12 @@ pub async fn handle_v1_buddy_opportunity_accept(
     let outcome = match dispatch_action(app.clone(), &id, &action).await {
         Ok(outcome) => outcome,
         Err(err) => {
-            clear_accept_claim(gcx.clone(), &id).await;
+            clear_accept_claim(&app.chat_ctx(), &id).await;
             return Err(err);
         }
     };
 
-    let buddy_arc = gcx.buddy.clone();
+    let buddy_arc = app.buddy.buddy.clone();
     let mut lock = buddy_arc.lock().await;
     let svc = lock.as_mut().ok_or_else(|| {
         ScratchError::new(
@@ -247,7 +244,7 @@ pub async fn handle_v1_buddy_action_undo(
     axum::extract::Json(req): axum::extract::Json<UndoRequest>,
 ) -> Result<axum::Json<serde_json::Value>, ScratchError> {
     let project_root = {
-        let buddy_arc = app.gcx.buddy.clone();
+        let buddy_arc = app.buddy.buddy.clone();
         let lock = buddy_arc.lock().await;
         let svc = lock.as_ref().ok_or_else(|| {
             ScratchError::new(
@@ -273,7 +270,7 @@ pub async fn handle_v1_buddy_action_undo(
     let receipt = crate::buddy::receipts::undo_receipt(&project_root, &req.receipt_id)
         .await
         .map_err(|e| ScratchError::new(StatusCode::BAD_REQUEST, e))?;
-    let buddy_arc = app.gcx.buddy.clone();
+    let buddy_arc = app.buddy.buddy.clone();
     let mut lock = buddy_arc.lock().await;
     if let Some(svc) = lock.as_mut() {
         svc.record_verdict(
@@ -298,7 +295,7 @@ pub async fn handle_v1_buddy_rule_unmute(
     State(app): State<AppState>,
     axum::extract::Json(req): axum::extract::Json<UnmuteRequest>,
 ) -> Result<axum::Json<serde_json::Value>, ScratchError> {
-    let buddy_arc = app.gcx.buddy.clone();
+    let buddy_arc = app.buddy.buddy.clone();
     let mut lock = buddy_arc.lock().await;
     let svc = lock.as_mut().ok_or_else(|| {
         ScratchError::new(
@@ -315,7 +312,7 @@ pub async fn handle_v1_buddy_rule_unmute(
 }
 
 async fn buddy_project_root(app: &AppState) -> Result<PathBuf, ScratchError> {
-    let buddy_arc = app.gcx.buddy.clone();
+    let buddy_arc = app.buddy.buddy.clone();
     let lock = buddy_arc.lock().await;
     let svc = lock.as_ref().ok_or_else(|| {
         ScratchError::new(
@@ -326,8 +323,8 @@ async fn buddy_project_root(app: &AppState) -> Result<PathBuf, ScratchError> {
     Ok(svc.project_root.clone())
 }
 
-async fn clear_accept_claim(gcx: Arc<GlobalContext>, id: &str) {
-    let buddy_arc = gcx.buddy.clone();
+async fn clear_accept_claim(ctx: &ChatCtx, id: &str) {
+    let buddy_arc = ctx.buddy.buddy.clone();
     let mut lock = buddy_arc.lock().await;
     if let Some(svc) = lock.as_mut() {
         svc.clear_opportunity_accept_claim(id);
@@ -377,7 +374,7 @@ pub(crate) async fn dispatch_action(
         BuddyAction::LaunchInvestigationChat { preload } => {
             let mut enriched_ctx = preload.clone();
             enrich_investigation_context(&app, &mut enriched_ctx).await;
-            let chat_id = create_investigation_chat(app.gcx.clone(), &enriched_ctx).await?;
+            let chat_id = create_investigation_chat(&app, &enriched_ctx).await?;
             Ok(ActionOutcome {
                 result: serde_json::json!({
                     "kind": "launch_investigation_chat",
@@ -416,10 +413,10 @@ pub(crate) async fn dispatch_action(
                     ),
                 };
                 let draft =
-                    synthesize_draft(app.gcx.clone(), dk, label.to_string(), content).await?;
+                    synthesize_draft(&app.chat_ctx(), dk, label.to_string(), content).await?;
                 draft.id.clone()
             } else {
-                validate_existing_draft(app.gcx.clone(), draft_id, dk, DraftTarget::Any).await?;
+                validate_existing_draft(&app.chat_ctx(), draft_id, dk, DraftTarget::Any).await?;
                 draft_id.clone()
             };
             let kind = dk;
@@ -440,7 +437,7 @@ pub(crate) async fn dispatch_action(
                 content.as_str()
             };
             let draft = synthesize_draft(
-                app.gcx.clone(),
+                &app.chat_ctx(),
                 DraftKind::AgentsMd,
                 "AGENTS.md".to_string(),
                 draft_content.to_string(),
@@ -466,7 +463,7 @@ pub(crate) async fn dispatch_action(
                     .unwrap_or_default()
             };
             let draft = synthesize_draft(
-                app.gcx.clone(),
+                &app.chat_ctx(),
                 DraftKind::DefaultsModel,
                 "Default Models".to_string(),
                 content,
@@ -488,14 +485,14 @@ pub(crate) async fn dispatch_action(
             patch,
         } => {
             let draft_kind = customization_kind_to_draft_kind(*customization_kind);
-            let existing = read_existing_customization(&app.gcx, *customization_kind, id)
+            let existing = read_existing_customization(&app, *customization_kind, id)
                 .await
                 .unwrap_or_else(|| default_customization_template(*customization_kind, id));
             let draft_content = merge_customization_content(*customization_kind, &existing, patch)
                 .map_err(|e| ScratchError::new(StatusCode::UNPROCESSABLE_ENTITY, e))?;
             let title_kind = customization_url_kind(*customization_kind);
             let draft = synthesize_draft(
-                app.gcx.clone(),
+                &app.chat_ctx(),
                 draft_kind,
                 format!("{} {}", title_kind, id),
                 draft_content,
@@ -521,7 +518,7 @@ pub(crate) async fn dispatch_action(
             };
             let content = render_pulse_to_markdown(&pulse, *scope);
             let draft = synthesize_draft(
-                app.gcx.clone(),
+                &app.chat_ctx(),
                 DraftKind::PulseReport,
                 format!("Pulse Report ({})", scope_label(*scope)),
                 content,
@@ -561,7 +558,7 @@ pub(crate) async fn dispatch_action(
         }
         BuddyAction::ApplyMemoryBatch { batch_key, .. } => {
             let (autonomy, project_root) = {
-                let buddy_arc = app.gcx.buddy.clone();
+                let buddy_arc = app.buddy.buddy.clone();
                 let lock = buddy_arc.lock().await;
                 let svc = lock.as_ref().ok_or_else(|| {
                     ScratchError::new(
@@ -587,7 +584,7 @@ pub(crate) async fn dispatch_action(
                 .await
                 .map_err(|e| ScratchError::new(StatusCode::INTERNAL_SERVER_ERROR, e))?;
             {
-                let buddy_arc = app.gcx.buddy.clone();
+                let buddy_arc = app.buddy.buddy.clone();
                 let mut lock = buddy_arc.lock().await;
                 if let Some(svc) = lock.as_mut() {
                     svc.set_memory_ops(memory_ops);
@@ -609,7 +606,7 @@ pub(crate) async fn dispatch_action(
             target_path,
         } => {
             let (autonomy, project_root, draft) = {
-                let buddy_arc = app.gcx.buddy.clone();
+                let buddy_arc = app.buddy.buddy.clone();
                 let lock = buddy_arc.lock().await;
                 let svc = lock.as_ref().ok_or_else(|| {
                     ScratchError::new(
@@ -661,7 +658,7 @@ pub(crate) async fn dispatch_action(
         }
         BuddyAction::AcceptQuest { suggestion_id } => {
             let (quest, persona, identity_name, pulse) = {
-                let buddy_arc = app.gcx.buddy.clone();
+                let buddy_arc = app.buddy.buddy.clone();
                 let mut lock = buddy_arc.lock().await;
                 let svc = lock.as_mut().ok_or_else(|| {
                     ScratchError::new(
@@ -748,12 +745,11 @@ fn customization_url_kind(kind: CustomizationKind) -> &'static str {
     }
 }
 
-async fn read_effective_ext_file<F>(gcx: &Arc<GlobalContext>, relative_path: F) -> Option<String>
+async fn read_effective_ext_file<F>(app: &AppState, relative_path: F) -> Option<String>
 where
     F: Fn(&StdPath) -> PathBuf,
 {
-    let app = AppState::from_gcx(gcx.clone()).await;
-    let ext_dirs = get_ext_dirs(app).await;
+    let ext_dirs = get_ext_dirs(app.clone()).await;
     let mut found = None;
     for dir in ext_dirs.all_dirs_in_order() {
         if let Ok(content) = tokio::fs::read_to_string(relative_path(dir)).await {
@@ -764,15 +760,15 @@ where
 }
 
 async fn read_effective_config_file(
-    gcx: &Arc<GlobalContext>,
+    app: &AppState,
     dir_name: &str,
     file_name: &str,
 ) -> Option<String> {
-    let config_dir = gcx.config_dir.clone();
+    let config_dir = app.paths.config_dir.clone();
     let mut found = tokio::fs::read_to_string(config_dir.join(dir_name).join(file_name))
         .await
         .ok();
-    for project_root in get_project_dirs(gcx.clone()).await {
+    for project_root in get_unscoped_project_dirs_for_ctx(&app.chat_ctx()).await {
         if let Ok(content) =
             tokio::fs::read_to_string(project_root.join(".refact").join(dir_name).join(file_name))
                 .await
@@ -784,25 +780,25 @@ async fn read_effective_config_file(
 }
 
 async fn read_existing_customization(
-    gcx: &Arc<GlobalContext>,
+    app: &AppState,
     kind: CustomizationKind,
     id: &str,
 ) -> Option<String> {
     match kind {
         CustomizationKind::Skill => {
-            read_effective_ext_file(gcx, |dir| dir.join("skills").join(id).join("SKILL.md")).await
+            read_effective_ext_file(app, |dir| dir.join("skills").join(id).join("SKILL.md")).await
         }
         CustomizationKind::Command => {
-            read_effective_ext_file(gcx, |dir| dir.join("commands").join(format!("{}.md", id)))
+            read_effective_ext_file(app, |dir| dir.join("commands").join(format!("{}.md", id)))
                 .await
         }
         CustomizationKind::Delegate => {
-            read_effective_config_file(gcx, "subagents", &format!("{}.yaml", id)).await
+            read_effective_config_file(app, "subagents", &format!("{}.yaml", id)).await
         }
         CustomizationKind::Mode => {
-            read_effective_config_file(gcx, "modes", &format!("{}.yaml", id)).await
+            read_effective_config_file(app, "modes", &format!("{}.yaml", id)).await
         }
-        CustomizationKind::Hook => read_effective_config_file(gcx, "", "hooks.yaml").await,
+        CustomizationKind::Hook => read_effective_config_file(app, "", "hooks.yaml").await,
     }
 }
 
@@ -1069,12 +1065,12 @@ async fn install_marketplace_action(
 }
 
 async fn synthesize_draft(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     kind: DraftKind,
     title: String,
     content: String,
 ) -> Result<BuddyDraft, ScratchError> {
-    let buddy_arc = gcx.buddy.clone();
+    let buddy_arc = ctx.buddy.buddy.clone();
     let mut lock = buddy_arc.lock().await;
     let svc = lock.as_mut().ok_or_else(|| {
         ScratchError::new(
@@ -1380,16 +1376,13 @@ pub(crate) fn build_investigation_data_envelope(ctx: &InvestigationContext) -> S
 }
 
 async fn create_investigation_chat(
-    gcx: Arc<GlobalContext>,
+    app: &AppState,
     ctx: &InvestigationContext,
 ) -> Result<String, ScratchError> {
     let chat_id = Uuid::new_v4().to_string();
     let now = chrono::Utc::now().to_rfc3339();
 
-    let model = crate::buddy::actor::resolve_buddy_chat_model(
-        crate::app_state::AppState::from_gcx(gcx.clone()).await,
-    )
-    .await;
+    let model = crate::buddy::actor::resolve_buddy_chat_model(app.clone()).await;
     let snapshot = TrajectorySnapshot {
         pending_deliveries: Vec::new(),
         goal: None,
@@ -1462,7 +1455,7 @@ async fn create_investigation_chat(
         waiting_for_card_ids: Vec::new(),
     };
 
-    crate::chat::trajectories::save_trajectory_snapshot(gcx, snapshot)
+    crate::chat::trajectories::save_trajectory_snapshot(app.gcx.clone(), snapshot)
         .await
         .map_err(|e| ScratchError::new(StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
@@ -1475,8 +1468,7 @@ pub async fn handle_v1_buddy_opportunity_dismiss(
     body: Option<axum::extract::Json<DismissRequest>>,
 ) -> Result<axum::Json<serde_json::Value>, ScratchError> {
     let req = body.map(|b| b.0).unwrap_or_default();
-    let gcx = app.gcx.clone();
-    let buddy_arc = gcx.buddy.clone();
+    let buddy_arc = app.buddy.buddy.clone();
     let mut lock = buddy_arc.lock().await;
     let svc = lock.as_mut().ok_or_else(|| {
         ScratchError::new(

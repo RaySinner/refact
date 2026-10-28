@@ -6,6 +6,7 @@ use tracing::info;
 use tokio::sync::Mutex as AMutex;
 
 use crate::app_state::AppState;
+use crate::chat::ctx::ChatCtx;
 use super::actor::redact_sensitive;
 use super::diagnostics::DiagnosticContext;
 use super::types::BuddyActivity;
@@ -267,13 +268,13 @@ pub(crate) async fn detect_repo_from_git(project_root: &Path) -> Option<RepoInfo
 }
 
 async fn detect_provider(
-    gcx: AppState,
+    app: AppState,
     repo: &RepoInfo,
     preferred_provider: Option<&str>,
 ) -> Result<Option<IssueProvider>, String> {
-    let active = crate::files_correction::get_active_project_path(gcx.gcx.clone()).await;
+    let active = crate::files_correction::get_active_project_path(app.gcx.clone()).await;
     let (config_dirs, global_config_dir) =
-        crate::integrations::setting_up_integrations::get_config_dirs(gcx.gcx.clone(), &active)
+        crate::integrations::setting_up_integrations::get_config_dirs(app.gcx.clone(), &active)
             .await;
     let mut search_dirs: Vec<PathBuf> = config_dirs;
     search_dirs.push(global_config_dir);
@@ -304,8 +305,8 @@ async fn detect_provider(
     })
 }
 
-async fn github_mcp_issue_tool(gcx: AppState) -> Option<String> {
-    let groups = crate::tools::tools_list::get_integration_tools(gcx.gcx.clone()).await;
+async fn github_mcp_issue_tool(app: AppState) -> Option<String> {
+    let groups = crate::tools::tools_list::get_integration_tools(app.gcx.clone()).await;
     groups
         .into_iter()
         .flat_map(|group| group.tools)
@@ -322,18 +323,18 @@ async fn github_mcp_issue_tool(gcx: AppState) -> Option<String> {
         })
 }
 
-pub async fn has_github_mcp(gcx: AppState) -> bool {
-    github_mcp_issue_tool(gcx).await.is_some()
+pub async fn has_github_mcp(app: AppState) -> bool {
+    github_mcp_issue_tool(app).await.is_some()
 }
 
 pub async fn investigation_logs(
-    gcx: AppState,
+    app: AppState,
     error: &str,
     collected_at: Option<&str>,
 ) -> Result<String, String> {
     let ccx = Arc::new(AMutex::new(
         AtCommandsContext::new_from_app(
-            gcx.clone(),
+            app.clone(),
             4000,
             20,
             false,
@@ -377,10 +378,10 @@ pub async fn investigation_logs(
     Ok(kept.join("\n"))
 }
 
-pub async fn investigation_internal_context(gcx: AppState) -> Result<String, String> {
+pub async fn investigation_internal_context(app: AppState) -> Result<String, String> {
     let ccx = Arc::new(AMutex::new(
         AtCommandsContext::new_from_app(
-            gcx.clone(),
+            app.clone(),
             4000,
             20,
             false,
@@ -432,14 +433,15 @@ pub(crate) fn mcp_issue_args(
 }
 
 pub async fn create_issue_via_mcp(
-    gcx: AppState,
+    app: AppState,
     context: &DiagnosticContext,
     title: &str,
     body: &str,
     labels: Vec<String>,
     manual: bool,
 ) -> Result<BuddyIssueCreateResult, String> {
-    let project_root = crate::files_correction::get_project_dirs(gcx.gcx.clone())
+    let ctx = app.chat_ctx();
+    let project_root = crate::files_correction::get_unscoped_project_dirs_for_ctx(&ctx)
         .await
         .into_iter()
         .next()
@@ -451,10 +453,10 @@ pub async fn create_issue_via_mcp(
         return Err("GitHub MCP issue creation requires a GitHub origin remote".to_string());
     }
 
-    let mcp_tool = github_mcp_issue_tool(gcx.clone())
+    let mcp_tool = github_mcp_issue_tool(app.clone())
         .await
         .ok_or_else(|| "GitHub MCP issue tool not available".to_string())?;
-    let (auto_enabled, last_issue_at, recent_errors) = issue_control_snapshot(gcx.clone()).await?;
+    let (auto_enabled, last_issue_at, recent_errors) = issue_control_snapshot(&ctx).await?;
     let prepared = prepare_issue_content(
         context,
         Some(title),
@@ -467,7 +469,7 @@ pub async fn create_issue_via_mcp(
     )?;
 
     let mut ccx_inner = AtCommandsContext::new_from_app(
-        gcx.clone(),
+        app.clone(),
         4000,
         20,
         false,
@@ -508,7 +510,7 @@ pub async fn create_issue_via_mcp(
         failure_category: None,
         failure_summary: None,
     };
-    record_issue_success(gcx, prepared.dedupe_text, activity).await;
+    record_issue_success(app, prepared.dedupe_text, activity).await;
 
     Ok(BuddyIssueCreateResult {
         url: text,
@@ -518,7 +520,7 @@ pub async fn create_issue_via_mcp(
 }
 
 pub async fn resolve_issue_context(
-    gcx: AppState,
+    app: AppState,
     diagnostic_index: Option<usize>,
     diagnostic_id: Option<String>,
     collected_at: Option<String>,
@@ -528,7 +530,7 @@ pub async fn resolve_issue_context(
         if diagnostic_index.is_none() && diagnostic_id.is_none() && collected_at.is_none() {
             match error.as_ref() {
                 Some(err) => {
-                    Some(crate::buddy::diagnostics::collect_diagnostics(gcx.clone(), err).await)
+                    Some(crate::buddy::diagnostics::collect_diagnostics(app.clone(), err).await)
                 }
                 None => None,
             }
@@ -537,7 +539,7 @@ pub async fn resolve_issue_context(
         };
 
     crate::buddy::actor::resolve_diagnostic(
-        gcx,
+        app,
         diagnostic_index,
         diagnostic_id.as_deref(),
         collected_at.as_deref(),
@@ -547,7 +549,7 @@ pub async fn resolve_issue_context(
 }
 
 async fn issue_control_snapshot(
-    gcx: AppState,
+    ctx: &ChatCtx,
 ) -> Result<
     (
         bool,
@@ -556,7 +558,7 @@ async fn issue_control_snapshot(
     ),
     String,
 > {
-    let buddy_arc = gcx.buddy.buddy.clone();
+    let buddy_arc = ctx.buddy.buddy.clone();
     let lock = buddy_arc.lock().await;
     let svc = lock
         .as_ref()
@@ -575,7 +577,7 @@ async fn issue_control_snapshot(
 /// `source_file`/`tool_name` so the synthesized context can satisfy the reproduction-context
 /// gate; `title`/`body` are used as the message fallback when no `error` is given.
 pub async fn resolve_or_synthesize_context(
-    gcx: AppState,
+    app: AppState,
     diagnostic_index: Option<usize>,
     diagnostic_id: Option<String>,
     collected_at: Option<String>,
@@ -586,7 +588,7 @@ pub async fn resolve_or_synthesize_context(
     body: &str,
 ) -> Result<DiagnosticContext, String> {
     if diagnostic_index.is_some() || diagnostic_id.is_some() || collected_at.is_some() {
-        return resolve_issue_context(gcx, diagnostic_index, diagnostic_id, collected_at, error)
+        return resolve_issue_context(app, diagnostic_index, diagnostic_id, collected_at, error)
             .await;
     }
 
@@ -617,17 +619,17 @@ pub async fn resolve_or_synthesize_context(
 /// and falling back to the native gh/glab path. The standard integration, auto-creation,
 /// rate-limit, dedup, and redaction gates still apply.
 pub async fn create_confirmed_issue(
-    gcx: AppState,
+    app: AppState,
     context: &DiagnosticContext,
     title: &str,
     body: &str,
     labels: Vec<String>,
 ) -> Result<BuddyIssueCreateResult, String> {
-    create_confirmed_issue_with_provider(gcx, context, title, body, labels, None).await
+    create_confirmed_issue_with_provider(app, context, title, body, labels, None).await
 }
 
 pub async fn create_confirmed_issue_with_provider(
-    gcx: AppState,
+    app: AppState,
     context: &DiagnosticContext,
     title: &str,
     body: &str,
@@ -637,7 +639,8 @@ pub async fn create_confirmed_issue_with_provider(
     let provider = provider.as_deref();
     // Detect the repo once; validate any explicit provider override against the actual host so a
     // mismatched override cannot file to the wrong backend or mislabel the result.
-    let project_root = crate::files_correction::get_project_dirs(gcx.gcx.clone())
+    let ctx = app.chat_ctx();
+    let project_root = crate::files_correction::get_unscoped_project_dirs_for_ctx(&ctx)
         .await
         .into_iter()
         .next()
@@ -656,13 +659,13 @@ pub async fn create_confirmed_issue_with_provider(
 
     // Only take the GitHub MCP path when the repo is actually GitHub; GitLab/self-hosted repos
     // fall through to the native glab path.
-    if matches!(repo.host, RepoHost::GitHub) && has_github_mcp(gcx.clone()).await {
-        return create_issue_via_mcp(gcx, context, title, body, labels, false).await;
+    if matches!(repo.host, RepoHost::GitHub) && has_github_mcp(app.clone()).await {
+        return create_issue_via_mcp(app, context, title, body, labels, false).await;
     }
 
-    let (auto_enabled, last_issue_at, recent_errors) = issue_control_snapshot(gcx.clone()).await?;
+    let (auto_enabled, last_issue_at, recent_errors) = issue_control_snapshot(&ctx).await?;
     let (url, _activity) = create_issue_with_options(
-        gcx.clone(),
+        app.clone(),
         context,
         Some(title),
         Some(body),
@@ -881,11 +884,11 @@ pub(crate) fn prepare_issue_content(
 }
 
 pub(crate) async fn record_issue_success(
-    gcx: AppState,
+    app: AppState,
     dedupe_text: String,
     activity: BuddyActivity,
 ) {
-    let buddy_arc = gcx.buddy.buddy.clone();
+    let buddy_arc = app.chat_ctx().buddy.buddy.clone();
     let mut lock = buddy_arc.lock().await;
     if let Some(svc) = lock.as_mut() {
         svc.record_issue_created(dedupe_text);
@@ -894,7 +897,7 @@ pub(crate) async fn record_issue_success(
 }
 
 pub async fn create_issue(
-    gcx: AppState,
+    app: AppState,
     context: &DiagnosticContext,
     raw_title: Option<&str>,
     raw_body: Option<&str>,
@@ -904,7 +907,7 @@ pub async fn create_issue(
     recent_errors: &[(String, chrono::DateTime<chrono::Utc>)],
 ) -> Result<(String, BuddyActivity), String> {
     create_issue_with_options(
-        gcx,
+        app,
         context,
         raw_title,
         raw_body,
@@ -919,7 +922,7 @@ pub async fn create_issue(
 }
 
 async fn create_issue_with_options(
-    gcx: AppState,
+    app: AppState,
     context: &DiagnosticContext,
     raw_title: Option<&str>,
     raw_body: Option<&str>,
@@ -930,7 +933,8 @@ async fn create_issue_with_options(
     last_issue_at: Option<std::time::Instant>,
     recent_errors: &[(String, chrono::DateTime<chrono::Utc>)],
 ) -> Result<(String, BuddyActivity), String> {
-    let project_root = crate::files_correction::get_project_dirs(gcx.gcx.clone())
+    let ctx = app.chat_ctx();
+    let project_root = crate::files_correction::get_unscoped_project_dirs_for_ctx(&ctx)
         .await
         .into_iter()
         .next()
@@ -939,7 +943,7 @@ async fn create_issue_with_options(
     let repo = detect_repo_from_git(&project_root)
         .await
         .ok_or_else(|| "could not detect issue repository from git origin remote".to_string())?;
-    let provider = detect_provider(gcx.clone(), &repo, preferred_provider).await?;
+    let provider = detect_provider(app.clone(), &repo, preferred_provider).await?;
 
     let prepared = prepare_issue_content(
         context,
@@ -976,7 +980,7 @@ async fn create_issue_with_options(
         failure_category: None,
         failure_summary: None,
     };
-    record_issue_success(gcx, prepared.dedupe_text, activity.clone()).await;
+    record_issue_success(app, prepared.dedupe_text, activity.clone()).await;
     Ok((url, activity))
 }
 

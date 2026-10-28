@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::file_filter::KNOWLEDGE_FOLDER_NAME;
-use crate::files_correction::{canonicalize_normalized_path, get_project_dirs};
+use crate::files_correction::canonicalize_normalized_path;
 use crate::app_state::AppState;
 use crate::chat::ctx::ChatCtx;
 use crate::git::operations::{
@@ -17,8 +17,8 @@ use crate::git::operations::{
 };
 use crate::knowledge_graph::kg_structs::{KnowledgeDoc, KnowledgeFrontmatter};
 use crate::memories::{
-    create_frontmatter, get_global_knowledge_dir_for_ctx, memories_add, normalize_memory_tags,
-    update_memory_document_frontmatter, update_memory_document_frontmatter_for_ctx,
+    create_frontmatter, get_global_knowledge_dir_for_ctx, memories_add_for_ctx,
+    normalize_memory_tags, update_memory_document_frontmatter_for_ctx,
 };
 
 pub use refact_buddy_core::memory_lifecycle_model::*;
@@ -1194,13 +1194,6 @@ pub async fn load_memory_doc_snapshots_from_knowledge_dirs(
     docs
 }
 
-pub async fn propose_supersede_for_near_duplicate(
-    gcx: std::sync::Arc<crate::global_context::GlobalContext>,
-    new_path: &Path,
-) -> Option<MemoryLifecycleOp> {
-    propose_supersede_for_near_duplicate_for_ctx(&gcx.chat_ctx(gcx.clone()), new_path).await
-}
-
 pub async fn propose_supersede_for_near_duplicate_for_ctx(
     ctx: &ChatCtx,
     new_path: &Path,
@@ -1287,21 +1280,6 @@ pub async fn propose_supersede_for_near_duplicate_for_ctx(
         0.85,
         Utc::now(),
     )
-}
-
-pub async fn find_memory_by_source(
-    gcx: std::sync::Arc<crate::global_context::GlobalContext>,
-    source: MemorySource,
-    source_id: Option<&str>,
-    source_content_hash: Option<&str>,
-) -> Option<PathBuf> {
-    find_memory_by_source_for_ctx(
-        &gcx.chat_ctx(gcx.clone()),
-        source,
-        source_id,
-        source_content_hash,
-    )
-    .await
 }
 
 pub async fn find_memory_by_source_for_ctx(
@@ -1925,7 +1903,15 @@ impl KnowledgeRoots {
 }
 
 pub async fn apply_memory_lifecycle_op(
-    gcx: AppState,
+    app: AppState,
+    op: &MemoryLifecycleOp,
+) -> Result<MemoryApplyOutcome, String> {
+    let ctx = app.chat_ctx();
+    apply_memory_lifecycle_op_for_ctx(&ctx, op).await
+}
+
+async fn apply_memory_lifecycle_op_for_ctx(
+    ctx: &ChatCtx,
     op: &MemoryLifecycleOp,
 ) -> Result<MemoryApplyOutcome, String> {
     let op = op.clone().normalized();
@@ -1937,15 +1923,15 @@ pub async fn apply_memory_lifecycle_op(
         });
     }
     match op.op_type {
-        MemoryOpType::CreateMemory => apply_create_memory(gcx, &op).await,
-        MemoryOpType::Retag => apply_retag(gcx, &op).await,
-        MemoryOpType::RepairLinks => apply_repair_links(gcx, &op).await,
-        MemoryOpType::MarkReviewNeeded => apply_mark_review_needed(gcx, &op).await,
-        MemoryOpType::MarkStale => apply_review_status(gcx, &op, "deprecated").await,
+        MemoryOpType::CreateMemory => apply_create_memory(ctx, &op).await,
+        MemoryOpType::Retag => apply_retag(ctx, &op).await,
+        MemoryOpType::RepairLinks => apply_repair_links(ctx, &op).await,
+        MemoryOpType::MarkReviewNeeded => apply_mark_review_needed(ctx, &op).await,
+        MemoryOpType::MarkStale => apply_review_status(ctx, &op, "deprecated").await,
         MemoryOpType::Archive | MemoryOpType::ArchiveCandidate => {
-            apply_archive(gcx, &op, None).await
+            apply_archive(ctx, &op, None).await
         }
-        MemoryOpType::MergeArchive => apply_merge_archive(gcx, &op).await,
+        MemoryOpType::MergeArchive => apply_merge_archive(ctx, &op).await,
         MemoryOpType::DeleteCandidate => {
             Err("hard delete is not supported by memory lifecycle applier".to_string())
         }
@@ -1957,14 +1943,22 @@ pub async fn apply_memory_lifecycle_op(
 }
 
 pub async fn apply_memory_lifecycle_op_status(
-    gcx: AppState,
+    app: AppState,
+    op: &MemoryLifecycleOp,
+) -> MemoryLifecycleOp {
+    let ctx = app.chat_ctx();
+    apply_memory_lifecycle_op_status_for_ctx(&ctx, op).await
+}
+
+async fn apply_memory_lifecycle_op_status_for_ctx(
+    ctx: &ChatCtx,
     op: &MemoryLifecycleOp,
 ) -> MemoryLifecycleOp {
     let mut updated = op.clone().normalized();
     if memory_op_status_is_finalized(updated.status) {
         return updated;
     }
-    match apply_memory_lifecycle_op(gcx, &updated).await {
+    match apply_memory_lifecycle_op_for_ctx(ctx, &updated).await {
         Ok(outcome) => {
             updated.status = outcome.status;
             updated.error = outcome.message;
@@ -2017,7 +2011,7 @@ async fn rewrite_memory_document(
 }
 
 async fn apply_create_memory(
-    gcx: AppState,
+    ctx: &ChatCtx,
     op: &MemoryLifecycleOp,
 ) -> Result<MemoryApplyOutcome, String> {
     let payload = op
@@ -2057,8 +2051,8 @@ async fn apply_create_memory(
         .source_content_hash
         .clone()
         .unwrap_or_else(|| compute_content_hash(&content));
-    if let Some(path) = find_memory_by_source(
-        gcx.gcx.clone(),
+    if let Some(path) = find_memory_by_source_for_ctx(
+        ctx,
         op.source,
         op.payload.source_id.as_deref(),
         Some(&source_content_hash),
@@ -2112,8 +2106,7 @@ async fn apply_create_memory(
     frontmatter.source_id = op.payload.source_id.clone();
     frontmatter.source_content_hash = Some(source_content_hash);
 
-    let outcome =
-        crate::memories::memories_add_dedup(gcx.gcx.clone(), &frontmatter, &content).await?;
+    let outcome = crate::memories::memories_add_dedup_for_ctx(ctx, &frontmatter, &content).await?;
     if !outcome.created() {
         return Ok(MemoryApplyOutcome::skipped(format!(
             "duplicate content, touched existing memory {}",
@@ -2121,8 +2114,8 @@ async fn apply_create_memory(
         )));
     }
     let path = outcome.path().clone();
-    if let Some(supersede_op) = propose_supersede_for_near_duplicate(gcx.gcx.clone(), &path).await {
-        let roots = get_project_dirs(gcx.gcx.clone()).await;
+    if let Some(supersede_op) = propose_supersede_for_near_duplicate_for_ctx(ctx, &path).await {
+        let roots = crate::files_correction::get_unscoped_project_dirs_for_ctx(ctx).await;
         if let Some(project_root) = roots
             .iter()
             .find(|root| path.starts_with(root))
@@ -2138,17 +2131,17 @@ async fn apply_create_memory(
     Ok(MemoryApplyOutcome::applied(vec![path]))
 }
 
-async fn apply_retag(gcx: AppState, op: &MemoryLifecycleOp) -> Result<MemoryApplyOutcome, String> {
+async fn apply_retag(ctx: &ChatCtx, op: &MemoryLifecycleOp) -> Result<MemoryApplyOutcome, String> {
     let tags = op
         .payload
         .tags
         .clone()
         .ok_or_else(|| "retag payload missing tags".to_string())?;
-    let roots = knowledge_roots(gcx.clone()).await;
+    let roots = knowledge_roots_for_ctx(ctx).await;
     let mut paths = Vec::new();
     for target in &op.target_paths {
         let path = validate_existing_memory_path(target, &roots).await?;
-        let changed = update_memory_document_frontmatter(gcx.gcx.clone(), &path, |frontmatter| {
+        let changed = update_memory_document_frontmatter_for_ctx(ctx, &path, |frontmatter| {
             let new_tags = normalize_memory_tags(&tags, 16);
             if frontmatter.tags == new_tags {
                 return Ok(false);
@@ -2170,7 +2163,7 @@ async fn apply_retag(gcx: AppState, op: &MemoryLifecycleOp) -> Result<MemoryAppl
 }
 
 async fn apply_repair_links(
-    gcx: AppState,
+    ctx: &ChatCtx,
     op: &MemoryLifecycleOp,
 ) -> Result<MemoryApplyOutcome, String> {
     if op.payload.filenames.is_none()
@@ -2179,11 +2172,11 @@ async fn apply_repair_links(
     {
         return Err("repair_links payload has no link fields".to_string());
     }
-    let roots = knowledge_roots(gcx.clone()).await;
+    let roots = knowledge_roots_for_ctx(ctx).await;
     let mut paths = Vec::new();
     for target in &op.target_paths {
         let path = validate_existing_memory_path(target, &roots).await?;
-        let changed = update_memory_document_frontmatter(gcx.gcx.clone(), &path, |frontmatter| {
+        let changed = update_memory_document_frontmatter_for_ctx(ctx, &path, |frontmatter| {
             let old = (
                 frontmatter.filenames.clone(),
                 frontmatter.related_files.clone(),
@@ -2222,17 +2215,17 @@ async fn apply_repair_links(
 }
 
 async fn apply_review_status(
-    gcx: AppState,
+    ctx: &ChatCtx,
     op: &MemoryLifecycleOp,
     status: &str,
 ) -> Result<MemoryApplyOutcome, String> {
-    let roots = knowledge_roots(gcx.clone()).await;
+    let roots = knowledge_roots_for_ctx(ctx).await;
     let status = normalize_memory_status(Some(status));
     let review_after = op.payload.review_after.clone().unwrap_or_else(today_string);
     let mut paths = Vec::new();
     for target in &op.target_paths {
         let path = validate_existing_memory_path(target, &roots).await?;
-        let changed = update_memory_document_frontmatter(gcx.gcx.clone(), &path, |frontmatter| {
+        let changed = update_memory_document_frontmatter_for_ctx(ctx, &path, |frontmatter| {
             if frontmatter.status.as_deref() == Some(status.as_str())
                 && frontmatter.review_after.as_deref() == Some(review_after.as_str())
                 && (status == "deprecated") == frontmatter.deprecated_at.is_some()
@@ -2264,10 +2257,10 @@ async fn apply_review_status(
 }
 
 async fn apply_mark_review_needed(
-    gcx: AppState,
+    ctx: &ChatCtx,
     op: &MemoryLifecycleOp,
 ) -> Result<MemoryApplyOutcome, String> {
-    let roots = knowledge_roots(gcx.clone()).await;
+    let roots = knowledge_roots_for_ctx(ctx).await;
     let review_after = op.payload.review_after.clone().unwrap_or_else(today_string);
     let mut paths = Vec::new();
     for target in &op.target_paths {
@@ -2297,16 +2290,16 @@ async fn apply_mark_review_needed(
 }
 
 async fn apply_archive(
-    gcx: AppState,
+    ctx: &ChatCtx,
     op: &MemoryLifecycleOp,
     superseded_by: Option<&str>,
 ) -> Result<MemoryApplyOutcome, String> {
-    let roots = knowledge_roots(gcx.clone()).await;
+    let roots = knowledge_roots_for_ctx(ctx).await;
     let mut paths = Vec::new();
     for target in &op.target_paths {
         let path = validate_existing_memory_path(target, &roots).await?;
-        let changed = archive_memory_file(
-            gcx.clone(),
+        let changed = archive_memory_file_for_ctx(
+            ctx,
             &path,
             superseded_by.or(op.payload.superseded_by.as_deref()),
         )
@@ -2323,7 +2316,7 @@ async fn apply_archive(
 }
 
 async fn apply_merge_archive(
-    gcx: AppState,
+    ctx: &ChatCtx,
     op: &MemoryLifecycleOp,
 ) -> Result<MemoryApplyOutcome, String> {
     let canonical = op
@@ -2336,7 +2329,7 @@ async fn apply_merge_archive(
         return Err("merge_archive canonical content is empty".to_string());
     }
 
-    let roots = knowledge_roots(gcx.clone()).await;
+    let roots = knowledge_roots_for_ctx(ctx).await;
     let superseded_targets = if op.payload.superseded_paths.is_empty() {
         op.target_paths.clone()
     } else {
@@ -2402,7 +2395,7 @@ async fn apply_merge_archive(
         rewrite_memory_document(&path, frontmatter.clone(), canonical.content.trim(), &[]).await?;
         path
     } else {
-        memories_add(gcx.gcx.clone(), &frontmatter, canonical.content.trim()).await?
+        memories_add_for_ctx(ctx, &frontmatter, canonical.content.trim()).await?
     };
     let canonical_id = frontmatter
         .id
@@ -2414,21 +2407,13 @@ async fn apply_merge_archive(
         if path == paths[0] {
             continue;
         }
-        let changed = archive_memory_file(gcx.clone(), &path, Some(&canonical_id)).await?;
+        let changed = archive_memory_file_for_ctx(ctx, &path, Some(&canonical_id)).await?;
         if changed {
             paths.push(path);
         }
     }
 
     Ok(MemoryApplyOutcome::applied(paths))
-}
-
-pub async fn archive_memory_file_checked(
-    gcx: AppState,
-    path: &Path,
-    superseded_by: Option<&str>,
-) -> Result<bool, String> {
-    archive_memory_file_checked_for_ctx(&gcx.chat_ctx(), path, superseded_by).await
 }
 
 pub async fn archive_memory_file_checked_for_ctx(
@@ -2450,14 +2435,6 @@ pub async fn archive_memory_file_checked_for_ctx(
     archive_memory_file_for_ctx(ctx, &canonical, superseded_by).await
 }
 
-async fn archive_memory_file(
-    gcx: AppState,
-    path: &Path,
-    superseded_by: Option<&str>,
-) -> Result<bool, String> {
-    archive_memory_file_for_ctx(&gcx.chat_ctx(), path, superseded_by).await
-}
-
 async fn archive_memory_file_for_ctx(
     ctx: &ChatCtx,
     path: &Path,
@@ -2476,10 +2453,6 @@ async fn archive_memory_file_for_ctx(
         Ok(true)
     })
     .await
-}
-
-async fn knowledge_roots(gcx: AppState) -> KnowledgeRoots {
-    knowledge_roots_for_ctx(&gcx.chat_ctx()).await
 }
 
 async fn knowledge_roots_for_ctx(ctx: &ChatCtx) -> KnowledgeRoots {
@@ -4044,7 +4017,9 @@ mod tests {
             op.status = MemoryOpStatus::Approved;
             op.payload.review_after = Some("2026-05-03".to_string());
 
-            apply_review_status(gcx, &op, status).await.unwrap();
+            apply_review_status(&gcx.chat_ctx(), &op, status)
+                .await
+                .unwrap();
 
             let (frontmatter, body) =
                 frontmatter_and_body(&tokio::fs::read_to_string(&path).await.unwrap());
@@ -4332,7 +4307,7 @@ mod buddy_memory_tools_checked_tests {
             .join("..")
             .join("knowledge")
             .join("missing.md");
-        let err = archive_memory_file_checked(gcx, &path, None)
+        let err = archive_memory_file_checked_for_ctx(&gcx.chat_ctx(), &path, None)
             .await
             .unwrap_err();
         assert!(err.contains(".."));

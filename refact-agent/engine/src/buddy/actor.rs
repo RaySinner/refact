@@ -58,7 +58,7 @@ pub(crate) fn chat_phrase_bank_is_fresh(bank: &BuddyChatPhraseBank, now: DateTim
 
 pub(crate) async fn observe_buddy_facts_parallel(
     due_observers: Vec<Arc<dyn BuddyObserver>>,
-    gcx: AppState,
+    app: AppState,
     project_root: std::path::PathBuf,
     now: DateTime<Utc>,
 ) -> Vec<(u64, Vec<BuddyFact>)> {
@@ -67,13 +67,13 @@ pub(crate) async fn observe_buddy_facts_parallel(
     let mut pending = FuturesUnordered::new();
     let mut all_facts = Vec::new();
     for obs in due_observers {
-        let gcx = gcx.clone();
+        let app = app.clone();
         let project_root = project_root.clone();
         pending.push(async move {
             let ctx = ObserverContext { project_root, now };
             let refresh_ttl = obs.emission_refresh_ttl_seconds();
             let facts =
-                tokio::time::timeout(tokio::time::Duration::from_secs(5), obs.observe(gcx, &ctx))
+                tokio::time::timeout(tokio::time::Duration::from_secs(5), obs.observe(app, &ctx))
                     .await
                     .unwrap_or_default();
             (refresh_ttl, facts)
@@ -127,7 +127,7 @@ fn parse_commit_activity_from_log(output: &str) -> Vec<UserAction> {
         .collect()
 }
 
-async fn poll_commit_activity_once(gcx: AppState, project_root: PathBuf) {
+async fn poll_commit_activity_once(app: AppState, project_root: PathBuf) {
     let output = tokio::task::spawn_blocking(move || {
         std::process::Command::new("git")
             .arg("log")
@@ -149,7 +149,7 @@ async fn poll_commit_activity_once(gcx: AppState, project_root: PathBuf) {
     if actions.is_empty() {
         return;
     }
-    let user_activity = gcx.buddy.user_activity.clone();
+    let user_activity = app.chat_ctx().buddy.user_activity.clone();
     if let Ok(mut ring) = user_activity.try_lock() {
         let mut existing = ring
             .snapshot()
@@ -172,7 +172,7 @@ async fn poll_commit_activity_once(gcx: AppState, project_root: PathBuf) {
 }
 
 async fn commit_activity_poller(
-    gcx: AppState,
+    app: AppState,
     project_root: PathBuf,
     shutdown_flag: Arc<std::sync::atomic::AtomicBool>,
 ) {
@@ -182,7 +182,7 @@ async fn commit_activity_poller(
                 if shutdown_flag.load(Ordering::SeqCst) {
                     break;
                 }
-                poll_commit_activity_once(gcx.clone(), project_root.clone()).await;
+                poll_commit_activity_once(app.clone(), project_root.clone()).await;
             }
             _ = wait_for_shutdown(shutdown_flag.clone()) => {
                 break;
@@ -299,7 +299,7 @@ fn safe_generated_buddy_text_opt(
 }
 
 pub async fn render_buddy_speech(
-    gcx: AppState,
+    app: AppState,
     persona: BuddyPersonalityProfile,
     identity_name: String,
     pulse: BuddyPulse,
@@ -322,7 +322,7 @@ pub async fn render_buddy_speech(
     };
     let mut speech = voice_service()
         .await
-        .render_speech(gcx, voice_ctx, intent)
+        .render_speech(app, voice_ctx, intent)
         .await;
     speech.text = safe_generated_buddy_text(
         &speech.text,
@@ -334,7 +334,7 @@ pub async fn render_buddy_speech(
 }
 
 pub async fn render_buddy_runtime_event(
-    gcx: AppState,
+    app: AppState,
     persona: BuddyPersonalityProfile,
     identity_name: String,
     pulse: BuddyPulse,
@@ -358,7 +358,7 @@ pub async fn render_buddy_runtime_event(
     };
     let (title, description) = voice_service()
         .await
-        .render_runtime_event(gcx, voice_ctx, status)
+        .render_runtime_event(app, voice_ctx, status)
         .await;
     let title_is_safe = safe_buddy_candidate(&title, BUDDY_TITLE_MAX_CHARS).is_some();
     (
@@ -378,7 +378,7 @@ pub async fn render_buddy_runtime_event(
 }
 
 pub async fn render_buddy_activity_title(
-    gcx: AppState,
+    app: AppState,
     persona: BuddyPersonalityProfile,
     identity_name: String,
     pulse: BuddyPulse,
@@ -401,7 +401,7 @@ pub async fn render_buddy_activity_title(
     };
     let title = voice_service()
         .await
-        .render_activity_title(gcx, voice_ctx, intent)
+        .render_activity_title(app, voice_ctx, intent)
         .await;
     safe_generated_buddy_text(
         &title,
@@ -1849,24 +1849,25 @@ pub fn make_runtime_event(
     }
 }
 
-pub async fn buddy_complete_event(gcx: AppState, dedupe_key: &str, status: &str) {
-    let buddy_arc = gcx.buddy.buddy.clone();
+pub async fn buddy_complete_event(app: AppState, dedupe_key: &str, status: &str) {
+    let buddy_arc = app.chat_ctx().buddy.buddy.clone();
     let mut lock = buddy_arc.lock().await;
     if let Some(svc) = lock.as_mut() {
         svc.complete_runtime_event(dedupe_key, status);
     }
 }
 
-pub async fn buddy_enqueue_event(gcx: AppState, event: BuddyRuntimeEvent) {
-    let buddy_arc = gcx.buddy.buddy.clone();
+pub async fn buddy_enqueue_event(app: AppState, event: BuddyRuntimeEvent) {
+    let buddy_arc = app.chat_ctx().buddy.buddy.clone();
     let mut lock = buddy_arc.lock().await;
     if let Some(svc) = lock.as_mut() {
         svc.enqueue_runtime_event(event);
     }
 }
 
-pub async fn resolve_buddy_chat_model(gcx: AppState) -> String {
-    let caps_state = gcx.model.caps.read().await;
+pub async fn resolve_buddy_chat_model(app: AppState) -> String {
+    let ctx = app.chat_ctx();
+    let caps_state = ctx.model.caps.read().await;
     let Some(caps) = caps_state.caps.as_ref() else {
         return String::new();
     };
@@ -1878,21 +1879,21 @@ pub async fn resolve_buddy_chat_model(gcx: AppState) -> String {
     }
 }
 
-pub async fn buddy_snapshot(gcx: AppState) -> Option<BuddySnapshot> {
-    let buddy_arc = gcx.buddy.buddy.clone();
+pub async fn buddy_snapshot(app: AppState) -> Option<BuddySnapshot> {
+    let buddy_arc = app.chat_ctx().buddy.buddy.clone();
     let lock = buddy_arc.lock().await;
     lock.as_ref().map(|svc| svc.snapshot())
 }
 
 pub async fn buddy_record_workflow_telemetry(
-    gcx: AppState,
+    app: AppState,
     workflow_id: &str,
     llm_calls: u64,
     tokens_in: u64,
     tokens_out: u64,
     produced_output: bool,
 ) {
-    let buddy_arc = gcx.buddy.buddy.clone();
+    let buddy_arc = app.chat_ctx().buddy.buddy.clone();
     let mut lock = buddy_arc.lock().await;
     if let Some(svc) = lock.as_mut() {
         svc.record_workflow_telemetry(
@@ -1905,24 +1906,24 @@ pub async fn buddy_record_workflow_telemetry(
     }
 }
 
-pub async fn buddy_update_speech(gcx: AppState, speech: BuddySpeechItem) {
-    let buddy_arc = gcx.buddy.buddy.clone();
+pub async fn buddy_update_speech(app: AppState, speech: BuddySpeechItem) {
+    let buddy_arc = app.chat_ctx().buddy.buddy.clone();
     let mut lock = buddy_arc.lock().await;
     if let Some(svc) = lock.as_mut() {
         svc.update_speech(speech);
     }
 }
 
-pub async fn buddy_llm_budget_exhausted(gcx: &AppState) -> bool {
-    let buddy_arc = gcx.buddy.buddy.clone();
+pub async fn buddy_llm_budget_exhausted(app: &AppState) -> bool {
+    let buddy_arc = app.chat_ctx().buddy.buddy.clone();
     let lock = buddy_arc.lock().await;
     lock.as_ref()
         .map(|svc| svc.llm_budget_exhausted())
         .unwrap_or(false)
 }
 
-pub async fn buddy_update_speech_user(gcx: AppState, speech: BuddySpeechItem) {
-    let buddy_arc = gcx.buddy.buddy.clone();
+pub async fn buddy_update_speech_user(app: AppState, speech: BuddySpeechItem) {
+    let buddy_arc = app.chat_ctx().buddy.buddy.clone();
     let mut lock = buddy_arc.lock().await;
     if let Some(svc) = lock.as_mut() {
         svc.update_speech_user_initiated(speech);
@@ -1935,7 +1936,7 @@ pub struct CompletedQuestVoice {
 }
 
 pub async fn complete_quest_with_voice(
-    gcx: AppState,
+    app: AppState,
     quest: BuddyQuest,
     persona: BuddyPersonalityProfile,
     identity_name: String,
@@ -1945,7 +1946,7 @@ pub async fn complete_quest_with_voice(
     let fallback_speech = format!("Quest complete: {title}! Tiny victory dance?");
     let fallback_event = format!("Quest complete: {title}");
     let mut speech = render_buddy_speech(
-        gcx.clone(),
+        app.clone(),
         persona.clone(),
         identity_name.clone(),
         pulse.clone(),
@@ -1961,7 +1962,7 @@ pub async fn complete_quest_with_voice(
     speech.controls = vec![];
 
     let (event_title, event_speech) = render_buddy_runtime_event(
-        gcx,
+        app,
         persona,
         identity_name.clone(),
         pulse,
@@ -2011,32 +2012,33 @@ pub async fn complete_quest_with_voice(
 }
 
 pub async fn report_error_persisted(
-    gcx: AppState,
+    app: AppState,
     error_type: &str,
     error_msg: &str,
     source: Option<&str>,
     chat_id: Option<&str>,
 ) {
-    report_error_persisted_with_model(gcx, error_type, error_msg, source, chat_id, None).await;
+    report_error_persisted_with_model(app, error_type, error_msg, source, chat_id, None).await;
 }
 
 pub async fn report_error_persisted_with_model(
-    gcx: AppState,
+    app: AppState,
     error_type: &str,
     error_msg: &str,
     source: Option<&str>,
     chat_id: Option<&str>,
     model_id: Option<&str>,
 ) {
-    let buddy_arc = gcx.buddy.buddy.clone();
+    let buddy_arc = app.chat_ctx().buddy.buddy.clone();
     let mut lock = buddy_arc.lock().await;
     if let Some(svc) = lock.as_mut() {
         svc.report_error_with_model(error_type, error_msg, source, chat_id, model_id);
     }
 }
 
-pub async fn latest_project_root(gcx: AppState) -> Result<std::path::PathBuf, String> {
-    crate::files_correction::get_project_dirs(gcx.gcx.clone())
+pub async fn latest_project_root(app: AppState) -> Result<std::path::PathBuf, String> {
+    let ctx = app.chat_ctx();
+    crate::files_correction::get_unscoped_project_dirs_for_ctx(&ctx)
         .await
         .into_iter()
         .next()
@@ -2056,14 +2058,14 @@ pub async fn load_diagnostics_for_service(
 }
 
 pub async fn resolve_diagnostic(
-    gcx: AppState,
+    app: AppState,
     diagnostic_index: Option<usize>,
     diagnostic_id: Option<&str>,
     collected_at: Option<&str>,
     fallback: Option<super::diagnostics::DiagnosticContext>,
 ) -> Result<super::diagnostics::DiagnosticContext, String> {
-    let project_root = latest_project_root(gcx.clone()).await?;
-    let buddy_arc = gcx.buddy.buddy.clone();
+    let project_root = latest_project_root(app.clone()).await?;
+    let buddy_arc = app.chat_ctx().buddy.buddy.clone();
     let lock = buddy_arc.lock().await;
     let svc = lock
         .as_ref()
@@ -2149,8 +2151,8 @@ impl Default for BuddyMutation {
     }
 }
 
-pub async fn buddy_apply(gcx: AppState, m: BuddyMutation) {
-    let buddy_arc = gcx.buddy.buddy.clone();
+pub async fn buddy_apply(app: AppState, m: BuddyMutation) {
+    let buddy_arc = app.chat_ctx().buddy.buddy.clone();
     let mut lock = buddy_arc.lock().await;
     let Some(svc) = lock.as_mut() else { return };
     if let Some(ev) = m.runtime_event {
@@ -2171,12 +2173,13 @@ pub async fn buddy_apply(gcx: AppState, m: BuddyMutation) {
     }
 }
 
-pub async fn buddy_background_task(gcx: AppState) {
+pub async fn buddy_background_task(app: AppState) {
+    let ctx = app.chat_ctx();
     let project_root = loop {
-        if gcx.runtime.shutdown_flag.load(Ordering::SeqCst) {
+        if ctx.runtime.shutdown_flag.load(Ordering::SeqCst) {
             return;
         }
-        let dirs = crate::files_correction::get_project_dirs(gcx.gcx.clone()).await;
+        let dirs = crate::files_correction::get_unscoped_project_dirs_for_ctx(&ctx).await;
         if let Some(root) = dirs.into_iter().next() {
             break root;
         }
@@ -2225,7 +2228,7 @@ pub async fn buddy_background_task(gcx: AppState) {
     }
     let runtime_queue = super::storage::load_runtime_queue(&project_root).await;
 
-    let events_tx = gcx.buddy.buddy_events_tx.clone();
+    let events_tx = ctx.buddy.buddy_events_tx.clone();
 
     // Spawn the single-writer task that owns runtime_queue.jsonl. All queue
     // mutations forward to this channel, which preserves on-disk write order.
@@ -2249,10 +2252,10 @@ pub async fn buddy_background_task(gcx: AppState) {
         .draft_store
         .restore(super::storage::load_drafts(&project_root).await);
 
-    let buddy_arc = gcx.buddy.buddy.clone();
+    let buddy_arc = ctx.buddy.buddy.clone();
     *buddy_arc.lock().await = Some(service);
     let initial_pulse =
-        super::pulse::build_pulse(gcx.clone(), &project_root, &FactStore::new()).await;
+        super::pulse::build_pulse(app.clone(), &project_root, &FactStore::new()).await;
     {
         let mut buddy = buddy_arc.lock().await;
         if let Some(svc) = buddy.as_mut() {
@@ -2300,9 +2303,9 @@ pub async fn buddy_background_task(gcx: AppState) {
     info!("buddy: service started for {:?}", project_root);
 
     let scheduler = super::scheduler::BuddyScheduler::new();
-    let shutdown_flag = gcx.runtime.shutdown_flag.clone();
+    let shutdown_flag = ctx.runtime.shutdown_flag.clone();
     let commit_poller_handle = tokio::spawn(commit_activity_poller(
-        gcx.clone(),
+        app.clone(),
         project_root.clone(),
         shutdown_flag.clone(),
     ));
@@ -2340,12 +2343,13 @@ pub async fn buddy_background_task(gcx: AppState) {
                 for f in facts {
                     tmp_store.ingest(f);
                 }
-                let knowledge_dirs = crate::files_correction::get_project_dirs(gcx.gcx.clone())
-                    .await
-                    .into_iter()
-                    .map(|dir| dir.join(crate::file_filter::KNOWLEDGE_FOLDER_NAME))
-                    .filter(|dir| dir.exists())
-                    .collect::<Vec<_>>();
+                let knowledge_dirs =
+                    crate::files_correction::get_unscoped_project_dirs_for_ctx(&ctx)
+                        .await
+                        .into_iter()
+                        .map(|dir| dir.join(crate::file_filter::KNOWLEDGE_FOLDER_NAME))
+                        .filter(|dir| dir.exists())
+                        .collect::<Vec<_>>();
                 let lifecycle_ops =
                     detect_memory_lifecycle_ops_from_knowledge_dirs(&knowledge_dirs, now).await;
                 if !lifecycle_ops.is_empty() {
@@ -2364,7 +2368,7 @@ pub async fn buddy_background_task(gcx: AppState) {
                     }
                 }
                 let new_pulse =
-                    super::pulse::build_pulse(gcx.clone(), &project_root, &tmp_store).await;
+                    super::pulse::build_pulse(app.clone(), &project_root, &tmp_store).await;
                 let mut buddy = buddy_arc.lock().await;
                 if let Some(svc) = buddy.as_mut() {
                     svc.set_pulse(new_pulse);
@@ -2378,7 +2382,7 @@ pub async fn buddy_background_task(gcx: AppState) {
         {
             let window = {
                 let actions = {
-                    let ring = gcx.buddy.user_activity.lock().await;
+                    let ring = ctx.buddy.user_activity.lock().await;
                     ring.snapshot()
                 };
                 super::speech_policy::auto_quiet_window_from_actions(&actions)
@@ -2423,7 +2427,7 @@ pub async fn buddy_background_task(gcx: AppState) {
                 // DiagnosticClusterObserver which also locks buddy).
                 let all_facts = observe_buddy_facts_parallel(
                     due_observers.clone(),
-                    gcx.clone(),
+                    app.clone(),
                     project_root.clone(),
                     now,
                 )
@@ -2502,12 +2506,12 @@ pub async fn buddy_background_task(gcx: AppState) {
                     interjection_plan.filter(|(stuck, ..)| !stuck.is_empty())
                 {
                     let targets =
-                        super::chat_interjection::collect_interjection_targets(&gcx, &stuck).await;
+                        super::chat_interjection::collect_interjection_targets(&app, &stuck).await;
                     for target in targets {
                         let text =
                             super::chat_interjection::build_interjection_text(&target);
                         match super::chat_interjection::maybe_interject_with_agent(
-                            gcx.clone(),
+                            app.clone(),
                             &target,
                             settings.clone(),
                             rotation.clone(),
@@ -2554,7 +2558,7 @@ pub async fn buddy_background_task(gcx: AppState) {
                     })
                 };
                 if let Some((settings, rotation, auto_quiet_window)) = backstop_plan {
-                    let task_ids: Vec<String> = crate::tasks::storage::list_tasks(gcx.gcx.clone())
+                    let task_ids: Vec<String> = crate::tasks::storage::list_tasks_for_ctx(&ctx)
                         .await
                         .unwrap_or_default()
                         .into_iter()
@@ -2569,13 +2573,13 @@ pub async fn buddy_background_task(gcx: AppState) {
                         .collect();
                     let candidates =
                         super::planner_backstop_runner::collect_backstop_candidates(
-                            &gcx, &task_ids,
+                            &app, &task_ids,
                         )
                         .await;
                     for candidate in candidates {
                         let card_id = candidate.question.card_id.clone();
                         let outcome = super::planner_backstop_runner::maybe_answer_overdue_question(
-                            &gcx,
+                            &app,
                             settings.clone(),
                             rotation.clone(),
                             auto_quiet_window,
@@ -2628,7 +2632,7 @@ pub async fn buddy_background_task(gcx: AppState) {
                             opp.humor = Some(line);
                         }
                         HumorPlan::Generate(reservation) => {
-                            let lines = reservation.generate(gcx.clone()).await;
+                            let lines = reservation.generate(app.clone()).await;
                             let line = {
                                 let mut humor = humor_arc.lock().await;
                                 humor.complete_humor(reservation, lines)
@@ -2655,7 +2659,7 @@ pub async fn buddy_background_task(gcx: AppState) {
         }
         if expiry_tick % 30 == 0 {
             scheduler
-                .tick(gcx.clone(), buddy_arc.clone(), &project_root)
+                .tick(app.clone(), buddy_arc.clone(), &project_root)
                 .await;
         }
         let state_to_save = {
@@ -2732,7 +2736,7 @@ pub async fn buddy_background_task(gcx: AppState) {
                 if enabled {
                     match super::storage::drain_memory_ops(
                         &project_root,
-                        gcx.clone(),
+                        app.clone(),
                         autonomy,
                         MEMORY_OPS_DRAIN_MAX_APPLIES,
                     )

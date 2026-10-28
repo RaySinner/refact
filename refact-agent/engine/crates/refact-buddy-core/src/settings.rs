@@ -133,6 +133,12 @@ pub struct BuddySettings {
     /// while the task is still unfinished.
     #[serde(default = "default_true")]
     pub stalled_turn_intervention: bool,
+    /// Minimum seconds between two stalled-turn nudges in the same chat.
+    #[serde(default = "default_stalled_turn_min_interval_secs")]
+    pub stalled_turn_min_interval_secs: u64,
+    /// Ceiling on stalled-turn nudges per chat per rolling hour.
+    #[serde(default = "default_stalled_turn_max_per_hour")]
+    pub stalled_turn_max_per_hour: u32,
     #[serde(default)]
     pub observers: ObserverToggles,
 }
@@ -155,6 +161,14 @@ fn default_quiet_end() -> u8 {
 
 fn default_planner_backstop_after_secs() -> u64 {
     crate::planner_backstop::DEFAULT_PLANNER_BACKSTOP_AFTER_SECS
+}
+
+fn default_stalled_turn_min_interval_secs() -> u64 {
+    300
+}
+
+fn default_stalled_turn_max_per_hour() -> u32 {
+    6
 }
 
 impl Default for BuddySettings {
@@ -183,6 +197,8 @@ impl Default for BuddySettings {
             planner_backstop_enabled: false,
             planner_backstop_after_secs: default_planner_backstop_after_secs(),
             stalled_turn_intervention: true,
+            stalled_turn_min_interval_secs: default_stalled_turn_min_interval_secs(),
+            stalled_turn_max_per_hour: default_stalled_turn_max_per_hour(),
             observers: ObserverToggles::default(),
         }
     }
@@ -213,6 +229,8 @@ mod tests {
             crate::planner_backstop::DEFAULT_PLANNER_BACKSTOP_AFTER_SECS
         );
         assert!(settings.stalled_turn_intervention);
+        assert_eq!(settings.stalled_turn_min_interval_secs, 300);
+        assert_eq!(settings.stalled_turn_max_per_hour, 6);
     }
 
     #[test]

@@ -1965,15 +1965,22 @@ fn collect_combined(chunks: &[ExecOutputChunk]) -> String {
 mod tests {
     use super::*;
 
+    fn test_tool_ctx(app: &AppState) -> ToolCtx {
+        app.tool.clone()
+    }
+
     #[tokio::test]
     async fn process_notice_push_defaults_and_explicit_modes() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
+        let app = AppState::from_gcx(gcx.clone()).await;
+        let tool = test_tool_ctx(&app);
+        let chat = app.chat_ctx();
         let mut input = HashMap::from([
             ("command".to_string(), json!("echo test")),
             ("description".to_string(), json!("test process")),
         ]);
         assert_eq!(
-            parse_start_args(gcx.clone(), &input, None)
+            parse_start_args(&tool, &chat, gcx.clone(), &input, None)
                 .await
                 .unwrap()
                 .push,
@@ -1985,7 +1992,7 @@ mod tests {
         ] {
             input.insert("push".into(), json!(value));
             assert_eq!(
-                parse_start_args(gcx.clone(), &input, None)
+                parse_start_args(&tool, &chat, gcx.clone(), &input, None)
                     .await
                     .unwrap()
                     .push,
@@ -1993,7 +2000,7 @@ mod tests {
             );
         }
         input.insert("push".into(), json!(123));
-        assert!(parse_start_args(gcx.clone(), &input, None).await.is_err());
+        assert!(parse_start_args(&tool, &chat, gcx.clone(), &input, None).await.is_err());
     }
 
     use crate::app_state::AppState;

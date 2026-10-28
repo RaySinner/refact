@@ -10,7 +10,7 @@ use refact_core::custom_error::YamlError;
 
 #[cfg(test)]
 use refact_core::llm_types::WireFormat;
-use refact_providers::identity::provider_identity_from_yaml;
+use crate::identity::provider_identity_from_yaml;
 
 pub use crate::provider_config::{
     CapsProvider, CompletionPresets, EmbeddingPresets, default_endpoint_style, extend_collection,

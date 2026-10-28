@@ -1,4 +1,4 @@
-use crate::registry::PROVIDER_NAMES;
+﻿use crate::provider_names::PROVIDER_NAMES;
 
 pub const RESERVED_INSTANCE_IDS: &[&str] = &["defaults", "refact"];
 

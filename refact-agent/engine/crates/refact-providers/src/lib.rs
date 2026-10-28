@@ -1,7 +1,7 @@
 pub mod config;
 pub mod config_store;
 pub mod credential;
-pub mod identity;
+pub use refact_caps_core::identity;
 pub mod instance;
 pub mod llm_http_retry;
 pub mod models_dev_provider;

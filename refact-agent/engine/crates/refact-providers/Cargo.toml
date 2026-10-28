@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 refact-core = { path = "../refact-core" }
+refact-caps-core = { path = "../refact-caps-core" }
 refact-llm = { path = "../refact-llm" }
 
 serde.workspace = true

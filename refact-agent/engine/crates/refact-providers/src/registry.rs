@@ -17,33 +17,7 @@ use crate::{
     opencode::OpenCodeProvider, litellm::LiteLLMProvider,
 };
 
-pub const PROVIDER_NAMES: &[&str] = &[
-    "anthropic",
-    "openai",
-    "openai_responses",
-    "openai_codex",
-    "openrouter",
-    "ollama",
-    "lmstudio",
-    "vllm",
-    "litellm",
-    "groq",
-    "deepseek",
-    "doubao",
-    "xai",
-    "xai_responses",
-    "xai_oauth",
-    "google_gemini",
-    "google_antigravity",
-    "qwen",
-    "kimi",
-    "zhipu",
-    "minimax",
-    "opencode",
-    "github_copilot",
-    "custom",
-    "claude_code",
-];
+pub use refact_caps_core::provider_names::PROVIDER_NAMES;
 
 pub fn create_provider(name: &str) -> Option<Box<dyn ProviderTrait>> {
     match name {

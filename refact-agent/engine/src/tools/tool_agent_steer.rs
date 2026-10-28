@@ -283,7 +283,7 @@ impl Tool for ToolAgentSteer {
             planner_delivery::truncate_chars(&message, 80)
         );
         if let Some(reason) = planner_delivery::reserve_card_status(
-            gcx.clone(),
+            &gcx.chat_ctx(gcx.clone()),
             &task_id,
             &target,
             status_message,
@@ -299,7 +299,7 @@ impl Tool for ToolAgentSteer {
         }
 
         let report = planner_delivery::deliver_to_card(
-            gcx.clone(),
+            &gcx.chat_ctx(gcx.clone()),
             chat_facade.clone(),
             &task_id,
             &target,
@@ -315,7 +315,7 @@ impl Tool for ToolAgentSteer {
 
         if !report.reached_agent() {
             planner_delivery::record_card_status(
-                gcx,
+                &gcx.chat_ctx(gcx.clone()),
                 &task_id,
                 &target,
                 format!("Planner steer {}", report.short_status()),

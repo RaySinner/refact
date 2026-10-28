@@ -178,7 +178,7 @@ async fn broadcast_to_target(
         planner_delivery::truncate_chars(message, 80)
     );
     match planner_delivery::reserve_card_status(
-        gcx.clone(),
+        &gcx.chat_ctx(gcx.clone()),
         task_id,
         &target,
         pending_status,
@@ -201,7 +201,7 @@ async fn broadcast_to_target(
     }
 
     let report = planner_delivery::deliver_to_card(
-        gcx.clone(),
+        &gcx.chat_ctx(gcx.clone()),
         chat_facade,
         task_id,
         &target,
@@ -224,7 +224,7 @@ async fn broadcast_to_target(
     } else {
         format!("Broadcast {}", report.short_status())
     };
-    let record_error = planner_delivery::record_card_status(gcx, task_id, &target, follow_up)
+    let record_error = planner_delivery::record_card_status(&gcx.chat_ctx(gcx.clone()), task_id, &target, follow_up)
         .await
         .err();
 

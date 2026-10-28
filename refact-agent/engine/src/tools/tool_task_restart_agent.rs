@@ -331,7 +331,7 @@ impl Tool for ToolTaskRestartAgent {
 
         let task_meta = storage::load_task_meta_for_ctx(&ctx, &task_id).await?;
         let model = resolve_agent_model(&tool.caps, &current_model).await?;
-        crate::tools::task_tool_helpers::preflight_agent_model(app.gcx.clone(), &model).await?;
+        crate::tools::task_tool_helpers::preflight_agent_model(&app.chat_ctx(), &model).await?;
 
         let board = storage::load_board_for_ctx(&ctx, &task_id).await?;
         let card = board
@@ -450,7 +450,7 @@ impl ToolTaskRestartAgent {
 
         if let Some(old_chat_id) = original_card.agent_chat_id.as_deref() {
             if let Err(e) =
-                wait_for_agent_abort(app.gcx.clone(), old_chat_id, AGENT_ABORT_TIMEOUT).await
+                wait_for_agent_abort(&app.chat_ctx(), old_chat_id, AGENT_ABORT_TIMEOUT).await
             {
                 return Err(format!(
                     "Cannot restart card {}: previous agent session '{}' did not stop in time: {}. \
@@ -588,7 +588,7 @@ impl ToolTaskRestartAgent {
 
         if let Some(old_chat_id) = original_card.agent_chat_id.as_deref() {
             if let Err(e) =
-                wait_for_agent_abort(app.gcx.clone(), old_chat_id, AGENT_ABORT_TIMEOUT).await
+                wait_for_agent_abort(&app.chat_ctx(), old_chat_id, AGENT_ABORT_TIMEOUT).await
             {
                 return Err(format!(
                     "Cannot resume card {}: previous agent session '{}' did not stop in time: {}. \

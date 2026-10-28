@@ -755,7 +755,7 @@ impl Tool for ToolCancelAgent {
             CleanupResult::default()
         } else {
             match crate::tools::task_tool_helpers::wait_for_agent_abort(
-                planner.gcx.clone(),
+                &planner.gcx.chat_ctx(planner.gcx.clone()),
                 &agent_chat_id,
                 crate::tools::task_tool_helpers::AGENT_ABORT_TIMEOUT,
             )
@@ -889,7 +889,7 @@ impl Tool for ToolPauseAgent {
             chat_id: agent_chat_id.clone(),
         };
         let report = planner_delivery::deliver_to_card(
-            planner.gcx.clone(),
+            &planner.gcx.chat_ctx(planner.gcx.clone()),
             planner.chat_facade.clone(),
             &planner.task_id,
             &target,
@@ -977,7 +977,7 @@ impl Tool for ToolResumeAgent {
             chat_id: agent_chat_id.clone(),
         };
         let report = planner_delivery::deliver_to_card(
-            planner.gcx.clone(),
+            &planner.gcx.chat_ctx(planner.gcx.clone()),
             planner.chat_facade.clone(),
             &planner.task_id,
             &target,

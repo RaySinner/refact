@@ -88,8 +88,12 @@ fn dispatch_cleared_mcp_call<T>(
             }
         }
     }
-    clear_for_mcp(gcx, McpCallAudit { records }, server_name)
-        .map_err(|refusal| refusal.model_facing().to_string())?;
+    clear_for_mcp(
+        &gcx.privacy_policy_load,
+        McpCallAudit { records },
+        server_name,
+    )
+    .map_err(|refusal| refusal.model_facing().to_string())?;
     Ok(dispatch(call_params))
 }
 
@@ -620,7 +624,8 @@ fn attach_mcp_observation_status(
     observed_reads_before: &std::collections::HashSet<std::path::PathBuf>,
     message: &mut ChatMessage,
 ) {
-    crate::privacy::record_observation_status(gcx, &status);
+    let privacy_scope = crate::privacy::records::PrivacyRecordScope::from_gcx(gcx);
+    crate::privacy::record_observation_status(&gcx.privacy_observation_runtime, &status);
     match status {
         refact_exec::ObservationStatus::Observed(access)
         | refact_exec::ObservationStatus::Pending(access)
@@ -629,7 +634,7 @@ fn attach_mcp_observation_status(
                 .reads
                 .into_iter()
                 .filter(|path| !observed_reads_before.contains(path));
-            match crate::privacy::records::observed_file_records(gcx, paths) {
+            match crate::privacy::records::observed_file_records(&privacy_scope, paths) {
                 Ok(records) => crate::privacy::records::merge_records(message, records),
                 Err(reason) => attach_observation_unavailable(message, reason),
             }

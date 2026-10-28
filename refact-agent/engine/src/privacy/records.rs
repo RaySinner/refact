@@ -100,13 +100,6 @@ impl ObservationReason {
     }
 }
 
-pub fn shell_observation_reason(
-    gcx: &Arc<GlobalContext>,
-    destination: &Destination,
-) -> ObservationReason {
-    shell_observation_reason_for_policy(&gcx.privacy_policy_load, destination)
-}
-
 pub fn shell_observation_reason_for_policy(
     privacy_policy_load: &Arc<RwLock<super::PolicyLoad>>,
     destination: &Destination,
@@ -121,18 +114,6 @@ pub fn shell_observation_reason_for_policy(
             .count(),
         derived_labels: 0,
     }
-}
-
-pub fn shell_observation_reason_for_session(
-    gcx: &Arc<GlobalContext>,
-    destination: &Destination,
-    derived_zones: &DerivedPrivacyZones,
-) -> ObservationReason {
-    shell_observation_reason_for_session_with_policy(
-        &gcx.privacy_policy_load,
-        destination,
-        derived_zones,
-    )
 }
 
 pub fn shell_observation_reason_for_session_with_policy(
@@ -162,16 +143,24 @@ pub fn shell_observation_reason_for_session_with_policy(
     reason
 }
 
-pub fn shell_observation_needed(gcx: &Arc<GlobalContext>, destination: &Destination) -> bool {
-    shell_observation_reason(gcx, destination).needed()
+pub fn shell_observation_needed(
+    privacy_policy_load: &Arc<RwLock<super::PolicyLoad>>,
+    destination: &Destination,
+) -> bool {
+    shell_observation_reason_for_policy(privacy_policy_load, destination).needed()
 }
 
 pub fn shell_observation_needed_for_session(
-    gcx: &Arc<GlobalContext>,
+    privacy_policy_load: &Arc<RwLock<super::PolicyLoad>>,
     destination: &Destination,
     derived_zones: &DerivedPrivacyZones,
 ) -> bool {
-    shell_observation_reason_for_session(gcx, destination, derived_zones).needed()
+    shell_observation_reason_for_session_with_policy(
+        privacy_policy_load,
+        destination,
+        derived_zones,
+    )
+    .needed()
 }
 
 pub(crate) async fn filter_path_enrichment_for_model_context(
@@ -328,13 +317,12 @@ fn zone_for_record_path(
 }
 
 pub fn derived_zone_for_path(
-    gcx: &Arc<GlobalContext>,
+    scope: &PrivacyRecordScope,
     path: &Path,
     derived_zones: &DerivedPrivacyZones,
 ) -> Option<DerivedZone> {
-    let scope = PrivacyRecordScope::from_gcx(gcx);
     let mappings = registered_worktree_path_mappings(scope.cache_dir.as_path());
-    derived_zone_for_path_with(&scope, path, &mappings, derived_zones)
+    derived_zone_for_path_with(scope, path, &mappings, derived_zones)
 }
 
 fn derived_zone_for_path_with(
@@ -824,19 +812,18 @@ pub fn carry_records_into(
 }
 
 fn file_record(
-    gcx: &Arc<GlobalContext>,
+    scope: &PrivacyRecordScope,
     path: &Path,
     attribution: Attribution,
     derived_zones: &DerivedPrivacyZones,
 ) -> Result<FileRecord, String> {
-    let scope = PrivacyRecordScope::from_gcx(gcx);
     let compiled = scope
         .policy()
         .compile()
         .map_err(|error| error.to_string())?;
     let mappings = registered_worktree_path_mappings(scope.cache_dir.as_path());
     Ok(file_record_with(
-        &scope,
+        scope,
         &compiled,
         &mappings,
         path,
@@ -860,9 +847,9 @@ fn file_record_with(
     }
 }
 
-pub fn declared_file_record(gcx: &Arc<GlobalContext>, path: &Path) -> Result<FileRecord, String> {
+pub fn declared_file_record(scope: &PrivacyRecordScope, path: &Path) -> Result<FileRecord, String> {
     file_record(
-        gcx,
+        scope,
         path,
         Attribution::Declared,
         &new_derived_privacy_zones(),
@@ -905,14 +892,10 @@ pub fn declared_file_records_with_scope(
 }
 
 pub fn observed_file_records(
-    gcx: &Arc<GlobalContext>,
+    scope: &PrivacyRecordScope,
     paths: impl IntoIterator<Item = PathBuf>,
 ) -> Result<Vec<FileRecord>, String> {
-    observed_file_records_with_derived(
-        &PrivacyRecordScope::from_gcx(gcx),
-        paths,
-        &new_derived_privacy_zones(),
-    )
+    observed_file_records_with_derived(scope, paths, &new_derived_privacy_zones())
 }
 
 fn observed_file_records_with_derived(
@@ -1019,7 +1002,7 @@ fn inherit_observed_write_zones(
 }
 
 pub fn attach_declared_output_files(
-    gcx: &Arc<GlobalContext>,
+    scope: &PrivacyRecordScope,
     messages: &mut [ChatMessage],
 ) -> Result<(), String> {
     for message in messages {
@@ -1044,7 +1027,7 @@ pub fn attach_declared_output_files(
             }
             _ => continue,
         };
-        let records = declared_file_records(gcx, paths)?;
+        let records = declared_file_records_with_scope(scope, paths)?;
         merge_records(message, records);
     }
     Ok(())
@@ -1254,7 +1237,13 @@ mod tests {
             },
         );
 
-        let record = file_record(&gcx, &file, Attribution::Observed, &derived_zones).unwrap();
+        let record = file_record(
+            &PrivacyRecordScope::from_gcx(&gcx),
+            &file,
+            Attribution::Observed,
+            &derived_zones,
+        )
+        .unwrap();
 
         assert_eq!(record.zone, "derived-earlier");
     }
@@ -1387,9 +1376,13 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            derived_zone_for_path(&gcx, &derived, &derived_zones)
-                .and_then(|zone| zone.origin)
-                .unwrap(),
+            derived_zone_for_path(
+                &PrivacyRecordScope::from_gcx(&gcx),
+                &derived,
+                &derived_zones,
+            )
+            .and_then(|zone| zone.origin)
+            .unwrap(),
             refact_core::chat_types::normalize_file_name(secret.to_string_lossy().into_owned())
         );
 
@@ -1495,7 +1488,10 @@ mod tests {
         let derived_zones = new_derived_privacy_zones();
         let mut message = tool_message("allowed output");
 
-        assert!(!shell_observation_needed(&gcx, &destination));
+        assert!(!shell_observation_needed(
+            &gcx.privacy_policy_load,
+            &destination
+        ));
         let decision = apply_shell_observation(
             &gcx,
             "cat secret.txt",
@@ -1545,7 +1541,7 @@ mod tests {
 
         gcx.documents_state.workspace_files.lock().unwrap().clear();
         assert!(shell_observation_needed_for_session(
-            &gcx,
+            &gcx.privacy_policy_load,
             &destination,
             &derived_zones
         ));
@@ -1710,7 +1706,7 @@ mod tests {
         });
 
         assert!(shell_observation_needed(
-            &gcx,
+            &gcx.privacy_policy_load,
             &provider_destination("untrusted/model")
         ));
     }
@@ -1725,22 +1721,24 @@ mod tests {
         let guarded = provider_destination("untrusted/model");
         let derived_zones = new_derived_privacy_zones();
 
-        let allowed_reason = shell_observation_reason(&gcx, &allowed);
+        let allowed_reason =
+            shell_observation_reason_for_policy(&gcx.privacy_policy_load, &allowed);
         assert_eq!(allowed_reason.blocked_patterns, 0);
         assert_eq!(allowed_reason.guarded_zones, 0);
         assert_eq!(allowed_reason.derived_labels, 0);
         assert!(!allowed_reason.needed());
         assert_eq!(
             allowed_reason.needed(),
-            shell_observation_needed(&gcx, &allowed)
+            shell_observation_needed(&gcx.privacy_policy_load, &allowed)
         );
 
-        let guarded_reason = shell_observation_reason(&gcx, &guarded);
+        let guarded_reason =
+            shell_observation_reason_for_policy(&gcx.privacy_policy_load, &guarded);
         assert_eq!(guarded_reason.guarded_zones, 1);
         assert!(guarded_reason.needed());
         assert_eq!(
             guarded_reason.needed(),
-            shell_observation_needed(&gcx, &guarded)
+            shell_observation_needed(&gcx.privacy_policy_load, &guarded)
         );
 
         derived_zones.write().unwrap().insert(
@@ -1750,13 +1748,21 @@ mod tests {
                 origin: None,
             },
         );
-        let session_reason = shell_observation_reason_for_session(&gcx, &allowed, &derived_zones);
+        let session_reason = shell_observation_reason_for_session_with_policy(
+            &gcx.privacy_policy_load,
+            &allowed,
+            &derived_zones,
+        );
         assert_eq!(session_reason.guarded_zones, 0);
         assert_eq!(session_reason.derived_labels, 1);
         assert!(session_reason.needed());
         assert_eq!(
             session_reason.needed(),
-            shell_observation_needed_for_session(&gcx, &allowed, &derived_zones)
+            shell_observation_needed_for_session(
+                &gcx.privacy_policy_load,
+                &allowed,
+                &derived_zones
+            )
         );
     }
 

@@ -3,7 +3,6 @@ use std::sync::{Arc, RwLock as StdRwLock};
 use refact_privacy::{Cleared, Destination, DestinationId, DestinationKind, PrivacyAudited};
 
 use crate::caps::{BaseModelRecord, EmbeddingModelRecord};
-use crate::global_context::SharedGlobalContext;
 
 pub(crate) trait DestinationExt<T> {
     fn from_model_record(model_rec: &T) -> Destination;
@@ -51,7 +50,7 @@ pub(crate) fn clear_for_model<T: PrivacyAudited>(
 }
 
 pub(crate) fn clear_for_mcp<T: PrivacyAudited>(
-    gcx: &SharedGlobalContext,
+    privacy_policy_load: &Arc<StdRwLock<refact_privacy::PolicyLoad>>,
     value: T,
     server_name: &str,
 ) -> Result<Cleared<T>, refact_privacy::Refusal> {
@@ -60,8 +59,7 @@ pub(crate) fn clear_for_mcp<T: PrivacyAudited>(
         kind: DestinationKind::Mcp,
         display_name: server_name.to_string(),
     };
-    let policy = gcx
-        .privacy_policy_load
+    let policy = privacy_policy_load
         .read()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .policy

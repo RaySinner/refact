@@ -761,7 +761,7 @@ mod tests {
     async fn privacy_status_keeps_platform_support_when_runtime_is_unavailable() {
         let (_cache, _config, app) = test_app().await;
         crate::privacy::record_observation_status(
-            &app.gcx,
+            &app.gcx.privacy_observation_runtime,
             &refact_exec::ObservationStatus::Unavailable("ptrace denied".to_string()),
         );
         let router = crate::http::routers::make_refact_http_server(app);

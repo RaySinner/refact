@@ -34,8 +34,11 @@ pub struct PrivacyObservationRuntimeState {
     pub last_error: Option<String>,
 }
 
-pub fn record_observation_status(gcx: &GlobalContext, status: &refact_exec::ObservationStatus) {
-    *gcx.privacy_observation_runtime.write().unwrap() = observation_runtime_state(status);
+pub fn record_observation_status(
+    privacy_observation_runtime: &Arc<StdRwLock<PrivacyObservationRuntimeState>>,
+    status: &refact_exec::ObservationStatus,
+) {
+    *privacy_observation_runtime.write().unwrap() = observation_runtime_state(status);
 }
 
 pub fn observation_runtime_state(
@@ -85,15 +88,15 @@ fn project_privacy_paths(project_dirs: Vec<PathBuf>) -> Vec<PathBuf> {
         .collect()
 }
 
-fn global_privacy_path(gcx: &GlobalContext) -> PathBuf {
-    if gcx.cmdline.privacy_yaml.is_empty() {
-        gcx.config_dir.join("privacy.yaml")
+fn global_privacy_path(config_dir: &Path, privacy_yaml: &str) -> PathBuf {
+    if privacy_yaml.is_empty() {
+        config_dir.join("privacy.yaml")
     } else {
-        canonical_path(gcx.cmdline.privacy_yaml.clone())
+        canonical_path(privacy_yaml.to_string())
     }
 }
 pub async fn global_only_policy(gcx: Arc<GlobalContext>) -> Option<refact_privacy::PrivacyPolicy> {
-    let path = global_privacy_path(&gcx);
+    let path = global_privacy_path(gcx.config_dir.as_path(), gcx.cmdline.privacy_yaml.as_str());
     let content = tokio::fs::read_to_string(&path).await.ok()?;
     refact_privacy::parse_policy_yaml(&content).ok()
 }
@@ -163,7 +166,7 @@ pub async fn save_privacy_policy(
     policy
         .compile()
         .map_err(|error| format!("invalid privacy policy: {error}"))?;
-    let path = global_privacy_path(&gcx);
+    let path = global_privacy_path(gcx.config_dir.as_path(), gcx.cmdline.privacy_yaml.as_str());
     let mut document = match tokio::fs::read_to_string(&path).await {
         Ok(content) => match serde_yaml::from_str::<Value>(&content) {
             Ok(Value::Mapping(document)) => document,

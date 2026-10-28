@@ -319,7 +319,10 @@ pub async fn reconstruct_context(
                 &canonical,
             )
             .await?;
-            let record = crate::privacy::records::declared_file_record(&gcx, &canonical)?;
+            let record = crate::privacy::records::declared_file_record(
+                &crate::privacy::records::PrivacyRecordScope::from_gcx(&gcx),
+                &canonical,
+            )?;
             let mut audit = ChatMessage::default();
             crate::privacy::records::attach_record(&mut audit, record.clone());
             crate::privacy::destinations::clear_for_model(

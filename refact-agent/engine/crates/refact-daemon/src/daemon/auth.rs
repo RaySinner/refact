@@ -176,7 +176,7 @@ pub(crate) fn resolve_token(config_token: Option<&str>) -> String {
         .unwrap_or_else(generate_token)
 }
 
-pub(crate) fn token_matches(provided: &str, expected: &str) -> bool {
+pub fn token_matches(provided: &str, expected: &str) -> bool {
     let provided = provided.as_bytes();
     let expected = expected.as_bytes();
     let mut diff = provided.len() ^ expected.len();
@@ -217,7 +217,7 @@ fn hook_request_authorized<B>(req: &Request<B>, expected: &str) -> bool {
             .unwrap_or(false)
 }
 
-pub(crate) fn bearer_token_from_headers(headers: &HeaderMap) -> Option<&str> {
+pub fn bearer_token_from_headers(headers: &HeaderMap) -> Option<&str> {
     if has_multiple_authorization_headers(headers) {
         return None;
     }

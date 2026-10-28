@@ -413,7 +413,7 @@ fn log_filter_directives(default_level: &str) -> String {
         .join(",")
 }
 
-pub(crate) fn rust_log_is_set() -> bool {
+pub fn rust_log_is_set() -> bool {
     std::env::var_os("RUST_LOG").is_some_and(|value| !value.is_empty())
 }
 
@@ -421,7 +421,7 @@ pub(crate) fn log_env_filter() -> EnvFilter {
     log_env_filter_with_default_level(DEFAULT_LOG_FILTER_LEVEL)
 }
 
-pub(crate) fn log_env_filter_with_default_level(default_level: &str) -> EnvFilter {
+pub fn log_env_filter_with_default_level(default_level: &str) -> EnvFilter {
     let directives = std::env::var("RUST_LOG")
         .ok()
         .filter(|value| !value.trim().is_empty())
@@ -429,7 +429,7 @@ pub(crate) fn log_env_filter_with_default_level(default_level: &str) -> EnvFilte
     EnvFilter::new(directives)
 }
 
-pub(crate) fn non_blocking_bounded_log_writer(
+pub fn non_blocking_bounded_log_writer(
     path: &Path,
 ) -> (
     tracing_appender::non_blocking::NonBlocking,

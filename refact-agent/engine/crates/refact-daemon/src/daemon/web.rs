@@ -1258,7 +1258,7 @@ pub type GuiAssetFn = fn(&str) -> Option<EmbeddedFile>;
 pub const INDEX_PATH: &str = "index.html";
 pub const ASSET_PREFIX: &str = "dist/chat/";
 const CACHE_CONTROL: &str = "no-cache";
-const MIN_GZIP_BYTES: usize = 1024;
+pub const MIN_GZIP_BYTES: usize = 1024;
 pub const ORIGIN_CANDIDATES_PLACEHOLDER: &str =
     "/*__REFACT_ORIGIN_CANDIDATES__*/ window.__REFACT_ENGINE_ORIGIN_CANDIDATES__ || []";
 

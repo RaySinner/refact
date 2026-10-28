@@ -364,7 +364,7 @@ async fn cleanup_ab_variant_with_timeout(
     variant: &AbVariantInfo,
     abort_timeout: std::time::Duration,
 ) -> Result<(), String> {
-    wait_for_agent_abort(app.gcx.clone(), &variant.chat_id, abort_timeout)
+    wait_for_agent_abort(&app.chat_ctx(), &variant.chat_id, abort_timeout)
         .await
         .map_err(|e| {
             format!(

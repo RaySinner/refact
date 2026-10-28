@@ -1118,7 +1118,7 @@ impl Tool for ToolTaskSpawnAgent {
         let explicit_base_commit = optional_nonempty_string_arg(args, "base_commit")?;
 
         let model = resolve_agent_model(&tool.caps, &current_model).await?;
-        crate::tools::task_tool_helpers::preflight_agent_model(app.gcx.clone(), &model).await?;
+        crate::tools::task_tool_helpers::preflight_agent_model(&app.chat_ctx(), &model).await?;
 
         validate_id(&task_id, "task_id")?;
         validate_id(card_id, "card_id")?;

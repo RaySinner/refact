@@ -570,7 +570,7 @@ impl Tool for ToolPlannerReply {
                 format!("planner-reply:{}:{}:{}", task_id, card_id, question_id),
             );
             planner_delivery::deliver_to_card(
-                app.gcx.clone(),
+                &app.chat_ctx(),
                 facade,
                 &task_id,
                 &target,

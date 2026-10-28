@@ -1,12 +1,14 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex as StdMutex, RwLock as StdRwLock};
 
 use async_trait::async_trait;
 use refact_chat_api::ChatMessage;
+use refact_core::ast_types::Document;
 use refact_core::vecdb_types::VecdbSearch;
 use refact_runtime_api::{ActivitySink, BuddyEventSink, ToolRegistry};
-use tokio::sync::Mutex as AMutex;
+use tokio::sync::{Mutex as AMutex, RwLock as ARwLock};
 
 use crate::agents::registry::BackgroundAgentRegistry;
 use crate::app_state::{
@@ -41,6 +43,8 @@ pub struct ChatWorkspace {
     pub knowledge_index: Arc<AMutex<KnowledgeIndex>>,
     pub at_commands_preview_cache: Arc<AMutex<AtCommandsPreviewCache>>,
     pub privacy_settings: Arc<PrivacySettings>,
+    pub enrichment_generation: Arc<AtomicU64>,
+    pub memory_document_map: Arc<AMutex<HashMap<PathBuf, Arc<ARwLock<Document>>>>>,
 }
 
 #[derive(Clone)]

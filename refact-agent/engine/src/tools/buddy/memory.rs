@@ -11,20 +11,22 @@ use walkdir::WalkDir;
 
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::buddy::memory_lifecycle::{
-    archive_memory_file_checked, compute_content_hash, find_memory_by_source, normalize_kind,
-    normalize_tags, propose_supersede_for_near_duplicate, MemoryCreatePayload, MemoryLifecycleOp,
-    MemoryLifecyclePayload, MemoryOpStatus, MemoryOpType, MemorySource,
+    archive_memory_file_checked_for_ctx, compute_content_hash, find_memory_by_source_for_ctx,
+    normalize_kind, normalize_tags, propose_supersede_for_near_duplicate_for_ctx,
+    MemoryCreatePayload, MemoryLifecycleOp, MemoryLifecyclePayload, MemoryOpStatus, MemoryOpType,
+    MemorySource,
 };
 use crate::buddy::jobs::autonomous_chats::redact_and_cap_text;
 use crate::buddy::storage::enqueue_memory_op;
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
+use crate::chat::ctx::ChatCtx;
 use crate::file_filter::KNOWLEDGE_FOLDER_NAME;
-use crate::files_correction::get_project_dirs;
-use crate::global_context::GlobalContext;
+use crate::files_correction::get_unscoped_project_dirs_for_ctx;
 use crate::knowledge_graph::kg_structs::KnowledgeFrontmatter;
 use crate::knowledge_index::KnowledgeCard;
 use crate::memories::{
-    get_global_knowledge_dir, normalize_memory_tags, update_memory_document_frontmatter,
+    get_global_knowledge_dir_for_ctx, normalize_memory_tags,
+    update_memory_document_frontmatter_for_ctx,
 };
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
 
@@ -172,14 +174,14 @@ fn op_id(tool_name: &str, parts: &[&str]) -> String {
     format!("memop_buddy_{}_{}", tool_name, &hash_parts(parts)[..16])
 }
 
-async fn knowledge_dirs(gcx: Arc<GlobalContext>) -> Vec<PathBuf> {
-    let mut dirs: Vec<PathBuf> = get_project_dirs(gcx.clone())
+async fn knowledge_dirs(ctx: &ChatCtx) -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = get_unscoped_project_dirs_for_ctx(ctx)
         .await
         .into_iter()
         .map(|dir| dir.join(KNOWLEDGE_FOLDER_NAME))
         .filter(|dir| dir.exists())
         .collect();
-    let global = get_global_knowledge_dir(gcx).await;
+    let global = get_global_knowledge_dir_for_ctx(ctx);
     if global.exists() {
         dirs.push(global);
     }
@@ -195,15 +197,15 @@ fn reject_dotdot(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-async fn project_root(gcx: Arc<GlobalContext>) -> Result<PathBuf, String> {
-    get_project_dirs(gcx)
+async fn project_root(ctx: &ChatCtx) -> Result<PathBuf, String> {
+    get_unscoped_project_dirs_for_ctx(ctx)
         .await
         .into_iter()
         .next()
         .ok_or_else(|| "No workspace folder found".to_string())
 }
 
-async fn resolve_memory_path(gcx: Arc<GlobalContext>, raw: &str) -> Result<PathBuf, String> {
+async fn resolve_memory_path(ctx: &ChatCtx, raw: &str) -> Result<PathBuf, String> {
     let raw = raw.trim();
     if raw.is_empty() || raw.contains('\0') {
         return Err("memory path is empty or invalid".to_string());
@@ -213,12 +215,12 @@ async fn resolve_memory_path(gcx: Arc<GlobalContext>, raw: &str) -> Result<PathB
     if raw_path.is_absolute() {
         return Ok(raw_path);
     }
-    let root = project_root(gcx).await?;
+    let root = project_root(ctx).await?;
     Ok(root.join(raw_path))
 }
 
 async fn checked_existing_memory_path(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     path: &Path,
 ) -> Result<PathBuf, String> {
     reject_dotdot(path)?;
@@ -236,7 +238,7 @@ async fn checked_existing_memory_path(
         .map(|path| dunce::simplified(&path).to_path_buf())
         .map_err(|e| format!("failed to canonicalize memory path: {e}"))?;
     let mut roots = Vec::new();
-    for root in knowledge_dirs(gcx).await {
+    for root in knowledge_dirs(ctx).await {
         if root.exists() {
             roots.push(
                 tokio::fs::canonicalize(root)
@@ -258,8 +260,8 @@ fn parse_memory_text(text: &str) -> (KnowledgeFrontmatter, String) {
     (frontmatter, body)
 }
 
-async fn scan_cards(gcx: Arc<GlobalContext>) -> Vec<KnowledgeCard> {
-    scan_cards_in_dirs(knowledge_dirs(gcx).await).await
+async fn scan_cards(ctx: &ChatCtx) -> Vec<KnowledgeCard> {
+    scan_cards_in_dirs(knowledge_dirs(ctx).await).await
 }
 
 async fn scan_cards_in_dirs(dirs: Vec<PathBuf>) -> Vec<KnowledgeCard> {
@@ -348,15 +350,13 @@ fn dedup_cards(cards: Vec<KnowledgeCard>) -> Vec<KnowledgeCard> {
     out
 }
 
-async fn all_index_cards(gcx: Arc<GlobalContext>) -> Vec<KnowledgeCard> {
-    let gcx_read = gcx.clone();
-    let index = gcx_read.knowledge_index.lock().await;
+async fn all_index_cards(ctx: &ChatCtx) -> Vec<KnowledgeCard> {
+    let index = ctx.workspace.knowledge_index.lock().await;
     if !index.is_empty() {
         return dedup_cards(index.all_cards());
     }
     drop(index);
-    drop(gcx_read);
-    scan_cards(gcx).await
+    scan_cards(ctx).await
 }
 
 fn score_card(card: &KnowledgeCard, query: &str, kind: Option<&str>, tags: &[String]) -> i32 {
@@ -427,8 +427,8 @@ fn markdown_table(cards: &[KnowledgeCard]) -> String {
     lines.join("\n")
 }
 
-async fn append_audit_op(gcx: Arc<GlobalContext>, mut op: MemoryLifecycleOp) -> Result<(), String> {
-    let root = project_root(gcx).await?;
+async fn append_audit_op(ctx: &ChatCtx, mut op: MemoryLifecycleOp) -> Result<(), String> {
+    let root = project_root(ctx).await?;
     let now = Utc::now().to_rfc3339();
     op.status = MemoryOpStatus::Applied;
     op.requires_approval = false;
@@ -437,8 +437,8 @@ async fn append_audit_op(gcx: Arc<GlobalContext>, mut op: MemoryLifecycleOp) -> 
     Ok(())
 }
 
-async fn find_duplicate_content(gcx: Arc<GlobalContext>, hash: &str) -> Option<PathBuf> {
-    for dir in knowledge_dirs(gcx).await {
+async fn find_duplicate_content(ctx: &ChatCtx, hash: &str) -> Option<PathBuf> {
+    for dir in knowledge_dirs(ctx).await {
         for entry in WalkDir::new(&dir).into_iter().filter_map(Result::ok) {
             let path = entry.path();
             let Ok(metadata) = path.symlink_metadata() else {
@@ -472,7 +472,7 @@ async fn find_duplicate_content(gcx: Arc<GlobalContext>, hash: &str) -> Option<P
 }
 
 async fn create_memory(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     title: &str,
     content: &str,
     tags: Vec<String>,
@@ -491,8 +491,8 @@ async fn create_memory(
     let title = redact_and_cap_text(title, 160);
     let content = redact_and_cap_text(content, 4000);
     let content_hash = compute_content_hash(&content);
-    if let Some(path) = find_memory_by_source(
-        gcx.clone(),
+    if let Some(path) = find_memory_by_source_for_ctx(
+        ctx,
         MemorySource::Buddy,
         Some(source_id),
         Some(&content_hash),
@@ -501,17 +501,17 @@ async fn create_memory(
     {
         return Ok(CreateOutcome::Skipped(path));
     }
-    if let Some(path) = find_duplicate_content(gcx.clone(), &content_hash).await {
+    if let Some(path) = find_duplicate_content(ctx, &content_hash).await {
         return Ok(CreateOutcome::Skipped(path));
     }
 
     let signal_existing = {
-        let idx = gcx.knowledge_index.lock().await;
+        let idx = ctx.workspace.knowledge_index.lock().await;
         idx.first_path_for_signal_key(source_id).cloned()
     };
     if let Some(existing) = signal_existing {
         let existing_content = {
-            let idx = gcx.knowledge_index.lock().await;
+            let idx = ctx.workspace.knowledge_index.lock().await;
             idx.content_for_path(&existing).map(|c| c.to_string())
         };
         let is_near_duplicate = existing_content
@@ -519,7 +519,7 @@ async fn create_memory(
             .map(|text| refact_buddy_core::memory_dedup::near_duplicate(&content, text))
             .unwrap_or(false);
         if is_near_duplicate
-            && crate::memories::touch_memory_observation(gcx.clone(), &existing)
+            && crate::memories::touch_memory_observation_for_ctx(ctx, &existing)
                 .await
                 .is_ok()
         {
@@ -532,8 +532,8 @@ async fn create_memory(
             content_hash: Some(content_hash.clone()),
             ..Default::default()
         };
-        let outcome = crate::memories::memories_upsert_by_signal_key(
-            gcx.clone(),
+        let outcome = crate::memories::memories_upsert_by_signal_key_for_ctx(
+            ctx,
             source_id,
             &refreshed,
             &content,
@@ -566,7 +566,7 @@ async fn create_memory(
         last_observed: Some(Utc::now().to_rfc3339()),
         ..Default::default()
     };
-    let outcome = crate::memories::memories_add_dedup(gcx.clone(), &frontmatter, &content).await?;
+    let outcome = crate::memories::memories_add_dedup_for_ctx(ctx, &frontmatter, &content).await?;
     if !outcome.created() {
         return Ok(CreateOutcome::Skipped(outcome.path().clone()));
     }
@@ -589,12 +589,12 @@ async fn create_memory(
         source_content_hash: Some(content_hash),
         ..Default::default()
     };
-    if let Err(err) = append_audit_op(gcx.clone(), op).await {
+    if let Err(err) = append_audit_op(ctx, op).await {
         let _ = tokio::fs::remove_file(&path).await;
         return Err(err);
     }
-    if let Some(supersede_op) = propose_supersede_for_near_duplicate(gcx.clone(), &path).await {
-        if let Ok(root) = project_root(gcx).await {
+    if let Some(supersede_op) = propose_supersede_for_near_duplicate_for_ctx(ctx, &path).await {
+        if let Ok(root) = project_root(ctx).await {
             if let Err(err) = enqueue_memory_op(&root, supersede_op).await {
                 tracing::warn!("failed to enqueue near-duplicate memory op: {}", err);
             }
@@ -645,8 +645,8 @@ impl Tool for ToolBuddyMemorySearch {
             .transpose()?;
         let tags = normalize_tags(&optional_string_array_arg(args, "tags")?);
         let limit = limit_arg(args)?;
-        let gcx = ccx.lock().await.app.gcx.clone();
-        let mut cards = all_index_cards(gcx).await;
+        let ctx = ccx.lock().await.app.chat_ctx();
+        let mut cards = all_index_cards(&ctx).await;
         cards.retain(|card| card_matches(card, kind.as_deref(), &tags));
         cards.sort_by(|a, b| {
             score_card(b, query, kind.as_deref(), &tags)
@@ -696,9 +696,9 @@ impl Tool for ToolBuddyMemoryCreate {
         tool_call_id: &String,
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
-        let gcx = ccx.lock().await.app.gcx.clone();
+        let ctx = ccx.lock().await.app.chat_ctx();
         let outcome = create_memory(
-            gcx,
+            &ctx,
             string_arg(args, "title")?,
             string_arg(args, "content")?,
             string_array_arg(args, "tags")?,
@@ -758,11 +758,11 @@ impl Tool for ToolBuddyMemoryArchive {
         if reason.chars().count() > 240 {
             return Err("argument `reason` must be at most 240 chars".to_string());
         }
-        let gcx = ccx.lock().await.app.gcx.clone();
-        let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
-        let path = resolve_memory_path(gcx.clone(), string_arg(args, "path")?).await?;
+        let ctx = ccx.lock().await.app.chat_ctx();
+        let path = resolve_memory_path(&ctx, string_arg(args, "path")?).await?;
         let superseded_by = optional_string_arg(args, "superseded_by");
-        let changed = archive_memory_file_checked(app, &path, superseded_by.as_deref()).await?;
+        let changed =
+            archive_memory_file_checked_for_ctx(&ctx, &path, superseded_by.as_deref()).await?;
         let mut op = MemoryLifecycleOp::pending(
             op_id("archive", &[&path.to_string_lossy(), reason]),
             MemorySource::Buddy,
@@ -773,7 +773,7 @@ impl Tool for ToolBuddyMemoryArchive {
             Utc::now().to_rfc3339(),
         );
         op.payload.superseded_by = superseded_by;
-        append_audit_op(gcx, op).await?;
+        append_audit_op(&ctx, op).await?;
         Ok(if changed {
             result(tool_call_id, format!("Archived: {}", path.display()))
         } else {
@@ -819,11 +819,11 @@ impl Tool for ToolBuddyMemoryRetag {
         tool_call_id: &String,
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
-        let gcx = ccx.lock().await.app.gcx.clone();
-        let path = resolve_memory_path(gcx.clone(), string_arg(args, "path")?).await?;
-        let path = checked_existing_memory_path(gcx.clone(), &path).await?;
+        let ctx = ccx.lock().await.app.chat_ctx();
+        let path = resolve_memory_path(&ctx, string_arg(args, "path")?).await?;
+        let path = checked_existing_memory_path(&ctx, &path).await?;
         let tags = tags_with_buddy(string_array_arg(args, "new_tags")?);
-        update_memory_document_frontmatter(gcx.clone(), &path, |frontmatter| {
+        update_memory_document_frontmatter_for_ctx(&ctx, &path, |frontmatter| {
             frontmatter.tags = tags.clone();
             frontmatter.updated = Some(Local::now().format("%Y-%m-%d").to_string());
             Ok(true)
@@ -839,7 +839,7 @@ impl Tool for ToolBuddyMemoryRetag {
             Utc::now().to_rfc3339(),
         );
         op.payload.tags = Some(tags);
-        append_audit_op(gcx, op).await?;
+        append_audit_op(&ctx, op).await?;
         Ok(result(
             tool_call_id,
             format!("Retagged: {}", path.display()),
@@ -887,15 +887,14 @@ impl Tool for ToolBuddyMemoryMerge {
         if superseded.is_empty() {
             return Err("argument `superseded_paths` must be non-empty".to_string());
         }
-        let gcx = ccx.lock().await.app.gcx.clone();
-        let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+        let ctx = ccx.lock().await.app.chat_ctx();
         let source_id = hash_parts(&[
             string_arg(args, "canonical_title")?,
             string_arg(args, "canonical_content")?,
             &superseded.join(","),
         ]);
         let canonical_path = match create_memory(
-            gcx.clone(),
+            &ctx,
             string_arg(args, "canonical_title")?,
             string_arg(args, "canonical_content")?,
             string_array_arg(args, "tags")?,
@@ -913,15 +912,15 @@ impl Tool for ToolBuddyMemoryMerge {
         let canonical_canon = tokio::fs::canonicalize(&canonical_path).await.ok();
         let mut archived = 0usize;
         for raw in &superseded {
-            let path = resolve_memory_path(gcx.clone(), raw).await?;
+            let path = resolve_memory_path(&ctx, raw).await?;
             let path_canon = tokio::fs::canonicalize(&path).await.ok();
             let is_canonical = path == canonical_path
                 || (canonical_canon.is_some() && path_canon == canonical_canon);
             if is_canonical {
                 continue;
             }
-            if archive_memory_file_checked(
-                app.clone(),
+            if archive_memory_file_checked_for_ctx(
+                &ctx,
                 &path,
                 Some(&canonical_path.to_string_lossy()),
             )
@@ -953,7 +952,7 @@ impl Tool for ToolBuddyMemoryMerge {
             }),
             ..Default::default()
         };
-        append_audit_op(gcx, op).await?;
+        append_audit_op(&ctx, op).await?;
         Ok(result(
             tool_call_id,
             format!(
@@ -974,6 +973,7 @@ mod tests {
     use super::*;
     use crate::at_commands::at_commands::AtCommandsContext;
     use crate::buddy::storage::load_memory_ops;
+    use crate::global_context::GlobalContext;
     use crate::tools::tools_description::Tool;
     use crate::worktrees::types::WorktreeMeta;
     use std::collections::HashMap;
@@ -1260,7 +1260,8 @@ mod tests {
         std::os::unix::fs::symlink(&outside_file, knowledge_dir.join("link.md")).unwrap();
 
         let gcx = test_gcx(dir.path()).await;
-        let found = find_duplicate_content(gcx, &compute_content_hash(&outside_body)).await;
+        let ctx = gcx.chat_ctx(gcx.clone());
+        let found = find_duplicate_content(&ctx, &compute_content_hash(&outside_body)).await;
         assert!(found.is_none());
     }
 

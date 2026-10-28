@@ -10,14 +10,15 @@ use sha2::{Digest, Sha256};
 use crate::file_filter::KNOWLEDGE_FOLDER_NAME;
 use crate::files_correction::{canonicalize_normalized_path, get_project_dirs};
 use crate::app_state::AppState;
+use crate::chat::ctx::ChatCtx;
 use crate::git::operations::{
     GitCoChangePair, GitCommitClassification, GitCommitSummary, GitFileChangeStatus,
     GitHistoryReport, GitHotspot,
 };
 use crate::knowledge_graph::kg_structs::{KnowledgeDoc, KnowledgeFrontmatter};
 use crate::memories::{
-    create_frontmatter, get_global_knowledge_dir, memories_add, normalize_memory_tags,
-    update_memory_document_frontmatter,
+    create_frontmatter, get_global_knowledge_dir_for_ctx, memories_add, normalize_memory_tags,
+    update_memory_document_frontmatter, update_memory_document_frontmatter_for_ctx,
 };
 
 pub use refact_buddy_core::memory_lifecycle_model::*;
@@ -1197,23 +1198,31 @@ pub async fn propose_supersede_for_near_duplicate(
     gcx: std::sync::Arc<crate::global_context::GlobalContext>,
     new_path: &Path,
 ) -> Option<MemoryLifecycleOp> {
+    propose_supersede_for_near_duplicate_for_ctx(&gcx.chat_ctx(gcx.clone()), new_path).await
+}
+
+pub async fn propose_supersede_for_near_duplicate_for_ctx(
+    ctx: &ChatCtx,
+    new_path: &Path,
+) -> Option<MemoryLifecycleOp> {
     let text = tokio::fs::read_to_string(new_path).await.ok()?;
     let (frontmatter, body_start) = KnowledgeFrontmatter::parse(&text);
     if frontmatter.is_archived() || frontmatter.is_deprecated() {
         return None;
     }
     let body = text.get(body_start..).unwrap_or("");
-    let mut knowledge_dirs: Vec<PathBuf> = get_project_dirs(gcx.clone())
-        .await
-        .into_iter()
-        .map(|dir| dir.join(KNOWLEDGE_FOLDER_NAME))
-        .collect();
-    knowledge_dirs.push(get_global_knowledge_dir(gcx.clone()).await);
+    let mut knowledge_dirs: Vec<PathBuf> =
+        crate::files_correction::get_unscoped_project_dirs_for_ctx(ctx)
+            .await
+            .into_iter()
+            .map(|dir| dir.join(KNOWLEDGE_FOLDER_NAME))
+            .collect();
+    knowledge_dirs.push(get_global_knowledge_dir_for_ctx(ctx));
     let new_path = canonicalize_normalized_path(new_path.to_path_buf());
     if !knowledge_dirs.iter().any(|dir| new_path.starts_with(dir)) {
         return None;
     }
-    let vecdb_arc = gcx.vec_db.clone();
+    let vecdb_arc = ctx.workspace.vec_db.clone();
     let vecdb = vecdb_arc.lock().await.clone()?;
     let query: String = body.chars().take(2000).collect();
     if query.trim().is_empty() {
@@ -1286,18 +1295,33 @@ pub async fn find_memory_by_source(
     source_id: Option<&str>,
     source_content_hash: Option<&str>,
 ) -> Option<PathBuf> {
+    find_memory_by_source_for_ctx(
+        &gcx.chat_ctx(gcx.clone()),
+        source,
+        source_id,
+        source_content_hash,
+    )
+    .await
+}
+
+pub async fn find_memory_by_source_for_ctx(
+    ctx: &ChatCtx,
+    source: MemorySource,
+    source_id: Option<&str>,
+    source_content_hash: Option<&str>,
+) -> Option<PathBuf> {
     let source_id = normalize_optional_string(source_id);
     let source_content_hash = normalize_optional_string(source_content_hash);
     if source_id.is_none() && source_content_hash.is_none() {
         return None;
     }
     let roots = KnowledgeRoots {
-        local: get_project_dirs(gcx.clone())
+        local: crate::files_correction::get_unscoped_project_dirs_for_ctx(ctx)
             .await
             .into_iter()
             .map(|dir| dir.join(KNOWLEDGE_FOLDER_NAME))
             .collect(),
-        global: get_global_knowledge_dir(gcx).await,
+        global: get_global_knowledge_dir_for_ctx(ctx),
     };
     for root in roots.all() {
         let docs = load_memory_doc_snapshots_from_knowledge_dirs(&[root]).await;
@@ -2404,7 +2428,15 @@ pub async fn archive_memory_file_checked(
     path: &Path,
     superseded_by: Option<&str>,
 ) -> Result<bool, String> {
-    let roots = knowledge_roots(gcx.clone()).await;
+    archive_memory_file_checked_for_ctx(&gcx.chat_ctx(), path, superseded_by).await
+}
+
+pub async fn archive_memory_file_checked_for_ctx(
+    ctx: &ChatCtx,
+    path: &Path,
+    superseded_by: Option<&str>,
+) -> Result<bool, String> {
+    let roots = knowledge_roots_for_ctx(ctx).await;
     reject_unsafe_path(&path.to_string_lossy())?;
     validate_memory_extension(path)?;
     let canonical = canonical_existing_file_no_symlink(path).await?;
@@ -2415,7 +2447,7 @@ pub async fn archive_memory_file_checked(
     {
         return Err("memory path is outside knowledge directories".to_string());
     }
-    archive_memory_file(gcx, &canonical, superseded_by).await
+    archive_memory_file_for_ctx(ctx, &canonical, superseded_by).await
 }
 
 async fn archive_memory_file(
@@ -2423,7 +2455,15 @@ async fn archive_memory_file(
     path: &Path,
     superseded_by: Option<&str>,
 ) -> Result<bool, String> {
-    update_memory_document_frontmatter(gcx.gcx.clone(), path, |frontmatter| {
+    archive_memory_file_for_ctx(&gcx.chat_ctx(), path, superseded_by).await
+}
+
+async fn archive_memory_file_for_ctx(
+    ctx: &ChatCtx,
+    path: &Path,
+    superseded_by: Option<&str>,
+) -> Result<bool, String> {
+    update_memory_document_frontmatter_for_ctx(ctx, path, |frontmatter| {
         if frontmatter.is_archived() {
             return Ok(false);
         }
@@ -2439,12 +2479,16 @@ async fn archive_memory_file(
 }
 
 async fn knowledge_roots(gcx: AppState) -> KnowledgeRoots {
-    let local = get_project_dirs(gcx.gcx.clone())
+    knowledge_roots_for_ctx(&gcx.chat_ctx()).await
+}
+
+async fn knowledge_roots_for_ctx(ctx: &ChatCtx) -> KnowledgeRoots {
+    let local = crate::files_correction::get_unscoped_project_dirs_for_ctx(ctx)
         .await
         .into_iter()
         .map(|dir| dir.join(KNOWLEDGE_FOLDER_NAME))
         .collect();
-    let global = get_global_knowledge_dir(gcx.gcx.clone()).await;
+    let global = get_global_knowledge_dir_for_ctx(ctx);
     KnowledgeRoots { local, global }
 }
 

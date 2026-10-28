@@ -20,6 +20,7 @@ fn path_contains_component(path: &Path, component: &str) -> bool {
 }
 
 use crate::at_commands::at_commands::AtCommandsContext;
+use crate::chat::ctx::ChatCtx;
 use crate::chat::perf_diagnostics::{self, PerfComponent, PerfOutcome};
 use crate::knowledge_index::{KnowledgeIndex, KnowledgeSearchFilters};
 use crate::file_filter::KNOWLEDGE_FOLDER_NAME;
@@ -661,8 +662,11 @@ fn extract_fallback_tags(
 }
 
 pub async fn get_global_knowledge_dir(gcx: Arc<GlobalContext>) -> PathBuf {
-    let config_dir = gcx.config_dir.clone();
-    config_dir.join("knowledge")
+    get_global_knowledge_dir_for_ctx(&gcx.chat_ctx(gcx.clone()))
+}
+
+pub fn get_global_knowledge_dir_for_ctx(ctx: &ChatCtx) -> PathBuf {
+    ctx.paths.config_dir.join("knowledge")
 }
 
 pub fn get_global_knowledge_dir_for_ctx(ctx: &crate::chat::ctx::ChatCtx) -> PathBuf {
@@ -686,7 +690,11 @@ async fn get_all_knowledge_dirs(gcx: Arc<GlobalContext>) -> Vec<PathBuf> {
 }
 
 async fn get_first_knowledge_dir(gcx: Arc<GlobalContext>) -> Result<PathBuf, String> {
-    let project_dirs = get_project_dirs(gcx).await;
+    get_first_knowledge_dir_for_ctx(&gcx.chat_ctx(gcx.clone())).await
+}
+
+async fn get_first_knowledge_dir_for_ctx(ctx: &ChatCtx) -> Result<PathBuf, String> {
+    let project_dirs = crate::files_correction::get_unscoped_project_dirs_for_ctx(ctx).await;
     let workspace_root = project_dirs.first().ok_or("No workspace folder found")?;
     Ok(workspace_root.join(KNOWLEDGE_FOLDER_NAME))
 }
@@ -707,7 +715,15 @@ pub async fn memories_add(
     frontmatter: &KnowledgeFrontmatter,
     content: &str,
 ) -> Result<PathBuf, String> {
-    let knowledge_dir = get_first_knowledge_dir(gcx.clone()).await?;
+    memories_add_for_ctx(&gcx.chat_ctx(gcx.clone()), frontmatter, content).await
+}
+
+pub async fn memories_add_for_ctx(
+    ctx: &ChatCtx,
+    frontmatter: &KnowledgeFrontmatter,
+    content: &str,
+) -> Result<PathBuf, String> {
+    let knowledge_dir = get_first_knowledge_dir_for_ctx(ctx).await?;
     fs::create_dir_all(&knowledge_dir)
         .await
         .map_err(|e| format!("Failed to create knowledge dir: {}", e))?;
@@ -721,15 +737,15 @@ pub async fn memories_add(
 
     let md_content = format!("{}\n\n{}", frontmatter.to_yaml(), content);
     atomic_write_text(&file_path, &md_content).await?;
-    gcx.enrichment_generation
+    ctx.workspace
+        .enrichment_generation
         .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
     info!("Created knowledge entry: {}", file_path.display());
 
     // Update fast in-memory knowledge index (best-effort, new docs going forward).
     {
-        let gcx_read = gcx.clone();
-        let mut idx = gcx_read.knowledge_index.lock().await;
+        let mut idx = ctx.workspace.knowledge_index.lock().await;
         idx.add_signature(
             refact_buddy_core::memory_dedup::content_signature(content),
             file_path.clone(),
@@ -737,8 +753,8 @@ pub async fn memories_add(
         idx.add_from_frontmatter(file_path.clone(), frontmatter, Some(content));
     }
 
-    let roots = crate::indexing_routing::memory_plane_roots(gcx.clone()).await;
-    let vec_db = gcx.vec_db.clone();
+    let roots = crate::indexing_routing::memory_plane_roots_for_ctx(ctx).await;
+    let vec_db = ctx.workspace.vec_db.clone();
     if let Some(vecdb) = vec_db.lock().await.clone() {
         vecdb
             .vectorizer_enqueue_files(&vec![file_path.to_string_lossy().to_string()], true, roots)
@@ -771,8 +787,15 @@ pub async fn touch_memory_observation(
     gcx: Arc<GlobalContext>,
     doc_path: &Path,
 ) -> Result<(), String> {
+    touch_memory_observation_for_ctx(&gcx.chat_ctx(gcx.clone()), doc_path).await
+}
+
+pub async fn touch_memory_observation_for_ctx(
+    ctx: &ChatCtx,
+    doc_path: &Path,
+) -> Result<(), String> {
     let now = Utc::now().to_rfc3339();
-    update_memory_document_frontmatter(gcx, doc_path, |frontmatter| {
+    update_memory_document_frontmatter_for_ctx(ctx, doc_path, |frontmatter| {
         frontmatter.occurrences = frontmatter.occurrences.saturating_add(1).max(2);
         frontmatter.last_observed = Some(now);
         Ok(true)
@@ -784,29 +807,33 @@ pub async fn touch_memory_observation(
 const NEAR_DUPLICATE_CANDIDATE_CAP: usize = 64;
 
 async fn evict_stale_index_path(gcx: Arc<GlobalContext>, path: &Path) {
+    evict_stale_index_path_for_ctx(&gcx.chat_ctx(gcx.clone()), path).await
+}
+
+async fn evict_stale_index_path_for_ctx(ctx: &ChatCtx, path: &Path) {
     warn!(
         "memories: knowledge index pointed at missing file {}, evicting stale entry",
         path.display()
     );
-    let mut idx = gcx.knowledge_index.lock().await;
+    let mut idx = ctx.workspace.knowledge_index.lock().await;
     idx.remove_path(path);
 }
 
-async fn find_duplicate_memory(
-    gcx: Arc<GlobalContext>,
+async fn find_duplicate_memory_for_ctx(
+    ctx: &ChatCtx,
     frontmatter: &KnowledgeFrontmatter,
     content: &str,
 ) -> Option<PathBuf> {
     loop {
         let candidate = {
-            let idx = gcx.knowledge_index.lock().await;
+            let idx = ctx.workspace.knowledge_index.lock().await;
             find_duplicate_in_index(&idx, frontmatter, content)
         };
         let path = candidate?;
         if tokio::fs::try_exists(&path).await.unwrap_or(false) {
             return Some(path);
         }
-        evict_stale_index_path(gcx.clone(), &path).await;
+        evict_stale_index_path_for_ctx(ctx, &path).await;
     }
 }
 
@@ -847,12 +874,20 @@ pub async fn memories_add_dedup(
     frontmatter: &KnowledgeFrontmatter,
     content: &str,
 ) -> Result<MemoryWriteOutcome, String> {
-    if let Some(existing) = find_duplicate_memory(gcx.clone(), frontmatter, content).await {
+    memories_add_dedup_for_ctx(&gcx.chat_ctx(gcx.clone()), frontmatter, content).await
+}
+
+pub async fn memories_add_dedup_for_ctx(
+    ctx: &ChatCtx,
+    frontmatter: &KnowledgeFrontmatter,
+    content: &str,
+) -> Result<MemoryWriteOutcome, String> {
+    if let Some(existing) = find_duplicate_memory_for_ctx(ctx, frontmatter, content).await {
         info!(
             "memories: duplicate content detected, touching {} instead of creating a new file",
             existing.display()
         );
-        match touch_memory_observation(gcx.clone(), &existing).await {
+        match touch_memory_observation_for_ctx(ctx, &existing).await {
             Ok(()) => return Ok(MemoryWriteOutcome::DuplicateTouched(existing)),
             Err(err) => {
                 warn!(
@@ -860,11 +895,11 @@ pub async fn memories_add_dedup(
                     existing.display(),
                     err
                 );
-                evict_stale_index_path(gcx.clone(), &existing).await;
+                evict_stale_index_path_for_ctx(ctx, &existing).await;
             }
         }
     }
-    memories_add(gcx, frontmatter, content)
+    memories_add_for_ctx(ctx, frontmatter, content)
         .await
         .map(MemoryWriteOutcome::Created)
 }
@@ -875,13 +910,28 @@ pub async fn memories_upsert_by_signal_key(
     frontmatter: &KnowledgeFrontmatter,
     content: &str,
 ) -> Result<MemoryWriteOutcome, String> {
+    memories_upsert_by_signal_key_for_ctx(
+        &gcx.chat_ctx(gcx.clone()),
+        signal_key,
+        frontmatter,
+        content,
+    )
+    .await
+}
+
+pub async fn memories_upsert_by_signal_key_for_ctx(
+    ctx: &ChatCtx,
+    signal_key: &str,
+    frontmatter: &KnowledgeFrontmatter,
+    content: &str,
+) -> Result<MemoryWriteOutcome, String> {
     let signal_key = signal_key.trim();
     if signal_key.is_empty() {
-        return memories_add_dedup(gcx, frontmatter, content).await;
+        return memories_add_dedup_for_ctx(ctx, frontmatter, content).await;
     }
     loop {
         let existing = {
-            let idx = gcx.knowledge_index.lock().await;
+            let idx = ctx.workspace.knowledge_index.lock().await;
             idx.first_path_for_signal_key(signal_key).cloned()
         };
         let Some(doc_path) = existing else {
@@ -895,7 +945,7 @@ pub async fn memories_upsert_by_signal_key(
                     doc_path.display(),
                     err
                 );
-                evict_stale_index_path(gcx.clone(), &doc_path).await;
+                evict_stale_index_path_for_ctx(ctx, &doc_path).await;
                 continue;
             }
         };
@@ -922,7 +972,7 @@ pub async fn memories_upsert_by_signal_key(
             }
         }
         existing_frontmatter.content_hash = Some(compute_content_hash_hex(content));
-        rewrite_memory_document(gcx, &doc_path, &existing_frontmatter, content).await?;
+        rewrite_memory_document_for_ctx(ctx, &doc_path, &existing_frontmatter, content).await?;
         info!(
             "memories: upserted signal '{}' in place at {}",
             signal_key,
@@ -934,10 +984,10 @@ pub async fn memories_upsert_by_signal_key(
     stamped.signal_key = Some(signal_key.to_string());
     stamped.occurrences = stamped.occurrences.max(1);
     stamped.last_observed = Some(Utc::now().to_rfc3339());
-    let outcome = memories_add_dedup(gcx.clone(), &stamped, content).await?;
+    let outcome = memories_add_dedup_for_ctx(ctx, &stamped, content).await?;
     if let MemoryWriteOutcome::DuplicateTouched(path) = &outcome {
         let key = signal_key.to_string();
-        let stamp = update_memory_document_frontmatter(gcx.clone(), path, move |fm| {
+        let stamp = update_memory_document_frontmatter_for_ctx(ctx, path, move |fm| {
             if fm.signal_key.as_deref() == Some(key.as_str()) {
                 return Ok(false);
             }
@@ -1929,6 +1979,17 @@ pub async fn update_memory_document_frontmatter<F>(
 where
     F: FnOnce(&mut KnowledgeFrontmatter) -> Result<bool, String>,
 {
+    update_memory_document_frontmatter_for_ctx(&gcx.chat_ctx(gcx.clone()), doc_path, update).await
+}
+
+pub async fn update_memory_document_frontmatter_for_ctx<F>(
+    ctx: &ChatCtx,
+    doc_path: &Path,
+    update: F,
+) -> Result<bool, String>
+where
+    F: FnOnce(&mut KnowledgeFrontmatter) -> Result<bool, String>,
+{
     let existing_text = fs::read_to_string(doc_path)
         .await
         .map_err(|e| format!("Failed to read memory file: {}", e))?;
@@ -1940,7 +2001,7 @@ where
     if !update(&mut frontmatter)? {
         return Ok(false);
     }
-    rewrite_memory_document(gcx, doc_path, &frontmatter, &body)
+    rewrite_memory_document_for_ctx(ctx, doc_path, &frontmatter, &body)
         .await
         .map(|_| true)
 }
@@ -1951,15 +2012,24 @@ pub async fn rewrite_memory_document(
     frontmatter: &KnowledgeFrontmatter,
     body: &str,
 ) -> Result<(), String> {
+    rewrite_memory_document_for_ctx(&gcx.chat_ctx(gcx.clone()), doc_path, frontmatter, body).await
+}
+
+pub async fn rewrite_memory_document_for_ctx(
+    ctx: &ChatCtx,
+    doc_path: &Path,
+    frontmatter: &KnowledgeFrontmatter,
+    body: &str,
+) -> Result<(), String> {
     let content = format!("{}\n\n{}", frontmatter.to_yaml(), body.trim());
     atomic_write_text(doc_path, &content).await?;
-    gcx.enrichment_generation
+    ctx.workspace
+        .enrichment_generation
         .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
     let path_buf = doc_path.to_path_buf();
     {
-        let gcx_read = gcx.clone();
-        let mut idx = gcx_read.knowledge_index.lock().await;
+        let mut idx = ctx.workspace.knowledge_index.lock().await;
         idx.remove_path(&path_buf);
         if !frontmatter.is_archived() && !frontmatter.is_deprecated() {
             idx.add_signature(
@@ -1970,8 +2040,8 @@ pub async fn rewrite_memory_document(
         }
     }
 
-    let roots = crate::indexing_routing::memory_plane_roots(gcx.clone()).await;
-    let vec_db = gcx.vec_db.clone();
+    let roots = crate::indexing_routing::memory_plane_roots_for_ctx(ctx).await;
+    let vec_db = ctx.workspace.vec_db.clone();
     if let Some(vecdb) = vec_db.lock().await.clone() {
         if frontmatter.is_archived() || frontmatter.is_deprecated() {
             let _ = vecdb.remove_file(&path_buf).await;
@@ -1986,7 +2056,7 @@ pub async fn rewrite_memory_document(
         }
     }
 
-    gcx.documents_state
+    ctx.workspace
         .memory_document_map
         .lock()
         .await

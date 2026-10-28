@@ -469,6 +469,8 @@ impl GlobalContext {
                 knowledge_index: self.knowledge_index.clone(),
                 at_commands_preview_cache: self.at_commands_preview_cache.clone(),
                 privacy_settings: self.privacy_settings.read().unwrap().clone(),
+                enrichment_generation: self.enrichment_generation.clone(),
+                memory_document_map: self.documents_state.memory_document_map.clone(),
             },
             chat: ChatServices {
                 sessions: self.chat_sessions.clone(),

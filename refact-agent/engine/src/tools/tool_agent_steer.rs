@@ -930,7 +930,7 @@ mod tests {
         let mock = Arc::new(MockChatFacade::new(SessionState::Idle));
 
         let report = planner_delivery::deliver_to_card(
-            gcx,
+            &gcx.chat_ctx(gcx.clone()),
             mock.clone(),
             "task-1",
             &target,

@@ -251,7 +251,7 @@ async fn load_doing_card_snapshot(
     card_id: &str,
     action: &str,
 ) -> Result<LifecycleCardSnapshot, String> {
-    let board = storage::load_board(gcx, task_id).await?;
+    let board = storage::load_board_for_ctx(ctx, task_id).await?;
     let card = board
         .get_card(card_id)
         .ok_or_else(|| format!("Card {} not found", card_id))?;
@@ -260,7 +260,7 @@ async fn load_doing_card_snapshot(
 }
 
 async fn push_if_card_current_and_live(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     task_id: &str,
     card_id: &str,
     expected_chat_id: &str,
@@ -288,7 +288,7 @@ async fn push_if_card_current_and_live(
         None
     };
 
-    let board = storage::load_board(gcx.clone(), task_id).await?;
+    let board = storage::load_board_for_ctx(ctx, task_id).await?;
     if let Some(reason) = skipped_reason(board.get_card(card_id)) {
         return Ok(PushReport {
             pushed: false,
@@ -306,7 +306,7 @@ async fn push_if_card_current_and_live(
         });
     }
 
-    let board = storage::load_board(gcx, task_id).await?;
+    let board = storage::load_board_for_ctx(ctx, task_id).await?;
     if let Some(reason) = skipped_reason(board.get_card(card_id)) {
         return Ok(PushReport {
             pushed: false,
@@ -740,7 +740,7 @@ impl Tool for ToolCancelAgent {
         .await?;
 
         let push_report = push_if_card_current_and_live(
-            planner.gcx.clone(),
+            &planner.gcx.chat_ctx(planner.gcx.clone()),
             &planner.task_id,
             &card_id,
             &agent_chat_id,
@@ -1642,7 +1642,7 @@ mod tests {
         let mock = Arc::new(MockChatFacade::new(Some(SessionState::ExecutingTools)));
 
         let report = push_if_card_current_and_live(
-            gcx,
+            &gcx.chat_ctx(gcx.clone()),
             "task-1",
             "T-39",
             "agent-chat-1",
@@ -1679,7 +1679,7 @@ mod tests {
                 chat_id: "agent-chat-1".to_string(),
             };
             let report = planner_delivery::deliver_to_card(
-                gcx,
+                &gcx.chat_ctx(gcx.clone()),
                 mock.clone(),
                 "task-1",
                 &target,

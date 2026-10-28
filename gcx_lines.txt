@@ -1,0 +1,370 @@
+﻿77: fn normalize_path_for_workspace_state(gcx: &Arc<GlobalContext>, path: &Path) -> PathBuf {
+79: crate::files_correction::registered_worktree_path_mappings(gcx.cache_dir.as_path());
+84: fn normalize_path_for_index_store(gcx: &Arc<GlobalContext>, path: &Path) -> PathBuf {
+86: crate::files_correction::registered_worktree_path_mappings(gcx.cache_dir.as_path());
+88: .unwrap_or_else(|| normalize_path_for_workspace_state(gcx, path))
+348: pub async fn remove_memory_document_for_path(gcx: Arc<GlobalContext>, path: &PathBuf) -> bool {
+350: let normalized_path = normalize_path_for_workspace_state(&gcx, path);
+351: let mut doc_map = gcx.documents_state.memory_document_map.lock().await;
+359: pub async fn remove_memory_documents_under_path(gcx: Arc<GlobalContext>, path: &PathBuf) -> usize {
+361: let normalized_path = normalize_path_for_workspace_state(&gcx, path);
+362: let mut doc_map = gcx.documents_state.memory_document_map.lock().await;
+677: gcx: Arc<GlobalContext>,
+679: match read_file_from_disk(load_privacy_if_needed(gcx.clone()).await, &doc.doc_path).await {
+690: gcx: Arc<GlobalContext>,
+695: read_file_from_disk(load_privacy_if_needed(gcx.clone()).await, &doc.doc_path)
+770: pub async fn watcher_init(gcx: Arc<GlobalContext>) {
+771: let gcx_weak = Arc::downgrade(&gcx);
+788: let mut watch_folders = crate::files_correction::get_raw_project_dirs(gcx.clone()).await;
+789: watch_folders.extend(crate::files_correction::get_unscoped_project_dirs(gcx.clone()).await);
+796: let indexing_everywhere = reload_indexing_everywhere_if_needed(gcx.clone()).await;
+812: &mut *gcx.documents_state.fs_watcher.lock().unwrap(),
+1609: gcx: Arc<GlobalContext>,
+1617: crate::files_correction::registered_worktree_path_mappings(gcx.cache_dir.as_path());
+1618: let workspace_files_changed = normalize_workspace_files_for_unscoped(&gcx, &worktree_mappings);
+1623: enqueue_resolved_docs(gcx, queue_paths, workspace_files_changed, force).await;
+1626: async fn enqueue_some_docs(gcx: Arc<GlobalContext>, paths: &Vec<String>, force: bool) {
+1628: crate::files_correction::registered_worktree_path_mappings(gcx.cache_dir.as_path());
+1629: let workspace_files_changed = normalize_workspace_files_for_unscoped(&gcx, &worktree_mappings);
+1634: enqueue_resolved_docs(gcx, queue_paths, workspace_files_changed, force).await;
+1638: gcx: Arc<GlobalContext>,
+1663: crate::indexing_routing::route_index_enqueue(gcx.clone(), &normalized_paths, force, true).await;
+1664: let roots = crate::indexing_routing::memory_plane_roots(gcx.clone()).await;
+1674: let codegraph = gcx.codegraph.lock().await.clone();
+1686: crate::files_correction::files_cache_rebuild_as_needed(gcx.clone()).await;
+1707: let mut workspace_files = gcx.documents_state.workspace_files.lock().unwrap();
+1714: gcx.documents_state.cache_dirty.clone()
+1721: gcx: &Arc<GlobalContext>,
+1726: let workspace_files = gcx.documents_state.workspace_files.lock().unwrap();
+1735: let mut workspace_files = gcx.documents_state.workspace_files.lock().unwrap();
+1744: gcx: Arc<GlobalContext>,
+1748: let folders = crate::files_correction::get_unscoped_project_dirs(gcx.clone()).await;
+1751: gcx.file_index.clone(),
+1753: gcx.shutdown_flag.clone(),
+1761: crate::files_blocklist::reload_global_indexing_only(gcx.clone()).await;
+1762: let global_config_roots = vec![gcx.config_dir.clone()];
+1781: let mut workspace_files = gcx.documents_state.workspace_files.lock().unwrap();
+1786: let mut roots = gcx.documents_state.workspace_vcs_roots.lock().unwrap();
+1789: update_git_branch_heads_for_roots(&gcx, &vcs_folders);
+1790: gcx.documents_state.cache_dirty.clone()
+1810: gcx.clone(),
+1818: on_did_delete(gcx.clone(), &path).await;
+1825: pub async fn on_workspaces_init(gcx: Arc<GlobalContext>) -> i32 {
+1828: let folders = gcx
+1834: let old_app_searchable_id = gcx.app_searchable_id.lock().unwrap().clone();
+1837: *gcx.app_searchable_id.lock().unwrap() = get_app_searchable_id(&folders);
+1841: crate::app_state::AppState::from_gcx(gcx.clone()).await,
+1844: watcher_init(gcx.clone()).await;
+1845: let files_enqueued = enqueue_all_files_from_workspace_folders(gcx.clone(), false, false).await;
+1847: crate::git::checkpoints::enqueue_init_shadow_repos(gcx.clone()).await;
+1849: crate::chat::start_trajectory_watcher(gcx.clone());
+1851: let _ = load_integrations(gcx.clone(), &["**/mcp_*".to_string()]).await;
+1857: gcx: Arc<GlobalContext>,
+1865: gcx.file_index.refresh(cpath);
+1866: let normalized_path = normalize_path_for_workspace_state(&gcx, cpath);
+1874: mem_overwrite_or_create_document(gcx.clone(), doc).await;
+1882: *gcx.documents_state.active_file_path.lock().await = Some(cpath.clone());
+1885: pub async fn on_did_close(gcx: Arc<GlobalContext>, cpath: &PathBuf) {
+1890: if !remove_memory_document_for_path(gcx.clone(), cpath).await {
+1893: normalize_path_for_workspace_state(&gcx, cpath).display()
+1898: pub async fn on_did_change(gcx: Arc<GlobalContext>, path: &PathBuf, text: &String) {
+1902: gcx.file_index.refresh(path);
+1904: let normalized_path = normalize_path_for_workspace_state(&gcx, path);
+1909: mem_overwrite_or_create_document(gcx.clone(), doc).await;
+1921: *gcx.documents_state.active_file_path.lock().await = Some(path.clone());
+1944: enqueue_some_docs(gcx.clone(), &vec![cpath], false).await;
+1954: pub async fn on_did_delete(gcx: Arc<GlobalContext>, path: &PathBuf) {
+1958: gcx.file_index.remove(path);
+1965: let cx = gcx.clone();
+1977: let delete_path = normalize_path_for_index_store(&gcx, path);
+1993: pub async fn add_folder(gcx: Arc<GlobalContext>, fpath: &PathBuf) {
+1997: let documents_state = &gcx.documents_state;
+2007: gcx.enrichment_generation.fetch_add(1, Ordering::SeqCst);
+2009: on_workspaces_init(gcx.clone()).await;
+2018: pub async fn remove_folder(gcx: Arc<GlobalContext>, path: &PathBuf) {
+2022: let documents_state = &gcx.documents_state;
+2029: gcx.enrichment_generation.fetch_add(1, Ordering::SeqCst);
+2031: on_workspaces_init(gcx.clone()).await;
+2052: fn update_git_branch_heads_for_roots(gcx: &Arc<GlobalContext>, repo_paths: &[PathBuf]) {
+2057: let mut heads = gcx.documents_state.git_branch_heads.lock().unwrap();
+2179: fn record_git_head_change(gcx: &Arc<GlobalContext>, repo_path: &Path) -> Option<BranchHeadChange> {
+2182: let mut heads = gcx.documents_state.git_branch_heads.lock().unwrap();
+2209: gcx: &Arc<GlobalContext>,
+2216: let mut heads = gcx.documents_state.git_branch_heads.lock().unwrap();
+2237: let mut pending = gcx.documents_state.branch_head_debounce.lock().unwrap();
+2252: async fn enqueue_branch_head_changes(gcx: Arc<GlobalContext>, changes: Vec<BranchHeadChange>) {
+2269: enqueue_all_files_from_workspace_folders(gcx, true, false).await;
+2282: on_did_delete(gcx.clone(), &path).await;
+2285: enqueue_some_docs(gcx, &docs, true).await;
+2288: fn schedule_branch_head_debounce(gcx: Arc<GlobalContext>, repo_path: PathBuf) {
+2289: let mut tasks = gcx
+2297: let task_gcx = gcx.clone();
+2305: async fn flush_branch_head_debounce(gcx: Arc<GlobalContext>, repo_path: PathBuf) {
+2307: if gcx.shutdown_flag.load(Ordering::Relaxed) {
+2308: gcx.documents_state
+2316: if gcx.shutdown_flag.load(Ordering::Relaxed) {
+2317: gcx.documents_state
+2326: let mut pending = gcx.documents_state.branch_head_debounce.lock().unwrap();
+2328: gcx.documents_state
+2339: gcx.documents_state
+2351: gcx.documents_state
+2355: gcx,
+2369: let gcx = match gcx_weak.upgrade() {
+2370: Some(gcx) => gcx,
+2388: if let Some(repo_path) = record_pending_git_head_change(&gcx, &repo_path, now) {
+2389: schedule_branch_head_debounce(gcx.clone(), repo_path);
+2394: pub async fn on_explicit_branch_change(gcx: Arc<GlobalContext>, repo_path: &PathBuf) {
+2395: let change = record_git_head_change(&gcx, repo_path);
+2400: gcx.documents_state
+2409: enqueue_branch_head_changes(gcx, vec![change]).await;
+2414: gcx: Arc<GlobalContext>,
+2420: let mut debounce = gcx.documents_state.file_event_debounce.lock().unwrap();
+2434: let mut task = gcx.documents_state.file_event_debounce_task.lock().unwrap();
+2440: let task_gcx = gcx.clone();
+2446: gcx.documents_state.file_event_debounce_notify.notify_one();
+2449: fn take_all_debounced_file_events(gcx: &Arc<GlobalContext>) -> Vec<PendingFileEvent> {
+2450: let mut debounce = gcx.documents_state.file_event_debounce.lock().unwrap();
+2468: gcx: &Arc<GlobalContext>,
+2471: let mut debounce = gcx.documents_state.file_event_debounce.lock().unwrap();
+2503: fn finish_file_event_debounce_worker(gcx: &Arc<GlobalContext>) -> bool {
+2504: let debounce = gcx.documents_state.file_event_debounce.lock().unwrap();
+2506: *gcx.documents_state.file_event_debounce_task.lock().unwrap() = None;
+2519: async fn wait_for_file_debounce_signal(gcx: &Arc<GlobalContext>, wait_for: Option<Duration>) {
+2520: let notify = gcx.documents_state.file_event_debounce_notify.clone();
+2521: let shutdown_flag = gcx.shutdown_flag.clone();
+2539: async fn flush_debounced_file_paths(gcx: Arc<GlobalContext>, events: Vec<PendingFileEvent>) {
+2545: on_did_delete(gcx.clone(), &event.store_path).await;
+2552: enqueue_some_docs_with_read_paths(gcx, &docs, false).await;
+2555: async fn flush_debounced_file_event_worker(gcx: Arc<GlobalContext>) {
+2557: if gcx.shutdown_flag.load(Ordering::Relaxed) {
+2558: let paths = take_all_debounced_file_events(&gcx);
+2559: flush_debounced_file_paths(gcx.clone(), paths).await;
+2560: if finish_file_event_debounce_worker(&gcx) {
+2566: let (paths, wait_for) = take_due_debounced_file_events(&gcx, Instant::now());
+2568: flush_debounced_file_paths(gcx.clone(), paths).await;
+2572: if gcx
+2579: if finish_file_event_debounce_worker(&gcx) {
+2584: wait_for_file_debounce_signal(&gcx, wait_for).await;
+2590: gcx: Arc<GlobalContext>,
+2598: gcx.documents_state
+2612: let mut watch_folders = gcx
+2619: gcx.documents_state
+2626: crate::files_correction::get_unscoped_project_dirs(gcx.clone()).await;
+2661: gcx: Arc<GlobalContext>,
+2666: let tasks = gcx.documents_state.watch_registration_tasks.clone();
+2668: gcx,
+2681: let gcx = match gcx_weak.clone().upgrade() {
+2682: Some(gcx) => gcx,
+2685: let indexing_everywhere_arc = reload_indexing_everywhere_if_needed(gcx.clone()).await;
+2702: spawn_watch_registration(gcx.clone(), indexing_everywhere_arc.clone(), path, false);
+2705: spawn_watch_registration(gcx.clone(), indexing_everywhere_arc.clone(), path, true);
+2709: gcx.clone(),
+2722: gcx.tool_catalog_generations.advance_integrations();
+2729: gcx.tool_catalog_generations.advance_privacy();
+2737: gcx.enrichment_generation.fetch_add(1, Ordering::SeqCst);
+2739: let mut blocklist_roots = gcx
+2746: .extend(crate::files_correction::get_unscoped_project_dirs(gcx.clone()).await);
+2754: crate::files_correction::registered_worktree_path_mappings(gcx.cache_dir.as_path());
+2755: let global_config_roots = vec![gcx.config_dir.clone()];
+2783: schedule_debounced_file_event(gcx.clone(), queue_path, kind, debounce_now);
+2788: if let Some(gcx) = gcx_weak.clone().upgrade() {
+2811: let workspace_vcs_roots = gcx.documents_state.workspace_vcs_roots.clone();
+2837: enqueue_all_files_from_workspace_folders(gcx, false, false).await;
+2882: pub async fn files_in_workspace_init_task(gcx: Arc<GlobalContext>) {
+2883: let previous_folders = gcx
+2898: crate::app_state::AppState::from_gcx(gcx.clone()).await,
+2902: let file_count = enqueue_all_files_from_workspace_folders(gcx.clone(), true, false).await;
+2903: let current_folders = gcx
+2920: let user_activity = gcx.user_activity.clone();
+2929: enqueue_all_docs_from_jsonl_but_read_first(gcx.clone(), true, false).await;
+2930: crate::git::checkpoints::enqueue_init_shadow_repos(gcx.clone()).await;
+2939: crate::buddy::actor::buddy_enqueue_event(crate::app_state::AppState::from_gcx(gcx).await, ev)
+3054: async fn cache_dirty_value(gcx: &Arc<GlobalContext>) -> f64 {
+3055: let dirty = { gcx.documents_state.cache_dirty.clone() };
+3060: fn allow_all_privacy(gcx: &Arc<GlobalContext>) {
+3066: *gcx.privacy_settings.write().unwrap() = Arc::new(PrivacySettings {
+3075: fn set_blocked_privacy(gcx: &Arc<GlobalContext>, blocked: Vec<String>) {
+3076: *gcx.privacy_settings.write().unwrap() = Arc::new(PrivacySettings {
+3371: let gcx = crate::global_context::tests::make_test_gcx().await;
+3384: *gcx.documents_state.workspace_folders.lock().unwrap() = vec![root.clone()];
+3385: *gcx.documents_state.workspace_vcs_roots.lock().unwrap() = vec![root.clone()];
+3387: *gcx.codegraph.lock().await = Some(service.clone());
+3396: watcher_init(gcx.clone()).await;
+3419: gcx.shutdown_flag.store(true, Ordering::Relaxed);
+3420: gcx.documents_state.file_event_debounce_notify.notify_one();
+3576: let gcx = crate::global_context::tests::make_test_gcx().await;
+3577: allow_all_privacy(&gcx);
+3580: let worktree = worktree_root(&gcx.cache_dir, &source, "wt");
+3583: write_worktree_registry(&gcx.cache_dir, &source, &worktree);
+3585: *gcx.documents_state.workspace_folders.lock().unwrap() = vec![worktree.clone()];
+3586: *gcx.documents_state.workspace_files.lock().unwrap() = vec![normalized(&worktree_file)];
+3587: *gcx.documents_state.cache_dirty.lock().await = 1.0;
+3588: crate::files_correction::files_cache_rebuild_as_needed(gcx.clone()).await;
+3591: gcx.clone(),
+3597: let workspace_files = gcx.documents_state.workspace_files.lock().unwrap().clone();
+3609: let gcx = crate::global_context::tests::make_test_gcx().await;
+3610: allow_all_privacy(&gcx);
+3613: let worktree = worktree_root(&gcx.cache_dir, &source, "wt");
+3616: write_worktree_registry(&gcx.cache_dir, &source, &worktree);
+3620: gcx.clone(),
+3627: let read_text = get_file_text_from_memory_or_disk(gcx.clone(), &source_file)
+3632: let memory_doc_map = gcx.documents_state.memory_document_map.lock().await;
+3644: let gcx = crate::global_context::tests::make_test_gcx().await;
+3647: let worktree = worktree_root(&gcx.cache_dir, &source, "wt");
+3650: write_worktree_registry(&gcx.cache_dir, &source, &worktree);
+3651: set_blocked_privacy(&gcx, vec!["*/blocked_source/*".to_string()]);
+3653: let error = get_file_text_from_memory_or_disk(gcx, &worktree_file)
+3757: let gcx = crate::global_context::tests::make_test_gcx().await;
+3760: let worktree = worktree_root(&gcx.cache_dir, &source, "wt");
+3763: write_worktree_registry(&gcx.cache_dir, &source, &worktree);
+3764: allow_all_privacy(&gcx);
+3766: gcx.clone(),
+3772: set_blocked_privacy(&gcx, vec!["*/worktrees/*/wt/*".to_string()]);
+3774: let error = get_file_text_from_memory_or_disk(gcx, &source_file)
+3783: let gcx = crate::global_context::tests::make_test_gcx().await;
+3784: allow_all_privacy(&gcx);
+3790: let read_context = prepare_file_read_context(gcx.clone()).await;
+3793: gcx.clone(),
+3801: get_file_text_from_memory_or_disk_with_context(gcx, &oversized, &read_context, Some(4))
+3816: let gcx = crate::global_context::tests::make_test_gcx().await;
+3817: allow_all_privacy(&gcx);
+3820: let worktree = worktree_root(&gcx.cache_dir, &source, "wt");
+3823: write_worktree_registry(&gcx.cache_dir, &source, &worktree);
+3827: gcx.clone(),
+3834: get_file_text_from_memory_or_disk(gcx.clone(), &source_file)
+3840: assert!(remove_memory_document_for_path(gcx.clone(), &worktree_file).await);
+3842: get_file_text_from_memory_or_disk(gcx.clone(), &source_file)
+3856: let gcx = crate::global_context::tests::make_test_gcx().await;
+3864: let worktree = worktree_root(&gcx.cache_dir, &source, "wt");
+3867: write_worktree_registry(&gcx.cache_dir, &source, &worktree);
+3868: *gcx.documents_state.workspace_folders.lock().unwrap() = vec![worktree.clone()];
+3869: *gcx.documents_state.workspace_vcs_roots.lock().unwrap() = vec![source.clone()];
+3873: file_watcher_event(event, Arc::downgrade(&gcx)).await;
+3875: let workspace_files = gcx.documents_state.workspace_files.lock().unwrap().clone();
+3891: let gcx = crate::global_context::tests::make_test_gcx().await;
+3892: allow_all_privacy(&gcx);
+3895: let worktree = worktree_root(&gcx.cache_dir, &source, "wt");
+3900: write_worktree_registry(&gcx.cache_dir, &source, &worktree);
+3907: *gcx.codegraph.lock().await = Some(service.clone());
+3910: on_did_delete(gcx.clone(), &worktree_file).await;
+3918: let gcx = crate::global_context::tests::make_test_gcx().await;
+3929: on_did_open(gcx.clone(), &path, &text, &language_id).await;
+3933: gcx.documents_state.memory_document_map.clone(),
+3934: gcx.documents_state.active_file_path.clone(),
+3941: assert_eq!(cache_dirty_value(&gcx).await, 0.0);
+3946: let gcx = crate::global_context::tests::make_test_gcx().await;
+3956: on_did_change(gcx.clone(), &path, &text).await;
+3959: let wf_len = gcx.documents_state.workspace_files.lock().unwrap().len();
+3961: gcx.documents_state.memory_document_map.clone(),
+3962: gcx.documents_state.active_file_path.clone(),
+3971: assert_eq!(cache_dirty_value(&gcx).await, 0.0);
+3976: let gcx = crate::global_context::tests::make_test_gcx().await;
+3987: file_watcher_event(event, Arc::downgrade(&gcx)).await;
+3989: let workspace_files_len = gcx.documents_state.workspace_files.lock().unwrap().len();
+3991: assert_eq!(cache_dirty_value(&gcx).await, 0.0);
+3996: let gcx = crate::global_context::tests::make_test_gcx().await;
+4006: gcx.documents_state
+4013: on_did_delete(gcx.clone(), &path).await;
+4015: let mdm = gcx.documents_state.memory_document_map.clone();
+4018: assert_eq!(cache_dirty_value(&gcx).await, 0.0);
+4023: let gcx = crate::global_context::tests::make_test_gcx().await;
+4034: on_did_open(gcx.clone(), &path, &text, &language_id).await;
+4038: gcx.documents_state.memory_document_map.clone(),
+4039: gcx.documents_state.active_file_path.clone(),
+4046: assert!(cache_dirty_value(&gcx).await > 0.0);
+4116: let gcx = crate::global_context::tests::make_test_gcx().await;
+4117: allow_all_privacy(&gcx);
+4121: *gcx.documents_state.workspace_folders.lock().unwrap() = vec![normalized(temp.path())];
+4122: *gcx.documents_state.workspace_files.lock().unwrap() = vec![normalized(&file)];
+4124: *gcx.codegraph.lock().await = Some(service.clone());
+4128: file_watcher_event(event, Arc::downgrade(&gcx)).await;
+4132: file_watcher_event(event, Arc::downgrade(&gcx)).await;
+4141: let text = get_file_text_from_memory_or_disk(gcx.clone(), &PathBuf::from(&indexed_path))
+4170: let gcx = crate::global_context::tests::make_test_gcx().await;
+4171: allow_all_privacy(&gcx);
+4174: let worktree = worktree_root(&gcx.cache_dir, &source, "wt");
+4179: write_worktree_registry(&gcx.cache_dir, &source, &worktree);
+4180: *gcx.documents_state.workspace_folders.lock().unwrap() = vec![worktree.clone()];
+4182: *gcx.codegraph.lock().await = Some(service.clone());
+4186: file_watcher_event(event, Arc::downgrade(&gcx)).await;
+4197: crate::codegraph::cg_highlev::process_index_batch(gcx.clone(), service.clone(), queued)
+4219: let gcx = crate::global_context::tests::make_test_gcx().await;
+4220: allow_all_privacy(&gcx);
+4223: let worktree = worktree_root(&gcx.cache_dir, &source, "wt");
+4228: write_worktree_registry(&gcx.cache_dir, &source, &worktree);
+4229: *gcx.documents_state.workspace_folders.lock().unwrap() = vec![worktree.clone()];
+4230: *gcx.documents_state.workspace_files.lock().unwrap() = vec![normalized(&source_file)];
+4237: *gcx.codegraph.lock().await = Some(service.clone());
+4242: file_watcher_event(event, Arc::downgrade(&gcx)).await;
+4253: let workspace_files = gcx.documents_state.workspace_files.lock().unwrap().clone();
+4302: let gcx = crate::global_context::tests::make_test_gcx().await;
+4303: allow_all_privacy(&gcx);
+4306: let worktree = worktree_root(&gcx.cache_dir, &source, "wt");
+4311: write_worktree_registry(&gcx.cache_dir, &source, &worktree);
+4312: *gcx.documents_state.workspace_folders.lock().unwrap() = vec![worktree.clone()];
+4316: file_watcher_event(event, Arc::downgrade(&gcx)).await;
+4318: let event = gcx
+4328: gcx.shutdown_flag.store(true, Ordering::Relaxed);
+4329: gcx.documents_state.file_event_debounce_notify.notify_one();
+4333: let gcx = crate::global_context::tests::make_test_gcx().await;
+4334: allow_all_privacy(&gcx);
+4340: *gcx.documents_state.workspace_folders.lock().unwrap() = vec![normalized(temp.path())];
+4342: *gcx.codegraph.lock().await = Some(service.clone());
+4346: gcx.clone(),
+4355: gcx.clone(),
+4364: let task = gcx.documents_state.file_event_debounce_task.lock().unwrap();
+4369: gcx.shutdown_flag.store(true, Ordering::Relaxed);
+4370: gcx.documents_state.file_event_debounce_notify.notify_one();
+4374: && gcx
+4398: assert!(gcx
+4408: let gcx = crate::global_context::tests::make_test_gcx().await;
+4427: *gcx.documents_state.workspace_folders.lock().unwrap() = vec![canonical_repo.clone()];
+4428: *gcx.documents_state.workspace_vcs_roots.lock().unwrap() = vec![canonical_repo.clone()];
+4429: *gcx.documents_state.workspace_files.lock().unwrap() =
+4432: let mut heads = gcx.documents_state.git_branch_heads.lock().unwrap();
+4436: *gcx.codegraph.lock().await = Some(service.clone());
+4442: on_git_head_change(Arc::downgrade(&gcx), event).await;
+4453: let gcx = crate::global_context::tests::make_test_gcx().await;
+4474: *gcx.documents_state.workspace_folders.lock().unwrap() = vec![canonical_repo.clone()];
+4475: *gcx.documents_state.workspace_vcs_roots.lock().unwrap() = vec![canonical_repo.clone()];
+4476: *gcx.documents_state.workspace_files.lock().unwrap() =
+4479: let mut heads = gcx.documents_state.git_branch_heads.lock().unwrap();
+4487: *gcx.codegraph.lock().await = Some(service.clone());
+4493: on_git_head_change(Arc::downgrade(&gcx), event).await;
+4498: let workspace_files = gcx.documents_state.workspace_files.lock().unwrap().clone();
+4505: let gcx = crate::global_context::tests::make_test_gcx().await;
+4509: *gcx.documents_state.workspace_folders.lock().unwrap() = vec![normalized(temp.path())];
+4511: *gcx.codegraph.lock().await = Some(service.clone());
+4514: gcx.clone(),
+4525: assert!(gcx
+4535: let gcx = crate::global_context::tests::make_test_gcx().await;
+4539: *gcx.documents_state.workspace_folders.lock().unwrap() = vec![normalized(temp.path())];
+4541: *gcx.codegraph.lock().await = Some(service.clone());
+4547: file_watcher_event(event, Arc::downgrade(&gcx)).await;
+4558: let gcx = crate::global_context::tests::make_test_gcx().await;
+4567: *gcx.documents_state.workspace_folders.lock().unwrap() = vec![root.clone()];
+4568: *gcx.documents_state.workspace_files.lock().unwrap() = vec![normalized(&old_file)];
+4579: *gcx.codegraph.lock().await = Some(service.clone());
+4585: file_watcher_event(remove_event, Arc::downgrade(&gcx)).await;
+4590: file_watcher_event(create_event, Arc::downgrade(&gcx)).await;
+4593: let workspace_files = gcx.documents_state.workspace_files.lock().unwrap().clone();
+4608: let gcx = crate::global_context::tests::make_test_gcx().await;
+4624: *gcx.documents_state.workspace_folders.lock().unwrap() = vec![canonical_repo.clone()];
+4625: *gcx.documents_state.workspace_vcs_roots.lock().unwrap() = vec![canonical_repo.clone()];
+4627: let mut heads = gcx.documents_state.git_branch_heads.lock().unwrap();
+4636: on_git_head_change(Arc::downgrade(&gcx), event).await;
+4639: let heads = gcx.documents_state.git_branch_heads.lock().unwrap();
+4644: let ts = gcx
+4656: let gcx = crate::global_context::tests::make_test_gcx().await;
+4662: let mut heads = gcx.documents_state.git_branch_heads.lock().unwrap();
+4670: on_git_head_change(Arc::downgrade(&gcx), event).await;
+4673: let ts = gcx
+4685: let gcx = crate::global_context::tests::make_test_gcx().await;
+4710: let mut heads = gcx.documents_state.git_branch_heads.lock().unwrap();
+4713: *gcx.documents_state.workspace_folders.lock().unwrap() = vec![canonical_repo.clone()];
+4714: *gcx.documents_state.workspace_vcs_roots.lock().unwrap() = vec![canonical_repo.clone()];
+4715: *gcx.documents_state.workspace_files.lock().unwrap() = vec![normalized(&file)];
+4717: *gcx.codegraph.lock().await = Some(service.clone());
+4724: on_git_head_change(Arc::downgrade(&gcx), event).await;
+4729: on_git_head_change(Arc::downgrade(&gcx), event).await;
+4732: let heads = gcx.documents_state.git_branch_heads.lock().unwrap();

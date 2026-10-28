@@ -20,6 +20,7 @@ use refact_buddy_core::user_action::UserAction;
 use crate::files_correction::{canonical_path, resolve_codegraph_queue_path, CommandSimplifiedDirExt};
 use crate::git::operations::git_ls_files;
 use crate::global_context::{get_app_searchable_id, GlobalContext};
+use crate::chat::ctx::ChatCtx;
 use crate::integrations::running_integrations::load_integrations;
 use crate::file_filter::{is_valid_file, SOURCE_FILE_EXTENSIONS};
 use crate::privacy::{
@@ -74,18 +75,16 @@ enum WatchSubtreeClass {
 
 pub use refact_core::ast_types::Document;
 
-fn normalize_path_for_workspace_state(gcx: &Arc<GlobalContext>, path: &Path) -> PathBuf {
-    let worktree_mappings =
-        crate::files_correction::registered_worktree_path_mappings(gcx.cache_dir.as_path());
+fn normalize_path_for_workspace_state(cache_dir: &Path, path: &Path) -> PathBuf {
+    let worktree_mappings = crate::files_correction::registered_worktree_path_mappings(cache_dir);
     crate::files_correction::normalize_path_for_unscoped_root_selection(path, &worktree_mappings)
         .unwrap_or_else(|| crate::files_correction::canonical_path(path.to_string_lossy()))
 }
 
-fn normalize_path_for_index_store(gcx: &Arc<GlobalContext>, path: &Path) -> PathBuf {
-    let worktree_mappings =
-        crate::files_correction::registered_worktree_path_mappings(gcx.cache_dir.as_path());
+fn normalize_path_for_index_store(cache_dir: &Path, path: &Path) -> PathBuf {
+    let worktree_mappings = crate::files_correction::registered_worktree_path_mappings(cache_dir);
     crate::files_correction::normalize_path_for_unscoped_root_selection(path, &worktree_mappings)
-        .unwrap_or_else(|| normalize_path_for_workspace_state(gcx, path))
+        .unwrap_or_else(|| normalize_path_for_workspace_state(cache_dir, path))
 }
 
 fn path_for_blocklist(path: &Path, roots: &[PathBuf]) -> PathBuf {
@@ -346,9 +345,13 @@ fn event_path_is_valid_file(
 }
 
 pub async fn remove_memory_document_for_path(gcx: Arc<GlobalContext>, path: &PathBuf) -> bool {
+    remove_memory_document_for_path_for_ctx(&gcx.chat_ctx(gcx.clone()), path).await
+}
+
+pub async fn remove_memory_document_for_path_for_ctx(ctx: &ChatCtx, path: &PathBuf) -> bool {
     let canonical_path = crate::files_correction::canonical_path(path.to_string_lossy());
-    let normalized_path = normalize_path_for_workspace_state(&gcx, path);
-    let mut doc_map = gcx.documents_state.memory_document_map.lock().await;
+    let normalized_path = normalize_path_for_workspace_state(ctx.paths.cache_dir.as_path(), path);
+    let mut doc_map = ctx.workspace.memory_document_map.lock().await;
     let mut removed = doc_map.remove(&canonical_path).is_some();
     if normalized_path != canonical_path {
         removed |= doc_map.remove(&normalized_path).is_some();
@@ -357,9 +360,13 @@ pub async fn remove_memory_document_for_path(gcx: Arc<GlobalContext>, path: &Pat
 }
 
 pub async fn remove_memory_documents_under_path(gcx: Arc<GlobalContext>, path: &PathBuf) -> usize {
+    remove_memory_documents_under_path_for_ctx(&gcx.chat_ctx(gcx.clone()), path).await
+}
+
+pub async fn remove_memory_documents_under_path_for_ctx(ctx: &ChatCtx, path: &PathBuf) -> usize {
     let canonical_path = crate::files_correction::canonical_path(path.to_string_lossy());
-    let normalized_path = normalize_path_for_workspace_state(&gcx, path);
-    let mut doc_map = gcx.documents_state.memory_document_map.lock().await;
+    let normalized_path = normalize_path_for_workspace_state(ctx.paths.cache_dir.as_path(), path);
+    let mut doc_map = ctx.workspace.memory_document_map.lock().await;
     let paths_to_remove = doc_map
         .keys()
         .filter(|p| p.starts_with(&canonical_path) || p.starts_with(&normalized_path))
@@ -1863,7 +1870,7 @@ pub async fn on_did_open(
         return;
     }
     gcx.file_index.refresh(cpath);
-    let normalized_path = normalize_path_for_workspace_state(&gcx, cpath);
+    let normalized_path = normalize_path_for_workspace_state(gcx.cache_dir.as_path(), cpath);
     let mut doc = Document::new(&normalized_path);
     doc.update_text(text);
     info!(
@@ -1883,14 +1890,18 @@ pub async fn on_did_open(
 }
 
 pub async fn on_did_close(gcx: Arc<GlobalContext>, cpath: &PathBuf) {
+    on_did_close_for_ctx(&gcx.chat_ctx(gcx.clone()), cpath).await
+}
+
+pub async fn on_did_close_for_ctx(ctx: &ChatCtx, cpath: &PathBuf) {
     info!(
         "on_did_close {}",
         crate::nicer_logs::last_n_chars(&cpath.display().to_string(), 30)
     );
-    if !remove_memory_document_for_path(gcx.clone(), cpath).await {
+    if !remove_memory_document_for_path_for_ctx(ctx, cpath).await {
         tracing::error!(
             "on_did_close: failed to remove from memory_document_map {:?}",
-            normalize_path_for_workspace_state(&gcx, cpath).display()
+            normalize_path_for_workspace_state(ctx.paths.cache_dir.as_path(), cpath).display()
         );
     }
 }
@@ -1901,7 +1912,7 @@ pub async fn on_did_change(gcx: Arc<GlobalContext>, path: &PathBuf, text: &Strin
     }
     gcx.file_index.refresh(path);
     let t0 = Instant::now();
-    let normalized_path = normalize_path_for_workspace_state(&gcx, path);
+    let normalized_path = normalize_path_for_workspace_state(gcx.cache_dir.as_path(), path);
     let (doc_arc, dirty_arc, mark_dirty) = {
         let mut doc = Document::new(&normalized_path);
         doc.update_text(text);
@@ -1974,7 +1985,7 @@ pub async fn on_did_delete(gcx: Arc<GlobalContext>, path: &PathBuf) {
 
     crate::files_correction::mark_files_cache_dirty(&dirty_arc).await;
 
-    let delete_path = normalize_path_for_index_store(&gcx, path);
+    let delete_path = normalize_path_for_index_store(gcx.cache_dir.as_path(), path);
 
     match *vec_db_module.lock().await {
         Some(ref mut db) => match db.remove_file(&delete_path).await {

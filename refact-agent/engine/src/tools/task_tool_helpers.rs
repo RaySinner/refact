@@ -7,7 +7,7 @@ use tokio::sync::Mutex as AMutex;
 
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::chat::types::TaskMeta;
-use crate::global_context::{GlobalContext, try_load_caps_quickly_if_not_present};
+use crate::chat::ctx::ChatCtx;
 use crate::tasks::storage;
 
 pub(crate) fn required_string(args: &HashMap<String, Value>, key: &str) -> Result<String, String> {
@@ -115,10 +115,12 @@ pub(crate) async fn require_agent_task_meta(
 }
 
 pub(crate) async fn preflight_agent_model(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     model_name: &str,
 ) -> Result<(), String> {
-    let caps = try_load_caps_quickly_if_not_present(gcx, 0)
+    let caps = ctx
+        .caps
+        .try_load_caps_quickly(0)
         .await
         .map_err(|e| format!("Cannot spawn agent: failed to check model availability: {e}"))?;
     if caps.chat_models.contains_key(model_name) {
@@ -143,13 +145,13 @@ pub(crate) async fn preflight_agent_model(
 }
 
 pub(crate) async fn wait_for_agent_abort(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     chat_id: &str,
     timeout: std::time::Duration,
 ) -> Result<(), String> {
     use std::sync::atomic::Ordering;
     let session_arc = {
-        let sessions = gcx.chat_sessions.read().await;
+        let sessions = ctx.chat.sessions.read().await;
         sessions.get(chat_id).cloned()
     };
     let Some(session_arc) = session_arc else {
@@ -371,7 +373,7 @@ mod tests {
     #[tokio::test]
     async fn preflight_passes_for_configured_chat_model() {
         let gcx = gcx_with_chat_models(&["provider/test-model"]).await;
-        preflight_agent_model(gcx, "provider/test-model")
+        preflight_agent_model(&gcx.chat_ctx(gcx.clone()), "provider/test-model")
             .await
             .unwrap();
     }
@@ -379,7 +381,7 @@ mod tests {
     #[tokio::test]
     async fn preflight_fails_with_helpful_message_for_unknown_model() {
         let gcx = gcx_with_chat_models(&["provider/available-model"]).await;
-        let err = preflight_agent_model(gcx, "provider/missing-model")
+        let err = preflight_agent_model(&gcx.chat_ctx(gcx.clone()), "provider/missing-model")
             .await
             .unwrap_err();
         assert!(
@@ -396,7 +398,7 @@ mod tests {
     async fn spawn_agent_fails_before_worktree_when_model_unavailable() {
         let gcx = gcx_with_chat_models(&[]).await;
         let cache_dir = gcx.cache_dir.clone();
-        let err = preflight_agent_model(gcx, "unavailable/model")
+        let err = preflight_agent_model(&gcx.chat_ctx(gcx.clone()), "unavailable/model")
             .await
             .unwrap_err();
         assert!(
@@ -417,7 +419,7 @@ mod tests {
     async fn restart_agent_fails_before_worktree_when_model_unavailable() {
         let gcx = gcx_with_chat_models(&[]).await;
         let cache_dir = gcx.cache_dir.clone();
-        let err = preflight_agent_model(gcx, "unavailable/model")
+        let err = preflight_agent_model(&gcx.chat_ctx(gcx.clone()), "unavailable/model")
             .await
             .unwrap_err();
         assert!(

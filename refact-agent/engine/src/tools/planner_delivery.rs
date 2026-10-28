@@ -15,7 +15,7 @@ use chrono::Utc;
 use serde_json::Value;
 
 use crate::call_validation::{ChatContent, ChatMessage};
-use crate::global_context::GlobalContext;
+use crate::chat::ctx::ChatCtx;
 use crate::tasks::storage;
 use crate::tasks::types::{BoardCard, StatusUpdate};
 use refact_core::chat_types::{DeliveryOutcome, PendingDelivery, PushMode};
@@ -222,12 +222,12 @@ fn stale_card_reason(
 }
 
 async fn card_is_stale(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     task_id: &str,
     target: &CardTarget,
     require_doing: bool,
 ) -> Result<Option<String>, String> {
-    let board = storage::load_board(gcx, task_id).await?;
+    let board = storage::load_board_for_ctx(ctx, task_id).await?;
     Ok(stale_card_reason(
         board.get_card(&target.card_id),
         &target.card_id,
@@ -239,14 +239,14 @@ async fn card_is_stale(
 /// Revalidate the card, optionally probe for a live session, revalidate once
 /// more to close the window opened by that probe, then deliver.
 pub(crate) async fn deliver_to_card(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     facade: Arc<dyn ChatSessionFacade>,
     task_id: &str,
     target: &CardTarget,
     guard: CardGuard,
     pending: PendingDelivery,
 ) -> DeliveryReport {
-    match card_is_stale(gcx.clone(), task_id, target, guard.require_doing).await {
+    match card_is_stale(ctx, task_id, target, guard.require_doing).await {
         Ok(Some(reason)) => return DeliveryReport::Skipped { reason },
         Ok(None) => {}
         Err(error) => {
@@ -268,7 +268,7 @@ pub(crate) async fn deliver_to_card(
             }
         }
 
-        match card_is_stale(gcx, task_id, target, guard.require_doing).await {
+        match card_is_stale(ctx, task_id, target, guard.require_doing).await {
             Ok(Some(reason)) => return DeliveryReport::Skipped { reason },
             Ok(None) => {}
             Err(error) => {
@@ -294,7 +294,7 @@ const CARD_SKIP_PREFIX: &str = "planner_delivery_skip:";
 /// reserving it for this send. `Ok(Some(reason))` means the card moved on and
 /// nothing was written.
 pub(crate) async fn reserve_card_status(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     task_id: &str,
     target: &CardTarget,
     status_message: String,
@@ -304,7 +304,7 @@ pub(crate) async fn reserve_card_status(
     let card_id = target.card_id.clone();
     let chat_id = target.chat_id.clone();
     let timestamp = Utc::now().to_rfc3339();
-    let result = storage::update_board_atomic(gcx, task_id, move |board| {
+    let result = storage::update_board_atomic_for_ctx(ctx, task_id, move |board| {
         if let Some(reason) =
             stale_card_reason(board.get_card(&card_id), &card_id, &chat_id, require_doing)
         {
@@ -337,7 +337,7 @@ pub(crate) async fn reserve_card_status(
 /// still bound to the same agent chat. Silently does nothing when the card has
 /// since been rebound, so late writes never land on a different agent's card.
 pub(crate) async fn record_card_status(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     task_id: &str,
     target: &CardTarget,
     status_message: String,
@@ -345,7 +345,7 @@ pub(crate) async fn record_card_status(
     let card_id = target.card_id.clone();
     let chat_id = target.chat_id.clone();
     let timestamp = Utc::now().to_rfc3339();
-    storage::update_board_atomic(gcx, task_id, move |board| {
+    storage::update_board_atomic_for_ctx(ctx, task_id, move |board| {
         let card = board
             .get_card_mut(&card_id)
             .ok_or_else(|| format!("Card {} not found", card_id))?;

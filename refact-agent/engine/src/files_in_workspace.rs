@@ -462,15 +462,21 @@ pub(crate) fn check_file_privacy_for_read_preparation_with_context(
     Ok(())
 }
 
+pub(crate) fn file_read_context_for(
+    privacy_settings: Arc<PrivacySettings>,
+    cache_dir: &std::path::Path,
+) -> FileReadContext {
+    FileReadContext {
+        privacy_settings,
+        worktree_mappings: crate::files_correction::registered_worktree_path_mappings(cache_dir),
+    }
+}
+
 pub(crate) async fn prepare_file_read_context(
     global_context: Arc<GlobalContext>,
 ) -> FileReadContext {
-    FileReadContext {
-        privacy_settings: load_privacy_if_needed(global_context.clone()).await,
-        worktree_mappings: crate::files_correction::registered_worktree_path_mappings(
-            global_context.cache_dir.as_path(),
-        ),
-    }
+    let privacy_settings = load_privacy_if_needed(global_context.clone()).await;
+    file_read_context_for(privacy_settings, global_context.cache_dir.as_path())
 }
 
 pub(crate) async fn get_file_text_from_memory_or_disk_with_context(

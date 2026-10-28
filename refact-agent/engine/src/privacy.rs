@@ -1,5 +1,5 @@
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock as StdRwLock};
 use std::time::SystemTime;
 
 use serde_yaml::{Mapping, Value};
@@ -9,7 +9,7 @@ use tracing::error;
 use uuid::Uuid;
 
 use crate::files_correction::{canonical_path, get_project_dirs};
-use crate::global_context::GlobalContext;
+use crate::global_context::{GlobalContext, ToolCatalogGenerations};
 
 pub mod destinations;
 pub mod heuristic;
@@ -35,7 +35,13 @@ pub struct PrivacyObservationRuntimeState {
 }
 
 pub fn record_observation_status(gcx: &GlobalContext, status: &refact_exec::ObservationStatus) {
-    let state = match status {
+    *gcx.privacy_observation_runtime.write().unwrap() = observation_runtime_state(status);
+}
+
+pub fn observation_runtime_state(
+    status: &refact_exec::ObservationStatus,
+) -> PrivacyObservationRuntimeState {
+    match status {
         refact_exec::ObservationStatus::Unavailable(reason) => PrivacyObservationRuntimeState {
             runtime_available: false,
             last_error: Some(reason.clone()),
@@ -46,8 +52,7 @@ pub fn record_observation_status(gcx: &GlobalContext, status: &refact_exec::Obse
             runtime_available: true,
             last_error: None,
         },
-    };
-    *gcx.privacy_observation_runtime.write().unwrap() = state;
+    }
 }
 
 pub async fn warn_observation_degraded_once(gcx: Arc<GlobalContext>, reason: &str) {
@@ -94,45 +99,59 @@ pub async fn global_only_policy(gcx: Arc<GlobalContext>) -> Option<refact_privac
 }
 
 pub async fn load_privacy_if_needed(gcx: Arc<GlobalContext>) -> Arc<PrivacySettings> {
+    load_privacy_if_needed_for_policy(
+        &gcx.privacy_policy_load,
+        &gcx.privacy_settings,
+        gcx.config_dir.as_path(),
+        gcx.cmdline.privacy_yaml.as_str(),
+        get_project_dirs(gcx.clone()).await,
+        &gcx.tool_catalog_generations,
+    )
+    .await
+}
+
+pub async fn load_privacy_if_needed_for_policy(
+    privacy_policy_load: &Arc<StdRwLock<PolicyLoad>>,
+    privacy_settings: &Arc<StdRwLock<Arc<PrivacySettings>>>,
+    config_dir: &Path,
+    privacy_yaml: &str,
+    project_dirs: Vec<PathBuf>,
+    tool_catalog_generations: &ToolCatalogGenerations,
+) -> Arc<PrivacySettings> {
     let current_time = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap()
         .as_secs();
-    let (config_dir, privacy_yaml, previous_settings, previous_load) = {
-        let previous_settings = gcx.privacy_settings.read().unwrap().clone();
+    let (previous_settings, previous_load) = {
+        let previous_settings = privacy_settings.read().unwrap().clone();
         let should_reload = previous_settings.loaded_ts + PRIVACY_TOO_OLD.as_secs() <= current_time;
         if !should_reload {
             return previous_settings;
         }
-        (
-            gcx.config_dir.clone(),
-            gcx.cmdline.privacy_yaml.clone(),
-            previous_settings,
-            gcx.privacy_policy_load.read().unwrap().clone(),
-        )
+        (previous_settings, privacy_policy_load.read().unwrap().clone())
     };
 
     let global_path = if privacy_yaml.is_empty() {
         config_dir.join("privacy.yaml")
     } else {
-        canonical_path(privacy_yaml)
+        canonical_path(privacy_yaml.to_string())
     };
-    let project_paths = project_privacy_paths(get_project_dirs(gcx.clone()).await);
+    let project_paths = project_privacy_paths(project_dirs);
     let loaded =
         refact_privacy::load_policy(&global_path, &project_paths, Some(&previous_load)).await;
 
     if let Some(error_message) = &loaded.error {
         error!("{error_message}");
-        *gcx.privacy_policy_load.write().unwrap() = loaded;
+        *privacy_policy_load.write().unwrap() = loaded;
         return previous_settings;
     }
 
     let policy_changed = previous_load.policy != loaded.policy;
     let new_privacy_settings = Arc::new(legacy_settings(&loaded.policy, current_time));
-    *gcx.privacy_policy_load.write().unwrap() = loaded;
-    *gcx.privacy_settings.write().unwrap() = new_privacy_settings.clone();
+    *privacy_policy_load.write().unwrap() = loaded;
+    *privacy_settings.write().unwrap() = new_privacy_settings.clone();
     if policy_changed {
-        gcx.tool_catalog_generations.advance_privacy();
+        tool_catalog_generations.advance_privacy();
     }
     new_privacy_settings
 }

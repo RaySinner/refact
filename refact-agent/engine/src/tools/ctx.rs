@@ -26,7 +26,7 @@ pub struct ToolChatScope {
 #[derive(Clone)]
 pub struct ToolWorkspaceScope {
     pub knowledge_index: Arc<AMutex<KnowledgeIndex>>,
-    pub privacy_settings: Arc<PrivacySettings>,
+    pub privacy_settings: Arc<StdRwLock<Arc<PrivacySettings>>>,
 }
 
 #[derive(Clone)]

@@ -10,8 +10,8 @@ use tokio::sync::Mutex as AMutex;
 
 use crate::exec::ExecRegistry;
 use crate::exec::command_policy::{
-    build_exec_request, chat_mode_for_exec, escalation_from_args, queue_sandbox_audit, CommandKind,
-    CommandPolicyInput, ExecEscalation, ExecSource,
+    build_exec_request_for_ctx, chat_mode_for_exec_for_sessions, escalation_from_args,
+    queue_sandbox_audit_for_sessions, CommandKind, CommandPolicyInput, ExecEscalation, ExecSource,
 };
 
 use crate::at_commands::at_commands::AtCommandsContext;
@@ -156,10 +156,21 @@ impl Tool for ToolProcessStart {
         tool_call_id: &String,
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
-        let (gcx, exec_registry, execution_scope, chat_id, current_model, derived_privacy_zones) = {
+        let (
+            gcx,
+            tool,
+            chat,
+            exec_registry,
+            execution_scope,
+            chat_id,
+            current_model,
+            derived_privacy_zones,
+        ) = {
             let ccx_lock = ccx.lock().await;
             (
                 ccx_lock.app.gcx.clone(),
+                ccx_lock.app.tool.clone(),
+                ccx_lock.app.chat_ctx(),
                 ccx_lock.app.runtime.exec_registry.clone(),
                 ccx_lock.execution_scope.clone(),
                 ccx_lock.chat_id.clone(),
@@ -167,13 +178,23 @@ impl Tool for ToolProcessStart {
                 ccx_lock.derived_privacy_zones.clone(),
             )
         };
-        crate::privacy::load_privacy_if_needed(gcx.clone()).await;
+        crate::privacy::load_privacy_if_needed_for_policy(
+            &tool.privacy_policy_load,
+            &tool.workspace.privacy_settings,
+            tool.paths.config_dir.as_path(),
+            tool.runtime.cmdline.privacy_yaml.as_str(),
+            crate::files_correction::get_unscoped_project_dirs_for_ctx(&chat).await,
+            &chat.tool_catalog_generations,
+        )
+        .await;
+        let privacy_scope = crate::privacy::records::PrivacyRecordScope::from_gcx(&gcx);
         let destination = crate::privacy::records::provider_destination(&current_model);
-        let observe_reason = crate::privacy::records::shell_observation_reason_for_session(
-            &gcx,
-            &destination,
-            &derived_privacy_zones,
-        );
+        let observe_reason =
+            crate::privacy::records::shell_observation_reason_for_session_with_policy(
+                &tool.privacy_policy_load,
+                &destination,
+                &derived_privacy_zones,
+            );
         let observe = observe_reason.needed();
         tracing::debug!(
             "process observation {} for destination {}: {} blocked patterns, {} zones excluding \
@@ -227,9 +248,9 @@ impl Tool for ToolProcessStart {
             service_name: parsed.service_name.clone(),
             workspace,
         };
-        let chat_mode = chat_mode_for_exec(gcx.clone(), &chat_id).await;
-        let policy = match build_exec_request(
-            gcx.clone(),
+        let chat_mode = chat_mode_for_exec_for_sessions(&tool.chat.sessions, &chat_id).await;
+        let policy = match build_exec_request_for_ctx(
+            &chat,
             CommandPolicyInput {
                 source: ExecSource::ProcessTool,
                 command: CommandKind::Shell(&parsed.command),
@@ -244,13 +265,13 @@ impl Tool for ToolProcessStart {
             Ok(policy) => policy,
             Err(error) => {
                 if let Some(audit) = error.audit {
-                    queue_sandbox_audit(gcx.clone(), &chat_id, audit).await;
+                    queue_sandbox_audit_for_sessions(&tool.chat.sessions, &chat_id, audit).await;
                 }
                 return Err(error.message);
             }
         };
         if let Some(audit) = policy.audit.clone() {
-            queue_sandbox_audit(gcx.clone(), &chat_id, audit).await;
+            queue_sandbox_audit_for_sessions(&tool.chat.sessions, &chat_id, audit).await;
         }
         let sandbox_active = policy.request.sandbox.is_some();
         let sandbox_warning = policy.warning;
@@ -293,7 +314,7 @@ impl Tool for ToolProcessStart {
         let mut extra = exec_extra(&result.snapshot, Some(&read), None, Some(tty));
         attach_exec_path_references(
             &mut extra,
-            gcx.clone(),
+            &privacy_scope,
             &destination,
             &derived_privacy_zones,
             &result.snapshot,
@@ -317,7 +338,7 @@ impl Tool for ToolProcessStart {
             .await
             .unwrap_or(result.observation);
             apply_process_privacy(
-                &gcx,
+                &privacy_scope,
                 &result.snapshot,
                 &destination,
                 observation,
@@ -484,10 +505,21 @@ impl Tool for ToolProcessRead {
         tool_call_id: &String,
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
-        let (gcx, exec_registry, execution_scope, chat_id, current_model, derived_privacy_zones) = {
+        let (
+            gcx,
+            tool,
+            chat,
+            exec_registry,
+            execution_scope,
+            chat_id,
+            current_model,
+            derived_privacy_zones,
+        ) = {
             let ccx_lock = ccx.lock().await;
             (
                 ccx_lock.app.gcx.clone(),
+                ccx_lock.app.tool.clone(),
+                ccx_lock.app.chat_ctx(),
                 ccx_lock.app.runtime.exec_registry.clone(),
                 ccx_lock.execution_scope.clone(),
                 ccx_lock.chat_id.clone(),
@@ -495,7 +527,16 @@ impl Tool for ToolProcessRead {
                 ccx_lock.derived_privacy_zones.clone(),
             )
         };
-        crate::privacy::load_privacy_if_needed(gcx.clone()).await;
+        crate::privacy::load_privacy_if_needed_for_policy(
+            &tool.privacy_policy_load,
+            &tool.workspace.privacy_settings,
+            tool.paths.config_dir.as_path(),
+            tool.runtime.cmdline.privacy_yaml.as_str(),
+            crate::files_correction::get_unscoped_project_dirs_for_ctx(&chat).await,
+            &chat.tool_catalog_generations,
+        )
+        .await;
+        let privacy_scope = crate::privacy::records::PrivacyRecordScope::from_gcx(&gcx);
         let destination = crate::privacy::records::provider_destination(&current_model);
         let process_id = parse_process_id(args)?;
         let snapshot = authorize_process_access(
@@ -552,7 +593,7 @@ impl Tool for ToolProcessRead {
         let mut extra = exec_extra(&snapshot, Some(&read), Some(stream_label(stream)), None);
         attach_exec_path_references(
             &mut extra,
-            gcx.clone(),
+            &privacy_scope,
             &destination,
             &derived_privacy_zones,
             &snapshot,
@@ -570,7 +611,7 @@ impl Tool for ToolProcessRead {
         .await
         {
             apply_process_privacy(
-                &gcx,
+                &privacy_scope,
                 &snapshot,
                 &destination,
                 observation,
@@ -685,10 +726,21 @@ impl Tool for ToolProcessWait {
         tool_call_id: &String,
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
-        let (gcx, exec_registry, execution_scope, chat_id, current_model, derived_privacy_zones) = {
+        let (
+            gcx,
+            tool,
+            chat,
+            exec_registry,
+            execution_scope,
+            chat_id,
+            current_model,
+            derived_privacy_zones,
+        ) = {
             let ccx_lock = ccx.lock().await;
             (
                 ccx_lock.app.gcx.clone(),
+                ccx_lock.app.tool.clone(),
+                ccx_lock.app.chat_ctx(),
                 ccx_lock.app.runtime.exec_registry.clone(),
                 ccx_lock.execution_scope.clone(),
                 ccx_lock.chat_id.clone(),
@@ -696,7 +748,16 @@ impl Tool for ToolProcessWait {
                 ccx_lock.derived_privacy_zones.clone(),
             )
         };
-        crate::privacy::load_privacy_if_needed(gcx.clone()).await;
+        crate::privacy::load_privacy_if_needed_for_policy(
+            &tool.privacy_policy_load,
+            &tool.workspace.privacy_settings,
+            tool.paths.config_dir.as_path(),
+            tool.runtime.cmdline.privacy_yaml.as_str(),
+            crate::files_correction::get_unscoped_project_dirs_for_ctx(&chat).await,
+            &chat.tool_catalog_generations,
+        )
+        .await;
+        let privacy_scope = crate::privacy::records::PrivacyRecordScope::from_gcx(&gcx);
         let destination = crate::privacy::records::provider_destination(&current_model);
         let process_id = parse_process_id(args)?;
         authorize_process_access(
@@ -749,7 +810,7 @@ impl Tool for ToolProcessWait {
         }
         attach_exec_path_references(
             &mut extra,
-            gcx.clone(),
+            &privacy_scope,
             &destination,
             &derived_privacy_zones,
             &snapshot,
@@ -772,7 +833,7 @@ impl Tool for ToolProcessWait {
         .await
         {
             apply_process_privacy(
-                &gcx,
+                &privacy_scope,
                 &snapshot,
                 &destination,
                 observation,
@@ -1131,7 +1192,7 @@ async fn process_observation_status(
 }
 
 async fn apply_process_privacy(
-    gcx: &Arc<GlobalContext>,
+    scope: &crate::privacy::records::PrivacyRecordScope,
     snapshot: &ExecProcessSnapshot,
     destination: &refact_privacy::Destination,
     observation: refact_exec::ObservationStatus,
@@ -1144,8 +1205,8 @@ async fn apply_process_privacy(
         .as_deref()
         .or(snapshot.meta.owner.workspace.as_deref())
         .unwrap_or_else(|| Path::new("."));
-    match crate::privacy::records::apply_shell_observation(
-        gcx,
+    match crate::privacy::records::apply_shell_observation_with_scope(
+        scope,
         &snapshot.meta.command,
         cwd,
         destination,
@@ -1672,7 +1733,7 @@ fn exec_extra(
 
 async fn attach_exec_path_references(
     extra: &mut serde_json::Map<String, Value>,
-    gcx: Arc<GlobalContext>,
+    scope: &crate::privacy::records::PrivacyRecordScope,
     destination: &refact_privacy::Destination,
     derived_privacy_zones: &crate::privacy::records::DerivedPrivacyZones,
     snapshot: &ExecProcessSnapshot,
@@ -1718,13 +1779,14 @@ async fn attach_exec_path_references(
         cache.insert(key, collected.clone());
         collected
     };
-    let enrichment = crate::privacy::records::filter_path_enrichment_for_model_context(
-        gcx,
-        destination,
-        derived_privacy_zones,
-        collected,
-    )
-    .await;
+    let enrichment =
+        crate::privacy::records::filter_path_enrichment_for_model_context_with_scope(
+            scope,
+            destination,
+            derived_privacy_zones,
+            collected,
+        )
+        .await;
     refact_chat_api::attach_tool_enrichment_to_extra(
         extra,
         crate::privacy::records::tool_enrichment_from_path_references(enrichment),

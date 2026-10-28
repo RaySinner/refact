@@ -7,6 +7,7 @@ use serde_json::json;
 
 use crate::chat::internal_roles::{event, EventSubkind};
 use crate::chat::ctx::ChatCtx;
+use crate::chat::SessionsMap;
 use crate::exec::{ExecAuditMeta, ExecEnvPolicy, ExecMode, ExecSpawnRequest};
 use crate::exec::types::{ExecSandboxMode, ExecSandboxSpec};
 use crate::global_context::{GlobalContext, TerminalSecurityMode};
@@ -409,8 +410,16 @@ pub async fn queue_sandbox_audit(
     chat_id: &str,
     audit: SandboxAuditRecord,
 ) {
+    queue_sandbox_audit_for_sessions(&gcx.chat_sessions, chat_id, audit).await;
+}
+
+pub async fn queue_sandbox_audit_for_sessions(
+    sessions: &SessionsMap,
+    chat_id: &str,
+    audit: SandboxAuditRecord,
+) {
     let session = {
-        let sessions = gcx.chat_sessions.read().await;
+        let sessions = sessions.read().await;
         sessions.get(chat_id).cloned()
     };
     if let Some(session) = session {
@@ -428,8 +437,15 @@ pub async fn queue_sandbox_audit(
 }
 
 pub async fn chat_mode_for_exec(gcx: Arc<GlobalContext>, chat_id: &str) -> Option<ChatMode> {
+    chat_mode_for_exec_for_sessions(&gcx.chat_sessions, chat_id).await
+}
+
+pub async fn chat_mode_for_exec_for_sessions(
+    sessions: &SessionsMap,
+    chat_id: &str,
+) -> Option<ChatMode> {
     let session = {
-        let sessions = gcx.chat_sessions.read().await;
+        let sessions = sessions.read().await;
         sessions.get(chat_id).cloned()
     }?;
     let mode = session.lock().await.thread.mode.clone();

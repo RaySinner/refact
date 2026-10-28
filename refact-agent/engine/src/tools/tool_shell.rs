@@ -14,8 +14,8 @@ use crate::at_commands::at_file::return_one_candidate_or_a_good_error;
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
 use crate::exec::types::normalize_workspace_path;
 use crate::exec::command_policy::{
-    build_exec_request, chat_mode_for_exec, escalation_from_args, queue_sandbox_audit, CommandKind,
-    CommandPolicyInput, ExecEscalation, ExecSource,
+    build_exec_request_for_ctx, chat_mode_for_exec_for_sessions, escalation_from_args,
+    queue_sandbox_audit_for_sessions, CommandKind, CommandPolicyInput, ExecEscalation, ExecSource,
 };
 use crate::tools::ctx::ToolCtx;
 use crate::exec::{
@@ -85,10 +85,21 @@ impl Tool for ToolShell {
         tool_call_id: &String,
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
-        let (gcx, exec_registry, abort_flag, execution_scope, chat_id, derived_privacy_zones) = {
+        let (
+            gcx,
+            tool,
+            chat,
+            exec_registry,
+            abort_flag,
+            execution_scope,
+            chat_id,
+            derived_privacy_zones,
+        ) = {
             let ccx_lock = ccx.lock().await;
             (
                 ccx_lock.app.gcx.clone(),
+                ccx_lock.app.tool.clone(),
+                ccx_lock.app.chat_ctx(),
                 ccx_lock.app.runtime.exec_registry.clone(),
                 ccx_lock.abort_flag.clone(),
                 ccx_lock.execution_scope.clone(),
@@ -96,14 +107,24 @@ impl Tool for ToolShell {
                 ccx_lock.derived_privacy_zones.clone(),
             )
         };
-        crate::privacy::load_privacy_if_needed(gcx.clone()).await;
+        crate::privacy::load_privacy_if_needed_for_policy(
+            &tool.privacy_policy_load,
+            &tool.workspace.privacy_settings,
+            tool.paths.config_dir.as_path(),
+            tool.runtime.cmdline.privacy_yaml.as_str(),
+            crate::files_correction::get_unscoped_project_dirs_for_ctx(&chat).await,
+            &chat.tool_catalog_generations,
+        )
+        .await;
+        let privacy_scope = crate::privacy::records::PrivacyRecordScope::from_gcx(&gcx);
         let current_model = ccx.lock().await.current_model.clone();
         let destination = crate::privacy::records::provider_destination(&current_model);
-        let observe_reason = crate::privacy::records::shell_observation_reason_for_session(
-            &gcx,
-            &destination,
-            &derived_privacy_zones,
-        );
+        let observe_reason =
+            crate::privacy::records::shell_observation_reason_for_session_with_policy(
+                &tool.privacy_policy_load,
+                &destination,
+                &derived_privacy_zones,
+            );
         let observe = observe_reason.needed();
         tracing::debug!(
             "shell observation {} for destination {}: {} blocked patterns, {} zones excluding it, \
@@ -114,7 +135,7 @@ impl Tool for ToolShell {
             observe_reason.guarded_zones,
             observe_reason.derived_labels
         );
-        let shell_policy = shell_gate::load_policy(gcx.clone()).await;
+        let shell_policy = shell_gate::load_policy_for_ctx(&chat).await;
         let mut default_filter = self.cfg.output_filter.clone();
         default_filter.limit_lines = shell_policy.execution.output_limit_lines;
         default_filter.limit_chars = shell_policy
@@ -170,9 +191,9 @@ impl Tool for ToolShell {
                 ))),
             )
         };
-        let chat_mode = chat_mode_for_exec(gcx.clone(), &chat_id).await;
-        let policy = match build_exec_request(
-            gcx.clone(),
+        let chat_mode = chat_mode_for_exec_for_sessions(&tool.chat.sessions, &chat_id).await;
+        let policy = match build_exec_request_for_ctx(
+            &chat,
             CommandPolicyInput {
                 source: ExecSource::ShellTool,
                 command: CommandKind::Shell(&parsed.command),
@@ -187,13 +208,13 @@ impl Tool for ToolShell {
             Ok(policy) => policy,
             Err(error) => {
                 if let Some(audit) = error.audit {
-                    queue_sandbox_audit(gcx.clone(), &chat_id, audit).await;
+                    queue_sandbox_audit_for_sessions(&tool.chat.sessions, &chat_id, audit).await;
                 }
                 return Err(error.message);
             }
         };
         if let Some(audit) = policy.audit.clone() {
-            queue_sandbox_audit(gcx.clone(), &chat_id, audit).await;
+            queue_sandbox_audit_for_sessions(&tool.chat.sessions, &chat_id, audit).await;
         }
         let sandbox_active = policy.request.sandbox.is_some();
         let sandbox_warning = policy.warning;
@@ -260,7 +281,7 @@ impl Tool for ToolShell {
             };
             attach_exec_path_references(
                 &mut message.extra,
-                gcx.clone(),
+                &privacy_scope,
                 &destination,
                 &derived_privacy_zones,
                 &result.snapshot,
@@ -275,7 +296,7 @@ impl Tool for ToolShell {
                     .map(|reader| reader.status())
                     .unwrap_or(result.observation);
                 apply_shell_privacy(
-                    &gcx,
+                    &privacy_scope,
                     &parsed.command,
                     request_cwd(&result.snapshot),
                     &destination,
@@ -336,7 +357,7 @@ impl Tool for ToolShell {
         };
         attach_exec_path_references(
             &mut message.extra,
-            gcx.clone(),
+            &privacy_scope,
             &destination,
             &derived_privacy_zones,
             &result.snapshot,
@@ -346,7 +367,7 @@ impl Tool for ToolShell {
         .await;
         if observe {
             apply_shell_privacy(
-                &gcx,
+                &privacy_scope,
                 &parsed.command,
                 request_cwd(&result.snapshot),
                 &destination,
@@ -428,7 +449,7 @@ fn request_cwd(snapshot: &ExecProcessSnapshot) -> &std::path::Path {
 }
 
 async fn apply_shell_privacy(
-    gcx: &Arc<GlobalContext>,
+    scope: &crate::privacy::records::PrivacyRecordScope,
     command: &str,
     cwd: &std::path::Path,
     destination: &refact_privacy::Destination,
@@ -436,8 +457,8 @@ async fn apply_shell_privacy(
     derived_zones: &crate::privacy::records::DerivedPrivacyZones,
     message: &mut ChatMessage,
 ) -> Result<(), String> {
-    match crate::privacy::records::apply_shell_observation(
-        gcx,
+    match crate::privacy::records::apply_shell_observation_with_scope(
+        scope,
         command,
         cwd,
         destination,
@@ -766,7 +787,7 @@ fn exec_extra(
 
 async fn attach_exec_path_references(
     extra: &mut serde_json::Map<String, Value>,
-    gcx: Arc<GlobalContext>,
+    scope: &crate::privacy::records::PrivacyRecordScope,
     destination: &refact_privacy::Destination,
     derived_privacy_zones: &crate::privacy::records::DerivedPrivacyZones,
     snapshot: &ExecProcessSnapshot,
@@ -787,13 +808,14 @@ async fn attach_exec_path_references(
         output,
     )
     .await;
-    let enrichment = crate::privacy::records::filter_path_enrichment_for_model_context(
-        gcx,
-        destination,
-        derived_privacy_zones,
-        collected,
-    )
-    .await;
+    let enrichment =
+        crate::privacy::records::filter_path_enrichment_for_model_context_with_scope(
+            scope,
+            destination,
+            derived_privacy_zones,
+            collected,
+        )
+        .await;
     refact_chat_api::attach_tool_enrichment_to_extra(
         extra,
         crate::privacy::records::tool_enrichment_from_path_references(enrichment),

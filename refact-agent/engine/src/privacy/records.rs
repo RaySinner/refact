@@ -15,7 +15,7 @@ use refact_chat_api::{
 use crate::call_validation::ChatMessage;
 use crate::exec::path_enrichment::{CollectedPathEnrichment, PathEnrichment};
 use crate::files_correction::registered_worktree_path_mappings;
-use crate::files_in_workspace::{check_file_privacy_for_model_context, registered_alias_paths};
+use crate::files_in_workspace::registered_alias_paths;
 use crate::global_context::GlobalContext;
 
 pub const SHELL_WITHHELD_MESSAGE: &str = "Output withheld by user privacy policy — the command ran, but its output read guarded files and cannot be shown.";
@@ -40,6 +40,37 @@ pub type DerivedPrivacyZones = Arc<RwLock<HashMap<PathBuf, DerivedZone>>>;
 
 pub fn new_derived_privacy_zones() -> DerivedPrivacyZones {
     Arc::new(RwLock::new(HashMap::new()))
+}
+
+#[derive(Clone)]
+pub struct PrivacyRecordScope {
+    pub privacy_policy_load: Arc<RwLock<super::PolicyLoad>>,
+    pub privacy_settings: Arc<RwLock<Arc<super::PrivacySettings>>>,
+    pub privacy_observation_runtime: Arc<RwLock<super::PrivacyObservationRuntimeState>>,
+    pub file_index: Arc<crate::file_index::FileIndex>,
+    pub workspace_folders: Arc<std::sync::Mutex<Vec<PathBuf>>>,
+    pub cache_dir: PathBuf,
+}
+
+impl PrivacyRecordScope {
+    pub fn from_gcx(gcx: &Arc<GlobalContext>) -> Self {
+        Self {
+            privacy_policy_load: gcx.privacy_policy_load.clone(),
+            privacy_settings: gcx.privacy_settings.clone(),
+            privacy_observation_runtime: gcx.privacy_observation_runtime.clone(),
+            file_index: gcx.file_index.clone(),
+            workspace_folders: gcx.documents_state.workspace_folders.clone(),
+            cache_dir: gcx.cache_dir.clone(),
+        }
+    }
+
+    fn policy(&self) -> Arc<refact_privacy::PrivacyPolicy> {
+        self.privacy_policy_load.read().unwrap().policy.clone()
+    }
+
+    fn workspace_folders(&self) -> Vec<PathBuf> {
+        self.workspace_folders.lock().unwrap().clone()
+    }
 }
 
 pub fn provider_destination(model_id: &str) -> Destination {
@@ -73,7 +104,14 @@ pub fn shell_observation_reason(
     gcx: &Arc<GlobalContext>,
     destination: &Destination,
 ) -> ObservationReason {
-    let policy = gcx.privacy_policy_load.read().unwrap().policy.clone();
+    shell_observation_reason_for_policy(&gcx.privacy_policy_load, destination)
+}
+
+pub fn shell_observation_reason_for_policy(
+    privacy_policy_load: &Arc<RwLock<super::PolicyLoad>>,
+    destination: &Destination,
+) -> ObservationReason {
+    let policy = privacy_policy_load.read().unwrap().policy.clone();
     ObservationReason {
         blocked_patterns: policy.blocked.len(),
         guarded_zones: policy
@@ -90,14 +128,26 @@ pub fn shell_observation_reason_for_session(
     destination: &Destination,
     derived_zones: &DerivedPrivacyZones,
 ) -> ObservationReason {
-    let mut reason = shell_observation_reason(gcx, destination);
+    shell_observation_reason_for_session_with_policy(
+        &gcx.privacy_policy_load,
+        destination,
+        derived_zones,
+    )
+}
+
+pub fn shell_observation_reason_for_session_with_policy(
+    privacy_policy_load: &Arc<RwLock<super::PolicyLoad>>,
+    destination: &Destination,
+    derived_zones: &DerivedPrivacyZones,
+) -> ObservationReason {
+    let mut reason = shell_observation_reason_for_policy(privacy_policy_load, destination);
     let derived_zone_names = derived_zones
         .read()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .values()
         .map(|derived| derived.zone.clone())
         .collect::<Vec<_>>();
-    let policy = gcx.privacy_policy_load.read().unwrap().policy.clone();
+    let policy = privacy_policy_load.read().unwrap().policy.clone();
     reason.derived_labels = derived_zone_names
         .iter()
         .filter(|name| {
@@ -130,21 +180,41 @@ pub(crate) async fn filter_path_enrichment_for_model_context(
     derived_zones: &DerivedPrivacyZones,
     collected: CollectedPathEnrichment,
 ) -> PathEnrichment {
+    crate::privacy::load_privacy_if_needed(gcx.clone()).await;
+    let scope = PrivacyRecordScope::from_gcx(&gcx);
+    filter_path_enrichment_for_model_context_with_scope(
+        &scope,
+        destination,
+        derived_zones,
+        collected,
+    )
+    .await
+}
+
+pub(crate) async fn filter_path_enrichment_for_model_context_with_scope(
+    scope: &PrivacyRecordScope,
+    destination: &Destination,
+    derived_zones: &DerivedPrivacyZones,
+    collected: CollectedPathEnrichment,
+) -> PathEnrichment {
     let mut metadata = collected.metadata;
     let mut references = Vec::new();
     let mut seen = HashSet::new();
-    let compiled_policy = {
-        let policy = gcx.privacy_policy_load.read().unwrap().policy.clone();
-        policy.compile().ok()
-    };
-    let worktree_mappings = registered_worktree_path_mappings(gcx.cache_dir.as_path());
+    let compiled_policy = scope.policy().compile().ok();
+    let worktree_mappings = registered_worktree_path_mappings(scope.cache_dir.as_path());
+    let read_context = crate::files_in_workspace::file_read_context_for(
+        scope.privacy_settings.read().unwrap().clone(),
+        scope.cache_dir.as_path(),
+    );
     for candidate in collected.candidates {
-        if check_file_privacy_for_model_context(gcx.clone(), &candidate.canonical_path)
-            .await
-            .is_err()
+        if crate::files_in_workspace::check_file_privacy_for_read_preparation_with_context(
+            &read_context,
+            &candidate.canonical_path,
+        )
+        .is_err()
             || !compiled_policy.as_ref().is_some_and(|compiled| {
                 path_allowed_for_destination(
-                    &gcx,
+                    scope,
                     compiled,
                     &worktree_mappings,
                     &candidate.canonical_path,
@@ -202,14 +272,14 @@ pub(crate) fn tool_enrichment_from_path_references(enrichment: PathEnrichment) -
 }
 
 fn path_allowed_for_destination(
-    gcx: &Arc<GlobalContext>,
+    scope: &PrivacyRecordScope,
     compiled: &refact_privacy::CompiledPolicy,
     mappings: &[crate::files_correction::RegisteredWorktreePathMapping],
     path: &Path,
     destination: &Destination,
     derived_zones: &DerivedPrivacyZones,
 ) -> bool {
-    let zone = zone_for_record_path(gcx, compiled, path, mappings, derived_zones);
+    let zone = zone_for_record_path(scope, compiled, path, mappings, derived_zones);
     zone != "blocked"
         && compiled
             .zone_named(&zone)
@@ -218,15 +288,15 @@ fn path_allowed_for_destination(
 }
 
 fn zone_for_record_path(
-    gcx: &Arc<GlobalContext>,
+    scope: &PrivacyRecordScope,
     compiled: &refact_privacy::CompiledPolicy,
     path: &Path,
     mappings: &[crate::files_correction::RegisteredWorktreePathMapping],
     derived_zones: &DerivedPrivacyZones,
 ) -> String {
-    let candidates = record_path_candidates(gcx, path, mappings);
+    let candidates = record_path_candidates(scope, path, mappings);
     let static_zone =
-        compiled.strictest_zone_for_paths_with_roots(&candidates, privacy_roots(gcx, mappings));
+        compiled.strictest_zone_for_paths_with_roots(&candidates, privacy_roots(scope, mappings));
     let derived_zone_name = {
         let derived_zones = derived_zones
             .read()
@@ -262,17 +332,18 @@ pub fn derived_zone_for_path(
     path: &Path,
     derived_zones: &DerivedPrivacyZones,
 ) -> Option<DerivedZone> {
-    let mappings = registered_worktree_path_mappings(gcx.cache_dir.as_path());
-    derived_zone_for_path_with(gcx, path, &mappings, derived_zones)
+    let scope = PrivacyRecordScope::from_gcx(gcx);
+    let mappings = registered_worktree_path_mappings(scope.cache_dir.as_path());
+    derived_zone_for_path_with(&scope, path, &mappings, derived_zones)
 }
 
 fn derived_zone_for_path_with(
-    gcx: &Arc<GlobalContext>,
+    scope: &PrivacyRecordScope,
     path: &Path,
     mappings: &[crate::files_correction::RegisteredWorktreePathMapping],
     derived_zones: &DerivedPrivacyZones,
 ) -> Option<DerivedZone> {
-    let candidates = record_path_candidates(gcx, path, mappings);
+    let candidates = record_path_candidates(scope, path, mappings);
     let derived_zones = derived_zones
         .read()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -282,21 +353,16 @@ fn derived_zone_for_path_with(
 }
 
 fn record_path_candidates(
-    gcx: &Arc<GlobalContext>,
+    scope: &PrivacyRecordScope,
     path: &Path,
     mappings: &[crate::files_correction::RegisteredWorktreePathMapping],
 ) -> Vec<PathBuf> {
     let mut candidates = registered_alias_paths(path, mappings);
     candidates.push(path.to_path_buf());
-    if let Some(facts) = gcx.file_index.get(path) {
-        candidates.extend(gcx.file_index.aliases_of(&facts, path));
+    if let Some(facts) = scope.file_index.get(path) {
+        candidates.extend(scope.file_index.aliases_of(&facts, path));
     }
-    let workspaces = gcx
-        .documents_state
-        .workspace_folders
-        .lock()
-        .unwrap()
-        .clone();
+    let workspaces = scope.workspace_folders();
     let aliases = candidates.clone();
     candidates.extend(workspaces.iter().flat_map(|workspace| {
         aliases
@@ -309,15 +375,10 @@ fn record_path_candidates(
 }
 
 fn privacy_roots(
-    gcx: &Arc<GlobalContext>,
+    scope: &PrivacyRecordScope,
     mappings: &[crate::files_correction::RegisteredWorktreePathMapping],
 ) -> Vec<PathBuf> {
-    let mut roots = gcx
-        .documents_state
-        .workspace_folders
-        .lock()
-        .unwrap()
-        .clone();
+    let mut roots = scope.workspace_folders();
     roots.extend(
         mappings
             .iter()
@@ -430,11 +491,37 @@ pub async fn apply_shell_observation(
     derived_zones: &DerivedPrivacyZones,
     message: &mut ChatMessage,
 ) -> Result<ShellReadDecision, String> {
-    crate::privacy::record_observation_status(gcx, &observation);
-    let policy = gcx.privacy_policy_load.read().unwrap().policy.clone();
+    if let ObservationStatus::Unavailable(reason) = &observation {
+        crate::privacy::warn_observation_degraded_once(gcx.clone(), reason).await;
+    }
+    let scope = PrivacyRecordScope::from_gcx(gcx);
+    apply_shell_observation_with_scope(
+        &scope,
+        command,
+        cwd,
+        destination,
+        observation,
+        derived_zones,
+        message,
+    )
+    .await
+}
+
+pub async fn apply_shell_observation_with_scope(
+    scope: &PrivacyRecordScope,
+    command: &str,
+    cwd: &Path,
+    destination: &Destination,
+    observation: ObservationStatus,
+    derived_zones: &DerivedPrivacyZones,
+    message: &mut ChatMessage,
+) -> Result<ShellReadDecision, String> {
+    *scope.privacy_observation_runtime.write().unwrap() =
+        crate::privacy::observation_runtime_state(&observation);
+    let policy = scope.policy();
     let records = match observation {
         ObservationStatus::Observed(access) => {
-            classify_observed_access(gcx, &policy, access, derived_zones).await?
+            classify_observed_access(scope, &policy, access, derived_zones).await?
         }
         ObservationStatus::Pending(access) => {
             message.extra.insert(
@@ -445,7 +532,7 @@ pub async fn apply_shell_observation(
                     "incomplete": true,
                 }),
             );
-            classify_observed_access(gcx, &policy, access, derived_zones).await?
+            classify_observed_access(scope, &policy, access, derived_zones).await?
         }
         ObservationStatus::Incomplete(access) => {
             message.extra.insert(
@@ -456,13 +543,12 @@ pub async fn apply_shell_observation(
                     "incomplete": true,
                 }),
             );
-            classify_observed_access(gcx, &policy, access, derived_zones).await?
+            classify_observed_access(scope, &policy, access, derived_zones).await?
         }
         ObservationStatus::Unavailable(reason) => {
             let compiled = policy.compile().map_err(|error| error.to_string())?;
             let heuristic =
                 crate::privacy::heuristic::attribute_shell_command(command, cwd, &compiled);
-            crate::privacy::warn_observation_degraded_once(gcx.clone(), &reason).await;
             message.extra.insert(
                 "privacy_observation".to_string(),
                 serde_json::json!({
@@ -503,7 +589,7 @@ pub async fn apply_shell_observation(
                 (Some(ShellBehavior::Withhold), _) => Some(ShellBehavior::Withhold),
                 (_, ShellBehavior::Ask) => Some(ShellBehavior::Ask),
             });
-    let origins = offending_record_origins(gcx, &offending, derived_zones);
+    let origins = offending_record_origins(scope, &offending, derived_zones);
     let guarded = guarded_read_list(&offending, &origins);
     let inherited_note = if origins.is_empty() {
         ""
@@ -540,7 +626,7 @@ pub async fn apply_shell_observation(
 }
 
 fn offending_record_origins(
-    gcx: &Arc<GlobalContext>,
+    scope: &PrivacyRecordScope,
     offending: &[(&FileRecord, ShellBehavior)],
     derived_zones: &DerivedPrivacyZones,
 ) -> HashMap<String, String> {
@@ -552,14 +638,14 @@ fn offending_record_origins(
     {
         return HashMap::new();
     }
-    let mappings = registered_worktree_path_mappings(gcx.cache_dir.as_path());
+    let mappings = registered_worktree_path_mappings(scope.cache_dir.as_path());
     let mut origins = HashMap::new();
     for (record, _) in offending {
         if origins.contains_key(&record.path) {
             continue;
         }
         let derived = derived_zone_for_path_with(
-            gcx,
+            scope,
             Path::new(record.path.as_str()),
             &mappings,
             derived_zones,
@@ -575,17 +661,17 @@ fn offending_record_origins(
 }
 
 async fn classify_observed_access(
-    gcx: &Arc<GlobalContext>,
+    scope: &PrivacyRecordScope,
     policy: &refact_privacy::PrivacyPolicy,
     access: refact_exec::ObservedAccess,
     derived_zones: &DerivedPrivacyZones,
 ) -> Result<Vec<FileRecord>, String> {
-    let gcx = gcx.clone();
+    let scope = scope.clone();
     let policy = policy.clone();
     let derived_zones = derived_zones.clone();
     tokio::task::spawn_blocking(move || {
-        let records = observed_file_records_with_derived(&gcx, access.reads, &derived_zones)?;
-        inherit_observed_write_zones(&gcx, &policy, &records, access.writes, &derived_zones)?;
+        let records = observed_file_records_with_derived(&scope, access.reads, &derived_zones)?;
+        inherit_observed_write_zones(&scope, &policy, &records, access.writes, &derived_zones)?;
         Ok(records)
     })
     .await
@@ -743,11 +829,14 @@ fn file_record(
     attribution: Attribution,
     derived_zones: &DerivedPrivacyZones,
 ) -> Result<FileRecord, String> {
-    let policy = gcx.privacy_policy_load.read().unwrap().policy.clone();
-    let compiled = policy.compile().map_err(|error| error.to_string())?;
-    let mappings = registered_worktree_path_mappings(gcx.cache_dir.as_path());
+    let scope = PrivacyRecordScope::from_gcx(gcx);
+    let compiled = scope
+        .policy()
+        .compile()
+        .map_err(|error| error.to_string())?;
+    let mappings = registered_worktree_path_mappings(scope.cache_dir.as_path());
     Ok(file_record_with(
-        gcx,
+        &scope,
         &compiled,
         &mappings,
         path,
@@ -757,7 +846,7 @@ fn file_record(
 }
 
 fn file_record_with(
-    gcx: &Arc<GlobalContext>,
+    scope: &PrivacyRecordScope,
     compiled: &refact_privacy::CompiledPolicy,
     mappings: &[crate::files_correction::RegisteredWorktreePathMapping],
     path: &Path,
@@ -766,7 +855,7 @@ fn file_record_with(
 ) -> FileRecord {
     FileRecord {
         path: refact_core::chat_types::normalize_file_name(path.to_string_lossy().into_owned()),
-        zone: zone_for_record_path(gcx, compiled, path, mappings, derived_zones),
+        zone: zone_for_record_path(scope, compiled, path, mappings, derived_zones),
         attribution,
     }
 }
@@ -784,15 +873,24 @@ pub fn declared_file_records(
     gcx: &Arc<GlobalContext>,
     paths: impl IntoIterator<Item = PathBuf>,
 ) -> Result<Vec<FileRecord>, String> {
-    let policy = gcx.privacy_policy_load.read().unwrap().policy.clone();
-    let compiled = policy.compile().map_err(|error| error.to_string())?;
-    let mappings = registered_worktree_path_mappings(gcx.cache_dir.as_path());
+    declared_file_records_with_scope(&PrivacyRecordScope::from_gcx(gcx), paths)
+}
+
+pub fn declared_file_records_with_scope(
+    scope: &PrivacyRecordScope,
+    paths: impl IntoIterator<Item = PathBuf>,
+) -> Result<Vec<FileRecord>, String> {
+    let compiled = scope
+        .policy()
+        .compile()
+        .map_err(|error| error.to_string())?;
+    let mappings = registered_worktree_path_mappings(scope.cache_dir.as_path());
     let derived_zones = new_derived_privacy_zones();
     let mut records = Vec::new();
     let mut seen = HashSet::new();
     for path in paths {
         let record = file_record_with(
-            gcx,
+            scope,
             &compiled,
             &mappings,
             &path,
@@ -810,22 +908,28 @@ pub fn observed_file_records(
     gcx: &Arc<GlobalContext>,
     paths: impl IntoIterator<Item = PathBuf>,
 ) -> Result<Vec<FileRecord>, String> {
-    observed_file_records_with_derived(gcx, paths, &new_derived_privacy_zones())
+    observed_file_records_with_derived(
+        &PrivacyRecordScope::from_gcx(gcx),
+        paths,
+        &new_derived_privacy_zones(),
+    )
 }
 
 fn observed_file_records_with_derived(
-    gcx: &Arc<GlobalContext>,
+    scope: &PrivacyRecordScope,
     paths: impl IntoIterator<Item = PathBuf>,
     derived_zones: &DerivedPrivacyZones,
 ) -> Result<Vec<FileRecord>, String> {
-    let policy = gcx.privacy_policy_load.read().unwrap().policy.clone();
-    let compiled = policy.compile().map_err(|error| error.to_string())?;
-    let mappings = registered_worktree_path_mappings(gcx.cache_dir.as_path());
+    let compiled = scope
+        .policy()
+        .compile()
+        .map_err(|error| error.to_string())?;
+    let mappings = registered_worktree_path_mappings(scope.cache_dir.as_path());
     let mut records = Vec::new();
     let mut seen = HashSet::new();
     for path in paths {
         let record = file_record_with(
-            gcx,
+            scope,
             &compiled,
             &mappings,
             &path,
@@ -865,7 +969,7 @@ fn is_vcs_metadata_churn(path: &Path) -> bool {
 }
 
 fn inherit_observed_write_zones(
-    gcx: &Arc<GlobalContext>,
+    scope: &PrivacyRecordScope,
     policy: &refact_privacy::PrivacyPolicy,
     reads: &[FileRecord],
     writes: impl IntoIterator<Item = PathBuf>,
@@ -885,7 +989,7 @@ fn inherit_observed_write_zones(
         .iter()
         .find(|record| record.zone == zone_name)
         .map(|record| record.path.clone());
-    let mappings = registered_worktree_path_mappings(gcx.cache_dir.as_path());
+    let mappings = registered_worktree_path_mappings(scope.cache_dir.as_path());
     let mut derived_zones = derived_zones
         .write()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -893,7 +997,7 @@ fn inherit_observed_write_zones(
         if !is_taintable_write_target(&path) {
             continue;
         }
-        for candidate in record_path_candidates(gcx, &path, &mappings) {
+        for candidate in record_path_candidates(scope, &path, &mappings) {
             let replace = derived_zones
                 .get(&candidate)
                 .map(|current| {

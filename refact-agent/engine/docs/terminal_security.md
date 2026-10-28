@@ -53,11 +53,11 @@ The following production sites bypass `refact-exec`. The inventory was verified 
 | `src/chat/system_context.rs:436,446` | trusted-internal-lifecycle | Queries the local OS version with platform-fixed commands. |
 | `src/chat/task_agent_monitor.rs:1493-1570` | trusted-internal-lifecycle | Captures failed-agent and changed-file Git evidence using fixed operations and task-owned refs. |
 | `src/chat/verifier_diff.rs:39` | trusted-internal-lifecycle | Collects verifier Git evidence using fixed operations and task-owned refs. |
-| `src/daemon/cli.rs:797-811` | integration-bootstrap | Opens the user-selected daemon URL through the platform browser launcher. |
-| `src/daemon/client.rs:462` | integration-bootstrap | Starts the current executable in detached daemon mode. |
-| `src/daemon/server.rs:586` | integration-bootstrap | Relaunches the current executable after daemon settings changes. |
-| `src/daemon/supervisor.rs:905` | integration-bootstrap | Test/deployment worker override parses explicit argv from `REFACT_DAEMON_WORKER_CMD`. |
-| `src/daemon/supervisor.rs:911` | integration-bootstrap | Starts the current executable as the supervised worker. |
+| `crates/refact-daemon/src/daemon/cli.rs:797-811` | integration-bootstrap | Opens the user-selected daemon URL through the platform browser launcher. |
+| `crates/refact-daemon/src/daemon/client.rs:462` | integration-bootstrap | Starts the current executable in detached daemon mode. |
+| `crates/refact-daemon/src/daemon/server.rs:586` | integration-bootstrap | Relaunches the current executable after daemon settings changes. |
+| `crates/refact-daemon/src/daemon/supervisor.rs:905` | integration-bootstrap | Test/deployment worker override parses explicit argv from `REFACT_DAEMON_WORKER_CMD`. |
+| `crates/refact-daemon/src/daemon/supervisor.rs:911` | integration-bootstrap | Starts the current executable as the supervised worker. |
 | `src/ext/hooks_runner.rs:327,334` | still-to-migrate | Executes configured hook text through the platform shell with hook payload environment. |
 | `src/ext/hooks_runner.rs:590` | trusted-internal-lifecycle | Test-only process-liveness assertion invokes fixed `kill -0`; it is not a production spawn path. |
 | `src/git/cleanup.rs:283` | trusted-internal-lifecycle | Runs fixed Git garbage collection on an engine-owned shadow repository. |

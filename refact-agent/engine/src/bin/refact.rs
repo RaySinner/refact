@@ -7,7 +7,11 @@ fn main() {
         }
         refact_lsp::cli_dispatch::DispatchResult::Daemon { foreground, port } => {
             let runtime = refact_lsp::runtime_config::build_tokio_runtime();
-            runtime.block_on(refact_lsp::daemon::run_daemon(foreground, port));
+            runtime.block_on(refact_lsp::daemon::run_daemon(
+                foreground,
+                port,
+                refact_lsp::daemon_gui_asset_getter(),
+            ));
         }
         refact_lsp::cli_dispatch::DispatchResult::Run(options) => {
             let runtime = refact_lsp::runtime_config::build_tokio_runtime();
@@ -44,7 +48,10 @@ fn main() {
         }
         refact_lsp::cli_dispatch::DispatchResult::Control(options) => {
             let runtime = refact_lsp::runtime_config::build_tokio_runtime();
-            let code = runtime.block_on(refact_lsp::daemon::cli::run(options));
+            let code = runtime.block_on(refact_lsp::daemon::cli::run(
+                options,
+                refact_lsp::cli_dispatch::version_text(),
+            ));
             std::process::exit(code);
         }
         refact_lsp::cli_dispatch::DispatchResult::SelfUpdate(options) => {

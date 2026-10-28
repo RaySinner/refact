@@ -1047,7 +1047,7 @@ mod tests {
         fn set(script: &str) -> Option<Self> {
             let python = crate::daemon::fake_worker_python()?;
             let worker = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("tests")
+                .join("../../tests")
                 .join("fake_worker.py");
             let keys = vec![
                 (
@@ -1097,7 +1097,7 @@ mod tests {
         };
         let task_paths = paths.clone();
         let task = tokio::spawn(async move {
-            crate::daemon::run_daemon_entry_with_paths(config, task_paths, false, false).await
+            crate::daemon::run_daemon_entry_with_paths(config, task_paths, false, false, None).await
         });
         let info = wait_for_info(&paths.daemon_json_path).await;
         (info, task, paths)

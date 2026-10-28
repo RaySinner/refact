@@ -1,0 +1,53 @@
+[package]
+name = "refact-daemon"
+version = "8.8.2"
+edition = "2021"
+
+[dependencies]
+refact-core = { path = "../refact-core" }
+refact-files = { path = "../refact-files" }
+refact-scheduler-core = { path = "../refact-scheduler-core" }
+refact-self-update = { path = "../refact-self-update" }
+refact-worktrees = { path = "../refact-worktrees" }
+
+axum = { version = "0.6.20", features = ["default", "http2"] }
+base64 = "0.22.1"
+chrono = { version = "0.4.31", features = ["serde"] }
+chrono-tz = "0.10"
+dirs = "5.0"
+eventsource-stream = "0.2"
+fd-lock = "4.0.4"
+flate2 = "1.0"
+futures = "0.3"
+hex = "0.4.3"
+home = "0.5"
+hostname = "0.4"
+hyper = { version = "0.14", features = ["server", "stream"] }
+mdns-sd = "0.20.0"
+parking_lot = { version = "0.12.1", features = ["serde"] }
+percent-encoding = "2.3"
+reqwest = { version = "0.13", default-features = false, features = ["json", "form", "stream", "rustls", "charset", "http2"] }
+rust-embed = { version = "8.5.0", features = ["include-exclude"] }
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml = "0.9.31"
+sha2 = "0.10.8"
+sysinfo = { version = "0.35.2", default-features = false, features = ["system"] }
+tokio = { workspace = true, features = ["net", "sync", "time"] }
+tower-http = { version = "0.4.0", features = ["cors"] }
+tracing = "0.1"
+tracing-appender = "0.2.3"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+unicode-width = "0.2"
+url = "2.4.1"
+uuid = { version = "1", features = ["v4", "v7", "serde"] }
+walkdir = "2.3"
+
+[target.'cfg(not(windows))'.dependencies]
+pnet_datalink = "0.35.0"
+
+[dev-dependencies]
+filetime = "0.2.25"
+serial_test = "3"
+tempfile.workspace = true
+tower = { version = "0.4", features = ["util"] }

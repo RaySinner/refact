@@ -1891,7 +1891,7 @@ mod tests {
         fn fake_worker() -> Option<Self> {
             let python = crate::daemon::fake_worker_python()?;
             let script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("tests")
+                .join("../../tests")
                 .join("fake_worker.py");
             let keys = vec![
                 (

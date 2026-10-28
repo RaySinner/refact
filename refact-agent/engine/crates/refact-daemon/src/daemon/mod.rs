@@ -67,7 +67,7 @@ pub(crate) fn fake_worker_script() -> Option<PathBuf> {
         .get_or_init(|| {
             let path =
                 std::env::temp_dir().join(format!("refact-fake-worker-{}.py", std::process::id()));
-            std::fs::write(&path, include_str!("../../tests/fake_worker.py")).ok()?;
+            std::fs::write(&path, include_str!("../../../../tests/fake_worker.py")).ok()?;
             Some(path)
         })
         .clone()
@@ -133,7 +133,11 @@ impl RuntimePaths {
     }
 }
 
-pub async fn run_daemon(foreground: bool, port: Option<u16>) {
+pub async fn run_daemon(
+    foreground: bool,
+    port: Option<u16>,
+    gui_assets: Option<crate::daemon::web::GuiAssetFn>,
+) {
     let mut config = match config::load().await {
         Ok(config) => config,
         Err(error) => {
@@ -155,7 +159,9 @@ pub async fn run_daemon(foreground: bool, port: Option<u16>) {
         // self-update, restart) inherit the same port.
         std::env::set_var(config::DAEMON_PORT_ENV, value.to_string());
     }
-    let code = run_daemon_entry_with_paths(config, RuntimePaths::default(), foreground, true).await;
+    let code =
+        run_daemon_entry_with_paths(config, RuntimePaths::default(), foreground, true, gui_assets)
+            .await;
     if code != 0 {
         std::process::exit(code);
     }
@@ -166,6 +172,7 @@ pub(crate) async fn run_daemon_entry_with_paths(
     paths: RuntimePaths,
     foreground: bool,
     install_signal_handlers: bool,
+    gui_assets: Option<crate::daemon::web::GuiAssetFn>,
 ) -> i32 {
     let _log_guard = setup_logging(&paths.daemon_log_path);
     let mut lock_file = match lock::open_lock(&paths.lock_path) {
@@ -233,6 +240,7 @@ pub(crate) async fn run_daemon_entry_with_paths(
         paths.daemon_dir_path.clone(),
         actual_addr.port(),
     );
+    state.set_gui_assets(gui_assets);
     state.load_projects(paths.projects_json_path.clone()).await;
     let info = state.daemon_info(actual_addr.port(), actual_addr.ip().to_string());
     if let Err(error) = state::write_daemon_info_atomic(&paths.daemon_json_path, &info).await {
@@ -917,7 +925,7 @@ mod tests {
         };
         let task_paths = paths.clone();
         let task = tokio::spawn(async move {
-            run_daemon_entry_with_paths(config, task_paths, false, false).await
+            run_daemon_entry_with_paths(config, task_paths, false, false, None).await
         });
         let info = wait_for_info(&paths.daemon_json_path).await;
         let client = reqwest::Client::new();
@@ -952,7 +960,7 @@ mod tests {
         };
         let task_paths = paths.clone();
         let task = tokio::spawn(async move {
-            run_daemon_entry_with_paths(config, task_paths, false, false).await
+            run_daemon_entry_with_paths(config, task_paths, false, false, None).await
         });
         let info = wait_for_info(&paths.daemon_json_path).await;
         assert!(info.urls.loopback.starts_with("http://127.0.0.1:"));

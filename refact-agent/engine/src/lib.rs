@@ -59,8 +59,13 @@ pub mod buddy;
 pub mod cache_maintenance;
 pub mod caps;
 pub mod cli_dispatch;
-pub mod daemon;
+pub use refact_daemon::daemon;
 pub mod daemon_link;
+
+pub fn daemon_gui_asset_getter() -> Option<crate::daemon::web::GuiAssetFn> {
+    use crate::http::routers::gui::ChatGuiAsset;
+    Some(ChatGuiAsset::get)
+}
 pub mod global_context;
 pub mod indexing_utils;
 pub mod json_utils;

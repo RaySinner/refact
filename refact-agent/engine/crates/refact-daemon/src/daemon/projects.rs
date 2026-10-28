@@ -245,7 +245,7 @@ fn make_slug<'a>(root: &Path, existing: impl Iterator<Item = &'a str>) -> String
 }
 
 fn canonicalize_root(root_str: &str) -> Result<PathBuf, String> {
-    let path = crate::files_correction::canonical_path(root_str.to_string());
+    let path = refact_files::path_utils::canonical_path(root_str.to_string());
     if !path.exists() {
         return Err(format!("path does not exist: {root_str}"));
     }
@@ -519,7 +519,7 @@ mod tests {
         fn fake_worker() -> Option<Self> {
             let python = crate::daemon::fake_worker_python()?;
             let script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("tests")
+                .join("../../tests")
                 .join("fake_worker.py");
             let keys = vec![
                 (

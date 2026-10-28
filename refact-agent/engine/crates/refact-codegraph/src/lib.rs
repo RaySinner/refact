@@ -1269,7 +1269,7 @@ mod tests {
         ("src/buddy/actor.rs", "rust"),
         ("crates/refact-llm/src/adapters/openai_responses.rs", "rust"),
         ("src/chat/task_agent_monitor.rs", "rust"),
-        ("src/daemon/cli.rs", "rust"),
+        ("crates/refact-daemon/src/daemon/cli.rs", "rust"),
         ("src/http/routers/v1/tasks.rs", "rust"),
         ("src/tools/tool_compress_chat.rs", "rust"),
         ("src/memories.rs", "rust"),

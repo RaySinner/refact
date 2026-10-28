@@ -1224,7 +1224,7 @@ mod tests {
                 ..crate::daemon::config::DaemonConfig::default()
             };
             let handle = tokio::spawn(async move {
-                crate::daemon::run_daemon_entry_with_paths(config, starter_paths, false, false)
+                crate::daemon::run_daemon_entry_with_paths(config, starter_paths, false, false, None)
                     .await
             });
             *handle_slot_for_start.lock().unwrap() = Some(handle);

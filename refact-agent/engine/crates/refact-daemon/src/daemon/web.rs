@@ -2,23 +2,27 @@
 //! the GUI's web `engineServed` mode resolves API calls relative to the current origin.
 
 use std::borrow::Cow;
+use std::collections::HashMap;
+use std::fmt::Write as _;
+use std::io::Write as _;
+use std::net::Ipv4Addr;
 use std::sync::Arc;
+use std::sync::{OnceLock, RwLock};
 use std::time::Duration;
 
+use axum::body::{boxed, Bytes, Full};
 use axum::extract::{OriginalUri, Path as AxumPath, State};
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
+use flate2::write::GzEncoder;
+use flate2::Compression;
 use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
+use rust_embed::EmbeddedFile;
 use serde::Serialize;
 
 use crate::daemon::projects::ProjectEntry;
 use crate::daemon::state::{now_ms, DaemonState};
 use crate::daemon::supervisor::{WorkerInfo, WorkerState};
-use crate::http::routers::gui::{
-    asset_response, embedded_asset_response, html_response, missing_gui_index_html, text_response,
-    ChatGuiAsset, ASSET_PREFIX, INDEX_PATH,
-};
-use crate::http::{gui_public_origin_candidates, GuiPublicOriginCandidates};
 
 const PICKER_TEMPLATE: &str = include_str!("web_picker.html");
 const DAEMON_GUI_BOOTSTRAP_SENTINEL: &str = "__REFACT_DAEMON_PROJECT_API_PREFIX__";
@@ -74,7 +78,7 @@ pub(crate) async fn handle_dashboard_index(
         return response;
     }
     let data = picker_data(state, port).await;
-    match ChatGuiAsset::get(INDEX_PATH) {
+    match state.gui_assets().and_then(|get| get(INDEX_PATH)) {
         Some(asset) => asset_response(
             INDEX_PATH,
             dashboard_gui_index_body(asset.data, &data, port),
@@ -117,7 +121,7 @@ pub(crate) async fn handle_project_gui_index(
         );
     }
 
-    match ChatGuiAsset::get(INDEX_PATH) {
+    match state.gui_assets().and_then(|get| get(INDEX_PATH)) {
         Some(asset) => {
             let body = project_gui_index_body(asset.data, &project_id, port);
             let mut response = asset_response(INDEX_PATH, body, StatusCode::OK);
@@ -144,6 +148,7 @@ pub(crate) async fn handle_project_gui_index(
 
 pub(crate) async fn handle_daemon_gui_asset(
     AxumPath(path): AxumPath<String>,
+    State((state, _port)): State<(Arc<DaemonState>, u16)>,
     request_headers: HeaderMap,
 ) -> impl IntoResponse {
     if invalid_asset_path(&path) {
@@ -154,7 +159,7 @@ pub(crate) async fn handle_daemon_gui_asset(
     }
 
     let embedded_path = format!("{ASSET_PREFIX}{path}");
-    match ChatGuiAsset::get(&embedded_path) {
+    match state.gui_assets().and_then(|get| get(&embedded_path)) {
         Some(asset) => embedded_asset_response(&embedded_path, asset, &request_headers),
         None => text_response(
             StatusCode::NOT_FOUND,
@@ -375,7 +380,7 @@ fn project_gui_index_body(
     port: u16,
 ) -> Cow<'static, [u8]> {
     let candidates = daemon_origin_candidates(port, project_id);
-    let body = crate::http::routers::gui::inject_gui_origin_candidates(body, &candidates);
+    let body = inject_gui_origin_candidates(body, &candidates);
     let Ok(html) = std::str::from_utf8(body.as_ref()) else {
         return body;
     };
@@ -389,7 +394,7 @@ fn dashboard_gui_index_body(
     port: u16,
 ) -> Cow<'static, [u8]> {
     let candidates = daemon_root_origin_candidates(port);
-    let body = crate::http::routers::gui::inject_gui_origin_candidates(body, &candidates);
+    let body = inject_gui_origin_candidates(body, &candidates);
     let Ok(html) = std::str::from_utf8(body.as_ref()) else {
         return body;
     };
@@ -667,7 +672,15 @@ mod tests {
     use crate::daemon::config::DaemonConfig;
     use crate::daemon::events::EventBus;
     use crate::daemon::projects::ProjectRegistry;
-    use crate::daemon_link::WorkerStatusReport;
+    use crate::daemon::state::WorkerStatusReport;
+
+    #[derive(rust_embed::RustEmbed)]
+    #[folder = "tests_gui_fixture/"]
+    struct TestGuiAssets;
+
+    fn test_gui_assets(path: &str) -> Option<EmbeddedFile> {
+        TestGuiAssets::get(path)
+    }
 
     struct TestState {
         _dir: tempfile::TempDir,
@@ -693,6 +706,7 @@ mod tests {
             EventBus::new(dir.path().join("events.jsonl")),
             token.map(str::to_string),
         );
+        state.set_gui_assets(Some(test_gui_assets));
         *state.projects.write().await = ProjectRegistry::empty(dir.path().join("projects.json"));
         TestState { _dir: dir, state }
     }
@@ -751,9 +765,9 @@ mod tests {
         let daemon_candidates = GuiPublicOriginCandidates {
             origins: vec!["http://127.0.0.1:8488/p/abc123".to_string()],
         };
-        let asset = ChatGuiAsset::get(INDEX_PATH).expect("embedded index.html");
+        let asset = test_gui_assets(INDEX_PATH).expect("embedded index.html");
         let body =
-            crate::http::routers::gui::inject_gui_origin_candidates(asset.data, &worker_candidates);
+            inject_gui_origin_candidates(asset.data, &worker_candidates);
         let html = std::str::from_utf8(body.as_ref()).unwrap();
         let injected = inject_daemon_gui_bootstrap(html, "abc123", &daemon_candidates);
 
@@ -1177,7 +1191,7 @@ mod tests {
             ("style.css", "text/css; charset=utf-8"),
             ("index.umd.cjs", "text/javascript; charset=utf-8"),
         ] {
-            if ChatGuiAsset::get(&format!("dist/chat/{path}")).is_none() {
+            if test_gui_assets(&format!("dist/chat/{path}")).is_none() {
                 continue;
             }
             let response = crate::daemon::server::make_router(state.clone(), 8488)
@@ -1236,5 +1250,452 @@ mod tests {
         assert!(!text.contains("</script>"));
         assert!(text.contains("\\u003c/script\\u003e"));
         assert!(text.contains("\\u0026"));
+    }
+}
+
+pub type GuiAssetFn = fn(&str) -> Option<EmbeddedFile>;
+
+pub const INDEX_PATH: &str = "index.html";
+pub const ASSET_PREFIX: &str = "dist/chat/";
+const CACHE_CONTROL: &str = "no-cache";
+const MIN_GZIP_BYTES: usize = 1024;
+pub const ORIGIN_CANDIDATES_PLACEHOLDER: &str =
+    "/*__REFACT_ORIGIN_CANDIDATES__*/ window.__REFACT_ENGINE_ORIGIN_CANDIDATES__ || []";
+
+static GZIP_CACHE: OnceLock<RwLock<HashMap<String, Option<Bytes>>>> = OnceLock::new();
+
+#[derive(Clone, Debug, Default)]
+pub struct GuiPublicOriginCandidates {
+    pub origins: Vec<String>,
+}
+
+// Both LAN-enumeration helpers below are called only from the non-Windows
+// `local_lan_ipv4_hosts`, which returns an empty list on Windows.
+#[cfg_attr(target_os = "windows", allow(dead_code))]
+fn is_candidate_lan_ipv4(ip: Ipv4Addr) -> bool {
+    !(ip.is_loopback()
+        || ip.is_link_local()
+        || ip.is_broadcast()
+        || ip.is_documentation()
+        || ip.is_multicast()
+        || ip.is_unspecified())
+}
+
+#[cfg_attr(target_os = "windows", allow(dead_code))]
+fn is_likely_virtual_interface_name(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    name.starts_with("docker")
+        || name.starts_with("br-")
+        || name.starts_with("veth")
+        || name.starts_with("virbr")
+        || name.starts_with("tun")
+        || name.starts_with("tap")
+        || name.starts_with("tailscale")
+        || name.starts_with("zt")
+}
+
+#[cfg(target_os = "windows")]
+pub fn local_lan_ipv4_hosts() -> Vec<Ipv4Addr> {
+    Vec::new()
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn local_lan_ipv4_hosts() -> Vec<Ipv4Addr> {
+    let mut preferred = Vec::new();
+    let mut fallback = Vec::new();
+    for iface in pnet_datalink::interfaces() {
+        if iface.is_loopback() || !iface.is_up() {
+            continue;
+        }
+        let virtual_iface = is_likely_virtual_interface_name(&iface.name);
+        for network in iface.ips {
+            if let std::net::IpAddr::V4(ip) = network.ip() {
+                if !is_candidate_lan_ipv4(ip) || preferred.contains(&ip) || fallback.contains(&ip) {
+                    continue;
+                }
+                if virtual_iface {
+                    fallback.push(ip);
+                } else {
+                    preferred.push(ip);
+                }
+            }
+        }
+    }
+    preferred.extend(fallback);
+    preferred
+}
+
+pub fn gui_public_origin_candidates(port: u16) -> GuiPublicOriginCandidates {
+    let mut origins = Vec::new();
+    for ip in local_lan_ipv4_hosts() {
+        origins.push(format!("http://{ip}:{port}"));
+    }
+    let mdns_origin =
+        format!("http://{}:{port}", crate::daemon::mdns::local_mdns_browser_host());
+    if !origins.contains(&mdns_origin) {
+        origins.push(mdns_origin);
+    }
+    GuiPublicOriginCandidates { origins }
+}
+
+pub(crate) fn content_type_for_path(path: &str) -> &'static str {
+    match path.rsplit('.').next().unwrap_or_default() {
+        "html" => "text/html; charset=utf-8",
+        "js" | "mjs" | "cjs" => "text/javascript; charset=utf-8",
+        "css" => "text/css; charset=utf-8",
+        "json" => "application/json; charset=utf-8",
+        "svg" => "image/svg+xml",
+        "png" => "image/png",
+        "ico" => "image/x-icon",
+        "woff" => "font/woff",
+        "woff2" => "font/woff2",
+        _ => "application/octet-stream",
+    }
+}
+
+pub fn asset_response(
+    path: &str,
+    body: Cow<'static, [u8]>,
+    status: StatusCode,
+) -> Response<BoxBody> {
+    response_with_body(status, content_type_for_path(path), body)
+}
+
+pub fn html_response(status: StatusCode, body: Cow<'static, [u8]>) -> Response<BoxBody> {
+    response_with_body(status, "text/html; charset=utf-8", body)
+}
+
+pub fn text_response(status: StatusCode, body: String) -> Response<BoxBody> {
+    response_with_body(
+        status,
+        "text/plain; charset=utf-8",
+        body.into_bytes().into(),
+    )
+}
+
+pub type BoxBody = axum::body::BoxBody;
+
+fn response_with_body(
+    status: StatusCode,
+    content_type: &'static str,
+    body: Cow<'static, [u8]>,
+) -> Response<BoxBody> {
+    response_with_bytes(status, content_type, Bytes::from(body.into_owned()))
+}
+
+fn response_with_bytes(
+    status: StatusCode,
+    content_type: &'static str,
+    body: Bytes,
+) -> Response<BoxBody> {
+    let mut response = Response::new(boxed(Full::from(body)));
+    *response.status_mut() = status;
+    response
+        .headers_mut()
+        .insert(header::CONTENT_TYPE, HeaderValue::from_static(content_type));
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static(CACHE_CONTROL),
+    );
+    response
+}
+
+pub fn missing_gui_index_html() -> &'static str {
+    r#"<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Refact GUI assets missing</title>
+  </head>
+  <body>
+    <h1>Refact GUI assets are not bundled in this build.</h1>
+    <p>Run <code>cargo build</code> from <code>refact-agent/engine</code> with Node.js and npm available, or set <code>REFACT_SKIP_GUI_BUILD=1</code> only for API-only builds.</p>
+  </body>
+</html>
+"#
+}
+
+pub fn embedded_asset_response(
+    embedded_path: &str,
+    asset: EmbeddedFile,
+    request_headers: &HeaderMap,
+) -> Response<BoxBody> {
+    let etag = asset_etag(&asset);
+
+    if etag_matches(request_headers, &etag) {
+        let mut response = Response::new(boxed(Full::from(Bytes::new())));
+        *response.status_mut() = StatusCode::NOT_MODIFIED;
+        apply_validation_headers(response.headers_mut(), &etag);
+        return response;
+    }
+
+    let compressed = if accepts_gzip(request_headers) {
+        gzip_asset(embedded_path, asset.data.as_ref())
+    } else {
+        None
+    };
+
+    let content_type = content_type_for_path(embedded_path);
+    let is_gzipped = compressed.is_some();
+    let body = compressed.unwrap_or_else(|| Bytes::from(asset.data.into_owned()));
+
+    let mut response = response_with_bytes(StatusCode::OK, content_type, body);
+    if is_gzipped {
+        response
+            .headers_mut()
+            .insert(header::CONTENT_ENCODING, HeaderValue::from_static("gzip"));
+    }
+    apply_validation_headers(response.headers_mut(), &etag);
+    response
+}
+
+fn apply_validation_headers(headers: &mut HeaderMap, etag: &str) {
+    if let Ok(value) = HeaderValue::from_str(etag) {
+        headers.insert(header::ETAG, value);
+    }
+    headers.insert(header::VARY, HeaderValue::from_static("Accept-Encoding"));
+}
+
+pub fn asset_etag(asset: &EmbeddedFile) -> String {
+    let mut etag = String::with_capacity(66);
+    etag.push('"');
+    for byte in asset.metadata.sha256_hash() {
+        let _ = write!(etag, "{byte:02x}");
+    }
+    etag.push('"');
+    etag
+}
+
+pub fn etag_matches(request_headers: &HeaderMap, etag: &str) -> bool {
+    request_headers
+        .get(header::IF_NONE_MATCH)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| {
+            value.split(',').any(|candidate| {
+                let candidate = candidate.trim();
+                candidate == "*"
+                    || candidate == etag
+                    || candidate
+                        .strip_prefix("W/")
+                        .is_some_and(|weak| weak == etag)
+            })
+        })
+}
+
+pub fn accepts_gzip(request_headers: &HeaderMap) -> bool {
+    request_headers
+        .get(header::ACCEPT_ENCODING)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| {
+            value.split(',').any(|encoding| {
+                encoding
+                    .split(';')
+                    .next()
+                    .unwrap_or_default()
+                    .trim()
+                    .eq_ignore_ascii_case("gzip")
+            })
+        })
+}
+
+fn gzip_cache() -> &'static RwLock<HashMap<String, Option<Bytes>>> {
+    GZIP_CACHE.get_or_init(|| RwLock::new(HashMap::new()))
+}
+
+pub fn gzip_asset(embedded_path: &str, data: &[u8]) -> Option<Bytes> {
+    if data.len() < MIN_GZIP_BYTES {
+        return None;
+    }
+
+    if let Ok(cache) = gzip_cache().read() {
+        if let Some(cached) = cache.get(embedded_path) {
+            return cached.clone();
+        }
+    }
+
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    let compressed = encoder
+        .write_all(data)
+        .and_then(|()| encoder.finish())
+        .ok()
+        .filter(|compressed| compressed.len() < data.len())
+        .map(Bytes::from);
+
+    if let Ok(mut cache) = gzip_cache().write() {
+        cache.insert(embedded_path.to_string(), compressed.clone());
+    }
+    compressed
+}
+
+pub fn inject_gui_origin_candidates(
+    body: Cow<'static, [u8]>,
+    candidates: &GuiPublicOriginCandidates,
+) -> Cow<'static, [u8]> {
+    let Ok(html) = std::str::from_utf8(body.as_ref()) else {
+        return body;
+    };
+    let Ok(json) = serde_json::to_string(&candidates.origins) else {
+        return body;
+    };
+    if html.contains(ORIGIN_CANDIDATES_PLACEHOLDER) {
+        Cow::Owned(
+            html.replace(ORIGIN_CANDIDATES_PLACEHOLDER, &json)
+                .into_bytes(),
+        )
+    } else {
+        tracing::warn!("GUI origin candidates placeholder missing; serving index.html unchanged");
+        body
+    }
+}
+#[cfg(test)]
+mod gui_asset_tests {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+    use tracing_subscriber::fmt::MakeWriter;
+
+    #[test]
+    fn content_type_maps_common_gui_assets() {
+        assert_eq!(
+            content_type_for_path("index.html"),
+            "text/html; charset=utf-8"
+        );
+        assert_eq!(
+            content_type_for_path("index.umd.cjs"),
+            "text/javascript; charset=utf-8"
+        );
+        assert_eq!(
+            content_type_for_path("style.css"),
+            "text/css; charset=utf-8"
+        );
+        assert_eq!(
+            content_type_for_path("manifest.json"),
+            "application/json; charset=utf-8"
+        );
+        assert_eq!(content_type_for_path("font.woff2"), "font/woff2");
+    }
+
+    fn headers_with(name: header::HeaderName, value: &str) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(name, HeaderValue::from_str(value).unwrap());
+        headers
+    }
+
+    #[test]
+    fn accepts_gzip_reads_quality_values_and_ignores_other_encodings() {
+        assert!(accepts_gzip(&headers_with(
+            header::ACCEPT_ENCODING,
+            "gzip, deflate, br"
+        )));
+        assert!(accepts_gzip(&headers_with(
+            header::ACCEPT_ENCODING,
+            "br;q=1.0, GZIP;q=0.8"
+        )));
+        assert!(!accepts_gzip(&headers_with(
+            header::ACCEPT_ENCODING,
+            "br, deflate"
+        )));
+        assert!(!accepts_gzip(&HeaderMap::new()));
+    }
+
+    #[test]
+    fn etag_matches_handles_wildcard_weak_and_lists() {
+        let etag = "\"abc123\"";
+        assert!(etag_matches(
+            &headers_with(header::IF_NONE_MATCH, "*"),
+            etag
+        ));
+        assert!(etag_matches(
+            &headers_with(header::IF_NONE_MATCH, "\"abc123\""),
+            etag
+        ));
+        assert!(etag_matches(
+            &headers_with(header::IF_NONE_MATCH, "W/\"abc123\""),
+            etag
+        ));
+        assert!(etag_matches(
+            &headers_with(header::IF_NONE_MATCH, "\"other\", \"abc123\""),
+            etag
+        ));
+        assert!(!etag_matches(
+            &headers_with(header::IF_NONE_MATCH, "\"other\""),
+            etag
+        ));
+        assert!(!etag_matches(&HeaderMap::new(), etag));
+    }
+
+    #[test]
+    fn gzip_asset_skips_payloads_below_threshold() {
+        let small = vec![b'a'; MIN_GZIP_BYTES - 1];
+        assert!(gzip_asset("test/small.js", &small).is_none());
+    }
+
+    #[test]
+    fn gzip_asset_compresses_and_serves_cached_bytes() {
+        let data = "console.log('refact');".repeat(500).into_bytes();
+        assert!(data.len() >= MIN_GZIP_BYTES);
+
+        let first = gzip_asset("test/compressible.js", &data).expect("compressible payload");
+        assert!(first.len() < data.len());
+
+        let second = gzip_asset("test/compressible.js", &data).expect("cached payload");
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn gzip_asset_rejects_incompressible_payloads() {
+        let data: Vec<u8> = (0..8192u32)
+            .map(|i| (i.wrapping_mul(2654435761) >> 24) as u8)
+            .collect();
+        let compressed = gzip_asset("test/random.bin", &data);
+        if let Some(compressed) = compressed {
+            assert!(compressed.len() < data.len());
+        }
+    }
+
+    #[derive(Clone)]
+    struct SharedWriter(Arc<Mutex<Vec<u8>>>);
+
+    struct SharedWriterGuard(Arc<Mutex<Vec<u8>>>);
+
+    impl<'a> MakeWriter<'a> for SharedWriter {
+        type Writer = SharedWriterGuard;
+
+        fn make_writer(&'a self) -> Self::Writer {
+            SharedWriterGuard(self.0.clone())
+        }
+    }
+
+    impl std::io::Write for SharedWriterGuard {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn origin_candidates_missing_marker_warns_and_returns_unchanged() {
+        let html = r#"<html><head></head><body></body></html>"#;
+        let candidates = GuiPublicOriginCandidates {
+            origins: vec!["http://127.0.0.1:8001".to_string()],
+        };
+        let logs = Arc::new(Mutex::new(Vec::new()));
+        let subscriber = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::WARN)
+            .with_writer(SharedWriter(logs.clone()))
+            .with_ansi(false)
+            .finish();
+
+        let injected = tracing::subscriber::with_default(subscriber, || {
+            inject_gui_origin_candidates(Cow::Borrowed(html.as_bytes()), &candidates)
+        });
+
+        assert_eq!(injected.as_ref(), html.as_bytes());
+        let logs = String::from_utf8(logs.lock().unwrap().clone()).unwrap();
+        assert!(logs.contains("GUI origin candidates placeholder missing"));
     }
 }

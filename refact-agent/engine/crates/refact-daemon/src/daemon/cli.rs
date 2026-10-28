@@ -580,19 +580,20 @@ fn take_one(args: &mut Vec<String>, name: &str) -> Result<String, String> {
     }
 }
 
-pub async fn run(options: CliOptions) -> i32 {
+pub async fn run(options: CliOptions, version_text: String) -> i32 {
     let mut stdout = io::stdout();
     let mut stderr = io::stderr();
-    run_with_io(options, &mut stdout, &mut stderr).await
+    run_with_io(options, version_text, &mut stdout, &mut stderr).await
 }
 
 pub async fn run_with_io(
     options: CliOptions,
+    version_text: String,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> i32 {
     let json_output = options.json_output();
-    match run_inner(options, stdout).await {
+    match run_inner(options, version_text, stdout).await {
         Ok(code) => code,
         Err(error) => {
             if json_output {
@@ -608,7 +609,11 @@ pub async fn run_with_io(
     }
 }
 
-async fn run_inner(options: CliOptions, out: &mut dyn Write) -> Result<i32, CliError> {
+async fn run_inner(
+    options: CliOptions,
+    version_text: String,
+    out: &mut dyn Write,
+) -> Result<i32, CliError> {
     match options.command {
         CliCommand::Ui {
             path,
@@ -624,7 +629,7 @@ async fn run_inner(options: CliOptions, out: &mut dyn Write) -> Result<i32, CliE
             }
             Ok(report.exit_code())
         }
-        CliCommand::Version { json } => run_version(json, out).await,
+        CliCommand::Version { json } => run_version(json, out, &version_text).await,
         CliCommand::Restart {
             daemon: true, json, ..
         } => restart_daemon(json, out).await,
@@ -1389,7 +1394,11 @@ async fn run_status(json_output: bool, out: &mut dyn Write) -> Result<i32, CliEr
     }
 }
 
-async fn run_version(json_output: bool, out: &mut dyn Write) -> Result<i32, CliError> {
+async fn run_version(
+    json_output: bool,
+    out: &mut dyn Write,
+    version_text: &str,
+) -> Result<i32, CliError> {
     let daemon = match client::read_daemon_json().await {
         Ok(Some(info)) if client::ping_daemon(&info).await.is_alive() => Some(info.version),
         Ok(_) => None,
@@ -1401,7 +1410,7 @@ async fn run_version(json_output: bool, out: &mut dyn Write) -> Result<i32, CliE
             &json!({"client": env!("CARGO_PKG_VERSION"), "daemon": daemon}),
         )?;
     } else {
-        writeln!(out, "{}", crate::cli_dispatch::version_text()).map_err(write_error)?;
+        writeln!(out, "{}", version_text).map_err(write_error)?;
         match daemon {
             Some(version) => {
                 writeln!(out, "{:>20} {}", "daemon_version", version).map_err(write_error)?
@@ -1745,7 +1754,7 @@ fn resolve_target(projects: &[ProjectEntry], target: &str) -> Result<String, Cli
 }
 
 fn canonicalize_existing_dir(path: &Path) -> Result<PathBuf, CliError> {
-    let root = crate::files_correction::canonical_path(path.to_string_lossy().to_string());
+    let root = refact_files::path_utils::canonical_path(path.to_string_lossy().to_string());
     if !root.exists() {
         return Err(CliError::runtime(format!(
             "path does not exist: {}",
@@ -2235,7 +2244,7 @@ mod tests {
     fn path_resolution_uses_registered_root() {
         let dir = tempfile::tempdir().unwrap();
         let root =
-            crate::files_correction::canonical_path(dir.path().to_string_lossy().to_string());
+            refact_files::path_utils::canonical_path(dir.path().to_string_lossy().to_string());
         let id = "persisted-project-id".to_string();
         let projects = vec![ProjectEntry {
             id: id.clone(),
@@ -2505,7 +2514,7 @@ mod tests {
             ..crate::daemon::config::DaemonConfig::default()
         };
         let task = tokio::spawn(async move {
-            crate::daemon::run_daemon_entry_with_paths(config, paths, false, false).await
+            crate::daemon::run_daemon_entry_with_paths(config, paths, false, false, None).await
         });
         let daemon_json = cache_dir.path().join("daemon").join("daemon.json");
         (wait_for_daemon_info(&daemon_json).await, task)
@@ -2604,7 +2613,8 @@ mod tests {
         ] {
             let mut stdout = Vec::new();
             let mut stderr = Vec::new();
-            let code = run_with_io(CliOptions { command }, &mut stdout, &mut stderr).await;
+            let code =
+                run_with_io(CliOptions { command }, String::new(), &mut stdout, &mut stderr).await;
 
             assert_eq!(code, 1);
             assert!(stderr.is_empty());
@@ -2637,6 +2647,7 @@ mod tests {
             CliOptions {
                 command: CliCommand::Status { json: true },
             },
+            String::new(),
             &mut stdout,
             &mut stderr,
         )
@@ -2704,6 +2715,7 @@ mod tests {
             CliOptions {
                 command: CliCommand::Version { json: true },
             },
+            String::new(),
             &mut stdout,
             &mut stderr,
         )
@@ -2735,7 +2747,7 @@ mod tests {
             ..crate::daemon::config::DaemonConfig::default()
         };
         let task = tokio::spawn(async move {
-            crate::daemon::run_daemon_entry_with_paths(config, paths, false, false).await
+            crate::daemon::run_daemon_entry_with_paths(config, paths, false, false, None).await
         });
         let daemon_json = cache_dir.path().join("daemon").join("daemon.json");
         let info = wait_for_daemon_info(&daemon_json).await;

@@ -15,6 +15,7 @@ CARGO_LOCK = "refact-agent/engine/Cargo.lock"
 RELEASE_CRATES = (
     ("refact-agent/engine/Cargo.toml", "refact-lsp"),
     ("refact-agent/engine/crates/refact-tui/Cargo.toml", "refact-tui"),
+    ("refact-agent/engine/crates/refact-daemon/Cargo.toml", "refact-daemon"),
 )
 INTERNAL_CRATE_VERSION = "0.1.0"
 PACKAGE_RE = re.compile(

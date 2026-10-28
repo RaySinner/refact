@@ -23,10 +23,10 @@ impl MdnsAdvertisement {
                 return None;
             }
         };
-        let host_name = crate::http::local_mdns_host_name();
+        let host_name = local_mdns_host_name();
         let properties = service_properties(config.auth.enabled);
         let service_info = match ServiceInfo::new(
-            crate::http::MDNS_SERVICE_TYPE,
+            MDNS_SERVICE_TYPE,
             instance_name(),
             &host_name,
             "",
@@ -48,7 +48,7 @@ impl MdnsAdvertisement {
         }
         tracing::info!(
             "daemon mDNS advertising as http://{}:{port}/ ({fullname})",
-            crate::http::local_mdns_browser_host(),
+            local_mdns_browser_host(),
         );
         Some(MdnsAdvertisement { daemon, fullname })
     }
@@ -85,6 +85,37 @@ fn instance_name() -> &'static str {
     "Refact Daemon"
 }
 
+pub const MDNS_SERVICE_TYPE: &str = "_refact-lsp._tcp.local.";
+
+pub fn local_mdns_host_name() -> String {
+    let hostname = hostname::get()
+        .ok()
+        .and_then(|value| value.into_string().ok())
+        .map(|value| sanitize_mdns_label(&value))
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "refact".to_string());
+    format!("{hostname}.local.")
+}
+
+pub fn local_mdns_browser_host() -> String {
+    local_mdns_host_name().trim_end_matches('.').to_string()
+}
+
+fn sanitize_mdns_label(value: &str) -> String {
+    value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' {
+                ch.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>()
+        .trim_matches('-')
+        .to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use crate::daemon::config::{AuthConfig, DaemonConfig, MdnsConfig};
@@ -93,7 +124,7 @@ mod tests {
 
     #[test]
     fn mdns_uses_shared_host_name_helper() {
-        let name = crate::http::local_mdns_host_name();
+        let name = local_mdns_host_name();
         assert!(!name.is_empty());
         assert!(name.ends_with(".local."));
     }

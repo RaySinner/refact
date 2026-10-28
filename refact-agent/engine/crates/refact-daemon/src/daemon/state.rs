@@ -18,7 +18,17 @@ use crate::daemon::config::DaemonConfig;
 use crate::daemon::events::EventBus;
 use crate::daemon::idle::{WorkerIdleSnapshot, STATUS_FRESH_MS};
 use crate::daemon::supervisor::{WorkerInfo, WorkerState};
-use crate::daemon_link::WorkerStatusReport;
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct WorkerStatusReport {
+    pub project_id: String,
+    pub pid: u32,
+    #[serde(default)]
+    pub instance_token: String,
+    pub lsp_clients: usize,
+    pub busy_chats: usize,
+    pub exec_running: usize,
+    pub last_activity_ts: u64,
+}
 
 #[derive(Debug, Clone)]
 struct StoredWorkerStatus {
@@ -87,6 +97,7 @@ pub struct DaemonState {
     pub auth_token: Option<String>,
     pub started_at_ms: u64,
     pub version: String,
+    gui_assets: SyncRwLock<Option<crate::daemon::web::GuiAssetFn>>,
     relaunch_executable: Result<PathBuf, String>,
     pub projects: RwLock<crate::daemon::projects::ProjectRegistry>,
     worker_statuses: RwLock<HashMap<String, StoredWorkerStatus>>,
@@ -204,6 +215,14 @@ pub fn warm_current_executable_sha256() {
 }
 
 impl DaemonState {
+    pub fn set_gui_assets(&self, getter: Option<crate::daemon::web::GuiAssetFn>) {
+        *self.gui_assets.write() = getter;
+    }
+
+    pub fn gui_assets(&self) -> Option<crate::daemon::web::GuiAssetFn> {
+        *self.gui_assets.read()
+    }
+
     pub fn new(config: DaemonConfig, events: EventBus, auth_token: Option<String>) -> Arc<Self> {
         Self::new_with_daemon_dir(
             config,
@@ -278,6 +297,7 @@ impl DaemonState {
             auth_token,
             started_at_ms: now_ms(),
             version: env!("CARGO_PKG_VERSION").to_string(),
+            gui_assets: SyncRwLock::new(None),
             relaunch_executable,
             projects: RwLock::new(crate::daemon::projects::ProjectRegistry::empty(
                 daemon_dir.join("projects.json"),

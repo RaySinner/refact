@@ -145,7 +145,7 @@ pub(crate) async fn tick_at(state: &Arc<DaemonState>, now: u64) {
 mod tests {
     use super::*;
     use crate::daemon::events::EventBus;
-    use crate::daemon_link::WorkerStatusReport;
+    use crate::daemon::state::WorkerStatusReport;
     use hyper::{Body, Request, StatusCode};
     use serial_test::serial;
     use std::path::PathBuf;
@@ -161,7 +161,7 @@ mod tests {
         fn fake_worker() -> Option<Self> {
             let python = crate::daemon::fake_worker_python()?;
             let script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("tests")
+                .join("../../tests")
                 .join("fake_worker.py");
             let keys = vec![
                 (

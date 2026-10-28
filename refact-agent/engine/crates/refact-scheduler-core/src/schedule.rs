@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
 
 use super::cron_expr;
+use super::jitter::{jittered_next_run_ms_for, one_shot_jittered_next_run_ms_for, JitterConfig};
 use super::types::{
     DEFAULT_MISSED_GRACE_MAX_MS, DEFAULT_MISSED_GRACE_MIN_MS, Job, SchedulerConfig, Trigger,
 };
@@ -293,7 +294,80 @@ fn once_next_run_ms(job: &Job, at_ms: u64) -> Option<u64> {
     }
 }
 
-#[cfg(test)]
+
+pub fn scheduler_timezone() -> chrono_tz::Tz {
+    iana_time_zone::get_timezone()
+        .ok()
+        .and_then(|value| value.parse::<chrono_tz::Tz>().ok())
+        .or_else(|| {
+            std::env::var("TZ")
+                .ok()
+                .and_then(|value| value.trim_start_matches(':').parse::<chrono_tz::Tz>().ok())
+        })
+        .unwrap_or(chrono_tz::UTC)
+}
+
+pub fn scheduler_enabled() -> bool {
+    std::env::var("REFACT_DISABLE_SCHEDULER").map_or(true, |value| {
+        let value = value.trim();
+        value.is_empty() || value == "0" || value.eq_ignore_ascii_case("false")
+    })
+}
+
+pub fn runner_enabled(config: &SchedulerConfig) -> bool {
+    config.enabled && scheduler_enabled()
+}
+
+pub fn scheduled_fire_at_ms(
+    task: &Job,
+    now: u64,
+    jitter_cfg: &JitterConfig,
+    grace_config: MissedRunGraceConfig,
+) -> Option<u64> {
+    if let Some(trigger_at_ms) = task.trigger_at_ms {
+        if task.is_paused() {
+            return Some(trigger_at_ms);
+        }
+    }
+    let tz = scheduler_timezone();
+    let from_ms = task.last_fired_at_ms.unwrap_or(task.created_at_ms);
+    let recurring_state = if task.recurring
+        && matches!(
+            task.trigger,
+            Trigger::Cron { .. } | Trigger::Interval { .. }
+        ) {
+        recurring_missed_grace_state(task, from_ms, now, tz, grace_config)
+    } else {
+        None
+    };
+    if recurring_state
+        .as_ref()
+        .is_some_and(|state| state.due_ms.is_some() && !state.should_fire)
+    {
+        return recurring_state.map(|state| state.next_future_ms);
+    }
+    let scheduled = match &task.trigger {
+        Trigger::Cron { .. } if task.recurring => {
+            jittered_next_run_ms_for(task, from_ms, &task.id, jitter_cfg, tz)
+        }
+        Trigger::Cron { .. } => {
+            one_shot_jittered_next_run_ms_for(task, from_ms, &task.id, jitter_cfg, tz)
+        }
+        Trigger::Interval { .. } | Trigger::Once { .. } => next_run_ms(task, from_ms, tz),
+        Trigger::Manual | Trigger::Webhook { .. } | Trigger::OnProcessExit { .. } => None,
+    };
+    let scheduled = if task.recurring || task.last_fired_at_ms.is_none() {
+        scheduled
+    } else {
+        None
+    };
+    match (scheduled, task.trigger_at_ms) {
+        (Some(scheduled), Some(trigger_at_ms)) => Some(scheduled.min(trigger_at_ms)),
+        (Some(scheduled), None) => Some(scheduled),
+        (None, Some(trigger_at_ms)) => Some(trigger_at_ms),
+        (None, None) => None,
+    }
+}
 mod tests {
     use chrono::{TimeZone, Utc};
 

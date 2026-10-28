@@ -2,8 +2,6 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-use serde::{Deserialize, Serialize};
-
 use crate::chat::types::SessionState;
 use crate::exec::{ExecProcessFilter, ExecStatusKind};
 use crate::global_context::GlobalContext;
@@ -31,17 +29,7 @@ impl std::fmt::Display for DaemonLinkError {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct WorkerStatusReport {
-    pub project_id: String,
-    pub pid: u32,
-    #[serde(default)]
-    pub instance_token: String,
-    pub lsp_clients: usize,
-    pub busy_chats: usize,
-    pub exec_running: usize,
-    pub last_activity_ts: u64,
-}
+pub use crate::daemon::state::WorkerStatusReport;
 
 pub fn should_self_terminate(consecutive_failures: u32) -> bool {
     consecutive_failures >= DAEMON_LINK_FAILURE_LIMIT

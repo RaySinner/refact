@@ -204,7 +204,7 @@ async fn resolve_project(
     if let Some(entry) = by_slug {
         return Ok(entry);
     }
-    let root = crate::files_correction::canonical_path(project.to_string());
+    let root = refact_files::path_utils::canonical_path(project.to_string());
     registry
         .list()
         .into_iter()
@@ -331,7 +331,7 @@ mod tests {
         fn fake_worker() -> Option<Self> {
             let python = crate::daemon::fake_worker_python()?;
             let script = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("tests")
+                .join("../../tests")
                 .join("fake_worker.py");
             let keys = vec![(
                 "REFACT_DAEMON_WORKER_CMD",

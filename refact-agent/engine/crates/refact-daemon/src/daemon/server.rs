@@ -746,7 +746,7 @@ async fn read_log_tail(
 
 async fn worker_status(
     State((state, _)): State<(Arc<DaemonState>, u16)>,
-    Json(report): Json<crate::daemon_link::WorkerStatusReport>,
+    Json(report): Json<crate::daemon::state::WorkerStatusReport>,
 ) -> Response {
     match state.store_validated_worker_status(report).await {
         Ok(event_emitted) => {
@@ -950,7 +950,7 @@ mod tests {
         fn fake_worker() -> Option<Self> {
             let python = crate::daemon::fake_worker_python()?;
             let script = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("tests")
+                .join("../../tests")
                 .join("fake_worker.py");
             let keys = vec![
                 (
@@ -1732,7 +1732,7 @@ mod tests {
 
     #[tokio::test]
     async fn worker_status_handler_stores_report_and_emits_only_on_change() {
-        use crate::daemon_link::WorkerStatusReport;
+        use crate::daemon::state::WorkerStatusReport;
         use tokio::time::{timeout, Duration};
 
         fn report(
@@ -1822,7 +1822,7 @@ mod tests {
 
     #[tokio::test]
     async fn worker_status_handler_rejects_missing_project_and_wrong_pid() {
-        use crate::daemon_link::WorkerStatusReport;
+        use crate::daemon::state::WorkerStatusReport;
 
         fn report(project_id: &str, pid: u32) -> WorkerStatusReport {
             WorkerStatusReport {

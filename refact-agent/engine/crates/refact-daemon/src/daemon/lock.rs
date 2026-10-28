@@ -154,7 +154,8 @@ pub fn workspace_lease_info_path(root: &Path) -> PathBuf {
 /// Two genuinely different roots — including two worktrees belonging to *different* projects — still
 /// produce different keys, because the collapse only applies to registry-backed worktree roots.
 pub fn normalize_workspace_roots(cache_dir: &Path, roots: &[PathBuf]) -> Vec<PathBuf> {
-    let mut normalized = crate::files_correction::project_dirs_for_unscoped_paths(cache_dir, roots);
+    let mut normalized =
+        refact_worktrees::path_mappings::project_dirs_for_unscoped_paths(cache_dir, roots);
     normalized.sort();
     normalized.dedup();
     normalized

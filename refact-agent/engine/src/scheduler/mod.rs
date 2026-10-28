@@ -25,17 +25,7 @@ pub use types::{
     delivery_from_value, delivery_kind, human_schedule_for_trigger, push_from_value, push_schema,
 };
 
-pub fn scheduler_timezone() -> chrono_tz::Tz {
-    iana_time_zone::get_timezone()
-        .ok()
-        .and_then(|value| value.parse::<chrono_tz::Tz>().ok())
-        .or_else(|| {
-            std::env::var("TZ")
-                .ok()
-                .and_then(|value| value.trim_start_matches(':').parse::<chrono_tz::Tz>().ok())
-        })
-        .unwrap_or(chrono_tz::UTC)
-}
+pub use refact_scheduler_core::schedule::scheduler_timezone;
 
 pub async fn active_durable_cron_store(
     gcx: std::sync::Arc<crate::global_context::GlobalContext>,

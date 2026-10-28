@@ -12,9 +12,14 @@ use crate::daemon::config::DaemonConfig;
 use crate::daemon::projects::ProjectEntry;
 use crate::daemon::state::{now_ms, DaemonState};
 use crate::daemon::supervisor::WorkerState;
-use crate::scheduler::{
-    next_run_ms, recurring_missed_grace_state, scheduled_tasks_path, scheduler_timezone, Action,
-    AgentTarget, Delivery, Job, MissedRunGraceConfig, Trigger,
+use refact_scheduler_core::jitter::JitterConfig;
+use refact_scheduler_core::schedule::{
+    next_run_ms, recurring_missed_grace_state, runner_enabled, scheduled_fire_at_ms,
+    scheduler_timezone, MissedRunGraceConfig,
+};
+use refact_scheduler_core::store::scheduled_tasks_path;
+use refact_scheduler_core::types::{
+    Action, AgentTarget, Delivery, Job, Trigger, DEFAULT_RECURRING_AUTO_EXPIRE_AFTER_MS,
 };
 
 pub(crate) const WAKE_LEAD_MS: u64 = 90_000;
@@ -70,7 +75,7 @@ pub(crate) async fn status(state: &DaemonState) -> CronClockStatus {
 }
 
 fn cron_clock_enabled(config: &DaemonConfig) -> bool {
-    crate::scheduler::runner::runner_enabled(&config.scheduler)
+    runner_enabled(&config.scheduler)
 }
 
 pub(crate) struct CronClock {
@@ -368,7 +373,7 @@ mod tests {
     use crate::daemon::config::DaemonConfig;
     use crate::daemon::events::EventBus;
     use crate::daemon::projects::ProjectSettings;
-    use crate::scheduler::DEFAULT_RECURRING_AUTO_EXPIRE_AFTER_MS;
+    use refact_scheduler_core::types::DEFAULT_RECURRING_AUTO_EXPIRE_AFTER_MS;
 
     struct EnvGuard {
         keys: Vec<(&'static str, Option<String>)>,
@@ -378,7 +383,7 @@ mod tests {
         fn fake_worker() -> Option<Self> {
             let python = crate::daemon::fake_worker_python()?;
             let script = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("tests")
+                .join("../../tests")
                 .join("fake_worker.py");
             let keys = vec![
                 (
@@ -523,11 +528,11 @@ mod tests {
         let now = utc_ms(2026, 1, 1, 0, 10);
         let mut task = task("overdue", "*/1 * * * *", utc_ms(2026, 1, 1, 0, 0));
         task.last_fired_at_ms = Some(utc_ms(2026, 1, 1, 0, 0));
-        let mut jitter_cfg = crate::scheduler::jitter::JitterConfig::default();
+        let mut jitter_cfg = JitterConfig::default();
         jitter_cfg.recurring_frac = 0.0;
 
         let clock_next = next_fire_for_task(&task, now, chrono_tz::UTC).unwrap();
-        let runner_next = crate::scheduler::runner::scheduled_fire_at_ms(
+        let runner_next = scheduled_fire_at_ms(
             &task,
             now,
             &jitter_cfg,

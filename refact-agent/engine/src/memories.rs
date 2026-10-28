@@ -685,25 +685,10 @@ async fn get_all_knowledge_dirs(gcx: Arc<GlobalContext>) -> Vec<PathBuf> {
     dirs
 }
 
-async fn get_first_knowledge_dir(gcx: Arc<GlobalContext>) -> Result<PathBuf, String> {
-    get_first_knowledge_dir_for_ctx(&gcx.chat_ctx(gcx.clone())).await
-}
-
 async fn get_first_knowledge_dir_for_ctx(ctx: &ChatCtx) -> Result<PathBuf, String> {
     let project_dirs = crate::files_correction::get_unscoped_project_dirs_for_ctx(ctx).await;
     let workspace_root = project_dirs.first().ok_or("No workspace folder found")?;
     Ok(workspace_root.join(KNOWLEDGE_FOLDER_NAME))
-}
-
-#[allow(dead_code)]
-pub async fn get_knowledge_dir_for_scope(
-    gcx: Arc<GlobalContext>,
-    scope: StorageScope,
-) -> Result<PathBuf, String> {
-    match scope {
-        StorageScope::Local => get_first_knowledge_dir(gcx).await,
-        StorageScope::Global => Ok(get_global_knowledge_dir(gcx).await),
-    }
 }
 
 pub async fn memories_add(
@@ -2105,24 +2090,32 @@ pub async fn delete_document_from_disk(
     gcx: Arc<GlobalContext>,
     doc_path: &PathBuf,
 ) -> Result<(), String> {
+    delete_document_from_disk_for_ctx(&gcx.chat_ctx(gcx.clone()), doc_path).await
+}
+
+pub async fn delete_document_from_disk_for_ctx(
+    ctx: &ChatCtx,
+    doc_path: &PathBuf,
+) -> Result<(), String> {
     match fs::remove_file(doc_path).await {
         Ok(()) => {}
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
         Err(e) => return Err(format!("Failed to delete document: {}", e)),
     }
-    gcx.enrichment_generation
+    ctx.workspace
+        .enrichment_generation
         .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
     info!("Deleted document from disk: {}", doc_path.display());
 
-    gcx.knowledge_index.lock().await.remove_path(doc_path);
+    ctx.workspace.knowledge_index.lock().await.remove_path(doc_path);
 
-    let vec_db = gcx.vec_db.clone();
+    let vec_db = ctx.workspace.vec_db.clone();
     if let Some(vecdb) = vec_db.lock().await.clone() {
         let _ = vecdb.remove_file(doc_path).await;
     }
 
-    gcx.documents_state
+    ctx.workspace
         .memory_document_map
         .lock()
         .await

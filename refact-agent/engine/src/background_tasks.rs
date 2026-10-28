@@ -1,6 +1,6 @@
 use std::iter::IntoIterator;
 use std::path::PathBuf;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use std::vec;
@@ -13,33 +13,34 @@ const CACHE_MAINTENANCE_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 use crate::global_context::GlobalContext;
 use crate::knowledge_index::{build_knowledge_index, knowledge_index_watcher_background_task};
 
-async fn wait_for_shutdown(gcx: Arc<GlobalContext>) {
-    while !gcx.shutdown_flag.load(Ordering::SeqCst) {
+async fn wait_for_shutdown(shutdown_flag: Arc<AtomicBool>) {
+    while !shutdown_flag.load(Ordering::SeqCst) {
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
 }
 
 async fn cache_maintenance_background_task(
-    gcx: Arc<GlobalContext>,
+    ctx: crate::chat::ctx::ChatCtx,
     app: crate::app_state::AppState,
 ) {
+    let shutdown_flag = ctx.runtime.shutdown_flag.clone();
     let mut delay = CACHE_MAINTENANCE_START_DELAY;
     loop {
-        if gcx.shutdown_flag.load(Ordering::SeqCst) {
+        if shutdown_flag.load(Ordering::SeqCst) {
             return;
         }
         tokio::select! {
             _ = tokio::time::sleep(delay) => {}
-            _ = wait_for_shutdown(gcx.clone()) => return,
+            _ = wait_for_shutdown(shutdown_flag.clone()) => return,
         }
-        if gcx.shutdown_flag.load(Ordering::SeqCst) {
+        if shutdown_flag.load(Ordering::SeqCst) {
             return;
         }
-        let spill_dir = gcx.cache_dir.join("exec");
+        let spill_dir = ctx.paths.cache_dir.join("exec");
         if let Err(error) = refact_exec::spill::sweep_spill_dir(&spill_dir).await {
             tracing::warn!("exec spill maintenance failed: {error}");
         }
-        if let Err(error) = crate::cache_maintenance::sweep_logs_dir(&gcx.cache_dir).await {
+        if let Err(error) = crate::cache_maintenance::sweep_logs_dir(&ctx.paths.cache_dir).await {
             tracing::warn!("log cache maintenance failed: {error}");
         }
         let removed =
@@ -47,7 +48,7 @@ async fn cache_maintenance_background_task(
         if removed > 0 {
             tracing::info!("removed {removed} stale browser profiles");
         }
-        let trajectory_dirs = crate::chat::trajectories::list_trajectory_dirs(&gcx.chat_ctx(gcx.clone())).await;
+        let trajectory_dirs = crate::chat::trajectories::list_trajectory_dirs(&ctx).await;
         let removed = crate::chat::trajectory_index::sweep_trajectory_index_tmp_files_in_roots(
             &trajectory_dirs,
             crate::chat::trajectory_index::TRAJECTORY_INDEX_TMP_SWEEP_MAX_AGE,
@@ -131,7 +132,7 @@ pub async fn start_full_soak_background_tasks(gcx: Arc<GlobalContext>) -> Backgr
             background_agent_monitor_shutdown,
         )),
         tokio::spawn(cache_maintenance_background_task(
-            gcx.clone(),
+            gcx.chat_ctx(gcx.clone()),
             cache_maintenance_app,
         )),
         tokio::spawn({
@@ -187,7 +188,7 @@ pub async fn start_background_tasks(
         )),
         tokio::spawn(crate::knowledge_graph::cleanup_inactive_memories_on_startup(gcx.clone())),
         tokio::spawn(cache_maintenance_background_task(
-            gcx.clone(),
+            gcx.chat_ctx(gcx.clone()),
             cache_maintenance_app,
         )),
         tokio::spawn(crate::trajectory_memos::trajectory_memos_background_task(

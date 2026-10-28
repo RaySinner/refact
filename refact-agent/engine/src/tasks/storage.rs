@@ -13,7 +13,8 @@ use crate::global_context::GlobalContext;
 use crate::files_correction::get_project_dirs;
 use super::types::{BoardCard, TaskBoard, TaskMeta, TaskStatus, TrajectoryInfo};
 use super::events::{
-    emit_task_event, emit_task_event_via, emit_task_updated_via, TaskEvent,
+    emit_task_event, emit_task_event_for_services, emit_task_event_via, emit_task_updated_via,
+    TaskEvent,
 };
 
 const TASKS_DIR: &str = "tasks";
@@ -60,8 +61,8 @@ impl BoardConflict {
     }
 }
 
-pub async fn get_tasks_dir(gcx: Arc<GlobalContext>) -> Result<PathBuf, String> {
-    let project_dirs = get_project_dirs(gcx).await;
+pub async fn get_tasks_dir_for_ctx(ctx: &crate::chat::ctx::ChatCtx) -> Result<PathBuf, String> {
+    let project_dirs = crate::files_correction::get_unscoped_project_dirs_for_ctx(ctx).await;
     let workspace_root = project_dirs.first().ok_or("No workspace folder found")?;
     Ok(workspace_root.join(".refact").join(TASKS_DIR))
 }
@@ -125,8 +126,8 @@ pub(crate) async fn find_task_dir_for_ctx(
     Err(format!("Task not found: {}", task_id))
 }
 
-pub async fn ensure_tasks_dir(gcx: Arc<GlobalContext>) -> Result<PathBuf, String> {
-    let dir = get_tasks_dir(gcx).await?;
+pub async fn ensure_tasks_dir_for_ctx(ctx: &crate::chat::ctx::ChatCtx) -> Result<PathBuf, String> {
+    let dir = get_tasks_dir_for_ctx(ctx).await?;
     if !dir.exists() {
         fs::create_dir_all(&dir).await.map_err(|e| e.to_string())?;
     }
@@ -374,6 +375,16 @@ pub async fn save_planner_instructions(
     fs::write(&path, content).await.map_err(|e| e.to_string())
 }
 
+pub async fn save_planner_instructions_for_ctx(
+    ctx: &crate::chat::ctx::ChatCtx,
+    task_id: &str,
+    content: &str,
+) -> Result<(), String> {
+    let task_dir = find_task_dir_for_ctx(ctx, task_id).await?;
+    let path = task_dir.join("planner_instructions.md");
+    fs::write(&path, content).await.map_err(|e| e.to_string())
+}
+
 fn detect_git_branch_and_commit(workspace_root: &Path) -> (Option<String>, Option<String>) {
     let repo = match Repository::open(workspace_root) {
         Ok(r) => r,
@@ -397,7 +408,14 @@ fn detect_git_branch_and_commit(workspace_root: &Path) -> (Option<String>, Optio
 }
 
 pub async fn create_task(gcx: Arc<GlobalContext>, name: &str) -> Result<TaskMeta, String> {
-    let tasks_dir = ensure_tasks_dir(gcx.clone()).await?;
+    create_task_for_ctx(&gcx.chat_ctx(gcx.clone()), name).await
+}
+
+pub async fn create_task_for_ctx(
+    ctx: &crate::chat::ctx::ChatCtx,
+    name: &str,
+) -> Result<TaskMeta, String> {
+    let tasks_dir = ensure_tasks_dir_for_ctx(ctx).await?;
     let task_id = Uuid::new_v4().to_string();
     let task_dir = tasks_dir.join(&task_id);
 
@@ -411,7 +429,7 @@ pub async fn create_task(gcx: Arc<GlobalContext>, name: &str) -> Result<TaskMeta
         .await
         .map_err(|e| e.to_string())?;
 
-    let project_dirs = crate::files_correction::get_project_dirs(gcx.clone()).await;
+    let project_dirs = crate::files_correction::get_unscoped_project_dirs_for_ctx(ctx).await;
     let (base_branch, base_commit) = project_dirs
         .first()
         .map(|p| detect_git_branch_and_commit(p))
@@ -442,12 +460,12 @@ pub async fn create_task(gcx: Arc<GlobalContext>, name: &str) -> Result<TaskMeta
         planner_session_state: None,
     };
 
-    save_task_meta(gcx.clone(), &task_id, &meta).await?;
-    save_board(gcx.clone(), &task_id, &TaskBoard::default()).await?;
-    save_planner_instructions(gcx.clone(), &task_id, "").await?;
+    save_task_meta_for_ctx(ctx, &task_id, &meta).await?;
+    save_board_for_ctx(ctx, &task_id, &TaskBoard::default()).await?;
+    save_planner_instructions_for_ctx(ctx, &task_id, "").await?;
 
-    emit_task_event(
-        gcx.clone(),
+    emit_task_event_for_services(
+        &ctx.chat,
         TaskEvent::TaskCreated {
             task_id: task_id.clone(),
             meta: meta.clone(),
@@ -463,11 +481,7 @@ pub async fn create_task(gcx: Arc<GlobalContext>, name: &str) -> Result<TaskMeta
             "completed",
             None,
         );
-        crate::buddy::actor::buddy_enqueue_event(
-            crate::app_state::AppState::from_gcx(gcx).await,
-            ev,
-        )
-        .await;
+        ctx.buddy_event_sink.enqueue_event(ev).await;
     }
 
     Ok(meta)

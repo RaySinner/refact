@@ -740,7 +740,7 @@ impl Tool for ToolCancelAgent {
         .await?;
 
         let push_report = push_if_card_current_and_live(
-            &planner.gcx.chat_ctx(planner.gcx.clone()),
+            planner.gcx.clone(),
             &planner.task_id,
             &card_id,
             &agent_chat_id,

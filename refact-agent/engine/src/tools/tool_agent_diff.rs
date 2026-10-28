@@ -11,7 +11,6 @@ use tokio::sync::Mutex as AMutex;
 
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
-use crate::global_context::GlobalContext;
 use crate::tasks::storage;
 use crate::tasks::types::{AbVariantInfo, BoardCard};
 use crate::tools::task_tool_helpers::{required_string, require_bound_planner_task};
@@ -202,13 +201,13 @@ fn registered_error_allows_legacy_fallback(err: &str) -> bool {
 }
 
 async fn base_from_worktree_meta(
-    gcx: Arc<GlobalContext>,
+    ctx: &crate::chat::ctx::ChatCtx,
     task_id: &str,
     card: &BoardCard,
 ) -> (Option<String>, Option<String>) {
-    let project_dirs = crate::files_correction::get_project_dirs(gcx.clone()).await;
+    let project_dirs = crate::files_correction::get_unscoped_project_dirs_for_ctx(ctx).await;
     for source_root in project_dirs {
-        let Ok(service) = WorktreeService::new_async(gcx.cache_dir.clone(), source_root).await
+        let Ok(service) = WorktreeService::new_async(ctx.paths.cache_dir.clone(), source_root).await
         else {
             continue;
         };
@@ -335,14 +334,14 @@ fn validate_fallback_worktree_path(
     Ok(worktree)
 }
 
-async fn primary_workspace_root(gcx: Arc<GlobalContext>) -> Result<PathBuf, String> {
-    let project_dirs = crate::files_correction::get_project_dirs(gcx).await;
+async fn primary_workspace_root(ctx: &crate::chat::ctx::ChatCtx) -> Result<PathBuf, String> {
+    let project_dirs = crate::files_correction::get_unscoped_project_dirs_for_ctx(ctx).await;
     let workspace_root = project_dirs.first().ok_or("No workspace folder found")?;
     canonical_existing_path(workspace_root)
 }
 
 fn legacy_worktree_path(
-    gcx: &GlobalContext,
+    cache_dir: &Path,
     workspace_root: &Path,
     card: &BoardCard,
 ) -> Result<PathBuf, String> {
@@ -355,7 +354,7 @@ fn legacy_worktree_path(
         .as_ref()
         .ok_or_else(|| format!("Card {} has no agent branch", card.id))?;
     validate_fallback_worktree_path(
-        gcx.cache_dir.as_path(),
+        cache_dir,
         workspace_root,
         &card.id,
         Path::new(worktree),
@@ -364,14 +363,14 @@ fn legacy_worktree_path(
 }
 
 async fn registered_worktree_path(
-    gcx: Arc<GlobalContext>,
+    ctx: &crate::chat::ctx::ChatCtx,
     task_id: &str,
     card: &BoardCard,
     worktree_name: &str,
 ) -> Result<PathBuf, String> {
-    let project_dirs = crate::files_correction::get_project_dirs(gcx.clone()).await;
+    let project_dirs = crate::files_correction::get_unscoped_project_dirs_for_ctx(ctx).await;
     for source_root in project_dirs {
-        let Ok(service) = WorktreeService::new_async(gcx.cache_dir.clone(), source_root).await
+        let Ok(service) = WorktreeService::new_async(ctx.paths.cache_dir.clone(), source_root).await
         else {
             continue;
         };
@@ -404,14 +403,14 @@ async fn registered_worktree_path(
 }
 
 async fn registered_worktree_path_for_card(
-    gcx: Arc<GlobalContext>,
+    ctx: &crate::chat::ctx::ChatCtx,
     task_id: &str,
     card: &BoardCard,
     excluded_id: Option<&str>,
 ) -> Result<Option<PathBuf>, String> {
-    let project_dirs = crate::files_correction::get_project_dirs(gcx.clone()).await;
+    let project_dirs = crate::files_correction::get_unscoped_project_dirs_for_ctx(ctx).await;
     for source_root in project_dirs {
-        let Ok(service) = WorktreeService::new_async(gcx.cache_dir.clone(), source_root).await
+        let Ok(service) = WorktreeService::new_async(ctx.paths.cache_dir.clone(), source_root).await
         else {
             continue;
         };
@@ -459,7 +458,7 @@ async fn registered_worktree_path_for_card(
 }
 
 async fn canonical_worktree(
-    gcx: Arc<GlobalContext>,
+    ctx: &crate::chat::ctx::ChatCtx,
     task_id: &str,
     card: &BoardCard,
 ) -> Result<PathBuf, String> {
@@ -469,14 +468,14 @@ async fn canonical_worktree(
         .map(str::trim)
         .filter(|value| !value.is_empty())
     {
-        return match registered_worktree_path(gcx.clone(), task_id, card, worktree_name).await {
+        return match registered_worktree_path(ctx, task_id, card, worktree_name).await {
             Ok(path) => Ok(path),
             Err(registered_err) => {
                 if !registered_error_allows_legacy_fallback(&registered_err) {
                     return Err(registered_err);
                 }
                 let card_registered_err = match registered_worktree_path_for_card(
-                    gcx.clone(),
+                    ctx,
                     task_id,
                     card,
                     Some(worktree_name),
@@ -487,8 +486,8 @@ async fn canonical_worktree(
                     Ok(None) => None,
                     Err(err) => Some(err),
                 };
-                let workspace_root = primary_workspace_root(gcx.clone()).await?;
-                legacy_worktree_path(&gcx, &workspace_root, card).map_err(|legacy_err| {
+                let workspace_root = primary_workspace_root(ctx).await?;
+                legacy_worktree_path(ctx.paths.cache_dir.as_path(), &workspace_root, card).map_err(|legacy_err| {
                     if let Some(card_registered_err) = card_registered_err.as_deref() {
                         format!(
                             "{}; related registered lookup failed: {}; legacy fallback failed: {}",
@@ -501,21 +500,21 @@ async fn canonical_worktree(
             }
         };
     }
-    match registered_worktree_path_for_card(gcx.clone(), task_id, card, None).await {
+    match registered_worktree_path_for_card(ctx, task_id, card, None).await {
         Ok(Some(path)) => return Ok(path),
         Ok(None) => {}
         Err(registered_err) => {
             if !registered_error_allows_legacy_fallback(&registered_err) {
                 return Err(registered_err);
             }
-            let workspace_root = primary_workspace_root(gcx.clone()).await?;
-            return legacy_worktree_path(&gcx, &workspace_root, card).map_err(|legacy_err| {
+            let workspace_root = primary_workspace_root(ctx).await?;
+            return legacy_worktree_path(ctx.paths.cache_dir.as_path(), &workspace_root, card).map_err(|legacy_err| {
                 format!("{}; legacy fallback failed: {}", registered_err, legacy_err)
             });
         }
     }
-    let workspace_root = primary_workspace_root(gcx.clone()).await?;
-    legacy_worktree_path(&gcx, &workspace_root, card)
+    let workspace_root = primary_workspace_root(ctx).await?;
+    legacy_worktree_path(ctx.paths.cache_dir.as_path(), &workspace_root, card)
 }
 
 async fn run_with_timeout<F, T>(fut: F, timeout: Duration) -> Result<T, ()>
@@ -972,17 +971,18 @@ impl Tool for ToolAgentDiff {
         let mode = AgentDiffMode::parse(args.get("mode"))?;
         let max_lines = parse_max_lines(args)?;
         let task_id = require_bound_planner_task(&ccx, args).await?;
-        let gcx = ccx.lock().await.app.gcx.clone();
+        let app = ccx.lock().await.app.clone();
+        let ctx = app.chat_ctx();
 
-        let board = storage::load_board(gcx.clone(), &task_id).await?;
+        let board = storage::load_board_for_ctx(&ctx, &task_id).await?;
         let card = board
             .get_card(card_id)
             .ok_or_else(|| format!("Card {} not found", card_id))?;
         let card = card_for_diff_target(card, &requested_card_id)?;
-        let worktree = canonical_worktree(gcx.clone(), &task_id, &card).await?;
-        let task_meta = storage::load_task_meta(gcx.clone(), &task_id).await?;
+        let worktree = canonical_worktree(&ctx, &task_id, &card).await?;
+        let task_meta = storage::load_task_meta_for_ctx(&ctx, &task_id).await?;
         let (worktree_commit, worktree_branch) =
-            base_from_worktree_meta(gcx.clone(), &task_id, &card).await;
+            base_from_worktree_meta(&ctx, &task_id, &card).await;
         let base = resolve_base(
             worktree_commit,
             worktree_branch,

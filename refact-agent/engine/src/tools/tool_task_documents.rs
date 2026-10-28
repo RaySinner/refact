@@ -761,6 +761,21 @@ pub async fn list_task_documents_for_api_for_ctx(
     })
 }
 
+async fn emit_document_changed(
+    chat: &crate::app_state::ChatServices,
+    task_id: &str,
+    slug: &str,
+) {
+    crate::tasks::events::emit_task_event_for_services(
+        chat,
+        crate::tasks::events::TaskEvent::TaskDocumentChanged {
+            task_id: task_id.to_string(),
+            slug: Some(slug.to_string()),
+        },
+    )
+    .await;
+}
+
 pub async fn get_task_document_for_api(
     gcx: Arc<GlobalContext>,
     task_id: &str,
@@ -789,12 +804,11 @@ pub async fn create_task_document_for_api(
     task_id: &str,
     request: CreateDocumentRequest,
 ) -> Result<TaskDocumentDetail, String> {
-    create_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()), gcx.clone(), task_id, request).await
+    create_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()), task_id, request).await
 }
 
 pub async fn create_task_document_for_api_for_ctx(
     ctx: &crate::chat::ctx::ChatCtx,
-    gcx: Arc<GlobalContext>,
     task_id: &str,
     request: CreateDocumentRequest,
 ) -> Result<TaskDocumentDetail, String> {
@@ -811,7 +825,7 @@ pub async fn create_task_document_for_api_for_ctx(
     )
     .await?;
     let detail = document_to_detail(document);
-    crate::tasks::events::emit_task_document_changed(gcx, task_id, Some(&detail.slug)).await;
+    emit_document_changed(&ctx.chat, task_id, &detail.slug).await;
     Ok(detail)
 }
 
@@ -822,12 +836,11 @@ pub async fn update_task_document_for_api(
     content: String,
     pinned: Option<bool>,
 ) -> Result<TaskDocumentDetail, String> {
-    update_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()), gcx.clone(), task_id, slug, content, pinned).await
+    update_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()), task_id, slug, content, pinned).await
 }
 
 pub async fn update_task_document_for_api_for_ctx(
     ctx: &crate::chat::ctx::ChatCtx,
-    gcx: Arc<GlobalContext>,
     task_id: &str,
     slug: &str,
     content: String,
@@ -839,7 +852,7 @@ pub async fn update_task_document_for_api_for_ctx(
     }
     let document = replace_document_content_at(&documents_dir, slug, content, pinned).await?;
     let detail = document_to_detail(document);
-    crate::tasks::events::emit_task_document_changed(gcx, task_id, Some(&detail.slug)).await;
+    emit_document_changed(&ctx.chat, task_id, &detail.slug).await;
     Ok(detail)
 }
 
@@ -849,12 +862,11 @@ pub async fn append_task_document_for_api(
     slug: &str,
     section: String,
 ) -> Result<TaskDocumentDetail, String> {
-    append_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()), gcx.clone(), task_id, slug, section).await
+    append_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()), task_id, slug, section).await
 }
 
 pub async fn append_task_document_for_api_for_ctx(
     ctx: &crate::chat::ctx::ChatCtx,
-    gcx: Arc<GlobalContext>,
     task_id: &str,
     slug: &str,
     section: String,
@@ -865,7 +877,7 @@ pub async fn append_task_document_for_api_for_ctx(
     }
     let document = append_document_at(&documents_dir, slug, &section).await?;
     let detail = document_to_detail(document);
-    crate::tasks::events::emit_task_document_changed(gcx, task_id, Some(&detail.slug)).await;
+    emit_document_changed(&ctx.chat, task_id, &detail.slug).await;
     Ok(detail)
 }
 
@@ -874,18 +886,17 @@ pub async fn delete_task_document_for_api(
     task_id: &str,
     slug: &str,
 ) -> Result<(), String> {
-    delete_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()), gcx.clone(), task_id, slug).await
+    delete_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()), task_id, slug).await
 }
 
 pub async fn delete_task_document_for_api_for_ctx(
     ctx: &crate::chat::ctx::ChatCtx,
-    gcx: Arc<GlobalContext>,
     task_id: &str,
     slug: &str,
 ) -> Result<(), String> {
     let documents_dir = documents_dir_for_task_for_ctx(ctx, task_id).await?;
     delete_document_at(&documents_dir, slug).await?;
-    crate::tasks::events::emit_task_document_changed(gcx, task_id, Some(slug)).await;
+    emit_document_changed(&ctx.chat, task_id, slug).await;
     Ok(())
 }
 
@@ -895,12 +906,11 @@ pub async fn pin_task_document_for_api(
     slug: &str,
     pinned: bool,
 ) -> Result<TaskDocumentDetail, String> {
-    pin_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()), gcx.clone(), task_id, slug, pinned).await
+    pin_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()), task_id, slug, pinned).await
 }
 
 pub async fn pin_task_document_for_api_for_ctx(
     ctx: &crate::chat::ctx::ChatCtx,
-    gcx: Arc<GlobalContext>,
     task_id: &str,
     slug: &str,
     pinned: bool,
@@ -911,7 +921,7 @@ pub async fn pin_task_document_for_api_for_ctx(
     }
     let document = pin_document_at(&documents_dir, slug, pinned).await?;
     let detail = document_to_detail(document);
-    crate::tasks::events::emit_task_document_changed(gcx, task_id, Some(&detail.slug)).await;
+    emit_document_changed(&ctx.chat, task_id, &detail.slug).await;
     Ok(detail)
 }
 
@@ -1081,12 +1091,7 @@ impl Tool for ToolDocCreate {
             &author_role,
         )
         .await?;
-        crate::tasks::events::emit_task_document_changed(
-            app.gcx.clone(),
-            &task_id,
-            Some(&document.frontmatter.slug),
-        )
-        .await;
+        emit_document_changed(&app.chat, &task_id, &document.frontmatter.slug).await;
         Ok((
             false,
             tool_message(tool_call_id, format_document(&document)),
@@ -1149,12 +1154,7 @@ impl Tool for ToolDocUpdate {
         let content = string_arg(args, "content")?;
         let documents_dir = documents_dir_for_task_for_ctx(&app.chat_ctx(), &task_id).await?;
         let document = update_document_at(&documents_dir, &slug, &content).await?;
-        crate::tasks::events::emit_task_document_changed(
-            app.gcx.clone(),
-            &task_id,
-            Some(&document.frontmatter.slug),
-        )
-        .await;
+        emit_document_changed(&app.chat, &task_id, &document.frontmatter.slug).await;
         Ok((
             false,
             tool_message(tool_call_id, format_document(&document)),
@@ -1197,12 +1197,7 @@ impl Tool for ToolDocAppend {
         let section = string_arg(args, "section")?;
         let documents_dir = documents_dir_for_task_for_ctx(&app.chat_ctx(), &task_id).await?;
         let document = append_document_at(&documents_dir, &slug, &section).await?;
-        crate::tasks::events::emit_task_document_changed(
-            app.gcx.clone(),
-            &task_id,
-            Some(&document.frontmatter.slug),
-        )
-        .await;
+        emit_document_changed(&app.chat, &task_id, &document.frontmatter.slug).await;
         Ok((
             false,
             tool_message(tool_call_id, format_document(&document)),
@@ -1243,7 +1238,7 @@ impl Tool for ToolDocDelete {
         let slug = string_arg(args, "slug")?;
         let documents_dir = documents_dir_for_task_for_ctx(&app.chat_ctx(), &task_id).await?;
         let deleted_path = delete_document_at(&documents_dir, &slug).await?;
-        crate::tasks::events::emit_task_document_changed(app.gcx.clone(), &task_id, Some(&slug)).await;
+        emit_document_changed(&app.chat, &task_id, &slug).await;
         Ok((
             false,
             tool_message(
@@ -1293,12 +1288,7 @@ impl Tool for ToolDocPin {
             .ok_or_else(|| "argument `pinned` is required".to_string())?;
         let documents_dir = documents_dir_for_task_for_ctx(&app.chat_ctx(), &task_id).await?;
         let document = pin_document_at(&documents_dir, &slug, pinned).await?;
-        crate::tasks::events::emit_task_document_changed(
-            app.gcx.clone(),
-            &task_id,
-            Some(&document.frontmatter.slug),
-        )
-        .await;
+        emit_document_changed(&app.chat, &task_id, &document.frontmatter.slug).await;
         Ok((
             false,
             tool_message(tool_call_id, format_document(&document)),

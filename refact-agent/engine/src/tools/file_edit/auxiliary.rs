@@ -84,7 +84,7 @@ pub async fn check_scope_guard(
     ccx: &Arc<AMutex<AtCommandsContext>>,
     edit_path: &Path,
 ) -> Result<(), String> {
-    let (gcx, task_id, card_id) = {
+    let (ctx, task_id, card_id) = {
         let ccx_lock = ccx.lock().await;
         let meta = match ccx_lock.task_meta.as_ref() {
             Some(meta) if meta.role == "agents" => meta.clone(),
@@ -94,10 +94,10 @@ pub async fn check_scope_guard(
             Some(card_id) => card_id.clone(),
             None => return Ok(()),
         };
-        (ccx_lock.app.gcx.clone(), meta.task_id, card_id)
+        (ccx_lock.app.chat_ctx(), meta.task_id, card_id)
     };
 
-    let board = crate::tasks::storage::load_board(gcx, &task_id).await?;
+    let board = crate::tasks::storage::load_board_for_ctx(&ctx, &task_id).await?;
     let card = match board.get_card(&card_id) {
         Some(card) => card,
         None => return Ok(()),

@@ -9,7 +9,7 @@ use tokio::sync::Mutex as AMutex;
 
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
-use crate::chat::verifier::{schedule_card_verifier_after_finish, ExpectedCardState};
+use crate::chat::verifier::{schedule_card_verifier_after_finish_for_ctx, ExpectedCardState};
 use crate::tasks::storage;
 use crate::tasks::types::{
     AbVariantFinish, AbVariantInfo, BoardCard, FinalReport, StatusUpdate, SuggestedCard,
@@ -1187,8 +1187,8 @@ impl Tool for ToolTaskAgentFinish {
 
         if card_success {
             if let Some(verifier_expected_state) = verifier_expected_state {
-                schedule_card_verifier_after_finish(
-                    app.gcx.clone(),
+                schedule_card_verifier_after_finish_for_ctx(
+                    &app.chat_ctx(),
                     task_id.clone(),
                     card_id.clone(),
                     verifier_expected_state,

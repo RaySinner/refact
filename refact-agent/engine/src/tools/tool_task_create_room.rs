@@ -18,8 +18,8 @@ use tokio::sync::Mutex as AMutex;
 
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
-use crate::global_context::GlobalContext;
-use crate::tasks::events::{TaskEvent, emit_task_event};
+use crate::app_state::AppState;
+use crate::tasks::events::{TaskEvent, emit_task_event_for_services};
 use crate::tasks::rooms;
 use crate::tasks::storage;
 use crate::tasks::types::{BoardCard, StatusUpdate, TeamMember};
@@ -225,7 +225,7 @@ fn string_list(value: Option<&Value>, index: usize, key: &str) -> Result<Vec<Str
 async fn planner_room_context(
     ccx: &Arc<AMutex<AtCommandsContext>>,
     args: &HashMap<String, Value>,
-) -> Result<(Arc<GlobalContext>, String), String> {
+) -> Result<(AppState, String), String> {
     let ccx_lock = ccx.lock().await;
     let is_planner = ccx_lock
         .task_meta
@@ -250,14 +250,16 @@ async fn planner_room_context(
                 "Missing 'task_id' (and chat is not bound to a task)".to_string()
             })?,
     };
-    Ok((ccx_lock.app.gcx.clone(), task_id))
+    Ok((ccx_lock.app.clone(), task_id))
 }
 
 /// The registry as a sorted name → definition list, so an error lists agents in a stable order.
 async fn sorted_subagent_registry(
-    gcx: Arc<GlobalContext>,
+    tool: &crate::tools::ctx::ToolCtx,
 ) -> Result<Vec<(String, SubagentConfig)>, String> {
-    let registry = crate::yaml_configs::customization_registry::get_project_registry(gcx)
+    let registry = tool
+        .mode_config
+        .get_project_registry()
         .await
         .ok_or_else(|| {
             "Could not read the agent registry; a room can only be staffed from agent definitions."
@@ -375,7 +377,7 @@ impl Tool for ToolTaskCreateRoom {
         tool_call_id: &String,
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
-        let (gcx, task_id) = planner_room_context(&ccx, args).await?;
+        let (app, task_id) = planner_room_context(&ccx, args).await?;
         let card_id = args
             .get("card_id")
             .and_then(Value::as_str)
@@ -384,9 +386,9 @@ impl Tool for ToolTaskCreateRoom {
             .ok_or("Missing 'card_id'")?
             .to_string();
         let requests = parse_agents(args)?;
-        let registry = sorted_subagent_registry(gcx.clone()).await?;
+        let registry = sorted_subagent_registry(&app.tool).await?;
 
-        let card = storage::load_board(gcx.clone(), &task_id)
+        let card = storage::load_board_for_ctx(&app.chat_ctx(), &task_id)
             .await?
             .get_card(&card_id)
             .cloned()
@@ -395,7 +397,7 @@ impl Tool for ToolTaskCreateRoom {
 
         let roster = members.clone();
         let card_id_for_update = card_id.clone();
-        let (board, _) = storage::update_board_atomic(gcx.clone(), &task_id, move |board| {
+        let (board, _) = storage::update_board_atomic_for_ctx(&app.chat_ctx(), &task_id, move |board| {
             let card = board
                 .get_card_mut(&card_id_for_update)
                 .ok_or_else(|| format!("Card {} not found", card_id_for_update))?;
@@ -419,8 +421,8 @@ impl Tool for ToolTaskCreateRoom {
         })
         .await?;
 
-        emit_task_event(
-            gcx.clone(),
+        emit_task_event_for_services(
+            &app.chat,
             TaskEvent::BoardChanged {
                 task_id: task_id.clone(),
                 rev: board.rev,
@@ -428,7 +430,7 @@ impl Tool for ToolTaskCreateRoom {
             },
         )
         .await;
-        storage::update_task_stats(gcx.clone(), &task_id).await?;
+        storage::update_task_stats_for_ctx(&app.chat_ctx(), &task_id).await?;
 
         Ok((
             false,

@@ -7,7 +7,7 @@ use tokio::sync::Mutex as AMutex;
 
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
-use crate::chat::verifier::{verify_card, VerifyCardRequest};
+use crate::chat::verifier::{verify_card_for_ctx, VerifyCardRequest};
 use crate::tools::task_tool_helpers::require_bound_planner_task;
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
 
@@ -90,9 +90,9 @@ impl Tool for ToolTaskVerifyCard {
         let task_id = require_bound_planner_task(&ccx, args)
             .await
             .map_err(verify_card_task_scope_error)?;
-        let gcx = ccx.lock().await.app.gcx.clone();
-        let report = verify_card(
-            gcx,
+        let ctx = ccx.lock().await.app.chat_ctx();
+        let report = verify_card_for_ctx(
+            &ctx,
             VerifyCardRequest {
                 task_id,
                 card_id: card_id.clone(),

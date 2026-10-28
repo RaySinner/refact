@@ -14,7 +14,7 @@ use crate::tools::tools_description::{
 use crate::tasks::rooms::parse_team_members;
 use crate::tasks::storage;
 use crate::tasks::types::{AbVariants, BoardCard, ScopeGuardMode, TaskBoard};
-use crate::tasks::events::{TaskEvent, emit_task_event};
+use crate::tasks::events::{TaskEvent, emit_task_event_for_services};
 use refact_runtime_api::SessionState;
 
 fn make_source() -> ToolSource {
@@ -843,8 +843,8 @@ impl Tool for ToolTaskBoardCreateCard {
         board.rev += 1;
 
         storage::save_board_for_ctx(&ctx, &task_id, &board).await?;
-        emit_task_event(
-            app.gcx.clone(),
+        emit_task_event_for_services(
+            &app.chat,
             TaskEvent::BoardChanged {
                 task_id: task_id.to_string(),
                 rev: board.rev,
@@ -952,8 +952,8 @@ impl Tool for ToolTaskBoardUpdateCard {
 
         board.rev += 1;
         storage::save_board_for_ctx(&ctx, &task_id, &board).await?;
-        emit_task_event(
-            app.gcx.clone(),
+        emit_task_event_for_services(
+            &app.chat,
             TaskEvent::BoardChanged {
                 task_id: task_id.to_string(),
                 rev: board.rev,
@@ -1128,8 +1128,8 @@ impl Tool for ToolTaskBoardMoveCard {
         board.rev += 1;
 
         storage::save_board_for_ctx(&ctx, &task_id, &board).await?;
-        emit_task_event(
-            app.gcx.clone(),
+        emit_task_event_for_services(
+            &app.chat,
             TaskEvent::BoardChanged {
                 task_id: task_id.to_string(),
                 rev: board.rev,
@@ -1245,8 +1245,8 @@ impl Tool for ToolTaskBoardDeleteCard {
         board.rev += 1;
 
         storage::save_board_for_ctx(&ctx, &task_id, &board).await?;
-        emit_task_event(
-            app.gcx.clone(),
+        emit_task_event_for_services(
+            &app.chat,
             TaskEvent::BoardChanged {
                 task_id: task_id.to_string(),
                 rev: board.rev,

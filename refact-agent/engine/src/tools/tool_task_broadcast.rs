@@ -7,7 +7,7 @@ use tokio::sync::Mutex as AMutex;
 
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
-use crate::global_context::GlobalContext;
+use crate::chat::ctx::ChatCtx;
 use crate::tasks::storage;
 use crate::tools::planner_delivery::{self, CardGuard, CardTarget, DeliveryReport};
 use crate::tools::task_tool_helpers::required_string;
@@ -159,7 +159,7 @@ fn format_output(results: &[BroadcastResult], notified_count: usize, message: &s
 }
 
 async fn broadcast_to_target(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     task_id: &str,
     target: CardTarget,
     message: &str,
@@ -178,7 +178,7 @@ async fn broadcast_to_target(
         planner_delivery::truncate_chars(message, 80)
     );
     match planner_delivery::reserve_card_status(
-        &gcx.chat_ctx(gcx.clone()),
+        ctx,
         task_id,
         &target,
         pending_status,
@@ -201,7 +201,7 @@ async fn broadcast_to_target(
     }
 
     let report = planner_delivery::deliver_to_card(
-        &gcx.chat_ctx(gcx.clone()),
+        ctx,
         chat_facade,
         task_id,
         &target,
@@ -224,7 +224,7 @@ async fn broadcast_to_target(
     } else {
         format!("Broadcast {}", report.short_status())
     };
-    let record_error = planner_delivery::record_card_status(&gcx.chat_ctx(gcx.clone()), task_id, &target, follow_up)
+    let record_error = planner_delivery::record_card_status(ctx, task_id, &target, follow_up)
         .await
         .err();
 
@@ -303,12 +303,12 @@ impl Tool for ToolTaskBroadcast {
         let push = planner_delivery::parse_push_mode(args)?;
         let broadcast_message = priority.format_message(&message);
 
-        let (gcx, chat_facade) = {
+        let (ctx, chat_facade) = {
             let ccx_lock = ccx.lock().await;
-            (ccx_lock.app.gcx.clone(), ccx_lock.app.chat.facade.clone())
+            (ccx_lock.app.chat_ctx(), ccx_lock.app.chat.facade.clone())
         };
 
-        let board = storage::load_board(gcx.clone(), &task_id).await?;
+        let board = storage::load_board_for_ctx(&ctx, &task_id).await?;
         let targets: Vec<CardTarget> = board
             .cards
             .iter()
@@ -333,7 +333,7 @@ impl Tool for ToolTaskBroadcast {
             }
 
             let (result, delivered) = broadcast_to_target(
-                gcx.clone(),
+                &ctx,
                 &task_id,
                 target,
                 &message,
@@ -365,6 +365,7 @@ impl Tool for ToolTaskBroadcast {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::global_context::GlobalContext;
     use refact_chat_api::ChatCommand;
     use crate::app_state::AppState;
     use crate::chat::types::TaskMeta as ThreadTaskMeta;

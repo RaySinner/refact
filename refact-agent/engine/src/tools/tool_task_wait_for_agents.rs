@@ -11,7 +11,7 @@ use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
 use crate::chat::types::ChatSession;
 use crate::tools::task_tool_helpers::require_bound_planner_task;
 use crate::tools::tool_task_check_agents::{
-    AgentStatus, agent_status_input_schema, format_agent_statuses, get_agent_statuses,
+    AgentStatus, agent_status_input_schema, format_agent_statuses, get_agent_statuses_for_ctx,
     has_active_agent_statuses, parse_agent_status_query, waitable_agent_statuses,
 };
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
@@ -147,17 +147,17 @@ impl Tool for ToolTaskWaitForAgents {
 
         let query = parse_agent_status_query(args)?;
         let task_id = require_bound_planner_task(&ccx, args).await?;
-        let (gcx, chat_facade, chat_id, app) = {
+        let (ctx, chat_facade, chat_id, app) = {
             let ccx_lock = ccx.lock().await;
             (
-                ccx_lock.app.gcx.clone(),
+                ccx_lock.app.chat_ctx(),
                 ccx_lock.app.chat.facade.clone(),
                 ccx_lock.chat_id.clone(),
                 ccx_lock.app.clone(),
             )
         };
 
-        let statuses = get_agent_statuses(gcx, chat_facade, &task_id).await?;
+        let statuses = get_agent_statuses_for_ctx(&ctx, chat_facade, &task_id).await?;
         let mut result = format_agent_statuses(&statuses, &query)?;
         let waitable = waitable_agent_statuses(&statuses, &query, status_filter_was_explicit(args));
         let resolved_card_ids = resolve_waiting_card_ids(&waitable);

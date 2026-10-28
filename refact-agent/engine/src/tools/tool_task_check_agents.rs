@@ -370,14 +370,6 @@ fn parse_i64(args: &HashMap<String, Value>, key: &str) -> Result<Option<i64>, St
     Ok(Some(n))
 }
 
-pub(crate) async fn get_agent_statuses(
-    gcx: Arc<crate::global_context::GlobalContext>,
-    chat_facade: Arc<dyn ChatSessionFacade>,
-    task_id: &str,
-) -> Result<Vec<AgentStatus>, String> {
-    get_agent_statuses_for_ctx(&gcx.chat_ctx(gcx.clone()), chat_facade, task_id).await
-}
-
 pub(crate) async fn get_agent_statuses_for_ctx(
     ctx: &crate::chat::ctx::ChatCtx,
     chat_facade: Arc<dyn ChatSessionFacade>,
@@ -1199,12 +1191,12 @@ impl Tool for ToolTaskCheckAgents {
 
         let query = parse_agent_status_query(args)?;
         let task_id = require_bound_planner_task(&ccx, args).await?;
-        let (gcx, chat_facade) = {
+        let (ctx, chat_facade) = {
             let ccx_lock = ccx.lock().await;
-            (ccx_lock.app.gcx.clone(), ccx_lock.app.chat.facade.clone())
+            (ccx_lock.app.chat_ctx(), ccx_lock.app.chat.facade.clone())
         };
 
-        let statuses = get_agent_statuses(gcx, chat_facade, &task_id).await?;
+        let statuses = get_agent_statuses_for_ctx(&ctx, chat_facade, &task_id).await?;
         let result = format_agent_statuses(&statuses, &query)?;
 
         Ok((
@@ -1594,7 +1586,7 @@ mod tests {
         let gcx = write_task_board(temp.path(), board).await;
         let chat_facade = AppState::from_gcx(gcx.clone()).await.chat.facade.clone();
 
-        let statuses = get_agent_statuses(gcx, chat_facade, "task-1")
+        let statuses = get_agent_statuses_for_ctx(&gcx.chat_ctx(gcx.clone()), chat_facade, "task-1")
             .await
             .unwrap();
 
@@ -1642,7 +1634,7 @@ mod tests {
         insert_live_session(gcx.clone(), "agent-chat-b", SessionState::Paused).await;
         let chat_facade = AppState::from_gcx(gcx.clone()).await.chat.facade.clone();
 
-        let statuses = get_agent_statuses(gcx, chat_facade, "task-1")
+        let statuses = get_agent_statuses_for_ctx(&gcx.chat_ctx(gcx.clone()), chat_facade, "task-1")
             .await
             .unwrap();
         let output =

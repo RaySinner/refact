@@ -78,14 +78,14 @@ impl Tool for ToolTaskMarkCardDone {
             .and_then(|v| v.as_str())
             .ok_or("Missing 'report'")?;
 
-        let gcx = ccx.lock().await.app.gcx.clone();
+        let ctx = ccx.lock().await.app.chat_ctx();
 
         let (card_title, already_done) = {
             let card_id_owned = card_id.to_string();
             let report_owned = report.to_string();
 
             let (board, already_done) =
-                storage::update_board_atomic(gcx.clone(), &task_id, move |board| {
+                storage::update_board_atomic_for_ctx(&ctx, &task_id, move |board| {
                     let card = board
                         .get_card_mut(&card_id_owned)
                         .ok_or(format!("Card {} not found", card_id_owned))?;
@@ -111,7 +111,7 @@ impl Tool for ToolTaskMarkCardDone {
                 })
                 .await?;
 
-            storage::update_task_stats(gcx.clone(), &task_id).await?;
+            storage::update_task_stats_for_ctx(&ctx, &task_id).await?;
             let title = board
                 .get_card(card_id)
                 .map(|c| c.title.clone())
@@ -183,13 +183,13 @@ impl Tool for ToolTaskMarkCardFailed {
             .and_then(|v| v.as_str())
             .ok_or("Missing 'reason'")?;
 
-        let gcx = ccx.lock().await.app.gcx.clone();
+        let ctx = ccx.lock().await.app.chat_ctx();
 
         let card_title = {
             let card_id_owned = card_id.to_string();
             let reason_owned = reason.to_string();
 
-            let (board, _) = storage::update_board_atomic(gcx.clone(), &task_id, move |board| {
+            let (board, _) = storage::update_board_atomic_for_ctx(&ctx, &task_id, move |board| {
                 let card = board
                     .get_card_mut(&card_id_owned)
                     .ok_or(format!("Card {} not found", card_id_owned))?;
@@ -210,7 +210,7 @@ impl Tool for ToolTaskMarkCardFailed {
             })
             .await?;
 
-            storage::update_task_stats(gcx.clone(), &task_id).await?;
+            storage::update_task_stats_for_ctx(&ctx, &task_id).await?;
             board
                 .get_card(card_id)
                 .map(|c| c.title.clone())

@@ -7,7 +7,6 @@ use chrono::Utc;
 
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::call_validation::{ChatMessage, ChatContent, ContextEnum};
-use crate::global_context::SharedGlobalContext;
 use refact_chat_api::TaskMeta;
 use crate::tools::tools_description::{
     Tool, ToolDesc, ToolSource, ToolSourceType, json_schema_from_params,
@@ -152,8 +151,8 @@ fn legacy_finish_tool_error(tool_name: &str) -> String {
     )
 }
 
-async fn get_global_context(ccx: &Arc<AMutex<AtCommandsContext>>) -> SharedGlobalContext {
-    ccx.lock().await.app.gcx.clone()
+async fn get_task_ctx(ccx: &Arc<AMutex<AtCommandsContext>>) -> crate::chat::ctx::ChatCtx {
+    ccx.lock().await.app.chat_ctx()
 }
 
 fn required_card_id(scope: &TaskAgentScope) -> Result<String, String> {
@@ -191,9 +190,9 @@ impl Tool for ToolTaskAgentUpdate {
             .ok_or("Missing 'message'")?
             .to_string();
 
-        let gcx = get_global_context(&ccx).await;
+        let ctx = get_task_ctx(&ccx).await;
         let card_id_for_update = card_id.clone();
-        storage::update_board_atomic(gcx, &task_id, move |board| {
+        storage::update_board_atomic_for_ctx(&ctx, &task_id, move |board| {
             let card = board
                 .get_card_mut(&card_id_for_update)
                 .ok_or(format!("Card {} not found", card_id_for_update))?;
@@ -363,11 +362,11 @@ impl Tool for ToolTaskAssignAgent {
             .ok_or("Missing 'agent_chat_id'")?
             .to_string();
 
-        let gcx = get_global_context(&ccx).await;
+        let ctx = get_task_ctx(&ccx).await;
         let card_id_for_update = card_id.clone();
         let agent_id_for_update = agent_id.clone();
         let agent_chat_id_for_update = agent_chat_id.clone();
-        storage::update_board_atomic(gcx.clone(), &task_id, move |board| {
+        storage::update_board_atomic_for_ctx(&ctx, &task_id, move |board| {
             let card = board
                 .get_card_mut(&card_id_for_update)
                 .ok_or(format!("Card {} not found", card_id_for_update))?;
@@ -382,7 +381,7 @@ impl Tool for ToolTaskAssignAgent {
             Ok(())
         })
         .await?;
-        storage::update_task_stats(gcx, &task_id).await?;
+        storage::update_task_stats_for_ctx(&ctx, &task_id).await?;
 
         let result = format!(
             "Assigned agent {} to card {} (chat: {})",

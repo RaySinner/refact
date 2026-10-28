@@ -9,7 +9,7 @@ use tokio::task::JoinSet;
 
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
-use crate::global_context::GlobalContext;
+use crate::app_state::AppState;
 use crate::tasks::storage;
 use crate::tasks::types::{BoardCard, TaskBoard};
 use crate::tools::tool_task_board::ToolTaskBoardCreateCard;
@@ -33,7 +33,7 @@ async fn planner_context(
     ccx: &Arc<AMutex<AtCommandsContext>>,
     args: &HashMap<String, Value>,
     tool_name: &str,
-) -> Result<(Arc<GlobalContext>, String), String> {
+) -> Result<(AppState, String), String> {
     let ccx_lock = ccx.lock().await;
     let is_planner = ccx_lock
         .task_meta
@@ -69,7 +69,7 @@ async fn planner_context(
         .or_else(|| bound_task_id.map(str::to_string))
         .or_else(|| storage::infer_task_id_from_chat_id(&ccx_lock.chat_id))
         .ok_or_else(|| "Missing 'task_id' (and chat is not bound to a task)".to_string())?;
-    Ok((ccx_lock.app.gcx.clone(), task_id))
+    Ok((ccx_lock.app.clone(), task_id))
 }
 
 fn batch_tool_message<T: Serialize>(
@@ -802,7 +802,7 @@ impl Tool for ToolSpawnAgentsBatch {
         tool_call_id: &String,
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
-        let (gcx, task_id) = planner_context(&ccx, args, "spawn_agents_batch").await?;
+        let (app, task_id) = planner_context(&ccx, args, "spawn_agents_batch").await?;
         let raw_items = array_arg(args, "cards")?;
         if raw_items.len() > MAX_SPAWN_BATCH {
             return Err(format!(
@@ -813,7 +813,7 @@ impl Tool for ToolSpawnAgentsBatch {
 
         let parsed: Vec<Result<SpawnBatchItem, String>> =
             raw_items.iter().map(parse_spawn_item).collect();
-        let board = storage::load_board(gcx.clone(), &task_id).await?;
+        let board = storage::load_board_for_ctx(&app.chat_ctx(), &task_id).await?;
         let validation_errors = validate_spawn_agent_cards(&board, &parsed);
         let mut results: Vec<Option<SpawnBatchResult>> = raw_items
             .iter()
@@ -840,7 +840,7 @@ impl Tool for ToolSpawnAgentsBatch {
             }
             let item = item.as_ref().map_err(|e| e.clone())?.clone();
             let ccx_clone = ccx.clone();
-            let gcx_clone = gcx.clone();
+            let ctx_clone = app.chat_ctx();
             let task_id_clone = task_id.clone();
             let call_id = format!("{}:{}", tool_call_id, item.card_id);
             joins.spawn(async move {
@@ -850,7 +850,7 @@ impl Tool for ToolSpawnAgentsBatch {
                 let result = tool.tool_execute(ccx_clone, &call_id, &single_args).await;
                 match result {
                     Ok(_) => {
-                        let agent_chat_id = storage::load_board(gcx_clone, &task_id_clone)
+                        let agent_chat_id = storage::load_board_for_ctx(&ctx_clone, &task_id_clone)
                             .await
                             .ok()
                             .and_then(|board| {
@@ -939,7 +939,7 @@ impl Tool for ToolMergeReadyInOrder {
         tool_call_id: &String,
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
-        let (gcx, task_id) = planner_context(&ccx, args, "merge_ready_in_order").await?;
+        let (app, task_id) = planner_context(&ccx, args, "merge_ready_in_order").await?;
         let strategy = args
             .get("strategy")
             .and_then(|v| v.as_str())
@@ -957,7 +957,7 @@ impl Tool for ToolMergeReadyInOrder {
         let max_merges = usize_arg(args, "max_merges", MAX_MERGE_BATCH)?.min(MAX_MERGE_BATCH);
         let auto_revert = auto_revert_arg(args)?;
         let auto_revert_timeout_secs = auto_revert_timeout_secs_arg(args)?;
-        let board = storage::load_board(gcx, &task_id).await?;
+        let board = storage::load_board_for_ctx(&app.chat_ctx(), &task_id).await?;
         let candidates = dependency_ordered_done_agent_cards(&board, max_merges);
         let mut results = Vec::new();
 
@@ -1192,7 +1192,7 @@ impl Tool for ToolBoardCreateBatch {
         tool_call_id: &String,
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
-        let (gcx, task_id) = planner_context(&ccx, args, "board_create_batch").await?;
+        let (app, task_id) = planner_context(&ccx, args, "board_create_batch").await?;
         let raw_items = array_arg(args, "cards")?;
         if raw_items.len() > MAX_CREATE_BATCH {
             return Err(format!(
@@ -1203,7 +1203,7 @@ impl Tool for ToolBoardCreateBatch {
 
         let parsed: Vec<Result<BoardCreateBatchItem, String>> =
             raw_items.iter().map(parse_board_create_item).collect();
-        let board = storage::load_board(gcx, &task_id).await?;
+        let board = storage::load_board_for_ctx(&app.chat_ctx(), &task_id).await?;
         let validation_errors = validate_board_create_batch(&board, &parsed);
         let mut results: Vec<Option<SimpleBatchResult>> = raw_items
             .iter()
@@ -1273,6 +1273,7 @@ impl Tool for ToolBoardCreateBatch {
 mod tests {
     use super::*;
     use crate::app_state::AppState;
+    use crate::global_context::GlobalContext;
     use crate::tasks::types::{TaskMeta as StoredTaskMeta, TaskStatus};
     use chrono::Utc;
     use refact_chat_api::TaskMeta as ThreadTaskMeta;

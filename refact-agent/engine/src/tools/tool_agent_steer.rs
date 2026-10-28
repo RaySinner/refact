@@ -228,12 +228,12 @@ impl Tool for ToolAgentSteer {
         let push = planner_delivery::parse_push_mode(args)?;
         let steer_message = priority.format_message(&message);
 
-        let (gcx, chat_facade) = {
+        let (ctx, chat_facade) = {
             let ccx_lock = ccx.lock().await;
-            (ccx_lock.app.gcx.clone(), ccx_lock.app.chat.facade.clone())
+            (ccx_lock.app.chat_ctx(), ccx_lock.app.chat.facade.clone())
         };
 
-        let board = storage::load_board(gcx.clone(), &task_id).await?;
+        let board = storage::load_board_for_ctx(&ctx, &task_id).await?;
         let card = board
             .get_card(&card_id)
             .ok_or_else(|| format!("Card {} not found", card_id))?;
@@ -254,8 +254,9 @@ impl Tool for ToolAgentSteer {
         validate_agent_snapshot(&snapshot, &task_id, &card_id, card.assignee.as_deref())?;
         let session_state = snapshot.session_state;
         let compacted = if should_autocompact_before_steer(session_state, &snapshot.thread) {
-            let session = gcx
-                .chat_sessions
+            let session = ctx
+                .chat
+                .sessions
                 .read()
                 .await
                 .get(&agent_chat_id)
@@ -283,7 +284,7 @@ impl Tool for ToolAgentSteer {
             planner_delivery::truncate_chars(&message, 80)
         );
         if let Some(reason) = planner_delivery::reserve_card_status(
-            &gcx.chat_ctx(gcx.clone()),
+            &ctx,
             &task_id,
             &target,
             status_message,
@@ -299,7 +300,7 @@ impl Tool for ToolAgentSteer {
         }
 
         let report = planner_delivery::deliver_to_card(
-            &gcx.chat_ctx(gcx.clone()),
+            &ctx,
             chat_facade.clone(),
             &task_id,
             &target,
@@ -315,7 +316,7 @@ impl Tool for ToolAgentSteer {
 
         if !report.reached_agent() {
             planner_delivery::record_card_status(
-                &gcx.chat_ctx(gcx.clone()),
+                &ctx,
                 &task_id,
                 &target,
                 format!("Planner steer {}", report.short_status()),

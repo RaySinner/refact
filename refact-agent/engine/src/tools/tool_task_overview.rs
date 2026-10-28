@@ -13,10 +13,9 @@ use tokio::sync::Mutex as AMutex;
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
 use crate::chat::history_limit::{compute_context_budget, ContextBudgetReport, ContextPressure};
-use crate::global_context::GlobalContext;
 use crate::tasks::storage;
 use crate::tasks::types::{BoardCard, TaskBoard};
-use crate::tools::tool_task_check_agents::{get_agent_statuses, AgentStatus};
+use crate::tools::tool_task_check_agents::{get_agent_statuses_for_ctx, AgentStatus};
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
 use refact_runtime_api::{ChatSessionFacade, SessionState};
 
@@ -34,7 +33,7 @@ impl ToolTaskOverview {
 
 struct OverviewContext {
     task_id: String,
-    gcx: Arc<GlobalContext>,
+    ctx: crate::chat::ctx::ChatCtx,
     chat_facade: Arc<dyn ChatSessionFacade>,
     messages: Vec<ChatMessage>,
     n_ctx: usize,
@@ -98,7 +97,7 @@ async fn overview_context(
         .ok_or_else(|| "Missing 'task_id' (and chat is not bound to a task)".to_string())?;
     Ok(OverviewContext {
         task_id,
-        gcx: ccx_lock.app.gcx.clone(),
+        ctx: ccx_lock.app.chat_ctx(),
         chat_facade: ccx_lock.app.chat.facade.clone(),
         messages: ccx_lock.messages.clone(),
         n_ctx: ccx_lock.n_ctx,
@@ -746,15 +745,15 @@ impl Tool for ToolTaskOverview {
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
         let context = overview_context(&ccx, args).await?;
-        let meta = storage::load_task_meta(context.gcx.clone(), &context.task_id).await?;
-        let board = storage::load_board(context.gcx.clone(), &context.task_id).await?;
-        let statuses = get_agent_statuses(
-            context.gcx.clone(),
+        let meta = storage::load_task_meta_for_ctx(&context.ctx, &context.task_id).await?;
+        let board = storage::load_board_for_ctx(&context.ctx, &context.task_id).await?;
+        let statuses = get_agent_statuses_for_ctx(
+            &context.ctx,
             context.chat_facade.clone(),
             &context.task_id,
         )
         .await?;
-        let task_dir = storage::find_task_dir(context.gcx.clone(), &context.task_id).await?;
+        let task_dir = storage::find_task_dir_for_ctx(&context.ctx, &context.task_id).await?;
         let memory_pulse = load_memory_pulse(&task_dir).await?;
         let (documents, document_activities) = load_documents(&task_dir).await?;
         let mut activities = card_activity_entries(&board);
@@ -783,6 +782,7 @@ impl Tool for ToolTaskOverview {
 mod tests {
     use super::*;
     use crate::app_state::AppState;
+    use crate::global_context::GlobalContext;
     use crate::chat::types::TaskMeta as ThreadTaskMeta;
     use crate::tasks::types::{TaskMeta, TaskStatus};
     use crate::tools::tools_description::Tool;

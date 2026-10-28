@@ -252,7 +252,7 @@ use super::test_support::*;
             .insert(chat_id.to_string(), session_arc.clone());
 
         process_trajectory_change_for_source(
-            gcx,
+            &gcx.chat_ctx(gcx.clone()),
             chat_id,
             false,
             Some(TrajectorySourceIdentity::from_task_meta(&task_meta)),
@@ -326,7 +326,7 @@ use super::test_support::*;
             .insert(chat_id.to_string(), session_arc.clone());
 
         process_trajectory_change_for_source(
-            gcx,
+            &gcx.chat_ctx(gcx.clone()),
             chat_id,
             false,
             Some(TrajectorySourceIdentity::Normal),
@@ -413,7 +413,7 @@ use super::test_support::*;
             .insert(chat_id.to_string(), session_arc.clone());
 
         process_trajectory_change_for_source(
-            gcx.clone(),
+            &gcx.chat_ctx(gcx.clone()),
             chat_id,
             false,
             Some(trajectory_source_identity_from_path(
@@ -594,7 +594,7 @@ use super::test_support::*;
             .insert(chat_id.to_string(), session_arc.clone());
 
         process_trajectory_change_for_source(
-            gcx,
+            &gcx.chat_ctx(gcx.clone()),
             chat_id,
             false,
             Some(TrajectorySourceIdentity::Normal),
@@ -770,7 +770,7 @@ use super::test_support::*;
             .insert(chat_id.to_string(), session_arc.clone());
 
         process_trajectory_change_for_source(
-            gcx,
+            &gcx.chat_ctx(gcx.clone()),
             chat_id,
             false,
             Some(TrajectorySourceIdentity::from_task_meta(&task_meta)),
@@ -841,7 +841,7 @@ use super::test_support::*;
             .insert(chat_id.to_string(), session_arc.clone());
 
         process_trajectory_change_for_source(
-            gcx,
+            &gcx.chat_ctx(gcx.clone()),
             chat_id,
             false,
             Some(TrajectorySourceIdentity::Normal),
@@ -1187,7 +1187,7 @@ use super::test_support::*;
             .insert(chat_id.to_string(), session_arc.clone());
 
         process_trajectory_change_for_source(
-            gcx,
+            &gcx.chat_ctx(gcx.clone()),
             chat_id,
             true,
             Some(TrajectorySourceIdentity::from_task_meta(&task_meta)),
@@ -1253,7 +1253,7 @@ use super::test_support::*;
             .insert(chat_id.to_string(), session_arc.clone());
 
         process_trajectory_change_for_source(
-            gcx,
+            &gcx.chat_ctx(gcx.clone()),
             chat_id,
             true,
             Some(TrajectorySourceIdentity::from_task_meta(&task_meta)),
@@ -1338,7 +1338,7 @@ use super::test_support::*;
             .insert(chat_id.to_string(), session_arc.clone());
 
         process_trajectory_change_for_source(
-            gcx.clone(),
+            &gcx.chat_ctx(gcx.clone()),
             chat_id,
             true,
             Some(TrajectorySourceIdentity::from_task_meta(&task_meta)),
@@ -1426,7 +1426,7 @@ use super::test_support::*;
             .insert(chat_id.to_string(), session_arc.clone());
 
         process_trajectory_change_for_source(
-            gcx,
+            &gcx.chat_ctx(gcx.clone()),
             chat_id,
             true,
             Some(TrajectorySourceIdentity::Normal),
@@ -1492,7 +1492,7 @@ use super::test_support::*;
             .insert(chat_id.to_string(), session_arc.clone());
 
         process_trajectory_change_for_source(
-            gcx.clone(),
+            &gcx.chat_ctx(gcx.clone()),
             chat_id,
             false,
             Some(TrajectorySourceIdentity::from_task_meta(&task_meta)),
@@ -1515,7 +1515,7 @@ use super::test_support::*;
             session.trajectory_dirty = true;
         }
         process_trajectory_change_for_source(
-            gcx,
+            &gcx.chat_ctx(gcx.clone()),
             chat_id,
             true,
             Some(TrajectorySourceIdentity::from_task_meta(&task_meta)),
@@ -1562,7 +1562,7 @@ use super::test_support::*;
             .insert(chat_id.to_string(), session_arc.clone());
 
         process_trajectory_change_for_source(
-            gcx.clone(),
+            &gcx.chat_ctx(gcx.clone()),
             chat_id,
             false,
             Some(TrajectorySourceIdentity::Normal),
@@ -1585,7 +1585,7 @@ use super::test_support::*;
             session.trajectory_dirty = true;
         }
         process_trajectory_change_for_source(
-            gcx,
+            &gcx.chat_ctx(gcx.clone()),
             chat_id,
             true,
             Some(TrajectorySourceIdentity::Normal),

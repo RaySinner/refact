@@ -923,8 +923,9 @@ use super::test_support::*;
         set_test_message_serialization_failure(Some(failed.messages[0].message_id.clone()));
         let failure_seen_wait = failure_seen.notified();
         let writer_ctx = gcx.chat_ctx(gcx.clone());
+        let writer_for_task = writer.clone();
         let task = tokio::spawn(async move {
-            run_detached_trajectory_writer(&writer_ctx, writer.clone()).await
+            run_detached_trajectory_writer(&writer_ctx, writer_for_task).await
         });
 
         tokio::time::timeout(Duration::from_secs(5), failure_seen_wait)

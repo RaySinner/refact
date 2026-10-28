@@ -161,7 +161,7 @@ use super::test_support::*;
         }
 
         let outcome = apply_external_delete_with_revalidation(
-            gcx,
+            &gcx.chat_ctx(gcx.clone()),
             session_arc.clone(),
             chat_id,
             Some(ExternalReloadPending::delete(
@@ -216,7 +216,7 @@ use super::test_support::*;
         }
 
         let outcome = apply_external_delete_with_revalidation(
-            gcx,
+            &gcx.chat_ctx(gcx.clone()),
             session_arc.clone(),
             chat_id,
             Some(ExternalReloadPending::delete(

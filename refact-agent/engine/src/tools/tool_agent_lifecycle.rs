@@ -1642,7 +1642,7 @@ mod tests {
         let mock = Arc::new(MockChatFacade::new(Some(SessionState::ExecutingTools)));
 
         let report = push_if_card_current_and_live(
-            &gcx.chat_ctx(gcx.clone()),
+            gcx.clone(),
             "task-1",
             "T-39",
             "agent-chat-1",

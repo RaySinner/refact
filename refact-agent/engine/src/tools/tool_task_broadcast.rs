@@ -825,7 +825,7 @@ mod tests {
         };
 
         let (result, delivered) = broadcast_to_target(
-            gcx.clone(),
+            &gcx.chat_ctx(gcx.clone()),
             "task-1",
             target,
             "Use API Y",
@@ -870,7 +870,7 @@ mod tests {
         };
 
         let (result, delivered) = broadcast_to_target(
-            gcx.clone(),
+            &gcx.chat_ctx(gcx.clone()),
             "task-1",
             target,
             "Use API Y",

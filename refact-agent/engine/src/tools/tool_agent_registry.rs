@@ -138,6 +138,7 @@ mod tests {
     use super::*;
     use crate::app_state::AppState;
     use crate::chat::types::TaskMeta as ThreadTaskMeta;
+    use crate::global_context::GlobalContext;
 
     async fn planner_ccx(
         gcx: Arc<GlobalContext>,

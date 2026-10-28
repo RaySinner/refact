@@ -696,10 +696,12 @@ mod tests {
 
         let scope = ExecutionScope::from_worktree(&fixture.worktree);
         let read_context = prepare_file_read_context(gcx.clone()).await;
+        let tool = gcx.tool_ctx(gcx.clone());
         let abort = AtomicBool::new(false);
 
         let outcome = direct_worktree_fallback_search(
             gcx,
+            &tool,
             Some(&scope),
             &read_context,
             "workspace",
@@ -730,10 +732,12 @@ mod tests {
 
         let scope = ExecutionScope::from_worktree(&fixture.worktree);
         let read_context = prepare_file_read_context(gcx.clone()).await;
+        let tool = gcx.tool_ctx(gcx.clone());
         let abort = AtomicBool::new(false);
 
         let outcome = direct_worktree_fallback_search(
             gcx,
+            &tool,
             Some(&scope),
             &read_context,
             "workspace",
@@ -767,10 +771,12 @@ mod tests {
 
         let scope = ExecutionScope::from_worktree(&fixture.worktree);
         let read_context = prepare_file_read_context(gcx.clone()).await;
+        let tool = gcx.tool_ctx(gcx.clone());
         let abort = AtomicBool::new(false);
 
         let outcome = direct_worktree_fallback_search(
             gcx,
+            &tool,
             Some(&scope),
             &read_context,
             "workspace",
@@ -797,10 +803,12 @@ mod tests {
 
         let scope = ExecutionScope::from_worktree(&fixture.worktree);
         let read_context = prepare_file_read_context(gcx.clone()).await;
+        let tool = gcx.tool_ctx(gcx.clone());
         let abort = AtomicBool::new(true);
 
         let result = direct_worktree_fallback_search(
             gcx,
+            &tool,
             Some(&scope),
             &read_context,
             "workspace",

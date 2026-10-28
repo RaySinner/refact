@@ -972,7 +972,7 @@ mod tests {
         let lock = gcx.knowledge_index.lock().await;
         let abort_flag = no_abort();
         let lookup = compute_related_memories(
-            gcx.clone(),
+            &gcx.knowledge_index,
             vec!["src/lib.rs".to_string()],
             "shared",
             &abort_flag,

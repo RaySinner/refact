@@ -182,27 +182,27 @@ use super::test_support::*;
             let mut session = session_arc.lock().await;
             session.trajectory_dirty = true;
         }
-        assert!(!refresh_session_from_trajectory_if_stale(app.clone(), chat_id, false).await);
+        assert!(!refresh_session_from_trajectory_if_stale(&app.chat_ctx(), chat_id, false).await);
 
         {
             let mut session = session_arc.lock().await;
             session.trajectory_dirty = false;
             session.runtime.state = SessionState::Generating;
         }
-        assert!(!refresh_session_from_trajectory_if_stale(app.clone(), chat_id, false).await);
+        assert!(!refresh_session_from_trajectory_if_stale(&app.chat_ctx(), chat_id, false).await);
 
         {
             let mut session = session_arc.lock().await;
             session.runtime.state = SessionState::Idle;
             session.draft_message = Some(ChatMessage::new("user".to_string(), "draft".to_string()));
         }
-        assert!(!refresh_session_from_trajectory_if_stale(app.clone(), chat_id, false).await);
+        assert!(!refresh_session_from_trajectory_if_stale(&app.chat_ctx(), chat_id, false).await);
 
         {
             let mut session = session_arc.lock().await;
             session.draft_message = None;
         }
-        assert!(refresh_session_from_trajectory_if_stale(app.clone(), chat_id, false).await);
+        assert!(refresh_session_from_trajectory_if_stale(&app.chat_ctx(), chat_id, false).await);
         let session = session_arc.lock().await;
         assert_eq!(session.messages.len(), 1);
     }
@@ -241,8 +241,8 @@ use super::test_support::*;
             .await
             .unwrap();
 
-        assert!(!refresh_session_from_trajectory_if_stale(app.clone(), chat_id, false).await);
-        assert!(refresh_session_from_trajectory_if_stale(app.clone(), chat_id, true).await);
+        assert!(!refresh_session_from_trajectory_if_stale(&app.chat_ctx(), chat_id, false).await);
+        assert!(refresh_session_from_trajectory_if_stale(&app.chat_ctx(), chat_id, true).await);
 
         let session = session_arc.lock().await;
         assert_eq!(session.messages.len(), 2);
@@ -299,7 +299,7 @@ use super::test_support::*;
         .await
         .unwrap();
 
-        assert!(refresh_session_from_trajectory_if_stale(app.clone(), chat_id, true).await);
+        assert!(refresh_session_from_trajectory_if_stale(&app.chat_ctx(), chat_id, true).await);
 
         let session = session_arc.lock().await;
         assert_eq!(session.messages.len(), 2);

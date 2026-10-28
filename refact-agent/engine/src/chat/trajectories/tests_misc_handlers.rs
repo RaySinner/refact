@@ -1000,7 +1000,7 @@ use super::test_support::*;
         .await
         .unwrap();
         process_trajectory_watcher_change(
-            gcx,
+            &gcx.chat_ctx(gcx.clone()),
             chat_id.to_string(),
             true,
             TrajectorySourceIdentity::Normal,
@@ -1064,7 +1064,7 @@ use super::test_support::*;
         .await
         .unwrap();
         process_trajectory_watcher_change(
-            gcx,
+            &gcx.chat_ctx(gcx.clone()),
             chat_id.to_string(),
             true,
             TrajectorySourceIdentity::Normal,

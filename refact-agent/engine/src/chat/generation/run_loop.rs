@@ -621,6 +621,22 @@ pub fn start_generation(
                         .await;
                         continue;
                     }
+                    if inject_queued_user_messages_before_llm_if_safe(
+                        app.clone(),
+                        session_arc.clone(),
+                    )
+                    .await
+                    {
+                        continue;
+                    }
+                    // The engine's own silent-tail nudge continues the turn, so
+                    // Buddy must not race it for the same step: the hook is told
+                    // the nudge already happened and stays quiet.
+                    let nudged_by_silent_tail =
+                        matches!(
+                            maybe_nudge_after_silent_tail(app.clone(), &session_arc).await,
+                            SilentTailNudge::Nudged
+                        );
                     let turn_index = {
                         let session = session_arc.lock().await;
                         session
@@ -635,19 +651,11 @@ pub fn start_generation(
                             session_arc.clone(),
                             0,
                             turn_index,
+                            nudged_by_silent_tail,
                         ),
                     );
-                    if inject_queued_user_messages_before_llm_if_safe(
-                        app.clone(),
-                        session_arc.clone(),
-                    )
-                    .await
-                    {
+                    if nudged_by_silent_tail {
                         continue;
-                    }
-                    match maybe_nudge_after_silent_tail(app.clone(), &session_arc).await {
-                        SilentTailNudge::Nudged => continue,
-                        SilentTailNudge::Exhausted | SilentTailNudge::NotApplicable => {}
                     }
                     let should_continue = {
                         let session = session_arc.lock().await;

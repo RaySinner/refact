@@ -33,6 +33,14 @@ pub const ESCALATE_USER_PREFIX: &str = "ESCALATE_USER:";
 /// stays short enough to act on in one glance.
 pub const MAX_REPLY_CHARS: usize = 600;
 
+/// The only card column that still means "this task is being worked on". A card
+/// that moved to done/failed/regressed is finished, not idle.
+pub const CARD_DOING_COLUMN: &str = "doing";
+
+/// The tool an agent calls to close its task, mirroring the engine's own
+/// `chat::generation::SILENT_TAIL_FINISH_TOOL`, which is private to generation.
+pub const AGENT_FINISH_TOOL: &str = "agent_finish";
+
 /// Plan and goal bodies can be tens of kilobytes; Buddy only needs the shape of
 /// them to say what to do next.
 const MAX_PLAN_CHARS: usize = 4_000;
@@ -68,7 +76,6 @@ pub(super) fn collect_turn_context(
                 GoalStatus::Completed | GoalStatus::Stopped | GoalStatus::Transferred
             )
     });
-    let card_doing = is_task_agent_chat(session);
     TurnContext {
         chat_id: &session.chat_id,
         tool_calls_count,
@@ -77,14 +84,14 @@ pub(super) fn collect_turn_context(
         is_aborted: false,
         chat_mode,
         goal_active,
-        card_doing,
-        plan_has_pending: crate::chat::plan_role::current_base_plan(session).is_some(),
+        card_doing: is_task_agent_chat(session),
+        plan_has_pending: current_plan_has_unfinished_items(session),
     }
 }
 
-/// Task-agent chat detector, mirroring `crate::chat::generation::recovery::
-/// is_task_agent_chat`. A load-bearing board lookup would turn the hook into
-/// work, so the card-in-doing check stays cheap: the thread's task meta alone.
+/// Whether the chat belongs to a task agent. This is deliberately the cheap
+/// half of "card in doing": the board is loaded later, off the classifier path,
+/// and a card that already left the doing column cancels the intervention there.
 fn is_task_agent_chat(session: &ChatSession) -> bool {
     session
         .thread
@@ -93,14 +100,67 @@ fn is_task_agent_chat(session: &ChatSession) -> bool {
         .is_some_and(|meta| meta.role == "agents")
 }
 
+/// Whether the chat's plan still has work in it. The classifier only gets a
+/// boolean, so the checklist parsing lives next to it.
+fn current_plan_has_unfinished_items(session: &ChatSession) -> bool {
+    crate::chat::plan_role::current_base_plan(session)
+        .map(|plan| plan_has_unfinished_items(&plan.content.content_text_only()))
+        .unwrap_or(false)
+}
+
+/// The assistant turn that just ended, even when an `event` notice landed after
+/// it: transcripts routinely end with a runner notice, not with the reply.
+fn last_assistant_message(session: &ChatSession) -> Option<&ChatMessage> {
+    session
+        .messages
+        .iter()
+        .rev()
+        .find(|message| message.role == "assistant")
+}
+
 /// Whether the last assistant message carries non-empty visible text. A
 /// reasoning-only turn is `false`, so the classifier sees an EmptyMessage.
 fn last_assistant_has_visible_text(session: &ChatSession) -> bool {
-    session
-        .messages
-        .last()
-        .filter(|message| message.role == "assistant")
+    last_assistant_message(session)
         .is_some_and(|message| !message.content.content_text_only().trim().is_empty())
+}
+
+/// Whether a plan body still has unfinished work in it.
+///
+/// Plan bodies are free-form prose with an optional markdown checklist, so this
+/// is a deliberate compromise: a plan without a single checkbox counts as
+/// unfinished, because assuming "nothing left" would silence a real stall.
+pub fn plan_has_unfinished_items(plan: &str) -> bool {
+    if plan.trim().is_empty() {
+        return false;
+    }
+    let mut saw_checkbox = false;
+    for line in plan.lines() {
+        let Some(checked) = checklist_state(line) else {
+            continue;
+        };
+        saw_checkbox = true;
+        if !checked {
+            return true;
+        }
+    }
+    !saw_checkbox
+}
+
+/// The state of the first markdown checkbox on a line, if it has one. Any bullet
+/// marker is accepted, so mixed `-`, `*`, `+` and numbered lists all parse.
+fn checklist_state(line: &str) -> Option<bool> {
+    let open = line.find('[')?;
+    let mut rest = line[open + 1..].chars();
+    let mark = rest.next()?;
+    if rest.next()? != ']' {
+        return None;
+    }
+    match mark {
+        ' ' => Some(false),
+        'x' | 'X' => Some(true),
+        _ => None,
+    }
 }
 
 /// Zero-latency stall hook: called straight from the turn-finalisation site.
@@ -110,12 +170,26 @@ pub(crate) async fn maybe_detect_stalled_turn(
     session_arc: Arc<AMutex<ChatSession>>,
     tool_calls_count: usize,
     turn_index: u64,
+    nudged_by_silent_tail: bool,
 ) {
-    let result =
-        detect_and_record_stalled_turn(app, &session_arc, tool_calls_count, turn_index).await;
+    let result = detect_and_record_stalled_turn(
+        app,
+        &session_arc,
+        tool_calls_count,
+        turn_index,
+        nudged_by_silent_tail,
+    )
+    .await;
     if let Err(error) = result {
         tracing::warn!("stalled_turn: hook failed (ignored): {error}");
     }
+}
+
+/// Whether the hook has anything to do at all. The engine's own silent-tail
+/// nudge has already told the agent to keep going, so that turn is not Buddy's
+/// business: no fact, no LLM call.
+pub fn stalled_turn_hook_applies(nudged_by_silent_tail: bool, settings_enabled: bool) -> bool {
+    settings_enabled && !nudged_by_silent_tail
 }
 
 async fn detect_and_record_stalled_turn(
@@ -123,6 +197,7 @@ async fn detect_and_record_stalled_turn(
     session_arc: &Arc<AMutex<ChatSession>>,
     tool_calls_count: usize,
     turn_index: u64,
+    nudged_by_silent_tail: bool,
 ) -> Result<(), String> {
     let settings_enabled = {
         let buddy = app.buddy.buddy.lock().await;
@@ -131,7 +206,7 @@ async fn detect_and_record_stalled_turn(
             .map(|svc| svc.settings.stalled_turn_intervention)
             .unwrap_or(false)
     };
-    if !settings_enabled {
+    if !stalled_turn_hook_applies(nudged_by_silent_tail, settings_enabled) {
         return Ok(());
     }
 
@@ -170,10 +245,7 @@ async fn detect_and_record_stalled_turn(
 }
 
 fn last_assistant_text(session: &ChatSession) -> String {
-    session
-        .messages
-        .last()
-        .filter(|message| message.role == "assistant")
+    last_assistant_message(session)
         .map(|message| message.content.content_text_only())
         .unwrap_or_default()
 }
@@ -237,6 +309,19 @@ async fn reserve_stalled_turn_slot(
     true
 }
 
+/// Hand the reserved slot back when the intervention never reached the chat, so
+/// a failed LLM call does not burn this chat's cooldown.
+async fn release_stalled_turn_slot(chat_id: &str, at: DateTime<Utc>) {
+    let history = stalled_turn_history();
+    let mut guard = history.write().await;
+    let Some(entries) = guard.get_mut(chat_id) else {
+        return;
+    };
+    if entries.last() == Some(&at) {
+        entries.pop();
+    }
+}
+
 pub fn intervention_enabled(settings: &BuddySettings) -> bool {
     settings.stalled_turn_intervention
 }
@@ -251,6 +336,48 @@ pub fn user_spoke_after_last_assistant(messages: &[ChatMessage]) -> bool {
     messages[last_assistant + 1..]
         .iter()
         .any(|message| message.role == "user")
+}
+
+/// `true` when the chat has not produced a tool call since the last stalled-turn
+/// nudge: the agent read the nudge and did nothing, so a second one is noise.
+pub fn no_progress_since_last_nudge(messages: &[ChatMessage]) -> bool {
+    let Some(nudge_index) = messages.iter().rposition(is_stalled_turn_nudge) else {
+        return false;
+    };
+    !messages[nudge_index + 1..].iter().any(|message| {
+        message.role == "assistant"
+            && message
+                .tool_calls
+                .as_ref()
+                .is_some_and(|calls| !calls.is_empty())
+    })
+}
+
+fn is_stalled_turn_nudge(message: &ChatMessage) -> bool {
+    message
+        .extra
+        .get("event")
+        .and_then(|event| event.get("source"))
+        .and_then(|source| source.as_str())
+        == Some(STALLED_TURN_SOURCE)
+}
+
+/// Whether the agent already closed its task in the trailing turn window. The
+/// finishing call is never the very last message (the turn stops on it), so the
+/// whole window since the last user message is inspected.
+pub fn agent_already_finished(messages: &[ChatMessage]) -> bool {
+    messages
+        .iter()
+        .rev()
+        .take_while(|message| message.role != "user")
+        .filter(|message| message.role == "assistant")
+        .any(|message| {
+            message.tool_calls.as_ref().is_some_and(|calls| {
+                calls
+                    .iter()
+                    .any(|call| call.function.name == AGENT_FINISH_TOOL)
+            })
+        })
 }
 
 /// The agent must be genuinely between turns. A draft, a running tool loop or a
@@ -382,21 +509,31 @@ fn collect_prompt_context(
 }
 
 /// Card title and target files are what make the nudge about *this* task rather
-/// than about tidiness in general. A board that cannot be read is not fatal.
-async fn attach_card_context(app: &AppState, prompt: &mut StalledTurnPrompt) {
+/// than about tidiness in general. Returns the card's column when the board was
+/// readable. A board that cannot be read is not fatal.
+async fn attach_card_context(app: &AppState, prompt: &mut StalledTurnPrompt) -> Option<String> {
     let (Some(task_id), Some(card_id)) = (prompt.task_id.clone(), prompt.card_id.clone()) else {
-        return;
+        return None;
     };
     match storage::load_board(app.gcx.clone(), &task_id).await {
-        Ok(board) => {
-            if let Some(card) = board.get_card(&card_id) {
-                prompt.card_title = Some(card.title.clone());
-                prompt.card_target_files = card.target_files.clone();
-            }
-        }
+        Ok(board) => board.get_card(&card_id).map(|card| {
+            prompt.card_title = Some(card.title.clone());
+            prompt.card_target_files = card.target_files.clone();
+            card.column.clone()
+        }),
         Err(error) => {
-            tracing::warn!(%task_id, %error, "stalled_turn: could not read the task board")
+            tracing::warn!(%task_id, %error, "stalled_turn: could not read the task board");
+            None
         }
+    }
+}
+
+/// Buddy only nags while the card is actually being worked on. An unreadable
+/// board (`None`) fails open: the nudge is still worth sending.
+pub fn card_work_is_active(column: Option<&str>) -> bool {
+    match column {
+        Some(column) => column == CARD_DOING_COLUMN,
+        None => true,
     }
 }
 
@@ -509,34 +646,66 @@ async fn run_stalled_turn_intervention(
             tracing::info!(chat_id = %signal.chat_id, "stalled_turn: user already spoke, staying quiet");
             return Ok(());
         }
+        if agent_already_finished(&session.messages) {
+            tracing::info!(chat_id = %signal.chat_id, "stalled_turn: agent already finished, staying quiet");
+            return Ok(());
+        }
+        if no_progress_since_last_nudge(&session.messages) {
+            tracing::info!(chat_id = %signal.chat_id, "stalled_turn: no progress since the last nudge, staying quiet");
+            return Ok(());
+        }
         collect_prompt_context(&session, signal, snippet)
     };
-    attach_card_context(&app, &mut prompt).await;
+    let card_column = attach_card_context(&app, &mut prompt).await;
+    if !card_work_is_active(card_column.as_deref()) {
+        tracing::info!(
+            chat_id = %signal.chat_id,
+            column = card_column.as_deref().unwrap_or_default(),
+            "stalled_turn: card is not in the doing column, staying quiet"
+        );
+        return Ok(());
+    }
 
     let budget = StalledTurnBudget::from_settings(&settings);
-    if !reserve_stalled_turn_slot(&signal.chat_id, Utc::now(), budget).await {
+    let reserved_at = Utc::now();
+    if !reserve_stalled_turn_slot(&signal.chat_id, reserved_at, budget).await {
         tracing::info!(chat_id = %signal.chat_id, "stalled_turn: intervention rate limited");
         return Ok(());
     }
 
-    let reply_text = ask_buddy_model(&app, &prompt).await?;
+    let reply_text = match ask_buddy_model(&app, &prompt).await {
+        Ok(reply_text) => reply_text,
+        Err(error) => {
+            release_stalled_turn_slot(&signal.chat_id, reserved_at).await;
+            return Err(error);
+        }
+    };
     let Some(delivery) = intervention_delivery(&signal.chat_id, turn_index, &reply_text) else {
+        release_stalled_turn_slot(&signal.chat_id, reserved_at).await;
         tracing::info!(chat_id = %signal.chat_id, "stalled_turn: buddy replied with nothing usable");
         return Ok(());
     };
 
-    {
+    let chat_moved_on = {
         let session = session_arc.lock().await;
-        if !agent_ready_for_nudge(&session) || user_spoke_after_last_assistant(&session.messages) {
-            tracing::info!(
-                chat_id = %signal.chat_id,
-                "stalled_turn: chat moved on while buddy was thinking, dropping the reply"
-            );
-            return Ok(());
-        }
+        !agent_ready_for_nudge(&session) || user_spoke_after_last_assistant(&session.messages)
+    };
+    if chat_moved_on {
+        release_stalled_turn_slot(&signal.chat_id, reserved_at).await;
+        tracing::info!(
+            chat_id = %signal.chat_id,
+            "stalled_turn: chat moved on while buddy was thinking, dropping the reply"
+        );
+        return Ok(());
     }
 
-    let outcome = deliver_to_chat(app, &signal.chat_id, delivery).await?;
+    let outcome = match deliver_to_chat(app, &signal.chat_id, delivery).await {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            release_stalled_turn_slot(&signal.chat_id, reserved_at).await;
+            return Err(error);
+        }
+    };
     tracing::info!(chat_id = %signal.chat_id, ?outcome, "stalled_turn: buddy reply delivered");
     Ok(())
 }
@@ -1008,5 +1177,193 @@ mod tests {
         assert_eq!(prompt.task_id.as_deref(), Some("task-1"));
         assert_eq!(prompt.card_id.as_deref(), Some("S-3"));
         assert_eq!(prompt.card_title, None, "title comes from the board, not the thread");
+    }
+
+    fn assistant_with_tool_call(name: &str) -> ChatMessage {
+        ChatMessage {
+            role: "assistant".to_string(),
+            content: ChatContent::SimpleText(String::new()),
+            tool_calls: Some(vec![crate::call_validation::ChatToolCall {
+                id: "call-1".to_string(),
+                function: crate::call_validation::ChatToolFunction {
+                    name: name.to_string(),
+                    arguments: "{}".to_string(),
+                },
+                tool_type: "function".to_string(),
+                index: None,
+                extra_content: None,
+                started_at_ms: None,
+                completed_at_ms: None,
+            }]),
+            ..Default::default()
+        }
+    }
+
+    fn stalled_nudge(text: &str) -> ChatMessage {
+        event(
+            EventSubkind::SystemNotice,
+            STALLED_TURN_SOURCE,
+            json!({"kind": "stalled_turn_nudge"}),
+            text,
+        )
+    }
+
+    #[test]
+    fn plan_without_checkboxes_is_treated_as_unfinished() {
+        assert!(plan_has_unfinished_items("1. Implement\n2. Test"));
+        assert!(plan_has_unfinished_items("- implement the thing"));
+    }
+
+    #[test]
+    fn empty_plan_has_nothing_pending() {
+        assert!(!plan_has_unfinished_items(""));
+        assert!(!plan_has_unfinished_items("   \n  "));
+    }
+
+    #[test]
+    fn fully_checked_plan_has_nothing_pending() {
+        assert!(!plan_has_unfinished_items(
+            "- [x] wire the hook\n- [X] write tests"
+        ));
+    }
+
+    #[test]
+    fn partly_checked_plan_is_unfinished() {
+        assert!(plan_has_unfinished_items(
+            "- [x] wire the hook\n- [ ] write tests"
+        ));
+    }
+
+    #[test]
+    fn mixed_bullet_markers_all_count_as_checkboxes() {
+        assert!(!plan_has_unfinished_items(
+            "* [x] one\n+ [x] two\n1. [x] three"
+        ));
+        assert!(plan_has_unfinished_items(
+            "* [x] one\n+ [ ] two\n1. [x] three"
+        ));
+    }
+
+    #[test]
+    fn no_progress_is_false_without_a_previous_nudge() {
+        let messages = vec![
+            visible("user", "go"),
+            visible("assistant", "I think we are done."),
+        ];
+        assert!(!no_progress_since_last_nudge(&messages));
+    }
+
+    #[test]
+    fn tool_call_after_the_nudge_is_progress() {
+        let messages = vec![
+            stalled_nudge("keep going"),
+            assistant_with_tool_call("update_textdoc"),
+        ];
+        assert!(!no_progress_since_last_nudge(&messages));
+    }
+
+    #[test]
+    fn plain_answer_after_the_nudge_is_no_progress() {
+        let messages = vec![
+            stalled_nudge("keep going"),
+            visible("assistant", "I think we are done."),
+        ];
+        assert!(no_progress_since_last_nudge(&messages));
+    }
+
+    #[test]
+    fn user_message_after_the_nudge_is_no_progress() {
+        let messages = vec![
+            stalled_nudge("keep going"),
+            visible("user", "actually, stop"),
+        ];
+        assert!(no_progress_since_last_nudge(&messages));
+    }
+
+    #[test]
+    fn tool_call_before_the_nudge_does_not_count_as_progress() {
+        let messages = vec![
+            assistant_with_tool_call("search_pattern"),
+            stalled_nudge("keep going"),
+            visible("assistant", "done"),
+        ];
+        assert!(no_progress_since_last_nudge(&messages));
+    }
+
+    #[test]
+    fn trailing_event_message_does_not_hide_the_assistant_reply() {
+        let mut session = session_with_goal();
+        session.messages.push(visible("assistant", "готово"));
+        session.messages.push(event(
+            EventSubkind::ProcessCompleted,
+            "process",
+            json!({}),
+            "done",
+        ));
+
+        let ctx = collect_turn_context(&session, 0);
+        assert!(ctx.has_content);
+        assert_eq!(last_assistant_text(&session), "готово");
+        assert!(matches!(
+            classify_stalled_turn(&ctx),
+            StalledTurnVerdict::Stalled(_)
+        ));
+    }
+
+    #[test]
+    fn finishing_tool_call_in_the_turn_means_the_agent_is_done() {
+        let messages = vec![
+            visible("user", "finish the card"),
+            assistant_with_tool_call(AGENT_FINISH_TOOL),
+            visible("assistant", "All done."),
+        ];
+        assert!(agent_already_finished(&messages));
+    }
+
+    #[test]
+    fn ordinary_tool_calls_do_not_mean_the_agent_is_done() {
+        let messages = vec![
+            visible("user", "keep going"),
+            assistant_with_tool_call("update_textdoc"),
+            visible("assistant", "Still working."),
+        ];
+        assert!(!agent_already_finished(&messages));
+        assert!(!agent_already_finished(&[]));
+    }
+
+    #[test]
+    fn only_a_doing_card_keeps_the_intervention_alive() {
+        assert!(card_work_is_active(Some(CARD_DOING_COLUMN)));
+        assert!(!card_work_is_active(Some("done")));
+        assert!(!card_work_is_active(Some("failed")));
+        assert!(
+            card_work_is_active(None),
+            "an unreadable board must not silence the nudge"
+        );
+    }
+
+    #[test]
+    fn silent_tail_nudge_leaves_nothing_for_the_hook_to_do() {
+        assert!(!stalled_turn_hook_applies(true, true));
+        assert!(stalled_turn_hook_applies(false, true));
+        assert!(!stalled_turn_hook_applies(false, false));
+    }
+
+    #[tokio::test]
+    async fn released_slot_does_not_block_the_next_nudge() {
+        let chat_id = format!("chat-release-{}", Uuid::new_v4());
+        let at = Utc::now();
+
+        assert!(reserve_stalled_turn_slot(&chat_id, at, budget()).await);
+        assert!(
+            !reserve_stalled_turn_slot(&chat_id, at, budget()).await,
+            "the reserved slot must hold the cooldown"
+        );
+
+        release_stalled_turn_slot(&chat_id, at).await;
+        assert!(
+            reserve_stalled_turn_slot(&chat_id, at + Duration::seconds(1), budget()).await,
+            "a failed intervention must not burn the slot"
+        );
     }
 }

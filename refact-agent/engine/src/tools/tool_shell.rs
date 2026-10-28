@@ -10,8 +10,8 @@ use serde_json::{json, Value};
 use tokio::sync::{mpsc, Mutex as AMutex};
 
 use crate::at_commands::at_commands::AtCommandsContext;
-use crate::at_commands::at_file::return_one_candidate_or_a_good_error;
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
+use crate::chat::ctx::ChatCtx;
 use crate::exec::types::normalize_workspace_path;
 use crate::exec::command_policy::{
     build_exec_request_for_ctx, chat_mode_for_exec_for_sessions, escalation_from_args,
@@ -24,17 +24,15 @@ use crate::exec::{
 };
 use crate::files_correction::canonical_path;
 use crate::files_correction::canonicalize_normalized_path;
-use crate::files_correction::check_if_its_inside_a_workspace_or_config;
-use crate::files_correction::correct_to_nearest_dir_path;
+use crate::files_correction::check_if_its_inside_a_workspace_or_config_for_ctx;
 use crate::files_correction::get_active_project_path;
-use crate::files_correction::get_unscoped_project_dirs;
 use crate::files_correction::preprocess_path_for_normalization;
 use crate::global_context::GlobalContext;
 use crate::integrations::integr_abstract::IntegrationConfirmation;
 use crate::postprocessing::pp_command_output::{
     output_mini_postprocessing, parse_output_filter_args, OutputFilter,
 };
-use crate::privacy::{check_file_privacy, load_privacy_if_needed, FilePrivacyLevel};
+use crate::privacy::{check_file_privacy, load_privacy_if_needed_for_policy, FilePrivacyLevel};
 use crate::tools::file_edit::auxiliary::{active_execution_scope, scoped_path_warnings};
 use crate::tools::shell_gate;
 use crate::tools::tools_description::{
@@ -143,7 +141,7 @@ impl Tool for ToolShell {
             .output_limit_lines
             .saturating_mul(200);
         let parsed =
-            parse_args_with_filter(gcx.clone(), args, &default_filter, execution_scope.as_ref())
+            parse_args_with_filter(&tool, &chat, args, &default_filter, execution_scope.as_ref())
                 .await?;
         let timeout = parsed
             .timeout
@@ -162,7 +160,7 @@ impl Tool for ToolShell {
             None => get_active_project_path(gcx.clone()).await,
         };
         let workspace =
-            shell_owner_workspace(gcx.clone(), execution_scope.as_ref(), cwd.as_ref()).await;
+            shell_owner_workspace(&tool, gcx.clone(), execution_scope.as_ref(), cwd.as_ref()).await;
         let short_description =
             sanitize_short_description(parsed.description.as_deref().unwrap_or_default());
         let owner = ExecOwnerMeta {
@@ -407,11 +405,15 @@ impl Tool for ToolShell {
         ccx: Arc<AMutex<AtCommandsContext>>,
         args: &HashMap<String, Value>,
     ) -> Result<String, String> {
-        let (gcx, execution_scope) = {
+        let (tool, chat, execution_scope) = {
             let cgcx = ccx.lock().await;
-            (cgcx.app.gcx.clone(), cgcx.execution_scope.clone())
+            (
+                cgcx.tool.clone(),
+                cgcx.app.chat_ctx(),
+                cgcx.execution_scope.clone(),
+            )
         };
-        let (command, _) = parse_args(gcx, args, execution_scope.as_ref()).await?;
+        let (command, _) = parse_args(&tool, &chat, args, execution_scope.as_ref()).await?;
         Ok(command)
     }
 
@@ -823,17 +825,19 @@ async fn attach_exec_path_references(
 }
 
 async fn parse_args(
-    gcx: Arc<GlobalContext>,
+    tool: &ToolCtx,
+    chat: &ChatCtx,
     args: &HashMap<String, Value>,
     execution_scope: Option<&ExecutionScope>,
 ) -> Result<(String, Option<PathBuf>), String> {
     let parsed =
-        parse_args_with_filter(gcx, args, &OutputFilter::default(), execution_scope).await?;
+        parse_args_with_filter(tool, chat, args, &OutputFilter::default(), execution_scope).await?;
     Ok((parsed.command, parsed.workdir))
 }
 
 async fn parse_args_with_filter(
-    gcx: Arc<GlobalContext>,
+    tool: &ToolCtx,
+    chat: &ChatCtx,
     args: &HashMap<String, Value>,
     config_filter: &OutputFilter,
     execution_scope: Option<&ExecutionScope>,
@@ -856,7 +860,7 @@ async fn parse_args_with_filter(
         None => None,
     };
     let (workdir, scope_warnings) =
-        resolve_shell_workdir(gcx.clone(), raw_workdir, execution_scope).await?;
+        resolve_shell_workdir(tool, chat, raw_workdir, execution_scope).await?;
 
     let has_filter_override =
         args.get("output_filter").is_some() || args.get("output_limit").is_some();
@@ -961,6 +965,7 @@ fn validate_shell_timeout_secs(secs: u64) -> Result<u64, String> {
 }
 
 async fn shell_owner_workspace(
+    tool: &ToolCtx,
     gcx: Arc<GlobalContext>,
     execution_scope: Option<&ExecutionScope>,
     cwd: Option<&PathBuf>,
@@ -969,7 +974,7 @@ async fn shell_owner_workspace(
         return Some(normalize_workspace_path(scope.effective_root()));
     }
     if let Some(cwd) = cwd {
-        if let Some(workspace) = workspace_containing_path(gcx.clone(), cwd).await {
+        if let Some(workspace) = workspace_containing_path(tool, cwd).await {
             return Some(workspace);
         }
         return Some(normalize_workspace_path(cwd));
@@ -979,12 +984,10 @@ async fn shell_owner_workspace(
         .map(|path| normalize_workspace_path(&path))
 }
 
-async fn workspace_containing_path(
-    gcx: Arc<GlobalContext>,
-    path: &std::path::Path,
-) -> Option<PathBuf> {
+async fn workspace_containing_path(tool: &ToolCtx, path: &std::path::Path) -> Option<PathBuf> {
     let path = normalize_workspace_path(path);
-    get_unscoped_project_dirs(gcx)
+    tool.files
+        .project_dirs()
         .await
         .into_iter()
         .map(|workspace| normalize_workspace_path(&workspace))
@@ -993,7 +996,8 @@ async fn workspace_containing_path(
 }
 
 async fn resolve_shell_workdir(
-    gcx: Arc<GlobalContext>,
+    tool: &ToolCtx,
+    chat: &ChatCtx,
     raw_path: Option<&str>,
     execution_scope: Option<&ExecutionScope>,
 ) -> Result<(Option<PathBuf>, Vec<String>), String> {
@@ -1005,7 +1009,15 @@ async fn resolve_shell_workdir(
                 e
             )
         })?;
-        let privacy_settings = load_privacy_if_needed(gcx.clone()).await;
+        let privacy_settings = load_privacy_if_needed_for_policy(
+            &tool.privacy_policy_load,
+            &tool.workspace.privacy_settings,
+            tool.paths.config_dir.as_path(),
+            tool.runtime.cmdline.privacy_yaml.as_str(),
+            tool.files.project_dirs().await,
+            &chat.tool_catalog_generations,
+        )
+        .await;
         if let Err(e) = check_file_privacy(
             privacy_settings,
             &scoped.path,
@@ -1034,20 +1046,18 @@ async fn resolve_shell_workdir(
 
     let workdir = if path.is_absolute() {
         let path = canonicalize_normalized_path(path);
-        check_if_its_inside_a_workspace_or_config(gcx.clone(), &path).await?;
+        check_if_its_inside_a_workspace_or_config_for_ctx(chat, &path).await?;
         path
     } else {
-        let project_dirs = get_unscoped_project_dirs(gcx.clone()).await;
-        let candidates = correct_to_nearest_dir_path(gcx.clone(), &path_str, false, 3).await;
+        let project_dirs = tool.files.project_dirs().await;
+        let candidates = tool
+            .files
+            .correct_to_nearest_dir_path(&path_str, false, 3)
+            .await;
         canonical_path(
-            return_one_candidate_or_a_good_error(
-                gcx.clone(),
-                &path_str,
-                &candidates,
-                &project_dirs,
-                true,
-            )
-            .await?,
+            tool.files
+                .return_one_candidate_or_a_good_error(&path_str, &candidates, &project_dirs, true)
+                .await?,
         )
     };
     if !workdir.exists() {
@@ -1076,7 +1086,13 @@ mod tests {
             ("description".to_string(), json!("test process")),
         ]);
         assert_eq!(
-            parse_args_with_filter(gcx.clone(), &input, &OutputFilter::default(), None)
+            parse_args_with_filter(
+                &gcx.tool_ctx(gcx.clone()),
+                &gcx.chat_ctx(gcx.clone()),
+                &input,
+                &OutputFilter::default(),
+                None,
+            )
                 .await
                 .unwrap()
                 .push,
@@ -1088,8 +1104,14 @@ mod tests {
         ] {
             input.insert("push".into(), json!(value));
             assert_eq!(
-                parse_args_with_filter(gcx.clone(), &input, &OutputFilter::default(), None)
-                    .await
+                parse_args_with_filter(
+                    &gcx.tool_ctx(gcx.clone()),
+                    &gcx.chat_ctx(gcx.clone()),
+                    &input,
+                    &OutputFilter::default(),
+                    None,
+                )
+                .await
                     .unwrap()
                     .push,
                 mode
@@ -1097,7 +1119,13 @@ mod tests {
         }
         input.insert("push".into(), json!(123));
         assert!(
-            parse_args_with_filter(gcx.clone(), &input, &OutputFilter::default(), None)
+            parse_args_with_filter(
+                &gcx.tool_ctx(gcx.clone()),
+                &gcx.chat_ctx(gcx.clone()),
+                &input,
+                &OutputFilter::default(),
+                None,
+            )
                 .await
                 .is_err()
         );

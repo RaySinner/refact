@@ -23,16 +23,17 @@ use crate::exec::{
 };
 use crate::exec::types::{current_timestamp_ms, normalize_workspace_path};
 use crate::files_correction::{
-    canonical_path, canonicalize_normalized_path, check_if_its_inside_a_workspace_or_config,
-    correct_to_nearest_dir_path, get_active_project_path, get_unscoped_project_dirs,
-    preprocess_path_for_normalization,
+    canonical_path, canonicalize_normalized_path, check_if_its_inside_a_workspace_or_config_for_ctx,
+    get_active_project_path, preprocess_path_for_normalization,
 };
 use crate::global_context::GlobalContext;
 use crate::integrations::integr_abstract::IntegrationConfirmation;
 use crate::postprocessing::pp_command_output::{
     output_mini_postprocessing, parse_output_filter_args, OutputFilter,
 };
-use crate::privacy::{check_file_privacy, load_privacy_if_needed, FilePrivacyLevel};
+use crate::chat::ctx::ChatCtx;
+use crate::privacy::{check_file_privacy, load_privacy_if_needed_for_policy, FilePrivacyLevel};
+use crate::tools::ctx::ToolCtx;
 use crate::tools::file_edit::auxiliary::{active_execution_scope, scoped_path_warnings};
 use crate::tools::shell_gate;
 use crate::tools::tools_description::{
@@ -205,7 +206,8 @@ impl Tool for ToolProcessStart {
             observe_reason.guarded_zones,
             observe_reason.derived_labels
         );
-        let parsed = parse_start_args(gcx.clone(), args, execution_scope.as_ref()).await?;
+        let parsed =
+            parse_start_args(&tool, &chat, gcx.clone(), args, execution_scope.as_ref()).await?;
         let mut error_log = Vec::new();
         let env_variables =
             crate::integrations::setting_up_integrations::get_vars_for_replacements(
@@ -214,7 +216,7 @@ impl Tool for ToolProcessStart {
             )
             .await;
         let workspace = match parsed.workdir.clone() {
-            Some(workdir) => workspace_containing_path(gcx.clone(), &workdir)
+            Some(workdir) => workspace_containing_path(&tool, &workdir)
                 .await
                 .or_else(|| Some(normalize_workspace_path(&workdir))),
             None => process_workspace(gcx.clone(), execution_scope.as_ref()).await,
@@ -373,11 +375,16 @@ impl Tool for ToolProcessStart {
         ccx: Arc<AMutex<AtCommandsContext>>,
         args: &HashMap<String, Value>,
     ) -> Result<String, String> {
-        let (gcx, execution_scope) = {
+        let (gcx, tool, chat, execution_scope) = {
             let ccx_lock = ccx.lock().await;
-            (ccx_lock.app.gcx.clone(), ccx_lock.execution_scope.clone())
+            (
+                ccx_lock.app.gcx.clone(),
+                ccx_lock.tool.clone(),
+                ccx_lock.app.chat_ctx(),
+                ccx_lock.execution_scope.clone(),
+            )
         };
-        Ok(parse_start_args(gcx, args, execution_scope.as_ref())
+        Ok(parse_start_args(&tool, &chat, gcx, args, execution_scope.as_ref())
             .await?
             .command)
     }
@@ -1324,6 +1331,8 @@ fn parse_start_mode(args: &HashMap<String, Value>) -> Result<ExecMode, String> {
 }
 
 async fn parse_start_args(
+    tool: &ToolCtx,
+    chat: &ChatCtx,
     gcx: Arc<GlobalContext>,
     args: &HashMap<String, Value>,
     execution_scope: Option<&ExecutionScope>,
@@ -1336,7 +1345,7 @@ async fn parse_start_args(
     })?;
     let raw_workdir = parse_optional_string(args, "workdir")?;
     let (workdir, scope_warnings) =
-        resolve_process_workdir(gcx, raw_workdir.as_deref(), execution_scope).await?;
+        resolve_process_workdir(tool, chat, gcx, raw_workdir.as_deref(), execution_scope).await?;
     let startup_wait = parse_optional_u64(args, "startup_wait_ms")?.map(Duration::from_millis);
     let wait_port = parse_optional_u16(args, "startup_wait_port")?;
     let wait_keyword = parse_optional_string(args, "startup_wait_keyword")?;
@@ -1368,6 +1377,8 @@ async fn parse_start_args(
 }
 
 async fn resolve_process_workdir(
+    tool: &ToolCtx,
+    chat: &ChatCtx,
     gcx: Arc<GlobalContext>,
     raw_path: Option<&str>,
     execution_scope: Option<&ExecutionScope>,
@@ -1380,7 +1391,15 @@ async fn resolve_process_workdir(
                 e
             )
         })?;
-        let privacy_settings = load_privacy_if_needed(gcx.clone()).await;
+        let privacy_settings = load_privacy_if_needed_for_policy(
+            &tool.privacy_policy_load,
+            &tool.workspace.privacy_settings,
+            tool.paths.config_dir.as_path(),
+            tool.runtime.cmdline.privacy_yaml.as_str(),
+            tool.files.project_dirs().await,
+            &chat.tool_catalog_generations,
+        )
+        .await;
         if let Err(e) = check_file_privacy(
             privacy_settings,
             &scoped.path,
@@ -1408,24 +1427,22 @@ async fn resolve_process_workdir(
     let path = PathBuf::from(&path_str);
     let workdir = if path.is_absolute() {
         let workdir = canonicalize_normalized_path(path);
-        if let Some(workspace) = workspace_containing_path(gcx.clone(), &workdir).await {
+        if let Some(workspace) = workspace_containing_path(tool, &workdir).await {
             workspace
         } else {
-            check_if_its_inside_a_workspace_or_config(gcx.clone(), &workdir).await?;
+            check_if_its_inside_a_workspace_or_config_for_ctx(chat, &workdir).await?;
             workdir
         }
     } else {
-        let project_dirs = get_unscoped_project_dirs(gcx.clone()).await;
-        let candidates = correct_to_nearest_dir_path(gcx.clone(), &path_str, false, 3).await;
+        let project_dirs = tool.files.project_dirs().await;
+        let candidates = tool
+            .files
+            .correct_to_nearest_dir_path(&path_str, false, 3)
+            .await;
         canonical_path(
-            crate::at_commands::at_file::return_one_candidate_or_a_good_error(
-                gcx,
-                &path_str,
-                &candidates,
-                &project_dirs,
-                true,
-            )
-            .await?,
+            tool.files
+                .return_one_candidate_or_a_good_error(&path_str, &candidates, &project_dirs, true)
+                .await?,
         )
     };
     if !workdir.exists() {
@@ -1435,9 +1452,10 @@ async fn resolve_process_workdir(
     }
 }
 
-async fn workspace_containing_path(gcx: Arc<GlobalContext>, path: &Path) -> Option<PathBuf> {
+async fn workspace_containing_path(tool: &ToolCtx, path: &Path) -> Option<PathBuf> {
     let path = normalize_workspace_path(path);
-    get_unscoped_project_dirs(gcx)
+    tool.files
+        .project_dirs()
         .await
         .into_iter()
         .map(|workspace| normalize_workspace_path(&workspace))

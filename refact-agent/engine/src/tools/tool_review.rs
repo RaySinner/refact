@@ -12,6 +12,7 @@ use crate::at_commands::at_commands::AtCommandsContext;
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
 use crate::global_context::GlobalContext;
 use crate::postprocessing::pp_command_output::OutputFilter;
+use crate::tools::ctx::ToolCtx;
 use crate::tools::review_agents::config::{
     load_review_config, slot_model_id, stage_subchat_spec, ReviewConfig,
 };
@@ -584,6 +585,7 @@ fn review_refs(report: &ReviewReport, roots: &[PathBuf]) -> (Value, bool) {
 #[allow(clippy::too_many_arguments)]
 async fn run_review(
     gcx: Arc<GlobalContext>,
+    tool: &ToolCtx,
     ctx: StageCtx,
     cfg: ReviewConfig,
     args: ReviewArgs,
@@ -665,7 +667,8 @@ async fn run_review(
     };
 
     let scratch = scratch_dir(
-        crate::files_correction::get_project_dirs(gcx.clone())
+        tool.files
+            .project_dirs()
             .await
             .first()
             .map(PathBuf::as_path),
@@ -857,9 +860,10 @@ impl Tool for ToolCodeReview {
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
         let args = parse_args(args)?;
-        let (gcx, ctx) = {
+        let (gcx, tool, ctx) = {
             let ccx_lock = ccx.lock().await;
             let gcx = ccx_lock.app.gcx.clone();
+            let tool = ccx_lock.tool.clone();
             let ctx = StageCtx {
                 review_id: format!("rv-{}", &uuid::Uuid::new_v4().simple().to_string()[..8]),
                 tool_call_id: tool_call_id.clone(),
@@ -872,13 +876,13 @@ impl Tool for ToolCodeReview {
                 root_chat_id: ccx_lock.root_chat_id.clone(),
                 activity: None,
             };
-            (gcx, ctx)
+            (gcx, tool, ctx)
         };
 
         let cfg = load_review_config(gcx.clone()).await?;
         let guardrails = cfg.guardrails_prompt.clone();
         let mut metering = serde_json::Map::new();
-        let report = run_review(gcx.clone(), ctx, cfg, args, &mut metering).await?;
+        let report = run_review(gcx.clone(), &tool, ctx, cfg, args, &mut metering).await?;
         let markdown = render_review_markdown(&report);
 
         metering.insert(
@@ -886,10 +890,7 @@ impl Tool for ToolCodeReview {
             serde_json::to_value(&report)
                 .map_err(|error| format!("failed to serialize review report: {error}"))?,
         );
-        let (refs, truncated) = review_refs(
-            &report,
-            &crate::files_correction::get_project_dirs(gcx.clone()).await,
-        );
+        let (refs, truncated) = review_refs(&report, &tool.files.project_dirs().await);
         metering.insert("review_refs".to_string(), refs);
         metering.insert("review_refs_truncated".to_string(), Value::Bool(truncated));
 

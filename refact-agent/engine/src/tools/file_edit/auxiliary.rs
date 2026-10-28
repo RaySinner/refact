@@ -6,10 +6,11 @@ use crate::files_correction::{
     correct_to_nearest_dir_path, get_unscoped_project_dirs, preprocess_path_for_normalization,
     registered_worktree_path_mappings, resolve_codegraph_queue_path,
 };
-use crate::files_in_workspace::{get_file_text_from_memory_or_disk, remove_memory_document_for_path};
+use crate::files_in_workspace::get_file_text_from_memory_or_disk;
 use crate::global_context::GlobalContext;
 use crate::privacy::{check_file_privacy, FilePrivacyLevel, PrivacySettings};
 use crate::tasks::types::ScopeGuardMode;
+use crate::tools::ctx::ToolCtx;
 use crate::worktrees::scope::ExecutionScope;
 use regex::{Match, Regex};
 use serde_json::Value;
@@ -410,12 +411,19 @@ pub async fn fast_enqueue_for_edit(
     gcx: Arc<GlobalContext>,
     docs: &[PathBuf],
 ) -> Result<(), String> {
+    fast_enqueue_for_edit_for_ctx(&gcx.tool_ctx(gcx.clone()), docs).await
+}
+
+pub async fn fast_enqueue_for_edit_for_ctx(
+    ctx: &ToolCtx,
+    docs: &[PathBuf],
+) -> Result<(), String> {
     if docs.is_empty() {
         return Ok(());
     }
-    let codegraph_mb = gcx.codegraph.lock().await.clone();
+    let codegraph_mb = ctx.codeintel.codegraph.lock().await.clone();
     if let Some(service) = codegraph_mb {
-        let worktree_mappings = registered_worktree_path_mappings(gcx.cache_dir.as_path());
+        let worktree_mappings = registered_worktree_path_mappings(ctx.paths.cache_dir.as_path());
         let paths: Vec<_> = docs
             .iter()
             .map(|doc| resolve_codegraph_queue_path(doc, &worktree_mappings))
@@ -427,6 +435,23 @@ pub async fn fast_enqueue_for_edit(
 
 pub async fn write_file(
     gcx: Arc<GlobalContext>,
+    path: &PathBuf,
+    file_text: &String,
+    dry: bool,
+    expected_preimage: Option<&str>,
+) -> Result<(String, String), String> {
+    write_file_for_ctx(
+        &gcx.tool_ctx(gcx.clone()),
+        path,
+        file_text,
+        dry,
+        expected_preimage,
+    )
+    .await
+}
+
+pub async fn write_file_for_ctx(
+    ctx: &ToolCtx,
     path: &PathBuf,
     file_text: &String,
     dry: bool,
@@ -450,7 +475,7 @@ pub async fn write_file(
     }
 
     let before_text = if path.exists() {
-        get_file_text_from_memory_or_disk(gcx.clone(), path).await?
+        ctx.files.get_file_text_from_memory_or_disk(path).await?
     } else {
         "".to_string()
     };
@@ -471,7 +496,7 @@ pub async fn write_file(
             warn!("{err}");
             err
         })?;
-        remove_memory_document_for_path(gcx.clone(), path).await;
+        ctx.files.remove_memory_document_for_path(path).await;
     }
 
     Ok((before_text, file_text.to_string()))

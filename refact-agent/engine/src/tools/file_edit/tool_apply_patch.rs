@@ -1,13 +1,15 @@
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum, DiffChunk};
-use crate::files_correction::{check_if_its_inside_a_workspace_or_config, get_unscoped_project_dirs};
-use crate::files_in_workspace::{get_file_text_from_memory_or_disk, remove_memory_document_for_path};
+use crate::chat::ctx::ChatCtx;
+use crate::files_correction::check_if_its_inside_a_workspace_or_config_for_ctx;
 use crate::global_context::GlobalContext;
 use crate::integrations::integr_abstract::IntegrationConfirmation;
-use crate::privacy::{check_file_privacy, load_privacy_if_needed, FilePrivacyLevel};
+use crate::privacy::{check_file_privacy, load_privacy_if_needed_for_policy, FilePrivacyLevel};
+use crate::tools::ctx::ToolCtx;
 use crate::tools::file_edit::auxiliary::{
-    check_scope_guard, convert_edit_to_diffchunks, fast_enqueue_for_edit, normalize_line_endings,
-    resolve_path_with_scope, restore_line_endings, write_file, ResolvedToolPath,
+    check_scope_guard, convert_edit_to_diffchunks, fast_enqueue_for_edit_for_ctx,
+    normalize_line_endings, resolve_path_with_scope, restore_line_endings, write_file_for_ctx,
+    ResolvedToolPath,
 };
 use crate::worktrees::scope::ExecutionScope;
 use crate::tools::file_edit::openai_apply_patch::{
@@ -73,13 +75,23 @@ fn absolute_path_inside_workspace(path: &str, project_dirs: &[PathBuf]) -> Optio
 }
 
 async fn resolve_patch_path(
-    gcx: Arc<GlobalContext>,
+    tool: &ToolCtx,
+    chat: &ChatCtx,
+    gcx: &Arc<GlobalContext>,
     rel_path: &str,
     must_exist: bool,
     execution_scope: Option<&ExecutionScope>,
 ) -> Result<ResolvedToolPath, String> {
     let requested_path = rel_path.trim();
-    let privacy_settings = load_privacy_if_needed(gcx.clone()).await;
+    let privacy_settings = load_privacy_if_needed_for_policy(
+        &tool.privacy_policy_load,
+        &tool.workspace.privacy_settings,
+        tool.paths.config_dir.as_path(),
+        tool.runtime.cmdline.privacy_yaml.as_str(),
+        tool.files.project_dirs().await,
+        &chat.tool_catalog_generations,
+    )
+    .await;
     if let Some(resolved) = resolve_path_with_scope(
         Path::new(requested_path),
         privacy_settings.clone(),
@@ -89,7 +101,7 @@ async fn resolve_patch_path(
         return resolved;
     }
 
-    let project_dirs = get_unscoped_project_dirs(gcx.clone()).await;
+    let project_dirs = tool.files.project_dirs().await;
     if project_dirs.is_empty() {
         return Err("No workspace found".to_string());
     }
@@ -154,9 +166,9 @@ async fn resolve_patch_path(
         full_path.clone()
     };
 
-    check_if_its_inside_a_workspace_or_config(gcx.clone(), &canonical).await?;
+    check_if_its_inside_a_workspace_or_config_for_ctx(chat, &canonical).await?;
 
-    let privacy_settings = gcx.privacy_settings.read().unwrap().clone();
+    let privacy_settings = tool.workspace.privacy_settings.read().unwrap().clone();
     if check_file_privacy(
         privacy_settings,
         &canonical,
@@ -188,6 +200,8 @@ pub async fn tool_apply_patch_exec(
     execution_scope: Option<&ExecutionScope>,
     scope_guard_context: Option<&Arc<AMutex<AtCommandsContext>>>,
 ) -> Result<ApplyPatchResult, String> {
+    let tool = gcx.tool_ctx(gcx.clone());
+    let chat = gcx.chat_ctx(gcx.clone());
     let parsed = parse_patch_arg(args)?;
 
     let mut file_results = Vec::new();
@@ -199,7 +213,7 @@ pub async fn tool_apply_patch_exec(
         match op {
             FileOperation::Add { path, contents } => {
                 let resolved_path =
-                    resolve_patch_path(gcx.clone(), &path, false, execution_scope).await?;
+                    resolve_patch_path(&tool, &chat, &gcx, &path, false, execution_scope).await?;
                 warnings.extend(resolved_path.warnings);
                 let full_path = resolved_path.path;
                 if let Some(ccx) = scope_guard_context {
@@ -218,8 +232,8 @@ pub async fn tool_apply_patch_exec(
                 if dry {
                     overlay.insert(full_path.clone(), OverlayState::Present(contents.clone()));
                 } else {
-                    write_file(gcx.clone(), &full_path, &contents, false, None).await?;
-                    fast_enqueue_for_edit(gcx.clone(), &[full_path.clone()]).await?;
+                    write_file_for_ctx(&tool, &full_path, &contents, false, None).await?;
+                    fast_enqueue_for_edit_for_ctx(&tool, &[full_path.clone()]).await?;
                 }
 
                 let chunks =
@@ -236,7 +250,7 @@ pub async fn tool_apply_patch_exec(
 
             FileOperation::Delete { path } => {
                 let resolved_path =
-                    resolve_patch_path(gcx.clone(), &path, true, execution_scope).await?;
+                    resolve_patch_path(&tool, &chat, &gcx, &path, true, execution_scope).await?;
                 warnings.extend(resolved_path.warnings);
                 let full_path = resolved_path.path;
                 if let Some(ccx) = scope_guard_context {
@@ -252,7 +266,7 @@ pub async fn tool_apply_patch_exec(
                         if !full_path.exists() {
                             return Err(format!("File not found: {:?}", full_path));
                         }
-                        get_file_text_from_memory_or_disk(gcx.clone(), &full_path).await?
+                        tool.files.get_file_text_from_memory_or_disk(&full_path).await?
                     }
                 };
 
@@ -263,8 +277,8 @@ pub async fn tool_apply_patch_exec(
                     tokio::fs::remove_file(&full_path)
                         .await
                         .map_err(|e| format!("Failed to delete: {}", e))?;
-                    remove_memory_document_for_path(gcx.clone(), &full_path).await;
-                    fast_enqueue_for_edit(gcx.clone(), &[full_path.clone()]).await?;
+                    tool.files.remove_memory_document_for_path(&full_path).await;
+                    fast_enqueue_for_edit_for_ctx(&tool, &[full_path.clone()]).await?;
                 }
 
                 let chunk = DiffChunk {
@@ -297,7 +311,7 @@ pub async fn tool_apply_patch_exec(
                 chunks,
             } => {
                 let resolved_path =
-                    resolve_patch_path(gcx.clone(), &path, true, execution_scope).await?;
+                    resolve_patch_path(&tool, &chat, &gcx, &path, true, execution_scope).await?;
                 warnings.extend(resolved_path.warnings);
                 let full_path = resolved_path.path;
                 if let Some(ccx) = scope_guard_context {
@@ -313,7 +327,7 @@ pub async fn tool_apply_patch_exec(
                         if !full_path.exists() {
                             return Err(format!("File not found: {:?}", full_path));
                         }
-                        get_file_text_from_memory_or_disk(gcx.clone(), &full_path).await?
+                        tool.files.get_file_text_from_memory_or_disk(&full_path).await?
                     }
                 };
 
@@ -324,7 +338,7 @@ pub async fn tool_apply_patch_exec(
 
                 if let Some(move_path) = move_to {
                     let resolved_dest =
-                        resolve_patch_path(gcx.clone(), &move_path, false, execution_scope).await?;
+                        resolve_patch_path(&tool, &chat, &gcx, &move_path, false, execution_scope).await?;
                     warnings.extend(resolved_dest.warnings);
                     let dest_path = resolved_dest.path;
                     if let Some(ccx) = scope_guard_context {
@@ -347,13 +361,13 @@ pub async fn tool_apply_patch_exec(
                             OverlayState::Present(new_file_content.clone()),
                         );
                     } else {
-                        write_file(gcx.clone(), &dest_path, &new_file_content, false, None).await?;
+                        write_file_for_ctx(&tool, &dest_path, &new_file_content, false, None).await?;
                         undo_history::record_before_edit(&full_path, &file_content);
                         tokio::fs::remove_file(&full_path)
                             .await
                             .map_err(|e| format!("Failed to remove: {}", e))?;
-                        remove_memory_document_for_path(gcx.clone(), &full_path).await;
-                        fast_enqueue_for_edit(gcx.clone(), &[full_path.clone(), dest_path.clone()])
+                        tool.files.remove_memory_document_for_path(&full_path).await;
+                        fast_enqueue_for_edit_for_ctx(&tool, &[full_path.clone(), dest_path.clone()])
                             .await?;
                     }
 
@@ -385,8 +399,8 @@ pub async fn tool_apply_patch_exec(
                             OverlayState::Present(new_file_content.clone()),
                         );
                     } else {
-                        write_file(gcx.clone(), &full_path, &new_file_content, false, None).await?;
-                        fast_enqueue_for_edit(gcx.clone(), &[full_path.clone()]).await?;
+                        write_file_for_ctx(&tool, &full_path, &new_file_content, false, None).await?;
+                        fast_enqueue_for_edit_for_ctx(&tool, &[full_path.clone()]).await?;
                     }
 
                     let diff_chunks = convert_edit_to_diffchunks(

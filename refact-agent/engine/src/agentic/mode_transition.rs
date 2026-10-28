@@ -118,11 +118,12 @@ async fn analyze_reconstruction(
         .user_template
         .as_ref()
         .ok_or("Missing reconstruction prompt")?;
-    let mut params = resolve_subchat_params(gcx.clone(), SUBAGENT_ID).await?;
+    let ctx = gcx.chat_ctx(gcx.clone());
+    let mut params = resolve_subchat_params(&ctx, SUBAGENT_ID).await?;
     if let Some(model) = &request.model_override {
         params.subchat_model = model.clone();
     }
-    let model = resolve_subchat_model(gcx.clone(), &params).await?;
+    let model = resolve_subchat_model(&ctx, &params).await?;
     let spec = ExplicitSubchatSpec {
         params,
         model: model.clone(),

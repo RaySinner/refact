@@ -742,7 +742,7 @@ async fn ask_buddy_model(app: &AppState, prompt: &StalledTurnPrompt) -> Result<S
         subchat_reasoning_effort: None,
         subchat_cache_control: CacheControl::Ephemeral,
     };
-    let model = crate::subchat::resolve_subchat_model(app.gcx.clone(), &params)
+    let model = crate::subchat::resolve_subchat_model(&app.chat_ctx(), &params)
         .await
         .map_err(|error| format!("buddy model: {error}"))?;
 

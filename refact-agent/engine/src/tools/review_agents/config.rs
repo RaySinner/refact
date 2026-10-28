@@ -137,7 +137,9 @@ pub async fn load_review_config(gcx: Arc<GlobalContext>) -> Result<ReviewConfig,
         .clone()
         .filter(|prompt| !prompt.trim().is_empty())
         .ok_or("guardrails prompt not configured for review_agents")?;
-    let base_params = crate::subchat::resolve_subchat_params(gcx, REVIEW_SUBAGENT_ID).await?;
+    let base_params =
+        crate::subchat::resolve_subchat_params(&gcx.chat_ctx(gcx.clone()), REVIEW_SUBAGENT_ID)
+            .await?;
 
     Ok(ReviewConfig {
         settings,

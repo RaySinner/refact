@@ -761,7 +761,7 @@ async fn render_via_subchat(gcx: AppState, request: VoiceRenderRequest) -> Optio
         subchat_reasoning_effort: None,
         subchat_cache_control: crate::llm::params::CacheControl::Ephemeral,
     };
-    let model = match crate::subchat::resolve_subchat_model(gcx.gcx.clone(), &params).await {
+    let model = match crate::subchat::resolve_subchat_model(&gcx.chat_ctx(), &params).await {
         Ok(model) => model,
         Err(e) => {
             debug!("buddy voice: failed to resolve light model: {}", e);

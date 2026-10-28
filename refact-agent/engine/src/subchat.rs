@@ -14,8 +14,9 @@ use crate::call_validation::{
     ChatContent, ChatMeta, ChatToolCall, SamplingParameters, ChatMessage, ChatUsage,
     ReasoningEffort, ChatModelType, SubchatParameters, ContextFile,
 };
-use crate::global_context::{GlobalContext, try_load_caps_quickly_if_not_present};
+use crate::global_context::GlobalContext;
 use crate::scratchpad_abstract::HasTokenizerAndEot;
+use crate::chat::ctx::ChatCtx;
 use crate::chat::prepare::{prepare_chat_passthrough, ChatPrepareOptions};
 use crate::chat::internal_roles::{event, EventSubkind};
 use crate::llm::params::CacheControl;
@@ -777,12 +778,12 @@ fn subagent_destination(model_id: &str) -> Destination {
 }
 
 fn gate_subchat_boundary(
-    gcx: &Arc<GlobalContext>,
+    ctx: &ChatCtx,
     messages: &[ChatMessage],
     model_id: &str,
 ) -> Result<(), String> {
     let records = unique_privacy_records(messages).map_err(|error| error.to_string())?;
-    let policy = gcx.privacy_policy_load.read().unwrap().policy.clone();
+    let policy = ctx.privacy_policy_load.read().unwrap().policy.clone();
     let compiled = policy.compile().map_err(|error| error.to_string())?;
     match refact_privacy::clear(
         AuditedSubchatReport(records),
@@ -796,14 +797,14 @@ fn gate_subchat_boundary(
 }
 
 fn prepare_subchat_messages(
-    gcx: &Arc<GlobalContext>,
+    ctx: &ChatCtx,
     messages: Vec<ChatMessage>,
     model_id: &str,
 ) -> Result<Vec<ChatMessage>, String> {
     let messages = refact_core::active_context::active_context(&messages)
         .map_err(|e| e.to_string())?
         .messages;
-    gate_subchat_boundary(gcx, &messages, model_id)?;
+    gate_subchat_boundary(ctx, &messages, model_id)?;
     if refact_privacy::records_from_messages(&messages)
         .map_err(|error| error.to_string())?
         .is_empty()
@@ -923,12 +924,12 @@ fn normalize_subchat_params_for_model(
 }
 
 pub async fn resolve_subchat_params(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     tool_name: &str,
 ) -> Result<SubchatParameters, String> {
-    use crate::yaml_configs::customization_registry::get_subagent_config;
-
-    let subagent_config = get_subagent_config(gcx.clone(), tool_name, None)
+    let subagent_config = ctx
+        .mode_config
+        .get_subagent_config(tool_name, None)
         .await
         .ok_or_else(|| {
             format!(
@@ -991,8 +992,10 @@ pub async fn resolve_subchat_params(
         ));
     }
 
-    let model = resolve_subchat_model_for_tool(gcx.clone(), tool_name, &params).await?;
-    let caps = try_load_caps_quickly_if_not_present(gcx.clone(), 0)
+    let model = resolve_subchat_model_for_tool(ctx, tool_name, &params).await?;
+    let caps = ctx
+        .caps
+        .try_load_caps_quickly(0)
         .await
         .map_err(|e| format!("failed to load caps: {:?}", e))?;
     let model_rec = resolve_chat_model(caps, &model)?;
@@ -1002,26 +1005,28 @@ pub async fn resolve_subchat_params(
 }
 
 pub async fn resolve_subchat_model(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     params: &SubchatParameters,
 ) -> Result<String, String> {
-    resolve_subchat_model_inner(gcx, params, None).await
+    resolve_subchat_model_inner(ctx, params, None).await
 }
 
 async fn resolve_subchat_model_for_tool(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     tool_name: &str,
     params: &SubchatParameters,
 ) -> Result<String, String> {
-    resolve_subchat_model_inner(gcx, params, Some(tool_name)).await
+    resolve_subchat_model_inner(ctx, params, Some(tool_name)).await
 }
 
 async fn resolve_subchat_model_inner(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     params: &SubchatParameters,
     tool_name: Option<&str>,
 ) -> Result<String, String> {
-    let caps = try_load_caps_quickly_if_not_present(gcx.clone(), 0)
+    let caps = ctx
+        .caps
+        .try_load_caps_quickly(0)
         .await
         .map_err(|e| format!("failed to load caps: {:?}", e))?;
 
@@ -1189,8 +1194,8 @@ pub async fn resolve_subchat_config(
     .await
 }
 
-async fn parent_thread_worktree(gcx: Arc<GlobalContext>, parent_id: &str) -> Option<WorktreeMeta> {
-    let sessions = { gcx.chat_sessions.clone() };
+async fn parent_thread_worktree(ctx: &ChatCtx, parent_id: &str) -> Option<WorktreeMeta> {
+    let sessions = { ctx.chat.sessions.clone() };
     let session_arc = {
         let sessions_read = sessions.read().await;
         sessions_read.get(parent_id).cloned()
@@ -1200,20 +1205,21 @@ async fn parent_thread_worktree(gcx: Arc<GlobalContext>, parent_id: &str) -> Opt
     }
 
     crate::chat::trajectories::validate_trajectory_id(parent_id).ok()?;
-    crate::chat::trajectories::load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), parent_id)
+    ctx.trajectories
+        .load_trajectory_for_chat(parent_id)
         .await
         .and_then(|loaded| loaded.thread.worktree)
 }
 
 async fn resolve_subchat_worktree(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     parent_id: Option<&str>,
     parent_worktree: Option<WorktreeMeta>,
 ) -> Option<WorktreeMeta> {
     match parent_worktree {
         Some(parent_worktree) => Some(parent_worktree),
         None => match parent_id {
-            Some(parent_id) => parent_thread_worktree(gcx, parent_id).await,
+            Some(parent_id) => parent_thread_worktree(ctx, parent_id).await,
             None => None,
         },
     }
@@ -1235,7 +1241,7 @@ fn worktree_reference_for_thread(
 }
 
 async fn register_stateful_subchat_worktree(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     chat_id: &str,
     thread: &mut ThreadParams,
 ) {
@@ -1246,7 +1252,7 @@ async fn register_stateful_subchat_worktree(
         return;
     };
 
-    let cache_dir = { gcx.cache_dir.clone() };
+    let cache_dir = { ctx.paths.cache_dir.clone() };
     let service =
         match WorktreeService::new_async(cache_dir, worktree.source_workspace_root.clone()).await {
             Ok(service) => service,
@@ -1300,13 +1306,16 @@ pub async fn resolve_subchat_config_with_parent(
         ));
     }
 
-    let params = resolve_subchat_params(gcx.clone(), tool_name).await?;
-    let model = resolve_subchat_model_for_tool(gcx.clone(), tool_name, &params).await?;
+    let ctx = gcx.chat_ctx(gcx.clone());
+    let params = resolve_subchat_params(&ctx, tool_name).await?;
+    let model = resolve_subchat_model_for_tool(&ctx, tool_name, &params).await?;
     let cache_control = params.subchat_cache_control;
     let (autonomous_no_confirm, auto_approve_editing_tools, auto_approve_dangerous_commands) =
-        resolve_subagent_confirmation_defaults(gcx.clone(), tool_name).await;
+        resolve_subagent_confirmation_defaults(&ctx, tool_name).await;
 
-    let caps = try_load_caps_quickly_if_not_present(gcx.clone(), 0)
+    let caps = ctx
+        .caps
+        .try_load_caps_quickly(0)
         .await
         .map_err(|e| format!("failed to load caps: {:?}", e))?;
 
@@ -1318,7 +1327,7 @@ pub async fn resolve_subchat_config_with_parent(
         ));
     }
 
-    let worktree = resolve_subchat_worktree(gcx.clone(), parent_id.as_deref(), worktree).await;
+    let worktree = resolve_subchat_worktree(&ctx, parent_id.as_deref(), worktree).await;
 
     if let Some(requested_tools) = tools.as_ref().filter(|list| !list.is_empty()) {
         let known_names: std::collections::HashSet<String> = get_available_tools(gcx.clone())
@@ -1435,7 +1444,10 @@ pub async fn resolve_subchat_config_with_explicit_params(
         ));
     }
 
-    let caps = try_load_caps_quickly_if_not_present(gcx.clone(), 0)
+    let ctx = gcx.chat_ctx(gcx.clone());
+    let caps = ctx
+        .caps
+        .try_load_caps_quickly(0)
         .await
         .map_err(|e| format!("failed to load caps: {:?}", e))?;
     let model_rec = resolve_chat_model(caps, &spec.model)?;
@@ -1448,7 +1460,7 @@ pub async fn resolve_subchat_config_with_explicit_params(
     let mut params = spec.params.clone();
     normalize_subchat_params_for_model(attribution_id, &mut params, &model_rec);
 
-    let worktree = resolve_subchat_worktree(gcx.clone(), parent_id.as_deref(), worktree).await;
+    let worktree = resolve_subchat_worktree(&ctx, parent_id.as_deref(), worktree).await;
 
     if let Some(requested_tools) = tools.as_ref().filter(|list| !list.is_empty()) {
         let known_names: std::collections::HashSet<String> = get_available_tools(gcx.clone())
@@ -1591,10 +1603,11 @@ fn stateful_thread_from_config(chat_id: &str, config: &SubchatConfig) -> ThreadP
 }
 
 async fn resolve_subagent_confirmation_defaults(
-    gcx: Arc<GlobalContext>,
+    ctx: &ChatCtx,
     tool_name: &str,
 ) -> (bool, bool, bool) {
-    crate::yaml_configs::customization_registry::get_subagent_config(gcx, tool_name, None)
+    ctx.mode_config
+        .get_subagent_config(tool_name, None)
         .await
         .map(|config| {
             (
@@ -1673,13 +1686,12 @@ async fn persist_subchat_progress(
         return;
     }
 
-    let (gcx, chat_id) = {
+    let (app, chat_id) = {
         let cgcx = ccx.lock().await;
-        (cgcx.global_context.clone(), cgcx.chat_id.clone())
+        (cgcx.app.clone(), cgcx.chat_id.clone())
     };
 
     let thread = trace_thread_from_config(&chat_id, config);
-    let app = AppState::from_gcx(gcx.clone()).await;
     let acknowledgements = if let Some(agent_id) = config.background_agent_id.as_deref() {
         app.agents
             .pending_deliveries(agent_id)
@@ -1703,7 +1715,7 @@ async fn persist_subchat_progress(
     } else {
         TrajectoryCommitIntent::Required
     };
-    match crate::chat::trajectories::save_trajectory_as_with_intent_checked(&gcx.chat_ctx(gcx.clone()),
+    match crate::chat::trajectories::save_trajectory_as_with_intent_checked(&app.chat_ctx(),
         &thread,
         messages,
         intent,
@@ -1723,7 +1735,6 @@ async fn persist_subchat_progress(
         Err(error) => warn!(%error, "Failed to save runner progress; retaining delivery payloads"),
     }
     if config.stateful {
-        let app = AppState::from_gcx(gcx).await;
         mirror_subchat_messages_into_session(&app, &chat_id, messages).await;
     }
 }
@@ -1758,7 +1769,7 @@ fn take_subchat_progress(progress: &SubchatProgressMessages) -> Vec<ChatMessage>
 }
 
 async fn save_failed_subchat_trajectory(
-    gcx: Arc<GlobalContext>,
+    app: &AppState,
     chat_id: &str,
     config: &SubchatConfig,
     progress: &SubchatProgressMessages,
@@ -1780,19 +1791,19 @@ async fn save_failed_subchat_trajectory(
         format!("Subchat run failed: {error}"),
     ));
 
+    let ctx = app.chat_ctx();
     let mut thread = trace_thread_from_config(chat_id, config);
     if config.stateful {
-        register_stateful_subchat_worktree(gcx.clone(), chat_id, &mut thread).await;
+        register_stateful_subchat_worktree(&ctx, chat_id, &mut thread).await;
     }
-    save_trajectory_as_with_intent(&gcx.chat_ctx(gcx.clone()),
+    save_trajectory_as_with_intent(&ctx,
         &thread,
         &messages,
         subchat_trajectory_commit_intent(SubchatTrajectoryCommitPhase::Failed),
     )
     .await;
     if config.stateful {
-        let app = AppState::from_gcx(gcx).await;
-        mirror_subchat_messages_into_session(&app, chat_id, &messages).await;
+        mirror_subchat_messages_into_session(app, chat_id, &messages).await;
     }
 }
 
@@ -1847,23 +1858,25 @@ pub async fn run_subchat(
         config.tool_name, config.model, config.stateful
     );
 
+    let app = AppState::from_gcx(gcx.clone()).await;
+    let ctx = app.chat_ctx();
+
     let chat_id = stable_subchat_chat_id(&config, || format!("subchat-{}", Uuid::new_v4()));
 
     let messages = refact_core::active_context::active_context(&messages)
         .map_err(|e| e.to_string())?
         .messages;
     let messages = sanitize_messages_for_new_thread(&messages);
-    let messages = prepare_subchat_messages(&gcx, messages, &config.model)?;
+    let messages = prepare_subchat_messages(&ctx, messages, &config.model)?;
     if should_persist_subchat_trajectory(&config) {
         let thread = trace_thread_from_config(&chat_id, &config);
-        save_trajectory_as_with_intent(&gcx.chat_ctx(gcx.clone()),
+        save_trajectory_as_with_intent(&ctx,
             &thread,
             &messages,
             subchat_trajectory_commit_intent(SubchatTrajectoryCommitPhase::Seed),
         )
         .await;
     }
-    let app = AppState::from_gcx(gcx.clone()).await;
     if config.stateful {
         install_stateful_subchat_session(&app, &chat_id, &config, &messages).await;
     }
@@ -1947,15 +1960,14 @@ pub async fn run_subchat(
     let (mut current_messages, aborted) = match current_messages_result {
         Ok((messages, aborted)) => (messages, aborted),
         Err(e) => {
-            save_failed_subchat_trajectory(gcx.clone(), &chat_id, &config, &progress_messages, &e)
-                .await;
+            save_failed_subchat_trajectory(&app, &chat_id, &config, &progress_messages, &e).await;
             finish_stateful_subchat_session(&app, &chat_id, &config).await;
             clear_unbound_openai_codex_websocket_session(&chat_id).await;
             return Err(e);
         }
     };
 
-    let subagent_policy = gcx
+    let subagent_policy = ctx
         .privacy_policy_load
         .read()
         .unwrap()
@@ -1964,8 +1976,7 @@ pub async fn run_subchat(
         .clone();
     if let Err(error) = apply_subchat_report_policy(&subagent_policy, &mut current_messages) {
         let error = error.to_string();
-        save_failed_subchat_trajectory(gcx.clone(), &chat_id, &config, &progress_messages, &error)
-            .await;
+        save_failed_subchat_trajectory(&app, &chat_id, &config, &progress_messages, &error).await;
         finish_stateful_subchat_session(&app, &chat_id, &config).await;
         clear_unbound_openai_codex_websocket_session(&chat_id).await;
         return Err(error);
@@ -1973,8 +1984,8 @@ pub async fn run_subchat(
 
     if config.stateful {
         let mut thread = stateful_thread_from_config(&chat_id, &config);
-        register_stateful_subchat_worktree(gcx.clone(), &chat_id, &mut thread).await;
-        save_trajectory_as_with_intent(&gcx.chat_ctx(gcx.clone()),
+        register_stateful_subchat_worktree(&ctx, &chat_id, &mut thread).await;
+        save_trajectory_as_with_intent(&ctx,
             &thread,
             &current_messages,
             subchat_trajectory_commit_intent(SubchatTrajectoryCommitPhase::Final),
@@ -1983,7 +1994,7 @@ pub async fn run_subchat(
         mirror_subchat_messages_into_session(&app, &chat_id, &current_messages).await;
     } else if should_persist_subchat_trajectory(&config) {
         let thread = trace_thread_from_config(&chat_id, &config);
-        save_trajectory_as_with_intent(&gcx.chat_ctx(gcx.clone()),
+        save_trajectory_as_with_intent(&ctx,
             &thread,
             &current_messages,
             subchat_trajectory_commit_intent(SubchatTrajectoryCommitPhase::Final),
@@ -2413,7 +2424,7 @@ async fn run_subchat_loop(
         persist_subchat_progress(&ccx, config, progress, &messages).await;
 
         if config.background_agent_id.is_some() {
-            let app = AppState::from_gcx(ccx.lock().await.global_context.clone()).await;
+            let app = ccx.lock().await.app.clone();
             let chat_id = ccx.lock().await.chat_id.clone();
             let sessions = app.chat.sessions.read().await;
             if let Some(session) = sessions.get(&chat_id) {
@@ -2479,8 +2490,8 @@ async fn run_subchat_loop(
         };
 
         update_usage_from_messages(usage, &results);
-        let gcx = ccx.lock().await.global_context.clone();
-        emit_usage_progress(&gcx, config, &results).await;
+        let ctx = ccx.lock().await.app.chat_ctx();
+        emit_usage_progress(&ctx, config, &results).await;
         messages = results.into_iter().next().unwrap_or(messages);
         persist_subchat_progress(&ccx, config, progress, &messages).await;
 
@@ -2489,7 +2500,7 @@ async fn run_subchat_loop(
         }
 
         if config.background_agent_id.is_some() {
-            let app = AppState::from_gcx(ccx.lock().await.global_context.clone()).await;
+            let app = ccx.lock().await.app.clone();
             let chat_id = ccx.lock().await.chat_id.clone();
             let sessions = app.chat.sessions.read().await;
             if let Some(session) = sessions.get(&chat_id) {
@@ -2602,8 +2613,8 @@ async fn run_forced_final_answer_turn(
     };
 
     update_usage_from_messages(usage, &results);
-    let gcx = ccx.lock().await.global_context.clone();
-    emit_usage_progress(&gcx, config, &results).await;
+    let ctx = ccx.lock().await.app.chat_ctx();
+    emit_usage_progress(&ctx, config, &results).await;
     Ok(results.into_iter().next().unwrap_or(messages))
 }
 
@@ -2716,8 +2727,8 @@ async fn run_subchat_with_wrap_up(
         };
 
         update_usage_from_messages(usage, &results);
-        let gcx = ccx.lock().await.global_context.clone();
-        emit_usage_progress(&gcx, config, &results).await;
+        let ctx = ccx.lock().await.app.chat_ctx();
+        emit_usage_progress(&ctx, config, &results).await;
         messages = results.into_iter().next().unwrap_or(messages);
         persist_subchat_progress(&ccx, config, progress, &messages).await;
 
@@ -2813,8 +2824,8 @@ async fn run_subchat_with_wrap_up(
         }
     };
     update_usage_from_messages(usage, &final_results);
-    let gcx = ccx.lock().await.global_context.clone();
-    emit_usage_progress(&gcx, config, &final_results).await;
+    let ctx = ccx.lock().await.app.chat_ctx();
+    emit_usage_progress(&ctx, config, &final_results).await;
 
     Ok((
         final_results.into_iter().next().unwrap_or_default(),
@@ -2842,7 +2853,7 @@ fn emit_subchat_progress(config: &SubchatConfig, progress: SubchatProgress) {
 }
 
 async fn emit_usage_progress(
-    gcx: &Arc<GlobalContext>,
+    ctx: &ChatCtx,
     config: &SubchatConfig,
     results: &[Vec<ChatMessage>],
 ) {
@@ -2857,7 +2868,7 @@ async fn emit_usage_progress(
     if tokens_delta > 0 {
         let cost_delta = match usage.metering_usd.as_ref() {
             Some(metering) => Some(metering.total_usd),
-            None => crate::providers::pricing::lookup_model_pricing(gcx, &config.model)
+            None => crate::providers::pricing::lookup_model_pricing_for_ctx(ctx, &config.model)
                 .await
                 .and_then(|pricing| {
                     crate::providers::pricing::compute_cost(usage, &pricing)
@@ -2913,10 +2924,10 @@ async fn execute_pending_tool_calls(
     auto_approve_dangerous_commands: bool,
     step_progress: Option<Arc<dyn Fn(SubchatProgress) + Send + Sync>>,
 ) -> Result<Vec<ChatMessage>, String> {
-    let (gcx, n_ctx, task_meta, worktree, chat_id, root_chat_id) = {
+    let (app, n_ctx, task_meta, worktree, chat_id, root_chat_id) = {
         let cgcx = ccx.lock().await;
         (
-            cgcx.global_context.clone(),
+            cgcx.app.clone(),
             cgcx.n_ctx,
             cgcx.task_meta.clone(),
             cgcx.execution_scope_worktree(),
@@ -2924,7 +2935,6 @@ async fn execute_pending_tool_calls(
             cgcx.root_chat_id.clone(),
         )
     };
-    let app = AppState::from_gcx(gcx.clone()).await;
     let last = match messages.last() {
         Some(m) => m,
         None => return Ok(messages),
@@ -3081,7 +3091,8 @@ async fn subchat_stream(
     allow_provider_retries: bool,
 ) -> Result<Vec<Vec<ChatMessage>>, String> {
     let (
-        gcx,
+        ctx,
+        app,
         effective_n_ctx,
         abort_flag,
         activity_stamp,
@@ -3092,7 +3103,8 @@ async fn subchat_stream(
     ) = {
         let cgcx = ccx.lock().await;
         (
-            cgcx.global_context.clone(),
+            cgcx.app.chat_ctx(),
+            cgcx.app.clone(),
             cgcx.n_ctx,
             cgcx.abort_flag.clone(),
             cgcx.activity_stamp.clone(),
@@ -3103,12 +3115,14 @@ async fn subchat_stream(
         )
     };
 
-    let caps = try_load_caps_quickly_if_not_present(gcx.clone(), 0)
+    let caps = ctx
+        .caps
+        .try_load_caps_quickly(0)
         .await
         .map_err(|e| format!("no caps: {:?}", e))?;
     let model_rec = resolve_chat_model(caps, model_id)?;
 
-    let tokenizer_arc = crate::tokens::cached_tokenizer(gcx.clone(), &model_rec.base).await?;
+    let tokenizer_arc = crate::tokens::cached_tokenizer_for_ctx(&ctx, &model_rec.base).await?;
     let t = HasTokenizerAndEot::new(tokenizer_arc);
 
     let capped_n_ctx = if model_rec.base.n_ctx > 0 {
@@ -3188,7 +3202,7 @@ async fn subchat_stream(
     };
 
     let prepared = prepare_chat_passthrough(
-        gcx.chat_ctx(gcx.clone()),
+        ctx.clone(),
         ccx.clone(),
         &t,
         messages.clone(),
@@ -3239,21 +3253,18 @@ async fn subchat_stream(
 
         let call_ts_start = chrono::Utc::now().to_rfc3339();
         let call_start = std::time::Instant::now();
-        let mut attempt_result: Result<Vec<_>, _> = run_llm_stream(
-            AppState::from_gcx(gcx.clone()).await,
-            params,
-            &mut collector,
-        )
-        .await
-        .and_then(|o| match o {
-            crate::chat::stream_core::LlmStreamOutcome::Choices(c) => Ok(c),
-            crate::chat::stream_core::LlmStreamOutcome::PausedForCacheGuard => {
-                Err(crate::chat::stream_core::LlmStreamError {
-                    message: "subchat generation paused by cache guard; retry".to_string(),
-                    partial_output_emitted: false,
-                })
-            }
-        });
+        let mut attempt_result: Result<Vec<_>, _> =
+            run_llm_stream(app.clone(), params, &mut collector)
+                .await
+                .and_then(|o| match o {
+                    crate::chat::stream_core::LlmStreamOutcome::Choices(c) => Ok(c),
+                    crate::chat::stream_core::LlmStreamOutcome::PausedForCacheGuard => {
+                        Err(crate::chat::stream_core::LlmStreamError {
+                            message: "subchat generation paused by cache guard; retry".to_string(),
+                            partial_output_emitted: false,
+                        })
+                    }
+                });
         let duration_ms = call_start.elapsed().as_millis() as u64;
         let call_ts_end = chrono::Utc::now().to_rfc3339();
 
@@ -3311,7 +3322,7 @@ async fn subchat_stream(
                     total_tokens: 0,
                     cost_usd: None,
                 };
-                if let Some(sender) = &*gcx.llm_stats_sender.lock().unwrap() {
+                if let Some(sender) = &ctx.model.llm_stats_sender {
                     if sender.try_send(event).is_err() {
                         tracing::warn!("stats: channel full, dropping LLM call event");
                     }
@@ -3369,7 +3380,7 @@ async fn subchat_stream(
                         .and_then(|u| u.metering_usd.as_ref())
                         .map(|m| m.total_usd),
                 };
-                if let Some(sender) = &*gcx.llm_stats_sender.lock().unwrap() {
+                if let Some(sender) = &ctx.model.llm_stats_sender {
                     if sender.try_send(event).is_err() {
                         tracing::warn!("stats: channel full, dropping LLM call event");
                     }
@@ -3380,7 +3391,7 @@ async fn subchat_stream(
         if let Some(error_message) = monitor_error {
             if let Some(task_meta) = thread.task_meta.clone() {
                 crate::chat::task_agent_monitor::handle_agent_streaming_error(
-                    AppState::from_gcx(gcx.clone()).await,
+                    app.clone(),
                     &task_meta,
                     &error_message,
                 )
@@ -3610,6 +3621,10 @@ mod subchat_tests {
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::{Arc, Mutex as StdMutex};
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn ctx_of(gcx: &Arc<crate::global_context::GlobalContext>) -> crate::chat::ctx::ChatCtx {
+        gcx.chat_ctx(gcx.clone())
+    }
 
     fn chat_model_record(id: &str, n_ctx: usize, endpoint: &str) -> Arc<ChatModelRecord> {
         Arc::new(ChatModelRecord {
@@ -4370,11 +4385,11 @@ mod subchat_tests {
         global_configs_try_create_all(&config_dir).await.unwrap();
 
         assert_eq!(
-            resolve_subagent_confirmation_defaults(gcx.clone(), "subagent").await,
+            resolve_subagent_confirmation_defaults(&ctx_of(&gcx), "subagent").await,
             (true, true, true)
         );
         assert_eq!(
-            resolve_subagent_confirmation_defaults(gcx.clone(), "title_generation").await,
+            resolve_subagent_confirmation_defaults(&ctx_of(&gcx), "title_generation").await,
             (false, false, false)
         );
 
@@ -4387,7 +4402,7 @@ mod subchat_tests {
             .await;
 
         assert_eq!(
-            resolve_subagent_confirmation_defaults(gcx, "subagent").await,
+            resolve_subagent_confirmation_defaults(&ctx_of(&gcx), "subagent").await,
             (false, false, false)
         );
     }
@@ -4411,7 +4426,7 @@ mod subchat_tests {
             ..Default::default()
         });
 
-        super::emit_usage_progress(&gcx, &config, &[vec![metered]]).await;
+        super::emit_usage_progress(&ctx_of(&gcx), &config, &[vec![metered]]).await;
 
         assert_eq!(
             progress.lock().unwrap().as_slice(),
@@ -4428,7 +4443,7 @@ mod subchat_tests {
             ..Default::default()
         });
 
-        super::emit_usage_progress(&gcx, &config, &[vec![unmetered]]).await;
+        super::emit_usage_progress(&ctx_of(&gcx), &config, &[vec![unmetered]]).await;
 
         assert_eq!(
             progress.lock().unwrap().as_slice(),
@@ -4506,7 +4521,8 @@ mod subchat_tests {
         assert_eq!(final_saved.messages[0].content.content_text_only(), "final");
 
         let progress = Arc::new(StdMutex::new(final_messages));
-        save_failed_subchat_trajectory(gcx.clone(), chat_id, &config, &progress, "failed").await;
+        let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+        save_failed_subchat_trajectory(&app, chat_id, &config, &progress, "failed").await;
         let failed_saved = crate::chat::trajectories::load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), chat_id)
             .await
             .expect("failed subchat snapshot should be durable");
@@ -4622,7 +4638,8 @@ mod subchat_tests {
             "archived secret",
             vec![privacy_record(".env", "secrets")],
         );
-        assert!(gate_subchat_boundary(&gcx, &[archived.clone()], "untrusted/model").is_err());
+        let ctx = ctx_of(&gcx);
+        assert!(gate_subchat_boundary(&ctx, &[archived.clone()], "untrusted/model").is_err());
         let mut current = ChatMessage::new("user".into(), "public current request".into());
         current.message_id = "public-current-request".into();
         let report = refact_core::active_context::make_reconstruction_report(
@@ -4631,7 +4648,8 @@ mod subchat_tests {
         )
         .unwrap();
         let prepared =
-            prepare_subchat_messages(&gcx, vec![archived, report], "untrusted/model").unwrap();
+            prepare_subchat_messages(&ctx_of(&gcx), vec![archived, report], "untrusted/model")
+                .unwrap();
         assert_eq!(prepared.len(), 1);
         assert_eq!(
             prepared[0].content.content_text_only(),
@@ -4649,7 +4667,8 @@ mod subchat_tests {
             vec![privacy_record(".env", "secrets")],
         )];
 
-        let error = gate_subchat_boundary(&gcx, &messages, "untrusted/model").unwrap_err();
+        let error =
+            gate_subchat_boundary(&ctx_of(&gcx), &messages, "untrusted/model").unwrap_err();
 
         assert!(error.starts_with("Output withheld by user privacy policy"));
         assert!(error.contains("zone \""));
@@ -4666,7 +4685,8 @@ mod subchat_tests {
         )];
 
         let sanitized = sanitize_messages_for_new_thread(&messages);
-        let error = prepare_subchat_messages(&gcx, sanitized, "untrusted/model").unwrap_err();
+        let error =
+            prepare_subchat_messages(&ctx_of(&gcx), sanitized, "untrusted/model").unwrap_err();
 
         assert!(error.starts_with("Output withheld by user privacy policy"));
         assert!(error.contains("zone \""));
@@ -4693,7 +4713,8 @@ mod subchat_tests {
             .clone();
         apply_subchat_report_policy(&policy, &mut messages).unwrap();
 
-        let error = gate_subchat_boundary(&gcx, &messages[1..], "parent/model").unwrap_err();
+        let error =
+            gate_subchat_boundary(&ctx_of(&gcx), &messages[1..], "parent/model").unwrap_err();
 
         assert!(error.starts_with("Output withheld by user privacy policy"));
     }
@@ -4751,7 +4772,7 @@ mod subchat_tests {
             vec![privacy_record(".env", "secrets")],
         )];
 
-        let prepared = prepare_subchat_messages(&gcx, messages, "trusted/model").unwrap();
+        let prepared = prepare_subchat_messages(&ctx_of(&gcx), messages, "trusted/model").unwrap();
 
         assert_eq!(prepared[0].role, "system");
         assert_eq!(
@@ -5200,7 +5221,7 @@ mod subchat_tests {
             );
         }
 
-        let resolved = resolve_subchat_worktree(gcx, Some(&parent_chat_id), None).await;
+        let resolved = resolve_subchat_worktree(&ctx_of(&gcx), Some(&parent_chat_id), None).await;
 
         assert_eq!(resolved, Some(worktree));
     }
@@ -5224,8 +5245,12 @@ mod subchat_tests {
         }
 
         let resolved =
-            resolve_subchat_worktree(gcx, Some(&parent_chat_id), Some(current_worktree.clone()))
-                .await;
+            resolve_subchat_worktree(
+                &ctx_of(&gcx),
+                Some(&parent_chat_id),
+                Some(current_worktree.clone()),
+            )
+            .await;
 
         assert_eq!(resolved, Some(current_worktree));
     }
@@ -5245,7 +5270,7 @@ mod subchat_tests {
             );
         }
 
-        let resolved = resolve_subchat_worktree(gcx, Some(&parent_chat_id), None).await;
+        let resolved = resolve_subchat_worktree(&ctx_of(&gcx), Some(&parent_chat_id), None).await;
 
         assert_eq!(resolved, None);
     }
@@ -5292,12 +5317,10 @@ mod subchat_tests {
         )
         .await;
 
+        let ctx = ctx_of(&gcx);
         tokio::time::timeout(std::time::Duration::from_secs(30), async {
             loop {
-                if parent_thread_worktree(gcx.clone(), &parent_chat_id)
-                    .await
-                    .is_some()
-                {
+                if parent_thread_worktree(&ctx, &parent_chat_id).await.is_some() {
                     return;
                 }
                 tokio::task::yield_now().await;
@@ -5305,10 +5328,7 @@ mod subchat_tests {
         })
         .await
         .expect("checkpoint should persist the parent worktree");
-        assert_eq!(
-            parent_thread_worktree(gcx, &parent_chat_id).await,
-            Some(worktree)
-        );
+        assert_eq!(parent_thread_worktree(&ctx, &parent_chat_id).await, Some(worktree));
     }
 
     #[tokio::test]
@@ -5362,7 +5382,7 @@ mod subchat_tests {
             );
         }
 
-        assert_eq!(parent_thread_worktree(gcx, &parent_chat_id).await, None);
+        assert_eq!(parent_thread_worktree(&ctx_of(&gcx), &parent_chat_id).await, None);
     }
 
     #[tokio::test]
@@ -5425,7 +5445,7 @@ mod subchat_tests {
         };
         let mut thread = stateful_thread_from_config("child-ref-chat", &config);
 
-        register_stateful_subchat_worktree(gcx, "child-ref-chat", &mut thread).await;
+        register_stateful_subchat_worktree(&ctx_of(&gcx), "child-ref-chat", &mut thread).await;
         assert_eq!(thread.worktree, Some(created.worktree.meta.clone()));
 
         let view = service
@@ -5465,7 +5485,7 @@ mod subchat_tests {
 
         install_caps(gcx.clone(), caps).await;
 
-        let params = resolve_subchat_params(gcx.clone(), "review_agents")
+        let params = resolve_subchat_params(&ctx_of(&gcx), "review_agents")
             .await
             .unwrap();
         let extra_budget = (params.subchat_n_ctx as f32 * 0.06) as usize;
@@ -5559,7 +5579,7 @@ mod subchat_tests {
 
         install_caps(gcx.clone(), caps).await;
 
-        let params = resolve_subchat_params(gcx, "subagent").await.unwrap();
+        let params = resolve_subchat_params(&ctx_of(&gcx), "subagent").await.unwrap();
 
         assert_eq!(params.subchat_cache_control, CacheControl::Ephemeral);
     }
@@ -5593,7 +5613,7 @@ mod subchat_tests {
             subchat_cache_control: crate::llm::params::CacheControl::Ephemeral,
         };
 
-        let err = resolve_subchat_model(gcx, &params).await.unwrap_err();
+        let err = resolve_subchat_model(&ctx_of(&gcx), &params).await.unwrap_err();
         assert!(err.contains("Light model is not set up"));
         assert!(err.contains("Default model settings"));
     }
@@ -5634,7 +5654,7 @@ mod subchat_tests {
             subchat_cache_control: crate::llm::params::CacheControl::Ephemeral,
         };
 
-        let err = resolve_subchat_model(gcx, &params).await.unwrap_err();
+        let err = resolve_subchat_model(&ctx_of(&gcx), &params).await.unwrap_err();
         assert!(err.contains("Thinking model 'broken/o1' is misconfigured"));
         assert!(err.contains("an empty LLM endpoint URL"));
         assert!(err.contains("Default model settings"));
@@ -5675,7 +5695,7 @@ mod subchat_tests {
             subchat_cache_control: crate::llm::params::CacheControl::Ephemeral,
         };
 
-        let err = resolve_subchat_model(gcx, &params).await.unwrap_err();
+        let err = resolve_subchat_model(&ctx_of(&gcx), &params).await.unwrap_err();
         assert!(err.contains("Thinking model 'openai/o1' is misconfigured"));
         assert!(err.contains("an invalid LLM endpoint URL"));
         assert!(err.contains("Default model settings"));
@@ -5702,7 +5722,7 @@ mod subchat_tests {
 
         install_caps(gcx.clone(), caps).await;
 
-        let err = resolve_subchat_params(gcx, "title_generation")
+        let err = resolve_subchat_params(&ctx_of(&gcx), "title_generation")
             .await
             .unwrap_err();
 

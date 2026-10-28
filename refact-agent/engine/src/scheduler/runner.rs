@@ -20,7 +20,7 @@ use crate::chat::types::max_queue_size;
 use refact_core::chat_types::{DeliveryOutcome, PushMode};
 use crate::files_correction::get_active_project_path;
 use crate::global_context::SharedGlobalContext;
-use crate::scheduler::{runner_enabled, scheduled_fire_at_ms, scheduler_timezone};
+use crate::scheduler::scheduler_timezone;
 
 use super::delivery::{deliver, deliver_notice, deliver_scheduled_turn};
 use super::exec_action::{command_error_summary, run_command, CommandRunResult};

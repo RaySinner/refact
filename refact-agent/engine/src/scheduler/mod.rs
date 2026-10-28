@@ -25,7 +25,7 @@ pub use types::{
     delivery_from_value, delivery_kind, human_schedule_for_trigger, push_from_value, push_schema,
 };
 
-pub use refact_scheduler_core::schedule::{runner_enabled, scheduled_fire_at_ms, scheduler_timezone};
+pub use refact_scheduler_core::schedule::scheduler_timezone;
 
 pub async fn active_durable_cron_store(
     gcx: std::sync::Arc<crate::global_context::GlobalContext>,

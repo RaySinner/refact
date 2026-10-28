@@ -134,20 +134,6 @@ pub async fn ensure_tasks_dir_for_ctx(ctx: &crate::chat::ctx::ChatCtx) -> Result
     Ok(dir)
 }
 
-async fn get_tasks_dir_for_ctx(ctx: &crate::chat::ctx::ChatCtx) -> Result<PathBuf, String> {
-    let project_dirs = crate::files_correction::get_unscoped_project_dirs_for_ctx(ctx).await;
-    let workspace_root = project_dirs.first().ok_or("No workspace folder found")?;
-    Ok(workspace_root.join(".refact").join(TASKS_DIR))
-}
-
-async fn ensure_tasks_dir_for_ctx(ctx: &crate::chat::ctx::ChatCtx) -> Result<PathBuf, String> {
-    let dir = get_tasks_dir_for_ctx(ctx).await?;
-    if !dir.exists() {
-        fs::create_dir_all(&dir).await.map_err(|e| e.to_string())?;
-    }
-    Ok(dir)
-}
-
 pub fn validate_task_id(task_id: &str) -> Result<(), String> {
     if task_id.is_empty() {
         return Err("Task ID cannot be empty".into());
@@ -392,16 +378,6 @@ pub async fn save_planner_instructions(
     content: &str,
 ) -> Result<(), String> {
     save_planner_instructions_for_ctx(&gcx.chat_ctx(gcx.clone()), task_id, content).await
-}
-
-pub async fn save_planner_instructions_for_ctx(
-    ctx: &crate::chat::ctx::ChatCtx,
-    task_id: &str,
-    content: &str,
-) -> Result<(), String> {
-    let task_dir = find_task_dir_for_ctx(ctx, task_id).await?;
-    let path = task_dir.join("planner_instructions.md");
-    fs::write(&path, content).await.map_err(|e| e.to_string())
 }
 
 pub async fn save_planner_instructions_for_ctx(

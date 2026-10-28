@@ -1,5 +1,6 @@
 pub mod env;
 pub mod observe;
+pub mod path_enrichment;
 pub mod pty;
 pub mod registry;
 pub mod spawn;

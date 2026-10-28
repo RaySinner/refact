@@ -1,4 +1,4 @@
-use crate::caps::BaseModelRecord;
+use refact_core::llm_types::BaseModelRecord;
 
 fn provider_id(model_rec: &BaseModelRecord) -> Result<&str, String> {
     model_rec
@@ -13,7 +13,7 @@ pub async fn resolve(model_rec: &BaseModelRecord) -> Result<Option<String>, Stri
     let Some(spec) = model_rec.credential.as_ref() else {
         return Ok(None);
     };
-    refact_providers::credential::resolve(provider_id(model_rec)?, spec, false)
+    crate::credential::resolve(provider_id(model_rec)?, spec, false)
         .await
         .map(Some)
 }
@@ -25,7 +25,7 @@ pub async fn refresh_after_rejection(
     let Some(spec) = model_rec.credential.as_ref() else {
         return Ok(None);
     };
-    refact_providers::credential::refresh_after_rejection(
+    crate::credential::refresh_after_rejection(
         provider_id(model_rec)?,
         spec,
         rejected_value,

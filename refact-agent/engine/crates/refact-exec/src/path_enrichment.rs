@@ -8,34 +8,34 @@ const MAX_SCAN_LINES: usize = 2_000;
 const MAX_REFERENCES: usize = 50;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PathReference {
-    pub(crate) path: String,
-    pub(crate) line1: Option<u32>,
-    pub(crate) line2: Option<u32>,
-    pub(crate) column1: Option<u32>,
-    pub(crate) column2: Option<u32>,
-    pub(crate) source: String,
-    pub(crate) confidence: String,
+pub struct PathReference {
+    pub path: String,
+    pub line1: Option<u32>,
+    pub line2: Option<u32>,
+    pub column1: Option<u32>,
+    pub column2: Option<u32>,
+    pub source: String,
+    pub confidence: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PathEnrichment {
-    pub(crate) references: Vec<PathReference>,
-    pub(crate) truncated: bool,
-    pub(crate) omitted_count: usize,
-    pub(crate) withheld_count: usize,
+pub struct PathEnrichment {
+    pub references: Vec<PathReference>,
+    pub truncated: bool,
+    pub omitted_count: usize,
+    pub withheld_count: usize,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct PathEnrichmentCandidate {
-    pub(crate) reference: PathReference,
-    pub(crate) canonical_path: PathBuf,
+pub struct PathEnrichmentCandidate {
+    pub reference: PathReference,
+    pub canonical_path: PathBuf,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct CollectedPathEnrichment {
-    pub(crate) metadata: PathEnrichment,
-    pub(crate) candidates: Vec<PathEnrichmentCandidate>,
+pub struct CollectedPathEnrichment {
+    pub metadata: PathEnrichment,
+    pub candidates: Vec<PathEnrichmentCandidate>,
 }
 
 #[derive(Debug, Clone)]
@@ -53,8 +53,7 @@ struct ReferenceKey {
     column2: Option<u32>,
 }
 
-#[cfg(test)]
-pub(crate) fn collect(
+pub fn collect(
     command: &str,
     cwd: &Path,
     workspace: &Path,
@@ -63,8 +62,7 @@ pub(crate) fn collect(
     collect_in_roots(command, cwd, &[workspace.to_path_buf()], output)
 }
 
-#[cfg(test)]
-pub(crate) fn collect_in_roots(
+pub fn collect_in_roots(
     command: &str,
     cwd: &Path,
     workspace_roots: &[PathBuf],
@@ -81,7 +79,7 @@ pub(crate) fn collect_in_roots(
     )
 }
 
-pub(crate) async fn collect_async(
+pub async fn collect_async(
     command: &str,
     cwd: &Path,
     workspace_roots: &[PathBuf],
@@ -91,7 +89,7 @@ pub(crate) async fn collect_async(
     collect_async_with_truncation(command, cwd, workspace_roots, output, output_truncated).await
 }
 
-pub(crate) async fn collect_async_with_truncation(
+pub async fn collect_async_with_truncation(
     command: &str,
     cwd: &Path,
     workspace_roots: &[PathBuf],
@@ -163,7 +161,7 @@ fn bounded_output(output: &str) -> (String, bool) {
     (prefix.to_string(), prefix.len() < output.len())
 }
 
-pub(crate) fn bounded_diagnostic_output(stdout: &str, stderr: &str) -> (String, bool) {
+pub fn bounded_diagnostic_output(stdout: &str, stderr: &str) -> (String, bool) {
     let total_len = stdout.len().saturating_add(1).saturating_add(stderr.len());
     let mut output = String::with_capacity(total_len.min(MAX_SCAN_BYTES));
     output.push_str(refact_core::string_utils::safe_truncate(

@@ -13,9 +13,11 @@ home = "0.5"
 libc = "0.2"
 portable-pty = "0.9"
 process-wrap = { version = "8.0.2", features = ["tokio1"] }
+regex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2 = "0.10.8"
+shell-words = "1.1.0"
 strip-ansi-escapes = "0.2.1"
 tokio = { workspace = true, features = ["sync", "time"] }
 tracing.workspace = true

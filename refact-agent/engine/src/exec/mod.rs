@@ -1,5 +1,5 @@
 pub mod command_policy;
-pub(crate) mod path_enrichment;
+pub use refact_exec::path_enrichment;
 
 pub use refact_exec::{pty, registry, spawn, spill, transcript, types};
 pub use refact_exec::{

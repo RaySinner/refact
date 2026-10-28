@@ -1,8 +1,9 @@
 pub mod http;
 pub mod oauth_refresh;
 pub mod pricing;
-pub mod quota;
-pub mod runtime_credential;
+
+pub use refact_providers::quota;
+pub use refact_providers::runtime_credential;
 
 pub use refact_providers::config;
 pub use refact_providers::config_store;

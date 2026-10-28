@@ -1,15 +1,15 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
-use std::sync::{Arc, Weak, Mutex as StdMutex};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Weak};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use indexmap::IndexSet;
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use notify::event::{AccessKind, AccessMode, CreateKind, ModifyKind, RemoveKind};
 use ropey::Rope;
 use tokio::io::AsyncReadExt;
-use tokio::sync::{RwLock as ARwLock, Mutex as AMutex, Notify};
+use tokio::sync::{RwLock as ARwLock, Mutex as AMutex};
 use walkdir::WalkDir;
 use which::which;
 use tracing::info;
@@ -72,8 +72,6 @@ enum WatchSubtreeClass {
 // You can customize blocklist using:
 //   ~/.config/refact/indexing.yaml
 //   ~/path/to/your/project/.refact/indexing.yaml
-
-pub use refact_core::ast_types::Document;
 
 fn normalize_path_for_workspace_state(cache_dir: &Path, path: &Path) -> PathBuf {
     let worktree_mappings = crate::files_correction::registered_worktree_path_mappings(cache_dir);
@@ -612,18 +610,7 @@ pub async fn filter_privacy_allowed_files_for_model_context(
         .collect()
 }
 
-#[derive(Debug, Clone)]
-struct PendingBranchHeadChange {
-    old_head: Option<String>,
-    new_head: Option<String>,
-    last_event: Instant,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DebouncedFileEventKind {
-    Upsert,
-    Remove,
-}
+pub use refact_files::documents_state::*;
 
 fn debounced_file_event_kind_for_path(
     is_remove_event: bool,
@@ -647,13 +634,6 @@ fn debounced_file_event_kind_for_path(
     } else {
         None
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct DebouncedFileEvent {
-    read_path: PathBuf,
-    at: Instant,
-    kind: DebouncedFileEventKind,
 }
 
 #[derive(Debug, Clone)]
@@ -704,30 +684,6 @@ pub async fn get_document_text_or_read_from_disk(
         .map(|x| x.to_string())
 }
 
-#[derive(Clone)]
-pub struct DocumentsState {
-    pub workspace_folders: Arc<StdMutex<Vec<PathBuf>>>,
-    pub workspace_files: Arc<StdMutex<Vec<PathBuf>>>,
-    pub workspace_vcs_roots: Arc<StdMutex<Vec<PathBuf>>>,
-
-    pub active_file_path: Arc<AMutex<Option<PathBuf>>>,
-    pub jsonl_files: Arc<StdMutex<Vec<PathBuf>>>,
-    // document_map on windows: c%3A/Users/user\Documents/file.ext
-    // query on windows: C:/Users/user/Documents/file.ext
-    pub memory_document_map: Arc<AMutex<HashMap<PathBuf, Arc<ARwLock<Document>>>>>, // if a file is open in IDE, and it's outside workspace dirs, it will be in this map and not in workspace_files
-    pub cache_dirty: Arc<AMutex<f64>>,
-    pub cache_correction: Arc<StdMutex<Arc<CacheCorrection>>>,
-    pub fs_watcher: Arc<StdMutex<Option<Arc<ARwLock<RecommendedWatcher>>>>>,
-    pub git_branch_heads: Arc<StdMutex<HashMap<PathBuf, String>>>,
-    pub branch_reindex_last_ts: Arc<AtomicU64>,
-    pub file_event_debounce: Arc<StdMutex<HashMap<PathBuf, DebouncedFileEvent>>>,
-    file_event_debounce_task: Arc<StdMutex<Option<tokio::task::JoinHandle<()>>>>,
-    file_event_debounce_notify: Arc<Notify>,
-    branch_head_debounce: Arc<StdMutex<HashMap<PathBuf, PendingBranchHeadChange>>>,
-    branch_head_debounce_tasks: Arc<StdMutex<HashMap<PathBuf, tokio::task::JoinHandle<()>>>>,
-    watch_registration_tasks: Arc<StdMutex<Vec<tokio::task::JoinHandle<()>>>>,
-}
-
 async fn mem_overwrite_or_create_document(
     global_context: Arc<GlobalContext>,
     document: Document,
@@ -746,31 +702,6 @@ async fn mem_overwrite_or_create_document(
         let darc = Arc::new(ARwLock::new(document));
         doc_map.insert(path, darc.clone());
         (darc, cx.documents_state.cache_dirty.clone(), true)
-    }
-}
-
-impl DocumentsState {
-    pub async fn new(workspace_dirs: Vec<PathBuf>) -> Self {
-        Self {
-            workspace_folders: Arc::new(StdMutex::new(workspace_dirs)),
-            workspace_files: Arc::new(StdMutex::new(Vec::new())),
-            workspace_vcs_roots: Arc::new(StdMutex::new(Vec::new())),
-
-            active_file_path: Arc::new(AMutex::new(None)),
-            jsonl_files: Arc::new(StdMutex::new(Vec::new())),
-            memory_document_map: Arc::new(AMutex::new(HashMap::new())),
-            cache_dirty: Arc::new(AMutex::<f64>::new(0.0)),
-            cache_correction: Arc::new(StdMutex::new(Arc::new(CacheCorrection::new()))),
-            fs_watcher: Arc::new(StdMutex::new(None)),
-            git_branch_heads: Arc::new(StdMutex::new(HashMap::new())),
-            branch_reindex_last_ts: Arc::new(AtomicU64::new(0)),
-            file_event_debounce: Arc::new(StdMutex::new(HashMap::new())),
-            file_event_debounce_task: Arc::new(StdMutex::new(None)),
-            file_event_debounce_notify: Arc::new(Notify::new()),
-            branch_head_debounce: Arc::new(StdMutex::new(HashMap::new())),
-            branch_head_debounce_tasks: Arc::new(StdMutex::new(HashMap::new())),
-            watch_registration_tasks: Arc::new(StdMutex::new(Vec::new())),
-        }
     }
 }
 

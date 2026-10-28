@@ -612,7 +612,7 @@ async fn paths_and_symbols_to_cat_with_path_ranges(
             .unwrap_or(false)
         {
             match resolve_existing_path_with_execution_scope_for_model_context(
-                gcx.clone(),
+                &tool,
                 execution_scope.as_ref(),
                 &p,
             )
@@ -622,7 +622,7 @@ async fn paths_and_symbols_to_cat_with_path_ranges(
                     scope_notices.extend(resolved.notices);
                     if resolved.path.is_dir() {
                         match list_scoped_files_under_dir_limited_for_model_context(
-                            gcx.clone(),
+                            &tool,
                             &resolved.path,
                             false,
                             expansion_probe_budget,

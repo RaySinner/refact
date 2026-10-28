@@ -540,6 +540,70 @@ impl FilesProvider for EngineFilesProvider {
         )
         .await
     }
+
+    async fn project_dirs(&self) -> Vec<PathBuf> {
+        crate::files_correction::get_unscoped_project_dirs(self.gcx.clone()).await
+    }
+
+    async fn check_file_privacy_for_send(&self, path: &PathBuf) -> Result<(), String> {
+        crate::files_in_workspace::check_file_privacy_for_send(self.gcx.clone(), path).await
+    }
+
+    async fn check_file_privacy_for_model_context(&self, path: &PathBuf) -> Result<(), String> {
+        crate::files_in_workspace::check_file_privacy_for_model_context(self.gcx.clone(), path)
+            .await
+    }
+
+    async fn filter_privacy_allowed_files(&self, files: Vec<PathBuf>) -> Vec<PathBuf> {
+        crate::files_in_workspace::filter_privacy_allowed_files(self.gcx.clone(), files).await
+    }
+
+    async fn filter_privacy_allowed_files_for_model_context(
+        &self,
+        files: Vec<PathBuf>,
+    ) -> Vec<PathBuf> {
+        crate::files_in_workspace::filter_privacy_allowed_files_for_model_context(
+            self.gcx.clone(),
+            files,
+        )
+        .await
+    }
+
+    async fn indexing_everywhere(&self) -> Arc<IndexingEverywhere> {
+        crate::files_blocklist::reload_indexing_everywhere_if_needed(self.gcx.clone()).await
+    }
+
+    async fn correct_to_nearest_dir_path(
+        &self,
+        correction_candidate: &str,
+        fuzzy: bool,
+        top_n: usize,
+    ) -> Vec<String> {
+        crate::files_correction::correct_to_nearest_dir_path(
+            self.gcx.clone(),
+            &correction_candidate.to_string(),
+            fuzzy,
+            top_n,
+        )
+        .await
+    }
+
+    async fn return_one_candidate_or_a_good_error(
+        &self,
+        file_path: &str,
+        candidates: &[String],
+        project_paths: &[PathBuf],
+        dirs: bool,
+    ) -> Result<String, String> {
+        crate::at_commands::at_file::return_one_candidate_or_a_good_error(
+            self.gcx.clone(),
+            &file_path.to_string(),
+            &candidates.to_vec(),
+            &project_paths.to_vec(),
+            dirs,
+        )
+        .await
+    }
 }
 
 pub struct EngineTrajectoryStore {

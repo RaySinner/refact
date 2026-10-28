@@ -400,13 +400,18 @@ async fn resolve_codegraph_file(
     ccx: Arc<AMutex<AtCommandsContext>>,
     raw_path: &str,
 ) -> Result<ResolvedCodegraphFile, String> {
-    let (gcx, top_n, execution_scope) = {
+    let (gcx, tool, top_n, execution_scope) = {
         let ccx = ccx.lock().await;
-        (ccx.app.gcx.clone(), ccx.top_n, ccx.execution_scope.clone())
+        (
+            ccx.app.gcx.clone(),
+            ccx.tool.clone(),
+            ccx.top_n,
+            ccx.execution_scope.clone(),
+        )
     };
     let read_path = if let Some(resolved) =
         resolve_existing_path_with_execution_scope_for_model_context(
-            gcx.clone(),
+            &tool,
             execution_scope.as_ref(),
             raw_path,
         )

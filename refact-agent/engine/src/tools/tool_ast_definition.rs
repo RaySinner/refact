@@ -17,6 +17,7 @@ use crate::at_commands::at_commands::AtCommandsContext;
 use crate::tools::scope_utils::{
     format_scope_notices, remap_context_file_for_execution_scope_for_model_context,
 };
+use crate::tools::ctx::ToolCtx;
 use crate::tools::tools_description::{
     Tool, ToolDesc, ToolSource, ToolSourceType, json_schema_from_params,
 };
@@ -204,7 +205,7 @@ fn workspace_relative_path(path: &Path, roots: &[PathBuf]) -> Option<String> {
 }
 
 async fn related_memory_references(
-    gcx: Arc<crate::global_context::GlobalContext>,
+    tool: &ToolCtx,
     cards: Vec<KnowledgeCard>,
     roots: &[PathBuf],
     execution_scope: Option<&ExecutionScope>,
@@ -227,7 +228,7 @@ async fn related_memory_references(
             skip_pp: true,
         };
         let Ok(Some((context_file, _))) = remap_context_file_for_execution_scope_for_model_context(
-            gcx.clone(),
+            tool,
             execution_scope,
             context_file,
         )
@@ -310,7 +311,7 @@ async fn symbol_def_via_codegraph(
             };
             if let Some((context_file, notices)) =
                 remap_context_file_for_execution_scope_for_model_context(
-                    gcx.clone(),
+                    &gcx.tool_ctx(gcx.clone()),
                     execution_scope,
                     context_file,
                 )
@@ -398,7 +399,7 @@ async fn symbol_def_via_codegraph(
         Vec::new()
     } else {
         related_memory_references(
-            gcx.clone(),
+            &gcx.tool_ctx(gcx.clone()),
             related_memories,
             &roots,
             execution_scope,

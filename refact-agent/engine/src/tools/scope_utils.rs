@@ -1,21 +1,15 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 pub use refact_scope_utils::{
     dedup_notices, format_scope_notices, path_with_sep, scoped_path_notices, ScopedFiles,
     ScopedResolvedPath, ScopedScopeFilter,
 };
 
-use crate::at_commands::at_file::{file_repair_candidates, return_one_candidate_or_a_good_error};
 use crate::call_validation::ContextFile;
-use crate::files_correction::{canonical_path, correct_to_nearest_dir_path, get_unscoped_project_dirs};
-use crate::files_in_workspace::{
-    check_file_privacy_for_model_context, check_file_privacy_for_send,
-    filter_privacy_allowed_files, filter_privacy_allowed_files_for_model_context, ls_files,
-    ls_files_limited, LsFilesLimited,
-};
-use crate::global_context::GlobalContext;
+use crate::files_correction::canonical_path;
+use crate::files_in_workspace::{ls_files, ls_files_limited, LsFilesLimited};
+use crate::tools::ctx::ToolCtx;
 use crate::worktrees::scope::ExecutionScope;
 
 /// Convert a PathBuf to a String with forward slashes on all platforms.
@@ -23,9 +17,9 @@ fn path_to_string(p: &Path) -> String {
     refact_core::chat_types::normalize_file_name(p.to_string_lossy().into_owned())
 }
 
-async fn get_workspace_files(gcx: Arc<GlobalContext>) -> Vec<PathBuf> {
-    let files = gcx.documents_state.workspace_files.lock().unwrap().clone();
-    let project_dirs = get_unscoped_project_dirs(gcx.clone()).await;
+async fn get_workspace_files(tool: &ToolCtx) -> Vec<PathBuf> {
+    let files = tool.workspace.workspace_files.lock().unwrap().clone();
+    let project_dirs = tool.files.project_dirs().await;
     files
         .into_iter()
         .filter(|file| project_dirs.iter().any(|dir| file.starts_with(dir)))
@@ -33,7 +27,7 @@ async fn get_workspace_files(gcx: Arc<GlobalContext>) -> Vec<PathBuf> {
 }
 
 async fn resolve_scope_legacy_limited(
-    gcx: Arc<GlobalContext>,
+    tool: &ToolCtx,
     scope: &str,
     max_entries: usize,
     abort: Option<&std::sync::atomic::AtomicBool>,
@@ -41,7 +35,7 @@ async fn resolve_scope_legacy_limited(
     if abort.is_some_and(|flag| flag.load(std::sync::atomic::Ordering::Relaxed)) {
         return Err("⚠️ File listing aborted before completion (cancelled by caller).".to_string());
     }
-    let mut files = resolve_scope_legacy(gcx, scope).await?;
+    let mut files = resolve_scope_legacy(tool, scope).await?;
     let truncated = files.len() > max_entries;
     files.truncate(max_entries);
     Ok(ScopedFiles {
@@ -54,23 +48,23 @@ async fn resolve_scope_legacy_limited(
 }
 
 pub async fn resolve_existing_path_with_execution_scope(
-    gcx: Arc<GlobalContext>,
+    tool: &ToolCtx,
     execution_scope: Option<&ExecutionScope>,
     raw: &str,
 ) -> Result<Option<ScopedResolvedPath>, String> {
-    resolve_existing_path_with_execution_scope_impl(gcx, execution_scope, raw, false).await
+    resolve_existing_path_with_execution_scope_impl(tool, execution_scope, raw, false).await
 }
 
 pub async fn resolve_existing_path_with_execution_scope_for_model_context(
-    gcx: Arc<GlobalContext>,
+    tool: &ToolCtx,
     execution_scope: Option<&ExecutionScope>,
     raw: &str,
 ) -> Result<Option<ScopedResolvedPath>, String> {
-    resolve_existing_path_with_execution_scope_impl(gcx, execution_scope, raw, true).await
+    resolve_existing_path_with_execution_scope_impl(tool, execution_scope, raw, true).await
 }
 
 async fn resolve_existing_path_with_execution_scope_impl(
-    gcx: Arc<GlobalContext>,
+    tool: &ToolCtx,
     execution_scope: Option<&ExecutionScope>,
     raw: &str,
     for_model_context: bool,
@@ -84,9 +78,11 @@ async fn resolve_existing_path_with_execution_scope_impl(
     let scoped = scope.resolve_existing_path(&PathBuf::from(raw))?;
     if scoped.path.is_file() {
         if for_model_context {
-            check_file_privacy_for_model_context(gcx, &scoped.path).await?;
+            tool.files
+                .check_file_privacy_for_model_context(&scoped.path)
+                .await?;
         } else {
-            check_file_privacy_for_send(gcx, &scoped.path).await?;
+            tool.files.check_file_privacy_for_send(&scoped.path).await?;
         }
     }
     Ok(Some(ScopedResolvedPath {
@@ -97,28 +93,27 @@ async fn resolve_existing_path_with_execution_scope_impl(
 }
 
 async fn list_files_under_dir(
-    gcx: Arc<GlobalContext>,
+    tool: &ToolCtx,
     dir: &PathBuf,
     recursive: bool,
     privacy_filter: bool,
 ) -> Result<Vec<PathBuf>, String> {
-    let indexing_everywhere =
-        crate::files_blocklist::reload_indexing_everywhere_if_needed(gcx.clone()).await;
+    let indexing_everywhere = tool.files.indexing_everywhere().await;
     let files = ls_files(&indexing_everywhere, dir, recursive)?;
     if privacy_filter {
-        Ok(filter_privacy_allowed_files(gcx, files).await)
+        Ok(tool.files.filter_privacy_allowed_files(files).await)
     } else {
         Ok(files)
     }
 }
 
 pub async fn list_scoped_files_under_dir(
-    gcx: Arc<GlobalContext>,
+    tool: &ToolCtx,
     dir: &PathBuf,
     recursive: bool,
     privacy_filter: bool,
 ) -> Result<Vec<PathBuf>, String> {
-    list_files_under_dir(gcx, dir, recursive, privacy_filter).await
+    list_files_under_dir(tool, dir, recursive, privacy_filter).await
 }
 
 pub fn is_worktree_root_alias(scope: &str) -> bool {
@@ -127,13 +122,13 @@ pub fn is_worktree_root_alias(scope: &str) -> bool {
 }
 
 pub async fn list_execution_scope_root(
-    gcx: Arc<GlobalContext>,
+    tool: &ToolCtx,
     execution_scope: &ExecutionScope,
     recursive: bool,
 ) -> Result<Vec<PathBuf>, String> {
     execution_scope.ensure_active_root()?;
     list_files_under_dir(
-        gcx,
+        tool,
         &execution_scope.effective_root().to_path_buf(),
         recursive,
         true,
@@ -154,7 +149,7 @@ pub fn truncation_notice(max_entries: usize) -> String {
 }
 
 async fn list_files_under_dir_limited(
-    gcx: Arc<GlobalContext>,
+    tool: &ToolCtx,
     dir: &PathBuf,
     recursive: bool,
     privacy_filter: bool,
@@ -162,8 +157,7 @@ async fn list_files_under_dir_limited(
     max_entries: usize,
     abort: Option<&std::sync::atomic::AtomicBool>,
 ) -> Result<ScopedListingLimited, String> {
-    let indexing_everywhere =
-        crate::files_blocklist::reload_indexing_everywhere_if_needed(gcx.clone()).await;
+    let indexing_everywhere = tool.files.indexing_everywhere().await;
     let LsFilesLimited {
         files,
         truncated,
@@ -176,9 +170,11 @@ async fn list_files_under_dir_limited(
         ));
     }
     let files = if for_model_context {
-        filter_privacy_allowed_files_for_model_context(gcx, files).await
+        tool.files
+            .filter_privacy_allowed_files_for_model_context(files)
+            .await
     } else if privacy_filter {
-        filter_privacy_allowed_files(gcx, files).await
+        tool.files.filter_privacy_allowed_files(files).await
     } else {
         files
     };
@@ -186,17 +182,17 @@ async fn list_files_under_dir_limited(
 }
 
 async fn list_files_under_dir_limited_for_model_context(
-    gcx: Arc<GlobalContext>,
+    tool: &ToolCtx,
     dir: &PathBuf,
     recursive: bool,
     max_entries: usize,
     abort: Option<&std::sync::atomic::AtomicBool>,
 ) -> Result<ScopedListingLimited, String> {
-    list_files_under_dir_limited(gcx, dir, recursive, true, true, max_entries, abort).await
+    list_files_under_dir_limited(tool, dir, recursive, true, true, max_entries, abort).await
 }
 
 pub async fn list_scoped_files_under_dir_limited(
-    gcx: Arc<GlobalContext>,
+    tool: &ToolCtx,
     dir: &PathBuf,
     recursive: bool,
     privacy_filter: bool,
@@ -204,7 +200,7 @@ pub async fn list_scoped_files_under_dir_limited(
     abort: Option<&std::sync::atomic::AtomicBool>,
 ) -> Result<ScopedListingLimited, String> {
     list_files_under_dir_limited(
-        gcx,
+        tool,
         dir,
         recursive,
         privacy_filter,
@@ -216,17 +212,17 @@ pub async fn list_scoped_files_under_dir_limited(
 }
 
 pub async fn list_scoped_files_under_dir_limited_for_model_context(
-    gcx: Arc<GlobalContext>,
+    tool: &ToolCtx,
     dir: &PathBuf,
     recursive: bool,
     max_entries: usize,
     abort: Option<&std::sync::atomic::AtomicBool>,
 ) -> Result<ScopedListingLimited, String> {
-    list_files_under_dir_limited_for_model_context(gcx, dir, recursive, max_entries, abort).await
+    list_files_under_dir_limited_for_model_context(tool, dir, recursive, max_entries, abort).await
 }
 
 pub async fn list_execution_scope_root_limited(
-    gcx: Arc<GlobalContext>,
+    tool: &ToolCtx,
     execution_scope: &ExecutionScope,
     recursive: bool,
     max_entries: usize,
@@ -234,7 +230,7 @@ pub async fn list_execution_scope_root_limited(
 ) -> Result<ScopedListingLimited, String> {
     execution_scope.ensure_active_root()?;
     list_files_under_dir_limited(
-        gcx,
+        tool,
         &execution_scope.effective_root().to_path_buf(),
         recursive,
         true,
@@ -245,35 +241,35 @@ pub async fn list_execution_scope_root_limited(
     .await
 }
 
-async fn resolve_scope_legacy(gcx: Arc<GlobalContext>, scope: &str) -> Result<Vec<String>, String> {
+async fn resolve_scope_legacy(tool: &ToolCtx, scope: &str) -> Result<Vec<String>, String> {
     if scope == "workspace" {
-        return Ok(get_workspace_files(gcx)
+        return Ok(get_workspace_files(tool)
             .await
             .into_iter()
             .map(|f| path_to_string(&f))
             .collect());
     }
 
-    let project_dirs = get_unscoped_project_dirs(gcx.clone()).await;
+    let project_dirs = tool.files.project_dirs().await;
     let scope_string = scope.to_string();
     let scope_is_dir = scope.ends_with('/') || scope.ends_with('\\');
 
     if scope_is_dir {
-        let dir_path = return_one_candidate_or_a_good_error(
-            gcx.clone(),
-            &scope_string,
-            &correct_to_nearest_dir_path(gcx.clone(), &scope_string, false, 10).await,
-            &project_dirs,
-            true,
-        )
-        .await?;
+        let candidates = tool
+            .files
+            .correct_to_nearest_dir_path(&scope_string, false, 10)
+            .await;
+        let dir_path = tool
+            .files
+            .return_one_candidate_or_a_good_error(&scope_string, &candidates, &project_dirs, true)
+            .await?;
 
         let dir_path_with_sep = if dir_path.ends_with(std::path::MAIN_SEPARATOR) {
             dir_path.clone()
         } else {
             format!("{}{}", dir_path, std::path::MAIN_SEPARATOR)
         };
-        return Ok(get_workspace_files(gcx)
+        return Ok(get_workspace_files(tool)
             .await
             .into_iter()
             .filter(|f| {
@@ -284,25 +280,30 @@ async fn resolve_scope_legacy(gcx: Arc<GlobalContext>, scope: &str) -> Result<Ve
             .collect());
     }
 
-    match return_one_candidate_or_a_good_error(
-        gcx.clone(),
-        &scope_string,
-        &file_repair_candidates(gcx.clone(), &scope_string, 10, false).await,
-        &project_dirs,
-        false,
-    )
-    .await
+    let file_candidates = tool
+        .files
+        .file_repair_candidates(&scope_string, 10, false)
+        .await;
+    match tool
+        .files
+        .return_one_candidate_or_a_good_error(&scope_string, &file_candidates, &project_dirs, false)
+        .await
     {
         Ok(file_path) => Ok(vec![file_path]),
         Err(file_err) => {
-            match return_one_candidate_or_a_good_error(
-                gcx.clone(),
-                &scope_string,
-                &correct_to_nearest_dir_path(gcx.clone(), &scope_string, false, 10).await,
-                &project_dirs,
-                true,
-            )
-            .await
+            let dir_candidates = tool
+                .files
+                .correct_to_nearest_dir_path(&scope_string, false, 10)
+                .await;
+            match tool
+                .files
+                .return_one_candidate_or_a_good_error(
+                    &scope_string,
+                    &dir_candidates,
+                    &project_dirs,
+                    true,
+                )
+                .await
             {
                 Ok(dir_path) => {
                     let dir_path_with_sep = if dir_path.ends_with(std::path::MAIN_SEPARATOR) {
@@ -310,7 +311,7 @@ async fn resolve_scope_legacy(gcx: Arc<GlobalContext>, scope: &str) -> Result<Ve
                     } else {
                         format!("{}{}", dir_path, std::path::MAIN_SEPARATOR)
                     };
-                    Ok(get_workspace_files(gcx)
+                    Ok(get_workspace_files(tool)
                         .await
                         .into_iter()
                         .filter(|f| {
@@ -327,30 +328,30 @@ async fn resolve_scope_legacy(gcx: Arc<GlobalContext>, scope: &str) -> Result<Ve
 }
 
 #[allow(dead_code)]
-pub async fn resolve_scope(gcx: Arc<GlobalContext>, scope: &str) -> Result<Vec<String>, String> {
-    resolve_scope_legacy(gcx, scope).await
+pub async fn resolve_scope(tool: &ToolCtx, scope: &str) -> Result<Vec<String>, String> {
+    resolve_scope_legacy(tool, scope).await
 }
 
 pub async fn resolve_scope_with_execution_scope(
-    gcx: Arc<GlobalContext>,
+    tool: &ToolCtx,
     execution_scope: Option<&ExecutionScope>,
     scope: &str,
 ) -> Result<ScopedFiles, String> {
     let Some(execution_scope) = execution_scope else {
         return Ok(ScopedFiles {
-            files: resolve_scope_legacy(gcx, scope).await?,
+            files: resolve_scope_legacy(tool, scope).await?,
             notices: vec![],
         });
     };
     if !execution_scope.is_enforced() {
         return Ok(ScopedFiles {
-            files: resolve_scope_legacy(gcx, scope).await?,
+            files: resolve_scope_legacy(tool, scope).await?,
             notices: vec![],
         });
     }
 
     if is_worktree_root_alias(scope) {
-        let files = list_execution_scope_root(gcx, execution_scope, true)
+        let files = list_execution_scope_root(tool, execution_scope, true)
             .await?
             .into_iter()
             .map(|file| path_to_string(&file))
@@ -370,7 +371,7 @@ pub async fn resolve_scope_with_execution_scope(
                 scope
             ));
         }
-        check_file_privacy_for_send(gcx, &scoped.path).await?;
+        tool.files.check_file_privacy_for_send(&scoped.path).await?;
         return Ok(ScopedFiles {
             files: vec![path_to_string(&scoped.path)],
             notices: scoped_path_notices(&scoped),
@@ -383,7 +384,7 @@ pub async fn resolve_scope_with_execution_scope(
         ));
     }
 
-    let files = list_files_under_dir(gcx, &scoped.path, true, true)
+    let files = list_files_under_dir(tool, &scoped.path, true, true)
         .await?
         .into_iter()
         .map(|file| path_to_string(&file))
@@ -396,14 +397,14 @@ pub async fn resolve_scope_with_execution_scope(
 }
 
 pub async fn resolve_scope_with_execution_scope_limited(
-    gcx: Arc<GlobalContext>,
+    tool: &ToolCtx,
     execution_scope: Option<&ExecutionScope>,
     scope: &str,
     max_entries: usize,
     abort: Option<&std::sync::atomic::AtomicBool>,
 ) -> Result<ScopedFiles, String> {
     resolve_scope_with_execution_scope_limited_impl(
-        gcx,
+        tool,
         execution_scope,
         scope,
         max_entries,
@@ -414,14 +415,14 @@ pub async fn resolve_scope_with_execution_scope_limited(
 }
 
 pub async fn resolve_scope_with_execution_scope_limited_for_model_context(
-    gcx: Arc<GlobalContext>,
+    tool: &ToolCtx,
     execution_scope: Option<&ExecutionScope>,
     scope: &str,
     max_entries: usize,
     abort: Option<&std::sync::atomic::AtomicBool>,
 ) -> Result<ScopedFiles, String> {
     resolve_scope_with_execution_scope_limited_impl(
-        gcx,
+        tool,
         execution_scope,
         scope,
         max_entries,
@@ -432,7 +433,7 @@ pub async fn resolve_scope_with_execution_scope_limited_for_model_context(
 }
 
 async fn resolve_scope_with_execution_scope_limited_impl(
-    gcx: Arc<GlobalContext>,
+    tool: &ToolCtx,
     execution_scope: Option<&ExecutionScope>,
     scope: &str,
     max_entries: usize,
@@ -442,50 +443,52 @@ async fn resolve_scope_with_execution_scope_limited_impl(
     let Some(execution_scope) = execution_scope else {
         if for_model_context {
             let scoped =
-                resolve_scope_legacy_limited(gcx.clone(), scope, max_entries, abort).await?;
-            let files = filter_privacy_allowed_files_for_model_context(
-                gcx,
-                scoped.files.into_iter().map(PathBuf::from).collect(),
-            )
-            .await
-            .into_iter()
-            .map(|path| path_to_string(&path))
-            .collect();
+                resolve_scope_legacy_limited(tool, scope, max_entries, abort).await?;
+            let files = tool
+                .files
+                .filter_privacy_allowed_files_for_model_context(
+                    scoped.files.into_iter().map(PathBuf::from).collect(),
+                )
+                .await
+                .into_iter()
+                .map(|path| path_to_string(&path))
+                .collect();
             return Ok(ScopedFiles {
                 files,
                 notices: scoped.notices,
             });
         }
-        return resolve_scope_legacy_limited(gcx, scope, max_entries, abort).await;
+        return resolve_scope_legacy_limited(tool, scope, max_entries, abort).await;
     };
     if !execution_scope.is_enforced() {
         if for_model_context {
             let scoped =
-                resolve_scope_legacy_limited(gcx.clone(), scope, max_entries, abort).await?;
-            let files = filter_privacy_allowed_files_for_model_context(
-                gcx,
-                scoped.files.into_iter().map(PathBuf::from).collect(),
-            )
-            .await
-            .into_iter()
-            .map(|path| path_to_string(&path))
-            .collect();
+                resolve_scope_legacy_limited(tool, scope, max_entries, abort).await?;
+            let files = tool
+                .files
+                .filter_privacy_allowed_files_for_model_context(
+                    scoped.files.into_iter().map(PathBuf::from).collect(),
+                )
+                .await
+                .into_iter()
+                .map(|path| path_to_string(&path))
+                .collect();
             return Ok(ScopedFiles {
                 files,
                 notices: scoped.notices,
             });
         }
-        return resolve_scope_legacy_limited(gcx, scope, max_entries, abort).await;
+        return resolve_scope_legacy_limited(tool, scope, max_entries, abort).await;
     }
 
     if is_worktree_root_alias(scope) {
         execution_scope.ensure_active_root()?;
         let root = execution_scope.effective_root().to_path_buf();
         let listing = if for_model_context {
-            list_files_under_dir_limited_for_model_context(gcx, &root, true, max_entries, abort)
+            list_files_under_dir_limited_for_model_context(tool, &root, true, max_entries, abort)
                 .await?
         } else {
-            list_files_under_dir_limited(gcx, &root, true, true, false, max_entries, abort).await?
+            list_files_under_dir_limited(tool, &root, true, true, false, max_entries, abort).await?
         };
         let mut notices = vec![];
         if listing.truncated {
@@ -511,9 +514,11 @@ async fn resolve_scope_with_execution_scope_limited_impl(
             ));
         }
         if for_model_context {
-            check_file_privacy_for_model_context(gcx, &scoped.path).await?;
+            tool.files
+                .check_file_privacy_for_model_context(&scoped.path)
+                .await?;
         } else {
-            check_file_privacy_for_send(gcx, &scoped.path).await?;
+            tool.files.check_file_privacy_for_send(&scoped.path).await?;
         }
         return Ok(ScopedFiles {
             files: vec![path_to_string(&scoped.path)],
@@ -528,10 +533,16 @@ async fn resolve_scope_with_execution_scope_limited_impl(
     }
 
     let listing = if for_model_context {
-        list_files_under_dir_limited_for_model_context(gcx, &scoped.path, true, max_entries, abort)
-            .await?
+        list_files_under_dir_limited_for_model_context(
+            tool,
+            &scoped.path,
+            true,
+            max_entries,
+            abort,
+        )
+        .await?
     } else {
-        list_files_under_dir_limited(gcx, &scoped.path, true, true, false, max_entries, abort)
+        list_files_under_dir_limited(tool, &scoped.path, true, true, false, max_entries, abort)
             .await?
     };
     let mut notices = scoped_path_notices(&scoped);
@@ -556,26 +567,26 @@ fn escape_path_for_scope_filter(path: &str) -> String {
 }
 
 async fn create_scope_filter_legacy(
-    gcx: Arc<GlobalContext>,
+    tool: &ToolCtx,
     scope: &str,
 ) -> Result<Option<String>, String> {
     if scope == "workspace" {
         return Ok(None);
     }
 
-    let project_dirs = get_unscoped_project_dirs(gcx.clone()).await;
+    let project_dirs = tool.files.project_dirs().await;
     let scope_string = scope.to_string();
     let scope_is_dir = scope.ends_with('/') || scope.ends_with('\\');
 
     if scope_is_dir {
-        let dir_path = return_one_candidate_or_a_good_error(
-            gcx.clone(),
-            &scope_string,
-            &correct_to_nearest_dir_path(gcx.clone(), &scope_string, false, 10).await,
-            &project_dirs,
-            true,
-        )
-        .await?;
+        let candidates = tool
+            .files
+            .correct_to_nearest_dir_path(&scope_string, false, 10)
+            .await;
+        let dir_path = tool
+            .files
+            .return_one_candidate_or_a_good_error(&scope_string, &candidates, &project_dirs, true)
+            .await?;
 
         let dir_path_with_sep = if dir_path.ends_with(std::path::MAIN_SEPARATOR) {
             dir_path.clone()
@@ -588,28 +599,33 @@ async fn create_scope_filter_legacy(
         )));
     }
 
-    match return_one_candidate_or_a_good_error(
-        gcx.clone(),
-        &scope_string,
-        &file_repair_candidates(gcx.clone(), &scope_string, 10, false).await,
-        &project_dirs,
-        false,
-    )
-    .await
+    let file_candidates = tool
+        .files
+        .file_repair_candidates(&scope_string, 10, false)
+        .await;
+    match tool
+        .files
+        .return_one_candidate_or_a_good_error(&scope_string, &file_candidates, &project_dirs, false)
+        .await
     {
         Ok(file_path) => Ok(Some(format!(
             "(scope = \"{}\")",
             escape_path_for_scope_filter(&file_path)
         ))),
         Err(file_err) => {
-            match return_one_candidate_or_a_good_error(
-                gcx.clone(),
-                &scope_string,
-                &correct_to_nearest_dir_path(gcx.clone(), &scope_string, false, 10).await,
-                &project_dirs,
-                true,
-            )
-            .await
+            let dir_candidates = tool
+                .files
+                .correct_to_nearest_dir_path(&scope_string, false, 10)
+                .await;
+            match tool
+                .files
+                .return_one_candidate_or_a_good_error(
+                    &scope_string,
+                    &dir_candidates,
+                    &project_dirs,
+                    true,
+                )
+                .await
             {
                 Ok(dir_path) => {
                     let dir_path_with_sep = if dir_path.ends_with(std::path::MAIN_SEPARATOR) {
@@ -630,10 +646,10 @@ async fn create_scope_filter_legacy(
 
 #[allow(dead_code)]
 pub async fn create_scope_filter(
-    gcx: Arc<GlobalContext>,
+    tool: &ToolCtx,
     scope: &str,
 ) -> Result<Option<String>, String> {
-    create_scope_filter_legacy(gcx, scope).await
+    create_scope_filter_legacy(tool, scope).await
 }
 
 fn indexed_path_for_scoped_path(execution_scope: &ExecutionScope, path: &Path) -> PathBuf {
@@ -668,7 +684,7 @@ pub struct WorktreeOnlyListingLimited {
 /// privacy/ignore filtering and source-to-worktree mapping have established that a file exists
 /// solely in the active worktree.
 pub async fn resolve_worktree_only_scope_limited(
-    gcx: Arc<GlobalContext>,
+    tool: &ToolCtx,
     execution_scope: &ExecutionScope,
     scope: &str,
     max_candidates: usize,
@@ -677,7 +693,7 @@ pub async fn resolve_worktree_only_scope_limited(
 ) -> Result<WorktreeOnlyListingLimited, String> {
     let traversal_notice = truncation_notice(max_visited_entries);
     let scoped = resolve_scope_with_execution_scope_limited(
-        gcx,
+        tool,
         Some(execution_scope),
         scope,
         max_visited_entries,
@@ -711,36 +727,36 @@ pub async fn resolve_worktree_only_scope_limited(
 }
 
 pub async fn create_scope_filter_with_execution_scope(
-    gcx: Arc<GlobalContext>,
+    tool: &ToolCtx,
     execution_scope: Option<&ExecutionScope>,
     scope: &str,
 ) -> Result<ScopedScopeFilter, String> {
-    create_scope_filter_with_execution_scope_impl(gcx, execution_scope, scope, false).await
+    create_scope_filter_with_execution_scope_impl(tool, execution_scope, scope, false).await
 }
 
 pub async fn create_scope_filter_with_execution_scope_for_model_context(
-    gcx: Arc<GlobalContext>,
+    tool: &ToolCtx,
     execution_scope: Option<&ExecutionScope>,
     scope: &str,
 ) -> Result<ScopedScopeFilter, String> {
-    create_scope_filter_with_execution_scope_impl(gcx, execution_scope, scope, true).await
+    create_scope_filter_with_execution_scope_impl(tool, execution_scope, scope, true).await
 }
 
 async fn create_scope_filter_with_execution_scope_impl(
-    gcx: Arc<GlobalContext>,
+    tool: &ToolCtx,
     execution_scope: Option<&ExecutionScope>,
     scope: &str,
     for_model_context: bool,
 ) -> Result<ScopedScopeFilter, String> {
     let Some(execution_scope) = execution_scope else {
         return Ok(ScopedScopeFilter {
-            filter: create_scope_filter_legacy(gcx, scope).await?,
+            filter: create_scope_filter_legacy(tool, scope).await?,
             notices: vec![],
         });
     };
     if !execution_scope.is_enforced() {
         return Ok(ScopedScopeFilter {
-            filter: create_scope_filter_legacy(gcx, scope).await?,
+            filter: create_scope_filter_legacy(tool, scope).await?,
             notices: vec![],
         });
     }
@@ -762,9 +778,11 @@ async fn create_scope_filter_with_execution_scope_impl(
     let scoped = execution_scope.resolve_existing_path(&PathBuf::from(scope))?;
     if scoped.path.is_file() {
         if for_model_context {
-            check_file_privacy_for_model_context(gcx, &scoped.path).await?;
+            tool.files
+                .check_file_privacy_for_model_context(&scoped.path)
+                .await?;
         } else {
-            check_file_privacy_for_send(gcx, &scoped.path).await?;
+            tool.files.check_file_privacy_for_send(&scoped.path).await?;
         }
     }
     let indexed_path = indexed_path_for_scoped_path(execution_scope, &scoped.path);
@@ -786,37 +804,39 @@ async fn create_scope_filter_with_execution_scope_impl(
 }
 
 pub async fn remap_context_file_for_execution_scope(
-    gcx: Arc<GlobalContext>,
+    tool: &ToolCtx,
     execution_scope: Option<&ExecutionScope>,
     context_file: ContextFile,
 ) -> Result<Option<(ContextFile, Vec<String>)>, String> {
-    remap_context_file_for_execution_scope_impl(gcx, execution_scope, context_file, false).await
+    remap_context_file_for_execution_scope_impl(tool, execution_scope, context_file, false).await
 }
 
 pub async fn remap_context_file_for_execution_scope_for_model_context(
-    gcx: Arc<GlobalContext>,
+    tool: &ToolCtx,
     execution_scope: Option<&ExecutionScope>,
     context_file: ContextFile,
 ) -> Result<Option<(ContextFile, Vec<String>)>, String> {
-    remap_context_file_for_execution_scope_impl(gcx, execution_scope, context_file, true).await
+    remap_context_file_for_execution_scope_impl(tool, execution_scope, context_file, true).await
 }
 
 async fn remap_context_file_for_execution_scope_impl(
-    gcx: Arc<GlobalContext>,
+    tool: &ToolCtx,
     execution_scope: Option<&ExecutionScope>,
     mut context_file: ContextFile,
     for_model_context: bool,
 ) -> Result<Option<(ContextFile, Vec<String>)>, String> {
     let Some(execution_scope) = execution_scope else {
         if for_model_context {
-            check_file_privacy_for_model_context(gcx, &PathBuf::from(&context_file.file_name))
+            tool.files
+                .check_file_privacy_for_model_context(&PathBuf::from(&context_file.file_name))
                 .await?;
         }
         return Ok(Some((context_file, vec![])));
     };
     if !execution_scope.is_enforced() {
         if for_model_context {
-            check_file_privacy_for_model_context(gcx, &PathBuf::from(&context_file.file_name))
+            tool.files
+                .check_file_privacy_for_model_context(&PathBuf::from(&context_file.file_name))
                 .await?;
         }
         return Ok(Some((context_file, vec![])));
@@ -832,9 +852,11 @@ async fn remap_context_file_for_execution_scope_impl(
 
     if normalized_path.starts_with(execution_scope.effective_root()) {
         if for_model_context {
-            check_file_privacy_for_model_context(gcx.clone(), &normalized_path).await?;
+            tool.files
+                .check_file_privacy_for_model_context(&normalized_path)
+                .await?;
         } else {
-            check_file_privacy_for_send(gcx.clone(), &normalized_path).await?;
+            tool.files.check_file_privacy_for_send(&normalized_path).await?;
         }
         context_file.file_name = path_to_string(&normalized_path);
         return Ok(Some((context_file, vec![])));
@@ -853,9 +875,11 @@ async fn remap_context_file_for_execution_scope_impl(
                     ))
                     .to_path_buf();
                     if for_model_context {
-                        check_file_privacy_for_model_context(gcx.clone(), &worktree_path).await?;
+                        tool.files
+                            .check_file_privacy_for_model_context(&worktree_path)
+                            .await?;
                     } else {
-                        check_file_privacy_for_send(gcx.clone(), &worktree_path).await?;
+                        tool.files.check_file_privacy_for_send(&worktree_path).await?;
                     }
                     let notice = format!(
                         "⚠️ AST/VecDB result was mapped from source checkout to active worktree: {} -> {}",
@@ -871,9 +895,11 @@ async fn remap_context_file_for_execution_scope_impl(
     }
 
     if for_model_context {
-        check_file_privacy_for_model_context(gcx, &normalized_path).await?;
+        tool.files
+            .check_file_privacy_for_model_context(&normalized_path)
+            .await?;
     } else {
-        check_file_privacy_for_send(gcx, &normalized_path).await?;
+        tool.files.check_file_privacy_for_send(&normalized_path).await?;
     }
     context_file.file_name = path_to_string(&normalized_path);
     Ok(Some((
@@ -886,23 +912,23 @@ async fn remap_context_file_for_execution_scope_impl(
 }
 
 pub async fn remap_context_files_for_execution_scope(
-    gcx: Arc<GlobalContext>,
+    tool: &ToolCtx,
     execution_scope: Option<&ExecutionScope>,
     context_files: Vec<ContextFile>,
 ) -> Result<(Vec<ContextFile>, Vec<String>), String> {
-    remap_context_files_for_execution_scope_impl(gcx, execution_scope, context_files, false).await
+    remap_context_files_for_execution_scope_impl(tool, execution_scope, context_files, false).await
 }
 
 pub async fn remap_context_files_for_execution_scope_for_model_context(
-    gcx: Arc<GlobalContext>,
+    tool: &ToolCtx,
     execution_scope: Option<&ExecutionScope>,
     context_files: Vec<ContextFile>,
 ) -> Result<(Vec<ContextFile>, Vec<String>), String> {
-    remap_context_files_for_execution_scope_impl(gcx, execution_scope, context_files, true).await
+    remap_context_files_for_execution_scope_impl(tool, execution_scope, context_files, true).await
 }
 
 async fn remap_context_files_for_execution_scope_impl(
-    gcx: Arc<GlobalContext>,
+    tool: &ToolCtx,
     execution_scope: Option<&ExecutionScope>,
     context_files: Vec<ContextFile>,
     for_model_context: bool,
@@ -913,7 +939,7 @@ async fn remap_context_files_for_execution_scope_impl(
 
     for context_file in context_files {
         if let Some((context_file, mut file_notices)) = remap_context_file_for_execution_scope_impl(
-            gcx.clone(),
+            tool,
             execution_scope,
             context_file,
             for_model_context,
@@ -966,6 +992,13 @@ mod worktree_scope_read_tools {
     use std::collections::HashMap;
     use std::fs;
     use tokio::sync::Mutex as AMutex;
+    use std::sync::Arc;
+
+    use crate::global_context::GlobalContext;
+
+    fn tool_ctx(gcx: &Arc<GlobalContext>) -> ToolCtx {
+        gcx.tool_ctx(gcx.clone())
+    }
 
     struct MockVecdb {
         records: Vec<crate::vecdb::vdb_structs::VecdbRecord>,
@@ -1528,7 +1561,7 @@ mod worktree_scope_read_tools {
         let gcx = make_gcx(&fixture, vec![]).await;
         let scope = ExecutionScope::from_worktree(&fixture.worktree);
 
-        let resolved = resolve_scope_with_execution_scope(gcx, Some(&scope), "workspace")
+        let resolved = resolve_scope_with_execution_scope(&tool_ctx(&gcx), Some(&scope), "workspace")
             .await
             .unwrap();
 
@@ -1567,8 +1600,13 @@ mod worktree_scope_read_tools {
         let gcx = make_gcx(&fixture, vec![]).await;
         let scope = ExecutionScope::from_worktree(&fixture.worktree);
 
-        let resolved =
-            resolve_scope_with_execution_scope_limited(gcx, Some(&scope), "workspace", 2, None)
+        let resolved = resolve_scope_with_execution_scope_limited(
+            &tool_ctx(&gcx),
+            Some(&scope),
+            "workspace",
+            2,
+            None,
+        )
                 .await
                 .unwrap();
 
@@ -1595,14 +1633,14 @@ mod worktree_scope_read_tools {
         let scope = ExecutionScope::from_worktree(&fixture.worktree);
 
         assert!(resolve_existing_path_with_execution_scope(
-            gcx.clone(),
+            &tool_ctx(&gcx),
             Some(&scope),
             "src/context.controlled",
         )
         .await
         .is_err());
         let resolved = resolve_existing_path_with_execution_scope_for_model_context(
-            gcx.clone(),
+            &tool_ctx(&gcx),
             Some(&scope),
             "src/context.controlled",
         )
@@ -1612,7 +1650,7 @@ mod worktree_scope_read_tools {
         assert_eq!(resolved.path, controlled);
         assert!(
             resolve_existing_path_with_execution_scope_for_model_context(
-                gcx,
+                &tool_ctx(&gcx),
                 Some(&scope),
                 "src/context.blocked",
             )
@@ -1635,7 +1673,7 @@ mod worktree_scope_read_tools {
         let scope = ExecutionScope::from_worktree(&fixture.worktree);
 
         let strict = resolve_scope_with_execution_scope_limited(
-            gcx.clone(),
+            &tool_ctx(&gcx),
             Some(&scope),
             "src/",
             100,
@@ -1649,7 +1687,7 @@ mod worktree_scope_read_tools {
             .any(|path| path.ends_with("context.controlled")));
 
         let model_context = resolve_scope_with_execution_scope_limited_for_model_context(
-            gcx,
+            &tool_ctx(&gcx),
             Some(&scope),
             "src/",
             100,
@@ -1676,9 +1714,10 @@ mod worktree_scope_read_tools {
             files.extend((0..10).map(|index| fixture.source.join(format!("extra_{index}.rs"))));
         }
 
-        let resolved = resolve_scope_with_execution_scope_limited(gcx, None, "workspace", 2, None)
-            .await
-            .unwrap();
+        let resolved =
+            resolve_scope_with_execution_scope_limited(&tool_ctx(&gcx), None, "workspace", 2, None)
+                .await
+                .unwrap();
 
         assert_eq!(resolved.files.len(), 2);
         assert!(resolved
@@ -1986,10 +2025,11 @@ mod worktree_scope_read_tools {
             skip_pp: false,
         };
 
-        let remapped = remap_context_file_for_execution_scope(gcx, Some(&scope), context_file)
-            .await
-            .unwrap()
-            .unwrap();
+        let remapped =
+            remap_context_file_for_execution_scope(&tool_ctx(&gcx), Some(&scope), context_file)
+                .await
+                .unwrap()
+                .unwrap();
 
         assert_eq!(remapped.0.file_name, worktree_path);
         assert!(remapped
@@ -2029,14 +2069,14 @@ mod worktree_scope_read_tools {
         };
 
         assert!(remap_context_file_for_execution_scope(
-            gcx.clone(),
+            &tool_ctx(&gcx),
             Some(&scope),
             context_file(&controlled_source),
         )
         .await
         .is_err());
         let (remapped, notices) = remap_context_files_for_execution_scope_for_model_context(
-            gcx.clone(),
+            &tool_ctx(&gcx),
             Some(&scope),
             vec![context_file(&controlled_source)],
         )
@@ -2045,7 +2085,7 @@ mod worktree_scope_read_tools {
         assert_eq!(remapped[0].file_name, norm(controlled_worktree));
         assert!(notices.join("\n").contains("mapped from source checkout"));
         assert!(remap_context_files_for_execution_scope_for_model_context(
-            gcx,
+            &tool_ctx(&gcx),
             Some(&scope),
             vec![context_file(&blocked_source)],
         )
@@ -2076,9 +2116,10 @@ mod worktree_scope_read_tools {
             skip_pp: false,
         };
 
-        let remapped = remap_context_file_for_execution_scope(gcx, Some(&scope), context_file)
-            .await
-            .unwrap();
+        let remapped =
+            remap_context_file_for_execution_scope(&tool_ctx(&gcx), Some(&scope), context_file)
+                .await
+                .unwrap();
 
         assert!(remapped.is_none());
     }
@@ -2106,9 +2147,10 @@ mod worktree_scope_read_tools {
             skip_pp: false,
         };
 
-        let remapped = remap_context_file_for_execution_scope(gcx, Some(&scope), context_file)
-            .await
-            .unwrap();
+        let remapped =
+            remap_context_file_for_execution_scope(&tool_ctx(&gcx), Some(&scope), context_file)
+                .await
+                .unwrap();
 
         assert!(remapped.is_none());
     }
@@ -2136,9 +2178,10 @@ mod worktree_scope_read_tools {
             skip_pp: false,
         };
 
-        let remapped = remap_context_file_for_execution_scope(gcx, Some(&scope), context_file)
-            .await
-            .unwrap();
+        let remapped =
+            remap_context_file_for_execution_scope(&tool_ctx(&gcx), Some(&scope), context_file)
+                .await
+                .unwrap();
 
         assert!(remapped.is_none());
     }
@@ -2188,7 +2231,9 @@ mod worktree_scope_read_tools {
             skip_pp: false,
         };
 
-        let result = remap_context_file_for_execution_scope(gcx, Some(&scope), context_file).await;
+        let result =
+            remap_context_file_for_execution_scope(&tool_ctx(&gcx), Some(&scope), context_file)
+                .await;
         assert!(
             result.is_err(),
             "privacy-blocked .env inside worktree should return error"

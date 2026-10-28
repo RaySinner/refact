@@ -105,7 +105,7 @@ impl Tool for ToolTree {
                 Some(path) => {
                     if is_worktree_root_alias(&path) {
                         let listing = list_execution_scope_root_limited(
-                            gcx.clone(),
+                            &tool,
                             scope,
                             true,
                             MAX_TREE_PATHS,
@@ -123,7 +123,7 @@ impl Tool for ToolTree {
                         )
                     } else {
                         let resolved = resolve_existing_path_with_execution_scope(
-                            gcx.clone(),
+                            &tool,
                             Some(scope),
                             &path,
                         )
@@ -140,7 +140,7 @@ impl Tool for ToolTree {
                             ));
                         }
                         let listing = list_scoped_files_under_dir_limited(
-                            gcx.clone(),
+                            &tool,
                             &resolved.path,
                             true,
                             true,
@@ -161,7 +161,7 @@ impl Tool for ToolTree {
                 }
                 None => {
                     let listing = list_execution_scope_root_limited(
-                        gcx.clone(),
+                        &tool,
                         scope,
                         true,
                         MAX_TREE_PATHS,

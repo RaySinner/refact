@@ -490,10 +490,11 @@ impl AtCommand for AtTree {
         cmd: &mut AtCommandMember,
         args: &mut Vec<AtCommandMember>,
     ) -> Result<(Vec<ContextEnum>, String), String> {
-        let (gcx, execution_scope, abort_flag) = {
+        let (gcx, tool, execution_scope, abort_flag) = {
             let cgcx = ccx.lock().await;
             (
                 cgcx.global_context.clone(),
+                cgcx.tool.clone(),
                 cgcx.execution_scope.clone(),
                 cgcx.abort_flag.clone(),
             )
@@ -527,7 +528,7 @@ impl AtCommand for AtTree {
             match args.iter().find(|x| x.text != "--ast") {
                 None => {
                     let listing = list_execution_scope_root_limited(
-                        gcx.clone(),
+                        &tool,
                         scope,
                         true,
                         MAX_TREE_PATHS,
@@ -548,7 +549,7 @@ impl AtCommand for AtTree {
                     let path = arg.text.clone();
                     if is_worktree_root_alias(&path) {
                         let listing = list_execution_scope_root_limited(
-                            gcx.clone(),
+                            &tool,
                             scope,
                             true,
                             MAX_TREE_PATHS,
@@ -566,7 +567,7 @@ impl AtCommand for AtTree {
                         )
                     } else {
                         let resolved = resolve_existing_path_with_execution_scope(
-                            gcx.clone(),
+                            &tool,
                             Some(scope),
                             &path,
                         )
@@ -582,7 +583,7 @@ impl AtCommand for AtTree {
                             return Err(e);
                         }
                         let listing = list_scoped_files_under_dir_limited(
-                            gcx.clone(),
+                            &tool,
                             &resolved.path,
                             true,
                             true,

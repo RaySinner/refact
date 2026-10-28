@@ -413,7 +413,7 @@ impl Tool for ToolRegexSearch {
         let roots = workspace_roots(&gcx, execution_scope.as_ref());
 
         let scoped_files = resolve_scope_with_execution_scope_limited_for_model_context(
-            gcx.clone(),
+            &tool,
             execution_scope.as_ref(),
             &scope,
             MAX_SEARCH_CANDIDATE_ENTRIES,

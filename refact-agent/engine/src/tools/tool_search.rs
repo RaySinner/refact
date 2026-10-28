@@ -21,6 +21,7 @@ use crate::tools::scope_utils::{
     create_scope_filter_with_execution_scope_for_model_context, format_scope_notices,
     remap_context_files_for_execution_scope_for_model_context, resolve_worktree_only_scope_limited,
 };
+use crate::tools::ctx::ToolCtx;
 use crate::tools::tools_description::{
     Tool, ToolDesc, ToolSource, ToolSourceType, json_schema_from_params,
 };
@@ -175,6 +176,7 @@ struct FallbackOutcome {
 
 async fn direct_worktree_fallback_search(
     gcx: Arc<GlobalContext>,
+    tool: &ToolCtx,
     execution_scope: Option<&ExecutionScope>,
     read_context: &FileReadContext,
     scope: &str,
@@ -205,7 +207,7 @@ async fn direct_worktree_fallback_search(
     }
 
     let listing = resolve_worktree_only_scope_limited(
-        gcx.clone(),
+        tool,
         execution_scope,
         scope,
         FALLBACK_MAX_CANDIDATE_FILES,
@@ -266,17 +268,18 @@ async fn execute_att_search(
     context_lines: usize,
     fallback_limit: usize,
 ) -> Result<(Vec<ContextFile>, Vec<String>), String> {
-    let (gcx, execution_scope, abort_flag) = {
+    let (gcx, tool, execution_scope, abort_flag) = {
         let cgcx = ccx.lock().await;
         (
             cgcx.app.gcx.clone(),
+            cgcx.tool.clone(),
             cgcx.execution_scope.clone(),
             cgcx.abort_flag.clone(),
         )
     };
 
     let scoped_filter = create_scope_filter_with_execution_scope_for_model_context(
-        gcx.clone(),
+        &tool,
         execution_scope.as_ref(),
         scope,
     )
@@ -286,7 +289,7 @@ async fn execute_att_search(
     let context_files = execute_at_search(ccx.clone(), &query, scoped_filter.filter).await?;
     let (mut context_files, remap_notices) =
         remap_context_files_for_execution_scope_for_model_context(
-            gcx.clone(),
+            &tool,
             execution_scope.as_ref(),
             context_files,
         )
@@ -297,6 +300,7 @@ async fn execute_att_search(
     let read_context = prepare_file_read_context(gcx.clone()).await;
     let fallback_outcome = direct_worktree_fallback_search(
         gcx.clone(),
+        &tool,
         execution_scope.as_ref(),
         &read_context,
         scope,

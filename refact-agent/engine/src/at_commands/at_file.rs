@@ -18,6 +18,7 @@ use crate::global_context::GlobalContext;
 use crate::tools::scope_utils::{
     format_scope_notices, resolve_existing_path_with_execution_scope_for_model_context,
 };
+use crate::tools::ctx::ToolCtx;
 use crate::worktrees::scope::ExecutionScope;
 
 pub async fn resolve_file_path_directly(
@@ -59,13 +60,14 @@ pub async fn resolve_file_path_directly(
 
 pub async fn resolve_file_path_directly_with_scope(
     gcx: Arc<GlobalContext>,
+    tool: &ToolCtx,
     execution_scope: Option<&ExecutionScope>,
     path_with_colon: &str,
 ) -> Result<Option<(String, Vec<String>)>, String> {
     let mut path_str = path_with_colon.to_string();
     let colon_range = colon_lines_range_from_arg(&mut path_str);
     if let Some(resolved) = resolve_existing_path_with_execution_scope_for_model_context(
-        gcx.clone(),
+        tool,
         execution_scope,
         &path_str,
     )
@@ -481,10 +483,11 @@ impl AtCommand for AtFile {
         cmd: &mut AtCommandMember,
         args: &mut Vec<AtCommandMember>,
     ) -> Result<(Vec<ContextEnum>, String), String> {
-        let (gcx, top_n, is_preview, execution_scope) = {
+        let (gcx, tool, top_n, is_preview, execution_scope) = {
             let ccx_lock = ccx.lock().await;
             (
                 ccx_lock.global_context.clone(),
+                ccx_lock.tool.clone(),
                 ccx_lock.top_n,
                 ccx_lock.is_preview,
                 ccx_lock.execution_scope.clone(),
@@ -509,6 +512,7 @@ impl AtCommand for AtFile {
 
         match resolve_file_path_directly_with_scope(
             gcx.clone(),
+            &tool,
             execution_scope.as_ref(),
             &arg0.text,
         )

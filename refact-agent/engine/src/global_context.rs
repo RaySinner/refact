@@ -576,6 +576,7 @@ impl GlobalContext {
             workspace: ToolWorkspaceScope {
                 knowledge_index: self.knowledge_index.clone(),
                 privacy_settings: self.privacy_settings.clone(),
+                workspace_files: self.documents_state.workspace_files.clone(),
             },
             codeintel: ToolCodeIntelScope {
                 codegraph: self.codegraph.clone(),

@@ -186,10 +186,11 @@ impl Tool for ToolGlob {
         let pattern = Pattern::new(&pattern_str)
             .map_err(|e| format!("⚠️ Invalid glob pattern '{}': {}. 💡 Use `**` to match across directories and `*` within a segment.", pattern_str, e))?;
 
-        let (gcx, execution_scope, abort_flag) = {
+        let (gcx, tool, execution_scope, abort_flag) = {
             let cgcx = ccx.lock().await;
             (
                 cgcx.app.gcx.clone(),
+                cgcx.tool.clone(),
                 cgcx.execution_scope.clone(),
                 cgcx.abort_flag.clone(),
             )
@@ -200,7 +201,7 @@ impl Tool for ToolGlob {
         }
 
         let scoped_files = resolve_scope_with_execution_scope_limited_for_model_context(
-            gcx.clone(),
+            &tool,
             execution_scope.as_ref(),
             &scope,
             MAX_GLOB_CANDIDATE_ENTRIES,

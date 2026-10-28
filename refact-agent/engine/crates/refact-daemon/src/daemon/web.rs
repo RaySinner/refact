@@ -66,7 +66,7 @@ pub(crate) async fn handle_project_picker(
     if let Some(response) = daemon_auth_redirect(&state, &uri) {
         return response;
     }
-    let data = picker_data(state, port).await;
+    let data = picker_data(state.clone(), port).await;
     html_response(StatusCode::OK, render_picker_html(&data))
 }
 
@@ -77,7 +77,7 @@ pub(crate) async fn handle_dashboard_index(
     if let Some(response) = daemon_auth_redirect(&state, &uri) {
         return response;
     }
-    let data = picker_data(state, port).await;
+    let data = picker_data(state.clone(), port).await;
     match state.gui_assets().and_then(|get| get(INDEX_PATH)) {
         Some(asset) => asset_response(
             INDEX_PATH,

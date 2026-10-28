@@ -621,6 +621,22 @@ pub fn start_generation(
                         .await;
                         continue;
                     }
+                    let turn_index = {
+                        let session = session_arc.lock().await;
+                        session
+                            .messages
+                            .iter()
+                            .filter(|message| message.role == "assistant")
+                            .count() as u64
+                    };
+                    tokio::spawn(
+                        crate::buddy::interventions::stalled_turn::maybe_detect_stalled_turn(
+                            app.clone(),
+                            session_arc.clone(),
+                            0,
+                            turn_index,
+                        ),
+                    );
                     if inject_queued_user_messages_before_llm_if_safe(
                         app.clone(),
                         session_arc.clone(),

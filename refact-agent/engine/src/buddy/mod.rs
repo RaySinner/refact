@@ -9,6 +9,7 @@ pub mod drafts;
 pub mod events;
 pub mod facts;
 pub mod humor;
+pub mod interventions;
 pub mod issues;
 pub mod jobs;
 pub mod memory_lifecycle;

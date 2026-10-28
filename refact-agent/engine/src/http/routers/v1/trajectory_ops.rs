@@ -193,8 +193,11 @@ async fn create_initial_plan_document_for_transition(
         return (None, None);
     };
     let result = async {
-        let documents_dir =
-            crate::tools::tool_task_documents::documents_dir_for_task(gcx.clone(), task_id).await?;
+        let documents_dir = crate::tools::tool_task_documents::documents_dir_for_task_for_ctx(
+            &gcx.chat_ctx(gcx.clone()),
+            task_id,
+        )
+        .await?;
         let slug = crate::tools::tool_task_documents::next_available_slug_at(
             &documents_dir,
             "initial-plan",

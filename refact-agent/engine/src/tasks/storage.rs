@@ -95,7 +95,7 @@ pub async fn find_task_dir(gcx: Arc<GlobalContext>, task_id: &str) -> Result<Pat
     find_task_dir_for_ctx(&gcx.chat_ctx(gcx.clone()), task_id).await
 }
 
-async fn get_all_tasks_dirs_for_ctx(ctx: &crate::chat::ctx::ChatCtx) -> Vec<PathBuf> {
+pub(crate) async fn get_all_tasks_dirs_for_ctx(ctx: &crate::chat::ctx::ChatCtx) -> Vec<PathBuf> {
     let mut dirs: Vec<PathBuf> = crate::files_correction::get_unscoped_project_dirs_for_ctx(ctx)
         .await
         .into_iter()

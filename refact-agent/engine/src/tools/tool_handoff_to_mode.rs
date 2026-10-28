@@ -18,7 +18,7 @@ use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
 use crate::postprocessing::pp_command_output::OutputFilter;
 use crate::tasks::storage;
 use crate::tools::tool_task_documents::{
-    create_document_at, documents_dir_for_task, next_available_slug_at,
+    create_document_at, documents_dir_for_task_for_ctx, next_available_slug_at,
 };
 use refact_chat_history::trajectory_ops::sanitize_messages_for_new_thread;
 use refact_chat_history::trajectory_snapshot::TrajectorySnapshot;
@@ -181,11 +181,11 @@ async fn ensure_task_for_planner_handoff(
 }
 
 async fn create_initial_plan_document(
-    gcx: Arc<crate::global_context::GlobalContext>,
+    ctx: &crate::chat::ctx::ChatCtx,
     task_id: &str,
     plan_text: &str,
 ) -> Result<String, String> {
-    let documents_dir = documents_dir_for_task(gcx, task_id).await?;
+    let documents_dir = documents_dir_for_task_for_ctx(ctx, task_id).await?;
     let slug = next_available_slug_at(&documents_dir, "initial-plan").await?;
     create_document_at(
         &documents_dir,
@@ -470,16 +470,19 @@ impl Tool for ToolHandoffToMode {
     ) -> Result<(bool, Vec<ContextEnum>), String> {
         let target = parse_optional_string(args, "target_mode")
             .ok_or("Missing required argument `target_mode`")?;
-        let (gcx, chat_id) = {
+        let (app, chat_id) = {
             let c = ccx.lock().await;
-            (c.app.gcx.clone(), c.chat_id.clone())
+            (c.app.clone(), c.chat_id.clone())
         };
         let canonical = map_legacy_mode_to_id(&target);
-        get_mode_config(gcx.clone(), canonical, None)
+        app.tool
+            .mode_config
+            .get_mode_config(canonical, None)
             .await
             .ok_or("Target mode not found")?;
-        let session = gcx
-            .chat_sessions
+        let session = app
+            .chat
+            .sessions
             .read()
             .await
             .get(&chat_id)
@@ -848,7 +851,9 @@ async fn finalize_handoff_inner(
     }
     let (initial_plan_doc_slug, initial_plan_doc_error) = if canonical_mode == "task_planner" {
         if let Some(meta) = &task_meta {
-            match create_initial_plan_document(gcx.clone(), &meta.task_id, &plan_body).await {
+            match create_initial_plan_document(&gcx.chat_ctx(gcx.clone()), &meta.task_id, &plan_body)
+                .await
+            {
                 Ok(slug) => (Some(slug), None),
                 Err(error) => (None, Some(error)),
             }

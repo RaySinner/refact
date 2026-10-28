@@ -436,6 +436,30 @@ pub async fn build_knowledge_index(gcx: Arc<GlobalContext>) -> KnowledgeIndex {
     index
 }
 
+async fn knowledge_dirs_for_index_for_ctx(ctx: &crate::chat::ctx::ChatCtx) -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = crate::files_correction::get_unscoped_project_dirs_for_ctx(ctx)
+        .await
+        .into_iter()
+        .map(|dir| dir.join(KNOWLEDGE_FOLDER_NAME))
+        .collect();
+    dirs.push(ctx.paths.config_dir.join("knowledge"));
+    dirs.sort();
+    dirs.dedup();
+    dirs.into_iter().filter(|dir| dir.exists()).collect()
+}
+
+pub async fn build_knowledge_index_for_ctx(ctx: &crate::chat::ctx::ChatCtx) -> KnowledgeIndex {
+    let mut index = KnowledgeIndex::empty();
+
+    scan_knowledge_dirs(&mut index, knowledge_dirs_for_index_for_ctx(ctx).await).await;
+
+    let task_dirs = crate::tasks::storage::get_all_tasks_dirs_for_ctx(ctx).await;
+    scan_task_dirs(&mut index, task_dirs).await;
+
+    index.mark_ready();
+    index
+}
+
 async fn scan_knowledge_dirs(index: &mut KnowledgeIndex, knowledge_dirs: Vec<PathBuf>) {
     for path_buf in collect_knowledge_markdown_paths(knowledge_dirs).await {
         let text = match tokio::fs::read_to_string(&path_buf).await {

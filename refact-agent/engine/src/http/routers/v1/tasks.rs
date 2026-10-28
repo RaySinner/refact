@@ -24,9 +24,11 @@ use crate::tasks::events::{TaskEvent, TaskEventEnvelope};
 use crate::tasks::storage;
 use crate::tools::tool_task_documents::{
     CreateDocumentRequest, TaskDocumentDetail, TaskDocumentHistoryResponse,
-    TaskDocumentListResponse, append_task_document_for_api, create_task_document_for_api,
-    delete_task_document_for_api, get_task_document_for_api, history_task_document_for_api,
-    list_task_documents_for_api, pin_task_document_for_api, update_task_document_for_api,
+    TaskDocumentListResponse, append_task_document_for_api_for_ctx,
+    create_task_document_for_api_for_ctx, delete_task_document_for_api_for_ctx,
+    get_task_document_for_api_for_ctx, history_task_document_for_api_for_ctx,
+    list_task_documents_for_api_for_ctx, pin_task_document_for_api_for_ctx,
+    update_task_document_for_api_for_ctx,
 };
 use crate::tools::tool_task_memory::{
     MemoryKind, MemoryNamespace, TaskMemoriesApiResponse, TaskMemoryArchiveApiResponse,
@@ -463,7 +465,7 @@ pub async fn handle_list_task_memories(
         .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
     let search = query.search.filter(|value| !value.trim().is_empty());
     let result = list_task_memories_for_api(
-        app.gcx.clone(),
+        &app.chat_ctx(),
         &task_id,
         TaskMemoryListFilters {
             since,
@@ -482,7 +484,7 @@ pub async fn handle_pin_task_memory(
     Path((task_id, filename)): Path<(String, String)>,
     Json(req): Json<PinTaskMemoryRequest>,
 ) -> Result<Json<TaskMemoryPinApiResponse>, (StatusCode, String)> {
-    let result = set_task_memory_pinned_for_api(app.gcx.clone(), &task_id, &filename, req.pinned)
+    let result = set_task_memory_pinned_for_api(&app.chat_ctx(), &task_id, &filename, req.pinned)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     Ok(Json(result))
@@ -492,7 +494,7 @@ pub async fn handle_archive_task_memory(
     State(app): State<AppState>,
     Path((task_id, filename)): Path<(String, String)>,
 ) -> Result<Json<TaskMemoryArchiveApiResponse>, (StatusCode, String)> {
-    let result = archive_task_memory_for_api(app.gcx.clone(), &task_id, &filename)
+    let result = archive_task_memory_for_api(&app.chat_ctx(), &task_id, &filename)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     Ok(Json(result))
@@ -510,7 +512,7 @@ pub async fn handle_task_memories_triage_done(
         .map(crate::tools::tool_task_memory::parse_rfc3339_utc)
         .transpose()
         .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
-    let result = mark_task_memories_triaged_for_api(app.gcx.clone(), &task_id, cursor)
+    let result = mark_task_memories_triaged_for_api(&app.chat_ctx(), &task_id, cursor)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     Ok(Json(result))
@@ -520,7 +522,7 @@ pub async fn handle_task_memory_facets(
     State(app): State<AppState>,
     Path(task_id): Path<String>,
 ) -> Result<Json<TaskMemoryFacetsResponse>, (StatusCode, String)> {
-    let result = task_memory_facets_for_api(app.gcx.clone(), &task_id)
+    let result = task_memory_facets_for_api(&app.chat_ctx(), &task_id)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     Ok(Json(result))
@@ -1478,7 +1480,7 @@ pub async fn handle_list_task_documents(
     State(app): State<AppState>,
     Path(task_id): Path<String>,
 ) -> Result<Json<TaskDocumentListResponse>, (StatusCode, String)> {
-    let result = list_task_documents_for_api(app.gcx.clone(), &task_id)
+    let result = list_task_documents_for_api_for_ctx(&app.chat_ctx(), &task_id)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     Ok(Json(result))
@@ -1489,7 +1491,7 @@ pub async fn handle_get_task_document(
     Path((task_id, slug)): Path<(String, String)>,
     Query(query): Query<GetDocumentQuery>,
 ) -> Result<Json<TaskDocumentDetail>, (StatusCode, String)> {
-    let result = get_task_document_for_api(app.gcx.clone(), &task_id, &slug, query.version)
+    let result = get_task_document_for_api_for_ctx(&app.chat_ctx(), &task_id, &slug, query.version)
         .await
         .map_err(map_doc_error)?;
     Ok(Json(result))
@@ -1500,7 +1502,7 @@ pub async fn handle_create_task_document(
     Path(task_id): Path<String>,
     Json(req): Json<CreateDocumentRequest>,
 ) -> Result<Json<TaskDocumentDetail>, (StatusCode, String)> {
-    let result = create_task_document_for_api(app.gcx.clone(), &task_id, req)
+    let result = create_task_document_for_api_for_ctx(&app.chat_ctx(), &task_id, req)
         .await
         .map_err(map_doc_error)?;
     Ok(Json(result))
@@ -1512,9 +1514,15 @@ pub async fn handle_update_task_document(
     Json(req): Json<UpdateTaskDocumentRequest>,
 ) -> Result<Json<TaskDocumentDetail>, (StatusCode, String)> {
     let result =
-        update_task_document_for_api(app.gcx.clone(), &task_id, &slug, req.content, req.pinned)
-            .await
-            .map_err(map_doc_error)?;
+        update_task_document_for_api_for_ctx(
+            &app.chat_ctx(),
+            &task_id,
+            &slug,
+            req.content,
+            req.pinned,
+        )
+        .await
+        .map_err(map_doc_error)?;
     Ok(Json(result))
 }
 
@@ -1523,7 +1531,7 @@ pub async fn handle_append_task_document(
     Path((task_id, slug)): Path<(String, String)>,
     Json(req): Json<AppendTaskDocumentRequest>,
 ) -> Result<Json<TaskDocumentDetail>, (StatusCode, String)> {
-    let result = append_task_document_for_api(app.gcx.clone(), &task_id, &slug, req.section)
+    let result = append_task_document_for_api_for_ctx(&app.chat_ctx(), &task_id, &slug, req.section)
         .await
         .map_err(map_doc_error)?;
     Ok(Json(result))
@@ -1533,7 +1541,7 @@ pub async fn handle_delete_task_document(
     State(app): State<AppState>,
     Path((task_id, slug)): Path<(String, String)>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    delete_task_document_for_api(app.gcx.clone(), &task_id, &slug)
+    delete_task_document_for_api_for_ctx(&app.chat_ctx(), &task_id, &slug)
         .await
         .map_err(map_doc_error)?;
     Ok(StatusCode::NO_CONTENT)
@@ -1544,7 +1552,7 @@ pub async fn handle_pin_task_document(
     Path((task_id, slug)): Path<(String, String)>,
     Json(req): Json<PinTaskDocumentRequest>,
 ) -> Result<Json<TaskDocumentDetail>, (StatusCode, String)> {
-    let result = pin_task_document_for_api(app.gcx.clone(), &task_id, &slug, req.pinned)
+    let result = pin_task_document_for_api_for_ctx(&app.chat_ctx(), &task_id, &slug, req.pinned)
         .await
         .map_err(map_doc_error)?;
     Ok(Json(result))
@@ -1554,7 +1562,7 @@ pub async fn handle_history_task_document(
     State(app): State<AppState>,
     Path((task_id, slug)): Path<(String, String)>,
 ) -> Result<Json<TaskDocumentHistoryResponse>, (StatusCode, String)> {
-    let result = history_task_document_for_api(app.gcx.clone(), &task_id, &slug)
+    let result = history_task_document_for_api_for_ctx(&app.chat_ctx(), &task_id, &slug)
         .await
         .map_err(map_doc_error)?;
     Ok(Json(result))

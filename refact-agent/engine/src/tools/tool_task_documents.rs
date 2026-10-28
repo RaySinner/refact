@@ -11,6 +11,7 @@ use tokio::sync::Mutex as AMutex;
 
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
+#[cfg(test)]
 use crate::global_context::GlobalContext;
 use crate::postprocessing::pp_command_output::OutputFilter;
 use crate::tasks::storage;
@@ -556,13 +557,6 @@ async fn task_context(
     Ok((app, task_id, author_role))
 }
 
-pub(crate) async fn documents_dir_for_task(
-    gcx: Arc<GlobalContext>,
-    task_id: &str,
-) -> Result<PathBuf, String> {
-    documents_dir_for_task_for_ctx(&gcx.chat_ctx(gcx.clone()), task_id).await
-}
-
 pub(crate) async fn documents_dir_for_task_for_ctx(
     ctx: &crate::chat::ctx::ChatCtx,
     task_id: &str,
@@ -741,13 +735,6 @@ fn document_to_detail(doc: TaskDocument) -> TaskDocumentDetail {
     }
 }
 
-pub async fn list_task_documents_for_api(
-    gcx: Arc<GlobalContext>,
-    task_id: &str,
-) -> Result<TaskDocumentListResponse, String> {
-    list_task_documents_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()), task_id).await
-}
-
 pub async fn list_task_documents_for_api_for_ctx(
     ctx: &crate::chat::ctx::ChatCtx,
     task_id: &str,
@@ -776,15 +763,6 @@ async fn emit_document_changed(
     .await;
 }
 
-pub async fn get_task_document_for_api(
-    gcx: Arc<GlobalContext>,
-    task_id: &str,
-    slug: &str,
-    version: Option<u64>,
-) -> Result<TaskDocumentDetail, String> {
-    get_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()), task_id, slug, version).await
-}
-
 pub async fn get_task_document_for_api_for_ctx(
     ctx: &crate::chat::ctx::ChatCtx,
     task_id: &str,
@@ -797,14 +775,6 @@ pub async fn get_task_document_for_api_for_ctx(
     }
     let document = get_document_at(&documents_dir, slug, version).await?;
     Ok(document_to_detail(document))
-}
-
-pub async fn create_task_document_for_api(
-    gcx: Arc<GlobalContext>,
-    task_id: &str,
-    request: CreateDocumentRequest,
-) -> Result<TaskDocumentDetail, String> {
-    create_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()), task_id, request).await
 }
 
 pub async fn create_task_document_for_api_for_ctx(
@@ -829,16 +799,6 @@ pub async fn create_task_document_for_api_for_ctx(
     Ok(detail)
 }
 
-pub async fn update_task_document_for_api(
-    gcx: Arc<GlobalContext>,
-    task_id: &str,
-    slug: &str,
-    content: String,
-    pinned: Option<bool>,
-) -> Result<TaskDocumentDetail, String> {
-    update_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()), task_id, slug, content, pinned).await
-}
-
 pub async fn update_task_document_for_api_for_ctx(
     ctx: &crate::chat::ctx::ChatCtx,
     task_id: &str,
@@ -854,15 +814,6 @@ pub async fn update_task_document_for_api_for_ctx(
     let detail = document_to_detail(document);
     emit_document_changed(&ctx.chat, task_id, &detail.slug).await;
     Ok(detail)
-}
-
-pub async fn append_task_document_for_api(
-    gcx: Arc<GlobalContext>,
-    task_id: &str,
-    slug: &str,
-    section: String,
-) -> Result<TaskDocumentDetail, String> {
-    append_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()), task_id, slug, section).await
 }
 
 pub async fn append_task_document_for_api_for_ctx(
@@ -881,14 +832,6 @@ pub async fn append_task_document_for_api_for_ctx(
     Ok(detail)
 }
 
-pub async fn delete_task_document_for_api(
-    gcx: Arc<GlobalContext>,
-    task_id: &str,
-    slug: &str,
-) -> Result<(), String> {
-    delete_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()), task_id, slug).await
-}
-
 pub async fn delete_task_document_for_api_for_ctx(
     ctx: &crate::chat::ctx::ChatCtx,
     task_id: &str,
@@ -898,15 +841,6 @@ pub async fn delete_task_document_for_api_for_ctx(
     delete_document_at(&documents_dir, slug).await?;
     emit_document_changed(&ctx.chat, task_id, slug).await;
     Ok(())
-}
-
-pub async fn pin_task_document_for_api(
-    gcx: Arc<GlobalContext>,
-    task_id: &str,
-    slug: &str,
-    pinned: bool,
-) -> Result<TaskDocumentDetail, String> {
-    pin_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()), task_id, slug, pinned).await
 }
 
 pub async fn pin_task_document_for_api_for_ctx(
@@ -923,14 +857,6 @@ pub async fn pin_task_document_for_api_for_ctx(
     let detail = document_to_detail(document);
     emit_document_changed(&ctx.chat, task_id, &detail.slug).await;
     Ok(detail)
-}
-
-pub async fn history_task_document_for_api(
-    gcx: Arc<GlobalContext>,
-    task_id: &str,
-    slug: &str,
-) -> Result<TaskDocumentHistoryResponse, String> {
-    history_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()), task_id, slug).await
 }
 
 pub async fn history_task_document_for_api_for_ctx(
@@ -1619,8 +1545,7 @@ mod tests {
     async fn list_task_documents_for_api_returns_summaries_in_creation_order() {
         let (_temp, gcx) = setup_task_gcx("task-docs-list").await;
         let tid = "task-docs-list";
-        create_task_document_for_api(
-            gcx.clone(),
+        create_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()),
             tid,
             CreateDocumentRequest {
                 slug: "doc-a".to_string(),
@@ -1634,8 +1559,7 @@ mod tests {
         .await
         .unwrap();
         tokio::time::sleep(std::time::Duration::from_millis(1)).await;
-        create_task_document_for_api(
-            gcx.clone(),
+        create_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()),
             tid,
             CreateDocumentRequest {
                 slug: "doc-b".to_string(),
@@ -1649,8 +1573,7 @@ mod tests {
         .await
         .unwrap();
         tokio::time::sleep(std::time::Duration::from_millis(1)).await;
-        create_task_document_for_api(
-            gcx.clone(),
+        create_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()),
             tid,
             CreateDocumentRequest {
                 slug: "doc-c".to_string(),
@@ -1663,7 +1586,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let result = list_task_documents_for_api(gcx, tid).await.unwrap();
+        let result = list_task_documents_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()), tid).await.unwrap();
         assert_eq!(result.task_id, tid);
         assert_eq!(result.documents.len(), 3);
         let slugs: Vec<&str> = result.documents.iter().map(|d| d.slug.as_str()).collect();
@@ -1674,8 +1597,7 @@ mod tests {
     async fn get_task_document_for_api_returns_detail_with_content() {
         let (_temp, gcx) = setup_task_gcx("task-docs-get").await;
         let tid = "task-docs-get";
-        create_task_document_for_api(
-            gcx.clone(),
+        create_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()),
             tid,
             CreateDocumentRequest {
                 slug: "my-doc".to_string(),
@@ -1688,7 +1610,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let detail = get_task_document_for_api(gcx, tid, "my-doc", None)
+        let detail = get_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()), tid, "my-doc", None)
             .await
             .unwrap();
         assert_eq!(detail.slug, "my-doc");
@@ -1702,8 +1624,7 @@ mod tests {
     async fn create_task_document_for_api_rejects_duplicate_slug() {
         let (_temp, gcx) = setup_task_gcx("task-docs-dup").await;
         let tid = "task-docs-dup";
-        create_task_document_for_api(
-            gcx.clone(),
+        create_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()),
             tid,
             CreateDocumentRequest {
                 slug: "dup".to_string(),
@@ -1716,8 +1637,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let err = create_task_document_for_api(
-            gcx,
+        let err = create_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()),
             tid,
             CreateDocumentRequest {
                 slug: "dup".to_string(),
@@ -1737,8 +1657,7 @@ mod tests {
     async fn update_task_document_for_api_increments_version_and_writes_history() {
         let (_temp, gcx) = setup_task_gcx("task-docs-upd").await;
         let tid = "task-docs-upd";
-        create_task_document_for_api(
-            gcx.clone(),
+        create_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()),
             tid,
             CreateDocumentRequest {
                 slug: "upd".to_string(),
@@ -1751,12 +1670,12 @@ mod tests {
         )
         .await
         .unwrap();
-        let updated = update_task_document_for_api(gcx.clone(), tid, "upd", "v2".to_string(), None)
+        let updated = update_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()), tid, "upd", "v2".to_string(), None)
             .await
             .unwrap();
         assert_eq!(updated.version, 2);
         assert_eq!(updated.content, "v2");
-        let hist = history_task_document_for_api(gcx, tid, "upd")
+        let hist = history_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()), tid, "upd")
             .await
             .unwrap();
         assert!(!hist.history.is_empty());
@@ -1767,8 +1686,7 @@ mod tests {
     async fn update_task_document_for_api_updates_content_and_pin_in_one_version() {
         let (_temp, gcx) = setup_task_gcx("task-docs-update-pin").await;
         let tid = "task-docs-update-pin";
-        create_task_document_for_api(
-            gcx.clone(),
+        create_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()),
             tid,
             CreateDocumentRequest {
                 slug: "combined".to_string(),
@@ -1782,8 +1700,7 @@ mod tests {
         .await
         .unwrap();
 
-        let updated = update_task_document_for_api(
-            gcx.clone(),
+        let updated = update_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()),
             tid,
             "combined",
             "v2".to_string(),
@@ -1795,14 +1712,13 @@ mod tests {
         assert_eq!(updated.version, 2);
         assert_eq!(updated.content, "v2");
         assert!(!updated.pinned);
-        let hist = history_task_document_for_api(gcx.clone(), tid, "combined")
+        let hist = history_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()), tid, "combined")
             .await
             .unwrap();
         assert_eq!(hist.history.len(), 1);
         assert_eq!(hist.history[0].version, 1);
 
-        let unchanged = update_task_document_for_api(
-            gcx.clone(),
+        let unchanged = update_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()),
             tid,
             "combined",
             "v2".to_string(),
@@ -1812,7 +1728,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(unchanged.version, 2);
-        let hist = history_task_document_for_api(gcx, tid, "combined")
+        let hist = history_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()), tid, "combined")
             .await
             .unwrap();
         assert_eq!(hist.history.len(), 1);
@@ -1822,8 +1738,7 @@ mod tests {
     async fn pin_task_document_for_api_flips_pinned_flag() {
         let (_temp, gcx) = setup_task_gcx("task-docs-pin").await;
         let tid = "task-docs-pin";
-        create_task_document_for_api(
-            gcx.clone(),
+        create_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()),
             tid,
             CreateDocumentRequest {
                 slug: "pin-doc".to_string(),
@@ -1836,17 +1751,17 @@ mod tests {
         )
         .await
         .unwrap();
-        let unpinned = pin_task_document_for_api(gcx.clone(), tid, "pin-doc", false)
+        let unpinned = pin_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()), tid, "pin-doc", false)
             .await
             .unwrap();
         assert!(!unpinned.pinned);
         assert_eq!(unpinned.version, 2);
-        let repinned = pin_task_document_for_api(gcx.clone(), tid, "pin-doc", true)
+        let repinned = pin_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()), tid, "pin-doc", true)
             .await
             .unwrap();
         assert!(repinned.pinned);
         assert_eq!(repinned.version, 3);
-        let history = history_task_document_for_api(gcx, tid, "pin-doc")
+        let history = history_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()), tid, "pin-doc")
             .await
             .unwrap();
         assert_eq!(history.history.len(), 2);
@@ -1858,8 +1773,7 @@ mod tests {
     async fn delete_task_document_for_api_removes_document() {
         let (_temp, gcx) = setup_task_gcx("task-docs-del").await;
         let tid = "task-docs-del";
-        create_task_document_for_api(
-            gcx.clone(),
+        create_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()),
             tid,
             CreateDocumentRequest {
                 slug: "del-doc".to_string(),
@@ -1872,10 +1786,10 @@ mod tests {
         )
         .await
         .unwrap();
-        delete_task_document_for_api(gcx.clone(), tid, "del-doc")
+        delete_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()), tid, "del-doc")
             .await
             .unwrap();
-        let result = list_task_documents_for_api(gcx, tid).await.unwrap();
+        let result = list_task_documents_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()), tid).await.unwrap();
         assert!(result.documents.iter().all(|d| d.slug != "del-doc"));
     }
 
@@ -1883,8 +1797,7 @@ mod tests {
     async fn history_task_document_for_api_returns_entries_for_each_version() {
         let (_temp, gcx) = setup_task_gcx("task-docs-hist").await;
         let tid = "task-docs-hist";
-        create_task_document_for_api(
-            gcx.clone(),
+        create_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()),
             tid,
             CreateDocumentRequest {
                 slug: "hist-doc".to_string(),
@@ -1897,13 +1810,13 @@ mod tests {
         )
         .await
         .unwrap();
-        update_task_document_for_api(gcx.clone(), tid, "hist-doc", "v2".to_string(), None)
+        update_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()), tid, "hist-doc", "v2".to_string(), None)
             .await
             .unwrap();
-        update_task_document_for_api(gcx.clone(), tid, "hist-doc", "v3".to_string(), None)
+        update_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()), tid, "hist-doc", "v3".to_string(), None)
             .await
             .unwrap();
-        let hist = history_task_document_for_api(gcx, tid, "hist-doc")
+        let hist = history_task_document_for_api_for_ctx(&gcx.chat_ctx(gcx.clone()), tid, "hist-doc")
             .await
             .unwrap();
         assert_eq!(hist.history.len(), 2);

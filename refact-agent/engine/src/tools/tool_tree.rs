@@ -14,8 +14,7 @@ use crate::tools::tools_description::{
 use crate::call_validation::{ChatMessage, ChatContent, ContextEnum};
 use crate::postprocessing::pp_command_output::OutputFilter;
 use crate::files_correction::{
-    correct_to_nearest_dir_path, correct_to_nearest_filename, get_unscoped_project_dirs,
-    paths_from_anywhere,
+    correct_to_nearest_dir_path, correct_to_nearest_filename, paths_from_anywhere,
 };
 use crate::files_in_workspace::{filter_privacy_allowed_files, ls_files_limited};
 use crate::knowledge_index::format_related_memories_section;
@@ -61,11 +60,12 @@ impl Tool for ToolTree {
         tool_call_id: &String,
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
-        let (gcx, tool, execution_scope, abort_flag) = {
+        let (gcx, tool, chat, execution_scope, abort_flag) = {
             let cgcx = ccx.lock().await;
             (
                 cgcx.app.gcx.clone(),
                 cgcx.tool.clone(),
+                cgcx.app.chat_ctx(),
                 cgcx.execution_scope.clone(),
                 cgcx.abort_flag.clone(),
             )
@@ -190,7 +190,8 @@ impl Tool for ToolTree {
                         return Err(format!("⚠️ '{}' is a file, not a directory. 💡 Use cat('{}') to read it, or tree() without path for project root", path, path));
                     }
 
-                    let project_dirs = get_unscoped_project_dirs(gcx.clone()).await;
+                    let project_dirs =
+                        crate::files_correction::get_unscoped_project_dirs_for_ctx(&chat).await;
                     let candidate = return_one_candidate_or_a_good_error(
                         gcx.clone(),
                         &path,
@@ -201,7 +202,8 @@ impl Tool for ToolTree {
                     .await?;
                     let true_path = crate::files_correction::canonical_path(candidate);
 
-                    let all_project_dirs = get_unscoped_project_dirs(gcx.clone()).await;
+                    let all_project_dirs =
+                        crate::files_correction::get_unscoped_project_dirs_for_ctx(&chat).await;
                     let is_within_project_dirs =
                         all_project_dirs.iter().any(|p| true_path.starts_with(&p))
                             || project_dirs.iter().any(|p| true_path.starts_with(&p));

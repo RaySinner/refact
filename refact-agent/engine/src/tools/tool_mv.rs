@@ -12,7 +12,7 @@ use crate::at_commands::at_file::return_one_candidate_or_a_good_error;
 use crate::call_validation::{ChatMessage, ChatContent, ContextEnum, DiffChunk};
 use crate::files_correction::{
     canonical_path, correct_to_nearest_dir_path, correct_to_nearest_filename,
-    get_unscoped_project_dirs, preprocess_path_for_normalization,
+    preprocess_path_for_normalization,
 };
 use crate::files_in_workspace::remove_memory_documents_under_path;
 use crate::tools::tools_description::{
@@ -20,7 +20,7 @@ use crate::tools::tools_description::{
     json_schema_from_params,
 };
 use crate::integrations::integr_abstract::IntegrationConfirmation;
-use crate::privacy::{FilePrivacyLevel, load_privacy_if_needed, check_file_privacy};
+use crate::privacy::{check_file_privacy, FilePrivacyLevel};
 use crate::tools::file_edit::auxiliary::resolve_path_with_scope;
 
 pub struct ToolMv {
@@ -74,17 +74,26 @@ impl Tool for ToolMv {
         let dst_str = preprocess_path_for_normalization(dst_str);
         let overwrite = Self::parse_overwrite(args)?;
 
-        let (gcx, tool, execution_scope, top_n) = {
+        let (gcx, tool, chat, execution_scope, top_n) = {
             let cgcx = ccx.lock().await;
             (
                 cgcx.app.gcx.clone(),
                 cgcx.tool.clone(),
+                cgcx.app.chat_ctx(),
                 cgcx.execution_scope.clone(),
                 cgcx.top_n,
             )
         };
 
-        let privacy_settings = load_privacy_if_needed(gcx.clone()).await;
+        let privacy_settings = crate::privacy::load_privacy_if_needed_for_policy(
+            &tool.privacy_policy_load,
+            &tool.workspace.privacy_settings,
+            tool.paths.config_dir.as_path(),
+            tool.runtime.cmdline.privacy_yaml.as_str(),
+            crate::files_correction::get_unscoped_project_dirs_for_ctx(&chat).await,
+            &chat.tool_catalog_generations,
+        )
+        .await;
         let scoped_src = resolve_path_with_scope(
             Path::new(&src_str),
             privacy_settings.clone(),
@@ -127,7 +136,8 @@ impl Tool for ToolMv {
                 corrections,
             )
         } else {
-            let project_dirs = get_unscoped_project_dirs(gcx.clone()).await;
+            let project_dirs =
+                crate::files_correction::get_unscoped_project_dirs_for_ctx(&chat).await;
 
             let src_file_candidates =
                 correct_to_nearest_filename(gcx.clone(), &src_str, false, top_n).await;

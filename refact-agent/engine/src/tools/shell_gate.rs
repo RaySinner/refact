@@ -14,7 +14,7 @@ use refact_tool_api::{
 };
 
 use crate::at_commands::at_commands::AtCommandsContext;
-use crate::files_correction::{get_project_dirs, get_unscoped_project_dirs};
+use crate::chat::ctx::ChatCtx;
 use crate::global_context::GlobalContext;
 use crate::tools::file_edit::auxiliary::active_execution_scope;
 use crate::tools::shell_gate_llm::{validate_command, LlmVerdict};
@@ -457,10 +457,11 @@ pub async fn gate_tool_call(
     command: String,
     args: &HashMap<String, Value>,
 ) -> Result<MatchConfirmDeny, String> {
-    let (gcx, execution_scope, chat_id) = {
+    let (gcx, chat, execution_scope, chat_id) = {
         let ccx_lock = ccx.lock().await;
         (
             ccx_lock.app.gcx.clone(),
+            ccx_lock.app.chat_ctx(),
             ccx_lock.execution_scope.clone(),
             ccx_lock.chat_id.clone(),
         )
@@ -468,11 +469,11 @@ pub async fn gate_tool_call(
     let workspace_roots = if let Some(scope) = active_execution_scope(execution_scope.as_ref()) {
         vec![scope.effective_root().to_path_buf()]
     } else {
-        get_unscoped_project_dirs(gcx.clone()).await
+        crate::files_correction::get_unscoped_project_dirs_for_ctx(&chat).await
     };
-    let policy = load_policy(gcx.clone()).await;
+    let policy = load_policy_for_ctx(&chat).await;
     let outcome = evaluate_with_llm(
-        gcx.clone(),
+        gcx,
         &command,
         &policy,
         &GateContext {
@@ -482,7 +483,7 @@ pub async fn gate_tool_call(
         &chat_id,
     )
     .await;
-    append_audit(gcx, AuditEntry::from_outcome(chat_id, command, &outcome)).await;
+    append_audit_for_ctx(&chat, AuditEntry::from_outcome(chat_id, command, &outcome)).await;
     Ok(outcome.decision)
 }
 
@@ -494,8 +495,11 @@ fn audit_path(project_dir: &Path) -> PathBuf {
     project_dir.join(".refact").join("shell_audit.jsonl")
 }
 
-async fn project_dir(gcx: Arc<GlobalContext>) -> Option<PathBuf> {
-    get_project_dirs(gcx).await.into_iter().next()
+async fn project_dir_for_ctx(ctx: &ChatCtx) -> Option<PathBuf> {
+    crate::files_correction::get_unscoped_project_dirs_for_ctx(ctx)
+        .await
+        .into_iter()
+        .next()
 }
 
 pub async fn load_policy(gcx: Arc<GlobalContext>) -> ShellGatePolicy {
@@ -535,7 +539,11 @@ pub async fn load_policy_for_ctx(ctx: &crate::chat::ctx::ChatCtx) -> ShellGatePo
 }
 
 pub async fn save_policy(gcx: Arc<GlobalContext>, policy: &ShellGatePolicy) -> Result<(), String> {
-    let project_dir = project_dir(gcx)
+    save_policy_for_ctx(&gcx.chat_ctx(gcx.clone()), policy).await
+}
+
+pub async fn save_policy_for_ctx(ctx: &ChatCtx, policy: &ShellGatePolicy) -> Result<(), String> {
+    let project_dir = project_dir_for_ctx(ctx)
         .await
         .ok_or_else(|| "no active project".to_string())?;
     let path = policy_path(&project_dir);
@@ -586,13 +594,17 @@ impl AuditEntry {
 }
 
 pub async fn append_audit(gcx: Arc<GlobalContext>, entry: AuditEntry) {
-    if let Err(error) = append_audit_inner(gcx, entry).await {
+    append_audit_for_ctx(&gcx.chat_ctx(gcx.clone()), entry).await
+}
+
+pub async fn append_audit_for_ctx(ctx: &ChatCtx, entry: AuditEntry) {
+    if let Err(error) = append_audit_inner_for_ctx(ctx, entry).await {
         tracing::warn!(%error, "failed to append shell audit entry");
     }
 }
 
-async fn append_audit_inner(gcx: Arc<GlobalContext>, entry: AuditEntry) -> Result<(), String> {
-    let project_dir = project_dir(gcx)
+async fn append_audit_inner_for_ctx(ctx: &ChatCtx, entry: AuditEntry) -> Result<(), String> {
+    let project_dir = project_dir_for_ctx(ctx)
         .await
         .ok_or_else(|| "no active project".to_string())?;
     let path = audit_path(&project_dir);
@@ -626,7 +638,11 @@ async fn append_audit_inner(gcx: Arc<GlobalContext>, entry: AuditEntry) -> Resul
 }
 
 pub async fn read_audit(gcx: Arc<GlobalContext>, limit: usize) -> Vec<AuditEntry> {
-    let Some(project_dir) = project_dir(gcx).await else {
+    read_audit_for_ctx(&gcx.chat_ctx(gcx.clone()), limit).await
+}
+
+pub async fn read_audit_for_ctx(ctx: &ChatCtx, limit: usize) -> Vec<AuditEntry> {
+    let Some(project_dir) = project_dir_for_ctx(ctx).await else {
         return Vec::new();
     };
     let path = audit_path(&project_dir);

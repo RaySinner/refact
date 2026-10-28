@@ -278,6 +278,10 @@ impl DefaultModels {
     }
 }
 
+pub fn strip_model_from_finetune(model: &str) -> String {
+    model.split(":").next().unwrap().to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

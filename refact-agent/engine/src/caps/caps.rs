@@ -1002,9 +1002,7 @@ fn validate_default_embedding_model(caps: &CodeAssistantCaps) {
     }
 }
 
-pub fn strip_model_from_finetune(model: &str) -> String {
-    model.split(":").next().unwrap().to_string()
-}
+pub use refact_caps_core::model_records::strip_model_from_finetune;
 
 pub fn resolve_model<'a, T>(
     models: &'a IndexMap<String, Arc<T>>,

@@ -3,17 +3,16 @@ use std::sync::{Arc, OnceLock};
 
 use indexmap::IndexMap;
 
-use crate::caps::{
-    BaseModelRecord, ChatModelRecord, CodeAssistantCaps, CompletionModelRecord,
-    EmbeddingModelRecord, HasBaseModelRecord, strip_model_from_finetune,
-};
-use crate::custom_error::YamlError;
+use crate::model_records::{ChatModelRecord, CompletionModelRecord, strip_model_from_finetune};
+use crate::code_assistant_caps::CodeAssistantCaps;
+use refact_core::llm_types::{BaseModelRecord, EmbeddingModelRecord, HasBaseModelRecord};
+use refact_core::custom_error::YamlError;
 
 #[cfg(test)]
 use refact_core::llm_types::WireFormat;
 use refact_providers::identity::provider_identity_from_yaml;
 
-pub use refact_caps_core::provider_config::{
+pub use crate::provider_config::{
     CapsProvider, CompletionPresets, EmbeddingPresets, default_endpoint_style, extend_collection,
     extend_model_collection, set_field_if_exists,
 };
@@ -26,84 +25,84 @@ supports_completion: false
 const PROVIDER_TEMPLATES: &[(&str, &str)] = &[
     (
         "anthropic",
-        include_str!("../yaml_configs/default_providers/anthropic.yaml"),
+        include_str!("../../../src/yaml_configs/default_providers/anthropic.yaml"),
     ),
     (
         "custom",
-        include_str!("../yaml_configs/default_providers/custom.yaml"),
+        include_str!("../../../src/yaml_configs/default_providers/custom.yaml"),
     ),
     (
         "deepseek",
-        include_str!("../yaml_configs/default_providers/deepseek.yaml"),
+        include_str!("../../../src/yaml_configs/default_providers/deepseek.yaml"),
     ),
     (
         "doubao",
-        include_str!("../yaml_configs/default_providers/doubao.yaml"),
+        include_str!("../../../src/yaml_configs/default_providers/doubao.yaml"),
     ),
     (
         "google_gemini",
-        include_str!("../yaml_configs/default_providers/google_gemini.yaml"),
+        include_str!("../../../src/yaml_configs/default_providers/google_gemini.yaml"),
     ),
     (
         "groq",
-        include_str!("../yaml_configs/default_providers/groq.yaml"),
+        include_str!("../../../src/yaml_configs/default_providers/groq.yaml"),
     ),
     (
         "github_copilot",
-        include_str!("../yaml_configs/default_providers/github_copilot.yaml"),
+        include_str!("../../../src/yaml_configs/default_providers/github_copilot.yaml"),
     ),
     (
         "kimi",
-        include_str!("../yaml_configs/default_providers/kimi.yaml"),
+        include_str!("../../../src/yaml_configs/default_providers/kimi.yaml"),
     ),
     (
         "lmstudio",
-        include_str!("../yaml_configs/default_providers/lmstudio.yaml"),
+        include_str!("../../../src/yaml_configs/default_providers/lmstudio.yaml"),
     ),
     ("litellm", LITELLM_PROVIDER_TEMPLATE),
     (
         "minimax",
-        include_str!("../yaml_configs/default_providers/minimax.yaml"),
+        include_str!("../../../src/yaml_configs/default_providers/minimax.yaml"),
     ),
     (
         "ollama",
-        include_str!("../yaml_configs/default_providers/ollama.yaml"),
+        include_str!("../../../src/yaml_configs/default_providers/ollama.yaml"),
     ),
     (
         "opencode",
-        include_str!("../yaml_configs/default_providers/opencode.yaml"),
+        include_str!("../../../src/yaml_configs/default_providers/opencode.yaml"),
     ),
     (
         "openai",
-        include_str!("../yaml_configs/default_providers/openai.yaml"),
+        include_str!("../../../src/yaml_configs/default_providers/openai.yaml"),
     ),
     (
         "openai_responses",
-        include_str!("../yaml_configs/default_providers/openai_responses.yaml"),
+        include_str!("../../../src/yaml_configs/default_providers/openai_responses.yaml"),
     ),
     (
         "openrouter",
-        include_str!("../yaml_configs/default_providers/openrouter.yaml"),
+        include_str!("../../../src/yaml_configs/default_providers/openrouter.yaml"),
     ),
     (
         "qwen",
-        include_str!("../yaml_configs/default_providers/qwen.yaml"),
+        include_str!("../../../src/yaml_configs/default_providers/qwen.yaml"),
     ),
     (
         "vllm",
-        include_str!("../yaml_configs/default_providers/vllm.yaml"),
+        include_str!("../../../src/yaml_configs/default_providers/vllm.yaml"),
     ),
     (
         "xai",
-        include_str!("../yaml_configs/default_providers/xai.yaml"),
+        include_str!("../../../src/yaml_configs/default_providers/xai.yaml"),
     ),
     (
         "xai_responses",
-        include_str!("../yaml_configs/default_providers/xai_responses.yaml"),
+        include_str!("../../../src/yaml_configs/default_providers/xai_responses.yaml"),
     ),
     (
         "zhipu",
-        include_str!("../yaml_configs/default_providers/zhipu.yaml"),
+        include_str!("../../../src/yaml_configs/default_providers/zhipu.yaml"),
     ),
 ];
 static PARSED_PROVIDERS: OnceLock<IndexMap<String, CapsProvider>> = OnceLock::new();
@@ -544,8 +543,8 @@ fn apply_models_dict_patch(provider: &mut CapsProvider) {
     }
 }
 
-const UNPARSED_COMPLETION_PRESETS: &str = include_str!("../completion_presets.json");
-const UNPARSED_EMBEDDING_PRESETS: &str = include_str!("../embedding_presets.json");
+const UNPARSED_COMPLETION_PRESETS: &str = include_str!("../../../src/completion_presets.json");
+const UNPARSED_EMBEDDING_PRESETS: &str = include_str!("../../../src/embedding_presets.json");
 
 static COMPLETION_PRESETS: OnceLock<CompletionPresets> = OnceLock::new();
 static EMBEDDING_PRESETS: OnceLock<EmbeddingPresets> = OnceLock::new();
@@ -822,7 +821,7 @@ pub async fn get_provider_from_template_and_config_file(
     post_process: bool,
     experimental: bool,
 ) -> Result<CapsProvider, String> {
-    use crate::custom_error::MapErrToString;
+    use refact_core::custom_error::MapErrToString;
     let mut provider = get_provider_templates()
         .get(name)
         .cloned()
@@ -1406,7 +1405,7 @@ extra_headers: |
 
     #[test]
     fn test_qualify_model_no_double_prefix() {
-        use crate::caps::DefaultModels;
+        use crate::model_records::DefaultModels;
 
         let mut defaults = DefaultModels::default();
         let other = DefaultModels {
@@ -1440,7 +1439,7 @@ extra_headers: |
 
     #[test]
     fn test_qualify_model_with_slashes() {
-        use crate::caps::DefaultModels;
+        use crate::model_records::DefaultModels;
 
         // OpenRouter-style models: "openai/gpt-4.1" under provider "openrouter"
         let mut defaults = DefaultModels::default();

@@ -251,7 +251,7 @@ async fn load_doing_card_snapshot(
     card_id: &str,
     action: &str,
 ) -> Result<LifecycleCardSnapshot, String> {
-    let board = storage::load_board_for_ctx(ctx, task_id).await?;
+    let board = storage::load_board_for_ctx(&gcx.chat_ctx(gcx.clone()), task_id).await?;
     let card = board
         .get_card(card_id)
         .ok_or_else(|| format!("Card {} not found", card_id))?;
@@ -260,7 +260,7 @@ async fn load_doing_card_snapshot(
 }
 
 async fn push_if_card_current_and_live(
-    ctx: &ChatCtx,
+    gcx: Arc<GlobalContext>,
     task_id: &str,
     card_id: &str,
     expected_chat_id: &str,
@@ -288,7 +288,7 @@ async fn push_if_card_current_and_live(
         None
     };
 
-    let board = storage::load_board_for_ctx(ctx, task_id).await?;
+    let board = storage::load_board_for_ctx(&gcx.chat_ctx(gcx.clone()), task_id).await?;
     if let Some(reason) = skipped_reason(board.get_card(card_id)) {
         return Ok(PushReport {
             pushed: false,
@@ -306,7 +306,7 @@ async fn push_if_card_current_and_live(
         });
     }
 
-    let board = storage::load_board_for_ctx(ctx, task_id).await?;
+    let board = storage::load_board_for_ctx(&gcx.chat_ctx(gcx.clone()), task_id).await?;
     if let Some(reason) = skipped_reason(board.get_card(card_id)) {
         return Ok(PushReport {
             pushed: false,

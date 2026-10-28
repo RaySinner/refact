@@ -669,10 +669,6 @@ pub fn get_global_knowledge_dir_for_ctx(ctx: &ChatCtx) -> PathBuf {
     ctx.paths.config_dir.join("knowledge")
 }
 
-pub fn get_global_knowledge_dir_for_ctx(ctx: &crate::chat::ctx::ChatCtx) -> PathBuf {
-    ctx.paths.config_dir.join("knowledge")
-}
-
 async fn get_all_knowledge_dirs(gcx: Arc<GlobalContext>) -> Vec<PathBuf> {
     let mut dirs: Vec<PathBuf> = get_project_dirs(gcx.clone())
         .await

@@ -15,7 +15,7 @@ use crate::app_state::{
     AtCommandsPreviewCache, BuddyServices, ChatServices, ModelServices, PathServices,
     RuntimeServices, ToolCatalogGenerations,
 };
-use crate::call_validation::{ChatMeta, ChatToolCall};
+use crate::call_validation::{ChatMeta, ChatToolCall, SubchatParameters};
 use crate::chat::tools::ExecuteToolsOptions;
 use crate::chat::trajectories::{
     LoadedTrajectory, TrajectoryData, TrajectoryRepairPatch, TrajectoryVectorizationQueue,
@@ -29,7 +29,8 @@ use crate::integrations::browser_runtime::BrowserRuntime;
 use crate::knowledge_index::KnowledgeIndex;
 use crate::privacy::PrivacySettings;
 use crate::scratchpads::scratchpad_utils::HasRagResults;
-use crate::subchat::{SubchatConfig, SubchatResult, TraceParent};
+pub use crate::subchat::{ExplicitSubchatSpec, SubchatConfig, SubchatResult, ToolsPolicy, TraceParent};
+pub(crate) use crate::subchat::{drain_background_agent_inbox, install_stateful_subchat_session};
 use crate::yaml_configs::customization_registry::RegistryCacheManager;
 pub use refact_runtime_api::{CapsProvider, ModeConfigProvider};
 
@@ -62,6 +63,82 @@ pub trait SubchatLauncher: Send + Sync {
         &self,
         subagent_id: &str,
         messages: Vec<ChatMessage>,
+        trace_parent: TraceParent,
+    ) -> Result<SubchatResult, String>;
+
+    async fn resolve_subchat_params(
+        &self,
+        tool_name: &str,
+    ) -> Result<SubchatParameters, String>;
+
+    async fn resolve_subchat_config_with_parent(
+        &self,
+        tool_name: &str,
+        stateful: bool,
+        chat_id: Option<String>,
+        title: Option<String>,
+        parent_id: Option<String>,
+        link_type: Option<String>,
+        root_chat_id: Option<String>,
+        tools: Option<Vec<String>>,
+        max_steps: usize,
+        prepend_system_prompt: bool,
+        wrap_up: Option<crate::subchat::WrapUpConfig>,
+        mode: String,
+        task_meta: Option<crate::chat::types::TaskMeta>,
+        worktree: Option<crate::worktrees::types::WorktreeMeta>,
+        parent_tool_call_id: Option<String>,
+        parent_subchat_tx: Option<Arc<AMutex<tokio::sync::mpsc::UnboundedSender<serde_json::Value>>>>,
+        abort_flag: Option<Arc<std::sync::atomic::AtomicBool>>,
+        subchat_depth: usize,
+    ) -> Result<SubchatConfig, String>;
+
+    async fn resolve_subchat_config_with_explicit_params(
+        &self,
+        attribution_id: &str,
+        spec: &ExplicitSubchatSpec,
+        stateful: bool,
+        chat_id: Option<String>,
+        title: Option<String>,
+        parent_id: Option<String>,
+        link_type: Option<String>,
+        root_chat_id: Option<String>,
+        tools: Option<Vec<String>>,
+        max_steps: usize,
+        prepend_system_prompt: bool,
+        mode: String,
+        task_meta: Option<crate::chat::types::TaskMeta>,
+        worktree: Option<crate::worktrees::types::WorktreeMeta>,
+        parent_tool_call_id: Option<String>,
+        parent_subchat_tx: Option<Arc<AMutex<tokio::sync::mpsc::UnboundedSender<serde_json::Value>>>>,
+        abort_flag: Option<Arc<std::sync::atomic::AtomicBool>>,
+        subchat_depth: usize,
+    ) -> Result<SubchatConfig, String>;
+
+    async fn run_subchat_once_with_parent(
+        &self,
+        tool_name: &str,
+        messages: Vec<ChatMessage>,
+        parent_tool_call_id: String,
+        parent_subchat_tx: Arc<AMutex<tokio::sync::mpsc::UnboundedSender<serde_json::Value>>>,
+        parent_abort_flag: Arc<std::sync::atomic::AtomicBool>,
+        parent_depth: usize,
+        parent_task_meta: Option<crate::chat::types::TaskMeta>,
+        parent_worktree: Option<crate::worktrees::types::WorktreeMeta>,
+        trace_parent: TraceParent,
+    ) -> Result<SubchatResult, String>;
+
+    async fn run_subchat_once_with_explicit_params(
+        &self,
+        attribution_id: &str,
+        spec: &ExplicitSubchatSpec,
+        messages: Vec<ChatMessage>,
+        parent_tool_call_id: String,
+        parent_subchat_tx: Arc<AMutex<tokio::sync::mpsc::UnboundedSender<serde_json::Value>>>,
+        parent_abort_flag: Arc<std::sync::atomic::AtomicBool>,
+        parent_depth: usize,
+        parent_task_meta: Option<crate::chat::types::TaskMeta>,
+        parent_worktree: Option<crate::worktrees::types::WorktreeMeta>,
         trace_parent: TraceParent,
     ) -> Result<SubchatResult, String>;
 }

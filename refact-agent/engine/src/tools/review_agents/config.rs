@@ -7,7 +7,7 @@ use crate::call_validation::SubchatParameters;
 use crate::caps::resolve_chat_model;
 use crate::global_context::{try_load_caps_quickly_if_not_present, GlobalContext};
 use crate::llm::params::CacheControl;
-use crate::subchat::ExplicitSubchatSpec;
+use crate::chat::ctx::ExplicitSubchatSpec;
 use crate::tools::review_types::ReviewDepth;
 
 pub const REVIEW_SUBAGENT_ID: &str = "review_agents";
@@ -137,9 +137,8 @@ pub async fn load_review_config(gcx: Arc<GlobalContext>) -> Result<ReviewConfig,
         .clone()
         .filter(|prompt| !prompt.trim().is_empty())
         .ok_or("guardrails prompt not configured for review_agents")?;
-    let base_params =
-        crate::subchat::resolve_subchat_params(&gcx.chat_ctx(gcx.clone()), REVIEW_SUBAGENT_ID)
-            .await?;
+    let subchat = gcx.chat_ctx(gcx.clone()).subchat.clone();
+    let base_params = subchat.resolve_subchat_params(REVIEW_SUBAGENT_ID).await?;
 
     Ok(ReviewConfig {
         settings,

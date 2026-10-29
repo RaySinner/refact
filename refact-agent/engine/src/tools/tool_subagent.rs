@@ -694,7 +694,7 @@ mod tests {
 
     use crate::app_state::AppState;
     use crate::caps::{BaseModelRecord, ChatModelRecord, CodeAssistantCaps};
-    use crate::subchat::{SubchatResult, ToolsPolicy};
+    use crate::chat::ctx::{SubchatResult, ToolsPolicy};
     use serial_test::serial;
 
     fn args() -> HashMap<String, Value> {

@@ -11,7 +11,6 @@ use serde_json::json;
 use crate::call_validation::{ChatMessage, ChatContent, ContextEnum};
 use crate::chat::internal_roles::{event, EventSubkind};
 use crate::at_commands::at_commands::AtCommandsContext;
-use crate::subchat::run_subchat;
 use crate::postprocessing::pp_command_output::OutputFilter;
 use crate::yaml_configs::customization_types::SubagentConfig;
 
@@ -103,7 +102,7 @@ impl Tool for ToolConfigSubagent {
         use crate::at_commands::at_commands::MAX_SUBCHAT_DEPTH;
 
         let (
-            gcx,
+            subchat,
             parent_chat_id,
             parent_root_chat_id,
             parent_subchat_tx,
@@ -114,7 +113,7 @@ impl Tool for ToolConfigSubagent {
         ) = {
             let ccx_lock = ccx.lock().await;
             (
-                ccx_lock.app.gcx.clone(),
+                ccx_lock.app.ctx.subchat.clone(),
                 ccx_lock.chat_id.clone(),
                 ccx_lock.root_chat_id.clone(),
                 ccx_lock.subchat_tx.clone(),
@@ -152,9 +151,9 @@ impl Tool for ToolConfigSubagent {
             Some(self.config.tools.clone())
         };
 
-        let config = crate::subchat::resolve_subchat_config_with_parent(
-            gcx.clone(),
-            &self.config.id,
+        let config = subchat
+            .resolve_subchat_config_with_parent(
+                &self.config.id,
             self.config.subchat.stateful,
             None,
             Some(title),
@@ -238,7 +237,7 @@ impl Tool for ToolConfigSubagent {
             config.model
         );
 
-        let result = match run_subchat(gcx, messages, config).await {
+        let result = match subchat.run_subchat(messages, config).await {
             Ok(r) => r,
             Err(e) if e == "Aborted" || e.starts_with("Aborted") => {
                 return Ok((

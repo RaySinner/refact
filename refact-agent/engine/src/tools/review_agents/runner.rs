@@ -8,10 +8,7 @@ use tokio::sync::Mutex as AMutex;
 use crate::call_validation::{ChatContent, ChatMessage};
 use crate::chat::types::TaskMeta;
 use crate::global_context::GlobalContext;
-use crate::subchat::{
-    resolve_subchat_config_with_explicit_params, run_subchat,
-    run_subchat_once_with_explicit_params, ExplicitSubchatSpec, TraceParent,
-};
+use crate::chat::ctx::{ExplicitSubchatSpec, TraceParent};
 use crate::tools::review_agents::contract::{
     parse_stage_output, parse_verdict_output, StageOutput, Verdict, VerdictOutput, REPAIR_PROMPT,
 };
@@ -171,6 +168,7 @@ pub async fn run_stage(gcx: Arc<GlobalContext>, ctx: StageCtx, job: StageJob) ->
 
 async fn run_stage_inner(gcx: Arc<GlobalContext>, ctx: StageCtx, job: StageJob) -> StageProduct {
     let started = now_ms();
+    let launcher = gcx.chat_ctx(gcx.clone()).subchat.clone();
     let model = job.subchat.model.clone();
     let label = job.label.clone();
     let mut metering = serde_json::Map::new();
@@ -178,9 +176,9 @@ async fn run_stage_inner(gcx: Arc<GlobalContext>, ctx: StageCtx, job: StageJob) 
 
     let trace_chat_id = job.trace_chat_id.clone();
     let attribution = format!("review_{}", job.spec.id);
-    let mut config = match resolve_subchat_config_with_explicit_params(
-        gcx.clone(),
-        &attribution,
+    let mut config = match launcher
+        .resolve_subchat_config_with_explicit_params(
+            &attribution,
         &job.subchat,
         true,
         Some(trace_chat_id.clone()),
@@ -223,7 +221,7 @@ async fn run_stage_inner(gcx: Arc<GlobalContext>, ctx: StageCtx, job: StageJob) 
         ChatMessage::new("user".to_string(), job.prompt.clone()),
     ];
 
-    let result = match run_subchat(gcx.clone(), messages, config).await {
+    let result = match launcher.run_subchat(messages, config).await {
         Ok(result) => result,
         Err(error) => {
             return StageProduct::empty(StageRun::failed(
@@ -264,9 +262,9 @@ async fn run_stage_inner(gcx: Arc<GlobalContext>, ctx: StageCtx, job: StageJob) 
                 "user".to_string(),
                 format!("{REPAIR_PROMPT} {first_error}"),
             ));
-            match run_subchat_once_with_explicit_params(
-                gcx.clone(),
-                &attribution,
+            match launcher
+                .run_subchat_once_with_explicit_params(
+                    &attribution,
                 &job.subchat,
                 retry_messages,
                 ctx.tool_call_id.clone(),

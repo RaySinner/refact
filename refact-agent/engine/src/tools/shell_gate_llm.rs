@@ -7,7 +7,7 @@ use serde::Deserialize;
 use crate::call_validation::ChatMessage;
 use crate::global_context::{try_load_caps_quickly_if_not_present, GlobalContext};
 use crate::json_utils::extract_json_object;
-use crate::subchat::{run_subchat, run_subchat_once, SubchatConfig, ToolsPolicy, TraceParent};
+use crate::chat::ctx::{SubchatConfig, ToolsPolicy, TraceParent};
 use crate::tools::shell_gate::ShellLlmValidation;
 
 #[derive(Clone, Debug, Deserialize)]
@@ -78,6 +78,7 @@ async fn validate_command_inner(
     chat_id: &str,
     cfg: ShellLlmValidation,
 ) -> Option<LlmVerdict> {
+    let subchat = gcx.chat_ctx(gcx.clone()).subchat.clone();
     let caps = try_load_caps_quickly_if_not_present(gcx.clone(), 0)
         .await
         .ok()?;
@@ -106,14 +107,10 @@ async fn validate_command_inner(
     )];
 
     let result = if cfg.model.trim().is_empty() && model == light_model {
-        run_subchat_once(
-            gcx,
-            "shell_command_validator",
-            messages,
-            TraceParent::chat(chat_id),
-        )
-        .await
-        .ok()?
+        subchat
+            .run_subchat_once("shell_command_validator", messages, TraceParent::chat(chat_id))
+            .await
+            .ok()?
     } else {
         let config = SubchatConfig {
             tool_name: "shell_command_validator".to_string(),
@@ -151,7 +148,7 @@ async fn validate_command_inner(
             step_progress: None,
             trace_parent: TraceParent::chat(chat_id),
         };
-        run_subchat(gcx, messages, config).await.ok()?
+        subchat.run_subchat(messages, config).await.ok()?
     };
     let answer = result
         .messages

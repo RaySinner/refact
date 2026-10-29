@@ -10,10 +10,8 @@ use crate::call_validation::{ChatMessage, ChatContent};
 use crate::chat::ctx::SubchatLauncher;
 use crate::chat::internal_roles::{event, EventSubkind};
 use crate::files_correction::correct_to_nearest_filename;
+use crate::chat::ctx::{ExplicitSubchatSpec, TraceParent};
 use crate::global_context::GlobalContext;
-use crate::subchat::{
-    run_subchat_once_with_parent, resolve_subchat_config_with_parent, TraceParent,
-};
 use crate::tools::tool_helpers::{load_code_subagent_config, CodeSubagentConfig};
 use crate::worktrees::scope::ExecutionScope;
 use refact_runtime_api::SubchatLauncherHandle;
@@ -299,7 +297,7 @@ pub enum GatherRunner {
         subagent_id: String,
     },
     Explicit {
-        spec: crate::subchat::ExplicitSubchatSpec,
+        spec: ExplicitSubchatSpec,
     },
 }
 
@@ -424,11 +422,12 @@ pub async fn gather_files_phase_with_plan(
         runner,
     } = plan;
 
+    let subchat_launcher = ccx.lock().await.app.ctx.subchat.clone();
     let subchat_config = match &runner {
         GatherRunner::Registry { subagent_id } => {
-            resolve_subchat_config_with_parent(
-                gcx.clone(),
-                subagent_id,
+            subchat_launcher
+                .resolve_subchat_config_with_parent(
+                    subagent_id,
                 true,
                 None,
                 Some(params.title.to_string()),
@@ -450,9 +449,9 @@ pub async fn gather_files_phase_with_plan(
             .await?
         }
         GatherRunner::Explicit { spec } => {
-            crate::subchat::resolve_subchat_config_with_explicit_params(
-                gcx.clone(),
-                &attribution_id,
+            subchat_launcher
+                .resolve_subchat_config_with_explicit_params(
+                    &attribution_id,
                 spec,
                 true,
                 None,
@@ -532,9 +531,9 @@ pub async fn gather_files_phase_with_plan(
 
         let retry_result = match &runner {
             GatherRunner::Registry { subagent_id } => {
-                run_subchat_once_with_parent(
-                    gcx.clone(),
-                    subagent_id,
+                subchat_launcher
+                    .run_subchat_once_with_parent(
+                        subagent_id,
                     retry_messages,
                     tool_call_id.clone(),
                     parent_subchat_tx.clone(),
@@ -547,9 +546,9 @@ pub async fn gather_files_phase_with_plan(
                 .await?
             }
             GatherRunner::Explicit { spec } => {
-                crate::subchat::run_subchat_once_with_explicit_params(
-                    gcx.clone(),
-                    &attribution_id,
+                subchat_launcher
+                    .run_subchat_once_with_explicit_params(
+                        &attribution_id,
                     spec,
                     retry_messages,
                     tool_call_id.clone(),

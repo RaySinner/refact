@@ -263,7 +263,7 @@ mod tests {
 
     use crate::call_validation::{ChatModelType, SubchatParameters};
     use crate::llm::params::CacheControl;
-    use crate::subchat::ExplicitSubchatSpec;
+    use crate::chat::ctx::ExplicitSubchatSpec;
     use crate::tools::review_agents::runner::stage_trace_chat_id;
     use crate::tools::review_agents::stages::embedded_catalog;
     use crate::tools::review_types::StageStatusKind;

@@ -1062,7 +1062,7 @@ mod tests {
             .await
             .unwrap();
         let mut messages = Vec::new();
-        crate::subchat::drain_background_agent_inbox(&ccx, &mut messages).await;
+        crate::chat::ctx::drain_background_agent_inbox(&ccx, &mut messages).await;
         assert_eq!(messages.len(), 1);
         assert!(messages[0]
             .content
@@ -1110,7 +1110,7 @@ mod tests {
             .mark_running(&child.agent_id, "subchat-child-chat".to_string())
             .await
             .unwrap();
-        let config = crate::subchat::SubchatConfig {
+        let config = crate::chat::ctx::SubchatConfig {
             tool_name: "subagent".to_string(),
             stateful: true,
             autonomous_no_confirm: false,
@@ -1121,7 +1121,7 @@ mod tests {
             parent_id: Some("parent".to_string()),
             link_type: Some("subagent".to_string()),
             root_chat_id: Some("parent".to_string()),
-            tools: crate::subchat::ToolsPolicy::All,
+            tools: crate::chat::ctx::ToolsPolicy::All,
             max_steps: 1,
             prepend_system_prompt: false,
             wrap_up: None,
@@ -1144,9 +1144,9 @@ mod tests {
             final_step_force_answer: false,
             buddy_meta: None,
             step_progress: None,
-            trace_parent: crate::subchat::TraceParent::rooted("parent", "parent"),
+            trace_parent: crate::chat::ctx::TraceParent::rooted("parent", "parent"),
         };
-        crate::subchat::install_stateful_subchat_session(&app, "subchat-child-chat", &config, &[])
+        crate::chat::ctx::install_stateful_subchat_session(&app, "subchat-child-chat", &config, &[])
             .await;
         let thread = app
             .chat

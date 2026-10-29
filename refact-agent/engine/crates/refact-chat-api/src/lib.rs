@@ -821,6 +821,8 @@ pub struct BackgroundAgentSummary {
     pub agent_id: String,
     pub parent_chat_id: String,
     pub child_chat_id: Option<String>,
+    #[serde(default)]
+    pub parent_tool_call_id: Option<String>,
     pub kind: String,
     pub status: String,
     pub title: String,
@@ -1411,6 +1413,7 @@ mod tests {
             agent_id: "bgagent-1".to_string(),
             parent_chat_id: "parent-chat".to_string(),
             child_chat_id: Some("child-chat".to_string()),
+            parent_tool_call_id: None,
             kind: "delegate".to_string(),
             status: "waiting_for_approval".to_string(),
             title: "Patch frog pond".to_string(),

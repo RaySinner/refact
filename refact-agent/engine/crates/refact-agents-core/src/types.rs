@@ -14,6 +14,8 @@ pub enum BgAgentKind {
     Subagent,
     /// Legacy persisted-record variant; new unified agents use Subagent.
     Delegate,
+    /// A model-invoking *tool* promoted to a live background agent (review, design_review, ...).
+    Tool,
 }
 
 impl BgAgentKind {
@@ -21,6 +23,7 @@ impl BgAgentKind {
         match self {
             Self::Subagent => "subagent",
             Self::Delegate => "delegate",
+            Self::Tool => "tool",
         }
     }
 }
@@ -134,6 +137,7 @@ impl From<&BackgroundAgent> for BackgroundAgentSummary {
             agent_id: record.agent_id.clone(),
             parent_chat_id: record.parent_chat_id.clone(),
             child_chat_id: record.child_chat_id.clone(),
+            parent_tool_call_id: record.parent_tool_call_id.clone(),
             kind: record.kind.as_str().to_string(),
             status: record.status.as_str().to_string(),
             title: record.title.clone(),
@@ -211,4 +215,97 @@ pub struct AgentCompletion {
     pub diff_summary: Option<String>,
     pub conflict_summary: Option<String>,
     pub child_chat_id: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn record(kind: BgAgentKind, parent_tool_call_id: Option<&str>) -> BackgroundAgent {
+        let now = Utc::now();
+        BackgroundAgent {
+            schema_version: 1,
+            agent_id: "bgagent-1".to_string(),
+            parent_chat_id: "parent".to_string(),
+            parent_root_chat_id: None,
+            parent_tool_call_id: parent_tool_call_id.map(str::to_string),
+            child_chat_id: None,
+            kind,
+            config_name: "review".to_string(),
+            title: "Review".to_string(),
+            prompt: "prompt".to_string(),
+            target_files: Vec::new(),
+            status: BgAgentStatus::Running,
+            progress: None,
+            step_count: 0,
+            last_activity: None,
+            result_summary: None,
+            result_payload_path: None,
+            error: None,
+            edited_files: Vec::new(),
+            diff_summary: None,
+            conflict_summary: None,
+            completion_message_id: None,
+            completion_pushed_at: None,
+            completion_push: Default::default(),
+            pending_deliveries: Vec::new(),
+            delivery_ids: Vec::new(),
+            deferred_at: None,
+            model: "model".to_string(),
+            model_type: None,
+            current_tool: None,
+            goal_summary: None,
+            plan_present: false,
+            worktree_id: None,
+            worktree_branch: None,
+            merge_status: None,
+            questions: Vec::new(),
+            tokens_used: 0,
+            cost_usd: None,
+            created_at: now,
+            started_at: None,
+            finished_at: None,
+            last_update_at: now,
+            change_seq: 1,
+        }
+    }
+
+    #[test]
+    fn bg_agent_kind_tool_roundtrips() {
+        assert_eq!(BgAgentKind::Tool.as_str(), "tool");
+        let serialized = serde_json::to_string(&BgAgentKind::Tool).expect("serialize kind");
+        assert_eq!(serialized, "\"tool\"");
+        let parsed: BgAgentKind = serde_json::from_str(&serialized).expect("deserialize kind");
+        assert_eq!(parsed, BgAgentKind::Tool);
+
+        let persisted = serde_json::to_string(&record(BgAgentKind::Tool, Some("call-1")))
+            .expect("serialize record");
+        let restored: BackgroundAgent =
+            serde_json::from_str(&persisted).expect("deserialize record");
+        assert_eq!(restored.kind, BgAgentKind::Tool);
+        assert_eq!(restored.parent_tool_call_id.as_deref(), Some("call-1"));
+    }
+
+    #[test]
+    fn summary_carries_parent_tool_call_id() {
+        let summary = BackgroundAgentSummary::from(&record(BgAgentKind::Tool, Some("call-42")));
+        assert_eq!(summary.parent_tool_call_id.as_deref(), Some("call-42"));
+        assert_eq!(
+            BackgroundAgentSummary::from(&record(BgAgentKind::Subagent, None)).parent_tool_call_id,
+            None
+        );
+
+        let mut legacy = serde_json::to_value(BackgroundAgentSummary::from(&record(
+            BgAgentKind::Tool,
+            Some("call-42"),
+        )))
+        .expect("serialize summary");
+        legacy
+            .as_object_mut()
+            .expect("summary object")
+            .remove("parentToolCallId");
+        let parsed: BackgroundAgentSummary =
+            serde_json::from_value(legacy).expect("deserialize legacy summary");
+        assert_eq!(parsed.parent_tool_call_id, None);
+    }
 }

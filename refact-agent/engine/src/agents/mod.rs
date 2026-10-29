@@ -2,6 +2,7 @@ pub mod delivery;
 pub mod monitor;
 pub mod push;
 pub mod spawn;
+pub mod tool_agent;
 
 pub use refact_agents_core::{registry, storage, types};
 

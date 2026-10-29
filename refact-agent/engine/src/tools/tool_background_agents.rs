@@ -343,6 +343,7 @@ fn kind_label(kind: BgAgentKind) -> &'static str {
     match kind {
         BgAgentKind::Subagent => "subagent",
         BgAgentKind::Delegate => "delegate",
+        BgAgentKind::Tool => "tool",
     }
 }
 
@@ -350,6 +351,7 @@ fn kind_title(kind: BgAgentKind) -> &'static str {
     match kind {
         BgAgentKind::Subagent => "Subagent",
         BgAgentKind::Delegate => "Delegate",
+        BgAgentKind::Tool => "Tool",
     }
 }
 

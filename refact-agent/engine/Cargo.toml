@@ -47,6 +47,7 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
+reqwest = { version = "0.13", default-features = false, features = ["json", "form", "stream", "rustls", "charset", "http2"] }
 serde = { version = "1", features = ["rc", "derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 tokio = { version = "1.43.0", features = ["fs", "io-std", "io-util", "macros", "rt-multi-thread", "signal", "process"] }

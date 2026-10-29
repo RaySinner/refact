@@ -4,6 +4,7 @@ pub mod heuristic;
 pub mod matching;
 pub mod policy;
 pub mod record;
+pub mod runtime_state;
 #[cfg(feature = "test-util")]
 pub mod testing;
 
@@ -15,3 +16,7 @@ pub use policy::{
     PrivacyPolicy, ProviderToolAccess, ShellBehavior, SubagentPolicy, ToolAccess, Zone,
 };
 pub use record::{Attribution, FileRecord, PrivacyRecord};
+pub use runtime_state::{
+    observation_runtime_state, record_observation_status, PrivacyMatchCounts,
+    PrivacyObservationRuntimeState,
+};

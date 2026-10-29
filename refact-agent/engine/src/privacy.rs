@@ -16,47 +16,13 @@ pub mod heuristic;
 pub mod records;
 
 pub use refact_core::privacy_types::{FilePrivacyLevel, FilePrivacySettings, PrivacySettings};
+pub use refact_privacy::runtime_state::{
+    observation_runtime_state, record_observation_status, PrivacyMatchCounts,
+    PrivacyObservationRuntimeState,
+};
 pub use refact_privacy::{PolicyLoad, PrivacyPolicy};
 
 const PRIVACY_TOO_OLD: Duration = Duration::from_secs(3);
-
-#[derive(Default)]
-pub struct PrivacyMatchCounts {
-    pub counts: std::collections::BTreeMap<String, usize>,
-    pub fingerprint: u64,
-    pub computed_at: Option<std::time::Instant>,
-    pub computing: bool,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct PrivacyObservationRuntimeState {
-    pub runtime_available: bool,
-    pub last_error: Option<String>,
-}
-
-pub fn record_observation_status(
-    privacy_observation_runtime: &Arc<StdRwLock<PrivacyObservationRuntimeState>>,
-    status: &refact_exec::ObservationStatus,
-) {
-    *privacy_observation_runtime.write().unwrap() = observation_runtime_state(status);
-}
-
-pub fn observation_runtime_state(
-    status: &refact_exec::ObservationStatus,
-) -> PrivacyObservationRuntimeState {
-    match status {
-        refact_exec::ObservationStatus::Unavailable(reason) => PrivacyObservationRuntimeState {
-            runtime_available: false,
-            last_error: Some(reason.clone()),
-        },
-        refact_exec::ObservationStatus::Observed(_)
-        | refact_exec::ObservationStatus::Pending(_)
-        | refact_exec::ObservationStatus::Incomplete(_) => PrivacyObservationRuntimeState {
-            runtime_available: true,
-            last_error: None,
-        },
-    }
-}
 
 pub async fn warn_observation_degraded_once(gcx: Arc<GlobalContext>, reason: &str) {
     crate::buddy::observers::privacy_degraded::warn_once(gcx, reason).await;

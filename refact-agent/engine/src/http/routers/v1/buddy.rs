@@ -225,6 +225,9 @@ pub struct BuddySettingsRequest {
     pub daily_llm_token_budget: Option<Option<u64>>,
     pub planner_backstop_enabled: Option<bool>,
     pub planner_backstop_after_secs: Option<u64>,
+    pub stalled_turn_intervention: Option<bool>,
+    pub stalled_turn_min_interval_secs: Option<u64>,
+    pub stalled_turn_max_per_hour: Option<u32>,
     pub observers: Option<ObserverTogglesPatch>,
     pub palette_index: Option<usize>,
 }
@@ -268,6 +271,22 @@ impl BuddySettingsRequest {
                 return Err(ScratchError::new(
                     StatusCode::BAD_REQUEST,
                     "planner_backstop_after_secs must be greater than 0".to_string(),
+                ));
+            }
+        }
+        if let Some(secs) = self.stalled_turn_min_interval_secs {
+            if secs > 86400 {
+                return Err(ScratchError::new(
+                    StatusCode::BAD_REQUEST,
+                    "stalled_turn_min_interval_secs must be 0-86400".to_string(),
+                ));
+            }
+        }
+        if let Some(max_per_hour) = self.stalled_turn_max_per_hour {
+            if max_per_hour > 1000 {
+                return Err(ScratchError::new(
+                    StatusCode::BAD_REQUEST,
+                    "stalled_turn_max_per_hour must be 0-1000".to_string(),
                 ));
             }
         }
@@ -358,6 +377,15 @@ impl BuddySettingsRequest {
         }
         if let Some(v) = self.planner_backstop_after_secs {
             settings.planner_backstop_after_secs = v.max(1);
+        }
+        if let Some(v) = self.stalled_turn_intervention {
+            settings.stalled_turn_intervention = v;
+        }
+        if let Some(v) = self.stalled_turn_min_interval_secs {
+            settings.stalled_turn_min_interval_secs = v;
+        }
+        if let Some(v) = self.stalled_turn_max_per_hour {
+            settings.stalled_turn_max_per_hour = v;
         }
         if let Some(observers) = &self.observers {
             observers.apply_to(&mut settings.observers);

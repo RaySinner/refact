@@ -681,6 +681,71 @@ fn test_settings_request_rejects_invalid_digest_hour() {
     assert!(err.message.contains("daily_digest_hour"));
 }
 
+#[test]
+fn test_settings_request_accepts_stalled_turn_fields() {
+    let req: crate::http::routers::v1::buddy::BuddySettingsRequest = serde_json::from_str(
+        r#"{"stalled_turn_intervention": false, "stalled_turn_min_interval_secs": 60, "stalled_turn_max_per_hour": 3}"#,
+    )
+    .unwrap();
+
+    assert_eq!(req.stalled_turn_intervention, Some(false));
+    assert_eq!(req.stalled_turn_min_interval_secs, Some(60));
+    assert_eq!(req.stalled_turn_max_per_hour, Some(3));
+    assert!(req.validate().is_ok());
+}
+
+#[test]
+fn test_settings_request_rejects_interval_over_a_day() {
+    let req: crate::http::routers::v1::buddy::BuddySettingsRequest =
+        serde_json::from_str(r#"{"stalled_turn_min_interval_secs": 86401}"#).unwrap();
+    let err = req.validate().unwrap_err();
+
+    assert_eq!(err.status_code, hyper::StatusCode::BAD_REQUEST);
+    assert!(err.message.contains("stalled_turn_min_interval_secs"));
+}
+
+#[test]
+fn test_settings_request_rejects_max_per_hour_over_cap() {
+    let req: crate::http::routers::v1::buddy::BuddySettingsRequest =
+        serde_json::from_str(r#"{"stalled_turn_max_per_hour": 1001}"#).unwrap();
+    let err = req.validate().unwrap_err();
+
+    assert_eq!(err.status_code, hyper::StatusCode::BAD_REQUEST);
+    assert!(err.message.contains("stalled_turn_max_per_hour"));
+}
+
+#[test]
+fn test_settings_request_allows_zero_to_disable() {
+    let req: crate::http::routers::v1::buddy::BuddySettingsRequest = serde_json::from_str(
+        r#"{"stalled_turn_min_interval_secs": 0, "stalled_turn_max_per_hour": 0}"#,
+    )
+    .unwrap();
+
+    assert!(req.validate().is_ok());
+}
+
+#[test]
+fn test_stalled_turn_patch_leaves_other_fields_untouched() {
+    let req: crate::http::routers::v1::buddy::BuddySettingsRequest =
+        serde_json::from_str(r#"{"stalled_turn_intervention": false}"#).unwrap();
+    let mut settings = BuddySettings::default();
+    settings.quiet_mode = true;
+    settings.humor_level = HumorLevel::Normal;
+    settings.stalled_turn_min_interval_secs = 120;
+    settings.stalled_turn_max_per_hour = 4;
+    let planner_before = settings.planner_backstop_after_secs;
+
+    let persona_dirty = req.apply_to_settings(&mut settings);
+
+    assert!(!persona_dirty);
+    assert!(!settings.stalled_turn_intervention);
+    assert_eq!(settings.stalled_turn_min_interval_secs, 120);
+    assert_eq!(settings.stalled_turn_max_per_hour, 4);
+    assert!(settings.quiet_mode);
+    assert_eq!(settings.humor_level, HumorLevel::Normal);
+    assert_eq!(settings.planner_backstop_after_secs, planner_before);
+}
+
 #[tokio::test]
 async fn test_settings_load_clears_invalid_persisted_digest_hour() {
     let dir = tempfile::tempdir().unwrap();

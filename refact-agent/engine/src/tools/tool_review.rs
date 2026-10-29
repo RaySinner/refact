@@ -1,13 +1,15 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use serde_json::{json, Value};
+use tokio::sync::mpsc;
 use tokio::sync::Mutex as AMutex;
 
+use crate::agents::tool_agent::{ToolAgentHandle, ToolAgentSpec};
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
 use crate::global_context::GlobalContext;
@@ -18,7 +20,7 @@ use crate::tools::review_agents::config::{
 };
 use crate::tools::review_agents::prompts::{build_adversarial_prompt, build_stage_prompt};
 use crate::tools::review_agents::runner::{
-    merge_metering, now_ms, stage_trace_chat_id, StageCtx, StageJob,
+    merge_metering, now_ms, stage_trace_chat_id, ProgressSink, StageCtx, StageJob, StageProgress,
 };
 use crate::tools::review_agents::stages::{load_stage_catalog, select_stages, StagePhase, StageSpec};
 use crate::tools::review_agents::{
@@ -37,6 +39,7 @@ use crate::worktrees::scope::ExecutionScope;
 
 pub struct ToolCodeReview {
     pub config_path: String,
+    pub(crate) stage_executor_override: Option<Arc<dyn StageExecutor>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -582,6 +585,40 @@ fn review_refs(report: &ReviewReport, roots: &[PathBuf]) -> (Value, bool) {
     (Value::Array(references), false)
 }
 
+fn review_agent_focus(args: &ReviewArgs) -> String {
+    args.what_to_check
+        .clone()
+        .or_else(|| (!args.files.is_empty()).then(|| args.files.join(", ")))
+        .unwrap_or_else(|| "current change".to_string())
+}
+
+fn review_agent_prompt(args: &ReviewArgs, depth: &str) -> String {
+    let mut prompt = format!("Review the current change; focus: {}", review_agent_focus(args));
+    if !args.files.is_empty() {
+        prompt.push_str(&format!("; files: {}", args.files.join(", ")));
+    }
+    if let Some(base) = args.base.as_deref() {
+        prompt.push_str(&format!("; base: {base}"));
+    }
+    prompt.push_str(&format!("; depth: {depth}"));
+    prompt
+}
+
+fn review_agent_summary(report: &ReviewReport) -> String {
+    let facts = report.facts();
+    let blockers = facts
+        .iter()
+        .filter(|finding| finding.severity == ReviewSeverity::Blocker)
+        .count();
+    format!(
+        "{} stages · {} findings ({} blocker) · {} hypotheses",
+        report.stages.len(),
+        facts.len(),
+        blockers,
+        report.hypotheses().len(),
+    )
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn run_review(
     gcx: Arc<GlobalContext>,
@@ -590,7 +627,14 @@ async fn run_review(
     cfg: ReviewConfig,
     args: ReviewArgs,
     metering: &mut serde_json::Map<String, Value>,
+    stage_executor: Option<Arc<dyn StageExecutor>>,
+    progress: Option<ProgressSink>,
+    agent: Option<Arc<ToolAgentHandle>>,
 ) -> Result<ReviewReport, String> {
+    let review_cancelled = || {
+        agent.as_ref().is_some_and(|agent| agent.aborted())
+            || ctx.abort_flag.load(Ordering::SeqCst)
+    };
     let started = now_ms();
     let execution_scope = ctx.worktree.as_ref().map(ExecutionScope::from_worktree);
     let mut requested = Vec::new();
@@ -674,14 +718,19 @@ async fn run_review(
             .map(PathBuf::as_path),
         &ctx.review_id,
     );
-    let executor: Arc<dyn StageExecutor> = Arc::new(SubchatExecutor {
-        gcx: gcx.clone(),
-        ctx: ctx.clone(),
-    });
+    let executor: Arc<dyn StageExecutor> = match stage_executor {
+        Some(executor) => executor,
+        None => Arc::new(SubchatExecutor {
+            gcx: gcx.clone(),
+            ctx: ctx.clone(),
+        }),
+    };
 
     let mut findings: Vec<ReviewFinding> = Vec::new();
     let mut scratch_written = false;
-    for product in run_stage_jobs(executor.clone(), plan.jobs, schedule).await {
+    for product in
+        run_stage_jobs(executor.clone(), plan.jobs, schedule, progress.clone()).await
+    {
         merge_metering(metering, product.metering);
         if let (Some(dir), Some(raw)) = (scratch.as_ref(), product.raw.as_ref()) {
             scratch_written |= write_scratch(
@@ -707,6 +756,10 @@ async fn run_review(
     rank_findings(&mut findings);
 
     for spec in post_merge {
+        if review_cancelled() {
+            stage_rows.push(StageRun::not_run(&spec.id, "review cancelled"));
+            continue;
+        }
         if findings.is_empty() {
             stage_rows.push(StageRun::not_run(&spec.id, "no findings to check"));
             continue;
@@ -739,7 +792,9 @@ async fn run_review(
             prompt,
             abort: Arc::new(AtomicBool::new(false)),
         };
-        for mut product in run_stage_jobs(executor.clone(), vec![job], schedule).await {
+        for mut product in run_stage_jobs(executor.clone(), vec![job], schedule, progress.clone())
+            .await
+        {
             merge_metering(metering, std::mem::take(&mut product.metering));
             if let (Some(dir), Some(raw)) = (scratch.as_ref(), product.raw.as_ref()) {
                 scratch_written |= write_scratch(
@@ -860,10 +915,11 @@ impl Tool for ToolCodeReview {
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
         let args = parse_args(args)?;
-        let (gcx, tool, ctx) = {
+        let (gcx, tool, ctx, app) = {
             let ccx_lock = ccx.lock().await;
             let gcx = ccx_lock.app.gcx.clone();
             let tool = ccx_lock.tool.clone();
+            let app = ccx_lock.app.clone();
             let ctx = StageCtx {
                 review_id: format!("rv-{}", &uuid::Uuid::new_v4().simple().to_string()[..8]),
                 tool_call_id: tool_call_id.clone(),
@@ -876,14 +932,125 @@ impl Tool for ToolCodeReview {
                 root_chat_id: ccx_lock.root_chat_id.clone(),
                 activity: None,
             };
-            (gcx, tool, ctx)
+            (gcx, tool, ctx, app)
         };
 
         let cfg = load_review_config(gcx.clone()).await?;
         let guardrails = cfg.guardrails_prompt.clone();
+        let depth = cfg.settings.depth_or_default(args.depth);
+        let focus = review_agent_focus(&args);
+        let model = slot_model_id(gcx.clone(), cfg.settings.model_slot)
+            .await
+            .unwrap_or_default();
+        let child_chat_id = format!("subchat-{}", ctx.review_id);
+
+        let mut agent = match ToolAgentHandle::begin(
+            &app,
+            &ctx.chat_id,
+            &ctx.root_chat_id,
+            ToolAgentSpec {
+                tool_name: "review".to_string(),
+                title: format!("Review: {focus}"),
+                prompt: review_agent_prompt(&args, depth.as_str()),
+                model,
+                model_type: None,
+                target_files: args.files.clone(),
+                child_chat_id: child_chat_id.clone(),
+                parent_tool_call_id: tool_call_id.clone(),
+            },
+        )
+        .await
+        {
+            Ok(handle) => {
+                let shared = Arc::new(handle.clone());
+                Some((handle, shared))
+            }
+            Err(error) => {
+                tracing::warn!("review: tool agent unavailable, continuing without it: {error}");
+                None
+            }
+        };
+
+        let (progress_sink, progress_task) =
+            match agent.as_ref().map(|(_, shared)| shared.clone()) {
+                Some(shared) => {
+                    let (sender, mut receiver) = mpsc::unbounded_channel::<StageProgress>();
+                    let sink: ProgressSink = Arc::new(move |progress| {
+                        let _ = sender.send(progress);
+                    });
+                    let task = tokio::spawn(async move {
+                        let mut done: u32 = 0;
+                        while let Some(progress) = receiver.recv().await {
+                            done += 1;
+                            shared
+                                .progress(
+                                    format!("{}: {}", progress.label, progress.status.as_str()),
+                                    done,
+                                )
+                                .await;
+                            shared.add_usage(progress.tokens, progress.cost_usd).await;
+                        }
+                    });
+                    (Some(sink), Some(task))
+                }
+                None => (None, None),
+            };
+
+        let ctx_abort = ctx.abort_flag.clone();
         let mut metering = serde_json::Map::new();
-        let report = run_review(gcx.clone(), &tool, ctx, cfg, args, &mut metering).await?;
-        let markdown = render_review_markdown(&report);
+        let report = match run_review(
+            gcx.clone(),
+            &tool,
+            ctx,
+            cfg,
+            args,
+            &mut metering,
+            self.stage_executor_override.clone(),
+            progress_sink.clone(),
+            agent.as_ref().map(|(_, shared)| shared.clone()),
+        )
+        .await
+        {
+            Ok(report) => report,
+            Err(error) => {
+                drop(progress_sink);
+                if let Some(task) = progress_task {
+                    let _ = task.await;
+                }
+                if let Some((handle, _)) = agent {
+                    let _ = handle.fail(error.clone()).await;
+                }
+                return Err(error);
+            }
+        };
+        drop(progress_sink);
+        if let Some(task) = progress_task {
+            let _ = task.await;
+        }
+
+        let cancelled = agent
+            .as_ref()
+            .is_some_and(|(_, shared)| shared.aborted())
+            || ctx_abort.load(Ordering::SeqCst);
+
+        let status = if cancelled { "cancelled" } else { "completed" };
+        if let Some((_, shared)) = agent.as_ref() {
+            for (key, value) in shared.extras(status, None) {
+                metering.insert(key, value);
+            }
+        }
+        if cancelled {
+            if let Some((handle, _)) = agent.take() {
+                let _ = handle.cancelled(Some("review cancelled".to_string())).await;
+            }
+        } else if let Some((handle, _)) = agent.take() {
+            let _ = handle.complete(review_agent_summary(&report)).await;
+        }
+
+        let mut markdown = render_review_markdown(&report);
+        if cancelled {
+            markdown = markdown.replacen("## Review", "## Review — cancelled", 1);
+        }
 
         metering.insert(
             "review_report".to_string(),
@@ -925,7 +1092,12 @@ impl Tool for ToolCodeReview {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicU64, AtomicUsize};
+
+    use crate::agents::types::{BgAgentKind, BgAgentStatus};
+    use crate::caps::caps::{BaseModelRecord, ChatModelRecord, CodeAssistantCaps};
     use crate::tools::review_agents::contract::Verdict;
+    use crate::tools::review_agents::runner::StageProduct;
     use crate::tools::review_types::{
         CommandRun, FindingLocation, ReviewDiffSummary, ReviewScopeSummary, StageCoverage,
     };
@@ -1302,5 +1474,309 @@ mod tests {
         assert_eq!(format_duration(59_000), "59s");
         assert_eq!(format_duration(192_000), "3m12s");
         assert_eq!(format_duration(3_600_000), "60m00s");
+    }
+
+    struct FakeStageExecutor {
+        release: Option<Arc<AtomicBool>>,
+        started: Option<mpsc::UnboundedSender<()>>,
+        executed: AtomicUsize,
+    }
+
+    #[async_trait]
+    impl StageExecutor for FakeStageExecutor {
+        async fn execute(&self, job: StageJob, _activity: Arc<AtomicU64>) -> StageProduct {
+            self.executed.fetch_add(1, Ordering::SeqCst);
+            if let Some(started) = self.started.as_ref() {
+                let _ = started.send(());
+            }
+            if let Some(release) = self.release.as_ref() {
+                let deadline = tokio::time::Instant::now() + Duration::from_secs(60);
+                while !release.load(Ordering::SeqCst) && tokio::time::Instant::now() < deadline {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            }
+            let mut metering = serde_json::Map::new();
+            metering.insert("tokens_in".to_string(), json!(10));
+            metering.insert("tokens_out".to_string(), json!(20));
+            StageProduct {
+                run: StageRun::ok(&job.label, Some("test-provider/test-model".to_string()), 1),
+                findings: vec![],
+                verdicts: vec![],
+                metering,
+                raw: None,
+            }
+        }
+    }
+
+    async fn install_test_caps(gcx: &Arc<GlobalContext>) {
+        let model_id = "test-provider/test-model".to_string();
+        let mut caps = CodeAssistantCaps::default();
+        caps.chat_models.insert(
+            model_id.clone(),
+            Arc::new(ChatModelRecord {
+                base: BaseModelRecord {
+                    id: model_id.clone(),
+                    name: model_id.clone(),
+                    n_ctx: 128_000,
+                    endpoint: "https://example.invalid/v1/chat/completions".to_string(),
+                    ..Default::default()
+                },
+                max_output_tokens: Some(128_000),
+                ..Default::default()
+            }),
+        );
+        caps.defaults.chat_default_model = model_id.clone();
+        caps.defaults.chat_model_2 = model_id.clone();
+        caps.defaults.chat_light_model = model_id.clone();
+        caps.defaults.chat_thinking_model = model_id;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let mut state = gcx.caps_state.write().await;
+        state.caps = Some(Arc::new(caps));
+        state.last_attempted_ts = now;
+    }
+
+    async fn review_test_env(
+        chat_id: &str,
+    ) -> (
+        Arc<GlobalContext>,
+        crate::app_state::AppState,
+        Arc<AMutex<AtCommandsContext>>,
+    ) {
+        let gcx = crate::global_context::tests::make_test_gcx().await;
+        install_test_caps(&gcx).await;
+        let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+        let ccx = Arc::new(AMutex::new(
+            AtCommandsContext::new_from_app(
+                app.clone(),
+                4096,
+                20,
+                false,
+                vec![],
+                chat_id.to_string(),
+                Some(chat_id.to_string()),
+                "test-provider/test-model".to_string(),
+                None,
+                None,
+            )
+            .await,
+        ));
+        (gcx, app, ccx)
+    }
+
+    fn review_tool(executor: Option<Arc<dyn StageExecutor>>) -> ToolCodeReview {
+        ToolCodeReview {
+            config_path: String::new(),
+            stage_executor_override: executor,
+        }
+    }
+
+    fn fake_executor(release: Option<Arc<AtomicBool>>) -> Arc<FakeStageExecutor> {
+        Arc::new(FakeStageExecutor {
+            release,
+            started: None,
+            executed: AtomicUsize::new(0),
+        })
+    }
+
+    fn tool_result_message(results: &[ContextEnum]) -> &ChatMessage {
+        results
+            .iter()
+            .find_map(|item| match item {
+                ContextEnum::ChatMessage(message) if message.role == "tool" => Some(message),
+                _ => None,
+            })
+            .expect("tool message in results")
+    }
+
+    fn tool_result_text(results: &[ContextEnum]) -> String {
+        match &tool_result_message(results).content {
+            ChatContent::SimpleText(text) => text.clone(),
+            other => panic!("expected plain text tool result, got {other:?}"),
+        }
+    }
+
+    async fn wait_for_review_agent(
+        app: &crate::app_state::AppState,
+    ) -> crate::agents::types::BackgroundAgent {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            if let Some(record) = app
+                .agents
+                .list_all()
+                .await
+                .into_iter()
+                .find(|record| record.kind == BgAgentKind::Tool && record.config_name == "review")
+            {
+                return record;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "tool agent did not appear"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn review_creates_a_tool_agent_bound_to_the_tool_call() {
+        let (_gcx, app, ccx) = review_test_env("review-agent-parent").await;
+        let mut tool = review_tool(Some(fake_executor(None)));
+        let tool_call_id = "review-call-1".to_string();
+
+        let (_ok, _results) = tool
+            .tool_execute(ccx, &tool_call_id, &HashMap::new())
+            .await
+            .unwrap();
+
+        let record = app
+            .agents
+            .list_all()
+            .await
+            .into_iter()
+            .find(|record| record.kind == BgAgentKind::Tool && record.config_name == "review")
+            .expect("tool agent record");
+        assert_eq!(record.parent_tool_call_id.as_deref(), Some("review-call-1"));
+        assert!(record
+            .child_chat_id
+            .as_deref()
+            .is_some_and(|id| id.starts_with("subchat-rv-")));
+    }
+
+    #[tokio::test]
+    async fn review_result_extras_carry_the_tool_agent_contract() {
+        let (_gcx, _app, ccx) = review_test_env("review-extras").await;
+        let mut tool = review_tool(Some(fake_executor(None)));
+
+        let (_ok, results) = tool
+            .tool_execute(ccx, &"review-call-2".to_string(), &HashMap::new())
+            .await
+            .unwrap();
+
+        let message = tool_result_message(&results);
+        let extra = &message.extra;
+        assert_eq!(
+            extra.get("background_agent_kind").expect("kind"),
+            &json!("tool")
+        );
+        assert_eq!(
+            extra.get("background_agent_status").expect("status"),
+            &json!("completed")
+        );
+        assert!(extra
+            .get("background_agent_id")
+            .is_some_and(|value| value.is_string()));
+        assert!(extra
+            .get("child_chat_id")
+            .and_then(Value::as_str)
+            .is_some_and(|id| id.starts_with("subchat-rv-")));
+        assert_eq!(extra.get("parent_chat_id").expect("parent"), &json!("review-extras"));
+        assert!(extra
+            .get("model")
+            .and_then(Value::as_str)
+            .is_some_and(|model| !model.is_empty()));
+        assert_eq!(extra.get("title").expect("title"), &json!("Review: current change"));
+        assert!(extra.get("review_report").is_some(), "review_report kept");
+        assert!(extra.get("review_refs").is_some(), "review_refs kept");
+        assert!(extra.get("review_refs_truncated").is_some());
+    }
+
+    #[tokio::test]
+    async fn review_agent_records_steps_and_tokens() {
+        let (_gcx, app, ccx) = review_test_env("review-tokens").await;
+        let executor = fake_executor(None);
+        let mut tool = review_tool(Some(executor.clone()));
+
+        let (_ok, _results) = tool
+            .tool_execute(ccx, &"review-call-3".to_string(), &HashMap::new())
+            .await
+            .unwrap();
+
+        let executed = executor.executed.load(Ordering::SeqCst);
+        assert!(executed >= 1, "expected stages to run through the executor");
+        let record = wait_for_review_agent(&app).await;
+        assert!(
+            record.step_count as usize >= executed,
+            "step_count {} must cover {} completed stages",
+            record.step_count,
+            executed
+        );
+        assert_eq!(
+            record.tokens_used,
+            (executed as u64) * 30,
+            "tokens_used must be summed from the fake stage usage"
+        );
+    }
+
+    #[tokio::test]
+    async fn cancelling_the_review_agent_marks_it_cancelled_and_returns_a_partial_report() {
+        let (_gcx, app, ccx) = review_test_env("review-cancel").await;
+        let release = Arc::new(AtomicBool::new(false));
+        let (started_tx, mut started_rx) = mpsc::unbounded_channel::<()>();
+        let mut tool = review_tool(Some(Arc::new(FakeStageExecutor {
+            release: Some(release.clone()),
+            started: Some(started_tx),
+            executed: AtomicUsize::new(0),
+        })));
+        let chat_id = "review-cancel".to_string();
+        let run = tokio::spawn(async move {
+            tool.tool_execute(
+                ccx,
+                &"review-cancel-call".to_string(),
+                &HashMap::new(),
+            )
+            .await
+        });
+
+        let record = wait_for_review_agent(&app).await;
+        tokio::time::timeout(Duration::from_secs(10), started_rx.recv())
+            .await
+            .expect("a stage must start while the review is still running")
+            .expect("stage start signal");
+        assert_eq!(
+            app.agents.get_any(&record.agent_id).await.expect("record").status,
+            BgAgentStatus::Running
+        );
+        app.agents
+            .cancel(&chat_id, &record.agent_id, None)
+            .await
+            .expect("cancel");
+        release.store(true, Ordering::SeqCst);
+
+        let (_ok, results) = run.await.unwrap().expect("tool result despite cancellation");
+        let markdown = tool_result_text(&results);
+        assert!(markdown.contains("## Review"), "{markdown}");
+        assert!(markdown.contains("cancelled"), "{markdown}");
+        let message = tool_result_message(&results);
+        assert_eq!(
+            message.extra.get("background_agent_status").expect("status"),
+            &json!("cancelled")
+        );
+        let record = app.agents.get_any(&record.agent_id).await.expect("record");
+        assert_eq!(record.status, BgAgentStatus::Cancelled);
+    }
+
+    #[tokio::test]
+    async fn review_without_a_registry_failure_still_returns_a_report() {
+        let (gcx, _app, ccx) = review_test_env("review-degraded").await;
+        let storage_root = gcx.cache_dir.join(".refact").join("background_agents");
+        std::fs::remove_dir_all(&storage_root).ok();
+        std::fs::write(&storage_root, b"not a directory").unwrap();
+        let mut tool = review_tool(Some(fake_executor(None)));
+
+        let (_ok, results) = tool
+            .tool_execute(ccx, &"review-call-5".to_string(), &HashMap::new())
+            .await
+            .expect("review must complete despite the tool agent registry failure");
+
+        let markdown = tool_result_text(&results);
+        assert!(markdown.contains("## Review"), "{markdown}");
+        let message = tool_result_message(&results);
+        assert!(
+            message.extra.get("background_agent_id").is_none(),
+            "degraded run must not carry tool agent extras"
+        );
     }
 }

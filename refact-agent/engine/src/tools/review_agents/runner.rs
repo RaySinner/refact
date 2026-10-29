@@ -17,7 +17,7 @@ use crate::tools::review_agents::contract::{
 };
 use crate::tools::review_agents::prompts::REVIEW_SYSTEM_PROMPT;
 use crate::tools::review_agents::stages::{StageContract, StageSpec};
-use crate::tools::review_types::{ReviewFinding, StageRun};
+use crate::tools::review_types::{ReviewFinding, StageRun, StageStatusKind};
 use crate::tools::subagent_phases::get_last_assistant_content;
 use crate::worktrees::types::WorktreeMeta;
 
@@ -47,6 +47,37 @@ pub fn merge_metering(
             }
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct StageProgress {
+    pub label: String,
+    pub status: StageStatusKind,
+    pub duration_ms: u64,
+    pub tokens: u64,
+    pub cost_usd: Option<f64>,
+}
+
+pub type ProgressSink = Arc<dyn Fn(StageProgress) + Send + Sync>;
+
+pub fn usage_from_messages(messages: &[ChatMessage]) -> (u64, u64, Option<f64>) {
+    let mut tokens_in = 0u64;
+    let mut tokens_out = 0u64;
+    let mut cost_usd = None;
+    for message in messages {
+        if message.role != "assistant" {
+            continue;
+        }
+        let Some(usage) = message.usage.as_ref() else {
+            continue;
+        };
+        tokens_in += usage.prompt_tokens as u64;
+        tokens_out += usage.completion_tokens as u64;
+        if let Some(metering) = usage.metering_usd.as_ref() {
+            cost_usd = Some(cost_usd.unwrap_or(0.0) + metering.total_usd);
+        }
+    }
+    (tokens_in, tokens_out, cost_usd)
 }
 
 #[derive(Clone)]
@@ -204,6 +235,12 @@ async fn run_stage_inner(gcx: Arc<GlobalContext>, ctx: StageCtx, job: StageJob) 
         }
     };
     merge_metering(&mut metering, result.metering.clone());
+    let (tokens_in, tokens_out, cost_usd) = usage_from_messages(&result.messages);
+    metering.insert("tokens_in".to_string(), Value::from(tokens_in));
+    metering.insert("tokens_out".to_string(), Value::from(tokens_out));
+    if let Some(cost_usd) = cost_usd {
+        metering.insert("cost_usd".to_string(), Value::from(cost_usd));
+    }
     let text = get_last_assistant_content(&result.messages);
 
     let parsed = match job.spec.contract {

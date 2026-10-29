@@ -19,6 +19,7 @@ pub struct ToolAgentSpec {
     pub parent_tool_call_id: String,
 }
 
+#[derive(Clone)]
 pub struct ToolAgentHandle {
     app: AppState,
     agent_id: String,

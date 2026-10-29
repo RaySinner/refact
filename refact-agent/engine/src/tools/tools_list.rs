@@ -521,6 +521,7 @@ async fn get_builtin_tools(gcx: Arc<GlobalContext>) -> Vec<ToolGroup> {
     let deep_analysis_tools: Vec<Box<dyn Tool + Send>> = vec![
         Box::new(crate::tools::tool_review::ToolCodeReview {
             config_path: config_path.clone(),
+            stage_executor_override: None,
         }),
         Box::new(crate::tools::tool_subagent::ToolSubagent {
             config_path: config_path.clone(),

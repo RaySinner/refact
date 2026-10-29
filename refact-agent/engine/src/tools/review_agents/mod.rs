@@ -14,9 +14,11 @@ use async_trait::async_trait;
 use futures::FutureExt;
 use tokio::sync::Semaphore;
 
+use serde_json::Value;
+
 use crate::global_context::GlobalContext;
 use crate::tools::review_agents::runner::{
-    monitor_ctx, now_ms, run_stage, StageCtx, StageJob, StageProduct,
+    monitor_ctx, now_ms, run_stage, ProgressSink, StageCtx, StageJob, StageProduct, StageProgress,
 };
 use crate::tools::review_types::StageRun;
 
@@ -170,10 +172,28 @@ async fn watch_stage(
     }
 }
 
+fn stage_progress(product: &StageProduct) -> StageProgress {
+    let metering_number = |key: &str| {
+        product
+            .metering
+            .get(key)
+            .and_then(Value::as_f64)
+            .unwrap_or(0.0)
+    };
+    StageProgress {
+        label: product.run.name.clone(),
+        status: product.run.status,
+        duration_ms: product.run.duration_ms,
+        tokens: (metering_number("tokens_in") + metering_number("tokens_out")) as u64,
+        cost_usd: product.metering.get("cost_usd").and_then(Value::as_f64),
+    }
+}
+
 pub async fn run_stage_jobs(
     executor: Arc<dyn StageExecutor>,
     jobs: Vec<StageJob>,
     params: ScheduleParams,
+    progress: Option<ProgressSink>,
 ) -> Vec<StageProduct> {
     let semaphore = Arc::new(Semaphore::new(params.parallel_depth.max(1)));
     let idle_limit = params.idle_limit();
@@ -185,6 +205,7 @@ pub async fn run_stage_jobs(
         let executor = executor.clone();
         let semaphore = semaphore.clone();
         let parent_abort = parent_abort.clone();
+        let progress = progress.clone();
         async move {
             let label = job.label.clone();
             let trace = job.trace_chat_id.clone();
@@ -214,7 +235,7 @@ pub async fn run_stage_jobs(
                     Err(_) => panicked(&panic_label, &panic_trace, started),
                 }
             });
-            watch_stage(
+            let product = watch_stage(
                 label,
                 trace,
                 idle_limit,
@@ -225,7 +246,11 @@ pub async fn run_stage_jobs(
                 parent_abort,
                 work,
             )
-            .await
+            .await;
+            if let Some(sink) = progress.as_ref() {
+                sink(stage_progress(&product));
+            }
+            product
         }
     });
     futures::future::join_all(futures).await
@@ -343,7 +368,7 @@ mod tests {
         .map(|id| job(id, id))
         .collect();
 
-        let products = run_stage_jobs(executor.clone(), jobs, params(2)).await;
+        let products = run_stage_jobs(executor.clone(), jobs, params(2), None).await;
 
         assert_eq!(products.len(), 6);
         assert!(products
@@ -359,6 +384,7 @@ mod tests {
             Arc::new(PanickingExecutor),
             vec![job("spec", "spec")],
             params(2),
+            None,
         )
         .await;
 
@@ -646,7 +672,7 @@ mod tests {
         ];
         let flags: Vec<Arc<AtomicBool>> = jobs.iter().map(|job| job.abort.clone()).collect();
 
-        let products = run_stage_jobs(executor, jobs, params(1)).await;
+        let products = run_stage_jobs(executor, jobs, params(1), None).await;
 
         assert_eq!(products.len(), 3);
         assert!(products

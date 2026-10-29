@@ -139,7 +139,7 @@ impl SessionsHandle for EngineSessionsHandle {
     }
 }
 
-pub fn sessions_map_from_handle(handle: &dyn SessionsHandle) -> SessionsMap {
+pub fn sessions_map_from_handle(handle: &std::sync::Arc<dyn SessionsHandle>) -> SessionsMap {
     handle
         .as_any()
         .downcast_ref::<SessionsMap>()

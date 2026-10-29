@@ -92,7 +92,7 @@ impl BuddyServicesHandle for EngineBuddyServicesHandle {
     }
 }
 
-pub fn buddy_services_from_handle(handle: &dyn BuddyServicesHandle) -> BuddyServices {
+pub fn buddy_services_from_handle(handle: &std::sync::Arc<dyn BuddyServicesHandle>) -> BuddyServices {
     handle
         .as_any()
         .downcast_ref::<BuddyServices>()

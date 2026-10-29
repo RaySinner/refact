@@ -1,7 +1,4 @@
-use std::any::Any;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
 
 use async_trait::async_trait;
 use refact_buddy_core::snapshot::BuddySnapshot;
@@ -14,7 +11,7 @@ use refact_chat_api::{
 use refact_chat_history::trajectory_event::TrajectoryEvent;
 use refact_chat_history::trajectory_snapshot::TrajectorySnapshot;
 use refact_tasks::events::TaskEventEnvelope;
-use refact_tool_api::{build_registry_from_names, ToolAliasRegistry, ToolDesc};
+use refact_tool_api::{build_registry_from_names, ToolDesc};
 
 pub mod command_line;
 pub mod terminal_security;
@@ -35,6 +32,7 @@ pub use services::{IntegrationServices, ModelServices, PathServices, RuntimeServ
 
 pub use refact_chat_api::{DeliveryOutcome as RuntimeDeliveryOutcome, SessionState, TaskMeta};
 pub use refact_chat_api::{PendingDelivery as RuntimePendingDelivery, PushMode as RuntimePushMode};
+pub use refact_chat_api::{ToolCatalogSnapshot, ToolPolicyInfo, ToolRegistryIndex, TurnToolPool};
 pub use refact_tool_api::ToolDesc as RuntimeToolDesc;
 pub use refact_buddy_core::types::BuddyRuntimeEvent as RuntimeBuddyEvent;
 pub use refact_buddy_core::user_action::UserAction as RuntimeUserAction;
@@ -82,74 +80,10 @@ pub trait BuddyEventSink: Send + Sync {
 }
 
 #[derive(Clone)]
-pub struct ToolRegistryIndex {
-    pub tools: Vec<ToolDesc>,
-    pub mcp_lazy_mode: bool,
-    pub mcp_total_count: usize,
-    pub mcp_tool_index: Vec<(String, String)>,
-}
-
-#[derive(Clone)]
-pub struct ToolCatalogSnapshot {
-    pub index: ToolRegistryIndex,
-    pub policy: Vec<ToolPolicyInfo>,
-    pub aliases: ToolAliasRegistry,
-}
-
-#[derive(Clone)]
-pub struct TurnToolPool {
-    inner: Arc<dyn Any + Send + Sync>,
-    initial_vector_builds: Arc<AtomicU64>,
-    fallback_vector_builds: Arc<AtomicU64>,
-}
-
-impl TurnToolPool {
-    pub fn new<T>(inner: T) -> Self
-    where
-        T: Any + Send + Sync,
-    {
-        Self {
-            inner: Arc::new(inner),
-            initial_vector_builds: Arc::new(AtomicU64::new(0)),
-            fallback_vector_builds: Arc::new(AtomicU64::new(0)),
-        }
-    }
-
-    pub fn downcast_ref<T>(&self) -> Option<&T>
-    where
-        T: Any,
-    {
-        self.inner.downcast_ref()
-    }
-
-    pub fn record_initial_vector_build(&self) {
-        self.initial_vector_builds.fetch_add(1, Ordering::Relaxed);
-    }
-
-    pub fn record_fallback_vector_build(&self) {
-        self.fallback_vector_builds.fetch_add(1, Ordering::Relaxed);
-    }
-
-    pub fn initial_vector_builds(&self) -> u64 {
-        self.initial_vector_builds.load(Ordering::Relaxed)
-    }
-
-    pub fn fallback_vector_builds(&self) -> u64 {
-        self.fallback_vector_builds.load(Ordering::Relaxed)
-    }
-}
-
-#[derive(Clone)]
 pub struct ToolConfirmationCheck {
     pub tool_name: String,
     pub result: refact_tool_api::MatchConfirmDeny,
     pub integr_config_path: Option<String>,
-}
-
-#[derive(Clone)]
-pub struct ToolPolicyInfo {
-    pub name: String,
-    pub effective_allow_parallel: bool,
 }
 
 #[derive(Clone)]

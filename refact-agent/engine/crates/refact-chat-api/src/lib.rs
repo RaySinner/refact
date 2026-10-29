@@ -12,7 +12,9 @@ pub mod internal_roles;
 pub mod message_provenance;
 pub mod notification_event;
 pub mod plan_role;
+pub mod tool_catalog;
 pub mod tool_enrichment;
+pub mod trajectory_event;
 pub mod vectorization_queue;
 
 pub use goal_ledger::{
@@ -36,6 +38,8 @@ pub use tool_enrichment::{
     ToolEnrichmentPrivacy, ToolEnrichmentProvenance, ToolEnrichmentReference,
     ToolEnrichmentReferenceDetails, TOOL_ENRICHMENT_EXTRA_KEY, TOOL_ENRICHMENT_SCHEMA_VERSION,
 };
+pub use tool_catalog::{ToolCatalogSnapshot, ToolPolicyInfo, ToolRegistryIndex, TurnToolPool};
+pub use trajectory_event::TrajectoryEvent;
 pub use refact_core::buddy_meta::BuddyThreadMeta;
 pub use message_provenance::{
     attach_provenance, provenance_from_extra, provenance_from_message, role_accent,

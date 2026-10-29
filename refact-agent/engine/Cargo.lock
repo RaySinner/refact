@@ -4064,6 +4064,7 @@ dependencies = [
  "hex",
  "refact-caps-core",
  "refact-core",
+ "refact-tool-api",
  "regex",
  "serde",
  "serde_json",

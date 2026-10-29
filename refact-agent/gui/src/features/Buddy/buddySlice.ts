@@ -307,6 +307,9 @@ export function defaultBuddySettings(): BuddySettings {
     proactive_enabled: true,
     message_observation_enabled: true,
     chat_reactions_enabled: true,
+    stalled_turn_intervention: true,
+    stalled_turn_min_interval_secs: 300,
+    stalled_turn_max_per_hour: 6,
     housekeeping_enabled: true,
     humor_enabled: true,
     humor_level: "light",
@@ -419,6 +422,16 @@ function getBuddySettingsPatchFromSettings(
   }
   if (keys.includes("chat_reactions_enabled")) {
     patch.chat_reactions_enabled = settings.chat_reactions_enabled;
+  }
+  if (keys.includes("stalled_turn_intervention")) {
+    patch.stalled_turn_intervention = settings.stalled_turn_intervention;
+  }
+  if (keys.includes("stalled_turn_min_interval_secs")) {
+    patch.stalled_turn_min_interval_secs =
+      settings.stalled_turn_min_interval_secs;
+  }
+  if (keys.includes("stalled_turn_max_per_hour")) {
+    patch.stalled_turn_max_per_hour = settings.stalled_turn_max_per_hour;
   }
   if (keys.includes("housekeeping_enabled")) {
     patch.housekeeping_enabled = settings.housekeeping_enabled;

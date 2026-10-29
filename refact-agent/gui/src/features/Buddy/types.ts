@@ -1226,6 +1226,9 @@ export interface BuddySettings {
   proactive_enabled: boolean;
   message_observation_enabled: boolean;
   chat_reactions_enabled: boolean;
+  stalled_turn_intervention: boolean;
+  stalled_turn_min_interval_secs: number;
+  stalled_turn_max_per_hour: number;
   housekeeping_enabled: boolean;
   humor_enabled: boolean;
   humor_level: HumorLevel;

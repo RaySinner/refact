@@ -20,6 +20,7 @@ import { ShellSettingsSection } from "../Shell";
 import { GeneralSettingsSection } from "./GeneralSettingsSection";
 import { IndexingSettingsSection } from "./IndexingSettingsSection";
 import { BrowserSettingsSection } from "./BrowserSettingsSection";
+import { BuddySettingsSection } from "./BuddySettingsSection";
 import { TrajectorySettingsPanel } from "../Performance/TrajectorySettingsPanel";
 
 import styles from "./SettingsHub.module.css";
@@ -59,6 +60,8 @@ export const SettingsHub: React.FC<SettingsHubProps> = ({
         return <BrowserSettingsSection />;
       case "limits":
         return <TrajectorySettingsPanel />;
+      case "buddy":
+        return <BuddySettingsSection />;
       case "providers":
         return (
           <Providers

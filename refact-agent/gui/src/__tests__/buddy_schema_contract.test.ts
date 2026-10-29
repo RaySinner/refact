@@ -103,6 +103,9 @@ const RUST_DEFAULT_BUDDY_SETTINGS: BuddySettings = {
   proactive_enabled: true,
   message_observation_enabled: true,
   chat_reactions_enabled: true,
+  stalled_turn_intervention: true,
+  stalled_turn_min_interval_secs: 300,
+  stalled_turn_max_per_hour: 6,
   housekeeping_enabled: true,
   humor_enabled: true,
   humor_level: "light",
@@ -262,6 +265,9 @@ describe("Buddy schema contract", () => {
     expect(settings.enabled).toBe(true);
     expect(settings.chat_reactions_enabled).toBe(true);
     expect(settings.message_observation_enabled).toBe(true);
+    expect(settings.stalled_turn_intervention).toBe(true);
+    expect(settings.stalled_turn_min_interval_secs).toBe(300);
+    expect(settings.stalled_turn_max_per_hour).toBe(6);
     expect(settings.autonomy_level).toBe("propose");
     expect(settings.quiet_hours_mode).toBe("auto");
     expect(settings.quiet_hours_start).toBe(22);

@@ -72,6 +72,10 @@ vi.mock("./GeneralSettingsSection", () => ({
   GeneralSettingsSection: () => <div data-testid="general-section" />,
 }));
 
+vi.mock("./BuddySettingsSection", () => ({
+  BuddySettingsSection: () => <div data-testid="buddy-settings-section" />,
+}));
+
 vi.mock("./IndexingSettingsSection", () => ({
   IndexingSettingsSection: () => <div data-testid="indexing-section" />,
 }));
@@ -163,6 +167,11 @@ describe("SettingsHub — section routing by page name", () => {
     expect(screen.getByTestId("limits-section")).toBeInTheDocument();
   });
 
+  it("shows Buddy section for buddy settings page", () => {
+    renderHub({ name: "buddy settings" });
+    expect(screen.getByTestId("buddy-settings-section")).toBeInTheDocument();
+  });
+
   it("shows Marketplace section for marketplace hub page", () => {
     renderHub({ name: "marketplace hub" });
     const section = screen.getByTestId("marketplace-section");
@@ -225,6 +234,17 @@ describe("SettingsHub — left nav dispatches change(), not push()", () => {
     const pages = store.getState().pages;
     expect(pages.length).toBe(initialLength);
     expect(pages[pages.length - 1].name).toBe("limits settings");
+  });
+
+  it("switches to buddy section via change (stack length unchanged)", () => {
+    const { store } = renderHub({ name: "general settings" });
+    const initialLength = store.getState().pages.length;
+
+    fireEvent.click(screen.getByRole("button", { name: "Buddy" }));
+
+    const pages = store.getState().pages;
+    expect(pages.length).toBe(initialLength);
+    expect(pages[pages.length - 1].name).toBe("buddy settings");
   });
 
   it("switches to marketplace section via change (stack length unchanged)", () => {

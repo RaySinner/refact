@@ -1,0 +1,3 @@
+.numberInput {
+  max-width: var(--rf-setting-item-control-max, 360px);
+}

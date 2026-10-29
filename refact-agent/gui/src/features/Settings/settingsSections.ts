@@ -2,6 +2,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   Bot,
   Cable,
+  Cat,
   Chrome,
   Gauge,
   Paintbrush,
@@ -22,6 +23,7 @@ export type SettingsSectionId =
   | "indexing"
   | "browser"
   | "limits"
+  | "buddy"
   | "providers"
   | "models"
   | "customization"
@@ -43,6 +45,7 @@ export const SETTINGS_SECTIONS: SettingsSectionDef[] = [
   { id: "indexing", label: "Indexing", icon: ScanSearch },
   { id: "browser", label: "Browser", icon: Chrome },
   { id: "limits", label: "Limits & Budgets", icon: Gauge },
+  { id: "buddy", label: "Buddy", icon: Cat },
   { id: "providers", label: "Providers", icon: Plug },
   { id: "models", label: "Models", icon: Bot },
   { id: "customization", label: "Customization", icon: Paintbrush },

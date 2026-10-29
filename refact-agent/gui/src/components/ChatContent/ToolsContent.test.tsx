@@ -4,8 +4,10 @@ import {
   fireEvent,
   render,
   screen,
+  within,
 } from "../../utils/test-utils";
 import type {
+  BackgroundAgentSummary,
   ChatMessages,
   ExecToolMetadata,
   ToolCall,
@@ -671,5 +673,188 @@ describe("ToolsContent routing", () => {
       screen.queryByTestId("final-report-tool-error-icon"),
     ).not.toBeInTheDocument();
     expect(screen.getByText("success")).toBeInTheDocument();
+  });
+});
+
+function makeAgentSummary(
+  overrides: Partial<BackgroundAgentSummary> = {},
+): BackgroundAgentSummary {
+  return {
+    agent_id: "bgagent-tool",
+    parent_chat_id: "test-chat",
+    child_chat_id: null,
+    kind: "tool",
+    status: "running",
+    title: "Read the frog files",
+    progress: null,
+    step_count: 1,
+    last_activity: null,
+    target_files: [],
+    edited_files: [],
+    diff_summary: null,
+    conflict_summary: null,
+    result_summary: null,
+    error: null,
+    started_at: null,
+    finished_at: null,
+    change_seq: 1,
+    model: null,
+    model_type: null,
+    current_tool: null,
+    goal_summary: null,
+    plan_present: false,
+    worktree_branch: null,
+    merge_status: null,
+    pending_questions: 0,
+    questions: [],
+    tokens_used: 0,
+    cost_usd: null,
+    ...overrides,
+  };
+}
+
+function renderAgentToolContent({
+  toolCall,
+  message,
+  backgroundAgents = {},
+}: {
+  toolCall: ToolCall;
+  message?: ToolMessage;
+  backgroundAgents?: Record<string, BackgroundAgentSummary>;
+}) {
+  const chat = createDefaultChatState();
+  const runtime = chat.threads[chat.current_thread_id];
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+  if (!runtime) throw new Error("missing test thread");
+  runtime.thread.messages = message
+    ? ([message] as unknown as ChatMessages)
+    : [];
+  runtime.background_agents = backgroundAgents;
+
+  return render(<ToolContent toolCalls={[toolCall]} />, {
+    preloadedState: { chat },
+  });
+}
+
+describe("ToolAgentDecoration rendering", () => {
+  const toolAgentId = "bgagent-tool-report";
+
+  it("renders an agent card above the tool body when the result carries background_agent_id with kind tool", () => {
+    const toolCall = makeToolCall("agent_finish", "call-tool-agent");
+    const message: ToolMessage = {
+      ...makeToolMessage("call-tool-agent", "Report contents"),
+      background_agent_id: toolAgentId,
+      background_agent_kind: "tool",
+      background_agent_status: "completed",
+      child_chat_id: "child-tool-agent",
+    };
+    const { container } = renderAgentToolContent({ toolCall, message });
+
+    const wrapper = screen.getByTestId(`tool-agent-${toolAgentId}`);
+    const card = within(wrapper).getByTestId("background-agent-card");
+    const body = within(wrapper).getByTestId("final-report-tool");
+    expect(
+      card.compareDocumentPosition(body) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      container.querySelectorAll("[data-testid='background-agent-card']"),
+    ).toHaveLength(1);
+  });
+
+  it("renders a live agent card before the tool result arrives", () => {
+    const agent = makeAgentSummary({
+      agent_id: "bgagent-live-tool",
+      parent_tool_call_id: "call-live-tool",
+      current_tool: "cat frog.py",
+    });
+    const toolCall = makeToolCall("unknown_tool", "call-live-tool");
+    renderAgentToolContent({
+      toolCall,
+      backgroundAgents: { [agent.agent_id]: agent },
+    });
+
+    const wrapper = screen.getByTestId("tool-agent-bgagent-live-tool");
+    expect(
+      within(wrapper).getByTestId("background-agent-card"),
+    ).toBeInTheDocument();
+    expect(within(wrapper).getByTestId("generic-tool")).toBeInTheDocument();
+    expect(screen.getByTestId("background-agent-status-dot")).toHaveAttribute(
+      "aria-label",
+      "Background agent status: Running",
+    );
+  });
+
+  it("keeps the single-card rendering for subagent tool calls", () => {
+    const toolCall = makeToolCall("subagent", "call-bg-single", {
+      task: "Inspect the frogs",
+    });
+    const message: ToolMessage = {
+      ...makeToolMessage("call-bg-single", "started background agent"),
+      background_agent_id: "bgagent-single",
+      background_agent_kind: "subagent",
+      background_agent_status: "running",
+    };
+    const { container } = renderAgentToolContent({ toolCall, message });
+
+    expect(
+      container.querySelectorAll("[data-testid='background-agent-card']"),
+    ).toHaveLength(1);
+    expect(
+      screen.queryByText('Analyze "Inspect the frogs"'),
+    ).not.toBeInTheDocument();
+    expect(
+      container.querySelector(".tool-agent-with-body"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders tools without an agent exactly as before", () => {
+    const toolCall = makeToolCall("unknown_tool", "call-plain-tool");
+    const { container } = renderAgentToolContent({
+      toolCall,
+      message: makeToolMessage("call-plain-tool", "plain result"),
+    });
+
+    expect(
+      screen.queryByTestId("background-agent-card"),
+    ).not.toBeInTheDocument();
+    expect(
+      container.querySelectorAll("[data-testid^='tool-agent-']"),
+    ).toHaveLength(0);
+    expect(
+      container.querySelector(".tool-agent-with-body"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("generic-tool")).toBeInTheDocument();
+  });
+
+  it("picks the live agent over a stale terminal one for the same tool call id", () => {
+    const stale = makeAgentSummary({
+      agent_id: "bgagent-stale-done",
+      parent_tool_call_id: "call-stale-tool",
+      status: "completed",
+      title: "Stale report",
+      change_seq: 9,
+    });
+    const live = makeAgentSummary({
+      agent_id: "bgagent-stale-live",
+      parent_tool_call_id: "call-stale-tool",
+      title: "Live report",
+      change_seq: 2,
+    });
+    const toolCall = makeToolCall("unknown_tool", "call-stale-tool");
+    renderAgentToolContent({
+      toolCall,
+      backgroundAgents: { [stale.agent_id]: stale, [live.agent_id]: live },
+    });
+
+    expect(screen.getByTestId("tool-agent-bgagent-stale-live")).toHaveTextContent(
+      "Live report",
+    );
+    expect(
+      screen.queryByTestId("tool-agent-bgagent-stale-done"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("background-agent-status-dot")).toHaveAttribute(
+      "aria-label",
+      "Background agent status: Running",
+    );
   });
 });

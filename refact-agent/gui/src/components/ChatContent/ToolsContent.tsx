@@ -32,6 +32,7 @@ import {
   selectManyDiffMessageByThreadAndIds,
   selectManyToolResultsByThreadAndIds,
   selectToolResultByThreadAndId,
+  selectBackgroundAgentByToolCallId,
 } from "../../features/Chat/Thread/selectors";
 import { ChatThreadProvider, useThreadId } from "../../features/Chat/Thread";
 import { ScrollArea } from "../ScrollArea";
@@ -245,12 +246,6 @@ type BackgroundAgentExtra = Partial<
   parent_chat_id?: string;
 };
 
-function isBackgroundAgentTool(
-  toolName: string | undefined,
-): toolName is "subagent" | "delegate" {
-  return toolName === "subagent" || toolName === "delegate";
-}
-
 function getBackgroundAgentId(result: ToolResult | undefined) {
   return readStringField(result, "background_agent_id");
 }
@@ -324,13 +319,17 @@ function readStringArrayField(
 
 function readBackgroundAgentKind(
   result: ToolResult | undefined,
-  toolName: "subagent" | "delegate",
+  toolName: string | undefined,
 ): BackgroundAgentSummary["kind"] {
   const value =
     readStringField(result, "background_agent_kind") ??
     readStringField(result, "kind");
-  if (value === "subagent" || value === "delegate") return value;
-  return toolName === "delegate" ? "delegate" : "subagent";
+  if (value === "subagent" || value === "delegate" || value === "tool") {
+    return value;
+  }
+  if (toolName === "delegate") return "delegate";
+  if (toolName === "subagent") return "subagent";
+  return "tool";
 }
 
 function isBackgroundAgentStatus(
@@ -358,7 +357,7 @@ function readBackgroundAgentStatus(
 
 function backgroundAgentPlaceholder(
   result: ToolResult,
-  toolName: "subagent" | "delegate",
+  toolName: string | undefined,
 ): BackgroundAgentSummary | null {
   const agentId = getBackgroundAgentId(result);
   if (!agentId) return null;
@@ -397,36 +396,66 @@ function backgroundAgentPlaceholder(
   } satisfies BackgroundAgentSummary;
 }
 
-function decorateBackgroundAgentTool(
-  elem: React.ReactNode,
-  toolName: string | undefined,
-  result: ToolResult | undefined,
-  threadId: string | undefined,
+type ToolAgentDecorationProps = {
+  toolCall: ToolCall;
+  toolName: string | undefined;
+  result: ToolResult | undefined;
+  threadId?: string;
   onOpenTrajectory: (
     agent: BackgroundAgentSummary,
     childChatId: string,
-  ) => void,
-): React.ReactNode {
-  if (!isBackgroundAgentTool(toolName)) return elem;
-  const agentId = getBackgroundAgentId(result);
-  if (!result || !agentId) return elem;
-  const agent = backgroundAgentPlaceholder(result, toolName);
-  if (!agent) return elem;
-  // The card carries every fact the raw "✓ Started background delegate…" tool
-  // result spells out (id, target files, status, steps), so rendering both
-  // duplicated the same wall of text under the card. The card becomes the
-  // primary — and only — rendering for background agent tool calls.
-  return (
-    <BackgroundAgentCard
-      key={`background-agent-${agent.agent_id}`}
-      agent={agent}
-      agentId={agentId}
-      threadId={threadId}
-      compactDefault
-      onOpenAgentTrajectory={onOpenTrajectory}
-    />
+  ) => void;
+  children: React.ReactNode;
+};
+
+const ToolAgentDecoration: React.FC<ToolAgentDecorationProps> = ({
+  toolCall,
+  toolName,
+  result,
+  threadId,
+  onOpenTrajectory,
+  children,
+}) => {
+  const placeholderAgent = useMemo(() => {
+    if (!result) return null;
+    return backgroundAgentPlaceholder(result, toolName);
+  }, [result, toolName]);
+  const liveAgent = useAppSelector((state) =>
+    selectBackgroundAgentByToolCallId(state, threadId ?? "", toolCall.id),
   );
-}
+  const agent = placeholderAgent ?? liveAgent;
+  if (!agent) return <>{children}</>;
+  if (agent.kind === "subagent" || agent.kind === "delegate") {
+    // The card carries every fact the raw "✓ Started background delegate…" tool
+    // result spells out (id, target files, status, steps), so rendering both
+    // duplicated the same wall of text under the card. The card becomes the
+    // primary — and only — rendering for background agent tool calls.
+    return (
+      <BackgroundAgentCard
+        agent={agent}
+        agentId={agent.agent_id}
+        threadId={threadId}
+        compactDefault
+        onOpenAgentTrajectory={onOpenTrajectory}
+      />
+    );
+  }
+  return (
+    <div
+      className="tool-agent-with-body"
+      data-testid={`tool-agent-${agent.agent_id}`}
+    >
+      <BackgroundAgentCard
+        agent={agent}
+        agentId={agent.agent_id}
+        threadId={threadId}
+        compactDefault
+        onOpenAgentTrajectory={onOpenTrajectory}
+      />
+      {children}
+    </div>
+  );
+};
 
 // TODO: Sort of duplicated
 const ToolMessage: React.FC<{
@@ -721,6 +750,23 @@ function processToolCalls(
   const diffs = head.id ? diffsByToolId[head.id] : undefined;
   const isActiveTool = head.id === activeToolCallId;
 
+  const pushProcessed = (elem: React.ReactNode): React.ReactNode[] => {
+    const innerKey = React.isValidElement(elem) ? elem.key : null;
+    return [
+      ...processed,
+      <ToolAgentDecoration
+        key={innerKey ?? `tool-agent-decoration-${processed.length}`}
+        toolCall={normalizedHead}
+        toolName={headName}
+        result={result}
+        threadId={threadId}
+        onOpenTrajectory={onOpenTrajectory}
+      >
+        {elem}
+      </ToolAgentDecoration>,
+    ];
+  };
+
   if (
     result &&
     head.id &&
@@ -740,7 +786,7 @@ function processToolCalls(
       tail,
       toolResults,
       features,
-      [...processed, elem],
+      pushProcessed(elem),
       contextFilesByToolId,
       diffsByToolId,
       activeToolCallId,
@@ -761,7 +807,7 @@ function processToolCalls(
       tail,
       toolResults,
       features,
-      [...processed, elem],
+      pushProcessed(elem),
       contextFilesByToolId,
       diffsByToolId,
       activeToolCallId,
@@ -782,7 +828,7 @@ function processToolCalls(
       tail,
       toolResults,
       features,
-      [...processed, elem],
+      pushProcessed(elem),
       contextFilesByToolId,
       diffsByToolId,
       activeToolCallId,
@@ -804,7 +850,7 @@ function processToolCalls(
       tail,
       toolResults,
       features,
-      [...processed, elem],
+      pushProcessed(elem),
       contextFilesByToolId,
       diffsByToolId,
       activeToolCallId,
@@ -826,7 +872,7 @@ function processToolCalls(
       tail,
       toolResults,
       features,
-      [...processed, elem],
+      pushProcessed(elem),
       contextFilesByToolId,
       diffsByToolId,
       activeToolCallId,
@@ -848,7 +894,7 @@ function processToolCalls(
       tail,
       toolResults,
       features,
-      [...processed, elem],
+      pushProcessed(elem),
       contextFilesByToolId,
       diffsByToolId,
       activeToolCallId,
@@ -870,7 +916,7 @@ function processToolCalls(
       tail,
       toolResults,
       features,
-      [...processed, elem],
+      pushProcessed(elem),
       contextFilesByToolId,
       diffsByToolId,
       activeToolCallId,
@@ -891,7 +937,7 @@ function processToolCalls(
       tail,
       toolResults,
       features,
-      [...processed, elem],
+      pushProcessed(elem),
       contextFilesByToolId,
       diffsByToolId,
       activeToolCallId,
@@ -911,7 +957,7 @@ function processToolCalls(
       tail,
       toolResults,
       features,
-      [...processed, elem],
+      pushProcessed(elem),
       contextFilesByToolId,
       diffsByToolId,
       activeToolCallId,
@@ -931,7 +977,7 @@ function processToolCalls(
       tail,
       toolResults,
       features,
-      [...processed, elem],
+      pushProcessed(elem),
       contextFilesByToolId,
       diffsByToolId,
       activeToolCallId,
@@ -947,18 +993,11 @@ function processToolCalls(
         toolCall={normalizedHead}
       />
     );
-    const decoratedElem = decorateBackgroundAgentTool(
-      elem,
-      headName,
-      result,
-      threadId,
-      onOpenTrajectory,
-    );
     return processToolCalls(
       tail,
       toolResults,
       features,
-      [...processed, decoratedElem],
+      pushProcessed(elem),
       contextFilesByToolId,
       diffsByToolId,
       activeToolCallId,
@@ -978,7 +1017,7 @@ function processToolCalls(
       tail,
       toolResults,
       features,
-      [...processed, elem],
+      pushProcessed(elem),
       contextFilesByToolId,
       diffsByToolId,
       activeToolCallId,
@@ -1000,7 +1039,7 @@ function processToolCalls(
       tail,
       toolResults,
       features,
-      [...processed, elem],
+      pushProcessed(elem),
       contextFilesByToolId,
       diffsByToolId,
       activeToolCallId,
@@ -1022,7 +1061,7 @@ function processToolCalls(
       tail,
       toolResults,
       features,
-      [...processed, elem],
+      pushProcessed(elem),
       contextFilesByToolId,
       diffsByToolId,
       activeToolCallId,
@@ -1044,7 +1083,7 @@ function processToolCalls(
       tail,
       toolResults,
       features,
-      [...processed, elem],
+      pushProcessed(elem),
       contextFilesByToolId,
       diffsByToolId,
       activeToolCallId,
@@ -1066,7 +1105,7 @@ function processToolCalls(
       tail,
       toolResults,
       features,
-      [...processed, elem],
+      pushProcessed(elem),
       contextFilesByToolId,
       diffsByToolId,
       activeToolCallId,
@@ -1102,7 +1141,7 @@ function processToolCalls(
       tail,
       toolResults,
       features,
-      [...processed, elem],
+      pushProcessed(elem),
       contextFilesByToolId,
       diffsByToolId,
       activeToolCallId,
@@ -1124,7 +1163,7 @@ function processToolCalls(
       tail,
       toolResults,
       features,
-      [...processed, elem],
+      pushProcessed(elem),
       contextFilesByToolId,
       diffsByToolId,
       activeToolCallId,
@@ -1146,7 +1185,7 @@ function processToolCalls(
       tail,
       toolResults,
       features,
-      [...processed, elem],
+      pushProcessed(elem),
       contextFilesByToolId,
       diffsByToolId,
       activeToolCallId,
@@ -1168,7 +1207,7 @@ function processToolCalls(
       tail,
       toolResults,
       features,
-      [...processed, elem],
+      pushProcessed(elem),
       contextFilesByToolId,
       diffsByToolId,
       activeToolCallId,
@@ -1191,7 +1230,7 @@ function processToolCalls(
       tail,
       toolResults,
       features,
-      [...processed, elem],
+      pushProcessed(elem),
       contextFilesByToolId,
       diffsByToolId,
       activeToolCallId,
@@ -1213,7 +1252,7 @@ function processToolCalls(
       tail,
       toolResults,
       features,
-      [...processed, elem],
+      pushProcessed(elem),
       contextFilesByToolId,
       diffsByToolId,
       activeToolCallId,
@@ -1233,7 +1272,7 @@ function processToolCalls(
       tail,
       toolResults,
       features,
-      [...processed, elem],
+      pushProcessed(elem),
       contextFilesByToolId,
       diffsByToolId,
       activeToolCallId,
@@ -1253,7 +1292,7 @@ function processToolCalls(
       tail,
       toolResults,
       features,
-      [...processed, elem],
+      pushProcessed(elem),
       contextFilesByToolId,
       diffsByToolId,
       activeToolCallId,
@@ -1273,7 +1312,7 @@ function processToolCalls(
       tail,
       toolResults,
       features,
-      [...processed, elem],
+      pushProcessed(elem),
       contextFilesByToolId,
       diffsByToolId,
       activeToolCallId,
@@ -1293,7 +1332,7 @@ function processToolCalls(
       tail,
       toolResults,
       features,
-      [...processed, elem],
+      pushProcessed(elem),
       contextFilesByToolId,
       diffsByToolId,
       activeToolCallId,
@@ -1314,7 +1353,7 @@ function processToolCalls(
       tail,
       toolResults,
       features,
-      [...processed, elem],
+      pushProcessed(elem),
       contextFilesByToolId,
       diffsByToolId,
       activeToolCallId,
@@ -1342,7 +1381,7 @@ function processToolCalls(
       tail,
       toolResults,
       features,
-      [...processed, elem],
+      pushProcessed(elem),
       contextFilesByToolId,
       diffsByToolId,
       activeToolCallId,
@@ -1362,7 +1401,7 @@ function processToolCalls(
       tail,
       toolResults,
       features,
-      [...processed, elem],
+      pushProcessed(elem),
       contextFilesByToolId,
       diffsByToolId,
       activeToolCallId,
@@ -1382,7 +1421,7 @@ function processToolCalls(
       tail,
       toolResults,
       features,
-      [...processed, elem],
+      pushProcessed(elem),
       contextFilesByToolId,
       diffsByToolId,
       activeToolCallId,
@@ -1488,7 +1527,7 @@ function processToolCalls(
       tail,
       toolResults,
       features,
-      [...processed, elem],
+      pushProcessed(elem),
       contextFilesByToolId,
       diffsByToolId,
       activeToolCallId,
@@ -1514,7 +1553,7 @@ function processToolCalls(
       tail,
       toolResults,
       features,
-      [...processed, elem],
+      pushProcessed(elem),
       contextFilesByToolId,
       diffsByToolId,
       activeToolCallId,
@@ -1535,7 +1574,7 @@ function processToolCalls(
       tail,
       toolResults,
       features,
-      [...processed, elem],
+      pushProcessed(elem),
       contextFilesByToolId,
       diffsByToolId,
       activeToolCallId,
@@ -1555,7 +1594,7 @@ function processToolCalls(
       tail,
       toolResults,
       features,
-      [...processed, elem],
+      pushProcessed(elem),
       contextFilesByToolId,
       diffsByToolId,
       activeToolCallId,
@@ -1576,7 +1615,7 @@ function processToolCalls(
       tail,
       toolResults,
       features,
-      [...processed, elem],
+      pushProcessed(elem),
       contextFilesByToolId,
       diffsByToolId,
       activeToolCallId,
@@ -1615,7 +1654,7 @@ function processToolCalls(
       nextTail,
       toolResults,
       features,
-      [...processed, elem],
+      pushProcessed(elem),
       contextFilesByToolId,
       diffsByToolId,
       activeToolCallId,
@@ -1635,7 +1674,7 @@ function processToolCalls(
       tail,
       toolResults,
       features,
-      [...processed, elem],
+      pushProcessed(elem),
       contextFilesByToolId,
       diffsByToolId,
       activeToolCallId,
@@ -1654,7 +1693,7 @@ function processToolCalls(
     tail,
     toolResults,
     features,
-    [...processed, elem],
+    pushProcessed(elem),
     contextFilesByToolId,
     diffsByToolId,
     activeToolCallId,

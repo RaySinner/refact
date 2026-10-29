@@ -15,6 +15,7 @@ import {
   SET_TASKS_MESSAGES,
   SLEEP_ASK_MESSAGES,
   SUBAGENT_MESSAGES,
+  TOOL_AGENT_ABOVE_BODY_MESSAGES,
 } from "../../__fixtures__/toolCardsAgentic";
 import { CHAT_STORY_MSW_HANDLERS } from "../../__stories__/chatStoryState";
 import type { ChatMessages } from "../../services/refact";
@@ -107,4 +108,8 @@ export const Chrome: Story = {
 
 export const EngineAnalysis: Story = {
   args: { messages: ENGINE_ANALYSIS_MESSAGES },
+};
+
+export const ToolAgentAboveBody: Story = {
+  args: { messages: TOOL_AGENT_ABOVE_BODY_MESSAGES },
 };

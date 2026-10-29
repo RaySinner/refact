@@ -466,3 +466,58 @@ export const ENGINE_ANALYSIS_MESSAGES: ChatMessages = [
     }),
   },
 ];
+
+export const TOOL_AGENT_ABOVE_BODY_MESSAGES: ChatMessages = [
+  {
+    role: "user",
+    content: "Review the agent-card wiring in ToolsContent before we ship it.",
+  },
+  {
+    role: "assistant",
+    content: "I’ll run a focused review agent over the chat rendering path.",
+    tool_calls: [
+      call("agentic-review-tool", "code_review", {
+        path: "src/components/ChatContent/ToolsContent.tsx",
+      }),
+    ],
+  },
+  {
+    role: "tool",
+    tool_call_id: "agentic-review-tool",
+    tool_failed: false,
+    content: [
+      "## Review notes",
+      "",
+      "- Tool results stay associated with their originating calls.",
+      "- The agent card sits above the raw tool body for kind `tool`.",
+      "- No duplicate card is rendered once the result arrives.",
+    ].join("\n"),
+    extra: {
+      background_agent_id: "bg-review-tool-card",
+      background_agent_kind: "tool",
+      background_agent_status: "completed",
+      parent_chat_id: "storybook-chat",
+      child_chat_id: "storybook-review-tool-trajectory",
+      title: "Review agent-card wiring",
+      progress: "Review complete",
+      step_count: 4,
+      last_activity: "Summarized card and body layout",
+      target_files: ["src/components/ChatContent/ToolsContent.tsx"],
+      edited_files: [],
+      result_summary: "Card renders above the tool body without duplication.",
+      started_at: "2025-03-08T12:00:00.000Z",
+      finished_at: "2025-03-08T12:02:10.000Z",
+      change_seq: 9,
+      model_type: "default",
+      current_tool: null,
+      goal_summary: null,
+      plan_present: false,
+      worktree_branch: "refact/subagent/tool-card",
+      merge_status: "merged",
+      pending_questions: 0,
+      questions: [],
+      tokens_used: 940,
+      cost_usd: 0.0119,
+    },
+  },
+];

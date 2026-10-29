@@ -1,7 +1,10 @@
+use std::any::Any;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
+use async_trait::async_trait;
+use refact_runtime_api::SessionsHandle;
 use serde_json::json;
 use tokio::sync::{broadcast, Mutex as AMutex, Notify, RwLock as ARwLock};
 use tracing::{info, warn};
@@ -116,6 +119,25 @@ pub(super) fn should_replace_background_agent(
 }
 
 pub type SessionsMap = Arc<ARwLock<HashMap<String, Arc<AMutex<ChatSession>>>>>;
+
+pub struct EngineSessionsHandle(pub SessionsMap);
+
+#[async_trait]
+impl SessionsHandle for EngineSessionsHandle {
+    fn as_any(&self) -> &dyn Any {
+        &self.0
+    }
+
+    async fn session_ids(&self) -> Vec<String> {
+        self.0.read().await.keys().cloned().collect()
+    }
+
+    async fn session_state(&self, chat_id: &str) -> Option<SessionState> {
+        let session_arc = self.0.read().await.get(chat_id).cloned()?;
+        let session = session_arc.lock().await;
+        Some(session.runtime.state)
+    }
+}
 
 pub fn create_sessions_map() -> SessionsMap {
     Arc::new(ARwLock::new(HashMap::new()))

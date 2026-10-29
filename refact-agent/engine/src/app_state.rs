@@ -53,6 +53,7 @@ pub use refact_core::tokenizer_state::TokenizerState;
 use refact_core::vecdb_types::VecdbSearch;
 use refact_runtime_api::{
     ChatSessionFacade, ChatSessionSnapshot, ChatSessionUpdate, CreateSessionRequest,
+    NotificationEventSender, TaskEventEnvelopeSender, TrajectoryEventSender,
 };
 
 #[derive(Clone)]
@@ -2093,6 +2094,54 @@ impl BuddyEventSink for AppBuddyEventSink {
             AppState::from_gcx(self.gcx.clone()).await,
         )
         .await
+    }
+}
+
+pub struct EngineTrajectoryEventSender {
+    tx: tokio::sync::broadcast::Sender<TrajectoryEvent>,
+}
+
+impl EngineTrajectoryEventSender {
+    pub fn new(tx: tokio::sync::broadcast::Sender<TrajectoryEvent>) -> Self {
+        Self { tx }
+    }
+}
+
+impl TrajectoryEventSender for EngineTrajectoryEventSender {
+    fn send(&self, event: TrajectoryEvent) -> usize {
+        self.tx.send(event).unwrap_or(0)
+    }
+}
+
+pub struct EngineTaskEventEnvelopeSender {
+    tx: tokio::sync::broadcast::Sender<TaskEventEnvelope>,
+}
+
+impl EngineTaskEventEnvelopeSender {
+    pub fn new(tx: tokio::sync::broadcast::Sender<TaskEventEnvelope>) -> Self {
+        Self { tx }
+    }
+}
+
+impl TaskEventEnvelopeSender for EngineTaskEventEnvelopeSender {
+    fn send(&self, envelope: TaskEventEnvelope) -> usize {
+        self.tx.send(envelope).unwrap_or(0)
+    }
+}
+
+pub struct EngineNotificationEventSender {
+    tx: tokio::sync::broadcast::Sender<NotificationEvent>,
+}
+
+impl EngineNotificationEventSender {
+    pub fn new(tx: tokio::sync::broadcast::Sender<NotificationEvent>) -> Self {
+        Self { tx }
+    }
+}
+
+impl NotificationEventSender for EngineNotificationEventSender {
+    fn send(&self, event: NotificationEvent) -> usize {
+        self.tx.send(event).unwrap_or(0)
     }
 }
 

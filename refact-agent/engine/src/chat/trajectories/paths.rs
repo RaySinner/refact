@@ -222,13 +222,8 @@ pub(super) fn should_vectorize_trajectory(
     !matches!(source, TrajectorySourceIdentity::Buddy) && !is_internal_trace_link_type(link_type)
 }
 
-pub(super) const TRAJECTORY_VECTORIZATION_QUEUE_CAPACITY: usize = 64;
-
-#[derive(Default)]
-pub struct TrajectoryVectorizationQueue {
-    sender: Option<mpsc::Sender<PathBuf>>,
-    worker: Option<tokio::task::JoinHandle<()>>,
-}
+pub use refact_chat_api::vectorization_queue::TrajectoryVectorizationQueue;
+pub(super) use refact_chat_api::vectorization_queue::TRAJECTORY_VECTORIZATION_QUEUE_CAPACITY;
 
 pub(super) async fn wait_for_trajectory_vectorization_shutdown(
     shutdown_flag: Arc<std::sync::atomic::AtomicBool>,

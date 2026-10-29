@@ -13,6 +13,7 @@ pub mod message_provenance;
 pub mod notification_event;
 pub mod plan_role;
 pub mod tool_enrichment;
+pub mod vectorization_queue;
 
 pub use goal_ledger::{
     goal_budget_exhaustion_status, reduce_goal_ledger, seed_transferred_goal_ledger,
@@ -26,6 +27,9 @@ pub use chat_local_types::{
     PendingBrowserMessage, PendingSkillDeactivation, RuntimeChatTimeouts, TrajectorySourceIdentity,
 };
 pub use notification_event::{NotificationEvent, NotificationQuestion};
+pub use vectorization_queue::{
+    TrajectoryVectorizationQueue, TRAJECTORY_VECTORIZATION_QUEUE_CAPACITY,
+};
 pub use tool_enrichment::{
     attach_tool_enrichment, attach_tool_enrichment_to_extra, redact_tool_enrichment,
     sanitize_http_url, tool_enrichment_from_extra, ToolEnrichment, ToolEnrichmentKind,

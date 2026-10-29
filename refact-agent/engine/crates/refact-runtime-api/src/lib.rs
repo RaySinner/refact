@@ -8,10 +8,12 @@ use refact_buddy_core::snapshot::BuddySnapshot;
 use refact_buddy_core::types::{BuddyRuntimeEvent, BuddySuggestion};
 use refact_buddy_core::user_action::UserAction;
 use refact_chat_api::{
-    ChatCommand, ChatMessage, ContextFile, DeliveryOutcome, GoalSnapshot, PauseReason,
-    PendingDelivery, PushMode, ThreadParams,
+    ChatCommand, ChatMessage, ContextFile, DeliveryOutcome, GoalSnapshot, NotificationEvent,
+    PauseReason, PendingDelivery, PushMode, ThreadParams,
 };
+use refact_chat_history::trajectory_event::TrajectoryEvent;
 use refact_chat_history::trajectory_snapshot::TrajectorySnapshot;
+use refact_tasks::events::TaskEventEnvelope;
 use refact_tool_api::{build_registry_from_names, ToolAliasRegistry, ToolDesc};
 
 pub use refact_chat_api::{DeliveryOutcome as RuntimeDeliveryOutcome, SessionState, TaskMeta};
@@ -346,4 +348,29 @@ pub trait ChatSessionFacade: Send + Sync {
     async fn session_state(&self, chat_id: &str) -> Result<Option<SessionState>, String>;
     async fn maybe_save_session(&self, chat_id: &str) -> Result<(), String>;
     async fn save_trajectory_snapshot(&self, snapshot: TrajectorySnapshot) -> Result<(), String>;
+}
+
+/// Read seam over the engine chat sessions map. The concrete map type stays in
+/// the engine; lower crates hold `Arc<dyn SessionsHandle>` and can reach the
+/// engine map through `as_any` (same escape hatch as `TurnToolPool`).
+#[async_trait]
+pub trait SessionsHandle: Send + Sync {
+    fn as_any(&self) -> &dyn std::any::Any;
+    async fn session_ids(&self) -> Vec<String>;
+    async fn session_state(&self, chat_id: &str) -> Option<SessionState>;
+}
+
+/// Sender seam for trajectory index events; the engine wraps its broadcast channel.
+pub trait TrajectoryEventSender: Send + Sync {
+    fn send(&self, event: TrajectoryEvent) -> usize;
+}
+
+/// Sender seam for task board events; the engine wraps its broadcast channel.
+pub trait TaskEventEnvelopeSender: Send + Sync {
+    fn send(&self, envelope: TaskEventEnvelope) -> usize;
+}
+
+/// Sender seam for sidebar notification events; the engine wraps its broadcast channel.
+pub trait NotificationEventSender: Send + Sync {
+    fn send(&self, event: NotificationEvent) -> usize;
 }

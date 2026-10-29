@@ -87,6 +87,9 @@ pub struct StageCtx {
     pub task_meta: Option<TaskMeta>,
     pub worktree: Option<WorktreeMeta>,
     pub chat_id: String,
+    /// Trace owner for the stage subchats. For a review this is the review
+    /// chat (`subchat-<review_id>`), so every stage nests under it.
+    pub trace_parent_chat_id: String,
     pub root_chat_id: String,
     pub activity: Option<Arc<AtomicU64>>,
 }
@@ -166,39 +169,49 @@ pub async fn run_stage(gcx: Arc<GlobalContext>, ctx: StageCtx, job: StageJob) ->
     product
 }
 
+/// Build the subchat config for one stage. The stage subchat is attributed to
+/// `ctx.trace_parent_chat_id` (the review chat), so every stage nests under the
+/// review's own trajectory instead of the calling chat.
+pub(crate) async fn stage_subchat_config(
+    gcx: Arc<GlobalContext>,
+    ctx: &StageCtx,
+    job: &StageJob,
+) -> Result<crate::subchat::SubchatConfig, String> {
+    let launcher = gcx.chat_ctx(gcx.clone()).subchat.clone();
+    let attribution = format!("review_{}", job.spec.id);
+    launcher
+        .resolve_subchat_config_with_explicit_params(
+            &attribution,
+            &job.subchat,
+            true,
+            Some(job.trace_chat_id.clone()),
+            Some(job.spec.display_title()),
+            Some(ctx.trace_parent_chat_id.clone()),
+            Some("review_stage".to_string()),
+            Some(ctx.root_chat_id.clone()),
+            Some(job.spec.tools()),
+            job.max_steps,
+            false,
+            "agent".to_string(),
+            ctx.task_meta.clone(),
+            inherited_worktree(ctx),
+            Some(ctx.tool_call_id.clone()),
+            Some(ctx.subchat_tx.clone()),
+            Some(job.abort.clone()),
+            ctx.depth + 1,
+        )
+        .await
+}
+
 async fn run_stage_inner(gcx: Arc<GlobalContext>, ctx: StageCtx, job: StageJob) -> StageProduct {
     let started = now_ms();
     let launcher = gcx.chat_ctx(gcx.clone()).subchat.clone();
     let model = job.subchat.model.clone();
     let label = job.label.clone();
     let mut metering = serde_json::Map::new();
-    let worktree = inherited_worktree(&ctx);
-
-    let trace_chat_id = job.trace_chat_id.clone();
     let attribution = format!("review_{}", job.spec.id);
-    let mut config = match launcher
-        .resolve_subchat_config_with_explicit_params(
-            &attribution,
-        &job.subchat,
-        true,
-        Some(trace_chat_id.clone()),
-        Some(job.spec.display_title()),
-        Some(ctx.chat_id.clone()),
-        Some("review_stage".to_string()),
-        Some(ctx.root_chat_id.clone()),
-        Some(job.spec.tools()),
-        job.max_steps,
-        false,
-        "agent".to_string(),
-        ctx.task_meta.clone(),
-        worktree,
-        Some(ctx.tool_call_id.clone()),
-        Some(ctx.subchat_tx.clone()),
-        Some(job.abort.clone()),
-        ctx.depth + 1,
-    )
-    .await
-    {
+
+    let mut config = match stage_subchat_config(gcx.clone(), &ctx, &job).await {
         Ok(config) => config,
         Err(error) => {
             return StageProduct::empty(StageRun::failed(
@@ -273,7 +286,7 @@ async fn run_stage_inner(gcx: Arc<GlobalContext>, ctx: StageCtx, job: StageJob) 
                 ctx.depth,
                 ctx.task_meta.clone(),
                 ctx.worktree.clone(),
-                TraceParent::rooted(&ctx.chat_id, &ctx.root_chat_id),
+                TraceParent::rooted(&ctx.trace_parent_chat_id, &ctx.root_chat_id),
             )
             .await
             {
@@ -448,6 +461,7 @@ mod tests {
             task_meta: None,
             worktree,
             chat_id: "chat".to_string(),
+            trace_parent_chat_id: "chat".to_string(),
             root_chat_id: "chat".to_string(),
             activity: None,
         }

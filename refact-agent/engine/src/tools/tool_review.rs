@@ -10,8 +10,11 @@ use tokio::sync::mpsc;
 use tokio::sync::Mutex as AMutex;
 
 use crate::agents::tool_agent::{ToolAgentHandle, ToolAgentSpec};
+use crate::app_state::AppState;
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
+use crate::chat::trajectories::save_trajectory_as_with_intent_checked;
+use crate::chat::types::{ChatSession, SessionState, ThreadParams, TrajectoryCommitIntent};
 use crate::global_context::GlobalContext;
 use crate::postprocessing::pp_command_output::OutputFilter;
 use crate::tools::ctx::ToolCtx;
@@ -619,6 +622,87 @@ fn review_agent_summary(report: &ReviewReport) -> String {
     )
 }
 
+fn review_chat_thread(
+    ctx: &StageCtx,
+    child_chat_id: &str,
+    title: String,
+    model: String,
+) -> ThreadParams {
+    ThreadParams {
+        id: child_chat_id.to_string(),
+        title,
+        model,
+        task_meta: ctx.task_meta.clone(),
+        worktree: ctx.worktree.clone(),
+        parent_id: Some(ctx.chat_id.clone()),
+        link_type: Some("tool".to_string()),
+        root_chat_id: Some(ctx.root_chat_id.clone()),
+        ..Default::default()
+    }
+}
+
+async fn open_review_chat(
+    app: &AppState,
+    thread: &ThreadParams,
+    request: &ChatMessage,
+) -> Arc<AMutex<ChatSession>> {
+    let session = ChatSession::new_with_trajectory(
+        thread.id.clone(),
+        vec![request.clone()],
+        thread.clone(),
+        chrono::Utc::now().to_rfc3339(),
+        None,
+        Vec::new(),
+        None,
+    );
+    let session_arc = Arc::new(AMutex::new(session));
+    {
+        let mut sessions = app.chat.sessions.write().await;
+        sessions.insert(thread.id.clone(), session_arc.clone());
+    }
+    session_arc
+        .lock()
+        .await
+        .set_runtime_state(SessionState::Starting, None);
+    session_arc
+}
+
+async fn save_review_chat(
+    app: &AppState,
+    thread: &ThreadParams,
+    messages: &[ChatMessage],
+    intent: TrajectoryCommitIntent,
+) {
+    if let Err(error) =
+        save_trajectory_as_with_intent_checked(&app.chat_ctx(), thread, messages, intent).await
+    {
+        tracing::warn!("review: could not save the review chat trajectory: {error}");
+    }
+}
+
+async fn take_review_chat_inbox(session: &Arc<AMutex<ChatSession>>) -> Vec<ChatMessage> {
+    let mut session = session.lock().await;
+    session
+        .pending_deliveries
+        .drain(..)
+        .flat_map(|delivery| delivery.messages)
+        .filter(|message| message.role == "user")
+        .collect()
+}
+
+async fn close_review_chat(app: &AppState, chat_id: &str) {
+    let removed = {
+        let mut sessions = app.chat.sessions.write().await;
+        sessions.remove(chat_id)
+    };
+    if let Some(session_arc) = removed {
+        let mut session = session_arc.lock().await;
+        session.set_runtime_state(SessionState::Idle, None);
+        session.close_event_channel();
+        session.queue_notify.notify_waiters();
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn run_review(
     gcx: Arc<GlobalContext>,
@@ -915,13 +999,15 @@ impl Tool for ToolCodeReview {
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
         let args = parse_args(args)?;
-        let (gcx, tool, ctx, app) = {
+        let (gcx, tool, ctx, app, child_chat_id) = {
             let ccx_lock = ccx.lock().await;
             let gcx = ccx_lock.app.gcx.clone();
             let tool = ccx_lock.tool.clone();
             let app = ccx_lock.app.clone();
+            let review_id = format!("rv-{}", &uuid::Uuid::new_v4().simple().to_string()[..8]);
+            let child_chat_id = format!("subchat-{review_id}");
             let ctx = StageCtx {
-                review_id: format!("rv-{}", &uuid::Uuid::new_v4().simple().to_string()[..8]),
+                review_id,
                 tool_call_id: tool_call_id.clone(),
                 subchat_tx: ccx_lock.subchat_tx.clone(),
                 abort_flag: ccx_lock.abort_flag.clone(),
@@ -929,10 +1015,11 @@ impl Tool for ToolCodeReview {
                 task_meta: ccx_lock.task_meta.clone(),
                 worktree: ccx_lock.execution_scope_worktree(),
                 chat_id: ccx_lock.chat_id.clone(),
+                trace_parent_chat_id: child_chat_id.clone(),
                 root_chat_id: ccx_lock.root_chat_id.clone(),
                 activity: None,
             };
-            (gcx, tool, ctx, app)
+            (gcx, tool, ctx, app, child_chat_id)
         };
 
         let cfg = load_review_config(gcx.clone()).await?;
@@ -942,7 +1029,24 @@ impl Tool for ToolCodeReview {
         let model = slot_model_id(gcx.clone(), cfg.settings.model_slot)
             .await
             .unwrap_or_default();
-        let child_chat_id = format!("subchat-{}", ctx.review_id);
+        let review_thread = review_chat_thread(
+            &ctx,
+            &child_chat_id,
+            format!("Review: {focus}"),
+            model.clone(),
+        );
+        let review_request = ChatMessage::new(
+            "user".to_string(),
+            review_agent_prompt(&args, depth.as_str()),
+        );
+        let review_session = open_review_chat(&app, &review_thread, &review_request).await;
+        save_review_chat(
+            &app,
+            &review_thread,
+            std::slice::from_ref(&review_request),
+            TrajectoryCommitIntent::Checkpoint,
+        )
+        .await;
 
         let mut agent = match ToolAgentHandle::begin(
             &app,
@@ -952,7 +1056,7 @@ impl Tool for ToolCodeReview {
                 tool_name: "review".to_string(),
                 title: format!("Review: {focus}"),
                 prompt: review_agent_prompt(&args, depth.as_str()),
-                model,
+                model: model.clone(),
                 model_type: None,
                 target_files: args.files.clone(),
                 child_chat_id: child_chat_id.clone(),
@@ -1020,6 +1124,7 @@ impl Tool for ToolCodeReview {
                 if let Some((handle, _)) = agent {
                     let _ = handle.fail(error.clone()).await;
                 }
+                close_review_chat(&app, &child_chat_id).await;
                 return Err(error);
             }
         };
@@ -1051,6 +1156,18 @@ impl Tool for ToolCodeReview {
         if cancelled {
             markdown = markdown.replacen("## Review", "## Review — cancelled", 1);
         }
+
+        let mut review_messages = vec![review_request];
+        review_messages.extend(take_review_chat_inbox(&review_session).await);
+        review_messages.push(ChatMessage::new("assistant".to_string(), markdown.clone()));
+        save_review_chat(
+            &app,
+            &review_thread,
+            &review_messages,
+            TrajectoryCommitIntent::Required,
+        )
+        .await;
+        close_review_chat(&app, &child_chat_id).await;
 
         metering.insert(
             "review_report".to_string(),
@@ -1097,7 +1214,7 @@ mod tests {
     use crate::agents::types::{BgAgentKind, BgAgentStatus};
     use crate::caps::caps::{BaseModelRecord, ChatModelRecord, CodeAssistantCaps};
     use crate::tools::review_agents::contract::Verdict;
-    use crate::tools::review_agents::runner::StageProduct;
+    use crate::tools::review_agents::runner::{stage_subchat_config, StageProduct};
     use crate::tools::review_types::{
         CommandRun, FindingLocation, ReviewDiffSummary, ReviewScopeSummary, StageCoverage,
     };
@@ -1538,16 +1655,19 @@ mod tests {
         state.last_attempted_ts = now;
     }
 
-    async fn review_test_env(
+    async fn review_test_env_in(
         chat_id: &str,
-    ) -> (
-        Arc<GlobalContext>,
-        crate::app_state::AppState,
-        Arc<AMutex<AtCommandsContext>>,
-    ) {
+        workspace: Option<&std::path::Path>,
+    ) -> (Arc<GlobalContext>, AppState, Arc<AMutex<AtCommandsContext>>) {
         let gcx = crate::global_context::tests::make_test_gcx().await;
         install_test_caps(&gcx).await;
-        let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+        let app = AppState::from_gcx(gcx.clone()).await;
+        if let Some(workspace) = workspace {
+            std::fs::create_dir_all(workspace).unwrap();
+            *app.workspace.documents_state.workspace_folders.lock().unwrap() = vec![
+                crate::files_correction::canonicalize_normalized_path(workspace.to_path_buf()),
+            ];
+        }
         let ccx = Arc::new(AMutex::new(
             AtCommandsContext::new_from_app(
                 app.clone(),
@@ -1564,6 +1684,16 @@ mod tests {
             .await,
         ));
         (gcx, app, ccx)
+    }
+
+    async fn review_test_env(
+        chat_id: &str,
+    ) -> (
+        Arc<GlobalContext>,
+        crate::app_state::AppState,
+        Arc<AMutex<AtCommandsContext>>,
+    ) {
+        review_test_env_in(chat_id, None).await
     }
 
     fn review_tool(executor: Option<Arc<dyn StageExecutor>>) -> ToolCodeReview {
@@ -1778,5 +1908,187 @@ mod tests {
             message.extra.get("background_agent_id").is_none(),
             "degraded run must not carry tool agent extras"
         );
+    }
+
+    async fn review_child_chat_id(app: &AppState) -> String {
+        app.agents
+            .list_all()
+            .await
+            .into_iter()
+            .find(|record| record.kind == BgAgentKind::Tool && record.config_name == "review")
+            .and_then(|record| record.child_chat_id)
+            .expect("the review tool agent carries the child chat id")
+    }
+
+    #[tokio::test]
+    async fn review_chat_trajectory_contains_the_request_and_the_report() {
+        let dir = tempfile::tempdir().unwrap();
+        let (_gcx, app, ccx) = review_test_env_in("review-trajectory", Some(dir.path())).await;
+        let mut tool = review_tool(Some(fake_executor(None)));
+
+        let (_ok, _results) = tool
+            .tool_execute(ccx, &"review-trajectory-call".to_string(), &HashMap::new())
+            .await
+            .unwrap();
+
+        let child_chat_id = review_child_chat_id(&app).await;
+        let loaded =
+            crate::chat::trajectories::load_trajectory_for_chat(&app.chat_ctx(), &child_chat_id)
+                .await
+                .expect("the review chat trajectory is readable");
+
+        assert_eq!(loaded.messages.len(), 2, "{:?}", loaded.messages);
+        assert_eq!(loaded.messages[0].role, "user");
+        let request = loaded.messages[0].content.content_text_only();
+        assert!(request.contains("focus: current change"), "{request}");
+        assert!(request.contains("depth: normal"), "{request}");
+        assert_eq!(loaded.messages[1].role, "assistant");
+        assert!(
+            loaded.messages[1]
+                .content
+                .content_text_only()
+                .starts_with("## Review"),
+            "{}",
+            loaded.messages[1].content.content_text_only()
+        );
+    }
+
+    #[tokio::test]
+    async fn review_chat_link_type_is_tool_and_parent_is_the_calling_chat() {
+        let dir = tempfile::tempdir().unwrap();
+        let (_gcx, app, ccx) = review_test_env_in("review-link", Some(dir.path())).await;
+        let mut tool = review_tool(Some(fake_executor(None)));
+
+        let (_ok, _results) = tool
+            .tool_execute(ccx, &"review-link-call".to_string(), &HashMap::new())
+            .await
+            .unwrap();
+
+        let child_chat_id = review_child_chat_id(&app).await;
+        let loaded =
+            crate::chat::trajectories::load_trajectory_for_chat(&app.chat_ctx(), &child_chat_id)
+                .await
+                .expect("the review chat trajectory is readable");
+
+        assert_eq!(loaded.thread.id, child_chat_id);
+        assert_eq!(loaded.thread.link_type.as_deref(), Some("tool"));
+        assert_eq!(loaded.thread.parent_id.as_deref(), Some("review-link"));
+        assert_eq!(loaded.thread.root_chat_id.as_deref(), Some("review-link"));
+        assert_eq!(loaded.thread.title, "Review: current change");
+    }
+
+    #[tokio::test]
+    async fn stage_traces_are_nested_under_the_review_chat() {
+        let (gcx, _app, _ccx) = review_test_env("review-nested").await;
+        let (tx, _rx) = mpsc::unbounded_channel::<Value>();
+        let ctx = StageCtx {
+            review_id: "rv-nested".to_string(),
+            tool_call_id: "tc-nested".to_string(),
+            subchat_tx: Arc::new(AMutex::new(tx)),
+            abort_flag: Arc::new(AtomicBool::new(false)),
+            depth: 0,
+            task_meta: None,
+            worktree: None,
+            chat_id: "review-nested".to_string(),
+            trace_parent_chat_id: "subchat-rv-nested".to_string(),
+            root_chat_id: "review-nested".to_string(),
+            activity: None,
+        };
+        let job = StageJob {
+            spec: Arc::new(
+                crate::tools::review_agents::stages::embedded_catalog()
+                    .into_iter()
+                    .find(|spec| spec.id == "diff")
+                    .unwrap(),
+            ),
+            label: "diff".to_string(),
+            subchat: crate::subchat::ExplicitSubchatSpec {
+                params: crate::call_validation::SubchatParameters {
+                    subchat_model_type: crate::call_validation::ChatModelType::Default,
+                    subchat_model: "test-provider/test-model".to_string(),
+                    subchat_n_ctx: 100_000,
+                    subchat_max_new_tokens: 8000,
+                    subchat_temperature: None,
+                    subchat_tokens_for_rag: 0,
+                    subchat_reasoning_effort: None,
+                    subchat_cache_control: crate::llm::params::CacheControl::Off,
+                },
+                model: "test-provider/test-model".to_string(),
+                autonomous_no_confirm: true,
+            },
+            max_steps: 10,
+            prompt: String::new(),
+            trace_chat_id: stage_trace_chat_id("rv-nested", "diff"),
+            abort: Arc::new(AtomicBool::new(false)),
+        };
+
+        let config = stage_subchat_config(gcx, &ctx, &job)
+            .await
+            .expect("stage subchat config");
+
+        assert_eq!(config.parent_id.as_deref(), Some("subchat-rv-nested"));
+        assert_ne!(config.parent_id.as_deref(), Some(ctx.chat_id.as_str()));
+        assert_eq!(config.root_chat_id.as_deref(), Some("review-nested"));
+        assert_eq!(config.chat_id.as_deref(), Some("subchat-rv-nested-diff"));
+    }
+
+    #[tokio::test]
+    async fn review_chat_session_is_live_during_the_run_and_closed_after() {
+        let dir = tempfile::tempdir().unwrap();
+        let (_gcx, app, ccx) = review_test_env_in("review-session", Some(dir.path())).await;
+        let release = Arc::new(AtomicBool::new(false));
+        let (started_tx, mut started_rx) = mpsc::unbounded_channel::<()>();
+        let mut tool = review_tool(Some(Arc::new(FakeStageExecutor {
+            release: Some(release.clone()),
+            started: Some(started_tx),
+            executed: AtomicUsize::new(0),
+        })));
+        let run = tokio::spawn(async move {
+            tool.tool_execute(ccx, &"review-session-call".to_string(), &HashMap::new())
+                .await
+        });
+
+        tokio::time::timeout(Duration::from_secs(10), started_rx.recv())
+            .await
+            .expect("a stage must start while the review is still running")
+            .expect("stage start signal");
+        let (chat_id, session_arc) = {
+            let sessions = app.chat.sessions.read().await;
+            sessions
+                .iter()
+                .find(|(id, _)| id.starts_with("subchat-rv-"))
+                .map(|(id, session_arc)| (id.clone(), session_arc.clone()))
+                .expect("the review chat has a live session")
+        };
+        {
+            let session = session_arc.lock().await;
+            assert_eq!(session.runtime.state, SessionState::Starting);
+            assert_eq!(session.thread.link_type.as_deref(), Some("tool"));
+            assert_eq!(session.thread.parent_id.as_deref(), Some("review-session"));
+        }
+
+        release.store(true, Ordering::SeqCst);
+        let (_ok, _results) = run.await.unwrap().expect("review result");
+
+        let session_after = app.chat.sessions.read().await.get(&chat_id).cloned();
+        if let Some(session_after) = session_after {
+            assert!(session_after.lock().await.closed);
+        }
+    }
+
+    #[tokio::test]
+    async fn review_survives_a_trajectory_write_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join(".refact"), b"not a directory").unwrap();
+        let (_gcx, _app, ccx) = review_test_env_in("review-no-trajectory", Some(dir.path())).await;
+        let mut tool = review_tool(Some(fake_executor(None)));
+
+        let (_ok, results) = tool
+            .tool_execute(ccx, &"review-no-trajectory-call".to_string(), &HashMap::new())
+            .await
+            .expect("review must return a report even when the trajectory cannot be written");
+
+        let markdown = tool_result_text(&results);
+        assert!(markdown.contains("## Review"), "{markdown}");
     }
 }

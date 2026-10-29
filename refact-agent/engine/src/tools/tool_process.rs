@@ -250,7 +250,8 @@ impl Tool for ToolProcessStart {
             service_name: parsed.service_name.clone(),
             workspace,
         };
-        let chat_mode = chat_mode_for_exec_for_sessions(&tool.chat.sessions, &chat_id).await;
+        let sessions_map = crate::chat::sessions_map_from_handle(&tool.chat.sessions);
+        let chat_mode = chat_mode_for_exec_for_sessions(&sessions_map, &chat_id).await;
         let policy = match build_exec_request_for_ctx(
             &chat,
             CommandPolicyInput {
@@ -267,13 +268,13 @@ impl Tool for ToolProcessStart {
             Ok(policy) => policy,
             Err(error) => {
                 if let Some(audit) = error.audit {
-                    queue_sandbox_audit_for_sessions(&tool.chat.sessions, &chat_id, audit).await;
+                    queue_sandbox_audit_for_sessions(&sessions_map, &chat_id, audit).await;
                 }
                 return Err(error.message);
             }
         };
         if let Some(audit) = policy.audit.clone() {
-            queue_sandbox_audit_for_sessions(&tool.chat.sessions, &chat_id, audit).await;
+            queue_sandbox_audit_for_sessions(&sessions_map, &chat_id, audit).await;
         }
         let sandbox_active = policy.request.sandbox.is_some();
         let sandbox_warning = policy.warning;

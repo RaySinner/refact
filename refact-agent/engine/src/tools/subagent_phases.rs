@@ -7,6 +7,7 @@ use tokio::sync::Mutex as AMutex;
 
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::call_validation::{ChatMessage, ChatContent};
+use crate::chat::ctx::SubchatLauncher;
 use crate::chat::internal_roles::{event, EventSubkind};
 use crate::files_correction::correct_to_nearest_filename;
 use crate::global_context::GlobalContext;
@@ -15,6 +16,7 @@ use crate::subchat::{
 };
 use crate::tools::tool_helpers::{load_code_subagent_config, CodeSubagentConfig};
 use crate::worktrees::scope::ExecutionScope;
+use refact_runtime_api::SubchatLauncherHandle;
 
 pub const DEFAULT_MAX_FILES: usize = 30;
 pub const DEFAULT_GATHER_MAX_STEPS: usize = 10;
@@ -499,6 +501,10 @@ pub async fn gather_files_phase_with_plan(
 
     tracing::info!("{}: starting file-gathering subagent", attribution_id);
     let subchat = ccx.lock().await.app.tool.subchat.clone();
+    let subchat = subchat
+        .as_any()
+        .downcast_ref::<crate::app_state::EngineSubchatLauncher>()
+        .expect("engine subchat launcher handle");
     let result = subchat.run_subchat(messages.clone(), subchat_config).await?;
 
     let response = get_last_assistant_content(&result.messages);

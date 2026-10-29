@@ -83,7 +83,9 @@ impl Tool for ToolBuddyCreateDraft {
         let kind: DraftKind = serde_json::from_value(serde_json::json!(kind_str))
             .map_err(|e| format!("invalid kind '{}': {}", kind_str, e))?;
 
-        let buddy_arc = ccx.lock().await.tool.buddy.buddy.clone();
+        let buddy_arc = crate::app_state::buddy_services_from_handle(&ccx.lock().await.tool.buddy)
+            .buddy
+            .clone();
         let mut lock = buddy_arc.lock().await;
         let svc = lock.as_mut().ok_or("buddy service not initialized")?;
 

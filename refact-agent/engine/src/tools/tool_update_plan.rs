@@ -68,7 +68,10 @@ impl Tool for ToolUpdatePlan {
 
         let (sessions_map, chat_id) = {
             let guard = ccx.lock().await;
-            (guard.tool.chat.sessions.clone(), guard.chat_id.clone())
+            (
+                crate::chat::sessions_map_from_handle(&guard.tool.chat.sessions),
+                guard.chat_id.clone(),
+            )
         };
         let session_arc = {
             let sessions = sessions_map.read().await;

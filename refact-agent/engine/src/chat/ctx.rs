@@ -15,14 +15,12 @@ use crate::app_state::{
     AtCommandsPreviewCache, BuddyServices, ChatServices, ModelServices, PathServices,
     RuntimeServices, ToolCatalogGenerations,
 };
-use crate::caps::CodeAssistantCaps;
 use crate::call_validation::{ChatMeta, ChatToolCall};
 use crate::chat::tools::ExecuteToolsOptions;
 use crate::chat::trajectories::{
     LoadedTrajectory, TrajectoryData, TrajectoryRepairPatch, TrajectoryVectorizationQueue,
 };
 use crate::chat::types::{ChatSession, ThreadParams, TrajectoryCommitIntent, TrajectorySourceIdentity};
-use crate::custom_error::ScratchError;
 use crate::ext::hooks::HookEvent;
 use crate::ext::hooks_runner::{HookPayload, HookResult};
 use crate::ext::skills_context::SkillsTrackingInfo;
@@ -33,7 +31,7 @@ use crate::privacy::PrivacySettings;
 use crate::scratchpads::scratchpad_utils::HasRagResults;
 use crate::subchat::{SubchatConfig, SubchatResult, TraceParent};
 use crate::yaml_configs::customization_registry::RegistryCacheManager;
-use crate::yaml_configs::customization_types::{ModeConfig, ProjectRegistry, SubagentConfig};
+pub use refact_runtime_api::{CapsProvider, ModeConfigProvider};
 
 #[derive(Clone)]
 pub struct ChatWorkspace {
@@ -77,25 +75,6 @@ pub trait ProjectTreeProvider: Send + Sync {
 pub trait HookRunner: Send + Sync {
     async fn project_dir(&self) -> String;
     async fn run_hooks(&self, event: HookEvent, payload: HookPayload) -> Vec<HookResult>;
-}
-
-#[async_trait]
-pub trait ModeConfigProvider: Send + Sync {
-    async fn get_project_registry(&self) -> Option<ProjectRegistry>;
-    async fn get_mode_config(&self, mode_id: &str, model_id: Option<&str>) -> Option<ModeConfig>;
-    async fn get_subagent_config(
-        &self,
-        subagent_id: &str,
-        model_id: Option<&str>,
-    ) -> Option<SubagentConfig>;
-}
-
-#[async_trait]
-pub trait CapsProvider: Send + Sync {
-    async fn try_load_caps_quickly(
-        &self,
-        max_age_seconds: u64,
-    ) -> Result<Arc<CodeAssistantCaps>, ScratchError>;
 }
 
 pub trait ExecPolicyProvider: Send + Sync {

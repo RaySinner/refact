@@ -13,7 +13,7 @@ use crate::subchat::{SubchatConfig, ToolsPolicy, TraceParent};
 use crate::tasks::storage;
 use crate::tools::task_tool_helpers::require_bound_planner_task;
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
-use refact_runtime_api::ChatSessionFacade;
+use refact_runtime_api::{ChatSessionFacade, SubchatLauncherHandle};
 
 const TOOL_ARG_LIMIT: usize = 300;
 const TRANSCRIPT_CHAR_BUDGET: usize = 35_000;
@@ -356,6 +356,10 @@ async fn run_summary_subchat(
             ccx_lock.execution_scope_worktree(),
         )
     };
+    let subchat = subchat
+        .as_any()
+        .downcast_ref::<crate::app_state::EngineSubchatLauncher>()
+        .expect("engine subchat launcher handle");
 
     if parent_depth + 1 >= MAX_SUBCHAT_DEPTH {
         return Err(format!(

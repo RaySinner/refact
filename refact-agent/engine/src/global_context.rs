@@ -15,7 +15,7 @@ use tracing::{error, info};
 use crate::agents::registry::BackgroundAgentRegistry;
 use crate::app_state::{
     AppActivitySink, AppBuddyEventSink, AppState, AppToolRegistry, BuddyServices, CapsState,
-    ChatServices, EngineCapsProvider, EngineChatSessionFacade, EngineChatToolExecutor,
+    ChatServices, EngineBuddyServicesHandle, EngineCapsProvider, EngineChatSessionFacade, EngineChatToolExecutor,
     EngineExecPolicyProvider, EngineFilesProvider, EngineHookRunner, EngineModeConfigProvider,
     EngineProjectTreeProvider, EnginePromptAssembler, EngineSubchatLauncher, EngineTrajectoryStore,
     IntegrationServices, ModelServices, PathServices, RuntimeServices, TokenizerState,
@@ -23,6 +23,7 @@ use crate::app_state::{
 };
 use crate::caps::CodeAssistantCaps;
 use crate::chat::ctx::{ChatCtx, ChatIntegrationScope, ChatWorkspace};
+use crate::chat::EngineSessionsHandle;
 use crate::caps::providers::get_latest_provider_mtime;
 use crate::providers::{ProviderRegistry, load_providers_from_config};
 use crate::providers::quota::ProviderQuotaCache;
@@ -299,21 +300,21 @@ impl GlobalContext {
                 llm_stats_sender: self.llm_stats_sender.lock().unwrap().clone(),
             },
             chat: ToolChatScope {
-                sessions: self.chat_sessions.clone(),
+                sessions: Arc::new(EngineSessionsHandle(self.chat_sessions.clone())),
                 facade: Arc::new(EngineChatSessionFacade::new(gcx.clone())),
                 notification_events_tx: self
                     .notification_events_tx
                     .clone()
                     .expect("notification event sender is not initialized"),
             },
-            buddy: BuddyServices {
+            buddy: Arc::new(EngineBuddyServicesHandle(BuddyServices {
                 buddy: self.buddy.clone(),
                 buddy_events_tx: self
                     .buddy_events_tx
                     .clone()
                     .expect("buddy event sender is not initialized"),
                 user_activity: self.user_activity.clone(),
-            },
+            })),
             integrations: IntegrationServices {
                 integration_sessions: self.integration_sessions.clone(),
                 browser_runtimes: self.browser_runtimes.clone(),

@@ -19,12 +19,19 @@ use refact_tool_api::{build_registry_from_names, ToolAliasRegistry, ToolDesc};
 pub mod command_line;
 pub mod terminal_security;
 pub mod tool_catalog;
+pub mod ctx_traits;
+pub mod services;
 
 pub use command_line::CommandLine;
 pub use terminal_security::{TerminalSecurityConfig, TerminalSecurityMode};
 pub use tool_catalog::{
     ToolCatalogCache, ToolCatalogGenerations, ToolCatalogKey, TOOL_CATALOG_SNAPSHOT_CACHE_LIMIT,
 };
+pub use ctx_traits::{
+    BuddyServicesHandle, CapsProvider, FilesProvider, ModeConfigProvider, SubchatLauncherHandle,
+    TrajectoryStoreHandle,
+};
+pub use services::{IntegrationServices, ModelServices, PathServices, RuntimeServices};
 
 pub use refact_chat_api::{DeliveryOutcome as RuntimeDeliveryOutcome, SessionState, TaskMeta};
 pub use refact_chat_api::{PendingDelivery as RuntimePendingDelivery, PushMode as RuntimePushMode};

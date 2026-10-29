@@ -170,7 +170,11 @@ impl Tool for ToolBuddyGetContext {
                     result.insert(section.clone(), Value::String(content));
                 }
                 "setup_status" => {
-                    let content = read_setup_status(&tool.buddy, &project_root).await;
+                    let content = read_setup_status(
+                        &crate::app_state::buddy_services_from_handle(&tool.buddy),
+                        &project_root,
+                    )
+                    .await;
                     result.insert(section.clone(), Value::String(content));
                 }
                 "project_info" => {

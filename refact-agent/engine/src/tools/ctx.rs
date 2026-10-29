@@ -1,25 +1,21 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex as StdMutex, RwLock as StdRwLock};
 
-use async_trait::async_trait;
-use refact_files::indexing_settings::IndexingEverywhere;
-use refact_runtime_api::{ChatSessionFacade, ToolRegistry};
-use tokio::sync::{broadcast, Mutex as AMutex};
-
-use crate::agents::registry::BackgroundAgentRegistry;
-use crate::app_state::{
-    BuddyServices, IntegrationServices, ModelServices, PathServices, RuntimeServices,
+use refact_chat_api::notification_event::NotificationEvent;
+use refact_agents_core::registry::BackgroundAgentRegistry;
+use refact_codegraph::CodeGraphService;
+use refact_core::knowledge_index::KnowledgeIndex;
+use refact_core::privacy_types::PrivacySettings;
+use refact_runtime_api::{
+    BuddyServicesHandle, CapsProvider, ChatSessionFacade, IntegrationServices, ModeConfigProvider,
+    ModelServices, PathServices, RuntimeServices, SessionsHandle, SubchatLauncherHandle,
+    ToolRegistry, TrajectoryStoreHandle,
 };
-use crate::chat::ctx::{CapsProvider, ModeConfigProvider, SubchatLauncher, TrajectoryStore};
-use crate::chat::SessionsMap;
-use crate::codegraph::CodeGraphService;
-use crate::http::routers::v1::sidebar::NotificationEvent;
-use crate::knowledge_index::KnowledgeIndex;
-use crate::privacy::PrivacySettings;
+use tokio::sync::{broadcast, Mutex as AMutex};
 
 #[derive(Clone)]
 pub struct ToolChatScope {
-    pub sessions: SessionsMap,
+    pub sessions: Arc<dyn SessionsHandle>,
     pub facade: Arc<dyn ChatSessionFacade>,
     pub notification_events_tx: broadcast::Sender<NotificationEvent>,
 }
@@ -36,47 +32,7 @@ pub struct ToolCodeIntelScope {
     pub codegraph: Arc<AMutex<Option<Arc<CodeGraphService>>>>,
 }
 
-#[async_trait]
-pub trait FilesProvider: Send + Sync {
-    async fn get_file_text_from_memory_or_disk(&self, path: &PathBuf) -> Result<String, String>;
-    async fn fast_enqueue_for_edit(&self, docs: &[PathBuf]) -> Result<(), String>;
-    async fn remove_memory_document_for_path(&self, path: &PathBuf) -> bool;
-    async fn file_repair_candidates(&self, value: &str, top_n: usize, fuzzy: bool) -> Vec<String>;
-    async fn project_dirs(&self) -> Vec<PathBuf>;
-    async fn check_file_privacy_for_send(&self, path: &PathBuf) -> Result<(), String>;
-    async fn check_file_privacy_for_model_context(&self, path: &PathBuf) -> Result<(), String>;
-    async fn filter_privacy_allowed_files(&self, files: Vec<PathBuf>) -> Vec<PathBuf>;
-    async fn filter_privacy_allowed_files_for_model_context(
-        &self,
-        files: Vec<PathBuf>,
-    ) -> Vec<PathBuf>;
-    async fn indexing_everywhere(&self) -> Arc<IndexingEverywhere>;
-    async fn correct_to_nearest_dir_path(
-        &self,
-        correction_candidate: &str,
-        fuzzy: bool,
-        top_n: usize,
-    ) -> Vec<String>;
-    async fn correct_to_nearest_filename(
-        &self,
-        correction_candidate: &str,
-        fuzzy: bool,
-        top_n: usize,
-    ) -> Vec<String>;
-    async fn shortify_paths(&self, paths: &[String]) -> Vec<String>;
-    async fn paths_from_anywhere(&self) -> Vec<PathBuf>;
-    async fn get_file_text_from_memory_or_disk_for_model_context(
-        &self,
-        path: &PathBuf,
-    ) -> Result<String, String>;
-    async fn return_one_candidate_or_a_good_error(
-        &self,
-        file_path: &str,
-        candidates: &[String],
-        project_paths: &[PathBuf],
-        dirs: bool,
-    ) -> Result<String, String>;
-}
+pub use refact_runtime_api::FilesProvider;
 
 #[derive(Clone)]
 pub struct ToolCtx {
@@ -84,7 +40,7 @@ pub struct ToolCtx {
     pub paths: PathServices,
     pub model: ModelServices,
     pub chat: ToolChatScope,
-    pub buddy: BuddyServices,
+    pub buddy: Arc<dyn BuddyServicesHandle>,
     pub integrations: IntegrationServices,
     pub workspace: ToolWorkspaceScope,
     pub codeintel: ToolCodeIntelScope,
@@ -92,8 +48,8 @@ pub struct ToolCtx {
     pub tool_registry: Arc<dyn ToolRegistry>,
     pub privacy_policy_load: Arc<StdRwLock<refact_privacy::PolicyLoad>>,
     pub files: Arc<dyn FilesProvider>,
-    pub trajectories: Arc<dyn TrajectoryStore>,
-    pub subchat: Arc<dyn SubchatLauncher>,
+    pub trajectories: Arc<dyn TrajectoryStoreHandle>,
+    pub subchat: Arc<dyn SubchatLauncherHandle>,
     pub mode_config: Arc<dyn ModeConfigProvider>,
     pub caps: Arc<dyn CapsProvider>,
 }

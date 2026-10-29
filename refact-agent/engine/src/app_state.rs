@@ -10,12 +10,13 @@ use refact_buddy_core::types::{BuddyRuntimeEvent, BuddySuggestion};
 use refact_buddy_core::user_action::UserAction;
 use refact_chat_api::ChatMessage;
 use refact_runtime_api::{
-    ActivitySink, BuddyEventSink, ToolConfirmationCheck, ToolExecutionResult, ToolPolicyInfo,
-    ToolCatalogSnapshot, ToolRegistry, ToolRegistryIndex, TurnToolPool,
+    ActivitySink, BuddyEventSink, BuddyServicesHandle, SubchatLauncherHandle,
+    ToolConfirmationCheck, ToolExecutionResult, ToolPolicyInfo, ToolCatalogSnapshot, ToolRegistry,
+    ToolRegistryIndex, TrajectoryStoreHandle, TurnToolPool,
 };
 
 pub const TOOL_CATALOG_SNAPSHOTS_ENV: &str = "REFACT_TOOL_CATALOG_SNAPSHOTS";
-use tokio::sync::{Mutex as AMutex, Notify, RwLock as ARwLock};
+use tokio::sync::{Mutex as AMutex, Notify};
 
 use crate::agents::registry::BackgroundAgentRegistry;
 use crate::buddy::actor::BuddyService;
@@ -31,7 +32,6 @@ use crate::chat::types::{ChatSession, EnqueueCommandOutcome, ThreadParams, Traje
 use crate::chat::trajectories::{self, TrajectoryEvent};
 use crate::chat::{self, process_command_queue, SessionsMap};
 use crate::completion_cache::CompletionCache;
-use crate::exec::ExecRegistry;
 use crate::files_blocklist::IndexingEverywhere;
 use crate::files_in_workspace::DocumentsState;
 pub use crate::global_context::{AtCommandsPreviewCache, CommandLine, ToolCatalogGenerations};
@@ -39,15 +39,10 @@ use crate::global_context::SharedGlobalContext;
 use crate::global_context::TerminalSecurityConfig;
 use crate::subchat::{SubchatConfig, SubchatResult};
 use crate::http::routers::v1::sidebar::NotificationEvent;
-use crate::integrations::browser_runtime::BrowserRuntime;
-use crate::integrations::sessions::IntegrationSession;
 use crate::knowledge_index::KnowledgeIndex;
 use crate::privacy::PrivacySettings;
-use crate::providers::ProviderRegistry;
-use crate::stats::event::LlmCallEvent;
 use crate::tasks::events::TaskEventEnvelope;
 use crate::tools::ctx::{FilesProvider, ToolCtx};
-use crate::yaml_configs::customization_registry::RegistryCacheManager;
 pub use refact_caps_core::caps_state::CapsState;
 pub use refact_core::tokenizer_state::TokenizerState;
 use refact_core::vecdb_types::VecdbSearch;
@@ -56,29 +51,7 @@ use refact_runtime_api::{
     NotificationEventSender, TaskEventEnvelopeSender, TrajectoryEventSender,
 };
 
-#[derive(Clone)]
-pub struct RuntimeServices {
-    pub shutdown_flag: Arc<AtomicBool>,
-    pub cmdline: Arc<CommandLine>,
-    pub http_client: reqwest::Client,
-    pub ask_shutdown_sender: Arc<StdMutex<std::sync::mpsc::Sender<String>>>,
-    pub exec_registry: Arc<ExecRegistry>,
-}
-
-#[derive(Clone)]
-pub struct PathServices {
-    pub cache_dir: PathBuf,
-    pub config_dir: PathBuf,
-    pub app_searchable_id: String,
-}
-
-#[derive(Clone)]
-pub struct ModelServices {
-    pub caps: Arc<ARwLock<CapsState>>,
-    pub tokenizers: Arc<StdRwLock<TokenizerState>>,
-    pub providers: Arc<ARwLock<ProviderRegistry>>,
-    pub llm_stats_sender: Option<tokio::sync::mpsc::Sender<LlmCallEvent>>,
-}
+pub use refact_runtime_api::{IntegrationServices, ModelServices, PathServices, RuntimeServices};
 
 #[derive(Clone)]
 pub struct WorkspaceServices {
@@ -111,15 +84,20 @@ pub struct BuddyServices {
     pub user_activity: Arc<AMutex<UserActivityRing>>,
 }
 
-#[derive(Clone)]
-pub struct IntegrationServices {
-    pub integration_sessions:
-        Arc<AMutex<HashMap<String, Arc<AMutex<Box<dyn IntegrationSession>>>>>>,
-    pub browser_runtimes: Arc<AMutex<HashMap<String, Arc<AMutex<BrowserRuntime>>>>>,
-    pub ext_cache_generation: Arc<AtomicU64>,
-    pub project_registry_cache: Arc<StdRwLock<RegistryCacheManager>>,
-    pub init_shadow_repos_lock: Arc<AMutex<bool>>,
-    pub git_operations_abort_flag: Arc<AtomicBool>,
+pub struct EngineBuddyServicesHandle(pub BuddyServices);
+
+impl BuddyServicesHandle for EngineBuddyServicesHandle {
+    fn as_any(&self) -> &dyn std::any::Any {
+        &self.0
+    }
+}
+
+pub fn buddy_services_from_handle(handle: &dyn BuddyServicesHandle) -> BuddyServices {
+    handle
+        .as_any()
+        .downcast_ref::<BuddyServices>()
+        .expect("engine buddy services handle")
+        .clone()
 }
 
 #[derive(Clone)]
@@ -375,6 +353,12 @@ impl SubchatLauncher for EngineSubchatLauncher {
         trace_parent: crate::subchat::TraceParent,
     ) -> Result<SubchatResult, String> {
         crate::subchat::run_subchat_once(self.gcx.clone(), subagent_id, messages, trace_parent).await
+    }
+}
+
+impl SubchatLauncherHandle for EngineSubchatLauncher {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }
 
@@ -887,6 +871,12 @@ impl TrajectoryStore for EngineTrajectoryStore {
     async fn prune_buddy_conversations_throttled(&self) {
         trajectories::prune_buddy_conversations_throttled(&self.gcx.chat_ctx(self.gcx.clone()))
             .await
+    }
+}
+
+impl TrajectoryStoreHandle for EngineTrajectoryStore {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }
 

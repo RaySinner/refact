@@ -139,6 +139,14 @@ impl SessionsHandle for EngineSessionsHandle {
     }
 }
 
+pub fn sessions_map_from_handle(handle: &dyn SessionsHandle) -> SessionsMap {
+    handle
+        .as_any()
+        .downcast_ref::<SessionsMap>()
+        .expect("engine sessions handle wraps SessionsMap")
+        .clone()
+}
+
 pub fn create_sessions_map() -> SessionsMap {
     Arc::new(ARwLock::new(HashMap::new()))
 }

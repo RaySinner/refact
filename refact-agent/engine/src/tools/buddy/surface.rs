@@ -143,7 +143,9 @@ impl Tool for ToolBuddyLogActivity {
         let description = cap(required_str(args, "description")?, 240);
         let icon = cap(optional_str(args, "icon").as_deref().unwrap_or("✨"), 16);
         let (app, context_chat_id) = context(ccx).await;
-        if !buddy_initialized(&app.tool.buddy).await {
+        let buddy_services =
+            crate::app_state::buddy_services_from_handle(&app.tool.buddy);
+        if !buddy_initialized(&buddy_services).await {
             return ok_message(
                 tool_call_id,
                 "Buddy service not initialized; activity logging ignored",
@@ -203,7 +205,9 @@ impl Tool for ToolBuddySpeak {
         let intent = required_str(args, "intent")?.to_string();
         validate(&intent, VALID_INTENTS, "intent")?;
         let (app, _) = context(ccx).await;
-        let buddy_arc = app.tool.buddy.buddy.clone();
+        let buddy_arc = crate::app_state::buddy_services_from_handle(&app.tool.buddy)
+            .buddy
+            .clone();
         let mut lock = buddy_arc.lock().await;
         let Some(svc) = lock.as_mut() else {
             return ok_message(
@@ -262,7 +266,9 @@ impl Tool for ToolBuddyRuntimeEvent {
             .map(|s| cap(&s, 120))
             .filter(|s| !s.is_empty());
         let (app, _) = context(ccx).await;
-        if !buddy_initialized(&app.tool.buddy).await {
+        let buddy_services =
+            crate::app_state::buddy_services_from_handle(&app.tool.buddy);
+        if !buddy_initialized(&buddy_services).await {
             return ok_message(
                 tool_call_id,
                 "Buddy service not initialized; runtime event ignored",

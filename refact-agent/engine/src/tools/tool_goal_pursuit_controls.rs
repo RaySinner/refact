@@ -58,7 +58,10 @@ async fn session_for_chat(
 ) -> Result<Arc<AMutex<ChatSession>>, String> {
     let (sessions_map, chat_id) = {
         let ccx = ccx.lock().await;
-        (ccx.tool.chat.sessions.clone(), ccx.chat_id.clone())
+        (
+            crate::chat::sessions_map_from_handle(&ccx.tool.chat.sessions),
+            ccx.chat_id.clone(),
+        )
     };
     let sessions = sessions_map.read().await;
     sessions

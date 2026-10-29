@@ -71,7 +71,9 @@ impl Tool for ToolBuddyOpenSetupFlow {
             ));
         }
 
-        let buddy_arc = ccx.lock().await.tool.buddy.buddy.clone();
+        let buddy_arc = crate::app_state::buddy_services_from_handle(&ccx.lock().await.tool.buddy)
+            .buddy
+            .clone();
         let lock = buddy_arc.lock().await;
         let svc = lock
             .as_ref()

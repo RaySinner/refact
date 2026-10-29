@@ -53,6 +53,8 @@ pub enum BuddyEvent<Diagnostic = serde_json::Value> {
     },
 }
 
+pub type DiagnosticBuddyEvent = BuddyEvent<crate::diagnostics::DiagnosticContext>;
+
 #[cfg(test)]
 mod tests {
     use super::*;

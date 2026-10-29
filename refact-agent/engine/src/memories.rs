@@ -3,7 +3,6 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 use chrono::{Local, Duration, Utc};
 use regex::Regex;
-use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex as AMutex;
 use tokio::sync::Semaphore;
 use tokio::fs;
@@ -45,18 +44,7 @@ pub enum StorageScope {
     Global,
 }
 
-#[derive(Default, Debug, Serialize, Deserialize, Clone, PartialEq)]
-pub struct MemoRecord {
-    pub memid: String,
-    pub tags: Vec<String>,
-    pub content: String,
-    pub file_path: Option<PathBuf>,
-    pub line_range: Option<(u64, u64)>,
-    pub title: Option<String>,
-    pub created: Option<String>,
-    pub kind: Option<String>,
-    pub score: Option<f32>, // VecDB similarity score (lower distance = higher relevance)
-}
+pub use refact_knowledge_graph::memo::MemoRecord;
 
 fn generate_slug(content: &str) -> String {
     let first_line = content.lines().next().unwrap_or("knowledge");

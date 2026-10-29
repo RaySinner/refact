@@ -15,3 +15,5 @@ tracing = { workspace = true }
 petgraph = "0.6"
 walkdir = "2.3"
 chrono = { version = "0.4.31", features = ["serde"] }
+sha2 = "0.10.8"
+hex = "0.4.3"

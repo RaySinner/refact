@@ -1,4 +1,5 @@
 pub mod destination;
+pub mod derived;
 pub mod gate;
 pub mod heuristic;
 pub mod matching;
@@ -9,6 +10,7 @@ pub mod runtime_state;
 pub mod testing;
 
 pub use destination::{Destination, DestinationId, DestinationKind};
+pub use derived::{new_derived_privacy_zones, DerivedPrivacyZones, DerivedZone};
 pub use gate::{clear, records_from_messages, Cleared, PrivacyAuditError, PrivacyAudited, Refusal};
 pub use matching::{compile_patterns, CompiledPolicy, PolicyError};
 pub use policy::{

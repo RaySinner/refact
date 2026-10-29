@@ -4,6 +4,7 @@ pub mod ast_types;
 pub mod at_commands_preview_cache;
 pub mod background_tasks;
 pub mod buddy_meta;
+pub mod chat_config;
 pub mod chat_types;
 pub mod chunk_utils;
 pub mod custom_error;

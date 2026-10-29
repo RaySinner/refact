@@ -30,17 +30,7 @@ pub enum ShellReadDecision {
     Ask,
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct DerivedZone {
-    pub zone: String,
-    pub origin: Option<String>,
-}
-
-pub type DerivedPrivacyZones = Arc<RwLock<HashMap<PathBuf, DerivedZone>>>;
-
-pub fn new_derived_privacy_zones() -> DerivedPrivacyZones {
-    Arc::new(RwLock::new(HashMap::new()))
-}
+pub use refact_privacy::{new_derived_privacy_zones, DerivedPrivacyZones, DerivedZone};
 
 #[derive(Clone)]
 pub struct PrivacyRecordScope {

@@ -18,11 +18,7 @@ use refact_core::active_context::{
 };
 use crate::tools::tool_compress_chat::CompressChatApplyOutput;
 
-#[derive(Clone, Debug)]
-pub struct PendingContextRebuild {
-    pub model: Option<String>,
-    pub trigger: String,
-}
+pub use refact_chat_api::PendingContextRebuild;
 
 pub fn request_rebuild(
     session: &mut ChatSession,

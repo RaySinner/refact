@@ -190,22 +190,7 @@ pub async fn set_tool_config(
     Ok(())
 }
 
-/// Why an interruptible wait was interrupted. Tool results surface the label so
-/// the model can tell a real incoming message apart from a user abort.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum WaitInterruptCause {
-    MessageArrived,
-    RunnerMessageArrived,
-}
-
-impl WaitInterruptCause {
-    pub(crate) fn label(self) -> &'static str {
-        match self {
-            Self::MessageArrived => "message arrived",
-            Self::RunnerMessageArrived => "background agent message arrived",
-        }
-    }
-}
+pub use refact_chat_api::WaitInterruptCause;
 
 /// A wait-only cancellation signal; observing it never aborts the chat turn.
 #[derive(Clone)]

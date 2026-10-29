@@ -11,11 +11,14 @@ pub mod goal_role;
 pub mod internal_roles;
 pub mod message_provenance;
 pub mod notification_event;
+pub mod openai_codex_ws;
+pub mod pending_context_rebuild;
 pub mod plan_role;
 pub mod tool_catalog;
 pub mod tool_enrichment;
 pub mod trajectory_event;
 pub mod vectorization_queue;
+pub mod wait_interrupt;
 
 pub use goal_ledger::{
     goal_budget_exhaustion_status, reduce_goal_ledger, seed_transferred_goal_ledger,
@@ -29,6 +32,7 @@ pub use chat_local_types::{
     PendingBrowserMessage, PendingSkillDeactivation, RuntimeChatTimeouts, TrajectorySourceIdentity,
 };
 pub use notification_event::{NotificationEvent, NotificationQuestion};
+pub use pending_context_rebuild::PendingContextRebuild;
 pub use vectorization_queue::{
     TrajectoryVectorizationQueue, TRAJECTORY_VECTORIZATION_QUEUE_CAPACITY,
 };
@@ -40,6 +44,7 @@ pub use tool_enrichment::{
 };
 pub use tool_catalog::{ToolCatalogSnapshot, ToolPolicyInfo, ToolRegistryIndex, TurnToolPool};
 pub use trajectory_event::TrajectoryEvent;
+pub use wait_interrupt::WaitInterruptCause;
 pub use refact_core::buddy_meta::BuddyThreadMeta;
 pub use message_provenance::{
     attach_provenance, provenance_from_extra, provenance_from_message, role_accent,

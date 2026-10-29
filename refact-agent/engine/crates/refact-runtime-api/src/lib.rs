@@ -16,6 +16,16 @@ use refact_chat_history::trajectory_snapshot::TrajectorySnapshot;
 use refact_tasks::events::TaskEventEnvelope;
 use refact_tool_api::{build_registry_from_names, ToolAliasRegistry, ToolDesc};
 
+pub mod command_line;
+pub mod terminal_security;
+pub mod tool_catalog;
+
+pub use command_line::CommandLine;
+pub use terminal_security::{TerminalSecurityConfig, TerminalSecurityMode};
+pub use tool_catalog::{
+    ToolCatalogCache, ToolCatalogGenerations, ToolCatalogKey, TOOL_CATALOG_SNAPSHOT_CACHE_LIMIT,
+};
+
 pub use refact_chat_api::{DeliveryOutcome as RuntimeDeliveryOutcome, SessionState, TaskMeta};
 pub use refact_chat_api::{PendingDelivery as RuntimePendingDelivery, PushMode as RuntimePushMode};
 pub use refact_tool_api::ToolDesc as RuntimeToolDesc;

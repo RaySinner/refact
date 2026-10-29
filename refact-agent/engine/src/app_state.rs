@@ -1061,65 +1061,7 @@ impl AppTurnToolPool {
     }
 }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct ToolCatalogKey {
-    workspace_scope: String,
-    execution_scope: Option<String>,
-    mode: String,
-    model: Option<String>,
-    customization_generation: u64,
-    integration_generation: u64,
-    mcp_generation: u64,
-    privacy_generation: u64,
-    capability_generation: u64,
-    extension_generation: u64,
-}
-
-const TOOL_CATALOG_SNAPSHOT_CACHE_LIMIT: usize = 128;
-
-#[derive(Default)]
-pub struct ToolCatalogCache {
-    snapshots: ARwLock<HashMap<ToolCatalogKey, Arc<ToolCatalogSnapshot>>>,
-    build_locks: AMutex<HashMap<ToolCatalogKey, Arc<AMutex<()>>>>,
-}
-
-impl ToolCatalogCache {
-    async fn acquire_build_lock(&self, key: &ToolCatalogKey) -> Arc<AMutex<()>> {
-        let mut locks = self.build_locks.lock().await;
-        locks
-            .entry(key.clone())
-            .or_insert_with(|| Arc::new(AMutex::new(())))
-            .clone()
-    }
-
-    async fn get(&self, key: &ToolCatalogKey) -> Option<Arc<ToolCatalogSnapshot>> {
-        self.snapshots.read().await.get(key).cloned()
-    }
-
-    async fn insert(&self, key: ToolCatalogKey, snapshot: Arc<ToolCatalogSnapshot>) {
-        let mut snapshots = self.snapshots.write().await;
-        if snapshots.len() >= TOOL_CATALOG_SNAPSHOT_CACHE_LIMIT && !snapshots.contains_key(&key) {
-            if let Some(evicted) = snapshots.keys().next().cloned() {
-                snapshots.remove(&evicted);
-            }
-        }
-        snapshots.insert(key, snapshot);
-    }
-
-    async fn release_build_lock(&self, key: &ToolCatalogKey) {
-        self.build_locks.lock().await.remove(key);
-    }
-
-    #[cfg(test)]
-    async fn snapshot_count(&self) -> usize {
-        self.snapshots.read().await.len()
-    }
-
-    #[cfg(test)]
-    async fn build_lock_count(&self) -> usize {
-        self.build_locks.lock().await.len()
-    }
-}
+pub use refact_runtime_api::{ToolCatalogCache, ToolCatalogKey, TOOL_CATALOG_SNAPSHOT_CACHE_LIMIT};
 
 #[cfg(any(test, feature = "bench"))]
 pub type FixtureToolFactory =

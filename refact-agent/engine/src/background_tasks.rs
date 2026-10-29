@@ -1,12 +1,9 @@
-use std::iter::IntoIterator;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use std::vec;
-use tokio::task::JoinHandle;
 
-const ABORT_TIMEOUT: Duration = Duration::from_secs(10);
+
 const CACHE_MAINTENANCE_START_DELAY: Duration = Duration::from_secs(2 * 60);
 const CACHE_MAINTENANCE_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 
@@ -61,45 +58,8 @@ async fn cache_maintenance_background_task(
     }
 }
 
-pub struct BackgroundTasksHolder {
-    tasks: Vec<JoinHandle<()>>,
-}
 
-impl Default for BackgroundTasksHolder {
-    fn default() -> Self {
-        BackgroundTasksHolder { tasks: vec![] }
-    }
-}
-
-impl BackgroundTasksHolder {
-    pub fn new(tasks: Vec<JoinHandle<()>>) -> Self {
-        BackgroundTasksHolder { tasks }
-    }
-
-    pub fn push_back(&mut self, task: JoinHandle<()>) {
-        self.tasks.push(task);
-    }
-
-    pub fn extend<T>(&mut self, tasks: T)
-    where
-        T: IntoIterator<Item = JoinHandle<()>>,
-    {
-        self.tasks.extend(tasks);
-    }
-
-    pub async fn abort(&mut self) {
-        for task in self.tasks.iter_mut() {
-            task.abort();
-        }
-        let join_all = futures::future::join_all(self.tasks.drain(..));
-        if tokio::time::timeout(ABORT_TIMEOUT, join_all).await.is_err() {
-            tracing::warn!(
-                "background_tasks: some tasks did not finish within {:?} after abort, continuing shutdown",
-                ABORT_TIMEOUT
-            );
-        }
-    }
-}
+pub use refact_core::background_tasks::BackgroundTasksHolder;
 
 pub async fn start_full_soak_background_tasks(gcx: Arc<GlobalContext>) -> BackgroundTasksHolder {
     let app_state = crate::app_state::AppState::from_gcx(gcx.clone()).await;

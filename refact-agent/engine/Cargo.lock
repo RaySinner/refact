@@ -4179,6 +4179,7 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "fd-lock",
+ "futures",
  "hyper 0.14.32",
  "image",
  "indexmap 1.9.3",
@@ -4591,6 +4592,8 @@ dependencies = [
  "refact-tool-api",
  "serde",
  "serde_json",
+ "structopt",
+ "tokio",
 ]
 
 [[package]]

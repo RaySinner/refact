@@ -177,6 +177,7 @@ type BackgroundAgentSummaryCamelCase = {
   agentId: string;
   parentChatId: string;
   childChatId: string | null;
+  parentToolCallId?: string | null;
   kind: BackgroundAgentSummary["kind"];
   status: BackgroundAgentSummary["status"];
   title?: unknown;
@@ -893,6 +894,7 @@ function safeAgent(agent: BackgroundAgentSummaryWire): BackgroundAgentSummary {
       agent_id: agent.agentId,
       parent_chat_id: agent.parentChatId,
       child_chat_id: agent.childChatId,
+      parent_tool_call_id: agent.parentToolCallId,
       kind: agent.kind,
       status: agent.status,
       title: agent.title,
@@ -926,6 +928,7 @@ function safeAgent(agent: BackgroundAgentSummaryWire): BackgroundAgentSummary {
     agent_id: agent.agent_id,
     parent_chat_id: agent.parent_chat_id,
     child_chat_id: agent.child_chat_id,
+    parent_tool_call_id: normalizeNullableString(agent.parent_tool_call_id),
     kind: agent.kind,
     status: agent.status,
     title: typeof agent.title === "string" ? agent.title : "",

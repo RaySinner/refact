@@ -11,6 +11,7 @@ import {
   selectActiveBackgroundAgents,
   selectAgentsAggregateUsage,
   selectBackgroundAgent,
+  selectBackgroundAgentByToolCallId,
   selectBackgroundAgentsByThread,
   selectBackgroundAgentsTree,
   selectBackgroundAgentPool,
@@ -656,6 +657,97 @@ describe("background agents", () => {
     expect(selectBackgroundAgent(rootState, chatId, agent.agent_id)).toEqual(
       agent,
     );
+  });
+
+  test("selectBackgroundAgentByToolCallId finds the live agent for a tool call", () => {
+    const agent = makeAgent({ parent_tool_call_id: "call-tool" });
+    const state = makeState();
+    const runtime = state.threads[chatId];
+    if (!runtime) throw new Error("missing runtime");
+    runtime.background_agents = { [agent.agent_id]: agent };
+
+    expect(
+      selectBackgroundAgentByToolCallId(
+        { chat: state } as SelectorRootState,
+        chatId,
+        "call-tool",
+      ),
+    ).toEqual(agent);
+  });
+
+  test("selectBackgroundAgentByToolCallId returns undefined without a matching tool call id", () => {
+    const legacy = makeAgent();
+    const other = makeAgent({
+      agent_id: "bgagent-other",
+      parent_tool_call_id: "call-other",
+    });
+    const state = makeState();
+    const runtime = state.threads[chatId];
+    if (!runtime) throw new Error("missing runtime");
+    runtime.background_agents = {
+      [legacy.agent_id]: legacy,
+      [other.agent_id]: other,
+    };
+    const rootState = { chat: state } as SelectorRootState;
+
+    expect(
+      selectBackgroundAgentByToolCallId(rootState, chatId, "call-tool"),
+    ).toBeUndefined();
+    expect(
+      selectBackgroundAgentByToolCallId(rootState, chatId, undefined),
+    ).toBeUndefined();
+  });
+
+  test("selectBackgroundAgentByToolCallId prefers a live agent over a terminal one with the same tool call id", () => {
+    const completed = makeAgent({
+      agent_id: "bgagent-done",
+      parent_tool_call_id: "call-tool",
+      status: "completed",
+      change_seq: 9,
+    });
+    const live = makeAgent({
+      agent_id: "bgagent-live",
+      parent_tool_call_id: "call-tool",
+      change_seq: 2,
+    });
+    const state = makeState();
+    const runtime = state.threads[chatId];
+    if (!runtime) throw new Error("missing runtime");
+    runtime.background_agents = {
+      [completed.agent_id]: completed,
+      [live.agent_id]: live,
+    };
+
+    expect(
+      selectBackgroundAgentByToolCallId(
+        { chat: state } as SelectorRootState,
+        chatId,
+        "call-tool",
+      ),
+    ).toEqual(live);
+  });
+
+  test("normalizeBackgroundAgentSummary keeps parentToolCallId", () => {
+    const agent = normalizeBackgroundAgentSummary({
+      agentId: "bgagent-tool",
+      parentChatId: chatId,
+      childChatId: null,
+      parentToolCallId: "call-42",
+      kind: "tool",
+      status: "running",
+      title: "Run the tool",
+      progress: null,
+      lastActivity: null,
+      diffSummary: null,
+      conflictSummary: null,
+      resultSummary: null,
+      error: null,
+      startedAt: null,
+      finishedAt: null,
+    });
+
+    expect(agent.parent_tool_call_id).toBe("call-42");
+    expect(agent.kind).toBe("tool");
   });
 
   test("BackgroundAgentCard renders status badge, title, target_files, and edited_files", () => {

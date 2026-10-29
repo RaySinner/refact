@@ -62,6 +62,11 @@
   color: var(--rf-color-accent);
 }
 
+.kindTileTool {
+  background: var(--rf-color-accent-soft);
+  color: var(--rf-color-accent);
+}
+
 .title {
   flex: 2 1 auto;
   min-width: 0;

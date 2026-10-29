@@ -230,6 +230,29 @@ function isTerminalBackgroundAgent(agent: BackgroundAgentSummary): boolean {
   );
 }
 
+export const selectBackgroundAgentByToolCallId = (
+  state: RootState,
+  threadId: string,
+  toolCallId: string | undefined,
+): BackgroundAgentSummary | undefined => {
+  if (!toolCallId) return undefined;
+  let live: BackgroundAgentSummary | undefined;
+  let terminal: BackgroundAgentSummary | undefined;
+  for (const agent of Object.values(
+    selectBackgroundAgentsByThread(state, threadId),
+  )) {
+    if (agent.parent_tool_call_id !== toolCallId) continue;
+    if (isTerminalBackgroundAgent(agent)) {
+      if (!terminal || agent.change_seq > terminal.change_seq) {
+        terminal = agent;
+      }
+    } else if (!live || agent.change_seq > live.change_seq) {
+      live = agent;
+    }
+  }
+  return live ?? terminal;
+};
+
 function compareBackgroundAgentActivity(
   left: BackgroundAgentSummary,
   right: BackgroundAgentSummary,

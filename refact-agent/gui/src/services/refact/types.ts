@@ -47,7 +47,7 @@ export type ToolUsage = {
   amountOfCalls: number;
 };
 
-export type BackgroundAgentKind = "subagent" | "delegate";
+export type BackgroundAgentKind = "subagent" | "delegate" | "tool";
 
 export type BackgroundAgentMergeStatus =
   | "pending"
@@ -88,6 +88,7 @@ export interface BackgroundAgentSummary {
   agent_id: string;
   parent_chat_id: string;
   child_chat_id: string | null;
+  parent_tool_call_id?: string | null;
   kind: BackgroundAgentKind;
   status: BackgroundAgentStatus;
   title: string;

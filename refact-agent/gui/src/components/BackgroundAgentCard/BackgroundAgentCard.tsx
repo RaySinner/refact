@@ -1,7 +1,7 @@
 import React, { useCallback, useId, useMemo, useState } from "react";
 import * as Collapsible from "@radix-ui/react-collapsible";
 import classNames from "classnames";
-import { Bot, Telescope } from "lucide-react";
+import { Bot, Telescope, Wrench } from "lucide-react";
 import { Badge, Button, Icon } from "../ui";
 import { Chevron } from "../Collapsible";
 import { humanizeIdentifier } from "../../utils/displayNames";
@@ -20,6 +20,7 @@ export interface BackgroundAgentCardProps {
   threadId?: string;
   agentId?: string;
   compactDefault?: boolean;
+  children?: React.ReactNode;
   onOpenTrajectory?: (childChatId: string) => void;
   onOpenAgentTrajectory?: (
     agent: BackgroundAgentSummary,
@@ -189,12 +190,19 @@ const CompactRow: React.FC<{
         className={classNames(
           styles.kindTile,
           agent.kind === "delegate" && styles.kindTileDelegate,
+          agent.kind === "tool" && styles.kindTileTool,
         )}
         data-testid={`background-agent-kind-${agent.kind}`}
         title={humanizeIdentifier(agent.kind)}
       >
         <Icon
-          icon={agent.kind === "delegate" ? Bot : Telescope}
+          icon={
+            agent.kind === "delegate"
+              ? Bot
+              : agent.kind === "tool"
+                ? Wrench
+                : Telescope
+          }
           size="sm"
           tone={agent.kind === "delegate" ? "accent" : "muted"}
         />
@@ -479,6 +487,7 @@ const _BackgroundAgentCard: React.FC<BackgroundAgentCardProps> = ({
   threadId,
   agentId,
   compactDefault = true,
+  children,
   onOpenTrajectory,
   onOpenAgentTrajectory,
 }) => {
@@ -505,36 +514,39 @@ const _BackgroundAgentCard: React.FC<BackgroundAgentCardProps> = ({
   );
 
   return (
-    <Collapsible.Root open={expanded} onOpenChange={setExpanded}>
-      <div
-        className={classNames(styles.card, expanded && styles.cardExpanded)}
-        data-expanded={expanded}
-        data-testid="background-agent-card"
-      >
-        <Collapsible.Trigger asChild>
-          <button
-            type="button"
-            className={styles.expandTrigger}
-            aria-label={
-              expanded
-                ? "Collapse background agent details"
-                : "Expand background agent details"
-            }
-          >
-            <CompactRow agent={displayedAgent} expanded={expanded} />
-          </button>
-        </Collapsible.Trigger>
-        <Collapsible.Content className={styles.content}>
-          <ExpandedDetail
-            agent={displayedAgent}
-            filesOpen={filesOpen}
-            filesPanelId={filesPanelId}
-            onToggleFiles={handleToggleFiles}
-            onOpenTrajectory={handleOpenTrajectory}
-          />
-        </Collapsible.Content>
-      </div>
-    </Collapsible.Root>
+    <>
+      <Collapsible.Root open={expanded} onOpenChange={setExpanded}>
+        <div
+          className={classNames(styles.card, expanded && styles.cardExpanded)}
+          data-expanded={expanded}
+          data-testid="background-agent-card"
+        >
+          <Collapsible.Trigger asChild>
+            <button
+              type="button"
+              className={styles.expandTrigger}
+              aria-label={
+                expanded
+                  ? "Collapse background agent details"
+                  : "Expand background agent details"
+              }
+            >
+              <CompactRow agent={displayedAgent} expanded={expanded} />
+            </button>
+          </Collapsible.Trigger>
+          <Collapsible.Content className={styles.content}>
+            <ExpandedDetail
+              agent={displayedAgent}
+              filesOpen={filesOpen}
+              filesPanelId={filesPanelId}
+              onToggleFiles={handleToggleFiles}
+              onOpenTrajectory={handleOpenTrajectory}
+            />
+          </Collapsible.Content>
+        </div>
+      </Collapsible.Root>
+      {children}
+    </>
   );
 };
 

@@ -234,6 +234,39 @@ describe("BackgroundAgentCard", () => {
     expect(screen.getByTestId("background-agent-kind-subagent")).toBeVisible();
   });
 
+  it("renders the tool kind icon", () => {
+    render(<BackgroundAgentCard agent={makeAgent({ kind: "tool" })} />);
+    render(<BackgroundAgentCard agent={makeAgent({ kind: "subagent" })} />);
+
+    const toolTile = screen.getByTestId("background-agent-kind-tool");
+    const subagentTile = screen.getByTestId("background-agent-kind-subagent");
+
+    expect(toolTile).toBeVisible();
+    expect(toolTile.querySelector("svg path")?.getAttribute("d")).not.toBe(
+      subagentTile.querySelector("svg path")?.getAttribute("d"),
+    );
+  });
+
+  it("renders children below the card", () => {
+    render(
+      <BackgroundAgentCard agent={makeAgent({ kind: "tool" })}>
+        <div data-testid="tool-children">Tool body</div>
+      </BackgroundAgentCard>,
+    );
+
+    expect(screen.getByTestId("tool-children")).toBeVisible();
+    expect(screen.queryByTestId("background-agent-expanded-detail")).not.toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Expand background agent details" }),
+    );
+
+    expect(
+      screen.getByTestId("background-agent-expanded-detail"),
+    ).toBeVisible();
+    expect(screen.getByTestId("tool-children")).toBeVisible();
+  });
+
   it("preserves terminal result details and conflict tooltip after expansion", () => {
     render(
       <BackgroundAgentCard

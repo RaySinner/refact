@@ -1,7 +1,9 @@
 pub mod competitor_import;
 pub mod config_dirs;
 pub mod hooks;
+pub mod hooks_payload;
 pub mod skills;
+pub mod skills_context;
 pub mod skills_matcher;
 pub mod slash_commands;
 pub mod yaml_util;

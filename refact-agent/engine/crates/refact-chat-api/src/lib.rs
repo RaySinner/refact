@@ -15,6 +15,7 @@ pub mod notification_event;
 pub mod openai_codex_ws;
 pub mod pending_context_rebuild;
 pub mod plan_role;
+pub mod subchat_types;
 pub mod session;
 pub mod setparams;
 pub mod tool_catalog;
@@ -52,6 +53,10 @@ pub use trajectory_event::TrajectoryEvent;
 pub use types::{
     ChatSession, EnrichmentTurnIdentity, ExternalReloadPending, GoalSnapshotBudgetExt,
     QueueProcessorCounters, SessionsMap, TrajectoryCommitIntent, TrajectorySourceIdentitySessionExt,
+};
+pub use subchat_types::{
+    ChatMeta, ExecuteToolsOptions, ExplicitSubchatSpec, SubchatConfig, SubchatParameters,
+    SubchatProgress, SubchatResult, ToolsPolicy, TraceParent, WrapUpConfig,
 };
 pub use wait_interrupt::WaitInterruptCause;
 pub use refact_core::buddy_meta::BuddyThreadMeta;

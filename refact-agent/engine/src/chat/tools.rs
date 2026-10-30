@@ -61,14 +61,7 @@ fn make_runtime_event(
     }
 }
 
-#[derive(Default)]
-pub struct ExecuteToolsOptions {
-    pub subchat_tool_parameters: Option<IndexMap<String, SubchatParameters>>,
-    pub postprocess_settings: Option<PostprocessSettings>,
-    pub allowed_tools: Vec<String>,
-    pub catalog: Option<Arc<ToolCatalogSnapshot>>,
-    pub turn_tool_pool: Option<TurnToolPool>,
-}
+pub use refact_chat_api::ExecuteToolsOptions;
 
 fn tool_execution_messages(
     messages: &[ChatMessage],

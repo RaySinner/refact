@@ -8,8 +8,10 @@ refact-core = { path = "../refact-core" }
 refact-caps-core = { path = "../refact-caps-core" }
 refact-tool-api = { path = "../refact-tool-api" }
 refact-privacy = { path = "../refact-privacy" }
+refact-ext = { path = "../refact-ext" }
 refact-perf = { path = "../refact-perf" }
 tracing.workspace = true
+indexmap.workspace = true
 chrono = { version = "0.4.31", features = ["serde"] }
 serde.workspace = true
 serde_json.workspace = true

@@ -13,7 +13,7 @@ use crate::tools::tools_list::get_available_tools;
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::call_validation::{
     ChatContent, ChatMeta, ChatToolCall, SamplingParameters, ChatMessage, ChatUsage,
-    ReasoningEffort, ChatModelType, SubchatParameters, ContextFile,
+    ReasoningEffort, ChatModelType, ContextFile,
 };
 use crate::global_context::GlobalContext;
 use crate::scratchpad_abstract::HasTokenizerAndEot;
@@ -441,134 +441,10 @@ fn get_context_files_from_messages(messages: &[ChatMessage]) -> Vec<String> {
     paths
 }
 
-#[derive(Clone, Debug)]
-pub enum ToolsPolicy {
-    All,
-    None,
-    Only(Vec<String>),
-}
-
-impl ToolsPolicy {
-    pub fn from_option(opt: Option<Vec<String>>) -> Self {
-        match opt {
-            None => ToolsPolicy::All,
-            Some(v) if v.is_empty() => ToolsPolicy::None,
-            Some(v) => ToolsPolicy::Only(v),
-        }
-    }
-
-    fn to_subset_for_llm(&self) -> Option<Vec<String>> {
-        match self {
-            ToolsPolicy::All => None,
-            ToolsPolicy::None => Some(vec![]),
-            ToolsPolicy::Only(v) => Some(v.clone()),
-        }
-    }
-
-    fn allows_tool(&self, tool_name: &str) -> bool {
-        match self {
-            ToolsPolicy::All => true,
-            ToolsPolicy::None => false,
-            ToolsPolicy::Only(v) => v.iter().any(|t| t == tool_name),
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct WrapUpConfig {
-    pub depth: usize,
-    pub tokens_cnt: usize,
-    pub prompt: String,
-}
-
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct TraceParent {
-    pub chat_id: Option<String>,
-    pub root_chat_id: Option<String>,
-}
-
-impl TraceParent {
-    pub fn unattributed() -> Self {
-        Self::default()
-    }
-
-    pub fn from_parts(chat_id: Option<&str>, root_chat_id: Option<&str>) -> Self {
-        let normalize = |value: Option<&str>| {
-            value
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(str::to_string)
-        };
-        Self {
-            chat_id: normalize(chat_id),
-            root_chat_id: normalize(root_chat_id),
-        }
-    }
-
-    pub fn chat(chat_id: &str) -> Self {
-        Self::from_parts(Some(chat_id), None)
-    }
-
-    pub fn rooted(chat_id: &str, root_chat_id: &str) -> Self {
-        Self::from_parts(Some(chat_id), Some(root_chat_id))
-    }
-
-    pub fn trace_folder_owner(&self) -> Option<String> {
-        self.root_chat_id.clone().or_else(|| self.chat_id.clone())
-    }
-}
-
-#[derive(Clone)]
-pub struct SubchatConfig {
-    pub tool_name: String,
-    pub stateful: bool,
-    pub autonomous_no_confirm: bool,
-    pub auto_approve_editing_tools: bool,
-    pub auto_approve_dangerous_commands: bool,
-    pub chat_id: Option<String>,
-    pub title: Option<String>,
-    pub parent_id: Option<String>,
-    pub link_type: Option<String>,
-    pub root_chat_id: Option<String>,
-    pub tools: ToolsPolicy,
-    pub max_steps: usize,
-    pub prepend_system_prompt: bool,
-    pub wrap_up: Option<WrapUpConfig>,
-    pub task_meta: Option<TaskMeta>,
-    pub worktree: Option<WorktreeMeta>,
-    pub model: String,
-    pub mode: String,
-    pub n_ctx: usize,
-    pub max_new_tokens: usize,
-    pub temperature: Option<f32>,
-    pub reasoning_effort: Option<ReasoningEffort>,
-    pub cache_control: CacheControl,
-    pub parent_tool_call_id: Option<String>,
-    pub parent_subchat_tx: Option<Arc<AMutex<mpsc::UnboundedSender<Value>>>>,
-    pub abort_flag: Option<Arc<AtomicBool>>,
-    pub soft_abort: bool,
-    pub activity_stamp: Option<Arc<AtomicU64>>,
-    pub background_agent_id: Option<String>,
-    pub subchat_depth: usize,
-    pub final_step_force_answer: bool,
-    pub buddy_meta: Option<crate::buddy::types::BuddyThreadMeta>,
-    pub step_progress: Option<Arc<dyn Fn(SubchatProgress) + Send + Sync>>,
-    pub trace_parent: TraceParent,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum SubchatProgress {
-    Step(usize),
-    ToolStarted {
-        name: String,
-        arg_preview: Option<String>,
-    },
-    ToolsFinished,
-    Usage {
-        tokens_delta: u64,
-        cost_delta: Option<f64>,
-    },
-}
+pub use refact_chat_api::{
+    ExplicitSubchatSpec, SubchatConfig, SubchatParameters, SubchatProgress, SubchatResult,
+    ToolsPolicy, TraceParent, WrapUpConfig,
+};
 
 fn should_stream_thinking_progress(tool_name: &str) -> bool {
     tool_name == "review_agents" || tool_name.starts_with("review_")
@@ -731,16 +607,7 @@ impl StreamCollector for SubchatProgressCollector {
     fn on_finish(&mut self, _choice_idx: usize, _finish_reason: Option<String>) {}
 }
 
-pub struct SubchatResult {
-    pub messages: Vec<ChatMessage>,
-    /// Reserved for provider-local usage metadata returned by nested agent calls.
-    pub metering: serde_json::Map<String, serde_json::Value>,
-    /// Set when `config.stateful == true`, allows caller to reference the saved trajectory.
-    /// Intentionally public API - callers may use it for trajectory linking.
-    #[allow(dead_code)]
-    pub chat_id: Option<String>,
-    pub aborted: bool,
-}
+
 
 struct AuditedSubchatReport(Vec<(usize, refact_privacy::FileRecord)>);
 
@@ -1388,12 +1255,7 @@ pub async fn resolve_subchat_config_with_parent(
     })
 }
 
-#[derive(Debug, Clone)]
-pub struct ExplicitSubchatSpec {
-    pub params: SubchatParameters,
-    pub model: String,
-    pub autonomous_no_confirm: bool,
-}
+
 
 pub async fn resolve_subchat_config_with_explicit_params(
     gcx: Arc<GlobalContext>,

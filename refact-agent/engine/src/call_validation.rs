@@ -4,8 +4,6 @@ use axum::http::StatusCode;
 use ropey::Rope;
 
 use crate::custom_error::ScratchError;
-use crate::llm::params::CacheControl;
-use crate::worktrees::types::WorktreeMeta;
 
 pub use refact_core::chat_types::{
     Checkpoint, CodeCompletionInputs, CodeCompletionPost, ContextEnum, ContextFile, ChatContent,
@@ -48,82 +46,8 @@ pub fn code_completion_post_validate(
     Ok(())
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum ChatModelType {
-    Light,
-    Default,
-    Thinking,
-    Buddy,
-    #[serde(rename = "model_2")]
-    Model2,
-    #[serde(rename = "task_planner")]
-    TaskPlanner,
-}
-
-impl Default for ChatModelType {
-    fn default() -> Self {
-        ChatModelType::Default
-    }
-}
-
-fn default_subchat_cache_control() -> CacheControl {
-    CacheControl::Ephemeral
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct SubchatParameters {
-    #[serde(default)]
-    pub subchat_model_type: ChatModelType,
-    #[serde(default)]
-    pub subchat_model: String,
-    pub subchat_n_ctx: usize,
-    pub subchat_max_new_tokens: usize,
-    pub subchat_temperature: Option<f32>,
-    pub subchat_tokens_for_rag: usize,
-    pub subchat_reasoning_effort: Option<ReasoningEffort>,
-    #[serde(default = "default_subchat_cache_control")]
-    pub subchat_cache_control: CacheControl,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ChatMeta {
-    #[serde(default)]
-    pub chat_id: String,
-    #[serde(default)]
-    pub request_attempt_id: String,
-    #[serde(default)]
-    pub chat_remote: bool,
-    #[serde(default = "default_mode_id")]
-    pub chat_mode: String,
-    #[serde(default)]
-    pub current_config_file: String,
-    #[serde(default = "default_true")]
-    pub include_project_info: bool,
-    #[serde(default)]
-    pub context_tokens_cap: Option<usize>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub worktree: Option<WorktreeMeta>,
-}
-
-fn default_mode_id() -> String {
-    "agent".to_string()
-}
-
-impl Default for ChatMeta {
-    fn default() -> Self {
-        ChatMeta {
-            chat_id: String::new(),
-            request_attempt_id: String::new(),
-            chat_remote: false,
-            chat_mode: default_mode_id(),
-            current_config_file: String::new(),
-            include_project_info: true,
-            context_tokens_cap: None,
-            worktree: None,
-        }
-    }
-}
+pub use refact_core::chat_types::ChatModelType;
+pub use refact_chat_api::{ChatMeta, SubchatParameters};
 
 /// Check if a mode ID is agentic (supports tool execution and knowledge enrichment).
 pub fn is_agentic_mode_id(mode_id: &str) -> bool {

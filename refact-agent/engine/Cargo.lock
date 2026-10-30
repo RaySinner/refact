@@ -4062,8 +4062,10 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "hex",
+ "indexmap 1.9.3",
  "refact-caps-core",
  "refact-core",
+ "refact-ext",
  "refact-perf",
  "refact-privacy",
  "refact-tool-api",

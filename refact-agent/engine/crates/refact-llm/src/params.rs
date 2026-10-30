@@ -2,13 +2,7 @@ use serde::{Deserialize, Serialize};
 
 const DEFAULT_MAX_TOKENS: usize = 4096;
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum CacheControl {
-    #[default]
-    Off,
-    Ephemeral,
-}
+pub use refact_core::chat_types::CacheControl;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommonParams {

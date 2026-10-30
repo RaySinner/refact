@@ -8,6 +8,33 @@ use regex::Regex;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use tokenizers::Tokenizer;
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum CacheControl {
+    #[default]
+    Off,
+    Ephemeral,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum ChatModelType {
+    Light,
+    Default,
+    Thinking,
+    Buddy,
+    #[serde(rename = "model_2")]
+    Model2,
+    #[serde(rename = "task_planner")]
+    TaskPlanner,
+}
+
+impl Default for ChatModelType {
+    fn default() -> Self {
+        ChatModelType::Default
+    }
+}
+
 
 pub fn serialize_path<S: serde::Serializer>(
     path: &PathBuf,

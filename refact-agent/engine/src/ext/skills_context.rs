@@ -9,11 +9,7 @@ use crate::ext::skills_matcher::select_relevant_skills;
 
 pub const SKILLS_CONTEXT_MARKER: &str = "skills_context";
 
-#[derive(Debug, Default, Clone)]
-pub struct SkillsTrackingInfo {
-    pub available_count: usize,
-    pub included_names: Vec<String>,
-}
+pub use refact_ext::skills_context::SkillsTrackingInfo;
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

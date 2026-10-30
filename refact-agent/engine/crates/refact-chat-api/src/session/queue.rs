@@ -19,7 +19,7 @@ impl ChatSession {
         }
     }
 
-    pub(super) fn remember_request_id(&mut self, request_id: &str) {
+    pub fn remember_request_id(&mut self, request_id: &str) {
         if self.recent_request_ids.len() >= limits().recent_request_ids_capacity {
             if let Some(evicted) = self.recent_request_ids.pop_front() {
                 self.recent_request_ids_set.remove(&evicted);
@@ -29,7 +29,7 @@ impl ChatSession {
         self.recent_request_ids_set.insert(request_id.to_string());
     }
 
-    pub(super) fn command_is_critical_for_queue(&self, command: &ChatCommand) -> bool {
+    pub fn command_is_critical_for_queue(&self, command: &ChatCommand) -> bool {
         matches!(command, ChatCommand::Abort {})
             || (self.runtime.state == SessionState::Paused
                 && matches!(
@@ -40,7 +40,7 @@ impl ChatSession {
                 && matches!(command, ChatCommand::IdeToolResult { .. }))
     }
 
-    pub(super) fn command_interrupts_active_loop(command: &ChatCommand) -> bool {
+    pub fn command_interrupts_active_loop(command: &ChatCommand) -> bool {
         matches!(
             command,
             ChatCommand::UserMessage { .. }
@@ -97,11 +97,11 @@ impl ChatSession {
 }
 
 impl ChatSession {
-    pub(crate) fn record_command_queue_wait(&mut self, client_request_id: &str) {
+    pub fn record_command_queue_wait(&mut self, client_request_id: &str) {
         self.record_command_queue_wait_at(client_request_id, Instant::now());
     }
 
-    pub(crate) fn record_command_queue_wait_at(&mut self, client_request_id: &str, now: Instant) {
+    pub fn record_command_queue_wait_at(&mut self, client_request_id: &str, now: Instant) {
         let Some(enqueued_at) = self.command_enqueued_at.remove(client_request_id) else {
             return;
         };
@@ -122,16 +122,16 @@ impl ChatSession {
         );
     }
 
-    pub(crate) fn clear_stream_and_confirmation_timestamps(&mut self) {
+    pub fn clear_stream_and_confirmation_timestamps(&mut self) {
         self.stream_started_at = None;
         self.confirmation_paused_at = None;
     }
 
-    pub(crate) fn clear_discarded_queue_timestamps(&mut self) {
+    pub fn clear_discarded_queue_timestamps(&mut self) {
         self.command_enqueued_at.clear();
     }
 
-    pub(crate) fn clear_queue_timestamp(&mut self, client_request_id: &str) {
+    pub fn clear_queue_timestamp(&mut self, client_request_id: &str) {
         self.command_enqueued_at.remove(client_request_id);
     }
 }
@@ -183,7 +183,7 @@ impl ChatSession {
         self.emit_goal_status();
     }
 
-    pub(crate) fn interrupt_wait_for_delivery(&mut self, cause: WaitInterruptCause) {
+    pub fn interrupt_wait_for_delivery(&mut self, cause: WaitInterruptCause) {
         if self.interruptible_waits > 0
             && self
                 .pending_deliveries
@@ -239,7 +239,7 @@ impl ChatSession {
         self.enqueue_delivery(delivery)
     }
 
-    pub(super) fn delivery_envelope_boundary_open(&self, delivery: &PendingDelivery) -> bool {
+    pub fn delivery_envelope_boundary_open(&self, delivery: &PendingDelivery) -> bool {
         let kinds: HashSet<_> = delivery
             .messages
             .iter()
@@ -271,7 +271,7 @@ impl ChatSession {
         self.delivery_boundary_open(delivery.push)
     }
 
-    pub(super) fn knows_delivery_id(&self, id: &str) -> bool {
+    pub fn knows_delivery_id(&self, id: &str) -> bool {
         self.delivered_delivery_ids.contains(id)
             || self
                 .pending_deliveries
@@ -285,11 +285,11 @@ impl ChatSession {
 
     /// Append one delivery's messages, stamping delivery provenance so dedupe
     /// and the UI survive a restart without the pending queue.
-    pub(super) fn append_delivery(&mut self, delivery: &PendingDelivery) {
+    pub fn append_delivery(&mut self, delivery: &PendingDelivery) {
         if let Some(patch) = &delivery.thread_patch {
             let old_mode = self.thread.mode.clone();
             let (changed, sanitized) =
-                crate::chat::queue::apply_setparams_patch(&mut self.thread, patch);
+                apply_setparams_patch(&mut self.thread, patch);
             if changed {
                 self.emit(ChatEvent::ThreadUpdated { params: sanitized });
                 self.increment_version();
@@ -326,7 +326,7 @@ impl ChatSession {
 
     /// Discard the in-flight draft and close interrupted tool calls for an
     /// urgent delivery, recording at most one cancellation note per preemption.
-    pub(super) fn preempt_for_delivery(&mut self, source: &str) {
+    pub fn preempt_for_delivery(&mut self, source: &str) {
         let had_draft = self.draft_message.is_some();
         let was_active = matches!(
             self.runtime.state,

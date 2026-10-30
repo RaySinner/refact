@@ -11,10 +11,10 @@ impl ChatSession {
         let (event_tx, _) = broadcast::channel(limits().event_channel_capacity);
         Self {
             chat_id: chat_id.clone(),
-            derived_privacy_zones: crate::privacy::records::new_derived_privacy_zones(),
-            tool_loop_guard: crate::tools::tool_call_loop_guard::ToolCallLoopGuard::new(),
+            derived_privacy_zones: refact_privacy::new_derived_privacy_zones(),
+            tool_loop_guard: refact_tool_api::tool_call_loop_guard::ToolCallLoopGuard::new(),
             turn_investigation_tracker:
-                crate::tools::tool_call_loop_guard::TurnInvestigationTracker::new(),
+                refact_tool_api::tool_call_loop_guard::TurnInvestigationTracker::new(),
             thread: ThreadParams {
                 id: chat_id,
                 ..Default::default()
@@ -149,10 +149,10 @@ impl ChatSession {
             .collect();
         Self {
             chat_id,
-            derived_privacy_zones: crate::privacy::records::new_derived_privacy_zones(),
-            tool_loop_guard: crate::tools::tool_call_loop_guard::ToolCallLoopGuard::new(),
+            derived_privacy_zones: refact_privacy::new_derived_privacy_zones(),
+            tool_loop_guard: refact_tool_api::tool_call_loop_guard::ToolCallLoopGuard::new(),
             turn_investigation_tracker:
-                crate::tools::tool_call_loop_guard::TurnInvestigationTracker::new(),
+                refact_tool_api::tool_call_loop_guard::TurnInvestigationTracker::new(),
             thread,
             messages,
             runtime,
@@ -256,19 +256,19 @@ impl ChatSession {
         }
     }
 
-    pub(crate) fn has_enrichment_identity(&self, identity: &str) -> bool {
+    pub fn has_enrichment_identity(&self, identity: &str) -> bool {
         self.enrichment_identities.contains(identity)
     }
 
-    pub(crate) fn record_enrichment_identity(&mut self, identity: String) {
+    pub fn record_enrichment_identity(&mut self, identity: String) {
         self.enrichment_identities.insert(identity);
     }
 
-    pub(crate) fn trajectory_commit_can_write(&self, version: u64) -> bool {
+    pub fn trajectory_commit_can_write(&self, version: u64) -> bool {
         version >= self.trajectory_committed_version
     }
 
-    pub(crate) fn complete_trajectory_commit(&mut self, version: u64) -> bool {
+    pub fn complete_trajectory_commit(&mut self, version: u64) -> bool {
         if !self.trajectory_commit_can_write(version) {
             return false;
         }

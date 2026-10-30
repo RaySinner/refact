@@ -20,7 +20,7 @@ impl ChatSession {
         self.add_message_at_boundary(message);
     }
 
-    pub(super) fn add_message_at_boundary(&mut self, mut message: ChatMessage) {
+    pub fn add_message_at_boundary(&mut self, mut message: ChatMessage) {
         if message.message_id.is_empty() {
             message.message_id = Uuid::new_v4().to_string();
         }
@@ -47,7 +47,7 @@ impl ChatSession {
         self.touch();
     }
 
-    pub(super) fn latest_assistant_tool_call_window(
+    pub fn latest_assistant_tool_call_window(
         &self,
         tool_call_id: Option<&str>,
     ) -> Option<(usize, Vec<String>)> {
@@ -72,7 +72,7 @@ impl ChatSession {
             })
     }
 
-    pub(super) fn result_ids_after_assistant(&self, assistant_index: usize) -> HashSet<String> {
+    pub fn result_ids_after_assistant(&self, assistant_index: usize) -> HashSet<String> {
         let mut result_ids = HashSet::new();
         for message in self.messages.iter().skip(assistant_index + 1) {
             match message.role.as_str() {
@@ -81,9 +81,9 @@ impl ChatSession {
                 }
                 role if role == "assistant"
                     || role == "user"
-                    || role == crate::chat::internal_roles::EVENT_ROLE
-                    || role == crate::chat::internal_roles::PLAN_ROLE
-                    || role == crate::chat::internal_roles::GOAL_ROLE =>
+                    || role == crate::internal_roles::EVENT_ROLE
+                    || role == crate::internal_roles::PLAN_ROLE
+                    || role == crate::internal_roles::GOAL_ROLE =>
                 {
                     break;
                 }
@@ -93,7 +93,7 @@ impl ChatSession {
         result_ids
     }
 
-    pub(super) fn answered_tool_call_ids_for_interruption(
+    pub fn answered_tool_call_ids_for_interruption(
         &self,
         assistant_index: usize,
     ) -> HashSet<String> {
@@ -103,16 +103,16 @@ impl ChatSession {
                 "tool" | "diff" if !message.tool_call_id.is_empty() => {
                     result_ids.insert(message.tool_call_id.clone());
                 }
-                role if role == crate::chat::internal_roles::EVENT_ROLE
-                    || role == crate::chat::internal_roles::PLAN_ROLE
-                    || role == crate::chat::internal_roles::GOAL_ROLE => {}
+                role if role == crate::internal_roles::EVENT_ROLE
+                    || role == crate::internal_roles::PLAN_ROLE
+                    || role == crate::internal_roles::GOAL_ROLE => {}
                 _ => break,
             }
         }
         result_ids
     }
 
-    pub(super) fn all_tool_call_ids_have_results_after(
+    pub fn all_tool_call_ids_have_results_after(
         &self,
         assistant_index: usize,
         tool_call_ids: &[String],
@@ -121,7 +121,7 @@ impl ChatSession {
         tool_call_ids.iter().all(|id| result_ids.contains(id))
     }
 
-    pub(super) fn has_pending_tool_result_window(&self) -> bool {
+    pub fn has_pending_tool_result_window(&self) -> bool {
         self.latest_assistant_tool_call_window(None)
             .map(|(assistant_index, tool_call_ids)| {
                 !self.all_tool_call_ids_have_results_after(assistant_index, &tool_call_ids)
@@ -129,7 +129,7 @@ impl ChatSession {
             .unwrap_or(false)
     }
 
-    pub(super) fn tool_result_window_closed_for_tool_call(&self, tool_call_id: &str) -> bool {
+    pub fn tool_result_window_closed_for_tool_call(&self, tool_call_id: &str) -> bool {
         if let Some((assistant_index, tool_call_ids)) =
             self.latest_assistant_tool_call_window(Some(tool_call_id))
         {
@@ -156,8 +156,8 @@ impl ChatSession {
             tool_failed: Some(tool_failed),
             ..Default::default()
         });
-        self.queue_post_tool_side_effect(crate::chat::internal_roles::event(
-            crate::chat::internal_roles::EventSubkind::IdeCallback,
+        self.queue_post_tool_side_effect(crate::internal_roles::event(
+            crate::internal_roles::EventSubkind::IdeCallback,
             "ide.bridge",
             json!({"tool_call_id": tool_call_id.clone(), "ok": ok, "summary": content.clone()}),
             content,
@@ -218,7 +218,7 @@ impl ChatSession {
         projection
     }
 
-    pub(super) fn control_kind(message: &ChatMessage) -> Option<&'static str> {
+    pub fn control_kind(message: &ChatMessage) -> Option<&'static str> {
         match message.role.as_str() {
             "plan" => Some("plan"),
             "goal" => Some("goal"),
@@ -302,7 +302,7 @@ impl ChatSession {
         Ok(origin)
     }
 
-    pub(super) fn mutable_message_start(&self) -> Option<usize> {
+    pub fn mutable_message_start(&self) -> Option<usize> {
         refact_core::active_context::active_context(&self.messages)
             .ok()
             .map(|active| active.report_index.map_or(0, |index| index + 1))

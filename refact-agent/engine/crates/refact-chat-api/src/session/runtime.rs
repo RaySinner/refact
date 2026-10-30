@@ -1,7 +1,7 @@
 use super::*;
 
 impl ChatSession {
-    pub(crate) fn runtime_update_event(
+    pub fn runtime_update_event(
         &self,
         state: SessionState,
         error: Option<String>,
@@ -24,7 +24,7 @@ impl ChatSession {
         }
     }
 
-    pub(crate) fn emit_goal_status(&mut self) {
+    pub fn emit_goal_status(&mut self) {
         self.refresh_goal_runtime_mirror();
         let event = self.runtime_update_event(
             self.runtime.state,
@@ -39,7 +39,7 @@ impl ChatSession {
     /// Publish the automatic-compaction gate's decision inputs as read-only
     /// diagnostics. `estimated` is `None` when the local estimate was
     /// unavailable, so an unavailable estimate never reads as a huge context.
-    pub(crate) fn set_compression_gate_diagnostics(
+    pub fn set_compression_gate_diagnostics(
         &mut self,
         estimated: Option<usize>,
         cap: usize,
@@ -53,7 +53,7 @@ impl ChatSession {
         self.runtime.compression_cap_source = Some(cap_source.to_string());
     }
 
-    pub(crate) fn clear_compression_gate_diagnostics(&mut self) {
+    pub fn clear_compression_gate_diagnostics(&mut self) {
         self.compression_estimated_tokens = None;
         self.compression_effective_cap = None;
         self.compression_cap_source = None;
@@ -169,13 +169,13 @@ impl ChatSession {
         self.last_activity = now;
     }
 
-    pub(super) fn mark_stream_delta(&mut self) {
+    pub fn mark_stream_delta(&mut self) {
         let now = Instant::now();
         self.last_stream_delta_at = Some(now);
         self.last_activity = now;
     }
 
-    pub(crate) fn mark_persisted_runtime_changed(&mut self) {
+    pub fn mark_persisted_runtime_changed(&mut self) {
         self.increment_version();
         self.touch();
     }
@@ -217,7 +217,7 @@ impl ChatSession {
             })
     }
 
-    pub(crate) fn mirror_runner_messages(&mut self, mut messages: Vec<ChatMessage>) {
+    pub fn mirror_runner_messages(&mut self, mut messages: Vec<ChatMessage>) {
         for message in &mut messages {
             stamp_created_at_ms(message);
         }
@@ -256,7 +256,7 @@ impl ChatSession {
     /// Turn-scoped memory release: drops everything a completed/aborted turn owns.
     /// The per-turn investigation tracker resets here so every new turn starts with
     /// a fresh budget and an empty stagnation window.
-    pub(crate) fn release_turn_only_state(&mut self) {
+    pub fn release_turn_only_state(&mut self) {
         self.last_prompt_messages = Vec::new();
         self.tool_catalog = None;
         self.turn_tool_pool = None;
@@ -267,7 +267,7 @@ impl ChatSession {
 
     /// The last provider usage was measured under the previous model; it must not
     /// anchor the compression gate for the new one.
-    pub(crate) fn invalidate_usage_on_model_switch(&mut self) {
+    pub fn invalidate_usage_on_model_switch(&mut self) {
         self.provider_usage_stale = true;
     }
 }
@@ -375,7 +375,7 @@ impl ChatSession {
         self.queue_notify.notify_waiters();
     }
 
-    pub(super) fn emit_trajectory_state_change(&self) {
+    pub fn emit_trajectory_state_change(&self) {
         if self.thread.task_meta.is_some() {
             return;
         }
@@ -467,7 +467,7 @@ impl ChatSession {
         self.emit_trajectory_title_change(title);
     }
 
-    pub(super) fn emit_trajectory_title_change(&self, title: String) {
+    pub fn emit_trajectory_title_change(&self, title: String) {
         if let Some(ref tx) = self.trajectory_events_tx {
             let effective_root = self
                 .thread
@@ -520,7 +520,7 @@ impl ChatSession {
             .any(|r| r.tool_call_id == tool_call_id)
     }
 
-    pub(in crate::chat) fn add_tool_decision_event(
+    pub fn add_tool_decision_event(
         &mut self,
         decision: &str,
         tool_call_ids: Vec<String>,
@@ -618,11 +618,11 @@ impl ChatSession {
         }
     }
 
-    pub(crate) fn complete_confirmation_wait(&mut self) {
+    pub fn complete_confirmation_wait(&mut self) {
         self.complete_confirmation_wait_at(Instant::now());
     }
 
-    pub(crate) fn complete_confirmation_wait_at(&mut self, now: Instant) {
+    pub fn complete_confirmation_wait_at(&mut self, now: Instant) {
         if !perf_diagnostics::is_enabled() {
             return;
         }

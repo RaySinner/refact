@@ -30,74 +30,75 @@ impl TurnMemoryRetainedBytes {
     }
 }
 
-impl crate::chat::types::ChatSession {
-    pub fn retained_bytes_for_turn_memory(&self) -> TurnMemoryRetainedBytes {
-        let canonical_messages = self
-            .messages
-            .iter()
-            .map(|message| {
-                serde_json::to_vec(message)
-                    .map(|encoded| encoded.len())
-                    .unwrap_or_default()
-            })
-            .sum();
-        let last_prompt_messages = self
-            .last_prompt_messages
-            .iter()
-            .map(|message| {
-                serde_json::to_vec(message)
-                    .map(|encoded| encoded.len())
-                    .unwrap_or_default()
-            })
-            .sum();
-        let catalog_descriptors_and_aliases = self
-            .tool_catalog
-            .as_ref()
-            .map(|catalog| {
-                catalog
-                    .index
-                    .tools
-                    .iter()
-                    .map(|descriptor| {
-                        serde_json::to_vec(descriptor)
-                            .map(|encoded| encoded.len())
-                            .unwrap_or_default()
-                    })
-                    .sum::<usize>()
-                    .saturating_add(
+pub fn retained_bytes_for_turn_memory(
+    session: &crate::chat::types::ChatSession,
+) -> TurnMemoryRetainedBytes {
+    let canonical_messages = session
+        .messages
+        .iter()
+        .map(|message| {
+            serde_json::to_vec(message)
+                .map(|encoded| encoded.len())
+                .unwrap_or_default()
+        })
+        .sum();
+    let last_prompt_messages = session
+        .last_prompt_messages
+        .iter()
+        .map(|message| {
+            serde_json::to_vec(message)
+                .map(|encoded| encoded.len())
+                .unwrap_or_default()
+        })
+        .sum();
+    let catalog_descriptors_and_aliases = session
+        .tool_catalog
+        .as_ref()
+        .map(|catalog| {
+            catalog
+                .index
+                .tools
+                .iter()
+                .map(|descriptor| {
+                    serde_json::to_vec(descriptor)
+                        .map(|encoded| encoded.len())
+                        .unwrap_or_default()
+                })
+                .sum::<usize>()
+                .saturating_add(
+                    catalog
+                        .index
+                        .tools
+                        .iter()
+                        .map(|descriptor| descriptor.name.len().saturating_mul(2))
+                        .sum::<usize>(),
+                )
+        })
+        .unwrap_or_default();
+    let pool_vectors = session
+        .turn_tool_pool
+        .as_ref()
+        .map(|_| {
+            session
+                .tool_catalog
+                .as_ref()
+                .map(|catalog| {
+                    std::mem::size_of::<refact_runtime_api::TurnToolPool>().saturating_add(
                         catalog
                             .index
                             .tools
-                            .iter()
-                            .map(|descriptor| descriptor.name.len().saturating_mul(2))
-                            .sum::<usize>(),
+                            .len()
+                            .saturating_mul(std::mem::size_of::<usize>().saturating_mul(2)),
                     )
-            })
-            .unwrap_or_default();
-        let pool_vectors = self
-            .turn_tool_pool
-            .as_ref()
-            .map(|_| {
-                self.tool_catalog
-                    .as_ref()
-                    .map(|catalog| {
-                        std::mem::size_of::<refact_runtime_api::TurnToolPool>().saturating_add(
-                            catalog
-                                .index
-                                .tools
-                                .len()
-                                .saturating_mul(std::mem::size_of::<usize>().saturating_mul(2)),
-                        )
-                    })
-                    .unwrap_or_default()
-            })
-            .unwrap_or_default();
-        TurnMemoryRetainedBytes {
-            canonical_messages,
-            last_prompt_messages,
-            catalog_descriptors_and_aliases,
-            pool_vectors,
-        }
+                })
+                .unwrap_or_default()
+        })
+        .unwrap_or_default();
+    TurnMemoryRetainedBytes {
+        canonical_messages,
+        last_prompt_messages,
+        catalog_descriptors_and_aliases,
+        pool_vectors,
     }
 }
 

@@ -6,7 +6,6 @@ use axum::extract::State;
 use axum::http::{Response, StatusCode};
 use hyper::Body;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use tokio::fs;
 use tokio::sync::{Mutex as AMutex, broadcast};
 use tracing::{info, warn};
@@ -187,25 +186,7 @@ pub(super) fn clean_generated_title(raw_title: &str) -> String {
     truncate_text_chars(&cleaned, 60)
 }
 
-pub(crate) fn task_context_from_task_meta(
-    task_meta: Option<&crate::chat::types::TaskMeta>,
-) -> (
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-) {
-    task_meta
-        .map(|meta| {
-            (
-                Some(meta.task_id.clone()),
-                Some(meta.role.clone()),
-                meta.agent_id.clone(),
-                meta.card_id.clone(),
-            )
-        })
-        .unwrap_or((None, None, None, None))
-}
+pub use refact_chat_api::trajectory_meta::task_context_from_task_meta;
 
 pub(super) async fn generate_title_llm(
     ctx: &ChatCtx,

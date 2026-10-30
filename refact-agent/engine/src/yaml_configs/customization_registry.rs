@@ -630,28 +630,7 @@ pub async fn get_subagent_config(
     resolve_subagent_for_model(&registry, subagent_id, model_id)
 }
 
-pub fn map_legacy_mode_to_id(mode_str: &str) -> &str {
-    match mode_str.to_uppercase().as_str() {
-        "NO_TOOLS" => "explore",
-        "EXPLORE" => "explore",
-        "AGENT" => "agent",
-        "CONFIGURE" => "configurator",
-        "TASK_PLANNER" => "task_planner",
-        "TASK_AGENT" => "task_agent",
-        "BRAINSTORM" => "brainstorming",
-        "BRAINSTORMING" => "brainstorming",
-        _ => {
-            if mode_str
-                .chars()
-                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
-            {
-                mode_str
-            } else {
-                "agent"
-            }
-        }
-    }
-}
+pub use refact_chat_api::setparams::map_legacy_mode_to_id;
 
 #[cfg(test)]
 mod tests {

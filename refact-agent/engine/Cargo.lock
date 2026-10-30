@@ -4064,6 +4064,7 @@ dependencies = [
  "hex",
  "refact-caps-core",
  "refact-core",
+ "refact-perf",
  "refact-privacy",
  "refact-tool-api",
  "regex",
@@ -4073,6 +4074,7 @@ dependencies = [
  "similar",
  "tokio",
  "tokio-tungstenite",
+ "tracing",
  "url",
  "uuid",
 ]

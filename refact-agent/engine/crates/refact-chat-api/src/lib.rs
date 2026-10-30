@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 pub mod cache_guard;
+pub mod compression_gate;
 pub mod chat_local_types;
 pub mod code_lens;
 pub mod diagnostics;
@@ -14,9 +15,13 @@ pub mod notification_event;
 pub mod openai_codex_ws;
 pub mod pending_context_rebuild;
 pub mod plan_role;
+pub mod session;
+pub mod setparams;
 pub mod tool_catalog;
 pub mod tool_enrichment;
 pub mod trajectory_event;
+pub mod trajectory_meta;
+pub mod types;
 pub mod vectorization_queue;
 pub mod wait_interrupt;
 
@@ -44,6 +49,10 @@ pub use tool_enrichment::{
 };
 pub use tool_catalog::{ToolCatalogSnapshot, ToolPolicyInfo, ToolRegistryIndex, TurnToolPool};
 pub use trajectory_event::TrajectoryEvent;
+pub use types::{
+    ChatSession, EnrichmentTurnIdentity, ExternalReloadPending, GoalSnapshotBudgetExt,
+    QueueProcessorCounters, TrajectoryCommitIntent, TrajectorySourceIdentitySessionExt,
+};
 pub use wait_interrupt::WaitInterruptCause;
 pub use refact_core::buddy_meta::BuddyThreadMeta;
 pub use message_provenance::{

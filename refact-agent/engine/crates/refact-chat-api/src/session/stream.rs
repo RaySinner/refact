@@ -10,7 +10,7 @@ use super::*;
 /// hiding the very cause we are trying to surface. The GUI renders
 /// `error_info.title` and `error_info.explanation`, so those carry the meaning.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum StreamStartRefusal {
+pub enum StreamStartRefusal {
     /// A context rebuild owns the session right now. Transient: the user's
     /// message is intact and runs once compaction finishes.
     Compression,
@@ -27,7 +27,7 @@ pub(crate) enum StreamStartRefusal {
 }
 
 impl StreamStartRefusal {
-    pub(crate) fn as_str(&self) -> &'static str {
+    pub fn as_str(&self) -> &'static str {
         match self {
             Self::Compression => "a context rebuild is in progress",
             Self::PendingContextRebuild => "a context rebuild is pending",
@@ -38,7 +38,7 @@ impl StreamStartRefusal {
         }
     }
 
-    pub(super) fn user_message(&self) -> ChatMessage {
+    pub fn user_message(&self) -> ChatMessage {
         // Built before the match so the borrow outlives the tuple below. The detail is
         // interpolated rather than matched on: `classify_user_error` recognises none of the
         // real `ActiveContextError` prose, so routing this arm through the classifier-based
@@ -159,8 +159,8 @@ impl ChatSession {
     /// Compression is checked first because it is the wait a user can actually
     /// observe (the "Compacting older context…" spinner), so naming it beats
     /// naming whatever incidental state happens to be set alongside it.
-    pub(crate) fn stream_start_refusal(&self) -> Option<StreamStartRefusal> {
-        if crate::chat::context_rebuild::compression_attempt_active(self) {
+    pub fn stream_start_refusal(&self) -> Option<StreamStartRefusal> {
+        if compression_attempt_active(self) {
             return Some(StreamStartRefusal::Compression);
         }
         if self.pending_context_rebuild.is_some() {
@@ -187,7 +187,7 @@ impl ChatSession {
     /// collapses repeats of the same text, so a session that keeps waking up
     /// while blocked bumps `repeat_count` on one card rather than appending a
     /// new one on every wake.
-    pub(crate) fn append_stream_start_refusal(&mut self, refusal: &StreamStartRefusal) {
+    pub fn append_stream_start_refusal(&mut self, refusal: &StreamStartRefusal) {
         self.append_error_message_deduped_content(refusal.user_message());
     }
 
@@ -195,12 +195,11 @@ impl ChatSession {
         self.emit_stream_delta_after_emit(ops, None);
     }
 
-    #[cfg(test)]
-    pub(crate) fn emit_stream_delta_at(&mut self, ops: Vec<DeltaOp>, now: Instant) {
+    pub fn emit_stream_delta_at(&mut self, ops: Vec<DeltaOp>, now: Instant) {
         self.emit_stream_delta_after_emit(ops, Some(now));
     }
 
-    pub(super) fn emit_stream_delta_after_emit(&mut self, ops: Vec<DeltaOp>, now: Option<Instant>) {
+    pub fn emit_stream_delta_after_emit(&mut self, ops: Vec<DeltaOp>, now: Option<Instant>) {
         let (message_id, applied) = match &mut self.draft_message {
             Some(draft) => {
                 let mut applied = false;
@@ -397,7 +396,7 @@ impl ChatSession {
 
     /// Same collapsing rule as `append_error_message_deduped`, for callers that
     /// build the message themselves (e.g. a caller-supplied `error_info`).
-    pub(crate) fn append_error_message_deduped_content(&mut self, fresh: ChatMessage) {
+    pub fn append_error_message_deduped_content(&mut self, fresh: ChatMessage) {
         const LOOKBACK_PAST_EVENTS: usize = 4;
         let fresh_text = fresh.content.content_text_only();
 

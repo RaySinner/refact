@@ -1,22 +1,10 @@
 use std::collections::HashSet;
 
-pub const TRAJECTORY_META_TITLE_MAX_CHARS: usize = 120;
+pub use refact_chat_api::trajectory_meta::{
+    trajectory_meta_title, truncate_text_chars, TRAJECTORY_META_TITLE_MAX_CHARS,
+};
+
 pub const TRAJECTORY_LABEL_MAX_CHARS: usize = TRAJECTORY_META_TITLE_MAX_CHARS;
-
-pub fn truncate_text_chars(text: &str, max_chars: usize) -> String {
-    if text.chars().count() <= max_chars {
-        return text.to_string();
-    }
-    if max_chars <= 3 {
-        return text.chars().take(max_chars).collect();
-    }
-    text.chars().take(max_chars - 3).collect::<String>() + "..."
-}
-
-pub fn trajectory_meta_title(title: &str) -> String {
-    let cleaned = title.split_whitespace().collect::<Vec<_>>().join(" ");
-    truncate_text_chars(&cleaned, TRAJECTORY_META_TITLE_MAX_CHARS)
-}
 
 pub fn calculate_line_changes_from_messages(messages: &[serde_json::Value]) -> (i64, i64) {
     let mut total_added: i64 = 0;

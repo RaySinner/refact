@@ -1,7 +1,7 @@
 use super::*;
 
-pub(super) fn goal_event_subkind(message: &ChatMessage) -> Option<&str> {
-    if message.role != crate::chat::internal_roles::EVENT_ROLE {
+pub fn goal_event_subkind(message: &ChatMessage) -> Option<&str> {
+    if message.role != crate::internal_roles::EVENT_ROLE {
         return None;
     }
     message
@@ -11,21 +11,21 @@ pub(super) fn goal_event_subkind(message: &ChatMessage) -> Option<&str> {
         .and_then(|subkind| subkind.as_str())
 }
 
-pub(super) fn is_goal_projection_event(message: &ChatMessage) -> bool {
+pub fn is_goal_projection_event(message: &ChatMessage) -> bool {
     matches!(
         goal_event_subkind(message),
         Some("goal_delta" | "goal_pursuit")
     )
 }
 
-pub(super) fn message_affects_goal_projection(message: &ChatMessage) -> bool {
+pub fn message_affects_goal_projection(message: &ChatMessage) -> bool {
     message.role == GOAL_ROLE || is_goal_projection_event(message)
 }
 
 const GOAL_EVIDENCE_EXEMPT_TOOLS: &[&str] =
     &["sleep", "get_goal", "get_plan", "pause_goal", "snooze_goal"];
 
-pub(super) fn tool_result_counts_as_goal_evidence(
+pub fn tool_result_counts_as_goal_evidence(
     message: &ChatMessage,
     history: &[ChatMessage],
 ) -> bool {
@@ -49,7 +49,7 @@ pub(super) fn tool_result_counts_as_goal_evidence(
     }
 }
 
-pub(super) fn goal_runtime_projection(
+pub fn goal_runtime_projection(
     goal: Option<&GoalSnapshot>,
 ) -> (bool, Option<GoalStatus>, u32, u64, u32) {
     goal.map(|goal| {
@@ -64,7 +64,7 @@ pub(super) fn goal_runtime_projection(
     .unwrap_or((false, None, 0, 0, 0))
 }
 
-pub(super) fn apply_goal_runtime_projection(
+pub fn apply_goal_runtime_projection(
     runtime: &mut RuntimeState,
     goal: Option<&GoalSnapshot>,
 ) {
@@ -77,7 +77,7 @@ pub(super) fn apply_goal_runtime_projection(
     runtime.goal_no_progress_turns = goal_no_progress_turns;
 }
 
-pub(super) fn synthesized_goal_content(messages: &[ChatMessage], base: &ChatMessage) -> String {
+pub fn synthesized_goal_content(messages: &[ChatMessage], base: &ChatMessage) -> String {
     let base = base.content.content_text_only();
     let notes = messages
         .iter()
@@ -91,7 +91,7 @@ pub(super) fn synthesized_goal_content(messages: &[ChatMessage], base: &ChatMess
     }
 }
 
-pub(super) fn goal_events_from_messages(messages: &[ChatMessage]) -> Vec<GoalEvent> {
+pub fn goal_events_from_messages(messages: &[ChatMessage]) -> Vec<GoalEvent> {
     messages
         .iter()
         .filter_map(|message| {
@@ -137,7 +137,7 @@ fn merge_goal_events(derived: Vec<GoalEvent>, extras: Option<Vec<GoalEvent>>) ->
     merged
 }
 
-pub(super) fn goal_budget_has_hard_limits(budget: &GoalBudget) -> bool {
+pub fn goal_budget_has_hard_limits(budget: &GoalBudget) -> bool {
     budget.max_turns.is_some_and(|limit| limit > 0)
         || budget.max_minutes.is_some_and(|limit| limit > 0)
         || budget.max_tokens.is_some_and(|limit| limit > 0)
@@ -145,7 +145,7 @@ pub(super) fn goal_budget_has_hard_limits(budget: &GoalBudget) -> bool {
         || budget.no_progress_turns.is_some_and(|limit| limit > 0)
 }
 
-pub(crate) fn goal_snapshot_from_messages(
+pub fn goal_snapshot_from_messages(
     messages: &[ChatMessage],
     existing: Option<&GoalSnapshot>,
 ) -> Option<GoalSnapshot> {
@@ -158,7 +158,7 @@ pub(crate) fn goal_snapshot_from_messages(
         .iter()
         .enumerate()
         .filter_map(|(index, message)| {
-            crate::chat::goal_role::goal_version(message).map(|version| (index, version, message))
+            crate::goal_role::goal_version(message).map(|version| (index, version, message))
         })
         .max_by_key(|(index, version, _)| (*version, *index))?;
     let _ = base_index;
@@ -259,7 +259,7 @@ pub(crate) fn goal_snapshot_from_messages(
 }
 
 impl ChatSession {
-    pub(crate) fn refresh_goal_runtime_mirror(&mut self) {
+    pub fn refresh_goal_runtime_mirror(&mut self) {
         let (goal_active, goal_status, goal_turns_used, goal_tokens_used, goal_no_progress_turns) =
             goal_runtime_projection(self.goal.as_ref());
         self.goal_active = goal_active;
@@ -270,7 +270,7 @@ impl ChatSession {
         apply_goal_runtime_projection(&mut self.runtime, self.goal.as_ref());
     }
 
-    pub(crate) fn set_goal_projection(&mut self, goal: Option<GoalSnapshot>) {
+    pub fn set_goal_projection(&mut self, goal: Option<GoalSnapshot>) {
         self.goal = goal;
         self.refresh_goal_runtime_mirror();
     }
@@ -384,7 +384,7 @@ impl ChatSession {
     /// repeated goal nudges are still appended one message per nudge. Reported rather
     /// than removed: wiring it up belongs with whatever owns goal-nudge emission.
     #[allow(dead_code)]
-    pub(crate) fn coalesce_tail_goal_nudge_event(&mut self, at_ms: u64) -> bool {
+    pub fn coalesce_tail_goal_nudge_event(&mut self, at_ms: u64) -> bool {
         let is_tail_nudge = self.messages.last().is_some_and(|message| {
             goal_event_subkind(message) == Some("goal_pursuit")
                 && message
@@ -494,11 +494,11 @@ impl ChatSession {
         true
     }
 
-    pub(crate) fn goal_ledger_append(&mut self, op: GoalLedgerOp) -> u64 {
+    pub fn goal_ledger_append(&mut self, op: GoalLedgerOp) -> u64 {
         self.goal_ledger_append_at(op, epoch_ms_now())
     }
 
-    pub(crate) fn goal_ledger_append_at(&mut self, op: GoalLedgerOp, at_ms: u64) -> u64 {
+    pub fn goal_ledger_append_at(&mut self, op: GoalLedgerOp, at_ms: u64) -> u64 {
         let seq = self
             .goal_ledger
             .last()
@@ -508,12 +508,12 @@ impl ChatSession {
         seq
     }
 
-    pub(crate) fn goal_ledger_last_seq(&self) -> u64 {
+    pub fn goal_ledger_last_seq(&self) -> u64 {
         self.goal_ledger.last().map(|entry| entry.seq).unwrap_or(0)
     }
 
-    pub(crate) fn goal_status_changed_since(&self, seq: u64) -> bool {
-        refact_chat_api::status_changed_since(&self.goal_ledger, seq)
+    pub fn goal_status_changed_since(&self, seq: u64) -> bool {
+        crate::status_changed_since(&self.goal_ledger, seq)
     }
 
     pub fn suppress_delivery_wakes(&mut self) {
@@ -638,14 +638,14 @@ impl ChatSession {
         true
     }
 
-    pub(crate) fn rebuild_goal_projection_from_messages(&mut self) {
+    pub fn rebuild_goal_projection_from_messages(&mut self) {
         let existing = self.goal.clone();
         self.goal = goal_snapshot_from_messages(&self.messages, existing.as_ref());
         self.refresh_goal_runtime_mirror();
         self.ensure_goal_ledger_installed();
     }
 
-    pub(crate) fn ensure_goal_ledger_installed(&mut self) {
+    pub fn ensure_goal_ledger_installed(&mut self) {
         let Some(goal) = self.goal.as_ref() else {
             return;
         };
@@ -671,8 +671,30 @@ impl ChatSession {
         &mut self,
         mode: &str,
         body: &str,
-    ) -> crate::chat::plan_role::PlanInstallReport {
-        crate::chat::plan_role::install_plan(self, mode, body)
+    ) -> crate::plan_role::PlanInstallReport {
+        let projection = match self.try_accepted_control_projection() {
+            Ok(projection) => projection,
+            Err(error) => {
+                self.set_runtime_state(SessionState::Error, Some(error));
+                return crate::plan_role::PlanInstallReport {
+                    version: 0,
+                    supersedes: None,
+                };
+            }
+        };
+        if let Some(message) = crate::plan_role::current_base_plan(&projection) {
+            return crate::plan_role::PlanInstallReport {
+                version: message.extra["plan"]["version"].as_u64().unwrap_or(1) as u32,
+                supersedes: message.extra["plan"]["supersedes"]
+                    .as_str()
+                    .map(str::to_owned),
+            };
+        }
+        self.add_message(crate::internal_roles::plan(mode, 1, body, None));
+        crate::plan_role::PlanInstallReport {
+            version: 1,
+            supersedes: None,
+        }
     }
 
     pub fn install_goal(
@@ -681,7 +703,7 @@ impl ChatSession {
         body: &str,
         active: bool,
         budget: GoalBudget,
-    ) -> crate::chat::goal_role::GoalInstallReport {
+    ) -> crate::goal_role::GoalInstallReport {
         self.install_goal_with_criteria(mode, body, active, budget, Vec::new())
     }
 
@@ -692,8 +714,18 @@ impl ChatSession {
         active: bool,
         budget: GoalBudget,
         criteria: Vec<GoalCriterion>,
-    ) -> crate::chat::goal_role::GoalInstallReport {
-        if self
+    ) -> crate::goal_role::GoalInstallReport {
+        let mut projection = match self.try_accepted_control_projection() {
+            Ok(projection) => projection,
+            Err(error) => {
+                warn!(%error, "Goal installation blocked by invalid active context");
+                return crate::goal_role::GoalInstallReport {
+                    version: 0,
+                    supersedes: None,
+                };
+            }
+        };
+        if let Some(message) = self
             .post_tool_side_effects
             .iter()
             .chain(
@@ -701,12 +733,21 @@ impl ChatSession {
                     .iter()
                     .flat_map(|delivery| delivery.messages.iter()),
             )
-            .any(|message| message.role == GOAL_ROLE)
+            .find(|message| message.role == GOAL_ROLE)
         {
-            return crate::chat::goal_role::install_goal(self, mode, body, active, budget);
+            return crate::goal_role::GoalInstallReport {
+                version: message.extra["goal"]["version"].as_u64().unwrap_or(1) as u32,
+                supersedes: message.extra["goal"]["supersedes"]
+                    .as_str()
+                    .map(str::to_owned),
+            };
         }
         let installed_index = self.messages.len();
-        let report = crate::chat::goal_role::install_goal(self, mode, body, active, budget);
+        let before = projection.messages.len();
+        let report = crate::goal_role::install_goal(&mut projection, mode, body, active, budget);
+        for message in projection.messages.into_iter().skip(before) {
+            self.add_message(message);
+        }
         if self.messages.len() == installed_index {
             return report;
         }

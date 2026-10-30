@@ -79,7 +79,7 @@ impl ChatSession {
         }
     }
 
-    pub(super) fn record_sse_timing(
+    pub fn record_sse_timing(
         &self,
         serialize_us: u64,
         broadcast_us: u64,
@@ -165,8 +165,7 @@ impl ChatSession {
 }
 
 impl ChatSession {
-    #[cfg(test)]
-    pub(crate) fn record_sse_timing_for_test(
+    pub fn record_sse_timing_for_test(
         &self,
         serialize_us: u64,
         broadcast_us: u64,
@@ -176,7 +175,7 @@ impl ChatSession {
     }
 }
 
-pub(super) fn sse_broadcast_outcome(
+pub fn sse_broadcast_outcome(
     receiver_count: usize,
     result: &Result<usize, broadcast::error::SendError<Arc<String>>>,
 ) -> PerfOutcome {

@@ -1,49 +1,9 @@
 pub use refact_chat_api::plan_role::*;
 
-impl refact_chat_api::plan_role::PlanRoleSession for crate::chat::types::ChatSession {
-    fn plan_role_messages(&self) -> &[crate::call_validation::ChatMessage] {
-        &self.messages
-    }
-
-    fn add_plan_role_message(&mut self, message: crate::call_validation::ChatMessage) {
-        self.add_message(message);
-    }
-}
-
 pub fn current_base_plan(
     session: &crate::chat::types::ChatSession,
 ) -> Option<crate::call_validation::ChatMessage> {
     try_current_base_plan(session).ok().flatten()
-}
-
-pub fn install_plan(
-    session: &mut crate::chat::types::ChatSession,
-    mode: &str,
-    body: &str,
-) -> PlanInstallReport {
-    let projection = match session.try_accepted_control_projection() {
-        Ok(projection) => projection,
-        Err(error) => {
-            session.set_runtime_state(crate::chat::types::SessionState::Error, Some(error));
-            return PlanInstallReport {
-                version: 0,
-                supersedes: None,
-            };
-        }
-    };
-    if let Some(message) = refact_chat_api::plan_role::current_base_plan(&projection) {
-        return PlanInstallReport {
-            version: message.extra["plan"]["version"].as_u64().unwrap_or(1) as u32,
-            supersedes: message.extra["plan"]["supersedes"]
-                .as_str()
-                .map(str::to_owned),
-        };
-    }
-    session.add_message(crate::chat::internal_roles::plan(mode, 1, body, None));
-    PlanInstallReport {
-        version: 1,
-        supersedes: None,
-    }
 }
 
 pub fn try_current_base_plan(

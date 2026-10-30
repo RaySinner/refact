@@ -192,7 +192,7 @@ use serde_json::json;
             let before = crate::chat::perf_harness::aggregate_turn_memory_retained_bytes(
                 sessions
                     .iter()
-                    .map(|session| session.retained_bytes_for_turn_memory()),
+                    .map(crate::chat::perf_harness::retained_bytes_for_turn_memory),
             );
             let canonical_before = before.canonical_messages;
             let mut completed = sessions;
@@ -203,7 +203,7 @@ use serde_json::json;
             let after = crate::chat::perf_harness::aggregate_turn_memory_retained_bytes(
                 completed
                     .iter()
-                    .map(|session| session.retained_bytes_for_turn_memory()),
+                    .map(crate::chat::perf_harness::retained_bytes_for_turn_memory),
             );
 
             assert_eq!(

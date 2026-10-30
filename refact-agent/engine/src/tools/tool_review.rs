@@ -57,6 +57,7 @@ struct ReviewArgs {
     parallel_depth: Option<usize>,
     variants: Option<usize>,
     browser_scenario: Option<String>,
+    wait: bool,
 }
 
 fn optional_string(args: &HashMap<String, Value>, key: &str) -> Option<String> {
@@ -100,6 +101,12 @@ fn positive_number(args: &HashMap<String, Value>, key: &str) -> Result<Option<u6
 fn parse_args(args: &HashMap<String, Value>) -> Result<ReviewArgs, String> {
     let files = string_list(args, "files");
     let base = optional_string(args, "base");
+    let wait = match args.get("wait") {
+        None | Some(Value::Null) => true,
+        Some(value) => value
+            .as_bool()
+            .ok_or_else(|| "argument `wait` must be a boolean".to_string())?,
+    };
     let depth = match optional_string(args, "depth") {
         Some(value) => Some(
             ReviewDepth::parse(&value)
@@ -147,6 +154,7 @@ fn parse_args(args: &HashMap<String, Value>) -> Result<ReviewArgs, String> {
         parallel_depth: positive_number(args, "parallel_depth")?.map(|value| value as usize),
         variants: variants.map(|value| value as usize),
         browser_scenario,
+        wait,
     })
 }
 
@@ -919,6 +927,200 @@ async fn run_review(
     Ok(report)
 }
 
+struct ReviewRunInput {
+    gcx: Arc<GlobalContext>,
+    tool: ToolCtx,
+    ctx: StageCtx,
+    cfg: ReviewConfig,
+    args: ReviewArgs,
+    app: AppState,
+    thread: ThreadParams,
+    request: ChatMessage,
+    session: Arc<AMutex<ChatSession>>,
+    child_chat_id: String,
+    stage_executor: Option<Arc<dyn StageExecutor>>,
+    background: bool,
+}
+
+struct ReviewRunOutcome {
+    markdown: String,
+    metering: serde_json::Map<String, Value>,
+}
+
+async fn run_review_tool(
+    input: ReviewRunInput,
+    agent: Option<(ToolAgentHandle, Arc<ToolAgentHandle>)>,
+) -> Result<ReviewRunOutcome, String> {
+    let ReviewRunInput {
+        gcx,
+        tool,
+        ctx,
+        cfg,
+        args,
+        app,
+        thread,
+        request,
+        session,
+        child_chat_id,
+        stage_executor,
+        background,
+    } = input;
+
+    let (progress_sink, progress_task) = match agent.as_ref().map(|(_, shared)| shared.clone()) {
+        Some(shared) => {
+            let (sender, mut receiver) = mpsc::unbounded_channel::<StageProgress>();
+            let sink: ProgressSink = Arc::new(move |progress| {
+                let _ = sender.send(progress);
+            });
+            let task = tokio::spawn(async move {
+                let mut done: u32 = 0;
+                while let Some(progress) = receiver.recv().await {
+                    done += 1;
+                    shared
+                        .progress(
+                            format!("{}: {}", progress.label, progress.status.as_str()),
+                            done,
+                        )
+                        .await;
+                    shared.add_usage(progress.tokens, progress.cost_usd).await;
+                }
+            });
+            (Some(sink), Some(task))
+        }
+        None => (None, None),
+    };
+
+    let ctx_abort = ctx.abort_flag.clone();
+    let mut metering = serde_json::Map::new();
+    let report = match run_review(
+        gcx,
+        &tool,
+        ctx,
+        cfg,
+        args,
+        &mut metering,
+        stage_executor,
+        progress_sink.clone(),
+        agent.as_ref().map(|(_, shared)| shared.clone()),
+    )
+    .await
+    {
+        Ok(report) => report,
+        Err(error) => {
+            drop(progress_sink);
+            if let Some(task) = progress_task {
+                let _ = task.await;
+            }
+            if let Some((handle, _)) = agent {
+                let _ = handle.fail(error.clone()).await;
+            }
+            close_review_chat(&app, &child_chat_id).await;
+            return Err(error);
+        }
+    };
+    drop(progress_sink);
+    if let Some(task) = progress_task {
+        let _ = task.await;
+    }
+
+    let cancelled = agent
+        .as_ref()
+        .is_some_and(|(_, shared)| shared.aborted())
+        || ctx_abort.load(Ordering::SeqCst);
+
+    let status = if cancelled { "cancelled" } else { "completed" };
+    if let Some((_, shared)) = agent.as_ref() {
+        for (key, value) in shared.extras(status, None) {
+            metering.insert(key, value);
+        }
+    }
+
+    let mut markdown = render_review_markdown(&report);
+    if cancelled {
+        markdown = markdown.replacen("## Review", "## Review — cancelled", 1);
+    }
+
+    match agent {
+        Some((handle, _)) if cancelled => {
+            let _ = handle.cancelled(Some("review cancelled".to_string())).await;
+        }
+        Some((handle, _)) if background => {
+            let _ = handle.complete(markdown.clone()).await;
+        }
+        Some((handle, _)) => {
+            let _ = handle.complete(review_agent_summary(&report)).await;
+        }
+        None => {}
+    }
+
+    let mut messages = vec![request];
+    messages.extend(take_review_chat_inbox(&session).await);
+    messages.push(ChatMessage::new("assistant".to_string(), markdown.clone()));
+    save_review_chat(&app, &thread, &messages, TrajectoryCommitIntent::Required).await;
+    close_review_chat(&app, &child_chat_id).await;
+
+    metering.insert(
+        "review_report".to_string(),
+        serde_json::to_value(&report)
+            .map_err(|error| format!("failed to serialize review report: {error}"))?,
+    );
+    let (refs, truncated) = review_refs(&report, &tool.files.project_dirs().await);
+    metering.insert("review_refs".to_string(), refs);
+    metering.insert("review_refs_truncated".to_string(), Value::Bool(truncated));
+
+    Ok(ReviewRunOutcome {
+        markdown,
+        metering,
+    })
+}
+
+async fn push_review_completion(app: &AppState, agent_id: &str) {
+    let Ok(record) = app.agents.get_any(agent_id).await else {
+        return;
+    };
+    if let Err(error) =
+        crate::agents::push::push_completion_to_parent(app.clone(), &record).await
+    {
+        tracing::warn!("review: could not push the completion into the parent chat: {error}");
+    }
+}
+
+fn review_started_tool_result(
+    tool_call_id: &str,
+    focus: &str,
+    extra: serde_json::Map<String, Value>,
+) -> Vec<ContextEnum> {
+    let field = |key: &str| {
+        extra
+            .get(key)
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string()
+    };
+    let child_chat_id = field("child_chat_id");
+    let text = [
+        format!("✓ Started background review: {focus}"),
+        format!("- agent_id: {}", field("background_agent_id")),
+        "- status: running".to_string(),
+        format!("- child_chat_id: {child_chat_id}"),
+        format!("- model: {}", field("model")),
+        String::new(),
+        format!("Open the child trajectory: [view](refact://chat/{child_chat_id})"),
+        String::new(),
+        "The completion will be pushed back into this chat automatically.".to_string(),
+    ]
+    .join("\n");
+    vec![ContextEnum::ChatMessage(ChatMessage {
+        role: "tool".to_string(),
+        content: ChatContent::SimpleText(text),
+        tool_call_id: tool_call_id.to_string(),
+        preserve: Some(true),
+        extra,
+        output_filter: Some(OutputFilter::no_limits()),
+        ..Default::default()
+    })]
+}
+
 #[async_trait]
 impl Tool for ToolCodeReview {
     fn tool_description(&self) -> ToolDesc {
@@ -982,6 +1184,11 @@ impl Tool for ToolCodeReview {
                     "variants": {
                         "type": "integer",
                         "description": "Optional. Model variants per stage, 1-3. Defaults to 1."
+                    },
+                    "wait": {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "Block until the review finishes and return the report inline (default). Set false to return immediately with a live background-agent card; then use agent_wait and agent_result to collect the report."
                     }
                 },
                 "required": [],
@@ -1048,7 +1255,7 @@ impl Tool for ToolCodeReview {
         )
         .await;
 
-        let mut agent = match ToolAgentHandle::begin(
+        let agent = match ToolAgentHandle::begin(
             &app,
             &ctx.chat_id,
             &ctx.root_chat_id,
@@ -1075,120 +1282,56 @@ impl Tool for ToolCodeReview {
             }
         };
 
-        let (progress_sink, progress_task) =
-            match agent.as_ref().map(|(_, shared)| shared.clone()) {
-                Some(shared) => {
-                    let (sender, mut receiver) = mpsc::unbounded_channel::<StageProgress>();
-                    let sink: ProgressSink = Arc::new(move |progress| {
-                        let _ = sender.send(progress);
-                    });
-                    let task = tokio::spawn(async move {
-                        let mut done: u32 = 0;
-                        while let Some(progress) = receiver.recv().await {
-                            done += 1;
-                            shared
-                                .progress(
-                                    format!("{}: {}", progress.label, progress.status.as_str()),
-                                    done,
-                                )
-                                .await;
-                            shared.add_usage(progress.tokens, progress.cost_usd).await;
-                        }
-                    });
-                    (Some(sink), Some(task))
-                }
-                None => (None, None),
-            };
-
-        let ctx_abort = ctx.abort_flag.clone();
-        let mut metering = serde_json::Map::new();
-        let report = match run_review(
-            gcx.clone(),
-            &tool,
+        let background = !args.wait && agent.is_some();
+        let input = ReviewRunInput {
+            gcx,
+            tool,
             ctx,
             cfg,
             args,
-            &mut metering,
-            self.stage_executor_override.clone(),
-            progress_sink.clone(),
-            agent.as_ref().map(|(_, shared)| shared.clone()),
-        )
-        .await
-        {
-            Ok(report) => report,
-            Err(error) => {
-                drop(progress_sink);
-                if let Some(task) = progress_task {
-                    let _ = task.await;
-                }
-                if let Some((handle, _)) = agent {
-                    let _ = handle.fail(error.clone()).await;
-                }
-                close_review_chat(&app, &child_chat_id).await;
-                return Err(error);
-            }
+            app: app.clone(),
+            thread: review_thread,
+            request: review_request,
+            session: review_session,
+            child_chat_id,
+            stage_executor: self.stage_executor_override.clone(),
+            background,
         };
-        drop(progress_sink);
-        if let Some(task) = progress_task {
-            let _ = task.await;
+
+        if background {
+            let agent_id = agent
+                .as_ref()
+                .map(|(handle, _)| handle.agent_id().to_string())
+                .unwrap_or_default();
+            let mut extra = agent
+                .as_ref()
+                .map(|(_, shared)| shared.extras("running", None))
+                .unwrap_or_default();
+            extra.insert("review_started".to_string(), Value::Bool(true));
+            tokio::spawn(async move {
+                if let Err(error) = run_review_tool(input, agent).await {
+                    tracing::warn!("review: background run failed: {error}");
+                }
+                push_review_completion(&app, &agent_id).await;
+            });
+            return Ok((
+                false,
+                review_started_tool_result(tool_call_id, &focus, extra),
+            ));
         }
 
-        let cancelled = agent
-            .as_ref()
-            .is_some_and(|(_, shared)| shared.aborted())
-            || ctx_abort.load(Ordering::SeqCst);
-
-        let status = if cancelled { "cancelled" } else { "completed" };
-        if let Some((_, shared)) = agent.as_ref() {
-            for (key, value) in shared.extras(status, None) {
-                metering.insert(key, value);
-            }
-        }
-        if cancelled {
-            if let Some((handle, _)) = agent.take() {
-                let _ = handle.cancelled(Some("review cancelled".to_string())).await;
-            }
-        } else if let Some((handle, _)) = agent.take() {
-            let _ = handle.complete(review_agent_summary(&report)).await;
-        }
-
-        let mut markdown = render_review_markdown(&report);
-        if cancelled {
-            markdown = markdown.replacen("## Review", "## Review — cancelled", 1);
-        }
-
-        let mut review_messages = vec![review_request];
-        review_messages.extend(take_review_chat_inbox(&review_session).await);
-        review_messages.push(ChatMessage::new("assistant".to_string(), markdown.clone()));
-        save_review_chat(
-            &app,
-            &review_thread,
-            &review_messages,
-            TrajectoryCommitIntent::Required,
-        )
-        .await;
-        close_review_chat(&app, &child_chat_id).await;
-
-        metering.insert(
-            "review_report".to_string(),
-            serde_json::to_value(&report)
-                .map_err(|error| format!("failed to serialize review report: {error}"))?,
-        );
-        let (refs, truncated) = review_refs(&report, &tool.files.project_dirs().await);
-        metering.insert("review_refs".to_string(), refs);
-        metering.insert("review_refs_truncated".to_string(), Value::Bool(truncated));
-
+        let outcome = run_review_tool(input, agent).await?;
         Ok((
             false,
             vec![
                 ContextEnum::ChatMessage(ChatMessage {
                     role: "tool".to_string(),
-                    content: ChatContent::SimpleText(markdown),
+                    content: ChatContent::SimpleText(outcome.markdown),
                     tool_calls: None,
                     tool_call_id: tool_call_id.clone(),
                     usage: None,
                     preserve: Some(true),
-                    extra: metering,
+                    extra: outcome.metering,
                     output_filter: Some(OutputFilter::no_limits()),
                     ..Default::default()
                 }),
@@ -1218,6 +1361,8 @@ mod tests {
     use crate::tools::review_types::{
         CommandRun, FindingLocation, ReviewDiffSummary, ReviewScopeSummary, StageCoverage,
     };
+
+    const COMPLETION_PUSH_TEXT: &str = "[background subagent finished]";
 
     fn args_map(pairs: Vec<(&str, Value)>) -> HashMap<String, Value> {
         pairs
@@ -2090,5 +2235,294 @@ mod tests {
 
         let markdown = tool_result_text(&results);
         assert!(markdown.contains("## Review"), "{markdown}");
+    }
+
+    #[test]
+    fn parse_args_defaults_wait_to_true() {
+        assert!(parse_args(&args_map(vec![])).unwrap().wait);
+        assert!(parse_args(&args_map(vec![("wait", Value::Null)]))
+            .unwrap()
+            .wait);
+        assert!(parse_args(&args_map(vec![("wait", json!(true))]))
+            .unwrap()
+            .wait);
+    }
+
+    #[test]
+    fn parse_args_reads_wait_false() {
+        assert!(!parse_args(&args_map(vec![("wait", json!(false))]))
+            .unwrap()
+            .wait);
+    }
+
+    #[test]
+    fn parse_args_rejects_non_boolean_wait() {
+        let error = parse_args(&args_map(vec![("wait", json!("later"))])).unwrap_err();
+        assert_eq!(error, "argument `wait` must be a boolean");
+    }
+
+    fn background_agent_id(results: &[ContextEnum]) -> String {
+        tool_result_message(results)
+            .extra
+            .get("background_agent_id")
+            .and_then(Value::as_str)
+            .expect("background agent id in the tool result extras")
+            .to_string()
+    }
+
+    async fn wait_for_review_terminal(
+        app: &AppState,
+        parent_chat_id: &str,
+        agent_id: &str,
+    ) -> crate::agents::types::BackgroundAgent {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            let record = app
+                .agents
+                .get(parent_chat_id, agent_id)
+                .await
+                .expect("agent record");
+            if record.status.is_terminal() {
+                return record;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "the background review did not finish, status {}",
+                record.status.as_str()
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn wait_false_returns_immediately_with_running_extras() {
+        let (_gcx, app, ccx) = review_test_env("review-background-fast").await;
+        let release = Arc::new(AtomicBool::new(false));
+        let (started_tx, mut started_rx) = mpsc::unbounded_channel::<()>();
+        let mut tool = review_tool(Some(Arc::new(FakeStageExecutor {
+            release: Some(release.clone()),
+            started: Some(started_tx),
+            executed: AtomicUsize::new(0),
+        })));
+
+        let (_ok, results) = tokio::time::timeout(
+            Duration::from_secs(10),
+            tool.tool_execute(
+                ccx,
+                &"review-background-fast-call".to_string(),
+                &args_map(vec![("wait", json!(false))]),
+            ),
+        )
+        .await
+        .expect("wait=false must return before the review finishes")
+        .unwrap();
+
+        let message = tool_result_message(&results);
+        let extra = &message.extra;
+        assert_eq!(
+            extra.get("background_agent_kind").expect("kind"),
+            &json!("tool")
+        );
+        assert_eq!(
+            extra.get("background_agent_status").expect("status"),
+            &json!("running")
+        );
+        assert_eq!(extra.get("review_started").expect("flag"), &json!(true));
+        assert!(extra.get("review_report").is_none(), "no report yet");
+        let child_chat_id = extra
+            .get("child_chat_id")
+            .and_then(Value::as_str)
+            .expect("child chat id");
+        assert!(child_chat_id.starts_with("subchat-rv-"), "{child_chat_id}");
+
+        let markdown = tool_result_text(&results);
+        assert!(
+            markdown.starts_with("✓ Started background review: current change"),
+            "{markdown}"
+        );
+        assert!(markdown.contains("- status: running"), "{markdown}");
+        assert!(
+            markdown.contains(&format!("[view](refact://chat/{child_chat_id})")),
+            "{markdown}"
+        );
+        assert!(
+            markdown.contains("The completion will be pushed back into this chat automatically."),
+            "{markdown}"
+        );
+
+        let record = app
+            .agents
+            .get_any(&background_agent_id(&results))
+            .await
+            .expect("background agent record");
+        assert_eq!(
+            record.status,
+            BgAgentStatus::Running,
+            "the review must still be running when wait=false returns"
+        );
+
+        tokio::time::timeout(Duration::from_secs(10), started_rx.recv())
+            .await
+            .expect("the background run must reach a stage after the tool returned")
+            .expect("stage start signal");
+        release.store(true, Ordering::SeqCst);
+    }
+
+    #[tokio::test]
+    async fn wait_false_completion_marks_the_agent_completed() {
+        let (_gcx, app, ccx) = review_test_env("review-background-done").await;
+        let mut tool = review_tool(Some(fake_executor(None)));
+
+        let (_ok, results) = tool
+            .tool_execute(
+                ccx,
+                &"review-background-done-call".to_string(),
+                &args_map(vec![("wait", json!(false))]),
+            )
+            .await
+            .unwrap();
+
+        let agent_id = background_agent_id(&results);
+        let record = wait_for_review_terminal(&app, "review-background-done", &agent_id).await;
+
+        assert_eq!(record.status, BgAgentStatus::Completed);
+        let summary = record.result_summary.expect("result summary");
+        assert!(summary.starts_with("## Review"), "{summary}");
+    }
+
+    #[tokio::test]
+    async fn agent_result_returns_the_review_report() {
+        let (_gcx, app, ccx) = review_test_env("review-background-result").await;
+        let mut tool = review_tool(Some(fake_executor(None)));
+
+        let (_ok, results) = tool
+            .tool_execute(
+                ccx.clone(),
+                &"review-background-result-call".to_string(),
+                &args_map(vec![("wait", json!(false))]),
+            )
+            .await
+            .unwrap();
+
+        let agent_id = background_agent_id(&results);
+        wait_for_review_terminal(&app, "review-background-result", &agent_id).await;
+
+        let mut result_tool = crate::tools::tool_background_agents::ToolAgentResult {
+            config_path: String::new(),
+        };
+        let (_ok, output) = result_tool
+            .tool_execute(
+                ccx,
+                &"agent-result-call".to_string(),
+                &args_map(vec![("agent_id", json!(agent_id))]),
+            )
+            .await
+            .unwrap();
+
+        let text = tool_result_text(&output);
+        assert!(text.contains("## Review"), "{text}");
+        assert!(text.contains("Stages:"), "{text}");
+    }
+
+    #[tokio::test]
+    async fn wait_false_pushes_the_completion_into_the_parent_chat() {
+        let dir = tempfile::tempdir().unwrap();
+        let (_gcx, app, ccx) = review_test_env_in("review-background-push", Some(dir.path())).await;
+        let parent = Arc::new(AMutex::new(ChatSession::new(
+            "review-background-push".to_string(),
+        )));
+        parent
+            .lock()
+            .await
+            .queue_processor_running
+            .store(true, Ordering::SeqCst);
+        app.chat
+            .sessions
+            .write()
+            .await
+            .insert("review-background-push".to_string(), parent.clone());
+        let mut tool = review_tool(Some(fake_executor(None)));
+
+        let (_ok, results) = tool
+            .tool_execute(
+                ccx,
+                &"review-background-push-call".to_string(),
+                &args_map(vec![("wait", json!(false))]),
+            )
+            .await
+            .unwrap();
+
+        let agent_id = background_agent_id(&results);
+        wait_for_review_terminal(&app, "review-background-push", &agent_id).await;
+
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            let landed = {
+                let session = parent.lock().await;
+                let in_messages = session
+                    .messages
+                    .iter()
+                    .any(|message| message.content.content_text_only().contains(COMPLETION_PUSH_TEXT));
+                let in_queue = session.pending_deliveries.iter().any(|delivery| {
+                    delivery
+                        .messages
+                        .iter()
+                        .any(|message| message.content.content_text_only().contains(COMPLETION_PUSH_TEXT))
+                });
+                in_messages || in_queue
+            };
+            let record = app
+                .agents
+                .get("review-background-push", &agent_id)
+                .await
+                .expect("agent record");
+            let recorded = record
+                .completion_message_id
+                .as_deref()
+                .is_some_and(|id| id != "pending" && id != "deferred");
+            if landed && recorded {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "the review completion was never pushed into the parent chat: landed={landed}, id={:?}",
+                record.completion_message_id
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn wait_true_keeps_returning_the_report_inline() {
+        let (_gcx, app, ccx) = review_test_env("review-wait-true").await;
+        let mut tool = review_tool(Some(fake_executor(None)));
+
+        let (_ok, results) = tool
+            .tool_execute(
+                ccx,
+                &"review-wait-true-call".to_string(),
+                &args_map(vec![("wait", json!(true))]),
+            )
+            .await
+            .unwrap();
+
+        let markdown = tool_result_text(&results);
+        assert!(markdown.starts_with("## Review"), "{markdown}");
+        assert!(!markdown.contains("Started background review"), "{markdown}");
+
+        let message = tool_result_message(&results);
+        assert_eq!(
+            message.extra.get("background_agent_status").expect("status"),
+            &json!("completed")
+        );
+        assert!(message.extra.get("review_started").is_none());
+        assert!(message.extra.get("review_report").is_some());
+
+        let agent_id = background_agent_id(&results);
+        let record = wait_for_review_terminal(&app, "review-wait-true", &agent_id).await;
+        assert_eq!(record.status, BgAgentStatus::Completed);
+        let summary = record.result_summary.expect("result summary");
+        assert!(!summary.starts_with("## Review"), "{summary}");
+        assert!(summary.contains("stages"), "{summary}");
     }
 }

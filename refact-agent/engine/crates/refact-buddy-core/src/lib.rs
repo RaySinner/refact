@@ -1,4 +1,5 @@
 pub mod action_policy;
+pub mod actor;
 pub mod autonomous_workflows;
 pub mod briefing;
 pub mod chat_interjection;

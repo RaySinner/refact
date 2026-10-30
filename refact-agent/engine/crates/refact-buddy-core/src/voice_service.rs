@@ -51,3 +51,27 @@ impl SpeechIntent {
         }
     }
 }
+
+pub trait SpeechIntentWireToken {
+    fn wire_token(self) -> &'static str;
+}
+
+impl SpeechIntentWireToken for SpeechIntent {
+    fn wire_token(self) -> &'static str {
+        match self {
+            SpeechIntent::Humor => "humor",
+            SpeechIntent::Suggestion => "suggestion",
+            SpeechIntent::Insight => "insight",
+            SpeechIntent::Win => "win",
+            SpeechIntent::ErrorAlert => "error_alert",
+            SpeechIntent::Greeting => "greeting",
+            SpeechIntent::Tour => "tour",
+            SpeechIntent::Milestone => "milestone",
+            SpeechIntent::MemoryPulseCommentary => "memory_pulse_commentary",
+            SpeechIntent::QuestAccept => "quest_accept",
+            SpeechIntent::QuestComplete => "quest_complete",
+            SpeechIntent::ChatReaction => "chat_reaction",
+            SpeechIntent::AgentInterjection => "agent_interjection",
+        }
+    }
+}

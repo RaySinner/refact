@@ -26,26 +26,17 @@ async fn humor_attach_does_not_hold_buddy_lock() {
     }
 
     let started = Arc::new(AtomicBool::new(false));
-    let mut svc = make_service();
-    svc.humor_service = Arc::new(tokio::sync::Mutex::new(HumorService::new_with_generator(
+    let humor_arc = Arc::new(tokio::sync::Mutex::new(HumorService::new_with_generator(
         Arc::new(SlowGen {
             started: started.clone(),
         }),
     )));
-
-    let humor_arc = svc.humor_service.clone();
     let buddy_arc: Arc<tokio::sync::Mutex<Option<BuddyService>>> =
-        Arc::new(tokio::sync::Mutex::new(Some(svc)));
+        Arc::new(tokio::sync::Mutex::new(Some(make_service())));
 
     let gcx = crate::global_context::tests::make_test_gcx().await;
     let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
     let pulse = BuddyPulse::default();
-
-    // Simulate the background loop: extract humor_arc under buddy lock then release.
-    let _ = {
-        let guard = buddy_arc.lock().await;
-        guard.as_ref().unwrap().humor_service.clone()
-    };
 
     // Task A: hold humor lock for 200ms (simulates attach_humor outside buddy lock).
     let humor_clone = humor_arc.clone();

@@ -3,6 +3,10 @@ name = "refact-buddy-core"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = []
+test-util = []
+
 [dependencies]
 refact-core = { path = "../refact-core" }
 refact-ext = { path = "../refact-ext" }

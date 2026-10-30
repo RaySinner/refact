@@ -1,6 +1,18 @@
 use serde::{Deserialize, Serialize};
 
+use crate::snapshot::BuddyStorageMetadata;
+
 pub const MAX_PALETTE_INDEX: usize = 7;
+
+pub fn storage_metadata(project_root: &std::path::Path) -> BuddyStorageMetadata {
+    let buddy_dir = project_root.join(".refact").join("buddy");
+    let settings_path = buddy_dir.join("settings.json");
+    BuddyStorageMetadata {
+        project_root: project_root.to_string_lossy().to_string(),
+        buddy_dir: buddy_dir.to_string_lossy().to_string(),
+        settings_path: settings_path.to_string_lossy().to_string(),
+    }
+}
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]

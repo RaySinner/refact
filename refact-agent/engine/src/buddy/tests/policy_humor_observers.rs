@@ -1642,16 +1642,14 @@ async fn actor_humor_attached_when_allowed() {
     }
     let gcx = crate::global_context::tests::make_test_gcx().await;
     let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
-    let mut svc = make_service();
-    svc.humor_service = Arc::new(tokio::sync::Mutex::new(HumorService::new_with_generator(
-        std::sync::Arc::new(MockGen),
-    )));
     let mut opp = make_opportunity("humor-opp", "humor-opp-key");
     opp.humor_allowed = true;
     opp.priority = BuddyPriority::Normal;
     opp.summary = "test summary".to_string();
     let pulse = BuddyPulse::default();
-    let humor_service = svc.humor_service.clone();
+    let humor_service = tokio::sync::Mutex::new(HumorService::new_with_generator(
+        std::sync::Arc::new(MockGen),
+    ));
     let mut humor = humor_service.lock().await;
     apply_humor_plan(&mut humor, &mut opp, BuddyFactKind::TaskStuck, &pulse, app).await;
     assert!(opp.humor.is_some(), "humor must be attached when allowed");

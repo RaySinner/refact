@@ -13,6 +13,15 @@ refact-caps-core = { path = "../refact-caps-core" }
 refact-core = { path = "../refact-core" }
 refact-exec = { path = "../refact-exec" }
 refact-files = { path = "../refact-files" }
+refact-scratchpads = { path = "../refact-scratchpads" }
+refact-context-api = { path = "../refact-context-api", features = ["http-client"] }
+refact-privacy = { path = "../refact-privacy" }
+refact-daemon = { path = "../refact-daemon" }
+refact-ext = { path = "../refact-ext" }
+refact-knowledge-graph = { path = "../refact-knowledge-graph" }
+refact-agents-core = { path = "../refact-agents-core" }
+refact-codegraph = { path = "../refact-codegraph" }
+refact-perf = { path = "../refact-perf" }
 refact-providers = { path = "../refact-providers" }
 refact-stats = { path = "../refact-stats" }
 refact-integrations = { path = "../refact-integrations" }
@@ -22,5 +31,7 @@ async-trait = "0.1.73"
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+serde_yaml = "0.9"
+tracing = "0.1"
 structopt = "0.3"
 tokio.workspace = true

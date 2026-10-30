@@ -6,6 +6,7 @@ use tokio::sync::Mutex as AMutex;
 use uuid::Uuid;
 
 use crate::app_state::AppState;
+use crate::global_context::GlobalContextCtx;
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::call_validation::{ChatContent, ChatMessage, ChatMeta, ChatUsage, SamplingParameters};
 use crate::chat::internal_roles::{self, EventSubkind};

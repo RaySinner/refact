@@ -6,6 +6,7 @@ use serde_json::{json, Value};
 use tokio::sync::Mutex as AMutex;
 
 use crate::at_commands::at_commands::AtCommandsContext;
+use crate::global_context::GlobalContextCtx;
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
 use crate::chat::trajectories::{set_trajectory_label, TRAJECTORY_LABEL_MAX_CHARS};
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};

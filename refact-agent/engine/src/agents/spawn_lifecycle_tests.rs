@@ -8,6 +8,7 @@ use tempfile::TempDir;
 use tokio::sync::{Mutex, Notify};
 
 use crate::agents::spawn::{
+use crate::global_context::GlobalContextCtx;
     NotifyParent, SpawnGoal, SpawnHandle, SpawnRequest, SpawnWorktreeMode, TestRunnerGuard,
 };
 use crate::agents::types::{BackgroundAgent, BgAgentKind, BgAgentStatus};

@@ -1,4 +1,5 @@
 use super::*;
+use crate::global_context::GlobalContextCtx;
     use crate::chat::diagnostics::{is_ui_only_message, make_ui_only_error_message};
     use crate::chat::perf_diagnostics::{self, MemoryPerfSink, PerfClock, PerfRecorder};
     use crate::chat::types::{

@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::chat::internal_roles::{event, EventSubkind};
+use crate::global_context::GlobalContextCtx;
 use crate::chat::ctx::ChatCtx;
 use crate::chat::SessionsMap;
 use crate::exec::{ExecAuditMeta, ExecEnvPolicy, ExecMode, ExecSpawnRequest};

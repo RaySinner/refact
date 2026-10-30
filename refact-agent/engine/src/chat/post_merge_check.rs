@@ -8,6 +8,7 @@ use chrono::Utc;
 use tokio::process::Command;
 
 use crate::chat::verify_cmd::{parse_verification_argv, verification_commands, VerifyCommandPolicy};
+use crate::global_context::GlobalContextCtx;
 use crate::chat::ctx::ChatCtx;
 use crate::chat::verifier::ExpectedCardState;
 use crate::global_context::GlobalContext;

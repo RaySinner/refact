@@ -19,6 +19,7 @@ pub const TOOL_CATALOG_SNAPSHOTS_ENV: &str = "REFACT_TOOL_CATALOG_SNAPSHOTS";
 use tokio::sync::{Mutex as AMutex, Notify};
 
 use crate::agents::registry::BackgroundAgentRegistry;
+use crate::global_context::GlobalContextCtx;
 use crate::buddy::actor::BuddyService;
 use crate::buddy::events::BuddyEvent;
 use crate::buddy::user_activity::UserActivityRing;
@@ -54,36 +55,7 @@ use refact_runtime_api::{
 
 pub use refact_runtime_api::{IntegrationServices, ModelServices, PathServices, RuntimeServices};
 
-#[derive(Clone)]
-pub struct WorkspaceServices {
-    pub documents_state: DocumentsState,
-    pub privacy_settings: Arc<PrivacySettings>,
-    pub indexing_everywhere: Arc<StdRwLock<Arc<IndexingEverywhere>>>,
-    pub completions_cache: Arc<StdRwLock<CompletionCache>>,
-    pub vec_db: Arc<AMutex<Option<Arc<dyn VecdbSearch>>>>,
-    pub vec_db_error: Arc<StdMutex<String>>,
-    pub knowledge_index: Arc<AMutex<KnowledgeIndex>>,
-    pub at_commands_preview_cache: Arc<AMutex<AtCommandsPreviewCache>>,
-}
-
-#[derive(Clone)]
-pub struct ChatServices {
-    pub sessions: SessionsMap,
-    pub facade: Arc<dyn ChatSessionFacade>,
-    pub trajectory_index_coordinator: Arc<TrajectoryIndexCoordinator>,
-    pub trajectory_events_tx: tokio::sync::broadcast::Sender<TrajectoryEvent>,
-    pub workspace_changed_tx: tokio::sync::broadcast::Sender<()>,
-    pub task_events_tx: tokio::sync::broadcast::Sender<TaskEventEnvelope>,
-    pub task_events_seq: Arc<AtomicU64>,
-    pub notification_events_tx: tokio::sync::broadcast::Sender<NotificationEvent>,
-}
-
-#[derive(Clone)]
-pub struct BuddyServices {
-    pub buddy: Arc<AMutex<Option<BuddyService>>>,
-    pub buddy_events_tx: tokio::sync::broadcast::Sender<BuddyEvent>,
-    pub user_activity: Arc<AMutex<UserActivityRing>>,
-}
+pub use refact_runtime_api::services::{BuddyServices, ChatServices, WorkspaceServices};
 
 pub struct EngineBuddyServicesHandle(pub BuddyServices);
 

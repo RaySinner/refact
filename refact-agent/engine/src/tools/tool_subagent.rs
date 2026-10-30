@@ -7,8 +7,10 @@ use serde_json::{Map, Value, json};
 use tokio::sync::Mutex as AMutex;
 
 use crate::agents::spawn::{
+
     NotifyParent, SpawnGoal, SpawnRequest, SpawnWorktreeMode, spawn_background_agent,
 };
+use crate::global_context::GlobalContextCtx;
 use crate::agents::types::BgAgentKind;
 use crate::at_commands::at_commands::{AtCommandsContext, MAX_SUBCHAT_DEPTH};
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};

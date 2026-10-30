@@ -14,6 +14,7 @@ use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::Layer;
 
 use crate::background_tasks::start_background_tasks;
+use crate::global_context::GlobalContextCtx;
 use crate::lsp::spawn_lsp_task;
 use crate::yaml_configs::create_configs::yaml_configs_try_create_all;
 use crate::yaml_configs::customization_registry::get_project_registry;

@@ -6,6 +6,7 @@ use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use tokio::fs;
 use tracing::{debug, info, warn};
 use crate::chat::types::TrajectorySourceIdentitySessionExt;
+use crate::global_context::GlobalContextCtx;
 
 use crate::chat::ctx::ChatCtx;
 use crate::chat::config::timeouts;

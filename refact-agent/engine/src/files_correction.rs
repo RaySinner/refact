@@ -6,6 +6,7 @@ use tracing::info;
 use refact_codegraph::QueuedPath;
 
 use crate::global_context::GlobalContext;
+use crate::global_context::GlobalContextCtx;
 use crate::files_in_workspace::{detect_vcs_for_a_file_path, CacheCorrection};
 use crate::fuzzy_search::fuzzy_search;
 use crate::worktrees::scope::ExecutionScope;

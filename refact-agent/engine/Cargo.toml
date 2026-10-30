@@ -2,6 +2,7 @@
 members = [
     ".",
     "crates/refact-core",
+    "crates/refact-test-support",
     "crates/refact-chat-api",
     "crates/refact-vecdb",
     "crates/refact-codegraph-parsers",
@@ -393,6 +394,7 @@ thiserror = "2.0.12"
 dirs = "5.0"
 
 [dev-dependencies]
+refact-test-support = { path = "crates/refact-test-support" }
 refact-buddy-core = { path = "crates/refact-buddy-core", features = ["test-util"] }
 refact-privacy = { path = "crates/refact-privacy", features = ["test-util"] }
 # Same pinned rev as the main dependency; integration tests drive the MCP

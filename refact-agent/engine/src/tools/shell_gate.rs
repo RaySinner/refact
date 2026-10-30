@@ -14,6 +14,7 @@ use refact_tool_api::{
 };
 
 use crate::at_commands::at_commands::AtCommandsContext;
+use crate::global_context::GlobalContextCtx;
 use crate::chat::ctx::ChatCtx;
 use crate::global_context::GlobalContext;
 use crate::tools::file_edit::auxiliary::active_execution_scope;

@@ -1,4 +1,5 @@
 use super::*;
+use crate::global_context::GlobalContextCtx;
 
 pub(super) const MAX_BEHAVIOR_TRAJECTORY_BYTES: u64 = 1_024 * 1_024;
 pub(super) const MAX_BEHAVIOR_TRAJECTORY_META_BYTES: u64 = 32 * 1024;

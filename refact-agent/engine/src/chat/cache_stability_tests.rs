@@ -8,6 +8,7 @@ use serde_json::{json, Value};
 use tokio::sync::Mutex as AMutex;
 
 use crate::app_state::AppState;
+use crate::global_context::GlobalContextCtx;
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::call_validation::{ChatContent, ChatMessage, ChatMeta, SamplingParameters};
 use crate::caps::{BaseModelRecord, ChatModelRecord, CodeAssistantCaps};

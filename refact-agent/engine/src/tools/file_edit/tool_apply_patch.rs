@@ -1,4 +1,5 @@
 use crate::at_commands::at_commands::AtCommandsContext;
+use crate::global_context::GlobalContextCtx;
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum, DiffChunk};
 use crate::chat::ctx::ChatCtx;
 use crate::files_correction::check_if_its_inside_a_workspace_or_config_for_ctx;

@@ -7,8 +7,10 @@ use tokio::sync::Mutex as AMutex;
 use uuid::Uuid;
 
 use crate::agentic::mode_transition::{
+
     ParsedDecisions, insert_goal_messages_before_plan, transfer_goal_ownership,
 };
+use crate::global_context::GlobalContextCtx;
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::chat::trajectories::{
     chat_id_is_planner_for_task, resolve_task_planner_controller_chat_id,

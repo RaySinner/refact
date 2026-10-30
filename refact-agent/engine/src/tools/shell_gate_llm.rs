@@ -5,6 +5,7 @@ use std::time::Duration;
 use serde::Deserialize;
 
 use crate::call_validation::ChatMessage;
+use crate::global_context::GlobalContextCtx;
 use crate::global_context::{try_load_caps_quickly_if_not_present, GlobalContext};
 use crate::json_utils::extract_json_object;
 use crate::chat::ctx::{SubchatConfig, ToolsPolicy, TraceParent};

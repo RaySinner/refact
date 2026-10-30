@@ -8,6 +8,7 @@ use uuid::Uuid;
 use chrono::{DateTime, Utc};
 
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
+use crate::global_context::GlobalContextCtx;
 use crate::call_validation::{ChatMessage, ChatContent, ContextEnum, ContextFile};
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::chat::ctx::{CapsProvider, ChatCtx};

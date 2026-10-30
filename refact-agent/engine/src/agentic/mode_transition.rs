@@ -19,6 +19,7 @@ use std::sync::{
 use refact_context_api::PathsAccess;
 
 use crate::call_validation::{ChatContent, ChatMessage};
+use crate::global_context::GlobalContextCtx;
 use crate::global_context::GlobalContext;
 use crate::subchat::{
     run_subchat, resolve_subchat_config_with_explicit_params, resolve_subchat_params,

@@ -13,6 +13,7 @@ use tokio::sync::broadcast;
 use chrono::Utc;
 
 use crate::app_state::AppState;
+use crate::global_context::GlobalContextCtx;
 use crate::chat::ctx::ChatCtx;
 use crate::custom_error::ScratchError;
 use crate::files_correction::get_unscoped_project_dirs_for_ctx;

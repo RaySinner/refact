@@ -6,6 +6,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::Mutex as AMutex;
 
 use crate::call_validation::{ChatContent, ChatMessage};
+use crate::global_context::GlobalContextCtx;
 use crate::chat::types::TaskMeta;
 use crate::global_context::GlobalContext;
 use crate::chat::ctx::{ExplicitSubchatSpec, TraceParent};

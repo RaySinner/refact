@@ -5,6 +5,7 @@ use refact_chat_history::trajectory_snapshot::TrajectorySnapshot;
 use uuid::Uuid;
 
 use crate::app_state::AppState;
+use crate::global_context::GlobalContextCtx;
 use crate::buddy::types::BuddyThreadMeta;
 use crate::call_validation::ChatMessage;
 use crate::global_context::GlobalContext;

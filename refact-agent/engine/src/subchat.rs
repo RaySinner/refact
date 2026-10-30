@@ -6,6 +6,7 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::app_state::AppState;
+use crate::global_context::GlobalContextCtx;
 use crate::caps::{resolve_chat_model, resolve_model};
 use crate::tools::tools_description::ToolDesc;
 use crate::tools::tools_list::get_available_tools;

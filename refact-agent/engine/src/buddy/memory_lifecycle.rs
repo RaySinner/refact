@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::file_filter::KNOWLEDGE_FOLDER_NAME;
+use crate::global_context::GlobalContextCtx;
 use crate::files_correction::canonicalize_normalized_path;
 use crate::app_state::AppState;
 use crate::chat::ctx::ChatCtx;

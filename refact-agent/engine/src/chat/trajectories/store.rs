@@ -7,6 +7,7 @@ use tokio::fs;
 use tokio::sync::{Mutex as AMutex, Notify};
 use tracing::{info, warn};
 use crate::chat::types::TrajectorySourceIdentitySessionExt;
+use crate::global_context::GlobalContextCtx;
 
 use crate::app_state::AppState;
 use crate::call_validation::ChatMessage;

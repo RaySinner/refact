@@ -8,6 +8,7 @@ use tokio::sync::Mutex as AMutex;
 
 #[cfg(test)]
 use crate::agents::registry::InboxMessage;
+use crate::global_context::GlobalContextCtx;
 use refact_core::chat_types::{PendingDelivery, PushMode};
 use crate::agents::types::{BackgroundAgent, BgAgentStatus};
 use crate::app_state::AppState;

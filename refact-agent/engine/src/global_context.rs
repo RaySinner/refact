@@ -7,7 +7,6 @@ use std::sync::Mutex as StdMutex;
 use std::sync::RwLock as StdRwLock;
 use std::time::Duration;
 use hyper::StatusCode;
-use serde::Deserialize;
 use tokio::signal;
 use tokio::sync::{Mutex as AMutex, RwLock as ARwLock};
 use tracing::{error, info};
@@ -31,8 +30,6 @@ use crate::completion_cache::CompletionCache;
 use crate::custom_error::ScratchError;
 use crate::exec::ExecRegistry;
 use crate::files_in_workspace::DocumentsState;
-use crate::integrations::browser_runtime::BrowserRuntime;
-use crate::integrations::sessions::IntegrationSession;
 use crate::privacy::{PrivacyObservationRuntimeState, PrivacySettings};
 use crate::background_tasks::BackgroundTasksHolder;
 use crate::ext::hooks_runner::HooksConfig;
@@ -40,159 +37,24 @@ use crate::scheduler::SchedulerConfig;
 use crate::yaml_configs::customization_registry::RegistryCacheManager;
 use crate::knowledge_index::KnowledgeIndex;
 use crate::tools::ctx::{ToolChatScope, ToolCodeIntelScope, ToolCtx, ToolWorkspaceScope};
-use refact_context_api::{HttpClientAccess, PathsAccess, ShutdownAccess};
 pub use refact_core::at_commands_preview_cache::AtCommandsPreviewCache;
 
 pub use refact_runtime_api::{
     CommandLine, TerminalSecurityConfig, TerminalSecurityMode, ToolCatalogGenerations,
 };
+pub use refact_runtime_api::global_context::*;
 
-#[derive(Debug, Deserialize)]
-struct EngineGlobalConfig {
-    #[serde(default)]
-    scheduler: SchedulerConfig,
-    #[serde(default)]
-    hooks: HooksConfig,
-    #[serde(default)]
-    terminal_security: TerminalSecurityConfig,
+/// Engine seam trait: `GlobalContext` lives in `refact-runtime-api`, but the
+/// composite ctx constructors build engine handle objects, so per E0116 they
+/// are provided as an engine-local extension trait instead of inherent methods.
+pub trait GlobalContextCtx {
+    fn chat_ctx(&self, gcx: SharedGlobalContext) -> ChatCtx;
+    fn tool_ctx(&self, gcx: SharedGlobalContext) -> ToolCtx;
+    fn app_state(&self, gcx: SharedGlobalContext) -> AppState;
 }
 
-impl Default for EngineGlobalConfig {
-    fn default() -> Self {
-        Self {
-            scheduler: SchedulerConfig::default(),
-            hooks: HooksConfig::default(),
-            terminal_security: TerminalSecurityConfig::default(),
-        }
-    }
-}
-
-#[cfg(test)]
-static TEST_TEMP_DIRS: std::sync::OnceLock<std::sync::Mutex<Vec<PathBuf>>> =
-    std::sync::OnceLock::new();
-
-#[cfg(test)]
-fn test_temp_dir_is_safe(path: &std::path::Path) -> bool {
-    let temp_dir = std::env::temp_dir();
-    if !path.starts_with(&temp_dir) {
-        return false;
-    }
-    let Ok(path) = path.canonicalize() else {
-        return false;
-    };
-    let Ok(temp_dir) = temp_dir.canonicalize() else {
-        return false;
-    };
-    path.starts_with(&temp_dir)
-        && path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .is_some_and(|name| name.starts_with("refact-"))
-}
-
-#[cfg(test)]
-extern "C" fn remove_test_temp_dirs_at_exit() {
-    let Some(dirs) = TEST_TEMP_DIRS.get() else {
-        return;
-    };
-    let dirs = dirs.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    for dir in dirs.iter() {
-        if test_temp_dir_is_safe(dir) {
-            let _ = std::fs::remove_dir_all(dir);
-        }
-    }
-}
-
-#[cfg(test)]
-fn register_test_temp_dir(path: &std::path::Path) -> bool {
-    if !test_temp_dir_is_safe(path) {
-        return false;
-    }
-    let dirs = TEST_TEMP_DIRS.get_or_init(|| {
-        unsafe {
-            libc::atexit(remove_test_temp_dirs_at_exit);
-        }
-        std::sync::Mutex::new(Vec::new())
-    });
-    dirs.lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .push(path.to_path_buf());
-    true
-}
-
-pub struct GlobalContext {
-    pub shutdown_flag: Arc<AtomicBool>,
-    pub lsp_tcp_client_count: Arc<AtomicUsize>,
-    pub exec_registry: Arc<ExecRegistry>,
-    pub card_verifier_tasks: Arc<AMutex<tokio::task::JoinSet<()>>>,
-    pub trajectory_vectorization_queue:
-        Arc<AMutex<crate::chat::trajectories::TrajectoryVectorizationQueue>>,
-    pub cmdline: CommandLine,
-    pub http_client: reqwest::Client,
-    pub cache_dir: PathBuf,
-    pub config_dir: PathBuf,
-    pub caps_state: Arc<ARwLock<CapsState>>,
-    pub tokenizer_state: Arc<StdRwLock<TokenizerState>>,
-    pub completions_cache: Arc<StdRwLock<CompletionCache>>,
-    pub vec_db: Arc<AMutex<Option<Arc<dyn refact_core::vecdb_types::VecdbSearch>>>>,
-    pub vec_db_error: Arc<StdMutex<String>>,
-    pub codegraph: Arc<AMutex<Option<Arc<crate::codegraph::CodeGraphService>>>>,
-    pub codegraph_error: Arc<StdMutex<String>>,
-    pub ask_shutdown_sender: Arc<StdMutex<std::sync::mpsc::Sender<String>>>,
-    pub documents_state: DocumentsState,
-    pub at_commands_preview_cache: Arc<AMutex<AtCommandsPreviewCache>>,
-    pub privacy_settings: Arc<StdRwLock<Arc<PrivacySettings>>>,
-    pub privacy_policy_load: Arc<StdRwLock<refact_privacy::PolicyLoad>>,
-    pub file_index: Arc<crate::file_index::FileIndex>,
-    pub privacy_match_counts: Arc<StdRwLock<crate::privacy::PrivacyMatchCounts>>,
-    pub privacy_observation_runtime: Arc<StdRwLock<PrivacyObservationRuntimeState>>,
-    pub indexing_everywhere: Arc<StdRwLock<Arc<crate::files_blocklist::IndexingEverywhere>>>,
-    pub integration_sessions:
-        Arc<AMutex<HashMap<String, Arc<AMutex<Box<dyn IntegrationSession>>>>>>,
-    pub browser_runtimes: Arc<AMutex<HashMap<String, Arc<AMutex<BrowserRuntime>>>>>,
-    pub init_shadow_repos_background_task_holder: BackgroundTasksHolder,
-    pub init_shadow_repos_lock: Arc<AMutex<bool>>,
-    pub git_operations_abort_flag: Arc<AtomicBool>,
-    pub app_searchable_id: Arc<StdMutex<String>>,
-    pub trajectory_events_tx: Option<tokio::sync::broadcast::Sender<crate::chat::TrajectoryEvent>>,
-    pub workspace_changed_tx: Option<tokio::sync::broadcast::Sender<()>>,
-    pub task_events_tx:
-        Option<tokio::sync::broadcast::Sender<crate::tasks::events::TaskEventEnvelope>>,
-    pub task_events_seq: Option<Arc<std::sync::atomic::AtomicU64>>,
-    pub notification_events_tx: Option<
-        tokio::sync::broadcast::Sender<crate::http::routers::v1::sidebar::NotificationEvent>,
-    >,
-    pub chat_sessions: crate::chat::SessionsMap,
-    pub trajectory_index_coordinator:
-        Arc<crate::chat::trajectory_index::TrajectoryIndexCoordinator>,
-    pub performance_telemetry: Arc<crate::chat::perf_telemetry::PerformanceTelemetry>,
-    pub project_registry_cache: Arc<StdRwLock<RegistryCacheManager>>,
-    pub providers: Arc<ARwLock<ProviderRegistry>>,
-    pub quota_cache: Arc<AMutex<ProviderQuotaCache>>,
-    pub knowledge_index: Arc<AMutex<KnowledgeIndex>>,
-    pub enrichment_cache: Arc<crate::knowledge::enrichment::EnrichmentCache>,
-    pub enrichment_generation: Arc<AtomicU64>,
-    pub llm_stats_sender:
-        Arc<StdMutex<Option<tokio::sync::mpsc::Sender<crate::stats::event::LlmCallEvent>>>>,
-    pub ext_cache_generation: Arc<std::sync::atomic::AtomicU64>,
-    pub tool_catalog_generations: Arc<ToolCatalogGenerations>,
-    pub tool_catalog_cache: Arc<ToolCatalogCache>,
-    pub buddy: Arc<AMutex<Option<crate::buddy::actor::BuddyService>>>,
-    pub buddy_events_tx: Option<tokio::sync::broadcast::Sender<crate::buddy::events::BuddyEvent>>,
-    pub user_activity: Arc<AMutex<crate::buddy::user_activity::UserActivityRing>>,
-    pub agents: Arc<BackgroundAgentRegistry>,
-    pub scheduler_config: SchedulerConfig,
-    pub hooks_config: HooksConfig,
-    pub terminal_security_config: TerminalSecurityConfig,
-    /// Exclusive per-workspace leases held for the whole engine lifetime; dropping the context
-    /// closes the lock descriptors and lets another engine take over the workspace.
-    pub workspace_leases: Arc<StdMutex<crate::daemon::lock::WorkspaceLeaseSet>>,
-}
-
-pub type SharedGlobalContext = Arc<GlobalContext>; // TODO: remove this type alias, confusing
-
-impl GlobalContext {
-    pub fn chat_ctx(&self, gcx: SharedGlobalContext) -> ChatCtx {
+impl GlobalContextCtx for GlobalContext {
+    fn chat_ctx(&self, gcx: SharedGlobalContext) -> ChatCtx {
         ChatCtx {
             runtime: RuntimeServices {
                 shutdown_flag: self.shutdown_flag.clone(),
@@ -279,7 +141,7 @@ impl GlobalContext {
         }
     }
 
-    pub fn tool_ctx(&self, gcx: SharedGlobalContext) -> ToolCtx {
+    fn tool_ctx(&self, gcx: SharedGlobalContext) -> ToolCtx {
         ToolCtx {
             runtime: RuntimeServices {
                 shutdown_flag: self.shutdown_flag.clone(),
@@ -342,7 +204,7 @@ impl GlobalContext {
         }
     }
 
-    pub fn app_state(&self, gcx: SharedGlobalContext) -> AppState {
+    fn app_state(&self, gcx: SharedGlobalContext) -> AppState {
         let ctx = self.chat_ctx(gcx.clone());
         let tool = self.tool_ctx(gcx.clone());
         AppState {
@@ -411,36 +273,6 @@ async fn load_engine_global_config(
         .scheduler
         .with_startup_overrides(cmdline.no_scheduler);
     (scheduler, config.hooks, config.terminal_security)
-}
-
-impl ShutdownAccess for GlobalContext {
-    fn shutdown_flag(&self) -> Arc<AtomicBool> {
-        self.shutdown_flag.clone()
-    }
-}
-
-impl PathsAccess for GlobalContext {
-    fn cache_dir(&self) -> PathBuf {
-        self.cache_dir.clone()
-    }
-
-    fn config_dir(&self) -> PathBuf {
-        self.config_dir.clone()
-    }
-
-    fn workspace_folders(&self) -> Vec<PathBuf> {
-        self.documents_state
-            .workspace_folders
-            .lock()
-            .unwrap()
-            .clone()
-    }
-}
-
-impl HttpClientAccess for GlobalContext {
-    fn http_client(&self) -> reqwest::Client {
-        self.http_client.clone()
-    }
 }
 
 const CAPS_RELOAD_BACKOFF: u64 = 60; // seconds
@@ -673,17 +505,6 @@ pub async fn block_until_signal(
     }
 }
 
-fn build_shared_http_client_builder() -> reqwest::ClientBuilder {
-    reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::none())
-        .connect_timeout(Duration::from_secs(15))
-        .tcp_keepalive(Some(Duration::from_secs(30)))
-        .pool_idle_timeout(Some(Duration::from_secs(60)))
-        .http2_keep_alive_interval(Some(Duration::from_secs(20)))
-        .http2_keep_alive_timeout(Duration::from_secs(10))
-        .http2_keep_alive_while_idle(true)
-}
-
 pub async fn create_global_context(
     cache_dir: PathBuf,
     config_dir: PathBuf,
@@ -817,6 +638,9 @@ pub mod tests {
     use super::*;
     #[cfg(test)]
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    pub use refact_test_support::{make_test_gcx, make_test_gcx_with_dirs};
+    use refact_test_support::register_test_temp_dir;
 
     #[test]
     fn test_engine_global_config_parses_trusted_projects() {
@@ -962,14 +786,7 @@ pub mod tests {
         drop(gcx);
         assert!(cache_dir.exists());
         assert!(config_dir.exists());
-        let registered = TEST_TEMP_DIRS
-            .get()
-            .map(|dirs| {
-                dirs.lock()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner())
-                    .clone()
-            })
-            .unwrap_or_default();
+        let registered = refact_test_support::registered_test_temp_dirs();
         assert!(registered.contains(&cache_dir));
         assert!(registered.contains(&config_dir));
     }
@@ -989,12 +806,6 @@ pub mod tests {
             assert!(!register_test_temp_dir(&outside));
             std::fs::remove_dir_all(outside).unwrap();
         }
-    }
-
-    pub async fn make_test_gcx() -> Arc<GlobalContext> {
-        let cache_dir = std::env::temp_dir().join(format!("refact-test-{}", uuid::Uuid::new_v4()));
-        let config_dir = std::env::temp_dir().join(format!("refact-cfg-{}", uuid::Uuid::new_v4()));
-        make_test_gcx_with_dirs(cache_dir, config_dir).await
     }
 
     pub async fn test_chat_ctx() -> crate::chat::ctx::ChatCtx {
@@ -1021,144 +832,5 @@ pub mod tests {
             &ctx.workspace.workspace_folders
         ));
         assert!(Arc::ptr_eq(&clone.agents, &ctx.agents));
-    }
-
-    pub async fn make_test_gcx_with_dirs(
-        cache_dir: PathBuf,
-        config_dir: PathBuf,
-    ) -> Arc<GlobalContext> {
-        let (ask_shutdown_sender, _) = std::sync::mpsc::channel::<String>();
-
-        let _ = std::fs::create_dir_all(&cache_dir);
-        let _ = std::fs::create_dir_all(&config_dir);
-        register_test_temp_dir(&cache_dir);
-        register_test_temp_dir(&config_dir);
-        let user_activity = crate::buddy::user_activity::UserActivityRing::load(&cache_dir).await;
-        let agents =
-            BackgroundAgentRegistry::new(cache_dir.join(".refact").join("background_agents"))
-                .await
-                .unwrap_or_else(|error| {
-                    panic!("failed to initialize test background agent registry: {error}")
-                });
-
-        let cmdline = CommandLine {
-            ping_message: "pong".to_string(),
-            logs_stderr: true,
-            logs_to_file: String::new(),
-            insecure: true,
-            http_port: 0,
-            http_host: None,
-            lsp_port: 0,
-            lsp_stdin_stdout: 0,
-            verbose: false,
-            ast: false,
-            ast_max_files: 0,
-            ast_permanent: String::new(),
-            wait_ast: false,
-            vecdb: false,
-            vecdb_max_files: 0,
-            vecdb_force_path: String::new(),
-            wait_vecdb: false,
-            files_jsonl_path: String::new(),
-            workspace_folder: String::new(),
-            allow_shared_workspace: true,
-            only_create_yaml_configs: false,
-            print_customization: false,
-            experimental: false,
-            inside_container: true,
-            integrations_yaml: String::new(),
-            variables_yaml: String::new(),
-            secrets_yaml: String::new(),
-            indexing_yaml: String::new(),
-            privacy_yaml: String::new(),
-            no_scheduler: false,
-            daemon_endpoint: String::new(),
-            daemon_auth_token: None,
-            watch_parent_stdin: false,
-            no_mdns: false,
-            project_id: String::new(),
-        };
-
-        let http_client = build_shared_http_client_builder()
-            .danger_accept_invalid_certs(true)
-            .build()
-            .unwrap();
-
-        let cx = GlobalContext {
-            shutdown_flag: Arc::new(AtomicBool::new(false)),
-            lsp_tcp_client_count: Arc::new(AtomicUsize::new(0)),
-            exec_registry: Arc::new(ExecRegistry::new()),
-            card_verifier_tasks: Arc::new(AMutex::new(tokio::task::JoinSet::new())),
-            trajectory_vectorization_queue: Arc::new(AMutex::new(Default::default())),
-            cmdline,
-            http_client,
-            cache_dir,
-            config_dir,
-            caps_state: Arc::new(ARwLock::new(CapsState {
-                caps: None,
-                reading_lock: Arc::new(AMutex::<bool>::new(false)),
-                last_error: String::new(),
-                last_attempted_ts: 0,
-                models_dev_startup_refresh_attempted: true,
-                loaded_project_root: None,
-            })),
-            tokenizer_state: Arc::new(StdRwLock::new(TokenizerState {
-                map: HashMap::new(),
-                download_lock: Arc::new(AMutex::<bool>::new(false)),
-            })),
-            completions_cache: Arc::new(StdRwLock::new(CompletionCache::new())),
-            vec_db: Arc::new(AMutex::new(None)),
-            vec_db_error: Arc::new(StdMutex::new(String::new())),
-            codegraph: Arc::new(AMutex::new(None)),
-            codegraph_error: Arc::new(StdMutex::new(String::new())),
-            ask_shutdown_sender: Arc::new(StdMutex::new(ask_shutdown_sender)),
-            documents_state: DocumentsState::new(vec![]).await,
-            at_commands_preview_cache: Arc::new(AMutex::new(AtCommandsPreviewCache::new())),
-            privacy_settings: Arc::new(StdRwLock::new(Arc::new(PrivacySettings::default()))),
-            privacy_policy_load: Arc::new(StdRwLock::new(refact_privacy::PolicyLoad::default())),
-            file_index: Arc::new(crate::file_index::FileIndex::default()),
-            privacy_match_counts: Arc::new(StdRwLock::new(Default::default())),
-            privacy_observation_runtime: Arc::new(StdRwLock::new(
-                PrivacyObservationRuntimeState::default(),
-            )),
-            indexing_everywhere: Arc::new(StdRwLock::new(Arc::new(
-                crate::files_blocklist::IndexingEverywhere::default(),
-            ))),
-            integration_sessions: Arc::new(AMutex::new(HashMap::new())),
-            browser_runtimes: Arc::new(AMutex::new(HashMap::new())),
-            init_shadow_repos_background_task_holder: BackgroundTasksHolder::new(vec![]),
-            init_shadow_repos_lock: Arc::new(AMutex::new(false)),
-            git_operations_abort_flag: Arc::new(AtomicBool::new(false)),
-            app_searchable_id: Arc::new(StdMutex::new("test".to_string())),
-            trajectory_events_tx: Some(tokio::sync::broadcast::channel(1024).0),
-            workspace_changed_tx: Some(tokio::sync::broadcast::channel(16).0),
-            task_events_tx: Some(tokio::sync::broadcast::channel(1024).0),
-            task_events_seq: Some(Arc::new(std::sync::atomic::AtomicU64::new(0))),
-            notification_events_tx: Some(tokio::sync::broadcast::channel(256).0),
-            chat_sessions: crate::chat::create_sessions_map(),
-            trajectory_index_coordinator: Arc::new(
-                crate::chat::trajectory_index::TrajectoryIndexCoordinator::new_with_local_listing_counters(),
-            ),
-            performance_telemetry: crate::chat::perf_diagnostics::process_telemetry(),
-            project_registry_cache: Arc::new(StdRwLock::new(RegistryCacheManager::new())),
-            providers: Arc::new(ARwLock::new(ProviderRegistry::default())),
-            quota_cache: Arc::new(AMutex::new(ProviderQuotaCache::default())),
-            knowledge_index: Arc::new(AMutex::new(KnowledgeIndex::empty())),
-            enrichment_cache: Arc::new(crate::knowledge::enrichment::EnrichmentCache::default()),
-            enrichment_generation: Arc::new(AtomicU64::new(0)),
-            llm_stats_sender: Arc::new(StdMutex::new(None)),
-            ext_cache_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
-            tool_catalog_generations: Arc::new(ToolCatalogGenerations::default()),
-            tool_catalog_cache: Arc::new(ToolCatalogCache::default()),
-            buddy: Arc::new(AMutex::new(None)),
-            buddy_events_tx: Some(tokio::sync::broadcast::channel(256).0),
-            user_activity: Arc::new(AMutex::new(user_activity)),
-            agents,
-            scheduler_config: SchedulerConfig::default(),
-            hooks_config: HooksConfig::default(),
-            terminal_security_config: TerminalSecurityConfig::default(),
-            workspace_leases: Arc::new(StdMutex::new(Default::default())),
-        };
-        Arc::new(cx)
     }
 }

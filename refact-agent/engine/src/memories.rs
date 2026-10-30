@@ -19,6 +19,7 @@ fn path_contains_component(path: &Path, component: &str) -> bool {
 }
 
 use crate::at_commands::at_commands::AtCommandsContext;
+use crate::global_context::GlobalContextCtx;
 use crate::chat::ctx::ChatCtx;
 use crate::chat::perf_diagnostics::{self, PerfComponent, PerfOutcome};
 use crate::knowledge_index::{KnowledgeIndex, KnowledgeSearchFilters};

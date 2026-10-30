@@ -18,6 +18,7 @@ use refact_codegraph::QueuedPath;
 
 use refact_buddy_core::user_action::UserAction;
 use crate::files_correction::{canonical_path, resolve_codegraph_queue_path, CommandSimplifiedDirExt};
+use crate::global_context::GlobalContextCtx;
 use crate::git::operations::git_ls_files;
 use crate::global_context::{get_app_searchable_id, GlobalContext};
 use crate::chat::ctx::ChatCtx;

@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
-use tokio::sync::{broadcast, Notify, Mutex as AMutex};
+use tokio::sync::{broadcast, Notify, Mutex as AMutex, RwLock as ARwLock};
 
 use refact_core::chat_types::{ChatMessage, ChatUsage};
 use crate::wait_interrupt::WaitInterruptCause;
@@ -404,3 +404,4 @@ pub struct QueueProcessorCounters {
     pub processor_exits: AtomicU64,
     pub empty_locks: AtomicU64,
 }
+pub type SessionsMap = Arc<ARwLock<HashMap<String, Arc<AMutex<ChatSession>>>>>;

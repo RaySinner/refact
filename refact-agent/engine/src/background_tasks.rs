@@ -8,6 +8,7 @@ const CACHE_MAINTENANCE_START_DELAY: Duration = Duration::from_secs(2 * 60);
 const CACHE_MAINTENANCE_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 
 use crate::global_context::GlobalContext;
+use crate::global_context::GlobalContextCtx;
 use crate::knowledge_index::{build_knowledge_index, knowledge_index_watcher_background_task};
 
 async fn wait_for_shutdown(shutdown_flag: Arc<AtomicBool>) {

@@ -4502,6 +4502,7 @@ dependencies = [
  "refact-self-update",
  "refact-stats",
  "refact-tasks",
+ "refact-test-support",
  "refact-tool-api",
  "refact-tui",
  "refact-vecdb",
@@ -4657,16 +4658,25 @@ name = "refact-runtime-api"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "refact-agents-core",
  "refact-browser",
  "refact-buddy-core",
  "refact-caps-core",
  "refact-chat-api",
  "refact-chat-history",
+ "refact-codegraph",
+ "refact-context-api",
  "refact-core",
+ "refact-daemon",
  "refact-exec",
+ "refact-ext",
  "refact-files",
  "refact-integrations",
+ "refact-knowledge-graph",
+ "refact-perf",
+ "refact-privacy",
  "refact-providers",
+ "refact-scratchpads",
  "refact-stats",
  "refact-tasks",
  "refact-tool-api",
@@ -4674,8 +4684,10 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "serde_yaml",
  "structopt",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -4772,6 +4784,32 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+]
+
+[[package]]
+name = "refact-test-support"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "refact-agents-core",
+ "refact-buddy-core",
+ "refact-caps-core",
+ "refact-chat-api",
+ "refact-chat-history",
+ "refact-core",
+ "refact-exec",
+ "refact-ext",
+ "refact-files",
+ "refact-knowledge-graph",
+ "refact-perf",
+ "refact-privacy",
+ "refact-providers",
+ "refact-runtime-api",
+ "refact-scratchpads",
+ "refact-yaml-configs",
+ "reqwest",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]

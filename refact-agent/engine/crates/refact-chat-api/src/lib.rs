@@ -51,7 +51,7 @@ pub use tool_catalog::{ToolCatalogSnapshot, ToolPolicyInfo, ToolRegistryIndex, T
 pub use trajectory_event::TrajectoryEvent;
 pub use types::{
     ChatSession, EnrichmentTurnIdentity, ExternalReloadPending, GoalSnapshotBudgetExt,
-    QueueProcessorCounters, TrajectoryCommitIntent, TrajectorySourceIdentitySessionExt,
+    QueueProcessorCounters, SessionsMap, TrajectoryCommitIntent, TrajectorySourceIdentitySessionExt,
 };
 pub use wait_interrupt::WaitInterruptCause;
 pub use refact_core::buddy_meta::BuddyThreadMeta;

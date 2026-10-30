@@ -9,8 +9,10 @@ use serde_json::Value;
 use tokio::sync::Mutex as AMutex;
 
 use crate::tools::tools_description::{
+
     Tool, ToolDesc, ToolSource, ToolSourceType, json_schema_from_params,
 };
+use crate::global_context::GlobalContextCtx;
 use crate::call_validation::{ChatMessage, ChatContent, ContextEnum};
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::chat::verifier::{load_expected_card_state, outcome_is_infrastructure};

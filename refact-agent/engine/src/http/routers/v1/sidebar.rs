@@ -13,6 +13,7 @@ use tokio::time::timeout;
 use uuid::Uuid;
 
 use crate::app_state::AppState;
+use crate::global_context::GlobalContextCtx;
 use crate::global_context::GlobalContext;
 use crate::buddy::events::BuddyEvent;
 use crate::chat::trajectories::trajectory_event_is_displayable_chat;

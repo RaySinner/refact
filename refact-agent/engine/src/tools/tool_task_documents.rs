@@ -10,6 +10,7 @@ use tokio::fs;
 use tokio::sync::Mutex as AMutex;
 
 use crate::at_commands::at_commands::AtCommandsContext;
+use crate::global_context::GlobalContextCtx;
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
 #[cfg(test)]
 use crate::global_context::GlobalContext;

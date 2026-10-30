@@ -78,7 +78,7 @@ pub(crate) use refact_chat_api::session::{
     tool_result_counts_as_goal_evidence, StreamStartRefusal, ToolDecisionOutcome,
 };
 
-pub type SessionsMap = Arc<ARwLock<HashMap<String, Arc<AMutex<ChatSession>>>>>;
+pub use refact_chat_api::types::SessionsMap;
 
 pub struct EngineSessionsHandle(pub SessionsMap);
 

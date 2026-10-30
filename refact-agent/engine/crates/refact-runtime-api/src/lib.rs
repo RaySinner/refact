@@ -14,6 +14,7 @@ use refact_tasks::events::TaskEventEnvelope;
 use refact_tool_api::{build_registry_from_names, ToolDesc};
 
 pub mod command_line;
+pub mod global_context;
 pub mod terminal_security;
 pub mod tool_catalog;
 pub mod ctx_traits;
@@ -28,7 +29,10 @@ pub use ctx_traits::{
     BuddyServicesHandle, CapsProvider, FilesProvider, ModeConfigProvider, SubchatLauncherHandle,
     TrajectoryStoreHandle,
 };
-pub use services::{IntegrationServices, ModelServices, PathServices, RuntimeServices};
+pub use services::{
+    BuddyServices, ChatServices, IntegrationServices, ModelServices, PathServices, RuntimeServices,
+    WorkspaceServices,
+};
 
 pub use refact_chat_api::{DeliveryOutcome as RuntimeDeliveryOutcome, SessionState, TaskMeta};
 pub use refact_chat_api::{PendingDelivery as RuntimePendingDelivery, PushMode as RuntimePushMode};

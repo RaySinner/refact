@@ -1,4 +1,5 @@
 use super::*;
+use crate::global_context::GlobalContextCtx;
 
 // =============================================================================
 // G-B: Per-rule cooldown persistence + provider-tuning DefaultsKind correctness

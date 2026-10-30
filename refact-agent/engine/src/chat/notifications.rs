@@ -11,6 +11,7 @@ use tokio::task::JoinHandle;
 use refact_core::chat_types::{DeliveryOutcome, PendingDelivery, PushMode};
 
 use crate::call_validation::ChatMessage;
+use crate::global_context::GlobalContextCtx;
 use crate::chat::ctx::ChatCtx;
 use crate::chat::internal_roles::{event, EventSubkind};
 use crate::chat::types::ChatEvent;

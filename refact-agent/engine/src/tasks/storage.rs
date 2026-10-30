@@ -10,6 +10,7 @@ use chrono::Utc;
 
 use refact_buddy_core::user_action::UserAction;
 use crate::global_context::GlobalContext;
+use crate::global_context::GlobalContextCtx;
 use crate::files_correction::get_project_dirs;
 use super::types::{BoardCard, TaskBoard, TaskMeta, TaskStatus, TrajectoryInfo};
 use super::events::{

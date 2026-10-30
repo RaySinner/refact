@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::app_state::AppState;
+use crate::global_context::GlobalContextCtx;
 use crate::buddy::drafts::{draft_kind_str, DraftTarget, DraftValidationError};
 use crate::buddy::types::DraftKind;
 use crate::caps::model_caps::get_model_caps;

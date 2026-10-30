@@ -4,6 +4,7 @@ use serde_json::json;
 use tokio::sync::Mutex as AMutex;
 use tracing::{info, warn};
 use crate::chat::types::TrajectorySourceIdentitySessionExt;
+use crate::global_context::GlobalContextCtx;
 
 use crate::call_validation::{ChatContent, ChatMessage};
 use crate::chat::ctx::ChatCtx;

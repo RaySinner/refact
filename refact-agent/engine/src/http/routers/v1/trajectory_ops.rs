@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::app_state::AppState;
+use crate::global_context::GlobalContextCtx;
 use crate::global_context::GlobalContext;
 use crate::chat::trajectory_ops::{CompressOptions, TransformStats, compress_in_place};
 // Both of these are used only by the `#[cfg(test)]` helper

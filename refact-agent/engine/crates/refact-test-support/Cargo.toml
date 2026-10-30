@@ -1,0 +1,26 @@
+[package]
+name = "refact-test-support"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+refact-runtime-api = { path = "../refact-runtime-api" }
+refact-core = { path = "../refact-core" }
+refact-chat-api = { path = "../refact-chat-api" }
+refact-chat-history = { path = "../refact-chat-history" }
+refact-buddy-core = { path = "../refact-buddy-core" }
+refact-agents-core = { path = "../refact-agents-core" }
+refact-caps-core = { path = "../refact-caps-core" }
+refact-exec = { path = "../refact-exec" }
+refact-files = { path = "../refact-files" }
+refact-scratchpads = { path = "../refact-scratchpads" }
+refact-providers = { path = "../refact-providers" }
+refact-yaml-configs = { path = "../refact-yaml-configs" }
+refact-knowledge-graph = { path = "../refact-knowledge-graph" }
+refact-perf = { path = "../refact-perf" }
+refact-ext = { path = "../refact-ext" }
+refact-privacy = { path = "../refact-privacy" }
+libc = "0.2"
+reqwest.workspace = true
+tokio.workspace = true
+uuid.workspace = true

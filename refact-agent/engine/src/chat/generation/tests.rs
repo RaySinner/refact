@@ -4,6 +4,7 @@ use serde_json::json;
 use tokio::sync::{Mutex as AMutex};
 
 use crate::app_state::AppState;
+use crate::global_context::GlobalContextCtx;
 
 use crate::call_validation::{ChatContent, ChatMessage, ChatUsage};
 use crate::scratchpad_abstract::HasTokenizerAndEot;

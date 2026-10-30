@@ -9,6 +9,7 @@ use chrono::Utc;
 use serde_json::{json, Value};
 
 use crate::chat::internal_roles::{event, EventSubkind};
+use crate::global_context::GlobalContextCtx;
 use crate::chat::ctx::ChatCtx;
 use crate::chat::verifier_diff::{git_changed_files_summary, resolve_verifier_diff_base};
 use crate::chat::verify_cmd::{parse_verification_argv, verification_commands, VerifyCommandPolicy};

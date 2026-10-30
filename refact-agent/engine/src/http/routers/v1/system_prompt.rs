@@ -4,6 +4,7 @@ use hyper::Body;
 use serde::{Deserialize, Serialize};
 
 use crate::app_state::AppState;
+use crate::global_context::GlobalContextCtx;
 use crate::call_validation::{ChatContent, ChatMessage, ChatMeta, validate_mode_for_request};
 use crate::chat::get_or_create_session_with_trajectory;
 use crate::chat::prepare::build_canonical_openai_tools;

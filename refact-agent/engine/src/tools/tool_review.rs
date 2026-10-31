@@ -14,7 +14,7 @@ use crate::app_state::AppState;
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
 use crate::chat::trajectories::save_trajectory_as_with_intent_checked;
-use crate::chat::types::{ChatSession, SessionState, ThreadParams, TrajectoryCommitIntent};
+use crate::chat::types::{ChatSession, PushMode, SessionState, ThreadParams, TrajectoryCommitIntent};
 use crate::global_context::GlobalContext;
 use crate::postprocessing::pp_command_output::OutputFilter;
 use crate::tools::ctx::ToolCtx;
@@ -282,6 +282,7 @@ async fn plan_jobs(
                     (spec.id == BROWSER_STAGE)
                         .then_some(browser_scenario)
                         .flatten(),
+                    &[],
                 ),
                 trace_chat_id,
                 abort: Arc::new(AtomicBool::new(false)),
@@ -680,21 +681,146 @@ async fn save_review_chat(
     thread: &ThreadParams,
     messages: &[ChatMessage],
     intent: TrajectoryCommitIntent,
-) {
+) -> bool {
     if let Err(error) =
         save_trajectory_as_with_intent_checked(&app.chat_ctx(), thread, messages, intent).await
     {
         tracing::warn!("review: could not save the review chat trajectory: {error}");
+        return false;
+    }
+    true
+}
+
+struct SteeringInbox {
+    app: AppState,
+    agent_id: Option<String>,
+    session: Arc<AMutex<ChatSession>>,
+}
+
+impl SteeringInbox {
+    async fn drain(&self, idle: bool) -> Vec<ChatMessage> {
+        let mut messages = Vec::new();
+        if let Some(agent_id) = self.agent_id.as_deref() {
+            loop {
+                let drained = if idle {
+                    self.app.agents.finish_delivery_turn(agent_id).await
+                } else {
+                    self.app.agents.drain_deliveries(agent_id, false).await
+                };
+                match drained {
+                    Ok(deliveries) => {
+                        let sealed = !deliveries.iter().any(|delivery| delivery.wake);
+                        for delivery in deliveries {
+                            messages.extend(delivery.stamp_messages());
+                        }
+                        if !idle || sealed {
+                            break;
+                        }
+                    }
+                    Err(error) => {
+                        tracing::warn!("review: could not drain steering deliveries: {error}");
+                        break;
+                    }
+                }
+            }
+            messages.extend(
+                self.app
+                    .agents
+                    .drain_inbox(agent_id)
+                    .await
+                    .into_iter()
+                    .map(|message| ChatMessage::new("user".to_string(), message.text)),
+            );
+        }
+        let mut session = self.session.lock().await;
+        for delivery in std::mem::take(&mut session.pending_deliveries) {
+            if idle || delivery.push != PushMode::WhenIdle {
+                messages.extend(delivery.stamp_messages());
+            } else {
+                session.pending_deliveries.push_back(delivery);
+            }
+        }
+        for message in &mut messages {
+            message.role = "user".to_string();
+        }
+        messages
+    }
+
+    async fn accept(
+        &self,
+        messages: Vec<ChatMessage>,
+        agent: Option<&ToolAgentHandle>,
+        done_count: u32,
+    ) -> Vec<String> {
+        let texts = steering_texts(&messages);
+        for message in &messages {
+            if let Some(agent) = agent {
+                let preview: String = message
+                    .content
+                    .content_text_only()
+                    .chars()
+                    .take(60)
+                    .collect();
+                agent
+                    .progress(format!("user steering: {preview}"), done_count)
+                    .await;
+            }
+        }
+        if !messages.is_empty() {
+            let mut session = self.session.lock().await;
+            let mut trace = session.messages.clone();
+            trace.extend(messages);
+            session.mirror_runner_messages(trace);
+            drop(session);
+            self.persist().await;
+        }
+        texts
+    }
+
+    async fn persist(&self) {
+        let (thread, messages) = {
+            let session = self.session.lock().await;
+            (session.thread.clone(), session.messages.clone())
+        };
+        if save_review_chat(
+            &self.app,
+            &thread,
+            &messages,
+            TrajectoryCommitIntent::Required,
+        )
+        .await
+        {
+            if let Some(agent_id) = self.agent_id.as_deref() {
+                let landed = messages
+                    .iter()
+                    .filter_map(refact_core::chat_types::delivery_id_of_message)
+                    .collect::<std::collections::HashSet<_>>();
+                for delivery in self.app.agents.pending_deliveries(agent_id).await {
+                    if !landed.contains(delivery.id.as_str()) {
+                        continue;
+                    }
+                    if let Err(error) = self
+                        .app
+                        .agents
+                        .acknowledge_delivery(agent_id, &delivery.id)
+                        .await
+                    {
+                        tracing::warn!(
+                            "review: could not acknowledge a steering delivery: {error}"
+                        );
+                    }
+                }
+                crate::agents::delivery::publish_runner_queue(&self.app, agent_id).await;
+            }
+        }
     }
 }
 
-async fn take_review_chat_inbox(session: &Arc<AMutex<ChatSession>>) -> Vec<ChatMessage> {
-    let mut session = session.lock().await;
-    session
-        .pending_deliveries
-        .drain(..)
-        .flat_map(|delivery| delivery.messages)
-        .filter(|message| message.role == "user")
+fn steering_texts(messages: &[ChatMessage]) -> Vec<String> {
+    messages
+        .iter()
+        .map(|message| message.content.content_text_only().trim().to_string())
+        .filter(|text| !text.is_empty())
         .collect()
 }
 
@@ -722,10 +848,10 @@ async fn run_review(
     stage_executor: Option<Arc<dyn StageExecutor>>,
     progress: Option<ProgressSink>,
     agent: Option<Arc<ToolAgentHandle>>,
+    steering: &SteeringInbox,
 ) -> Result<ReviewReport, String> {
     let review_cancelled = || {
-        agent.as_ref().is_some_and(|agent| agent.aborted())
-            || ctx.abort_flag.load(Ordering::SeqCst)
+        agent.as_ref().is_some_and(|agent| agent.aborted()) || ctx.abort_flag.load(Ordering::SeqCst)
     };
     let started = now_ms();
     let execution_scope = ctx.worktree.as_ref().map(ExecutionScope::from_worktree);
@@ -820,9 +946,9 @@ async fn run_review(
 
     let mut findings: Vec<ReviewFinding> = Vec::new();
     let mut scratch_written = false;
-    for product in
-        run_stage_jobs(executor.clone(), plan.jobs, schedule, progress.clone()).await
-    {
+    let mut done_count = 0;
+    for product in run_stage_jobs(executor.clone(), plan.jobs, schedule, progress.clone()).await {
+        done_count += 1;
         merge_metering(metering, product.metering);
         if let (Some(dir), Some(raw)) = (scratch.as_ref(), product.raw.as_ref()) {
             scratch_written |= write_scratch(
@@ -847,6 +973,7 @@ async fn run_review(
     let (mut findings, duplicates_merged) = merge_findings(findings);
     rank_findings(&mut findings);
 
+    let mut applied_steering: Vec<String> = Vec::new();
     for spec in post_merge {
         if review_cancelled() {
             stage_rows.push(StageRun::not_run(&spec.id, "review cancelled"));
@@ -873,7 +1000,13 @@ async fn run_review(
                 continue;
             }
         };
-        let prompt = build_adversarial_prompt(&spec, &scope, &findings);
+        if review_cancelled() {
+            stage_rows.push(StageRun::not_run(&spec.id, "review cancelled"));
+            continue;
+        }
+        let arrived = steering.drain(false).await;
+        applied_steering.extend(steering.accept(arrived, agent.as_deref(), done_count).await);
+        let prompt = build_adversarial_prompt(&spec, &scope, &findings, &applied_steering);
         let label = spec.id.clone();
         let job = StageJob {
             spec: Arc::new(spec),
@@ -884,9 +1017,10 @@ async fn run_review(
             prompt,
             abort: Arc::new(AtomicBool::new(false)),
         };
-        for mut product in run_stage_jobs(executor.clone(), vec![job], schedule, progress.clone())
-            .await
+        for mut product in
+            run_stage_jobs(executor.clone(), vec![job], schedule, progress.clone()).await
         {
+            done_count += 1;
             merge_metering(metering, std::mem::take(&mut product.metering));
             if let (Some(dir), Some(raw)) = (scratch.as_ref(), product.raw.as_ref()) {
                 scratch_written |= write_scratch(
@@ -934,8 +1068,6 @@ struct ReviewRunInput {
     cfg: ReviewConfig,
     args: ReviewArgs,
     app: AppState,
-    thread: ThreadParams,
-    request: ChatMessage,
     session: Arc<AMutex<ChatSession>>,
     child_chat_id: String,
     stage_executor: Option<Arc<dyn StageExecutor>>,
@@ -958,8 +1090,6 @@ async fn run_review_tool(
         cfg,
         args,
         app,
-        thread,
-        request,
         session,
         child_chat_id,
         stage_executor,
@@ -992,6 +1122,13 @@ async fn run_review_tool(
 
     let ctx_abort = ctx.abort_flag.clone();
     let mut metering = serde_json::Map::new();
+    let steering = SteeringInbox {
+        app: app.clone(),
+        agent_id: agent
+            .as_ref()
+            .map(|(_, shared)| shared.agent_id().to_string()),
+        session: session.clone(),
+    };
     let report = match run_review(
         gcx,
         &tool,
@@ -1002,6 +1139,7 @@ async fn run_review_tool(
         stage_executor,
         progress_sink.clone(),
         agent.as_ref().map(|(_, shared)| shared.clone()),
+        &steering,
     )
     .await
     {
@@ -1023,10 +1161,28 @@ async fn run_review_tool(
         let _ = task.await;
     }
 
-    let cancelled = agent
-        .as_ref()
-        .is_some_and(|(_, shared)| shared.aborted())
+    let cancelled = agent.as_ref().is_some_and(|(_, shared)| shared.aborted())
         || ctx_abort.load(Ordering::SeqCst);
+
+    let late_steering = if cancelled {
+        0
+    } else {
+        let arrived = steering.drain(true).await;
+        let count = arrived.len();
+        let done_count = report
+            .stages
+            .iter()
+            .filter(|run| run.status != StageStatusKind::NotRun)
+            .count() as u32;
+        steering
+            .accept(
+                arrived,
+                agent.as_ref().map(|(_, shared)| shared.as_ref()),
+                done_count,
+            )
+            .await;
+        count
+    };
 
     let status = if cancelled { "cancelled" } else { "completed" };
     if let Some((_, shared)) = agent.as_ref() {
@@ -1039,6 +1195,20 @@ async fn run_review_tool(
     if cancelled {
         markdown = markdown.replacen("## Review", "## Review — cancelled", 1);
     }
+    if late_steering > 0 {
+        markdown.push_str(&format!(
+            "\n> Note: {late_steering} user message(s) arrived after the last stage and were not applied.\n"
+        ));
+    }
+
+    {
+        let mut session = session.lock().await;
+        let mut messages = session.messages.clone();
+        messages.push(ChatMessage::new("assistant".to_string(), markdown.clone()));
+        session.mirror_runner_messages(messages);
+    }
+    steering.persist().await;
+    close_review_chat(&app, &child_chat_id).await;
 
     match agent {
         Some((handle, _)) if cancelled => {
@@ -1048,16 +1218,16 @@ async fn run_review_tool(
             let _ = handle.complete(markdown.clone()).await;
         }
         Some((handle, _)) => {
-            let _ = handle.complete(review_agent_summary(&report)).await;
+            let mut summary = review_agent_summary(&report);
+            if late_steering > 0 {
+                summary.push_str(&format!(
+                    "\n> Note: {late_steering} user message(s) arrived after the last stage and were not applied.\n"
+                ));
+            }
+            let _ = handle.complete(summary).await;
         }
         None => {}
     }
-
-    let mut messages = vec![request];
-    messages.extend(take_review_chat_inbox(&session).await);
-    messages.push(ChatMessage::new("assistant".to_string(), markdown.clone()));
-    save_review_chat(&app, &thread, &messages, TrajectoryCommitIntent::Required).await;
-    close_review_chat(&app, &child_chat_id).await;
 
     metering.insert(
         "review_report".to_string(),
@@ -1068,10 +1238,7 @@ async fn run_review_tool(
     metering.insert("review_refs".to_string(), refs);
     metering.insert("review_refs_truncated".to_string(), Value::Bool(truncated));
 
-    Ok(ReviewRunOutcome {
-        markdown,
-        metering,
-    })
+    Ok(ReviewRunOutcome { markdown, metering })
 }
 
 async fn push_review_completion(app: &AppState, agent_id: &str) {
@@ -1290,8 +1457,6 @@ impl Tool for ToolCodeReview {
             cfg,
             args,
             app: app.clone(),
-            thread: review_thread,
-            request: review_request,
             session: review_session,
             child_chat_id,
             stage_executor: self.stage_executor_override.clone(),
@@ -1354,8 +1519,10 @@ mod tests {
     use super::*;
     use std::sync::atomic::{AtomicU64, AtomicUsize};
 
+    use crate::agents::registry::InboxMessage;
     use crate::agents::types::{BgAgentKind, BgAgentStatus};
     use crate::caps::caps::{BaseModelRecord, ChatModelRecord, CodeAssistantCaps};
+    use crate::chat::types::{PendingDelivery, PushMode};
     use crate::tools::review_agents::contract::Verdict;
     use crate::tools::review_agents::runner::{stage_subchat_config, StageProduct};
     use crate::tools::review_types::{
@@ -2524,5 +2691,464 @@ mod tests {
         let summary = record.result_summary.expect("result summary");
         assert!(!summary.starts_with("## Review"), "{summary}");
         assert!(summary.contains("stages"), "{summary}");
+    }
+
+    struct SteeringStageExecutor {
+        app: AppState,
+        prompts: Arc<AMutex<Vec<(String, String)>>>,
+        steer_on: Option<&'static str>,
+        steer_text: &'static str,
+        via_chat: bool,
+        cancel_after_steering: bool,
+        steered: AtomicBool,
+    }
+
+    impl SteeringStageExecutor {
+        fn new(app: AppState, prompts: Arc<AMutex<Vec<(String, String)>>>) -> Self {
+            Self {
+                app,
+                prompts,
+                steer_on: None,
+                steer_text: "",
+                via_chat: false,
+                cancel_after_steering: false,
+                steered: AtomicBool::new(false),
+            }
+        }
+
+        fn steering(mut self, on: &'static str, text: &'static str, via_chat: bool) -> Self {
+            self.steer_on = Some(on);
+            self.steer_text = text;
+            self.via_chat = via_chat;
+            self
+        }
+
+        async fn send_steering(&self) {
+            let record = app_review_agent(&self.app).await;
+            if self.via_chat {
+                let chat_id = record.child_chat_id.clone().expect("review child chat id");
+                let delivery = PendingDelivery::new(
+                    vec![ChatMessage::new(
+                        "user".to_string(),
+                        self.steer_text.to_string(),
+                    )],
+                    PushMode::Append,
+                    "user",
+                    true,
+                );
+                crate::chat::delivery::deliver_to_chat(self.app.clone(), &chat_id, delivery)
+                    .await
+                    .expect("steering delivery into the review chat");
+            } else {
+                self.app
+                    .agents
+                    .push_inbox(
+                        &record.agent_id,
+                        InboxMessage {
+                            from: "user".to_string(),
+                            text: self.steer_text.to_string(),
+                            queued_at: chrono::Utc::now(),
+                        },
+                    )
+                    .await
+                    .expect("steering message into the review agent inbox");
+            }
+            if self.cancel_after_steering {
+                self.app
+                    .agents
+                    .cancel(&record.parent_chat_id, &record.agent_id, None)
+                    .await
+                    .expect("cancel review");
+            }
+        }
+    }
+
+    #[async_trait]
+    impl StageExecutor for SteeringStageExecutor {
+        async fn execute(&self, job: StageJob, _activity: Arc<AtomicU64>) -> StageProduct {
+            self.prompts
+                .lock()
+                .await
+                .push((job.label.clone(), job.prompt.clone()));
+            if self.steer_on == Some(job.label.as_str())
+                && !self.steered.swap(true, Ordering::SeqCst)
+            {
+                self.send_steering().await;
+            }
+            StageProduct {
+                run: StageRun::ok(&job.label, Some("test-provider/test-model".to_string()), 1),
+                findings: vec![finding("rf-1", ReviewSeverity::High)],
+                verdicts: vec![],
+                metering: serde_json::Map::new(),
+                raw: None,
+            }
+        }
+    }
+
+    async fn app_review_agent(app: &AppState) -> crate::agents::types::BackgroundAgent {
+        app.agents
+            .list_all()
+            .await
+            .into_iter()
+            .find(|record| record.kind == BgAgentKind::Tool && record.config_name == "review")
+            .expect("review tool agent record")
+    }
+
+    fn captured_prompt(prompts: &[(String, String)], label: &str) -> String {
+        prompts
+            .iter()
+            .find(|(name, _)| name == label)
+            .map(|(_, prompt)| prompt.clone())
+            .unwrap_or_else(|| {
+                panic!(
+                    "no prompt captured for {label}: {:?}",
+                    prompts
+                        .iter()
+                        .map(|(name, _)| name.as_str())
+                        .collect::<Vec<_>>()
+                )
+            })
+    }
+
+    const STEERING_HEADER: &str = "# User steering (arrived while the review was running)";
+
+    async fn run_review_capturing_prompts(
+        chat_id: &str,
+        steer: Option<(&'static str, &'static str, bool)>,
+    ) -> Vec<(String, String)> {
+        let (_gcx, app, ccx) = review_test_env(chat_id).await;
+        let prompts = Arc::new(AMutex::new(Vec::new()));
+        let mut executor = SteeringStageExecutor::new(app.clone(), prompts.clone());
+        if let Some((label, text, via_chat)) = steer {
+            executor = executor.steering(label, text, via_chat);
+        }
+        let mut tool = review_tool(Some(Arc::new(executor)));
+
+        tool.tool_execute(
+            ccx,
+            &format!("{chat_id}-call"),
+            &args_map(vec![("stages", json!(["diff", "adversarial"]))]),
+        )
+        .await
+        .expect("review result");
+
+        let captured = prompts.lock().await.clone();
+        captured
+    }
+
+    #[tokio::test]
+    async fn steering_messages_are_injected_into_the_adversarial_prompt() {
+        let prompts = run_review_capturing_prompts(
+            "review-steering-prompt",
+            Some(("diff", "please also check the retry path", false)),
+        )
+        .await;
+
+        let diff = captured_prompt(&prompts, "diff");
+        assert!(!diff.contains(STEERING_HEADER), "{diff}");
+        let adversarial = captured_prompt(&prompts, "adversarial");
+        assert!(adversarial.contains(STEERING_HEADER), "{adversarial}");
+        assert!(
+            adversarial.contains("- please also check the retry path"),
+            "{adversarial}"
+        );
+    }
+
+    #[tokio::test]
+    async fn steering_messages_are_written_to_the_review_trajectory() {
+        let dir = tempfile::tempdir().unwrap();
+        let (_gcx, app, ccx) = review_test_env_in("review-steering-trace", Some(dir.path())).await;
+        let prompts = Arc::new(AMutex::new(Vec::new()));
+        let executor = Arc::new(
+            SteeringStageExecutor::new(app.clone(), prompts.clone()).steering(
+                "diff",
+                "look at the retry path too",
+                true,
+            ),
+        );
+        let mut tool = review_tool(Some(executor));
+
+        tool.tool_execute(
+            ccx,
+            &"review-steering-trace-call".to_string(),
+            &args_map(vec![("stages", json!(["diff", "adversarial"]))]),
+        )
+        .await
+        .expect("review result");
+
+        let child_chat_id = review_child_chat_id(&app).await;
+        let loaded =
+            crate::chat::trajectories::load_trajectory_for_chat(&app.chat_ctx(), &child_chat_id)
+                .await
+                .expect("the review chat trajectory is readable");
+
+        let steering: Vec<&ChatMessage> = loaded
+            .messages
+            .iter()
+            .filter(|message| {
+                message.role == "user"
+                    && message
+                        .content
+                        .content_text_only()
+                        .contains("look at the retry path too")
+            })
+            .collect();
+        assert_eq!(steering.len(), 1, "{:?}", loaded.messages);
+        assert_eq!(loaded.messages.last().unwrap().role, "assistant");
+        let record = app_review_agent(&app).await;
+        assert!(record.pending_deliveries.is_empty());
+        assert_eq!(record.delivery_ids.len(), 1);
+        assert_eq!(steering[0].extra["delivery"]["id"], record.delivery_ids[0]);
+        let adversarial = captured_prompt(&prompts.lock().await, "adversarial");
+        assert!(adversarial.contains("look at the retry path too"));
+    }
+
+    #[tokio::test]
+    async fn empty_inbox_keeps_prompts_unchanged() {
+        let steered = run_review_capturing_prompts(
+            "review-steering-empty-steered",
+            Some(("diff", "please also check the retry path", false)),
+        )
+        .await;
+        let plain = run_review_capturing_prompts("review-steering-empty-plain", None).await;
+
+        let block = format!("{STEERING_HEADER}\n- please also check the retry path\n\n");
+        assert_eq!(
+            captured_prompt(&steered, "diff"),
+            captured_prompt(&plain, "diff")
+        );
+        let plain_adversarial = captured_prompt(&plain, "adversarial");
+        assert!(
+            !plain_adversarial.contains(STEERING_HEADER),
+            "{plain_adversarial}"
+        );
+        assert_eq!(
+            captured_prompt(&steered, "adversarial"),
+            format!("{block}{plain_adversarial}")
+        );
+    }
+
+    #[tokio::test]
+    async fn late_steering_is_noted_in_the_report() {
+        let dir = tempfile::tempdir().unwrap();
+        let (_gcx, app, ccx) = review_test_env_in("review-steering-late", Some(dir.path())).await;
+        let prompts = Arc::new(AMutex::new(Vec::new()));
+        let executor = Arc::new(
+            SteeringStageExecutor::new(app.clone(), prompts.clone()).steering(
+                "adversarial",
+                "check the retry path",
+                false,
+            ),
+        );
+        let mut tool = review_tool(Some(executor));
+
+        let (_ok, results) = tool
+            .tool_execute(
+                ccx,
+                &"review-steering-late-call".to_string(),
+                &args_map(vec![("stages", json!(["diff", "adversarial"]))]),
+            )
+            .await
+            .expect("review result");
+
+        let markdown = tool_result_text(&results);
+        assert!(
+            markdown.contains(
+                "> Note: 1 user message(s) arrived after the last stage and were not applied."
+            ),
+            "{markdown}"
+        );
+        let adversarial = captured_prompt(&prompts.lock().await.clone(), "adversarial");
+        assert!(!adversarial.contains(STEERING_HEADER), "{adversarial}");
+        let record = app_review_agent(&app).await;
+        assert!(record.result_summary.unwrap().contains(
+            "> Note: 1 user message(s) arrived after the last stage and were not applied."
+        ));
+        let loaded = crate::chat::trajectories::load_trajectory_for_chat(
+            &app.chat_ctx(),
+            record.child_chat_id.as_deref().unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(loaded.messages[1].role, "user");
+        assert_eq!(
+            loaded.messages[1].content.content_text_only(),
+            "check the retry path"
+        );
+        assert_eq!(loaded.messages[2].content.content_text_only(), markdown);
+    }
+
+    #[tokio::test]
+    async fn background_review_applies_steering_and_reports_late_messages() {
+        for stage in ["diff", "adversarial"] {
+            let dir = tempfile::tempdir().unwrap();
+            let parent_chat_id = format!("review-background-steering-{stage}");
+            let (_gcx, app, ccx) = review_test_env_in(&parent_chat_id, Some(dir.path())).await;
+            let prompts = Arc::new(AMutex::new(Vec::new()));
+            let executor = SteeringStageExecutor::new(app.clone(), prompts.clone()).steering(
+                stage,
+                "verify retry behavior",
+                true,
+            );
+            let mut tool = review_tool(Some(Arc::new(executor)));
+            let (_, results) = tool
+                .tool_execute(
+                    ccx,
+                    &"background-steering-call".to_string(),
+                    &args_map(vec![
+                        ("stages", json!(["diff", "adversarial"])),
+                        ("wait", json!(false)),
+                    ]),
+                )
+                .await
+                .unwrap();
+            let record =
+                wait_for_review_terminal(&app, &parent_chat_id, &background_agent_id(&results))
+                    .await;
+            let adversarial = captured_prompt(&prompts.lock().await, "adversarial");
+            let late = stage == "adversarial";
+            assert_eq!(adversarial.contains(STEERING_HEADER), !late);
+            assert_eq!(adversarial.contains("verify retry behavior"), !late);
+            let summary = record.result_summary.unwrap();
+            assert_eq!(
+                summary.contains(
+                    "> Note: 1 user message(s) arrived after the last stage and were not applied."
+                ),
+                late
+            );
+            let loaded = crate::chat::trajectories::load_trajectory_for_chat(
+                &app.chat_ctx(),
+                record.child_chat_id.as_deref().unwrap(),
+            )
+            .await
+            .unwrap();
+            assert_eq!(loaded.messages[1].role, "user");
+            assert_eq!(
+                loaded.messages[1].content.content_text_only(),
+                "verify retry behavior"
+            );
+            assert_eq!(loaded.messages[2].content.content_text_only(), summary);
+            assert!(record.pending_deliveries.is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn cancelled_review_does_not_drain_steering() {
+        let (_gcx, app, ccx) = review_test_env("review-cancel-steering").await;
+        let prompts = Arc::new(AMutex::new(Vec::new()));
+        let mut executor = SteeringStageExecutor::new(app.clone(), prompts.clone()).steering(
+            "diff",
+            "do not consume after cancellation",
+            true,
+        );
+        executor.cancel_after_steering = true;
+        let mut tool = review_tool(Some(Arc::new(executor)));
+        let (_, results) = tool
+            .tool_execute(
+                ccx,
+                &"cancel-steering-call".to_string(),
+                &args_map(vec![("stages", json!(["diff", "adversarial"]))]),
+            )
+            .await
+            .unwrap();
+        assert!(tool_result_text(&results).contains("cancelled"));
+        assert_eq!(prompts.lock().await.len(), 1);
+        let record = app_review_agent(&app).await;
+        assert_eq!(record.status, BgAgentStatus::Cancelled);
+        assert_eq!(record.pending_deliveries.len(), 1);
+        assert!(record.delivery_ids.is_empty());
+    }
+
+    #[tokio::test]
+    async fn steering_is_visible_live_and_acknowledged_only_after_a_successful_save() {
+        let dir = tempfile::tempdir().unwrap();
+        let (_gcx, app, _ccx) = review_test_env_in("review-steering-ack", Some(dir.path())).await;
+        let thread = ThreadParams {
+            id: "subchat-review-steering-ack".to_string(),
+            root_chat_id: Some("review-steering-ack".to_string()),
+            parent_id: Some("review-steering-ack".to_string()),
+            link_type: Some("tool".to_string()),
+            ..Default::default()
+        };
+        let request = ChatMessage::new("user".to_string(), "Review request".to_string());
+        let session = open_review_chat(&app, &thread, &request).await;
+        let handle = ToolAgentHandle::begin(
+            &app,
+            "review-steering-ack",
+            "review-steering-ack",
+            ToolAgentSpec {
+                tool_name: "review".to_string(),
+                title: "Review".to_string(),
+                prompt: "Review".to_string(),
+                model: "test-provider/test-model".to_string(),
+                model_type: None,
+                target_files: vec![],
+                child_chat_id: thread.id.clone(),
+                parent_tool_call_id: "ack-call".to_string(),
+            },
+        )
+        .await
+        .unwrap();
+        let inbox = SteeringInbox {
+            app: app.clone(),
+            agent_id: Some(handle.agent_id().to_string()),
+            session: session.clone(),
+        };
+        let body = json!({
+            "client_request_id": "steering-request",
+            "type": "user_message",
+            "content": "check the retry path",
+        });
+        let response = crate::chat::handle_v1_chat_command(
+            axum::extract::State(app.clone()),
+            axum::extract::Path(thread.id.clone()),
+            hyper::body::Bytes::from(body.to_string()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.status(), hyper::StatusCode::OK);
+        assert_eq!(
+            app.agents.pending_deliveries(handle.agent_id()).await.len(),
+            1
+        );
+        std::fs::write(dir.path().join(".refact"), b"not a directory").unwrap();
+        let messages = inbox.drain(false).await;
+        assert_eq!(
+            inbox.accept(messages, Some(&handle), 3).await,
+            vec!["check the retry path"]
+        );
+        assert_eq!(
+            session.lock().await.messages[1].content.content_text_only(),
+            "check the retry path"
+        );
+        assert_eq!(
+            app.agents.pending_deliveries(handle.agent_id()).await.len(),
+            1
+        );
+        let record = app.agents.get_any(handle.agent_id()).await.unwrap();
+        assert_eq!(record.step_count, 3);
+        assert_eq!(
+            record.progress.as_deref(),
+            Some("user steering: check the retry path")
+        );
+        assert!(record.delivery_ids.is_empty());
+        std::fs::remove_file(dir.path().join(".refact")).unwrap();
+        inbox.persist().await;
+        assert!(app
+            .agents
+            .pending_deliveries(handle.agent_id())
+            .await
+            .is_empty());
+        let loaded =
+            crate::chat::trajectories::load_trajectory_for_chat(&app.chat_ctx(), &thread.id)
+                .await
+                .unwrap();
+        assert_eq!(loaded.messages[1].role, "user");
+        assert_eq!(
+            loaded.messages[1].content.content_text_only(),
+            "check the retry path"
+        );
+        close_review_chat(&app, &thread.id).await;
+        handle.complete("done".to_string()).await.unwrap();
     }
 }

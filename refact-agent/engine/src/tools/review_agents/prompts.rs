@@ -78,6 +78,21 @@ fn push_file_list(prompt: &mut String, heading: &str, files: &[String]) {
     }
 }
 
+fn steering_block(steering: &[String]) -> String {
+    let mut block = String::new();
+    for text in steering
+        .iter()
+        .map(|text| text.trim())
+        .filter(|text| !text.is_empty())
+    {
+        if block.is_empty() {
+            block.push_str("# User steering (arrived while the review was running)\n");
+        }
+        block.push_str(&format!("- {text}\n"));
+    }
+    block
+}
+
 fn file_boundary_before(text: &str, cap: usize) -> usize {
     let mut end = cap.min(text.len());
     while end > 0 && !text.is_char_boundary(end) {
@@ -149,8 +164,21 @@ fn scope_block(scope: &ReviewScope) -> String {
     prompt
 }
 
-pub fn build_stage_prompt(spec: &StageSpec, scope: &ReviewScope, scenario: Option<&str>) -> String {
-    let mut prompt = format!("# Your job this run: {}\n{}\n", spec.id, spec.task.trim());
+pub fn build_stage_prompt(
+    spec: &StageSpec,
+    scope: &ReviewScope,
+    scenario: Option<&str>,
+    steering: &[String],
+) -> String {
+    let mut prompt = steering_block(steering);
+    if !prompt.is_empty() {
+        prompt.push('\n');
+    }
+    prompt.push_str(&format!(
+        "# Your job this run: {}\n{}\n",
+        spec.id,
+        spec.task.trim()
+    ));
     if let Some(scenario) = scenario.map(str::trim).filter(|value| !value.is_empty()) {
         prompt.push_str(&format!(
             "\n# Scenario the caller requires you to run\nThis is authoritative. Drive exactly this and report what you observed; do not substitute a scenario of your own.\n{scenario}\n"
@@ -187,8 +215,17 @@ pub fn build_adversarial_prompt(
     spec: &StageSpec,
     scope: &ReviewScope,
     findings: &[ReviewFinding],
+    steering: &[String],
 ) -> String {
-    let mut prompt = format!("# Your job this run: {}\n{}\n", spec.id, spec.task.trim());
+    let mut prompt = steering_block(steering);
+    if !prompt.is_empty() {
+        prompt.push('\n');
+    }
+    prompt.push_str(&format!(
+        "# Your job this run: {}\n{}\n",
+        spec.id,
+        spec.task.trim()
+    ));
     prompt.push('\n');
     prompt.push_str(&scope_block(scope));
     prompt.push_str("\n# Findings to check\n");
@@ -277,7 +314,7 @@ mod tests {
 
     #[test]
     fn review_prompt_carries_task_scope_diff_and_contract() {
-        let prompt = build_stage_prompt(&stage("mechanical"), &scope(ScopeMode::Strict), None);
+        let prompt = build_stage_prompt(&stage("mechanical"), &scope(ScopeMode::Strict), None, &[]);
 
         assert!(prompt.contains("# Your job this run: mechanical"));
         assert!(prompt.contains("browser lifecycle"));
@@ -297,6 +334,7 @@ mod tests {
             &stage("adversarial"),
             &scope(ScopeMode::Broad),
             &[finding()],
+            &[],
         );
 
         assert!(prompt.contains("rf-1234abcd"));
@@ -352,7 +390,7 @@ mod tests {
             PathBuf::from("src/dropped_b.rs"),
         ];
 
-        let prompt = build_stage_prompt(&stage("diff"), &truncated, None);
+        let prompt = build_stage_prompt(&stage("diff"), &truncated, None, &[]);
 
         assert!(prompt.contains("# Files NOT reviewed (dropped by the max_files cap) (2)"));
         assert!(prompt.contains("- src/dropped_a.rs"));
@@ -365,14 +403,90 @@ mod tests {
             &stage("browser"),
             &scope(ScopeMode::Broad),
             Some("  open /settings, toggle dark mode, expect no console errors  "),
+            &[],
         );
 
         assert!(prompt.contains("# Scenario the caller requires you to run"));
         assert!(prompt.contains("open /settings, toggle dark mode"));
         assert!(prompt.contains("do not substitute a scenario of your own"));
-        assert!(
-            !build_stage_prompt(&stage("browser"), &scope(ScopeMode::Broad), Some("   "))
-                .contains("# Scenario the caller requires")
+        assert!(!build_stage_prompt(
+            &stage("browser"),
+            &scope(ScopeMode::Broad),
+            Some("   "),
+            &[]
+        )
+        .contains("# Scenario the caller requires"));
+    }
+
+    #[test]
+    fn review_prompt_puts_user_steering_first() {
+        let steering = vec!["  please also check the retry path  ".to_string()];
+
+        let stage_prompt = build_stage_prompt(
+            &stage("mechanical"),
+            &scope(ScopeMode::Strict),
+            None,
+            &steering,
+        );
+        assert!(stage_prompt.starts_with(
+            "# User steering (arrived while the review was running)\n- please also check the retry path\n\n# Your job this run: mechanical"
+        ));
+
+        let adversarial = build_adversarial_prompt(
+            &stage("adversarial"),
+            &scope(ScopeMode::Broad),
+            &[finding()],
+            &steering,
+        );
+        assert!(adversarial.starts_with(
+            "# User steering (arrived while the review was running)\n- please also check the retry path\n\n# Your job this run: adversarial"
+        ));
+    }
+
+    #[test]
+    fn review_prompt_is_unchanged_without_steering() {
+        let steering: Vec<String> = Vec::new();
+        let blank = vec!["   ".to_string()];
+
+        let stage_prompt = build_stage_prompt(
+            &stage("mechanical"),
+            &scope(ScopeMode::Strict),
+            None,
+            &steering,
+        );
+        let adversarial = build_adversarial_prompt(
+            &stage("adversarial"),
+            &scope(ScopeMode::Broad),
+            &[finding()],
+            &steering,
+        );
+
+        assert!(stage_prompt.starts_with("# Your job this run: mechanical"));
+        assert!(adversarial.starts_with("# Your job this run: adversarial"));
+        assert!(!stage_prompt.contains("# User steering"));
+        assert!(!adversarial.contains("# User steering"));
+        assert_eq!(
+            build_stage_prompt(
+                &stage("mechanical"),
+                &scope(ScopeMode::Strict),
+                None,
+                &blank
+            ),
+            stage_prompt
+        );
+
+        let mut spec = stage("diff");
+        spec.task = "Review this change".to_string();
+        spec.fallback = None;
+        spec.preferred_tools.clear();
+        let scope = scope(ScopeMode::Strict);
+        assert_eq!(
+            build_stage_prompt(&spec, &scope, None, &[]),
+            format!("# Your job this run: diff\nReview this change\n\n{}\n{FINDINGS_CONTRACT}\n", scope_block(&scope))
+        );
+        assert_eq!(
+            build_adversarial_prompt(&spec, &scope, &[], &[]),
+            format!("# Your job this run: diff\nReview this change\n\n{}\n# Findings to check\n\n{VERDICTS_CONTRACT}\n", scope_block(&scope))
         );
     }
 

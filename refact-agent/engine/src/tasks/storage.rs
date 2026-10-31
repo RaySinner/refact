@@ -1,50 +1,102 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use git2::Repository;
-use tokio::sync::Mutex as AMutex;
 use tokio::fs;
 use tracing::warn;
 use uuid::Uuid;
 use chrono::Utc;
 
-use refact_buddy_core::user_action::UserAction;
 use crate::global_context::GlobalContext;
 use crate::global_context::GlobalContextCtx;
 use crate::files_correction::get_project_dirs;
-use super::types::{BoardCard, TaskBoard, TaskMeta, TaskStatus, TrajectoryInfo};
+use super::types::{TaskBoard, TaskMeta, TaskStatus, TrajectoryInfo};
 use super::events::{
     emit_task_event_for_services, emit_task_event_via, emit_task_updated_via, TaskEvent,
 };
 
-const TASKS_DIR: &str = "tasks";
+pub use refact_runtime_api::task_storage::{
+    active_agent_count, create_task, find_task_dir_for_ctx, infer_task_id_from_chat_id, load_board,
+    load_board_for_ctx, load_task_meta, load_task_meta_for_ctx, next_planner_chat_id, save_board,
+    save_board_for_ctx, save_task_meta, save_task_meta_for_ctx, update_board_atomic,
+    update_board_atomic_for_ctx, update_task_stats, update_task_stats_for_ctx,
+};
+pub(crate) use refact_runtime_api::task_storage::get_all_tasks_dirs_for_ctx;
+pub use refact_tasks::storage::validate_task_id;
 
-async fn atomic_write_file(tmp_path: &Path, dest_path: &Path) -> Result<(), String> {
-    #[cfg(windows)]
-    if dest_path.exists() {
-        fs::remove_file(dest_path)
-            .await
-            .map_err(|e| format!("Failed to remove existing file: {}", e))?;
+pub struct EngineTaskStorageRuntime;
+
+#[async_trait::async_trait]
+impl refact_runtime_api::task_storage::TaskStorageRuntime for EngineTaskStorageRuntime {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
-    fs::rename(tmp_path, dest_path)
-        .await
-        .map_err(|e| format!("Failed to rename: {}", e))
+
+    fn ctx_from_gcx(&self, gcx: Arc<GlobalContext>) -> crate::chat::ctx::ChatCtx {
+        gcx.chat_ctx(gcx.clone())
+    }
+
+    async fn save_task_meta_for_ctx(
+        &self,
+        ctx: &crate::chat::ctx::ChatCtx,
+        task_id: &str,
+        meta: &TaskMeta,
+    ) -> Result<(), String> {
+        save_task_meta_impl(ctx, task_id, meta).await
+    }
+
+    async fn create_task(
+        &self,
+        ctx: &crate::chat::ctx::ChatCtx,
+        name: &str,
+    ) -> Result<TaskMeta, String> {
+        create_task_for_ctx(ctx, name).await
+    }
+
+    async fn next_planner_chat_id(
+        &self,
+        ctx: &crate::chat::ctx::ChatCtx,
+        task_id: &str,
+    ) -> Result<String, String> {
+        next_planner_chat_id_for_ctx(ctx, task_id).await
+    }
+
+    async fn emit_board_changed(
+        &self,
+        ctx: &crate::chat::ctx::ChatCtx,
+        task_id: &str,
+        board: &TaskBoard,
+    ) {
+        emit_task_event_via(
+            &Some(ctx.chat.task_events_tx.clone()),
+            &Some(ctx.chat.task_events_seq.clone()),
+            TaskEvent::BoardChanged {
+                task_id: task_id.to_string(),
+                rev: board.rev,
+                board: board.clone(),
+            },
+        )
+        .await;
+    }
+
+    async fn emit_task_updated(
+        &self,
+        ctx: &crate::chat::ctx::ChatCtx,
+        task_id: &str,
+        meta: &TaskMeta,
+    ) {
+        emit_task_updated_via(
+            &ctx.chat.sessions,
+            &Some(ctx.chat.task_events_tx.clone()),
+            &Some(ctx.chat.task_events_seq.clone()),
+            task_id.to_string(),
+            meta.clone(),
+        )
+        .await;
+    }
 }
 
-static BOARD_LOCKS: std::sync::OnceLock<AMutex<HashMap<String, Arc<AMutex<()>>>>> =
-    std::sync::OnceLock::new();
-
-fn get_board_locks() -> &'static AMutex<HashMap<String, Arc<AMutex<()>>>> {
-    BOARD_LOCKS.get_or_init(|| AMutex::new(HashMap::new()))
-}
-
-async fn get_board_lock(task_id: &str) -> Arc<AMutex<()>> {
-    let mut locks = get_board_locks().lock().await;
-    locks
-        .entry(task_id.to_string())
-        .or_insert_with(|| Arc::new(AMutex::new(())))
-        .clone()
-}
+const TASKS_DIR: &str = "tasks";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BoardConflict {
@@ -96,60 +148,12 @@ pub async fn find_task_dir(gcx: Arc<GlobalContext>, task_id: &str) -> Result<Pat
     find_task_dir_for_ctx(&gcx.chat_ctx(gcx.clone()), task_id).await
 }
 
-pub(crate) async fn get_all_tasks_dirs_for_ctx(ctx: &crate::chat::ctx::ChatCtx) -> Vec<PathBuf> {
-    let mut dirs: Vec<PathBuf> = crate::files_correction::get_unscoped_project_dirs_for_ctx(ctx)
-        .await
-        .into_iter()
-        .map(|p| p.join(".refact").join(TASKS_DIR))
-        .filter(|p| p.exists())
-        .collect();
-
-    let global_dir = ctx.paths.config_dir.join(TASKS_DIR);
-    if global_dir.exists() {
-        dirs.push(global_dir);
-    }
-
-    dirs
-}
-
-pub(crate) async fn find_task_dir_for_ctx(
-    ctx: &crate::chat::ctx::ChatCtx,
-    task_id: &str,
-) -> Result<PathBuf, String> {
-    validate_task_id(task_id)?;
-    for tasks_dir in get_all_tasks_dirs_for_ctx(ctx).await {
-        let candidate = tasks_dir.join(task_id);
-        if candidate.is_dir() {
-            return Ok(candidate);
-        }
-    }
-    Err(format!("Task not found: {}", task_id))
-}
-
 pub async fn ensure_tasks_dir_for_ctx(ctx: &crate::chat::ctx::ChatCtx) -> Result<PathBuf, String> {
     let dir = get_tasks_dir_for_ctx(ctx).await?;
     if !dir.exists() {
         fs::create_dir_all(&dir).await.map_err(|e| e.to_string())?;
     }
     Ok(dir)
-}
-
-pub fn validate_task_id(task_id: &str) -> Result<(), String> {
-    if task_id.is_empty() {
-        return Err("Task ID cannot be empty".into());
-    }
-    if task_id.len() > 128 {
-        return Err("Task ID too long".into());
-    }
-    if !task_id
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-    {
-        return Err(
-            "Task ID must contain only alphanumeric characters, hyphens, or underscores".into(),
-        );
-    }
-    Ok(())
 }
 
 pub async fn list_tasks(gcx: Arc<GlobalContext>) -> Result<Vec<TaskMeta>, String> {
@@ -185,33 +189,7 @@ pub async fn list_tasks_for_ctx(
     Ok(tasks)
 }
 
-async fn load_task_meta_from_path(path: &PathBuf) -> Result<TaskMeta, String> {
-    let content = fs::read_to_string(path).await.map_err(|e| e.to_string())?;
-    serde_yaml::from_str(&content).map_err(|e| e.to_string())
-}
-
-pub async fn load_task_meta(gcx: Arc<GlobalContext>, task_id: &str) -> Result<TaskMeta, String> {
-    load_task_meta_for_ctx(&gcx.chat_ctx(gcx.clone()), task_id).await
-}
-
-pub async fn load_task_meta_for_ctx(
-    ctx: &crate::chat::ctx::ChatCtx,
-    task_id: &str,
-) -> Result<TaskMeta, String> {
-    let task_dir = find_task_dir_for_ctx(ctx, task_id).await?;
-    let meta_path = task_dir.join("meta.yaml");
-    load_task_meta_from_path(&meta_path).await
-}
-
-pub async fn save_task_meta(
-    gcx: Arc<GlobalContext>,
-    task_id: &str,
-    meta: &TaskMeta,
-) -> Result<(), String> {
-    save_task_meta_for_ctx(&gcx.chat_ctx(gcx.clone()), task_id, meta).await
-}
-
-pub async fn save_task_meta_for_ctx(
+async fn save_task_meta_impl(
     ctx: &crate::chat::ctx::ChatCtx,
     task_id: &str,
     meta: &TaskMeta,
@@ -226,131 +204,6 @@ pub async fn save_task_meta_for_ctx(
         super::index::upsert_task_index_entry(tasks_dir, meta).await?;
     }
     Ok(())
-}
-
-pub async fn load_board(gcx: Arc<GlobalContext>, task_id: &str) -> Result<TaskBoard, String> {
-    load_board_for_ctx(&gcx.chat_ctx(gcx.clone()), task_id).await
-}
-
-pub async fn load_board_for_ctx(
-    ctx: &crate::chat::ctx::ChatCtx,
-    task_id: &str,
-) -> Result<TaskBoard, String> {
-    let task_dir = find_task_dir_for_ctx(ctx, task_id).await?;
-    let board_path = task_dir.join("board.yaml");
-    if !board_path.exists() {
-        return Ok(TaskBoard::default());
-    }
-    let content = fs::read_to_string(&board_path)
-        .await
-        .map_err(|e| e.to_string())?;
-    serde_yaml::from_str(&content).map_err(|e| e.to_string())
-}
-
-pub async fn save_board(
-    gcx: Arc<GlobalContext>,
-    task_id: &str,
-    board: &TaskBoard,
-) -> Result<(), String> {
-    save_board_for_ctx(&gcx.chat_ctx(gcx.clone()), task_id, board).await
-}
-
-pub async fn save_board_for_ctx(
-    ctx: &crate::chat::ctx::ChatCtx,
-    task_id: &str,
-    board: &TaskBoard,
-) -> Result<(), String> {
-    let task_dir = find_task_dir_for_ctx(ctx, task_id).await?;
-    let board_path = task_dir.join("board.yaml");
-    let tmp_path = task_dir.join("board.yaml.tmp");
-    let content = serde_yaml::to_string(board).map_err(|e| e.to_string())?;
-    fs::write(&tmp_path, &content)
-        .await
-        .map_err(|e| e.to_string())?;
-    atomic_write_file(&tmp_path, &board_path).await
-}
-
-pub async fn update_board_atomic<F, T>(
-    gcx: Arc<GlobalContext>,
-    task_id: &str,
-    updater: F,
-) -> Result<(TaskBoard, T), String>
-where
-    F: FnOnce(&mut TaskBoard) -> Result<T, String>,
-    T: Default,
-{
-    update_board_atomic_for_ctx(&gcx.chat_ctx(gcx.clone()), task_id, updater).await
-}
-
-pub async fn update_board_atomic_for_ctx<F, T>(
-    ctx: &crate::chat::ctx::ChatCtx,
-    task_id: &str,
-    updater: F,
-) -> Result<(TaskBoard, T), String>
-where
-    F: FnOnce(&mut TaskBoard) -> Result<T, String>,
-    T: Default,
-{
-    let lock = get_board_lock(task_id).await;
-    let _guard = lock.lock().await;
-
-    let mut board = load_board_for_ctx(ctx, task_id).await?;
-    let failed_before: HashSet<String> = board
-        .cards
-        .iter()
-        .filter(|card| card.column == "failed" || card.column == "regressed")
-        .map(|card| card.id.clone())
-        .collect();
-    let result = updater(&mut board)?;
-    let new_failed = board
-        .cards
-        .iter()
-        .filter(|card| {
-            (card.column == "failed" || card.column == "regressed")
-                && !failed_before.contains(&card.id)
-        })
-        .map(|card| {
-            let reason_short = card
-                .final_report
-                .as_deref()
-                .filter(|report| !report.trim().is_empty())
-                .or_else(|| {
-                    card.status_updates
-                        .last()
-                        .map(|update| update.message.as_str())
-                })
-                .unwrap_or(&card.title)
-                .chars()
-                .take(80)
-                .collect::<String>();
-            UserAction::TaskFailed {
-                task_id: task_id.to_string(),
-                reason_short,
-                ts: Utc::now(),
-            }
-        })
-        .collect::<Vec<_>>();
-    board.rev += 1;
-    save_board_for_ctx(ctx, task_id, &board).await?;
-    if !new_failed.is_empty() {
-        let user_activity = ctx.buddy.user_activity.clone();
-        if let Ok(mut ring) = user_activity.try_lock() {
-            for action in new_failed {
-                ring.push(action);
-            }
-        };
-    }
-    emit_task_event_via(
-        &Some(ctx.chat.task_events_tx.clone()),
-        &Some(ctx.chat.task_events_seq.clone()),
-        TaskEvent::BoardChanged {
-            task_id: task_id.to_string(),
-            rev: board.rev,
-            board: board.clone(),
-        },
-    )
-    .await;
-    Ok((board, result))
 }
 
 pub async fn load_planner_instructions(
@@ -410,10 +263,6 @@ fn detect_git_branch_and_commit(workspace_root: &Path) -> (Option<String>, Optio
     };
 
     (branch, commit)
-}
-
-pub async fn create_task(gcx: Arc<GlobalContext>, name: &str) -> Result<TaskMeta, String> {
-    create_task_for_ctx(&gcx.chat_ctx(gcx.clone()), name).await
 }
 
 pub async fn create_task_for_ctx(
@@ -552,57 +401,6 @@ pub async fn update_task_name_for_ctx(
     Ok(meta)
 }
 
-pub async fn update_task_stats(gcx: Arc<GlobalContext>, task_id: &str) -> Result<TaskMeta, String> {
-    update_task_stats_for_ctx(&gcx.chat_ctx(gcx.clone()), task_id).await
-}
-
-pub async fn update_task_stats_for_ctx(
-    ctx: &crate::chat::ctx::ChatCtx,
-    task_id: &str,
-) -> Result<TaskMeta, String> {
-    let mut meta = load_task_meta_for_ctx(ctx, task_id).await?;
-    let board = load_board_for_ctx(ctx, task_id).await?;
-
-    meta.cards_total = board.cards.len();
-    meta.cards_done = board.cards.iter().filter(|c| c.column == "done").count();
-    meta.cards_failed = board
-        .cards
-        .iter()
-        .filter(|c| c.column == "failed" || c.column == "regressed")
-        .count();
-    meta.agents_active = active_agent_count(&board.cards);
-    meta.updated_at = Utc::now().to_rfc3339();
-
-    save_task_meta_for_ctx(ctx, task_id, &meta).await?;
-    emit_task_updated_via(
-        &ctx.chat.sessions,
-        &Some(ctx.chat.task_events_tx.clone()),
-        &Some(ctx.chat.task_events_seq.clone()),
-        task_id.to_string(),
-        meta.clone(),
-    )
-    .await;
-    Ok(meta)
-}
-
-pub(crate) fn active_agent_count(cards: &[BoardCard]) -> usize {
-    cards
-        .iter()
-        .filter(|card| card.column == "doing")
-        .map(|card| {
-            if let Some(variants) = card.ab_variants.as_ref() {
-                if variants.winner.is_none() {
-                    return [variants.a.finish.as_ref(), variants.b.finish.as_ref()]
-                        .into_iter()
-                        .filter(|finish| finish.is_none())
-                        .count();
-                }
-            }
-            usize::from(card.agent_chat_id.is_some())
-        })
-        .sum()
-}
-
 pub fn get_task_trajectory_dir(task_dir: &PathBuf, role: &str, agent_id: Option<&str>) -> PathBuf {
     let base = task_dir.join("trajectories").join(role);
     match agent_id {
@@ -625,13 +423,6 @@ fn should_list_task_trajectory(role: &str, data: &serde_json::Value) -> bool {
 ///
 /// NOTE: this is not strictly atomic — concurrent callers can pick the same
 /// number. Callers that care about uniqueness must serialize themselves.
-pub async fn next_planner_chat_id(
-    gcx: Arc<GlobalContext>,
-    task_id: &str,
-) -> Result<String, String> {
-    next_planner_chat_id_for_ctx(&gcx.chat_ctx(gcx.clone()), task_id).await
-}
-
 pub async fn next_planner_chat_id_for_ctx(
     ctx: &crate::chat::ctx::ChatCtx,
     task_id: &str,
@@ -745,27 +536,6 @@ pub async fn list_task_trajectories_for_ctx(
     }
 
     Ok(trajectories)
-}
-
-pub fn infer_task_id_from_chat_id(chat_id: &str) -> Option<String> {
-    if let Some(id) = chat_id.strip_prefix("orch-") {
-        return Some(id.to_string());
-    }
-    if let Some(id) = chat_id.strip_prefix("plan-") {
-        return Some(id.to_string());
-    }
-    if let Some(rest) = chat_id.strip_prefix("planner-") {
-        if let Some((task_id, suffix)) = rest.rsplit_once('-') {
-            if !task_id.is_empty()
-                && !suffix.is_empty()
-                && suffix.chars().all(|c| c.is_ascii_digit())
-            {
-                return Some(task_id.to_string());
-            }
-        }
-        return Some(rest.to_string());
-    }
-    None
 }
 
 #[cfg(test)]

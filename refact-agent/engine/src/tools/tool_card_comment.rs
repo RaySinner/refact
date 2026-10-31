@@ -10,7 +10,7 @@ use crate::at_commands::at_commands::AtCommandsContext;
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
 use crate::chat::ctx::ChatCtx;
 use crate::tasks::comments::{self, CreateCardComment};
-use crate::tasks::storage;
+use refact_runtime_api::task_storage as storage;
 use crate::tasks::types::CardComment;
 use crate::tools::task_tool_helpers::{human_age, optional_string, required_string};
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};

@@ -15,7 +15,7 @@ use crate::chat::ctx::{CapsProvider, ChatCtx};
 use crate::chat::internal_roles::{event, EventSubkind};
 use crate::chat::trajectories::resolve_task_planner_controller_chat_id;
 use crate::tasks::rooms;
-use crate::tasks::storage;
+use refact_runtime_api::task_storage as storage;
 use crate::tasks::types::{BoardCard, StatusUpdate};
 use crate::global_context::GlobalContext;
 use crate::tasks::types::TaskMeta as StoredTaskMeta;
@@ -1479,7 +1479,7 @@ The agent will call `agent_finish()` when done. Use `check_agents` to monitor pr
 mod tests {
     use super::*;
     use crate::privacy::{FilePrivacySettings, PrivacySettings};
-    use crate::tasks::storage;
+    use refact_runtime_api::task_storage as storage;
     use crate::tasks::types::{BoardCard, TaskBoard, TaskMeta, TaskStatus};
     use std::path::Path;
     use std::process::Command;

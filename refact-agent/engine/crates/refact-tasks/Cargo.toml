@@ -5,7 +5,8 @@ edition = "2021"
 
 [dependencies]
 serde.workspace = true
+serde_yaml = "0.9.31"
+tokio.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
-serde_yaml = "0.9.31"

@@ -13,9 +13,14 @@ use crate::at_commands::at_commands::AtCommandsContext;
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
 use crate::chat::ctx::ChatCtx;
 use crate::chat::internal_roles::{event, EventSubkind};
+<<<<<<< HEAD
 use refact_chat_api::verifier::ExpectedCardState;
 use refact_runtime_api::verifier::schedule_card_verifier_after_finish_for_ctx;
 use crate::tasks::storage;
+=======
+use crate::chat::verifier::{schedule_card_verifier_after_finish_for_ctx, ExpectedCardState};
+use refact_runtime_api::task_storage as storage;
+>>>>>>> refact/task/6ba1dc0c-8993-4358-9336-cc5bb9b7487c/card/W11-P2/f763bf6a
 use crate::tasks::types::{AbVariantInfo, AbVariants, BoardCard, StatusUpdate};
 use crate::tools::task_tool_helpers::{wait_for_agent_abort, AGENT_ABORT_TIMEOUT};
 use crate::tools::tool_task_spawn_agent::{

@@ -198,7 +198,7 @@ async fn target_is_foreign_room_member(
     caller_card_id: &str,
     to: &str,
 ) -> bool {
-    let Ok(board) = crate::tasks::storage::load_board(gcx, task_id).await else {
+    let Ok(board) = refact_runtime_api::task_storage::load_board(gcx, task_id).await else {
         return false;
     };
     board
@@ -243,7 +243,7 @@ pub(crate) async fn resolve_room_peers(
     caller_chat_id: &str,
     to: Option<&str>,
 ) -> Option<Vec<RoomPeer>> {
-    let board = crate::tasks::storage::load_board(gcx, task_id).await.ok()?;
+    let board = refact_runtime_api::task_storage::load_board(gcx, task_id).await.ok()?;
     let card = board.get_card(caller_card_id)?;
     let author = crate::tasks::rooms::room_member_provenance(card, caller_chat_id)?;
     match to {
@@ -1260,7 +1260,7 @@ mod tests {
         *gcx.documents_state.workspace_folders.lock().unwrap() = vec![workspace.path().to_path_buf()];
 
         let board_card = room_board_card(&["agent-T-1-arch", "agent-T-1-code"]);
-        crate::tasks::storage::save_board(
+        refact_runtime_api::task_storage::save_board(
             gcx.clone(),
             "task-room",
             &crate::tasks::types::TaskBoard {
@@ -1312,7 +1312,7 @@ mod tests {
         let workspace = room_workspace();
         *gcx.documents_state.workspace_folders.lock().unwrap() = vec![workspace.path().to_path_buf()];
 
-        crate::tasks::storage::save_board(
+        refact_runtime_api::task_storage::save_board(
             gcx.clone(),
             "task-room",
             &crate::tasks::types::TaskBoard {
@@ -1354,7 +1354,7 @@ mod tests {
         *gcx.documents_state.workspace_folders.lock().unwrap() =
             vec![workspace.path().to_path_buf()];
 
-        crate::tasks::storage::save_board(
+        refact_runtime_api::task_storage::save_board(
             gcx.clone(),
             "task-room",
             &crate::tasks::types::TaskBoard {
@@ -1394,7 +1394,7 @@ mod tests {
         *gcx.documents_state.workspace_folders.lock().unwrap() =
             vec![workspace.path().to_path_buf()];
 
-        crate::tasks::storage::save_board(
+        refact_runtime_api::task_storage::save_board(
             gcx.clone(),
             "task-room",
             &crate::tasks::types::TaskBoard {
@@ -1439,7 +1439,7 @@ mod tests {
         *gcx.documents_state.workspace_folders.lock().unwrap() =
             vec![workspace.path().to_path_buf()];
 
-        crate::tasks::storage::save_board(
+        refact_runtime_api::task_storage::save_board(
             gcx.clone(),
             "task-room",
             &crate::tasks::types::TaskBoard {
@@ -1495,7 +1495,7 @@ mod tests {
         let workspace = room_workspace();
         *gcx.documents_state.workspace_folders.lock().unwrap() = vec![workspace.path().to_path_buf()];
 
-        crate::tasks::storage::save_board(
+        refact_runtime_api::task_storage::save_board(
             gcx.clone(),
             "task-room",
             &crate::tasks::types::TaskBoard {
@@ -1561,7 +1561,7 @@ mod tests {
         let workspace = room_workspace();
         *gcx.documents_state.workspace_folders.lock().unwrap() = vec![workspace.path().to_path_buf()];
 
-        crate::tasks::storage::save_board(
+        refact_runtime_api::task_storage::save_board(
             gcx.clone(),
             "task-room",
             &crate::tasks::types::TaskBoard {
@@ -1620,7 +1620,7 @@ mod tests {
         *gcx.documents_state.workspace_folders.lock().unwrap() = vec![workspace.path().to_path_buf()];
 
         let board_card = room_board_card(&["agent-T-1-arch", "agent-T-1-code"]);
-        crate::tasks::storage::save_board(
+        refact_runtime_api::task_storage::save_board(
             gcx.clone(),
             "task-room",
             &crate::tasks::types::TaskBoard {
@@ -1674,7 +1674,7 @@ mod tests {
         *gcx.documents_state.workspace_folders.lock().unwrap() = vec![workspace.path().to_path_buf()];
 
         let board_card = room_board_card(&["agent-T-1-arch", "agent-T-1-code"]);
-        crate::tasks::storage::save_board(
+        refact_runtime_api::task_storage::save_board(
             gcx.clone(),
             "task-room",
             &crate::tasks::types::TaskBoard {
@@ -1728,7 +1728,7 @@ mod tests {
         *gcx.documents_state.workspace_folders.lock().unwrap() = vec![workspace.path().to_path_buf()];
 
         let board_card = room_board_card(&["agent-T-1-arch", "agent-T-1-code"]);
-        crate::tasks::storage::save_board(
+        refact_runtime_api::task_storage::save_board(
             gcx.clone(),
             "task-room",
             &crate::tasks::types::TaskBoard {
@@ -1781,7 +1781,7 @@ mod tests {
         let workspace = room_workspace();
         *gcx.documents_state.workspace_folders.lock().unwrap() = vec![workspace.path().to_path_buf()];
 
-        crate::tasks::storage::save_board(
+        refact_runtime_api::task_storage::save_board(
             gcx.clone(),
             "task-room",
             &crate::tasks::types::TaskBoard {
@@ -1838,7 +1838,7 @@ mod tests {
         let workspace = room_workspace();
         *gcx.documents_state.workspace_folders.lock().unwrap() = vec![workspace.path().to_path_buf()];
 
-        crate::tasks::storage::save_board(
+        refact_runtime_api::task_storage::save_board(
             gcx.clone(),
             "task-room",
             &crate::tasks::types::TaskBoard {

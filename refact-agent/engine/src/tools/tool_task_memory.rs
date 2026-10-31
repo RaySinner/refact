@@ -26,7 +26,7 @@ use crate::knowledge_index::{
 };
 use crate::postprocessing::pp_command_output::OutputFilter;
 use crate::chat::ctx::ChatCtx;
-use crate::tasks::storage::find_task_dir_for_ctx;
+use refact_runtime_api::task_storage::find_task_dir_for_ctx;
 use crate::tools::tools_description::{
     Tool, ToolDesc, ToolSource, ToolSourceType, json_schema_from_params,
 };

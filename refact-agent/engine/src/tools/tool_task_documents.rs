@@ -15,7 +15,7 @@ use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
 #[cfg(test)]
 use crate::global_context::GlobalContext;
 use crate::postprocessing::pp_command_output::OutputFilter;
-use crate::tasks::storage;
+use refact_runtime_api::task_storage as storage;
 use crate::tools::tools_description::{
     json_schema_from_params, Tool, ToolDesc, ToolSource, ToolSourceType,
 };

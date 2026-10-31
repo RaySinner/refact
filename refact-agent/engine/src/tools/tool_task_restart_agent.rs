@@ -13,7 +13,7 @@ use crate::call_validation::{ChatMessage, ChatContent, ContextEnum, ContextFile}
 use crate::chat::ctx::ChatCtx;
 use crate::chat::internal_roles::{event, EventSubkind};
 use crate::global_context::GlobalContext;
-use crate::tasks::storage;
+use refact_runtime_api::task_storage as storage;
 use crate::tasks::types::{BoardCard, StatusUpdate};
 use crate::tools::task_tool_helpers::{wait_for_agent_abort, AGENT_ABORT_TIMEOUT};
 use crate::tools::tool_task_spawn_agent::{

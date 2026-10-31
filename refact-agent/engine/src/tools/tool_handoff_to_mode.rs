@@ -18,7 +18,7 @@ use crate::chat::trajectories::{
 };
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
 use crate::postprocessing::pp_command_output::OutputFilter;
-use crate::tasks::storage;
+use refact_runtime_api::task_storage as storage;
 use crate::tools::tool_task_documents::{
     create_document_at, documents_dir_for_task_for_ctx, next_available_slug_at,
 };

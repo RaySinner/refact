@@ -99,7 +99,7 @@ pub async fn check_scope_guard(
         (ccx_lock.app.chat_ctx(), meta.task_id, card_id)
     };
 
-    let board = crate::tasks::storage::load_board_for_ctx(&ctx, &task_id).await?;
+    let board = refact_runtime_api::task_storage::load_board_for_ctx(&ctx, &task_id).await?;
     let card = match board.get_card(&card_id) {
         Some(card) => card,
         None => return Ok(()),

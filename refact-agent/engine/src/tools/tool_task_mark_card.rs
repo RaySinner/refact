@@ -10,7 +10,7 @@ use crate::tools::tools_description::{
 };
 use crate::call_validation::{ChatMessage, ChatContent, ContextEnum};
 use crate::at_commands::at_commands::AtCommandsContext;
-use crate::tasks::storage;
+use refact_runtime_api::task_storage as storage;
 use crate::tasks::types::StatusUpdate;
 
 async fn get_task_id(

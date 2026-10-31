@@ -134,7 +134,7 @@ mod tests {
     use crate::app_state::AppState;
     use crate::chat::types::TaskMeta as ThreadTaskMeta;
     use crate::global_context::GlobalContext;
-    use crate::tasks::storage;
+    use refact_runtime_api::task_storage as storage;
     use crate::tasks::types::{TaskBoard, TaskMeta as StoredTaskMeta, TaskStatus};
     use std::path::Path;
 

@@ -21,7 +21,7 @@ use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
 use crate::app_state::AppState;
 use crate::tasks::events::{TaskEvent, emit_task_event_for_services};
 use crate::tasks::rooms;
-use crate::tasks::storage;
+use refact_runtime_api::task_storage as storage;
 use crate::tasks::types::{BoardCard, StatusUpdate, TeamMember};
 use crate::tools::tools_description::{
     json_schema_from_params, Tool, ToolDesc, ToolSource, ToolSourceType,

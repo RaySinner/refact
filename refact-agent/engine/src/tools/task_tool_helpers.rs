@@ -9,7 +9,7 @@ use crate::at_commands::at_commands::AtCommandsContext;
 use crate::global_context::GlobalContextCtx;
 use crate::chat::types::TaskMeta;
 use crate::chat::ctx::ChatCtx;
-use crate::tasks::storage;
+use refact_runtime_api::task_storage as storage;
 
 pub(crate) fn required_string(args: &HashMap<String, Value>, key: &str) -> Result<String, String> {
     args.get(key)

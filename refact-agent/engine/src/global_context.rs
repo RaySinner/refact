@@ -57,6 +57,7 @@ pub trait GlobalContextCtx {
 impl GlobalContextCtx for GlobalContext {
     fn chat_ctx(&self, gcx: SharedGlobalContext) -> ChatCtx {
         ChatCtx {
+            task_storage_runtime: self.task_storage_runtime.clone(),
             runtime: RuntimeServices {
                 shutdown_flag: self.shutdown_flag.clone(),
                 cmdline: Arc::new(self.cmdline.clone()),
@@ -549,6 +550,7 @@ pub async fn create_global_context(
         .await
         .unwrap_or_else(|error| panic!("failed to initialize background agent registry: {error}"));
     let cx = GlobalContext {
+        task_storage_runtime: Arc::new(crate::tasks::storage::EngineTaskStorageRuntime),
         shutdown_flag: Arc::new(AtomicBool::new(false)),
         lsp_tcp_client_count: Arc::new(AtomicUsize::new(0)),
         exec_registry: Arc::new(ExecRegistry::new()),
@@ -641,7 +643,22 @@ pub mod tests {
     #[cfg(test)]
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-    pub use refact_test_support::{make_test_gcx, make_test_gcx_with_dirs};
+    pub async fn make_test_gcx() -> SharedGlobalContext {
+        refact_test_support::make_test_gcx(Arc::new(crate::tasks::storage::EngineTaskStorageRuntime))
+            .await
+    }
+
+    pub async fn make_test_gcx_with_dirs(
+        cache_dir: PathBuf,
+        config_dir: PathBuf,
+    ) -> SharedGlobalContext {
+        refact_test_support::make_test_gcx_with_dirs(
+            cache_dir,
+            config_dir,
+            Arc::new(crate::tasks::storage::EngineTaskStorageRuntime),
+        )
+        .await
+    }
     use refact_test_support::register_test_temp_dir;
 
     #[test]

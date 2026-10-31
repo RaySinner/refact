@@ -66,6 +66,7 @@ impl Default for EngineGlobalConfig {
 }
 
 pub struct GlobalContext {
+    pub task_storage_runtime: Arc<dyn crate::task_storage::TaskStorageRuntime>,
     pub shutdown_flag: Arc<AtomicBool>,
     pub lsp_tcp_client_count: Arc<AtomicUsize>,
     pub exec_registry: Arc<ExecRegistry>,

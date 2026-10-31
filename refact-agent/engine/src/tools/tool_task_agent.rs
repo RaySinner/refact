@@ -11,7 +11,7 @@ use refact_chat_api::TaskMeta;
 use crate::tools::tools_description::{
     Tool, ToolDesc, ToolSource, ToolSourceType, json_schema_from_params,
 };
-use crate::tasks::storage;
+use refact_runtime_api::task_storage as storage;
 use crate::tasks::types::StatusUpdate;
 
 #[derive(Debug, Clone, PartialEq, Eq)]

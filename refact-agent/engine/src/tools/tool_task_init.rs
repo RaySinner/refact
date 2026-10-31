@@ -9,7 +9,7 @@ use crate::call_validation::{ChatMessage, ChatContent, ContextEnum};
 use crate::tools::tools_description::{
     Tool, ToolDesc, ToolSource, ToolSourceType, json_schema_from_params,
 };
-use crate::tasks::storage;
+use refact_runtime_api::task_storage as storage;
 
 pub struct ToolTaskInit;
 

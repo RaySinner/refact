@@ -93,16 +93,18 @@ pub fn registered_test_temp_dirs() -> Vec<PathBuf> {
 
 pub async fn make_test_gcx(
     task_storage_runtime: Arc<dyn refact_runtime_api::task_storage::TaskStorageRuntime>,
+    files_runtime: Arc<dyn refact_runtime_api::files_in_workspace::FilesRuntime>,
 ) -> SharedGlobalContext {
     let cache_dir = std::env::temp_dir().join(format!("refact-test-{}", uuid::Uuid::new_v4()));
     let config_dir = std::env::temp_dir().join(format!("refact-cfg-{}", uuid::Uuid::new_v4()));
-    make_test_gcx_with_dirs(cache_dir, config_dir, task_storage_runtime).await
+    make_test_gcx_with_dirs(cache_dir, config_dir, task_storage_runtime, files_runtime).await
 }
 
 pub async fn make_test_gcx_with_dirs(
     cache_dir: PathBuf,
     config_dir: PathBuf,
     task_storage_runtime: Arc<dyn refact_runtime_api::task_storage::TaskStorageRuntime>,
+    files_runtime: Arc<dyn refact_runtime_api::files_in_workspace::FilesRuntime>,
 ) -> SharedGlobalContext {
     let (ask_shutdown_sender, _) = std::sync::mpsc::channel::<String>();
 
@@ -162,6 +164,7 @@ pub async fn make_test_gcx_with_dirs(
 
     let _ = EngineGlobalConfig::default();
     let cx = GlobalContext {
+        files_runtime,
         task_storage_runtime,
         shutdown_flag: Arc::new(AtomicBool::new(false)),
         lsp_tcp_client_count: Arc::new(AtomicUsize::new(0)),

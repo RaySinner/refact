@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::files_in_workspace::get_file_text_from_memory_or_disk;
+use refact_runtime_api::files_in_workspace::get_file_text_from_memory_or_disk;
 use crate::global_context::GlobalContext;
 use crate::tools::review_scope::{paths_match, ReviewScope};
 use crate::tools::review_types::ReviewFinding;

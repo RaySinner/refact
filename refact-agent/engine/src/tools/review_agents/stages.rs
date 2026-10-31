@@ -249,7 +249,7 @@ pub async fn load_stage_catalog(gcx: Arc<GlobalContext>) -> Vec<StageSpec> {
 
     let config_dir = gcx.config_dir.clone();
     overlay_from_dir(&mut catalog, config_dir.join(STAGE_KIND)).await;
-    for project in crate::files_correction::get_project_dirs(gcx.clone()).await {
+    for project in refact_runtime_api::files_correction::get_project_dirs(gcx.clone()).await {
         overlay_from_dir(&mut catalog, project.join(".refact").join(STAGE_KIND)).await;
     }
 

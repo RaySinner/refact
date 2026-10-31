@@ -351,7 +351,7 @@ async fn symbol_def_via_codegraph(
             .map(|cf| cf.file_name.clone())
             .collect::<Vec<_>>();
         let short_file_paths =
-            crate::files_correction::shortify_paths(gcx.clone(), &file_paths).await;
+            refact_runtime_api::files_correction::shortify_paths(gcx.clone(), &file_paths).await;
         let mut tool_message = format!("Definitions for `{}`:\n", symbol);
         for (cf, short_path) in context_files.iter().zip(short_file_paths.iter()) {
             let symbol_path = cf.symbols.get(0).cloned().unwrap_or_default();

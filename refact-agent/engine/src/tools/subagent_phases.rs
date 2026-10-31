@@ -9,7 +9,7 @@ use crate::at_commands::at_commands::AtCommandsContext;
 use crate::call_validation::{ChatMessage, ChatContent};
 use crate::chat::ctx::SubchatLauncher;
 use crate::chat::internal_roles::{event, EventSubkind};
-use crate::files_correction::correct_to_nearest_filename;
+use refact_runtime_api::files_correction::correct_to_nearest_filename;
 use crate::chat::ctx::{ExplicitSubchatSpec, TraceParent};
 use crate::global_context::GlobalContext;
 use crate::tools::tool_helpers::{load_code_subagent_config, CodeSubagentConfig};

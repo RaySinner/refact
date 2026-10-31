@@ -69,6 +69,7 @@ use crate::ChatSessionFacade;
 
 #[derive(Clone)]
 pub struct WorkspaceServices {
+    pub files_runtime: Arc<dyn crate::files_in_workspace::FilesRuntime>,
     pub documents_state: DocumentsState,
     pub privacy_settings: Arc<PrivacySettings>,
     pub indexing_everywhere: Arc<StdRwLock<Arc<IndexingEverywhere>>>,

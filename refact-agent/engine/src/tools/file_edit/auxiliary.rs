@@ -4,12 +4,13 @@ use refact_runtime_api::at_command_executor::{
     file_repair_candidates, return_one_candidate_or_a_good_error,
 };
 use crate::call_validation::DiffChunk;
-use crate::files_correction::{
-    canonicalize_normalized_path, check_if_its_inside_a_workspace_or_config,
-    correct_to_nearest_dir_path, get_unscoped_project_dirs, preprocess_path_for_normalization,
-    registered_worktree_path_mappings, resolve_codegraph_queue_path,
+use refact_files::path_utils::{canonicalize_normalized_path, preprocess_path_for_normalization};
+use refact_runtime_api::files_correction::{
+    check_if_its_inside_a_workspace_or_config, correct_to_nearest_dir_path,
+    get_unscoped_project_dirs, resolve_codegraph_queue_path,
 };
-use crate::files_in_workspace::get_file_text_from_memory_or_disk;
+use refact_worktrees::path_mappings::registered_worktree_path_mappings;
+use refact_runtime_api::files_in_workspace::get_file_text_from_memory_or_disk;
 use crate::global_context::GlobalContext;
 use refact_privacy::check_file_privacy;
 use refact_core::privacy_types::{FilePrivacyLevel, PrivacySettings};
@@ -1584,7 +1585,7 @@ mod tests {
             fast_enqueue_for_edit(gcx.clone(), &[worktree_file.clone()])
                 .await
                 .unwrap();
-            crate::files_in_workspace::enqueue_some_docs_with_read_paths(
+            refact_runtime_api::files_in_workspace::enqueue_some_docs_with_read_paths(
                 gcx.clone(),
                 &[refact_codegraph::QueuedPath::new(
                     worktree_file.to_string_lossy().to_string(),

@@ -21,7 +21,7 @@ use crate::buddy::storage::enqueue_memory_op;
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
 use crate::chat::ctx::ChatCtx;
 use crate::file_filter::KNOWLEDGE_FOLDER_NAME;
-use crate::files_correction::get_unscoped_project_dirs_for_ctx;
+use refact_runtime_api::files_correction::get_unscoped_project_dirs_for_ctx;
 use crate::knowledge_graph::kg_structs::KnowledgeFrontmatter;
 use refact_core::knowledge_index::KnowledgeCard;
 use crate::memories::{

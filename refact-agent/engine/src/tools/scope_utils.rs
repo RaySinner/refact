@@ -8,8 +8,8 @@ pub use refact_scope_utils::{
 
 use crate::call_validation::ContextFile;
 use crate::global_context::GlobalContextCtx;
-use crate::files_correction::canonical_path;
-use crate::files_in_workspace::{ls_files, ls_files_limited, LsFilesLimited};
+use refact_files::path_utils::canonical_path;
+use refact_files::workspace::{ls_files, ls_files_limited, LsFilesLimited};
 use crate::tools::ctx::ToolCtx;
 use crate::worktrees::scope::ExecutionScope;
 

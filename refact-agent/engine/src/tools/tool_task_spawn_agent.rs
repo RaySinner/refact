@@ -313,7 +313,7 @@ async fn prepare_agent_worktree_with_base_and_suffix(
     base_commit: Option<String>,
     branch_suffix: Option<&str>,
 ) -> Result<PreparedWorktree, String> {
-    let project_dirs = crate::files_correction::get_unscoped_project_dirs_for_ctx(ctx).await;
+    let project_dirs = refact_runtime_api::files_correction::get_unscoped_project_dirs_for_ctx(ctx).await;
     let workspace_root = project_dirs.first().cloned().ok_or_else(|| {
         "No workspace folder found; task agents require an isolated git worktree".to_string()
     })?;
@@ -925,7 +925,7 @@ async fn context_files_from_files_to_open(
                 canonical_resolved.display()
             ));
         }
-        crate::files_in_workspace::check_file_privacy_for_model_context(
+        refact_runtime_api::files_in_workspace::check_file_privacy_for_model_context(
             gcx.clone(),
             &canonical_resolved,
         )
@@ -1158,7 +1158,7 @@ impl Tool for ToolTaskSpawnAgent {
         let agent_id = Uuid::new_v4().to_string();
         let agent_chat_id = format!("agent-{}-{}", card_id, &agent_id[..8]);
 
-        let project_dirs = crate::files_correction::get_unscoped_project_dirs_for_ctx(&ctx).await;
+        let project_dirs = refact_runtime_api::files_correction::get_unscoped_project_dirs_for_ctx(&ctx).await;
         let workspace_root = project_dirs.first().ok_or_else(|| {
             "No workspace folder found; task agents require an isolated git worktree".to_string()
         })?;
@@ -1766,7 +1766,7 @@ mod tests {
         init_repo(&source);
         let gcx = crate::global_context::tests::make_test_gcx().await;
         set_workspace(gcx.clone(), &source).await;
-        let before = crate::files_correction::get_project_dirs(gcx.clone()).await;
+        let before = refact_runtime_api::files_correction::get_project_dirs(gcx.clone()).await;
 
         let task_meta = sample_task_meta(None);
         let prepared = prepare_agent_worktree(&test_chat_ctx(&gcx).await,
@@ -1778,7 +1778,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let after = crate::files_correction::get_project_dirs(gcx.clone()).await;
+        let after = refact_runtime_api::files_correction::get_project_dirs(gcx.clone()).await;
 
         assert_eq!(after, before);
         assert!(!after.contains(&prepared.meta.root));

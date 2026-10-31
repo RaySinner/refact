@@ -251,7 +251,7 @@ async fn service_from_gcx(
     requested_source_root: Option<String>,
 ) -> Result<WorktreeService, String> {
     let cache_dir = gcx.cache_dir.clone();
-    let project_dirs = crate::files_correction::get_project_dirs(gcx).await;
+    let project_dirs = refact_runtime_api::files_correction::get_project_dirs(gcx).await;
     if project_dirs.is_empty() {
         return Err("No project root available".to_string());
     }

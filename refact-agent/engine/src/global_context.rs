@@ -218,6 +218,7 @@ impl GlobalContextCtx for GlobalContext {
             paths: ctx.paths.clone(),
             model: ctx.model.clone(),
             workspace: WorkspaceServices {
+                files_runtime: self.files_runtime.clone(),
                 documents_state: self.documents_state.clone(),
                 privacy_settings: ctx.workspace.privacy_settings.clone(),
                 indexing_everywhere: self.indexing_everywhere.clone(),
@@ -552,6 +553,7 @@ pub async fn create_global_context(
         .await
         .unwrap_or_else(|error| panic!("failed to initialize background agent registry: {error}"));
     let cx = GlobalContext {
+        files_runtime: Arc::new(crate::files_in_workspace::EngineFilesRuntime),
         task_storage_runtime: Arc::new(crate::tasks::storage::EngineTaskStorageRuntime),
         shutdown_flag: Arc::new(AtomicBool::new(false)),
         lsp_tcp_client_count: Arc::new(AtomicUsize::new(0)),
@@ -646,8 +648,11 @@ pub mod tests {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     pub async fn make_test_gcx() -> SharedGlobalContext {
-        refact_test_support::make_test_gcx(Arc::new(crate::tasks::storage::EngineTaskStorageRuntime))
-            .await
+        refact_test_support::make_test_gcx(
+            Arc::new(crate::tasks::storage::EngineTaskStorageRuntime),
+            Arc::new(crate::files_in_workspace::EngineFilesRuntime),
+        )
+        .await
     }
 
     pub async fn make_test_gcx_with_dirs(
@@ -658,6 +663,7 @@ pub mod tests {
             cache_dir,
             config_dir,
             Arc::new(crate::tasks::storage::EngineTaskStorageRuntime),
+            Arc::new(crate::files_in_workspace::EngineFilesRuntime),
         )
         .await
     }

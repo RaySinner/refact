@@ -23,11 +23,11 @@ use crate::exec::{
     sanitize_short_description, ExecOutputChunk, ExecOutputStream, ExecOwnerMeta,
     ExecProcessSnapshot, ExecRawOutput, ExecReadResult, ExecStatus,
 };
-use crate::files_correction::canonical_path;
-use crate::files_correction::canonicalize_normalized_path;
-use crate::files_correction::check_if_its_inside_a_workspace_or_config_for_ctx;
-use crate::files_correction::get_active_project_path;
-use crate::files_correction::preprocess_path_for_normalization;
+use refact_files::path_utils::canonical_path;
+use refact_files::path_utils::canonicalize_normalized_path;
+use refact_runtime_api::files_correction::check_if_its_inside_a_workspace_or_config_for_ctx;
+use refact_runtime_api::files_correction::get_active_project_path;
+use refact_files::path_utils::preprocess_path_for_normalization;
 use crate::global_context::GlobalContext;
 use refact_tool_api::IntegrationConfirmation;
 use crate::postprocessing::pp_command_output::{
@@ -113,7 +113,7 @@ impl Tool for ToolShell {
             &tool.workspace.privacy_settings,
             tool.paths.config_dir.as_path(),
             tool.runtime.cmdline.privacy_yaml.as_str(),
-            crate::files_correction::get_unscoped_project_dirs_for_ctx(&chat).await,
+            refact_runtime_api::files_correction::get_unscoped_project_dirs_for_ctx(&chat).await,
             &chat.tool_catalog_generations,
         )
         .await;

@@ -195,7 +195,7 @@ async fn read_plan_from_path(
             path.display()
         ));
     }
-    crate::files_in_workspace::check_file_privacy_for_send(gcx, &path).await?;
+    refact_runtime_api::files_in_workspace::check_file_privacy_for_send(gcx, &path).await?;
 
     let content = read_bounded_plan_file(&path).await?;
     if content.trim().is_empty() {
@@ -269,7 +269,7 @@ mod tests {
     use crate::call_validation::{ChatToolCall, ChatToolFunction};
     use crate::chat::internal_roles::{EVENT_ROLE, PLAN_ROLE};
     use crate::chat::types::{ChatEvent, ChatSession, EventEnvelope};
-    use crate::files_in_workspace::Document;
+    use refact_files::documents_state::Document;
     use crate::llm::adapter::{AdapterSettings, LlmWireAdapter};
     use crate::llm::adapters::openai_chat::OpenAiChatAdapter;
     use refact_core::privacy_types::{FilePrivacySettings, PrivacySettings};
@@ -693,7 +693,7 @@ mod tests {
             .await
             .unwrap();
         gcx.documents_state.workspace_folders.lock().unwrap().push(
-            crate::files_correction::canonical_path(temp.path().to_string_lossy().to_string()),
+            refact_files::path_utils::canonical_path(temp.path().to_string_lossy().to_string()),
         );
         let mut tool = ToolSetPlan {
             config_path: String::new(),
@@ -736,7 +736,7 @@ mod tests {
         let file = std::fs::File::create(&plan_path).unwrap();
         file.set_len(MAX_PLAN_FILE_BYTES + 1).unwrap();
         gcx.documents_state.workspace_folders.lock().unwrap().push(
-            crate::files_correction::canonical_path(temp.path().to_string_lossy().to_string()),
+            refact_files::path_utils::canonical_path(temp.path().to_string_lossy().to_string()),
         );
         let mut tool = ToolSetPlan {
             config_path: String::new(),
@@ -783,7 +783,7 @@ mod tests {
             Arc::new(tokio::sync::RwLock::new(document)),
         );
         gcx.documents_state.workspace_folders.lock().unwrap().push(
-            crate::files_correction::canonical_path(temp.path().to_string_lossy().to_string()),
+            refact_files::path_utils::canonical_path(temp.path().to_string_lossy().to_string()),
         );
         let mut tool = ToolSetPlan {
             config_path: String::new(),
@@ -821,7 +821,7 @@ mod tests {
         tokio::fs::write(&secret_path, "secret").await.unwrap();
         std::os::unix::fs::symlink(&secret_path, &plan_link).unwrap();
         gcx.documents_state.workspace_folders.lock().unwrap().push(
-            crate::files_correction::canonical_path(temp.path().to_string_lossy().to_string()),
+            refact_files::path_utils::canonical_path(temp.path().to_string_lossy().to_string()),
         );
         let mut tool = ToolSetPlan {
             config_path: String::new(),

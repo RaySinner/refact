@@ -10,7 +10,7 @@ use crate::tools::tools_description::{
     Tool, ToolDesc, ToolSource, ToolSourceType, json_schema_from_params,
 };
 use crate::call_validation::{ChatMessage, ChatContent, ContextEnum};
-use crate::files_in_workspace::enqueue_all_files_from_workspace_folders;
+use refact_runtime_api::files_in_workspace::enqueue_all_files_from_workspace_folders;
 
 pub struct ToolAddWorkspaceFolder {
     pub config_path: String,

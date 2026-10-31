@@ -17,6 +17,7 @@ pub mod command_line;
 pub mod command_policy;
 pub mod chat_ctx;
 pub mod files_correction;
+pub mod files_in_workspace;
 pub mod global_context;
 pub mod integr_abstract;
 pub mod knowledge_index;

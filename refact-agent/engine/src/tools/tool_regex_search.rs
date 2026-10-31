@@ -14,8 +14,8 @@ use tracing::info;
 use crate::at_commands::at_commands::{vec_context_file_to_context_tools, AtCommandsContext};
 use crate::call_validation::{ChatMessage, ChatContent, ContextEnum, ContextFile};
 use crate::postprocessing::pp_command_output::OutputFilter;
-use crate::files_correction::shortify_paths;
-use crate::files_in_workspace::{
+use refact_runtime_api::files_correction::shortify_paths;
+use refact_runtime_api::files_in_workspace::{
     check_file_privacy_for_read_preparation_with_context,
     get_file_text_from_memory_or_disk_for_model_context_with_context, prepare_file_read_context,
     FileReadContext,

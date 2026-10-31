@@ -15,15 +15,13 @@ use crate::tools::tools_description::{
     Tool, ToolDesc, ToolSource, ToolSourceType, json_schema_from_params,
 };
 use crate::call_validation::{ChatMessage, ChatContent, ContextEnum, ContextFile};
-use crate::files_correction::{
-    canonical_path, correct_to_nearest_dir_path, get_project_dirs,
-    preprocess_path_for_normalization,
-};
-use crate::files_in_workspace::{
+use refact_files::path_utils::{canonical_path, preprocess_path_for_normalization};
+use refact_runtime_api::files_correction::{correct_to_nearest_dir_path, get_project_dirs};
+use refact_runtime_api::files_in_workspace::{
     check_file_privacy_for_model_context,
-    get_file_text_from_memory_or_disk_for_model_context_with_context, ls_files_limited,
-    prepare_file_read_context,
+    get_file_text_from_memory_or_disk_for_model_context_with_context, prepare_file_read_context,
 };
+use refact_files::workspace::ls_files_limited;
 use crate::scratchpads::multimodality::MultimodalElement;
 use refact_core::knowledge_index::format_related_memories_section;
 use crate::tools::scope_utils::{
@@ -1052,7 +1050,7 @@ mod tests {
         // Mirror the production path pipeline: canonical_path resolves platform
         // quirks (Windows 8.3 short names like RUNNER~1, symlinked /tmp on macOS)
         // exactly like tool_cat does before emitting context files.
-        let canonical = crate::files_correction::canonical_path(path.to_string_lossy().to_string());
+        let canonical = refact_files::path_utils::canonical_path(path.to_string_lossy().to_string());
         refact_core::chat_types::normalize_file_name(canonical.to_string_lossy().to_string())
     }
 

@@ -312,7 +312,7 @@ pub async fn build_review_scope(gcx: Arc<GlobalContext>, request: ScopeRequest) 
                         .files
                         .into_iter()
                         .map(|file| {
-                            crate::files_correction::canonicalize_normalized_path(
+                            refact_files::path_utils::canonicalize_normalized_path(
                                 root.join(file.path),
                             )
                         })
@@ -604,7 +604,7 @@ mod tests {
 
         assert_eq!(
             scope.changed_files,
-            vec![crate::files_correction::canonicalize_normalized_path(
+            vec![refact_files::path_utils::canonicalize_normalized_path(
                 temp.path().join("changed.rs")
             )]
         );

@@ -1977,7 +1977,7 @@ mod tests {
         if let Some(workspace) = workspace {
             std::fs::create_dir_all(workspace).unwrap();
             *app.workspace.documents_state.workspace_folders.lock().unwrap() = vec![
-                crate::files_correction::canonicalize_normalized_path(workspace.to_path_buf()),
+                refact_files::path_utils::canonicalize_normalized_path(workspace.to_path_buf()),
             ];
         }
         let ccx = Arc::new(AMutex::new(

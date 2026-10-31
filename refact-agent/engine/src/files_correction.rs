@@ -2,7 +2,6 @@ use std::sync::Arc;
 use std::time::Instant;
 use std::path::{Path, PathBuf};
 use tracing::info;
-use refact_codegraph::QueuedPath;
 
 use crate::global_context::GlobalContext;
 use crate::global_context::GlobalContextCtx;
@@ -11,7 +10,10 @@ use crate::fuzzy_search::fuzzy_search;
 use crate::worktrees::scope::ExecutionScope;
 
 pub use refact_runtime_api::files_correction::{
-    check_if_its_inside_a_workspace_or_config_for_ctx, get_unscoped_project_dirs_for_ctx,
+    check_if_its_inside_a_workspace_or_config, check_if_its_inside_a_workspace_or_config_for_ctx,
+    correct_to_nearest_dir_path, correct_to_nearest_filename, get_active_project_path,
+    get_active_project_path_for_services, get_project_dirs, get_unscoped_project_dirs,
+    get_unscoped_project_dirs_for_ctx, paths_from_anywhere, shortify_paths,
 };
 
 pub use refact_files::path_utils::{
@@ -20,7 +22,7 @@ pub use refact_files::path_utils::{
     shortify_paths_from_indexed,
 };
 
-pub async fn paths_from_anywhere(global_context: Arc<GlobalContext>) -> Vec<PathBuf> {
+pub(crate) async fn paths_from_anywhere_impl(global_context: Arc<GlobalContext>) -> Vec<PathBuf> {
     let (file_paths_from_memory, paths_from_workspace, paths_from_jsonl) = {
         let documents_state = &global_context.documents_state; // somehow keeps lock until out of scope
         let file_paths_from_memory = documents_state
@@ -58,18 +60,7 @@ pub use refact_worktrees::path_mappings::{
     registered_worktree_path_mappings, RegisteredWorktreePathMapping, WorktreePathMappings,
 };
 
-pub fn resolve_codegraph_queue_path(
-    path: &Path,
-    mappings: &[RegisteredWorktreePathMapping],
-) -> QueuedPath {
-    let read_path = canonicalize_normalized_path(path.to_path_buf());
-    let store_path =
-        map_registered_worktree_path(&read_path, mappings).unwrap_or_else(|| read_path.clone());
-    QueuedPath::new(
-        store_path.to_string_lossy().to_string(),
-        read_path.to_string_lossy().to_string(),
-    )
-}
+pub use refact_runtime_api::files_correction::resolve_codegraph_queue_path;
 
 
 
@@ -224,7 +215,7 @@ async fn _correct_to_nearest(
     vec![]
 }
 
-pub async fn correct_to_nearest_filename(
+pub(crate) async fn correct_to_nearest_filename_impl(
     gcx: Arc<GlobalContext>,
     correction_candidate: &String,
     fuzzy: bool,
@@ -233,7 +224,7 @@ pub async fn correct_to_nearest_filename(
     _correct_to_nearest(gcx, correction_candidate, false, fuzzy, top_n).await
 }
 
-pub async fn correct_to_nearest_dir_path(
+pub(crate) async fn correct_to_nearest_dir_path_impl(
     gcx: Arc<GlobalContext>,
     correction_candidate: &String,
     fuzzy: bool,
@@ -248,14 +239,14 @@ pub async fn get_raw_project_dirs(gcx: Arc<GlobalContext>) -> Vec<PathBuf> {
     workspace_folders_locked.iter().cloned().collect::<Vec<_>>()
 }
 
-pub async fn get_project_dirs(gcx: Arc<GlobalContext>) -> Vec<PathBuf> {
+pub(crate) async fn get_project_dirs_impl(gcx: Arc<GlobalContext>) -> Vec<PathBuf> {
     project_dirs_for_unscoped_paths(
         gcx.cache_dir.as_path(),
         get_raw_project_dirs(gcx.clone()).await.as_slice(),
     )
 }
 
-pub async fn get_unscoped_project_dirs(gcx: Arc<GlobalContext>) -> Vec<PathBuf> {
+pub(crate) async fn get_unscoped_project_dirs_impl(gcx: Arc<GlobalContext>) -> Vec<PathBuf> {
     get_project_dirs(gcx).await
 }
 
@@ -272,14 +263,14 @@ pub async fn get_project_dirs_with_execution_scope(
     get_unscoped_project_dirs(gcx).await
 }
 
-pub async fn get_active_project_path(gcx: Arc<GlobalContext>) -> Option<PathBuf> {
+pub(crate) async fn get_active_project_path_impl(gcx: Arc<GlobalContext>) -> Option<PathBuf> {
     let cache_dir = gcx.cache_dir.clone();
     let active_file_path = gcx.documents_state.active_file_path.clone();
     let workspace_folders = get_unscoped_project_dirs(gcx).await;
     active_project_path(cache_dir.as_path(), &active_file_path, workspace_folders).await
 }
 
-pub async fn get_active_project_path_for_services(
+pub(crate) async fn get_active_project_path_for_services_impl(
     paths: &crate::app_state::PathServices,
     workspace: &crate::app_state::WorkspaceServices,
 ) -> Option<PathBuf> {
@@ -384,12 +375,12 @@ pub async fn get_active_workspace_folder(gcx: Arc<GlobalContext>) -> Option<Path
     }
 }
 
-pub async fn shortify_paths(gcx: Arc<GlobalContext>, paths: &Vec<String>) -> Vec<String> {
+pub(crate) async fn shortify_paths_impl(gcx: Arc<GlobalContext>, paths: &Vec<String>) -> Vec<String> {
     let cache_correction_arc = files_cache_rebuild_as_needed(gcx.clone()).await;
     shortify_paths_from_indexed(&cache_correction_arc, paths)
 }
 
-pub async fn check_if_its_inside_a_workspace_or_config(
+pub(crate) async fn check_if_its_inside_a_workspace_or_config_impl(
     gcx: Arc<GlobalContext>,
     path: &Path,
 ) -> Result<(), String> {

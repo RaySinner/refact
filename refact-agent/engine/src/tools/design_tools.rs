@@ -1818,7 +1818,7 @@ impl Tool for ToolImageRegion {
         let (app, _, model_id, execution_scope) = tool_context(&ccx).await;
         let policy = image_policy_for_model(app.tool.caps.as_ref(), &model_id).await;
         let path = resolve_image_source(&app, execution_scope.as_ref(), &args.image_path).await?;
-        crate::files_in_workspace::check_file_privacy_for_send(app.gcx.clone(), &path).await?;
+        refact_runtime_api::files_in_workspace::check_file_privacy_for_send(app.gcx.clone(), &path).await?;
         let bytes = tokio::fs::read(&path)
             .await
             .map_err(|error| format!("failed to read image `{}`: {error}", path.display()))?;

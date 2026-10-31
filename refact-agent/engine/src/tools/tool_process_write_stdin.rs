@@ -9,7 +9,7 @@ use crate::at_commands::at_commands::AtCommandsContext;
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
 use crate::exec::types::normalize_workspace_path;
 use crate::exec::{ExecOutputChunk, ExecProcessId, ExecProcessSnapshot, ExecWriteStdinResult};
-use crate::files_correction::get_active_project_path;
+use refact_runtime_api::files_correction::get_active_project_path;
 use crate::postprocessing::pp_command_output::{output_mini_postprocessing, OutputFilter};
 use crate::tools::file_edit::auxiliary::active_execution_scope;
 use crate::tools::tool_process::{process_value, read_value, status_label};

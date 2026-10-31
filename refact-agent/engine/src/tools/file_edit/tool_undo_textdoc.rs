@@ -7,7 +7,7 @@ use crate::tools::file_edit::auxiliary::{
     append_scope_warnings, convert_edit_to_diffchunks, fast_enqueue_for_edit,
     parse_path_for_update, scope_warnings_to_tool_message,
 };
-use crate::files_in_workspace::remove_memory_document_for_path;
+use refact_runtime_api::files_in_workspace::remove_memory_document_for_path;
 use crate::tools::file_edit::undo_history::{get_undo_history, UndoEntry};
 use crate::tools::tools_description::{
     MatchConfirmDeny, MatchConfirmDenyResult, Tool, ToolDesc, ToolSource, ToolSourceType,

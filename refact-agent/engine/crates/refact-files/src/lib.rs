@@ -6,3 +6,4 @@ pub mod indexing_settings;
 pub mod path_utils;
 
 pub use documents_state::*;
+pub mod workspace;

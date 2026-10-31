@@ -54,7 +54,7 @@ async fn cleanup_old_worktree(
 ) {
     if let Some(wt_name) = agent_worktree_name {
         let cache_dir = ctx.paths.cache_dir.clone();
-        let project_dirs = crate::files_correction::get_unscoped_project_dirs_for_ctx(ctx).await;
+        let project_dirs = refact_runtime_api::files_correction::get_unscoped_project_dirs_for_ctx(ctx).await;
         if let Some(source_root) = project_dirs.first() {
             if let Ok(service) = WorktreeService::new_async(cache_dir, source_root.clone()).await {
                 if service.delete_worktree(wt_name, true, true).await.is_ok() {
@@ -64,7 +64,7 @@ async fn cleanup_old_worktree(
         }
     }
 
-    let project_dirs = crate::files_correction::get_unscoped_project_dirs_for_ctx(ctx).await;
+    let project_dirs = refact_runtime_api::files_correction::get_unscoped_project_dirs_for_ctx(ctx).await;
     if let Some(workspace_root) = project_dirs.first() {
         if let Some(wt) = agent_worktree {
             let _ = tokio::process::Command::new("git")
@@ -188,7 +188,7 @@ async fn get_worktree_meta_for_resume(
         ));
     }
     let cache_dir = ctx.paths.cache_dir.clone();
-    let project_dirs = crate::files_correction::get_unscoped_project_dirs_for_ctx(ctx).await;
+    let project_dirs = refact_runtime_api::files_correction::get_unscoped_project_dirs_for_ctx(ctx).await;
     let source_root = project_dirs
         .first()
         .cloned()
@@ -739,7 +739,7 @@ impl ToolTaskRestartAgent {
                     );
                     continue;
                 }
-                if crate::files_in_workspace::check_file_privacy_for_model_context(
+                if refact_runtime_api::files_in_workspace::check_file_privacy_for_model_context(
                     app.gcx.clone(),
                     &canonical_resolved,
                 )

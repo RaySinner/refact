@@ -1052,7 +1052,7 @@ impl Tool for ToolTaskMergeAgent {
             ));
         }
 
-        let project_dirs = crate::files_correction::get_project_dirs(gcx.clone()).await;
+        let project_dirs = refact_runtime_api::files_correction::get_project_dirs(gcx.clone()).await;
         let workspace_root = project_dirs.first().ok_or("No workspace folder found")?;
 
         let is_git_repo = {

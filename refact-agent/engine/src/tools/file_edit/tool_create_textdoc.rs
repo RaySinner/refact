@@ -1,6 +1,6 @@
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum, DiffChunk};
-use crate::files_in_workspace::get_file_text_from_memory_or_disk;
+use refact_runtime_api::files_in_workspace::get_file_text_from_memory_or_disk;
 use crate::global_context::GlobalContext;
 use refact_tool_api::IntegrationConfirmation;
 use refact_runtime_api::privacy::load_privacy_if_needed;

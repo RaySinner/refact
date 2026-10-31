@@ -205,7 +205,7 @@ async fn base_from_worktree_meta(
     task_id: &str,
     card: &BoardCard,
 ) -> (Option<String>, Option<String>) {
-    let project_dirs = crate::files_correction::get_unscoped_project_dirs_for_ctx(ctx).await;
+    let project_dirs = refact_runtime_api::files_correction::get_unscoped_project_dirs_for_ctx(ctx).await;
     for source_root in project_dirs {
         let Ok(service) = WorktreeService::new_async(ctx.paths.cache_dir.clone(), source_root).await
         else {
@@ -335,7 +335,7 @@ fn validate_fallback_worktree_path(
 }
 
 async fn primary_workspace_root(ctx: &crate::chat::ctx::ChatCtx) -> Result<PathBuf, String> {
-    let project_dirs = crate::files_correction::get_unscoped_project_dirs_for_ctx(ctx).await;
+    let project_dirs = refact_runtime_api::files_correction::get_unscoped_project_dirs_for_ctx(ctx).await;
     let workspace_root = project_dirs.first().ok_or("No workspace folder found")?;
     canonical_existing_path(workspace_root)
 }
@@ -368,7 +368,7 @@ async fn registered_worktree_path(
     card: &BoardCard,
     worktree_name: &str,
 ) -> Result<PathBuf, String> {
-    let project_dirs = crate::files_correction::get_unscoped_project_dirs_for_ctx(ctx).await;
+    let project_dirs = refact_runtime_api::files_correction::get_unscoped_project_dirs_for_ctx(ctx).await;
     for source_root in project_dirs {
         let Ok(service) = WorktreeService::new_async(ctx.paths.cache_dir.clone(), source_root).await
         else {
@@ -408,7 +408,7 @@ async fn registered_worktree_path_for_card(
     card: &BoardCard,
     excluded_id: Option<&str>,
 ) -> Result<Option<PathBuf>, String> {
-    let project_dirs = crate::files_correction::get_unscoped_project_dirs_for_ctx(ctx).await;
+    let project_dirs = refact_runtime_api::files_correction::get_unscoped_project_dirs_for_ctx(ctx).await;
     for source_root in project_dirs {
         let Ok(service) = WorktreeService::new_async(ctx.paths.cache_dir.clone(), source_root).await
         else {

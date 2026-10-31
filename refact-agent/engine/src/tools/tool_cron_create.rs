@@ -12,7 +12,7 @@ use tokio::sync::{Mutex as AMutex, Notify};
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
 use crate::chat::internal_roles::{event, EventSubkind};
-use crate::files_correction::get_active_project_path_for_services;
+use refact_runtime_api::files_correction::get_active_project_path_for_services;
 use crate::scheduler::schedule::parse_schedule;
 use crate::scheduler::{
     delivery_kind, human_schedule_for_trigger as scheduler_human_schedule_for_trigger, next_run_ms,

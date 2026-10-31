@@ -17,7 +17,7 @@ use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
 use crate::chat::internal_roles::{event, EventSubkind};
 use crate::exec::types::normalize_workspace_path;
 use crate::exec::{ExecOutputChunk, ExecOutputStream, ExecProcessId, ExecRegistry};
-use crate::files_correction::get_active_project_path;
+use refact_runtime_api::files_correction::get_active_project_path;
 use crate::global_context::SharedGlobalContext;
 use crate::postprocessing::pp_command_output::OutputFilter;
 use crate::tools::file_edit::auxiliary::active_execution_scope;

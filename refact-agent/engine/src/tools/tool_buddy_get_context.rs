@@ -136,7 +136,7 @@ impl Tool for ToolBuddyGetContext {
         let (config_dir, project_dirs) = {
             (
                 tool.paths.config_dir.clone(),
-                crate::files_correction::get_project_dirs(gcx.clone()),
+                refact_runtime_api::files_correction::get_project_dirs(gcx.clone()),
             )
         };
         let project_dirs = project_dirs.await;

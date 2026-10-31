@@ -145,7 +145,7 @@ impl Tool for ToolDesignSystem {
                 scope.ensure_active_root()?;
                 scope.effective_root().to_path_buf()
             }
-            None => crate::files_correction::get_project_dirs(gcx.clone())
+            None => refact_runtime_api::files_correction::get_project_dirs(gcx.clone())
                 .await
                 .into_iter()
                 .next()
@@ -156,7 +156,7 @@ impl Tool for ToolDesignSystem {
         let scope = resolve_scope(&workspace_root, args.scope.as_deref())?;
         refact_runtime_api::privacy::load_privacy_if_needed(gcx.clone()).await;
         let paths = collect_scan_paths(&scope);
-        let paths = crate::files_in_workspace::filter_privacy_allowed_files_for_model_context(
+        let paths = refact_runtime_api::files_in_workspace::filter_privacy_allowed_files_for_model_context(
             gcx.clone(),
             paths,
         )

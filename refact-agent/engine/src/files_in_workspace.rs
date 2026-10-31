@@ -33,6 +33,19 @@ use crate::files_in_jsonl::enqueue_all_docs_from_jsonl_but_read_first;
 
 pub use refact_files::correction_cache::CacheCorrection;
 
+pub use refact_runtime_api::files_in_workspace::{
+    check_file_privacy_for_model_context, check_file_privacy_for_send,
+    enqueue_all_files_from_workspace_folders, enqueue_some_docs_with_read_paths,
+    filter_privacy_allowed_files, filter_privacy_allowed_files_for_model_context,
+    get_file_text_from_memory_or_disk, get_file_text_from_memory_or_disk_for_model_context,
+    remove_memory_document_for_path, remove_memory_documents_under_path,
+};
+pub(crate) use refact_runtime_api::files_in_workspace::{
+    check_file_privacy_for_read_preparation_with_context, check_file_privacy_with_context,
+    get_file_text_from_memory_or_disk_for_model_context_with_context, prepare_file_read_context,
+    FileReadContext,
+};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum WatchRegistrationMode {
     Recursive,
@@ -343,7 +356,7 @@ fn event_path_is_valid_file(
     }
 }
 
-pub async fn remove_memory_document_for_path(gcx: Arc<GlobalContext>, path: &PathBuf) -> bool {
+pub(crate) async fn remove_memory_document_for_path_impl(gcx: Arc<GlobalContext>, path: &PathBuf) -> bool {
     remove_memory_document_for_path_for_ctx(&gcx.chat_ctx(gcx.clone()), path).await
 }
 
@@ -358,7 +371,7 @@ pub async fn remove_memory_document_for_path_for_ctx(ctx: &ChatCtx, path: &PathB
     removed
 }
 
-pub async fn remove_memory_documents_under_path(gcx: Arc<GlobalContext>, path: &PathBuf) -> usize {
+pub(crate) async fn remove_memory_documents_under_path_impl(gcx: Arc<GlobalContext>, path: &PathBuf) -> usize {
     remove_memory_documents_under_path_for_ctx(&gcx.chat_ctx(gcx.clone()), path).await
 }
 
@@ -378,7 +391,7 @@ pub async fn remove_memory_documents_under_path_for_ctx(ctx: &ChatCtx, path: &Pa
     removed
 }
 
-pub async fn get_file_text_from_memory_or_disk(
+pub(crate) async fn get_file_text_from_memory_or_disk_impl(
     global_context: Arc<GlobalContext>,
     file_path: &PathBuf,
 ) -> Result<String, String> {
@@ -387,7 +400,7 @@ pub async fn get_file_text_from_memory_or_disk(
         .await
 }
 
-pub async fn get_file_text_from_memory_or_disk_for_model_context(
+pub(crate) async fn get_file_text_from_memory_or_disk_for_model_context_impl(
     global_context: Arc<GlobalContext>,
     file_path: &PathBuf,
 ) -> Result<String, String> {
@@ -399,11 +412,6 @@ pub async fn get_file_text_from_memory_or_disk_for_model_context(
         None,
     )
     .await
-}
-
-pub(crate) struct FileReadContext {
-    privacy_settings: Arc<PrivacySettings>,
-    worktree_mappings: crate::files_correction::WorktreePathMappings,
 }
 
 pub(crate) fn registered_alias_paths(
@@ -444,7 +452,7 @@ pub fn strictest_zone_for_path(
     policy.strictest_zone_for_paths_with_roots(aliases, roots)
 }
 
-pub(crate) fn check_file_privacy_with_context(
+pub(crate) fn check_file_privacy_with_context_impl(
     read_context: &FileReadContext,
     path: &Path,
 ) -> Result<(), String> {
@@ -458,7 +466,7 @@ pub(crate) fn check_file_privacy_with_context(
     Ok(())
 }
 
-pub(crate) fn check_file_privacy_for_read_preparation_with_context(
+pub(crate) fn check_file_privacy_for_read_preparation_with_context_impl(
     read_context: &FileReadContext,
     path: &Path,
 ) -> Result<(), String> {
@@ -473,12 +481,13 @@ pub(crate) fn file_read_context_for(
     cache_dir: &std::path::Path,
 ) -> FileReadContext {
     FileReadContext {
+        runtime: Arc::new(EngineFilesRuntime),
         privacy_settings,
         worktree_mappings: crate::files_correction::registered_worktree_path_mappings(cache_dir),
     }
 }
 
-pub(crate) async fn prepare_file_read_context(
+pub(crate) async fn prepare_file_read_context_impl(
     global_context: Arc<GlobalContext>,
 ) -> FileReadContext {
     let privacy_settings = load_privacy_if_needed(global_context.clone()).await;
@@ -501,7 +510,7 @@ pub(crate) async fn get_file_text_from_memory_or_disk_with_context(
     .await
 }
 
-pub(crate) async fn get_file_text_from_memory_or_disk_for_model_context_with_context(
+pub(crate) async fn get_file_text_from_memory_or_disk_for_model_context_with_context_impl(
     global_context: Arc<GlobalContext>,
     file_path: &PathBuf,
     read_context: &FileReadContext,
@@ -571,7 +580,7 @@ async fn get_file_text_from_memory_or_disk_with_context_impl(
     Ok(text.to_string())
 }
 
-pub async fn check_file_privacy_for_send(
+pub(crate) async fn check_file_privacy_for_send_impl(
     global_context: Arc<GlobalContext>,
     file_path: &PathBuf,
 ) -> Result<(), String> {
@@ -579,7 +588,7 @@ pub async fn check_file_privacy_for_send(
     check_file_privacy_with_context(&read_context, file_path)
 }
 
-pub async fn check_file_privacy_for_model_context(
+pub(crate) async fn check_file_privacy_for_model_context_impl(
     global_context: Arc<GlobalContext>,
     file_path: &PathBuf,
 ) -> Result<(), String> {
@@ -587,7 +596,7 @@ pub async fn check_file_privacy_for_model_context(
     check_file_privacy_for_read_preparation_with_context(&read_context, file_path)
 }
 
-pub async fn filter_privacy_allowed_files(
+pub(crate) async fn filter_privacy_allowed_files_impl(
     global_context: Arc<GlobalContext>,
     files: Vec<PathBuf>,
 ) -> Vec<PathBuf> {
@@ -598,7 +607,7 @@ pub async fn filter_privacy_allowed_files(
         .collect()
 }
 
-pub async fn filter_privacy_allowed_files_for_model_context(
+pub(crate) async fn filter_privacy_allowed_files_for_model_context_impl(
     global_context: Arc<GlobalContext>,
     files: Vec<PathBuf>,
 ) -> Vec<PathBuf> {
@@ -888,208 +897,7 @@ async fn ls_files_under_version_control(path: &PathBuf) -> Option<Vec<PathBuf>> 
     }
 }
 
-pub fn _ls_files(
-    indexing_everywhere: &IndexingEverywhere,
-    scan_root: &Path,
-    path: &PathBuf,
-    recursive: bool,
-    blocklist_check: bool,
-) -> Result<Vec<PathBuf>, String> {
-    let mut paths = vec![];
-    let mut dirs_to_visit = vec![path.clone()];
-
-    while let Some(dir) = dirs_to_visit.pop() {
-        let ls_maybe = fs::read_dir(&dir);
-        if ls_maybe.is_err() {
-            info!(
-                "failed to read directory {}: {}",
-                dir.display(),
-                ls_maybe.unwrap_err()
-            );
-            continue;
-        }
-        let ls: fs::ReadDir = ls_maybe.unwrap();
-        let entries_maybe = ls.collect::<Result<Vec<_>, _>>();
-        if entries_maybe.is_err() {
-            info!(
-                "failed to read directory {}: {}",
-                dir.display(),
-                entries_maybe.unwrap_err()
-            );
-            continue;
-        }
-        let mut entries = entries_maybe.unwrap();
-        entries.sort_by_key(|entry| entry.file_name());
-        for entry in entries {
-            let abs_path = entry.path();
-            let indexing_settings = indexing_everywhere.indexing_for_path(&abs_path);
-            let rel_path = abs_path.strip_prefix(scan_root).unwrap_or(&abs_path);
-            if recursive && abs_path.is_dir() {
-                if !blocklist_check || !is_blocklisted(&indexing_settings, rel_path) {
-                    dirs_to_visit.push(abs_path);
-                }
-            } else if abs_path.is_file() {
-                paths.push(abs_path);
-            }
-        }
-    }
-    Ok(paths)
-}
-
-// NOTE: don't optimized for large workspaces
-pub fn ls_files(
-    indexing_everywhere: &IndexingEverywhere,
-    path: &PathBuf,
-    recursive: bool,
-) -> Result<Vec<PathBuf>, String> {
-    if !path.is_dir() {
-        return Err(format!("path '{}' is not a directory", path.display()));
-    }
-
-    let indexing_settings = indexing_everywhere.indexing_for_path(path);
-    let mut paths = _ls_files(indexing_everywhere, path.as_path(), path, recursive, true).unwrap();
-    if recursive {
-        for additional_indexing_dir in indexing_settings.additional_indexing_dirs.iter() {
-            let additional_path = PathBuf::from(additional_indexing_dir);
-            paths.extend(
-                _ls_files(
-                    indexing_everywhere,
-                    additional_path.as_path(),
-                    &additional_path,
-                    recursive,
-                    false,
-                )
-                .unwrap(),
-            );
-        }
-    }
-
-    Ok(paths)
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct LsFilesLimited {
-    pub files: Vec<PathBuf>,
-    pub truncated: bool,
-    pub aborted: bool,
-}
-
-impl LsFilesLimited {
-    fn stopped(&self) -> bool {
-        self.truncated || self.aborted
-    }
-}
-
-fn _ls_files_limited(
-    indexing_everywhere: &IndexingEverywhere,
-    scan_root: &Path,
-    path: &PathBuf,
-    recursive: bool,
-    blocklist_check: bool,
-    budget: &mut usize,
-    abort: Option<&AtomicBool>,
-    out: &mut LsFilesLimited,
-) {
-    let mut dirs_to_visit = vec![path.clone()];
-
-    while let Some(dir) = dirs_to_visit.pop() {
-        if abort.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
-            out.aborted = true;
-            return;
-        }
-        let ls_maybe = fs::read_dir(&dir);
-        if ls_maybe.is_err() {
-            info!(
-                "failed to read directory {}: {}",
-                dir.display(),
-                ls_maybe.unwrap_err()
-            );
-            continue;
-        }
-        let ls: fs::ReadDir = ls_maybe.unwrap();
-        let entries_maybe = ls.collect::<Result<Vec<_>, _>>();
-        if entries_maybe.is_err() {
-            info!(
-                "failed to read directory {}: {}",
-                dir.display(),
-                entries_maybe.unwrap_err()
-            );
-            continue;
-        }
-        let mut entries = entries_maybe.unwrap();
-        entries.sort_by_key(|entry| entry.file_name());
-        for entry in entries {
-            if abort.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
-                out.aborted = true;
-                return;
-            }
-            if *budget == 0 {
-                out.truncated = true;
-                return;
-            }
-            *budget -= 1;
-
-            let abs_path = entry.path();
-            let indexing_settings = indexing_everywhere.indexing_for_path(&abs_path);
-            let rel_path = abs_path.strip_prefix(scan_root).unwrap_or(&abs_path);
-            if recursive && abs_path.is_dir() {
-                if !blocklist_check || !is_blocklisted(&indexing_settings, rel_path) {
-                    dirs_to_visit.push(abs_path);
-                }
-            } else if abs_path.is_file() {
-                out.files.push(abs_path);
-            }
-        }
-    }
-}
-
-pub fn ls_files_limited(
-    indexing_everywhere: &IndexingEverywhere,
-    path: &PathBuf,
-    recursive: bool,
-    max_entries: usize,
-    abort: Option<&AtomicBool>,
-) -> Result<LsFilesLimited, String> {
-    if !path.is_dir() {
-        return Err(format!("path '{}' is not a directory", path.display()));
-    }
-
-    let indexing_settings = indexing_everywhere.indexing_for_path(path);
-    let mut out = LsFilesLimited::default();
-    let mut budget = max_entries;
-
-    _ls_files_limited(
-        indexing_everywhere,
-        path.as_path(),
-        path,
-        recursive,
-        true,
-        &mut budget,
-        abort,
-        &mut out,
-    );
-
-    if recursive && !out.stopped() {
-        for additional_indexing_dir in indexing_settings.additional_indexing_dirs.iter() {
-            if out.stopped() {
-                break;
-            }
-            let additional_path = PathBuf::from(additional_indexing_dir);
-            _ls_files_limited(
-                indexing_everywhere,
-                additional_path.as_path(),
-                &additional_path,
-                recursive,
-                false,
-                &mut budget,
-                abort,
-                &mut out,
-            );
-        }
-    }
-
-    Ok(out)
-}
+pub use refact_files::workspace::{_ls_files, ls_files, ls_files_limited, LsFilesLimited};
 
 pub async fn detect_vcs_for_a_file_path(file_path: &Path) -> Option<(PathBuf, &'static str)> {
     let mut dir = file_path.to_path_buf();
@@ -1544,7 +1352,7 @@ pub fn is_path_to_enqueue_valid(path: &PathBuf) -> Result<(), String> {
     Ok(())
 }
 
-pub async fn enqueue_some_docs_with_read_paths(
+pub(crate) async fn enqueue_some_docs_with_read_paths_impl(
     gcx: Arc<GlobalContext>,
     paths: &[QueuedPath],
     force: bool,
@@ -1679,7 +1487,7 @@ fn normalize_workspace_files_for_unscoped(
     true
 }
 
-pub async fn enqueue_all_files_from_workspace_folders(
+pub(crate) async fn enqueue_all_files_from_workspace_folders_impl(
     gcx: Arc<GlobalContext>,
     wake_up_indexers: bool,
     vecdb_only: bool,
@@ -3621,6 +3429,7 @@ mod tests {
             loaded_ts: 0,
         });
         let controlled_context = FileReadContext {
+            runtime: Arc::new(EngineFilesRuntime),
             privacy_settings: controlled_settings,
             worktree_mappings: mappings.clone(),
         };
@@ -3633,6 +3442,7 @@ mod tests {
         assert!(check_file_privacy_with_context(&controlled_context, &source_file).is_err());
 
         let blocked_alias_context = FileReadContext {
+            runtime: Arc::new(EngineFilesRuntime),
             privacy_settings: Arc::new(PrivacySettings {
                 privacy_rules: crate::privacy::FilePrivacySettings {
                     only_send_to_servers_I_control: vec![source_file.to_string_lossy().to_string()],
@@ -4711,5 +4521,214 @@ mod tests {
         assert!(path_triggers_registry_reload(Path::new(
             "/repo/.refact/code_lens/lens.yaml"
         )));
+    }
+}
+
+pub struct EngineFilesRuntime;
+
+#[async_trait::async_trait]
+impl refact_runtime_api::files_in_workspace::FilesRuntime for EngineFilesRuntime {
+    async fn remove_memory_document_for_path(
+        &self,
+        gcx: Arc<GlobalContext>,
+        path: &PathBuf,
+    ) -> bool {
+        crate::files_in_workspace::remove_memory_document_for_path_impl(gcx, path).await
+    }
+
+    async fn remove_memory_documents_under_path(
+        &self,
+        gcx: Arc<GlobalContext>,
+        path: &PathBuf,
+    ) -> usize {
+        crate::files_in_workspace::remove_memory_documents_under_path_impl(gcx, path).await
+    }
+
+    async fn get_file_text_from_memory_or_disk(
+        &self,
+        global_context: Arc<GlobalContext>,
+        file_path: &PathBuf,
+    ) -> Result<String, String> {
+        crate::files_in_workspace::get_file_text_from_memory_or_disk_impl(global_context, file_path)
+            .await
+    }
+
+    async fn get_file_text_from_memory_or_disk_for_model_context(
+        &self,
+        global_context: Arc<GlobalContext>,
+        file_path: &PathBuf,
+    ) -> Result<String, String> {
+        crate::files_in_workspace::get_file_text_from_memory_or_disk_for_model_context_impl(
+            global_context,
+            file_path,
+        )
+        .await
+    }
+
+    async fn prepare_file_read_context(
+        &self,
+        global_context: Arc<GlobalContext>,
+    ) -> FileReadContext {
+        crate::files_in_workspace::prepare_file_read_context_impl(global_context).await
+    }
+
+    async fn get_file_text_from_memory_or_disk_for_model_context_with_context(
+        &self,
+        global_context: Arc<GlobalContext>,
+        file_path: &PathBuf,
+        read_context: &FileReadContext,
+        max_bytes: Option<usize>,
+    ) -> Result<String, String> {
+        crate::files_in_workspace::get_file_text_from_memory_or_disk_for_model_context_with_context_impl(global_context, file_path, read_context, max_bytes).await
+    }
+
+    async fn check_file_privacy_for_send(
+        &self,
+        global_context: Arc<GlobalContext>,
+        file_path: &PathBuf,
+    ) -> Result<(), String> {
+        crate::files_in_workspace::check_file_privacy_for_send_impl(global_context, file_path).await
+    }
+
+    async fn check_file_privacy_for_model_context(
+        &self,
+        global_context: Arc<GlobalContext>,
+        file_path: &PathBuf,
+    ) -> Result<(), String> {
+        crate::files_in_workspace::check_file_privacy_for_model_context_impl(
+            global_context,
+            file_path,
+        )
+        .await
+    }
+
+    async fn filter_privacy_allowed_files(
+        &self,
+        global_context: Arc<GlobalContext>,
+        files: Vec<PathBuf>,
+    ) -> Vec<PathBuf> {
+        crate::files_in_workspace::filter_privacy_allowed_files_impl(global_context, files).await
+    }
+
+    async fn filter_privacy_allowed_files_for_model_context(
+        &self,
+        global_context: Arc<GlobalContext>,
+        files: Vec<PathBuf>,
+    ) -> Vec<PathBuf> {
+        crate::files_in_workspace::filter_privacy_allowed_files_for_model_context_impl(
+            global_context,
+            files,
+        )
+        .await
+    }
+
+    async fn enqueue_some_docs_with_read_paths(
+        &self,
+        gcx: Arc<GlobalContext>,
+        paths: &[QueuedPath],
+        force: bool,
+    ) {
+        crate::files_in_workspace::enqueue_some_docs_with_read_paths_impl(gcx, paths, force).await
+    }
+
+    async fn enqueue_all_files_from_workspace_folders(
+        &self,
+        gcx: Arc<GlobalContext>,
+        wake_up_indexers: bool,
+        vecdb_only: bool,
+    ) -> i32 {
+        crate::files_in_workspace::enqueue_all_files_from_workspace_folders_impl(
+            gcx,
+            wake_up_indexers,
+            vecdb_only,
+        )
+        .await
+    }
+
+    async fn paths_from_anywhere(&self, global_context: Arc<GlobalContext>) -> Vec<PathBuf> {
+        crate::files_correction::paths_from_anywhere_impl(global_context).await
+    }
+
+    async fn correct_to_nearest_filename(
+        &self,
+        gcx: Arc<GlobalContext>,
+        correction_candidate: &String,
+        fuzzy: bool,
+        top_n: usize,
+    ) -> Vec<String> {
+        crate::files_correction::correct_to_nearest_filename_impl(
+            gcx,
+            correction_candidate,
+            fuzzy,
+            top_n,
+        )
+        .await
+    }
+
+    async fn correct_to_nearest_dir_path(
+        &self,
+        gcx: Arc<GlobalContext>,
+        correction_candidate: &String,
+        fuzzy: bool,
+        top_n: usize,
+    ) -> Vec<String> {
+        crate::files_correction::correct_to_nearest_dir_path_impl(
+            gcx,
+            correction_candidate,
+            fuzzy,
+            top_n,
+        )
+        .await
+    }
+
+    async fn get_project_dirs(&self, gcx: Arc<GlobalContext>) -> Vec<PathBuf> {
+        crate::files_correction::get_project_dirs_impl(gcx).await
+    }
+
+    async fn get_unscoped_project_dirs(&self, gcx: Arc<GlobalContext>) -> Vec<PathBuf> {
+        crate::files_correction::get_unscoped_project_dirs_impl(gcx).await
+    }
+
+    async fn get_active_project_path(&self, gcx: Arc<GlobalContext>) -> Option<PathBuf> {
+        crate::files_correction::get_active_project_path_impl(gcx).await
+    }
+
+    async fn get_active_project_path_for_services(
+        &self,
+        paths: &crate::app_state::PathServices,
+        workspace: &crate::app_state::WorkspaceServices,
+    ) -> Option<PathBuf> {
+        crate::files_correction::get_active_project_path_for_services_impl(paths, workspace).await
+    }
+
+    async fn shortify_paths(&self, gcx: Arc<GlobalContext>, paths: &Vec<String>) -> Vec<String> {
+        crate::files_correction::shortify_paths_impl(gcx, paths).await
+    }
+
+    async fn check_if_its_inside_a_workspace_or_config(
+        &self,
+        gcx: Arc<GlobalContext>,
+        path: &Path,
+    ) -> Result<(), String> {
+        crate::files_correction::check_if_its_inside_a_workspace_or_config_impl(gcx, path).await
+    }
+
+    fn check_file_privacy_with_context(
+        &self,
+        read_context: &FileReadContext,
+        path: &Path,
+    ) -> Result<(), String> {
+        crate::files_in_workspace::check_file_privacy_with_context_impl(read_context, path)
+    }
+
+    fn check_file_privacy_for_read_preparation_with_context(
+        &self,
+        read_context: &FileReadContext,
+        path: &Path,
+    ) -> Result<(), String> {
+        crate::files_in_workspace::check_file_privacy_for_read_preparation_with_context_impl(
+            read_context,
+            path,
+        )
     }
 }

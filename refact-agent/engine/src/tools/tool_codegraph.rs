@@ -18,10 +18,9 @@ use refact_runtime_api::at_command_executor::{
 };
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
 use crate::codegraph::code_intel_api::*;
-use crate::files_correction::{
-    canonicalize_normalized_path, get_project_dirs, preprocess_path_for_normalization,
-    registered_worktree_path_mappings, resolve_codegraph_queue_path,
-};
+use refact_files::path_utils::{canonicalize_normalized_path, preprocess_path_for_normalization};
+use refact_runtime_api::files_correction::{get_project_dirs, resolve_codegraph_queue_path};
+use refact_worktrees::path_mappings::registered_worktree_path_mappings;
 use crate::postprocessing::pp_command_output::OutputFilter;
 use crate::tools::scope_utils::resolve_existing_path_with_execution_scope_for_model_context;
 use crate::tools::tools_description::{
@@ -428,7 +427,7 @@ async fn resolve_codegraph_file(
         resolved.path
     } else {
         let normalized = if PathBuf::from(raw_path).is_absolute() {
-            crate::files_correction::canonical_path(raw_path)
+            refact_files::path_utils::canonical_path(raw_path)
                 .to_string_lossy()
                 .to_string()
         } else {
@@ -448,7 +447,7 @@ async fn resolve_codegraph_file(
     if !read_path.is_file() {
         return Err(format!("Path '{}' is not a file", read_path.display()));
     }
-    crate::files_in_workspace::check_file_privacy_for_model_context(gcx.clone(), &read_path)
+    refact_runtime_api::files_in_workspace::check_file_privacy_for_model_context(gcx.clone(), &read_path)
         .await?;
     let indexed_path =
         if let Some(scope) = execution_scope.as_ref().filter(|scope| scope.is_enforced()) {
@@ -486,7 +485,7 @@ async fn resolve_codegraph_filter_path(
                 resolved.path.display()
             ));
         }
-        crate::files_in_workspace::check_file_privacy_for_model_context(gcx, &resolved.path)
+        refact_runtime_api::files_in_workspace::check_file_privacy_for_model_context(gcx, &resolved.path)
             .await?;
         return Ok(scoped_indexed_path(scope, &resolved.path)?
             .to_string_lossy()
@@ -508,7 +507,7 @@ async fn resolve_codegraph_filter_path(
                 project_dirs
             ));
         }
-        crate::files_in_workspace::check_file_privacy_for_model_context(gcx, &normalized).await?;
+        refact_runtime_api::files_in_workspace::check_file_privacy_for_model_context(gcx, &normalized).await?;
         return Ok(normalized.to_string_lossy().to_string());
     }
     Ok(preprocess_path_for_normalization(normalized_raw))
@@ -723,7 +722,7 @@ fn scoped_code_map_inputs(
 }
 
 pub(crate) async fn project_dir(gcx: Arc<crate::global_context::GlobalContext>) -> Option<PathBuf> {
-    crate::files_correction::get_project_dirs(gcx)
+    refact_runtime_api::files_correction::get_project_dirs(gcx)
         .await
         .into_iter()
         .next()
@@ -3333,7 +3332,7 @@ impl Tool for ToolCodeHealth {
         let gcx = ccx.lock().await.app.gcx.clone();
         refact_runtime_api::privacy::load_privacy_if_needed(gcx.clone()).await;
         let mut record_paths = vec![resolved_file.read_path.clone()];
-        let text = crate::files_in_workspace::get_file_text_from_memory_or_disk(
+        let text = refact_runtime_api::files_in_workspace::get_file_text_from_memory_or_disk(
             gcx.clone(),
             &resolved_file.read_path,
         )
@@ -3343,7 +3342,7 @@ impl Tool for ToolCodeHealth {
             Some(Value::String(cov_path)) if !cov_path.trim().is_empty() => {
                 let resolved_coverage = resolve_codegraph_file(ccx.clone(), cov_path).await?;
                 record_paths.push(resolved_coverage.read_path.clone());
-                let rope = crate::files_in_workspace::get_file_text_from_memory_or_disk(
+                let rope = refact_runtime_api::files_in_workspace::get_file_text_from_memory_or_disk(
                     gcx.clone(),
                     &resolved_coverage.read_path,
                 )
@@ -3934,7 +3933,7 @@ async fn file_code_why_sources(
         #[cfg(test)]
         CODE_WHY_FILE_READ_ATTEMPTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let Ok(text) =
-            crate::files_in_workspace::get_file_text_from_memory_or_disk(gcx.clone(), &absolute)
+            refact_runtime_api::files_in_workspace::get_file_text_from_memory_or_disk(gcx.clone(), &absolute)
                 .await
         else {
             continue;
@@ -4585,7 +4584,7 @@ impl Tool for ToolSecurityScan {
         let gcx = ccx.lock().await.app.gcx.clone();
         refact_runtime_api::privacy::load_privacy_if_needed(gcx.clone()).await;
         let record_path = resolved_file.read_path.clone();
-        let text = crate::files_in_workspace::get_file_text_from_memory_or_disk(
+        let text = refact_runtime_api::files_in_workspace::get_file_text_from_memory_or_disk(
             gcx.clone(),
             &resolved_file.read_path,
         )

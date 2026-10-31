@@ -22,9 +22,11 @@ use crate::exec::{
     ExecReadResult, ExecReadinessProbe, ExecServiceLookup, ExecStatus,
 };
 use crate::exec::types::{current_timestamp_ms, normalize_workspace_path};
-use crate::files_correction::{
-    canonical_path, canonicalize_normalized_path, check_if_its_inside_a_workspace_or_config_for_ctx,
-    get_active_project_path, preprocess_path_for_normalization,
+use refact_files::path_utils::{
+    canonical_path, canonicalize_normalized_path, preprocess_path_for_normalization,
+};
+use refact_runtime_api::files_correction::{
+    check_if_its_inside_a_workspace_or_config_for_ctx, get_active_project_path,
 };
 use crate::global_context::GlobalContext;
 use refact_tool_api::IntegrationConfirmation;
@@ -186,7 +188,7 @@ impl Tool for ToolProcessStart {
             &tool.workspace.privacy_settings,
             tool.paths.config_dir.as_path(),
             tool.runtime.cmdline.privacy_yaml.as_str(),
-            crate::files_correction::get_unscoped_project_dirs_for_ctx(&chat).await,
+            refact_runtime_api::files_correction::get_unscoped_project_dirs_for_ctx(&chat).await,
             &chat.tool_catalog_generations,
         )
         .await;
@@ -542,7 +544,7 @@ impl Tool for ToolProcessRead {
             &tool.workspace.privacy_settings,
             tool.paths.config_dir.as_path(),
             tool.runtime.cmdline.privacy_yaml.as_str(),
-            crate::files_correction::get_unscoped_project_dirs_for_ctx(&chat).await,
+            refact_runtime_api::files_correction::get_unscoped_project_dirs_for_ctx(&chat).await,
             &chat.tool_catalog_generations,
         )
         .await;
@@ -763,7 +765,7 @@ impl Tool for ToolProcessWait {
             &tool.workspace.privacy_settings,
             tool.paths.config_dir.as_path(),
             tool.runtime.cmdline.privacy_yaml.as_str(),
-            crate::files_correction::get_unscoped_project_dirs_for_ctx(&chat).await,
+            refact_runtime_api::files_correction::get_unscoped_project_dirs_for_ctx(&chat).await,
             &chat.tool_catalog_generations,
         )
         .await;

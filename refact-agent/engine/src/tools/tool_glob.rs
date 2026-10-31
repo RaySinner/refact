@@ -10,8 +10,8 @@ use tokio::sync::Mutex as AMutex;
 
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
-use crate::files_correction::shortify_paths;
-use crate::files_in_workspace::{
+use refact_runtime_api::files_correction::shortify_paths;
+use refact_runtime_api::files_in_workspace::{
     check_file_privacy_for_read_preparation_with_context, prepare_file_read_context,
 };
 use crate::postprocessing::pp_command_output::OutputFilter;

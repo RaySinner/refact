@@ -459,7 +459,7 @@ async fn prepare_cleanup_target(
     card_id: &str,
     snapshot: &LifecycleCardSnapshot,
 ) -> Result<CleanupTarget, String> {
-    let project_dirs = crate::files_correction::get_project_dirs(gcx.clone()).await;
+    let project_dirs = refact_runtime_api::files_correction::get_project_dirs(gcx.clone()).await;
     if let Some(worktree_name) = snapshot.agent_worktree_name.as_deref() {
         for source_root in &project_dirs {
             let Ok(service) =

@@ -470,7 +470,7 @@ pub async fn gate_tool_call(
     let workspace_roots = if let Some(scope) = active_execution_scope(execution_scope.as_ref()) {
         vec![scope.effective_root().to_path_buf()]
     } else {
-        crate::files_correction::get_unscoped_project_dirs_for_ctx(&chat).await
+        refact_runtime_api::files_correction::get_unscoped_project_dirs_for_ctx(&chat).await
     };
     let policy = load_policy_for_ctx(&chat).await;
     let outcome = evaluate_with_llm(
@@ -497,7 +497,7 @@ fn audit_path(project_dir: &Path) -> PathBuf {
 }
 
 async fn project_dir_for_ctx(ctx: &ChatCtx) -> Option<PathBuf> {
-    crate::files_correction::get_unscoped_project_dirs_for_ctx(ctx)
+    refact_runtime_api::files_correction::get_unscoped_project_dirs_for_ctx(ctx)
         .await
         .into_iter()
         .next()
@@ -509,7 +509,7 @@ pub async fn load_policy(gcx: Arc<GlobalContext>) -> ShellGatePolicy {
 
 pub async fn load_policy_for_ctx(ctx: &crate::chat::ctx::ChatCtx) -> ShellGatePolicy {
     let Some(project_dir) =
-        crate::files_correction::get_unscoped_project_dirs_for_ctx(ctx)
+        refact_runtime_api::files_correction::get_unscoped_project_dirs_for_ctx(ctx)
             .await
             .into_iter()
             .next()

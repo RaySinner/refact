@@ -10,11 +10,11 @@ use serde_json::json;
 use crate::at_commands::at_commands::AtCommandsContext;
 use refact_runtime_api::at_command_executor::return_one_candidate_or_a_good_error;
 use crate::call_validation::{ChatMessage, ChatContent, ContextEnum, DiffChunk};
-use crate::files_correction::{
-    canonical_path, correct_to_nearest_dir_path, correct_to_nearest_filename,
-    get_unscoped_project_dirs, preprocess_path_for_normalization,
+use refact_files::path_utils::{canonical_path, preprocess_path_for_normalization};
+use refact_runtime_api::files_correction::{
+    correct_to_nearest_dir_path, correct_to_nearest_filename, get_unscoped_project_dirs,
 };
-use crate::files_in_workspace::remove_memory_documents_under_path;
+use refact_runtime_api::files_in_workspace::remove_memory_documents_under_path;
 use refact_privacy::check_file_privacy;
 use refact_runtime_api::privacy::load_privacy_if_needed;
 use refact_core::privacy_types::FilePrivacyLevel;

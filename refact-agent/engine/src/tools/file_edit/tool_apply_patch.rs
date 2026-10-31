@@ -2,7 +2,7 @@ use crate::at_commands::at_commands::AtCommandsContext;
 use crate::global_context::GlobalContextCtx;
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum, DiffChunk};
 use crate::chat::ctx::ChatCtx;
-use crate::files_correction::check_if_its_inside_a_workspace_or_config_for_ctx;
+use refact_runtime_api::files_correction::check_if_its_inside_a_workspace_or_config_for_ctx;
 use crate::global_context::GlobalContext;
 use refact_tool_api::IntegrationConfirmation;
 use refact_privacy::check_file_privacy;
@@ -143,7 +143,7 @@ async fn resolve_patch_path(
                 ));
             }
         } else {
-            let active = crate::files_correction::get_active_project_path(gcx.clone())
+            let active = refact_runtime_api::files_correction::get_active_project_path(gcx.clone())
                 .await
                 .ok_or_else(|| "No active workspace found for new file".to_string())?;
             active.join(&rel_path_buf)

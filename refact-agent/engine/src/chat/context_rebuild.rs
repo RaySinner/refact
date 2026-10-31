@@ -639,7 +639,7 @@ pub async fn rebuild_session(
         .as_ref()
         .is_some_and(budget_prefix_is_usable)
     {
-        let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         let scope = thread
             .worktree
             .as_ref()
@@ -1033,7 +1033,7 @@ pub async fn apply_deterministic_compaction_for_recovery(
     status(&mut s, CompressionPhase::Applied, None);
     drop(s);
     crate::chat::trajectories::maybe_save_trajectory_with_intent(
-        crate::app_state::AppState::from_gcx(gcx).await,
+        crate::app_state::app_state_from_gcx(gcx).await,
         session.clone(),
         TrajectoryCommitIntent::Required,
     )

@@ -59,7 +59,7 @@ mod tests {
 
     async fn test_router() -> (AppState, axum::Router) {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         let router = crate::http::routers::make_refact_http_server(app.clone());
         (app, router)
     }

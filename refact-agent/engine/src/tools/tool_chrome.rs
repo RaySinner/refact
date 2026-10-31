@@ -2297,7 +2297,7 @@ async fn setup_chrome_session(
                     .to_string(),
             );
             remove_browser_runtime(
-                crate::app_state::AppState::from_gcx(gcx.clone()).await,
+                crate::app_state::app_state_from_gcx(gcx.clone()).await,
                 &runtime_id,
             )
             .await;
@@ -2314,7 +2314,7 @@ async fn setup_chrome_session(
     }
 
     if let Some((runtime_id, _)) = find_runtime_by_chat_id(
-        crate::app_state::AppState::from_gcx(gcx.clone()).await,
+        crate::app_state::app_state_from_gcx(gcx.clone()).await,
         chat_id,
     )
     .await
@@ -2386,7 +2386,7 @@ async fn setup_chrome_session(
         if let Err(e) = setup_recording_for_runtime(&mut rt) {
             tracing::warn!("Browser recording setup failed (non-fatal): {}", e);
         }
-        register_browser_runtime(crate::app_state::AppState::from_gcx(gcx.clone()).await, rt).await
+        register_browser_runtime(crate::app_state::app_state_from_gcx(gcx.clone()).await, rt).await
     };
 
     setup_log.push("No opened tabs at this moment.".to_string());

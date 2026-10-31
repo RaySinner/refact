@@ -526,7 +526,7 @@ mod tests {
     async fn test_ccx() -> (Arc<GlobalContext>, Arc<AMutex<AtCommandsContext>>) {
         let gcx = crate::global_context::tests::make_test_gcx().await;
         let ccx = AtCommandsContext::new_with_abort(
-            AppState::from_gcx(gcx.clone()).await,
+            crate::app_state::app_state_from_gcx(gcx.clone()).await,
             4096,
             20,
             false,

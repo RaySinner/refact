@@ -272,7 +272,7 @@ fn test_drain_priority_user_messages_extracts_only_priority() {
 #[tokio::test]
 async fn priority_user_message_resets_goal_no_progress() {
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = AppState::from_gcx(gcx).await;
+    let app = crate::app_state::app_state_from_gcx(gcx).await;
     let session_arc = Arc::new(AMutex::new(ChatSession::new("priority-reset".to_string())));
     {
         let mut session = session_arc.lock().await;
@@ -309,7 +309,7 @@ async fn priority_user_message_resets_goal_no_progress() {
 #[tokio::test]
 async fn priority_user_message_preserves_client_message_id_and_server_message_id() {
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = AppState::from_gcx(gcx).await;
+    let app = crate::app_state::app_state_from_gcx(gcx).await;
     let session_arc = Arc::new(AMutex::new(ChatSession::new(
         "priority-client-message-id".to_string(),
     )));
@@ -342,7 +342,7 @@ async fn priority_user_message_preserves_client_message_id_and_server_message_id
 #[tokio::test]
 async fn ordinary_batched_user_messages_preserve_distinct_client_message_ids() {
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = AppState::from_gcx(gcx).await;
+    let app = crate::app_state::app_state_from_gcx(gcx).await;
     let session_arc = Arc::new(AMutex::new(ChatSession::new(
         "ordinary-client-message-ids".to_string(),
     )));
@@ -413,7 +413,7 @@ async fn ordinary_batched_user_messages_preserve_distinct_client_message_ids() {
 #[tokio::test]
 async fn priority_user_message_suppresses_auto_enrichment_without_context_files() {
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = AppState::from_gcx(gcx).await;
+    let app = crate::app_state::app_state_from_gcx(gcx).await;
     let session_arc = Arc::new(AMutex::new(ChatSession::new(
         "priority-suppress-enrichment".to_string(),
     )));
@@ -450,7 +450,7 @@ async fn priority_user_message_suppresses_auto_enrichment_without_context_files(
 #[tokio::test]
 async fn promoted_multimodal_message_reaches_priority_injection_unchanged() {
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = AppState::from_gcx(gcx).await;
+    let app = crate::app_state::app_state_from_gcx(gcx).await;
     let session_arc = Arc::new(AMutex::new(ChatSession::new(
         "priority-multimodal".to_string(),
     )));
@@ -618,7 +618,7 @@ fn test_drain_queued_user_messages_extracts_all_user_messages_in_queue_order() {
 #[tokio::test]
 async fn non_priority_user_message_is_injected_at_safe_boundary() {
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = AppState::from_gcx(gcx).await;
+    let app = crate::app_state::app_state_from_gcx(gcx).await;
     let session_arc = Arc::new(AMutex::new(ChatSession::new(
         "non-priority-injection".to_string(),
     )));

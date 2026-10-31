@@ -97,7 +97,7 @@ mod tests {
         let gcx = crate::global_context::tests::make_test_gcx().await;
         crate::chat::perf_diagnostics::clear_process_telemetry_for_test();
         gcx.performance_telemetry.set_enabled(false);
-        let app_state = AppState::from_gcx(gcx).await;
+        let app_state = crate::app_state::app_state_from_gcx(gcx).await;
         crate::http::routers::v1::make_v1_router(app_state.clone()).with_state(app_state)
     }
 

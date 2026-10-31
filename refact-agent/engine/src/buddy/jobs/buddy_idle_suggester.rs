@@ -167,7 +167,7 @@ mod tests {
         let (dir, _repo) = init_temp_git_repo();
         let root = dir.path();
         std::fs::write(root.join("tracked.txt"), "changed\n").unwrap();
-        let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+        let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
         set_activity(gcx.clone(), root, Utc::now() - Duration::minutes(20)).await;
 
         assert!(
@@ -181,7 +181,7 @@ mod tests {
     async fn buddy_idle_suggester_no_fire_without_recent_activity() {
         let (dir, _repo) = init_temp_git_repo();
         std::fs::write(dir.path().join("tracked.txt"), "changed\n").unwrap();
-        let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+        let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
 
         assert!(
             !BuddyIdleSuggesterJob

@@ -433,7 +433,7 @@ mod tests {
         let scan = scan_test_coverage(dir.path());
         let spec = build_test_coverage_spec(&test_context(dir.path(), None), &scan);
         let ctx = test_context(dir.path(), Some(serialize_scan(&spec.signal_hash, &scan)));
-        let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+        let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
 
         assert!(BuddyTestCoverageWatcherJob.should_run(gcx, &ctx).await);
         assert_eq!(scan.candidates.len(), 1);
@@ -466,7 +466,7 @@ mod tests {
                 &last,
             )),
         );
-        let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+        let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
 
         assert!(!BuddyTestCoverageWatcherJob.should_run(gcx, &ctx).await);
         let cache = cached_scan(&ctx).expect("coverage cache parses after success");
@@ -487,7 +487,7 @@ mod tests {
             }],
         };
         let ctx = test_context(dir.path(), Some(serialize_scan("old-hash", &scan)));
-        let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+        let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
 
         assert!(BuddyTestCoverageWatcherJob.should_run(gcx, &ctx).await);
     }
@@ -522,7 +522,7 @@ mod tests {
             dir.path(),
             Some(serde_json::to_string(&stale_cache).unwrap()),
         );
-        let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+        let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
 
         let result = BuddyTestCoverageWatcherJob.execute(gcx, ctx).await;
         let refreshed = serde_json::from_str::<CoverageScanCache>(

@@ -34,7 +34,7 @@ mod tests {
         root: &std::path::Path,
     ) -> (Arc<crate::global_context::GlobalContext>, AppState) {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         *app.workspace
             .documents_state
             .workspace_folders
@@ -295,7 +295,7 @@ pub async fn handle_v1_prepend_system_prompt_and_maybe_more_initial_messages(
     let prompt_tool_names = tool_descs.iter().map(|t| t.name.clone()).collect();
 
     let (messages, _) = prepend_the_right_system_prompt_and_maybe_more_initial_messages(
-        crate::app_state::AppState::from_gcx(gcx.clone()).await,
+        crate::app_state::app_state_from_gcx(gcx.clone()).await,
         post.messages,
         &post.chat_meta,
         &None,

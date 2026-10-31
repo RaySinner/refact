@@ -199,7 +199,7 @@ pub async fn vecdb_background_reload(gcx: Arc<GlobalContext>) {
                     None,
                 );
                 crate::buddy::actor::buddy_enqueue_event(
-                    crate::app_state::AppState::from_gcx(gcx.clone()).await,
+                    crate::app_state::app_state_from_gcx(gcx.clone()).await,
                     ev,
                 )
                 .await;
@@ -219,7 +219,7 @@ pub async fn vecdb_background_reload(gcx: Arc<GlobalContext>) {
                         None,
                     );
                     crate::buddy::actor::buddy_enqueue_event(
-                        crate::app_state::AppState::from_gcx(gcx.clone()).await,
+                        crate::app_state::app_state_from_gcx(gcx.clone()).await,
                         ev,
                     )
                     .await;

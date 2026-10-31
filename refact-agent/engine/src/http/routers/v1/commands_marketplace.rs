@@ -97,7 +97,7 @@ mod tests {
         .unwrap();
 
         let result = handle_v1_commands_marketplace_install(
-            axum::extract::State(crate::app_state::AppState::from_gcx(gcx.clone()).await),
+            axum::extract::State(crate::app_state::app_state_from_gcx(gcx.clone()).await),
             hyper::body::Bytes::from(body),
         )
         .await;

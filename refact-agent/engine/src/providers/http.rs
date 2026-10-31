@@ -5110,7 +5110,7 @@ oauth_tokens:
         let gcx = crate::global_context::tests::make_test_gcx().await;
         let config_dir = gcx.config_dir.clone();
         let response = handle_v1_provider_update(
-            axum::extract::State(crate::app_state::AppState::from_gcx(gcx.clone()).await),
+            axum::extract::State(crate::app_state::app_state_from_gcx(gcx.clone()).await),
             Path(ProviderPathParams {
                 name: "openai_2".to_string(),
             }),
@@ -5156,7 +5156,7 @@ oauth_tokens:
     async fn provider_get_openai_alias_returns_identity_fields() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
         handle_v1_provider_update(
-            axum::extract::State(crate::app_state::AppState::from_gcx(gcx.clone()).await),
+            axum::extract::State(crate::app_state::app_state_from_gcx(gcx.clone()).await),
             Path(ProviderPathParams {
                 name: "openai_2".to_string(),
             }),
@@ -5173,7 +5173,7 @@ oauth_tokens:
         .unwrap();
 
         let response = handle_v1_provider_get(
-            axum::extract::State(crate::app_state::AppState::from_gcx(gcx.clone()).await),
+            axum::extract::State(crate::app_state::app_state_from_gcx(gcx.clone()).await),
             Path(ProviderPathParams {
                 name: "openai_2".to_string(),
             }),
@@ -5218,7 +5218,7 @@ oauth_tokens:
         }
 
         let response = handle_v1_provider_get(
-            axum::extract::State(crate::app_state::AppState::from_gcx(gcx.clone()).await),
+            axum::extract::State(crate::app_state::app_state_from_gcx(gcx.clone()).await),
             Path(ProviderPathParams {
                 name: "claude_code".to_string(),
             }),
@@ -5254,7 +5254,7 @@ oauth_tokens:
             .await
             .unwrap();
         handle_v1_provider_update(
-            axum::extract::State(crate::app_state::AppState::from_gcx(gcx.clone()).await),
+            axum::extract::State(crate::app_state::app_state_from_gcx(gcx.clone()).await),
             Path(ProviderPathParams {
                 name: "openai_2".to_string(),
             }),
@@ -5272,7 +5272,7 @@ oauth_tokens:
         .unwrap();
 
         let response = handle_v1_provider_model_toggle(
-            axum::extract::State(crate::app_state::AppState::from_gcx(gcx.clone()).await),
+            axum::extract::State(crate::app_state::app_state_from_gcx(gcx.clone()).await),
             Path(ProviderPathParams {
                 name: "openai_2".to_string(),
             }),
@@ -5319,7 +5319,7 @@ extra_headers:
         .unwrap();
 
         let response = handle_v1_provider_update(
-            axum::extract::State(crate::app_state::AppState::from_gcx(gcx.clone()).await),
+            axum::extract::State(crate::app_state::app_state_from_gcx(gcx.clone()).await),
             Path(ProviderPathParams {
                 name: "custom_2".to_string(),
             }),
@@ -5390,7 +5390,7 @@ extra_headers:
         .unwrap();
 
         let response = handle_v1_provider_update(
-            axum::extract::State(crate::app_state::AppState::from_gcx(gcx.clone()).await),
+            axum::extract::State(crate::app_state::app_state_from_gcx(gcx.clone()).await),
             Path(ProviderPathParams {
                 name: "litellm".to_string(),
             }),
@@ -5447,7 +5447,7 @@ extra_headers:
             .await
             .unwrap();
         handle_v1_provider_update(
-            axum::extract::State(crate::app_state::AppState::from_gcx(gcx.clone()).await),
+            axum::extract::State(crate::app_state::app_state_from_gcx(gcx.clone()).await),
             Path(ProviderPathParams {
                 name: "openai_2".to_string(),
             }),
@@ -5464,7 +5464,7 @@ extra_headers:
         .unwrap();
 
         let response = handle_v1_provider_delete(
-            axum::extract::State(crate::app_state::AppState::from_gcx(gcx.clone()).await),
+            axum::extract::State(crate::app_state::app_state_from_gcx(gcx.clone()).await),
             Path(ProviderPathParams {
                 name: "openai_2".to_string(),
             }),
@@ -5504,7 +5504,7 @@ extra_headers:
         reload_provider_from_disk(&gcx.chat_ctx(gcx.clone()), "claude_code_2", &config_dir)
             .await
             .unwrap();
-        let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         let guard = ClaudeCodeProvider::lock_refresh_guard().await.unwrap();
 
         let delete = tokio::spawn(handle_v1_provider_delete(
@@ -5562,7 +5562,7 @@ extra_headers:
         }))
         .unwrap();
         let response = handle_v1_provider_update(
-            axum::extract::State(crate::app_state::AppState::from_gcx(gcx.clone()).await),
+            axum::extract::State(crate::app_state::app_state_from_gcx(gcx.clone()).await),
             Path(ProviderPathParams {
                 name: "custom".to_string(),
             }),
@@ -5625,7 +5625,7 @@ extra_headers:
         }))
         .unwrap();
         let err = handle_v1_provider_update(
-            axum::extract::State(crate::app_state::AppState::from_gcx(gcx.clone()).await),
+            axum::extract::State(crate::app_state::app_state_from_gcx(gcx.clone()).await),
             Path(ProviderPathParams {
                 name: "custom".to_string(),
             }),
@@ -5998,7 +5998,7 @@ extra_headers:
         let gcx = crate::global_context::tests::make_test_gcx().await;
         let config_dir = gcx.config_dir.clone();
         handle_v1_provider_update(
-            axum::extract::State(crate::app_state::AppState::from_gcx(gcx.clone()).await),
+            axum::extract::State(crate::app_state::app_state_from_gcx(gcx.clone()).await),
             Path(ProviderPathParams {
                 name: "custom_2".to_string(),
             }),
@@ -6028,7 +6028,7 @@ extra_headers:
         }
 
         let update_auth = handle_v1_provider_update(
-            axum::extract::State(crate::app_state::AppState::from_gcx(gcx.clone()).await),
+            axum::extract::State(crate::app_state::app_state_from_gcx(gcx.clone()).await),
             Path(ProviderPathParams {
                 name: "custom_2".to_string(),
             }),
@@ -6131,7 +6131,7 @@ extra_headers:
         .unwrap();
 
         let err = handle_v1_provider_health(
-            axum::extract::State(crate::app_state::AppState::from_gcx(gcx.clone()).await),
+            axum::extract::State(crate::app_state::app_state_from_gcx(gcx.clone()).await),
             Path(ProviderPathParams {
                 name: "openai_2".to_string(),
             }),
@@ -6141,7 +6141,7 @@ extra_headers:
         assert_eq!(err.status_code, StatusCode::BAD_REQUEST);
 
         let err = handle_v1_provider_usage(
-            axum::extract::State(crate::app_state::AppState::from_gcx(gcx.clone()).await),
+            axum::extract::State(crate::app_state::app_state_from_gcx(gcx.clone()).await),
             Path(ProviderPathParams {
                 name: "openai_2".to_string(),
             }),
@@ -6165,7 +6165,7 @@ extra_headers:
         .unwrap();
 
         let err = handle_v1_openrouter_model_endpoints(
-            axum::extract::State(crate::app_state::AppState::from_gcx(gcx.clone()).await),
+            axum::extract::State(crate::app_state::app_state_from_gcx(gcx.clone()).await),
             Path(ProviderModelPathParams {
                 name: "openrouter_2".to_string(),
                 model_id: "openai/gpt-4.1".to_string(),

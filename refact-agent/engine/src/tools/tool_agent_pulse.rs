@@ -795,7 +795,7 @@ mod tests {
         role: &str,
         facade: Arc<dyn ChatSessionFacade>,
     ) -> Arc<AMutex<AtCommandsContext>> {
-        let mut app = AppState::from_gcx(gcx).await;
+        let mut app = crate::app_state::app_state_from_gcx(gcx).await;
         app.chat.facade = facade;
         Arc::new(AMutex::new(
             AtCommandsContext::new_from_app(

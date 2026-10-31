@@ -237,7 +237,7 @@ mod tests {
         );
         let _guard = crate::buddy::voice_service::install_test_voice_service(service).await;
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
 
         let lines = DefaultHumorGenerator
             .generate(BuddyFactKind::TaskStuck, "tasks:1 stuck:1".to_string(), app)

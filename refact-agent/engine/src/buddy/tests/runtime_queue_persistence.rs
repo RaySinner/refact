@@ -687,7 +687,7 @@ async fn generated_buddy_speech_with_secret_uses_fallback() {
         )]);
     let _guard = crate::buddy::voice_service::install_test_voice_service(service).await;
     let app =
-        crate::app_state::AppState::from_gcx(crate::global_context::tests::make_test_gcx().await)
+        crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await)
             .await;
     let fallback = "Quest complete: safe fallback sparkle.".to_string();
 
@@ -716,7 +716,7 @@ async fn generated_runtime_event_title_and_description_with_secret_use_fallbacks
         )]);
     let _guard = crate::buddy::voice_service::install_test_voice_service(service).await;
     let app =
-        crate::app_state::AppState::from_gcx(crate::global_context::tests::make_test_gcx().await)
+        crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await)
             .await;
     let fallback_title = "Safe runtime title".to_string();
     let fallback_description = "Safe runtime description".to_string();
@@ -749,7 +749,7 @@ async fn generated_activity_title_with_secret_uses_fallback() {
     );
     let _guard = crate::buddy::voice_service::install_test_voice_service(service).await;
     let app =
-        crate::app_state::AppState::from_gcx(crate::global_context::tests::make_test_gcx().await)
+        crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await)
             .await;
     let fallback = "Safe activity title".to_string();
 
@@ -778,7 +778,7 @@ async fn normal_generated_buddy_speech_is_preserved() {
     );
     let _guard = crate::buddy::voice_service::install_test_voice_service(service).await;
     let app =
-        crate::app_state::AppState::from_gcx(crate::global_context::tests::make_test_gcx().await)
+        crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await)
             .await;
 
     let speech = super::actor::render_buddy_speech(
@@ -804,7 +804,7 @@ async fn generated_buddy_speech_with_secret_fallback_uses_static_safe_text() {
         )]);
     let _guard = crate::buddy::voice_service::install_test_voice_service(service).await;
     let app =
-        crate::app_state::AppState::from_gcx(crate::global_context::tests::make_test_gcx().await)
+        crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await)
             .await;
 
     let speech = super::actor::render_buddy_speech(
@@ -835,7 +835,7 @@ async fn runtime_event_secret_fallbacks_use_static_safe_text() {
     );
     let _guard = crate::buddy::voice_service::install_test_voice_service(service).await;
     let app =
-        crate::app_state::AppState::from_gcx(crate::global_context::tests::make_test_gcx().await)
+        crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await)
             .await;
 
     let (title, description) = super::actor::render_buddy_runtime_event(
@@ -868,7 +868,7 @@ async fn oversized_fallback_buddy_speech_is_capped() {
     );
     let _guard = crate::buddy::voice_service::install_test_voice_service(service).await;
     let app =
-        crate::app_state::AppState::from_gcx(crate::global_context::tests::make_test_gcx().await)
+        crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await)
             .await;
 
     let fallback = "f".repeat(400);
@@ -896,7 +896,7 @@ async fn runtime_event_safe_generated_title_keeps_safe_generated_description() {
     );
     let _guard = crate::buddy::voice_service::install_test_voice_service(service).await;
     let app =
-        crate::app_state::AppState::from_gcx(crate::global_context::tests::make_test_gcx().await)
+        crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await)
             .await;
     let workflow_summary = "Generated safe description".to_string();
 
@@ -924,7 +924,7 @@ async fn runtime_event_unsafe_generated_title_ignores_safe_summary_without_fallb
     );
     let _guard = crate::buddy::voice_service::install_test_voice_service(service).await;
     let app =
-        crate::app_state::AppState::from_gcx(crate::global_context::tests::make_test_gcx().await)
+        crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await)
             .await;
 
     let (title, description) = super::actor::render_buddy_runtime_event(
@@ -951,7 +951,7 @@ async fn runtime_event_unsafe_generated_title_with_safe_fallbacks_uses_fallbacks
     );
     let _guard = crate::buddy::voice_service::install_test_voice_service(service).await;
     let app =
-        crate::app_state::AppState::from_gcx(crate::global_context::tests::make_test_gcx().await)
+        crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await)
             .await;
 
     let (title, description) = super::actor::render_buddy_runtime_event(
@@ -978,7 +978,7 @@ async fn oversized_runtime_title_and_description_fallbacks_are_capped() {
     );
     let _guard = crate::buddy::voice_service::install_test_voice_service(service).await;
     let app =
-        crate::app_state::AppState::from_gcx(crate::global_context::tests::make_test_gcx().await)
+        crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await)
             .await;
 
     let (title, description) = super::actor::render_buddy_runtime_event(

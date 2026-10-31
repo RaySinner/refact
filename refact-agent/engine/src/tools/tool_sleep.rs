@@ -461,7 +461,7 @@ mod tests {
     async fn ticks_all_modes_wait_for_own_result_and_c_waits_for_turn() {
         for push in [PushMode::Append, PushMode::Preempt, PushMode::WhenIdle] {
             let gcx = crate::global_context::tests::make_test_gcx().await;
-            let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+            let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
             let session = Arc::new(AMutex::new(ChatSession::new(CHAT_ID.into())));
             gcx.chat_sessions
                 .write()
@@ -553,7 +553,7 @@ mod tests {
     ) -> Arc<AMutex<AtCommandsContext>> {
         Arc::new(AMutex::new(
             AtCommandsContext::new_from_app(
-                crate::app_state::AppState::from_gcx(gcx).await,
+                crate::app_state::app_state_from_gcx(gcx).await,
                 4096,
                 20,
                 false,

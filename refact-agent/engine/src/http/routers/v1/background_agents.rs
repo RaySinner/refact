@@ -216,7 +216,7 @@ mod tests {
     }
 
     async fn app() -> AppState {
-        AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await
+        crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await
     }
 
     async fn request(app: AppState, method: &str, uri: String, body: Value) -> (StatusCode, Value) {

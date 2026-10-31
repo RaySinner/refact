@@ -1973,7 +1973,7 @@ mod tests {
     #[tokio::test]
     async fn process_notice_push_defaults_and_explicit_modes() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         let tool = test_tool_ctx(&app);
         let chat = app.chat_ctx();
         let mut input = HashMap::from([
@@ -2025,7 +2025,7 @@ mod tests {
         task_role: Option<&str>,
     ) -> Arc<AMutex<AtCommandsContext>> {
         let ccx = AtCommandsContext::new_with_abort(
-            AppState::from_gcx(gcx).await,
+            crate::app_state::app_state_from_gcx(gcx).await,
             4096,
             20,
             false,
@@ -2056,7 +2056,7 @@ mod tests {
         workspace: PathBuf,
     ) -> Arc<AMutex<AtCommandsContext>> {
         let ccx = AtCommandsContext::new_with_abort(
-            AppState::from_gcx(gcx).await,
+            crate::app_state::app_state_from_gcx(gcx).await,
             4096,
             20,
             false,
@@ -2580,7 +2580,7 @@ mod tests {
     #[tokio::test]
     async fn tool_process_start_same_service_name_in_distinct_chats_does_not_collide() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         let first_ccx = Arc::new(AMutex::new(
             AtCommandsContext::new_with_abort(
                 app.clone(),

@@ -132,7 +132,7 @@ mod tests {
     #[tokio::test]
     async fn buddy_refactor_hunter_uses_calendar_week_dedup() {
         let dir = tempfile::tempdir().unwrap();
-        let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+        let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
         let ctx = test_context(dir.path());
         let job = BuddyRefactorHunterJob;
 

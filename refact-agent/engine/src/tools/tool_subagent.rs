@@ -751,7 +751,7 @@ mod tests {
     async fn test_context(parent_chat_id: &str) -> Arc<AMutex<AtCommandsContext>> {
         let gcx = crate::global_context::tests::make_test_gcx().await;
         install_test_caps(gcx.clone()).await;
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         Arc::new(AMutex::new(
             AtCommandsContext::new_from_app(
                 app,

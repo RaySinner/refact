@@ -1100,7 +1100,7 @@ mod tests {
 
     #[tokio::test]
     async fn budget_exhausted_finish_records_terminal_status() {
-        let app = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+        let app = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
         let mut session = session_with_goal();
         let budget = use_finite_goal_budget(&mut session);
         session.goal.as_mut().unwrap().progress.turns_used = budget.max_turns.unwrap();
@@ -1133,7 +1133,7 @@ mod tests {
 
     #[tokio::test]
     async fn no_progress_exhausted_finish_records_terminal_status() {
-        let app = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+        let app = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
         let mut session = session_with_goal();
         let budget = use_finite_goal_budget(&mut session);
         session.goal.as_mut().unwrap().progress.no_progress_turns =

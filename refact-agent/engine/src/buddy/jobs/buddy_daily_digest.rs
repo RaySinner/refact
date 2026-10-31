@@ -195,7 +195,7 @@ mod tests {
     #[tokio::test]
     async fn buddy_daily_digest_should_run_at_or_after_configured_hour() {
         let dir = tempfile::tempdir().unwrap();
-        let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+        let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
         let hour = Local::now().hour() as u8;
         let mut ctx = test_context(dir.path());
         let job = BuddyDailyDigestJob;

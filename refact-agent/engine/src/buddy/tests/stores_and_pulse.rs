@@ -158,7 +158,7 @@ async fn pulse_build_skeleton_sets_generated_at() {
     use super::facts::FactStore;
     use super::pulse::build_pulse;
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     let store = FactStore::new();
     let pulse = build_pulse(app, std::path::Path::new("/tmp"), &store).await;
     assert!(pulse.generated_at.is_some());

@@ -242,7 +242,7 @@ async fn make_gcx_with_buddy() -> AppState {
         tx,
         None,
     );
-    let app = AppState::from_gcx(gcx).await;
+    let app = crate::app_state::app_state_from_gcx(gcx).await;
     let buddy_arc = app.buddy.buddy.clone();
     *buddy_arc.lock().await = Some(service);
     app
@@ -388,7 +388,7 @@ async fn autonomous_activity_links_to_generated_buddy_chat() {
     .with_display("🌱", "Memory", "normal");
 
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let gcx = AppState::from_gcx(gcx).await;
+    let gcx = crate::app_state::app_state_from_gcx(gcx).await;
     let activity = autonomous_activity(gcx, &spec, "buddy-chat-1", "Buddy").await;
 
     assert_eq!(activity.activity_type, MEMORY_GARDENER_WORKFLOW_ID);
@@ -406,7 +406,7 @@ async fn voice_unavailable_falls_back_to_deterministic_string() {
     )
     .with_display("🌱", "Memory", "normal");
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let gcx = AppState::from_gcx(gcx).await;
+    let gcx = crate::app_state::app_state_from_gcx(gcx).await;
 
     let activity = autonomous_activity(gcx.clone(), &spec, "buddy-chat-1", "Pixel").await;
     let event = autonomous_runtime_event(gcx, &spec, "buddy-chat-1", "Pixel").await;
@@ -1730,7 +1730,7 @@ async fn dependency_radar_should_run_does_not_scan_git() {
     let job = DependencyRadarJob;
     let mut ctx = context_with_last_result(None);
     ctx.pulse.git.uncommitted_files = 1;
-    let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+    let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
     reset_local_git_evidence_scan_count(&ctx.project_root);
 
     assert!(job.should_run(gcx, &ctx).await);
@@ -1747,7 +1747,7 @@ async fn dependency_radar_execute_scans_git_once_without_should_run_duplication(
     ctx.project_root = root.to_path_buf();
     ctx.pulse.git.uncommitted_files = 1;
     let job = DependencyRadarJob;
-    let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+    let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
 
     assert!(job.should_run(gcx.clone(), &ctx).await);
     reset_local_git_evidence_scan_count(&ctx.project_root);
@@ -1780,7 +1780,7 @@ async fn same_signal_execution_returns_no_visible_output_and_preserves_last_resu
         consecutive_failures: None,
     });
     let ctx = context_with_last_result(Some(stored.clone()));
-    let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+    let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
 
     let result = execute_dependency_radar_with_evidence(gcx, &ctx, evidence).await;
 
@@ -1833,7 +1833,7 @@ fn autonomous_failure_result_classifies_model_context_and_tool_errors() {
 #[tokio::test]
 async fn autonomous_success_result_includes_visible_runtime_event_with_stable_dedupe() {
     let ctx = context_with_last_result(None);
-    let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+    let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
     let spec = build_autonomous_job_spec(
         dependency_radar_definition(),
         "Local dependency manifest evidence:\n- total_manifest_count: 12".to_string(),
@@ -1866,7 +1866,7 @@ async fn autonomous_chat_disabled_when_kill_switch_off() {
     save_settings(dir.path(), &settings).await.unwrap();
     let gcx = crate::global_context::tests::make_test_gcx().await;
     {
-        *crate::app_state::AppState::from_gcx(gcx.clone())
+        *crate::app_state::app_state_from_gcx(gcx.clone())
             .await
             .workspace
             .documents_state
@@ -1874,7 +1874,7 @@ async fn autonomous_chat_disabled_when_kill_switch_off() {
             .lock()
             .unwrap() = vec![dir.path().to_path_buf()];
     }
-    let gcx = AppState::from_gcx(gcx).await;
+    let gcx = crate::app_state::app_state_from_gcx(gcx).await;
     let spec = AutonomousBuddyChatSpec::new(
         "buddy_security_whisperer",
         "Security Whisperer",
@@ -1888,7 +1888,7 @@ async fn autonomous_chat_disabled_when_kill_switch_off() {
 
 #[tokio::test]
 async fn build_autonomous_messages_render_safe_user_prompt() {
-    let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+    let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
     let spec = AutonomousBuddyChatSpec::new(
         "buddy_security_whisperer",
         "Security Whisperer",
@@ -1910,7 +1910,7 @@ async fn build_autonomous_messages_render_safe_user_prompt() {
 
 #[tokio::test]
 async fn run_autonomous_buddy_chat_rejects_invalid_workflow_id() {
-    let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+    let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
     let spec = AutonomousBuddyChatSpec::new("../bad", "Bad", "Prompt", "Evidence");
     let err = run_autonomous_buddy_chat(gcx, spec).await.unwrap_err();
 

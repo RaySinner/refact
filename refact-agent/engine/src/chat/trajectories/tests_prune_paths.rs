@@ -480,7 +480,7 @@ use super::test_support::*;
         .await
         .unwrap();
 
-        AppState::from_gcx(gcx.clone())
+        crate::app_state::app_state_from_gcx(gcx.clone())
             .await
             .chat
             .trajectory_index_coordinator
@@ -586,7 +586,7 @@ use super::test_support::*;
         trace.link_type = Some(internal_trace_link_type("title_generation"));
         save_trajectory_snapshot(gcx.clone(), trace).await.unwrap();
 
-        AppState::from_gcx(gcx.clone())
+        crate::app_state::app_state_from_gcx(gcx.clone())
             .await
             .chat
             .trajectory_index_coordinator

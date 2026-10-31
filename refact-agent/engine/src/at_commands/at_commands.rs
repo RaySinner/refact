@@ -328,7 +328,7 @@ mod tests {
         let gcx = crate::global_context::tests::make_test_gcx().await;
         let (_temp, worktree) = sample_worktree();
         let ccx = AtCommandsContext::new_from_app(
-            AppState::from_gcx(gcx).await,
+            crate::app_state::app_state_from_gcx(gcx).await,
             4096,
             20,
             false,

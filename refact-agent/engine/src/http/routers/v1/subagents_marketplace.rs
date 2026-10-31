@@ -83,7 +83,7 @@ mod tests {
             .unwrap();
 
         let result = handle_v1_subagents_marketplace_get(
-            axum::extract::State(crate::app_state::AppState::from_gcx(gcx.clone()).await),
+            axum::extract::State(crate::app_state::app_state_from_gcx(gcx.clone()).await),
             Query(SubagentsMarketplaceQuery {
                 source: None,
                 q: None,

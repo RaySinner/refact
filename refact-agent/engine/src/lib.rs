@@ -324,7 +324,7 @@ pub async fn run_with_cmdline(cmdline: global_context::CommandLine) {
     // Buddy starts in background tasks below, so startup import runtime events are best-effort.
     // The persisted last_report is picked up by Buddy pulse after initialization.
     let _ = ext::competitor_import::run_global_import(
-        crate::app_state::AppState::from_gcx(gcx.clone()).await,
+        crate::app_state::app_state_from_gcx(gcx.clone()).await,
     )
     .await;
 

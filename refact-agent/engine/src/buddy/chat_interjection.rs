@@ -194,7 +194,7 @@ mod tests {
 
     #[tokio::test]
     async fn interjection_skips_agent_with_active_turn() {
-        let app = crate::app_state::AppState::from_gcx(
+        let app = crate::app_state::app_state_from_gcx(
             crate::global_context::tests::make_test_gcx().await,
         )
         .await;

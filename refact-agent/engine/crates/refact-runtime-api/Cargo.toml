@@ -28,6 +28,7 @@ refact-integrations = { path = "../refact-integrations" }
 refact-browser = { path = "../refact-browser" }
 refact-yaml-configs = { path = "../refact-yaml-configs" }
 async-trait = "0.1.73"
+axum = { version = "0.6.20", features = ["default", "http2"] }
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true

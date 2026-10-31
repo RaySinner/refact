@@ -273,7 +273,7 @@ mod tests {
         use crate::app_state::AppState;
 
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
 
         let chat_id = "planner-wake-test".to_string();
         let session = ChatSession::new(chat_id.clone());

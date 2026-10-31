@@ -231,7 +231,7 @@ mod tests {
             .await;
             *gcx.documents_state.workspace_folders.lock().unwrap() =
                 vec![workspace.path().to_path_buf()];
-            let app = AppState::from_gcx(gcx).await;
+            let app = crate::app_state::app_state_from_gcx(gcx).await;
             let id = "durable-delivery";
             let session = Arc::new(AMutex::new(ChatSession::new(id.into())));
             session.lock().await.thread.title = "Delivery acceptance".into();
@@ -293,7 +293,7 @@ mod tests {
         let workspace = tempfile::tempdir().unwrap();
         *gcx.documents_state.workspace_folders.lock().unwrap() =
             vec![workspace.path().to_path_buf()];
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         let session = Arc::new(AMutex::new(ChatSession::new("delivery-facade".into())));
         app.chat
             .sessions

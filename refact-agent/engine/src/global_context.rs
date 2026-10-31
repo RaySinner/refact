@@ -627,7 +627,7 @@ pub async fn create_global_context(
     };
     let gcx = Arc::new(cx);
     crate::files_in_workspace::watcher_init(gcx.clone()).await;
-    let app_state = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app_state = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     crate::chat::start_session_cleanup_task(app_state.chat_ctx());
     crate::chat::start_trajectory_watcher(gcx.clone());
     (gcx, ask_shutdown_receiver)
@@ -727,8 +727,8 @@ pub mod tests {
     #[tokio::test]
     async fn app_state_from_test_gcx_clones() {
         let gcx = make_test_gcx().await;
-        let app_state = crate::app_state::AppState::from_gcx(gcx.clone()).await;
-        let second_app_state = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+        let app_state = crate::app_state::app_state_from_gcx(gcx.clone()).await;
+        let second_app_state = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         let cloned = app_state.clone();
 
         assert_eq!(cloned.paths.app_searchable_id, "test");

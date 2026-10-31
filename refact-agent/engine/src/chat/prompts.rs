@@ -766,7 +766,7 @@ mod tests {
     async fn make_gcx_with_buddy() -> AppState {
         clear_buddy_persona_cache_for_tests();
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         let (tx, _) = broadcast::channel(16);
         let mut state = refact_buddy_core::state::default_buddy_state();
         state.identity.name = "Pixel".to_string();
@@ -820,7 +820,7 @@ mod tests {
         tokio::fs::create_dir_all(task_dir.join("documents"))
             .await
             .unwrap();
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         (temp, app, task_dir)
     }
 
@@ -963,7 +963,7 @@ mod tests {
         let gcx = crate::global_context::tests::make_test_gcx().await;
         let temp = tempfile::tempdir().unwrap();
         *gcx.documents_state.workspace_folders.lock().unwrap() = vec![temp.path().to_path_buf()];
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         (temp, app)
     }
 
@@ -1524,7 +1524,7 @@ mod tests {
     #[tokio::test]
     async fn codegraph_instructions_expand_only_when_codegraph_is_available() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         let prompt = "%CODEGRAPH_INSTRUCTIONS%".to_string();
         let rendered = system_prompt_add_extra_instructions(
             app.clone(),
@@ -1565,7 +1565,7 @@ mod tests {
     #[tokio::test]
     async fn trajectory_label_instructions_expand_only_when_tool_is_available() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         let prompt = "%TRAJECTORY_LABEL_INSTRUCTIONS%".to_string();
         let rendered = system_prompt_add_extra_instructions(
             app.clone(),
@@ -1697,7 +1697,7 @@ mod tests {
         let _guard = prompt_test_lock().lock().await;
         clear_buddy_persona_cache_for_tests();
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         let rendered = system_prompt_add_extra_instructions(
             app,
             format!("Alpha\n{}\nOmega", BUDDY_PERSONALITY_MARKER),

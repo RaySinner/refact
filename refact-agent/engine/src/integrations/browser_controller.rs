@@ -28,7 +28,7 @@ pub async fn execute_request_with_runtime_validated(
         return execute_request_with_runtime(runtime_arc, request, image_policy).await;
     };
 
-    let app = crate::app_state::AppState::from_gcx(gcx).await;
+    let app = crate::app_state::app_state_from_gcx(gcx).await;
     let total_steps = request.steps.len();
     let transport_alive = {
         let mut rt = runtime_arc.lock().await;

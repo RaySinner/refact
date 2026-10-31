@@ -184,7 +184,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         let chat_id = "goal-lifecycle-smoke";
         let mut session = ChatSession::new(chat_id.to_string());
         session.thread.mode = "agent".to_string();
@@ -261,7 +261,7 @@ mod tests {
     #[tokio::test]
     async fn no_goal_returns_null() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         let chat_id = "get-goal-no-goal";
         insert_session(&app, ChatSession::new(chat_id.to_string())).await;
         let mut tool = ToolGetGoal::new(String::new());
@@ -278,7 +278,7 @@ mod tests {
     #[tokio::test]
     async fn with_goal_returns_synthesized_goal() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         let chat_id = "get-goal-with-goal";
         let mut session = ChatSession::new(chat_id.to_string());
         crate::chat::goal_role::install_goal(
@@ -343,7 +343,7 @@ mod tests {
     #[tokio::test]
     async fn accepted_control_pending_goal_is_read_without_delivery() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         let chat_id = "get-goal-pending";
         let mut session = ChatSession::new(chat_id.to_string());
         session.turn_depth = 1;

@@ -206,7 +206,7 @@ mod tests {
         let gcx = crate::global_context::tests::make_test_gcx().await;
         *gcx.documents_state.workspace_folders.lock().unwrap() =
             vec![workspace.path().to_path_buf()];
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         let chat_id = "plan-lifecycle-smoke";
         let mut session = ChatSession::new(chat_id.to_string());
         session.thread.mode = "agent".to_string();
@@ -342,7 +342,7 @@ mod tests {
     #[tokio::test]
     async fn no_plan_returns_null() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         let chat_id = "get-plan-no-plan";
         insert_session(&app, ChatSession::new(chat_id.to_string())).await;
         let mut tool = ToolGetPlan::new(String::new());
@@ -359,7 +359,7 @@ mod tests {
     #[tokio::test]
     async fn with_plan_returns_synthesized_plan() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         let chat_id = "get-plan-with-plan";
         let mut session = ChatSession::new(chat_id.to_string());
         session.install_plan("agent", "base plan");
@@ -397,7 +397,7 @@ mod tests {
     #[tokio::test]
     async fn accepted_control_pending_plan_is_read_without_delivery() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         let chat_id = "get-plan-pending";
         let mut session = ChatSession::new(chat_id.to_string());
         session.turn_depth = 1;

@@ -612,7 +612,7 @@ mod tests {
         )
         .await;
         *gcx.documents_state.workspace_folders.lock().unwrap() = vec![workspace.to_path_buf()];
-        let app = crate::app_state::AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         (app, config_dir)
     }
 

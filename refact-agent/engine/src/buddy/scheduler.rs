@@ -760,7 +760,7 @@ mod tests {
             jobs: vec![Box::new(NoIntentSpeechJob)],
         };
         let buddy_arc = test_service(&dir, crate::buddy::state::default_buddy_state()).await;
-        let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+        let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
 
         scheduler.tick(gcx, buddy_arc.clone(), dir.path()).await;
 
@@ -833,7 +833,7 @@ mod tests {
             ],
         };
         let buddy_arc = test_service(&dir, crate::buddy::state::default_buddy_state()).await;
-        let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+        let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
 
         scheduler.tick(gcx, buddy_arc.clone(), dir.path()).await;
 
@@ -861,7 +861,7 @@ mod tests {
                 .collect(),
         };
         let buddy_arc = test_service(&dir, crate::buddy::state::default_buddy_state()).await;
-        let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+        let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
 
         for _ in 0..6 {
             scheduler
@@ -913,7 +913,7 @@ mod tests {
             ],
         };
         let buddy_arc = test_service(&dir, crate::buddy::state::default_buddy_state()).await;
-        let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+        let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
 
         scheduler.tick(gcx, buddy_arc.clone(), dir.path()).await;
 
@@ -957,7 +957,7 @@ mod tests {
             ],
         };
         let buddy_arc = test_service(&dir, crate::buddy::state::default_buddy_state()).await;
-        let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+        let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
 
         scheduler.tick(gcx, buddy_arc.clone(), dir.path()).await;
 
@@ -1016,7 +1016,7 @@ mod tests {
             },
         );
         let buddy_arc = test_service(&dir, state).await;
-        let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+        let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
 
         scheduler.tick(gcx, buddy_arc.clone(), dir.path()).await;
 
@@ -1075,7 +1075,7 @@ mod tests {
             jobs: vec![Box::new(NoOutputUnrecordedJob { last_result: None })],
         };
         let buddy_arc = Arc::new(AMutex::new(Some(service)));
-        let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+        let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
 
         scheduler.tick(gcx, buddy_arc.clone(), dir.path()).await;
 
@@ -1113,7 +1113,7 @@ mod tests {
             })],
         };
         let buddy_arc = test_service(&dir, state).await;
-        let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+        let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
 
         scheduler.tick(gcx, buddy_arc.clone(), dir.path()).await;
 
@@ -1141,7 +1141,7 @@ mod tests {
             })],
         };
         let buddy_arc = test_service(&dir, state).await;
-        let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+        let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
 
         scheduler
             .tick(gcx.clone(), buddy_arc.clone(), dir.path())
@@ -1186,7 +1186,7 @@ mod tests {
             )],
         };
         let buddy_arc = Arc::new(AMutex::new(Some(service)));
-        let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+        let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
 
         scheduler
             .tick(gcx.clone(), buddy_arc.clone(), dir.path())
@@ -1223,7 +1223,7 @@ mod tests {
                 .collect(),
         };
         let buddy_arc = test_service(&dir, crate::buddy::state::default_buddy_state()).await;
-        let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+        let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
 
         scheduler.tick(gcx, buddy_arc.clone(), dir.path()).await;
 
@@ -1245,7 +1245,7 @@ mod tests {
             })],
         };
         let buddy_arc = test_service(&dir, crate::buddy::state::default_buddy_state()).await;
-        let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+        let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
 
         scheduler
             .tick(gcx.clone(), buddy_arc.clone(), dir.path())

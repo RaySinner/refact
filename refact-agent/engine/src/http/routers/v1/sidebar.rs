@@ -304,7 +304,7 @@ async fn load_workspace_part(gcx: Arc<GlobalContext>) -> InitialSidebarPart {
 }
 
 async fn load_chats_part(gcx: Arc<GlobalContext>) -> InitialSidebarPart {
-    let app = crate::app_state::AppState::from_gcx(gcx).await;
+    let app = crate::app_state::app_state_from_gcx(gcx).await;
     match timeout(
         SIDEBAR_BOOTSTRAP_TIMEOUT,
         list_trajectories_page_for(

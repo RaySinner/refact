@@ -174,7 +174,7 @@ async fn process_single_trajectory(
     let trajectory_id2 = trajectory_id.clone();
     let root_chat_id2 = root_chat_id.clone();
     let extraction = crate::buddy::workflows::buddy_wrap_workflow(
-        crate::app_state::AppState::from_gcx(gcx.clone()).await,
+        crate::app_state::app_state_from_gcx(gcx.clone()).await,
         "memo_extraction",
         "🧠",
         8,

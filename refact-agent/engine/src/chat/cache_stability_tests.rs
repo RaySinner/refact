@@ -151,7 +151,7 @@ async fn gcx_with_models_and_modes(
         .cloned()
         .unwrap_or_else(|| "test/cache-openai".to_string());
     {
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         let mut state = app.model.caps.write().await;
         state.caps = Some(Arc::new(caps));
         state.last_attempted_ts = std::time::SystemTime::now()
@@ -216,7 +216,7 @@ async fn prepare_request(
     prefix: Option<FrozenRequestPrefix>,
     boost_reasoning: bool,
 ) -> crate::chat::prepare::PreparedChat {
-    let app = AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     let ccx = AtCommandsContext::new_from_app(
         app,
         8192,

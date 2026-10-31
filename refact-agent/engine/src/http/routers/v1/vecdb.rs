@@ -232,7 +232,7 @@ mod tests {
             .await
             .unwrap();
         *gcx.codegraph.lock().await = Some(Arc::new(codegraph));
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
 
         let response = handle_v1_vecdb_search(
             State(app),
@@ -256,7 +256,7 @@ mod tests {
             .await
             .unwrap();
         *gcx.codegraph.lock().await = Some(Arc::new(codegraph));
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
 
         let response = handle_v1_codegraph_search(
             State(app),
@@ -276,7 +276,7 @@ mod tests {
         let gcx = crate::global_context::tests::make_test_gcx().await;
         let codegraph = refact_codegraph::CodeGraphService::open_in_memory().unwrap();
         *gcx.codegraph.lock().await = Some(Arc::new(codegraph));
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
 
         let response = handle_v1_codegraph_search(State(app), codegraph_search_body(" ", 5))
             .await
@@ -298,7 +298,7 @@ mod tests {
         let conn = rusqlite::Connection::open(&db_path).unwrap();
         conn.execute_batch("DROP TABLE fts_code").unwrap();
         *gcx.codegraph.lock().await = Some(Arc::new(codegraph));
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
 
         let err = match handle_v1_codegraph_search(State(app), codegraph_search_body("needle", 5))
             .await

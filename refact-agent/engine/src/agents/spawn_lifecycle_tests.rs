@@ -78,7 +78,7 @@ async fn repo_fixture() -> RepoFixture {
     let source = std::fs::canonicalize(source).expect("canonical source");
     let gcx = crate::global_context::tests::make_test_gcx_with_dirs(cache.clone(), config).await;
     *gcx.documents_state.workspace_folders.lock().unwrap() = vec![source.clone()];
-    let app = AppState::from_gcx(gcx).await;
+    let app = crate::app_state::app_state_from_gcx(gcx).await;
     let parent_worktree = WorktreeMeta {
         id: "parent-work".to_string(),
         kind: "chat".to_string(),
@@ -227,7 +227,7 @@ async fn spawned_test_subchat_session_carries_approval_defaults() {
         crate::agents::spawn::install_test_runner(Arc::new(move |gcx, messages, config| {
             let observed = observed.clone();
             Box::pin(async move {
-                let app = AppState::from_gcx(gcx).await;
+                let app = crate::app_state::app_state_from_gcx(gcx).await;
                 let chat_id = config.chat_id.as_deref().expect("stateful child chat id");
                 let thread = app
                     .chat
@@ -724,7 +724,7 @@ async fn registered_subagent_session_mirrors_runner_messages_while_generating() 
         crate::agents::spawn::install_test_runner(Arc::new(move |gcx, messages, config| {
             let observed_live = observed_live.clone();
             Box::pin(async move {
-                let app = AppState::from_gcx(gcx).await;
+                let app = crate::app_state::app_state_from_gcx(gcx).await;
                 let chat_id = config.chat_id.clone().expect("stateful child chat id");
                 let seed_len = messages.len();
 

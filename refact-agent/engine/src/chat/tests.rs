@@ -200,7 +200,7 @@ mod tests {
     #[tokio::test]
     async fn test_snapshot_includes_background_agents() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         let parent_chat_id = "parent-background-snapshot";
         let session = ChatSession::new(parent_chat_id.to_string());
 
@@ -1742,7 +1742,7 @@ mod tests {
     #[tokio::test]
     async fn mode_switch_emits_event_not_user_message() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         let mut session = ChatSession::new("mode-switch-test".to_string());
         session.thread.mode = "agent".to_string();
         session.add_message(ChatMessage {
@@ -1807,7 +1807,7 @@ mod tests {
         let gcx = crate::global_context::tests::make_test_gcx().await;
         *gcx.documents_state.workspace_folders.lock().unwrap() = vec![temp.path().to_path_buf()];
         *gcx.documents_state.workspace_files.lock().unwrap() = vec![src_dir.join("lib.rs")];
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         let mut session = ChatSession::new("plan-agent-test".to_string());
         session.thread.mode = "explore".to_string();
 
@@ -1841,7 +1841,7 @@ mod tests {
     #[tokio::test]
     async fn mode_switch_does_not_create_second_plan() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         let mut session = ChatSession::new("plan-version-test".to_string());
         session.thread.mode = "explore".to_string();
 
@@ -1897,7 +1897,7 @@ mod tests {
     #[tokio::test]
     async fn mode_without_plan_template_installs_no_plan() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         let mut session = ChatSession::new("plan-none-test".to_string());
         session.thread.mode = "agent".to_string();
 

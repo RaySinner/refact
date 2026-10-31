@@ -195,7 +195,7 @@ mod tests {
         let gcx = crate::global_context::tests::make_test_gcx().await;
         let codegraph = refact_codegraph::CodeGraphService::open_in_memory().unwrap();
         *gcx.codegraph.lock().await = Some(Arc::new(codegraph));
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         let dir = tempfile::tempdir().unwrap();
         let file_path = dir.path().join("empty.rs");
 
@@ -219,7 +219,7 @@ mod tests {
         let conn = rusqlite::Connection::open(&db_path).unwrap();
         conn.execute_batch("DROP TABLE nodes").unwrap();
         *gcx.codegraph.lock().await = Some(Arc::new(codegraph));
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         let file_path = db_dir.path().join("error.rs");
 
         let err = match handle_v1_code_lens(State(app), code_lens_body(&file_path)).await {

@@ -567,7 +567,7 @@ mod tests {
             },
             loaded_ts: 0,
         });
-        (cache, config, AppState::from_gcx(gcx).await)
+        (cache, config, crate::app_state::app_state_from_gcx(gcx).await)
     }
 
     async fn json_request(router: axum::Router, request: Request<Body>) -> (StatusCode, Value) {

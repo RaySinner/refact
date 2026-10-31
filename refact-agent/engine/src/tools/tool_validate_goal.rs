@@ -275,7 +275,7 @@ mod tests {
     ) -> Arc<AMutex<AtCommandsContext>> {
         Arc::new(AMutex::new(
             AtCommandsContext::new_from_app(
-                AppState::from_gcx(gcx).await,
+                crate::app_state::app_state_from_gcx(gcx).await,
                 4096,
                 20,
                 false,
@@ -387,7 +387,7 @@ mod tests {
         let gcx = crate::global_context::tests::make_test_gcx().await;
         *gcx.documents_state.workspace_folders.lock().unwrap() =
             vec![workspace.path().to_path_buf()];
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         let mut session = ChatSession::new("subchat-validate-goal".to_string());
         session.install_goal("agent", "ship feature", true, GoalBudget::default());
         let snapshot = crate::chat::trajectories::trajectory_snapshot_from_session(&session);

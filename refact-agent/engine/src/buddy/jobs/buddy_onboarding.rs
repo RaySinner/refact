@@ -233,7 +233,7 @@ mod tests {
         let scan = scan_onboarding(dir.path());
         let spec = build_onboarding_spec(&test_context(dir.path(), None), &scan);
         let ctx = test_context(dir.path(), Some(serialize_scan(&spec.signal_hash, &scan)));
-        let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+        let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
 
         assert!(BuddyOnboardingJob.should_run(gcx, &ctx).await);
         assert_eq!(scan.candidates.len(), 1);

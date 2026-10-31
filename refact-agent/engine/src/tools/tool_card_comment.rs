@@ -473,7 +473,7 @@ mod tests {
     ) -> Arc<AMutex<AtCommandsContext>> {
         Arc::new(AMutex::new(
             AtCommandsContext::new_from_app(
-                AppState::from_gcx(gcx).await,
+                crate::app_state::app_state_from_gcx(gcx).await,
                 4096,
                 20,
                 false,
@@ -501,7 +501,7 @@ mod tests {
         reply_to: Option<String>,
     ) -> Result<TaskBoard, (hyper::StatusCode, String)> {
         Ok(handle_create_card_comment(
-            State(AppState::from_gcx(gcx).await),
+            State(crate::app_state::app_state_from_gcx(gcx).await),
             Path(("task-1".to_string(), card_id.to_string())),
             Json(CreateCardCommentRequest {
                 body: body.to_string(),

@@ -19,7 +19,7 @@ async fn test_app() -> (tempfile::TempDir, AppState, Router) {
     let temp = tempfile::tempdir().unwrap();
     let gcx = crate::global_context::tests::make_test_gcx().await;
     *gcx.documents_state.workspace_folders.lock().unwrap() = vec![temp.path().to_path_buf()];
-    let app_state = AppState::from_gcx(gcx).await;
+    let app_state = crate::app_state::app_state_from_gcx(gcx).await;
     let router = Router::new()
         .route(
             "/scheduler/cron",

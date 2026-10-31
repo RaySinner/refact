@@ -194,7 +194,7 @@ mod tests {
             std::env::temp_dir().join(format!("refact-cfg-{}", uuid::Uuid::new_v4())),
         )
         .await;
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         app
     }
 

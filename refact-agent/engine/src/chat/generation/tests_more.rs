@@ -378,7 +378,7 @@ fn delta_batch_caps_large_utf8_content_without_breaking_text() {
 #[tokio::test]
 async fn test_models_dev_generation_metering_uses_central_pricing_lookup() {
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = AppState::from_gcx(gcx).await;
+    let app = crate::app_state::app_state_from_gcx(gcx).await;
     let mut model_caps = std::collections::HashMap::new();
     model_caps.insert(
         "openai/gpt-4o".to_string(),
@@ -737,7 +737,7 @@ fn reasoning_only_tail_session(thinking_blocks: bool) -> ChatSession {
 #[tokio::test]
 async fn silent_tail_nudge_fires_for_reasoning_only_tail() {
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = AppState::from_gcx(gcx).await;
+    let app = crate::app_state::app_state_from_gcx(gcx).await;
     let session_arc = Arc::new(AMutex::new(reasoning_only_tail_session(false)));
     assert!(matches!(
         maybe_nudge_after_silent_tail(app, &session_arc).await,
@@ -753,7 +753,7 @@ async fn silent_tail_nudge_fires_for_reasoning_only_tail() {
 #[tokio::test]
 async fn silent_tail_nudge_fires_for_thinking_blocks_only_tail() {
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = AppState::from_gcx(gcx).await;
+    let app = crate::app_state::app_state_from_gcx(gcx).await;
     let session_arc = Arc::new(AMutex::new(reasoning_only_tail_session(true)));
     assert!(matches!(
         maybe_nudge_after_silent_tail(app, &session_arc).await,
@@ -764,7 +764,7 @@ async fn silent_tail_nudge_fires_for_thinking_blocks_only_tail() {
 #[tokio::test]
 async fn silent_tail_nudge_stays_quiet_for_truly_empty_tail() {
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = AppState::from_gcx(gcx).await;
+    let app = crate::app_state::app_state_from_gcx(gcx).await;
     let mut session = reasoning_only_tail_session(false);
     session.messages.last_mut().unwrap().reasoning_content = None;
     let session_arc = Arc::new(AMutex::new(session));

@@ -180,7 +180,7 @@ mod tests {
     #[tokio::test]
     async fn buddy_friday_retro_should_run_on_friday_at_or_after_digest_hour() {
         let dir = tempfile::tempdir().unwrap();
-        let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+        let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
         let now = Local::now();
         let mut ctx = test_context(dir.path());
         ctx.settings.daily_digest_hour = Some(now.hour() as u8);

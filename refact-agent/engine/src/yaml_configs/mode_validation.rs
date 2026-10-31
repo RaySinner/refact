@@ -105,7 +105,7 @@ pub async fn warn_override_tool_drift(
 }
 
 async fn notify_buddy(gcx: Arc<GlobalContext>, message: &str) {
-    let app = crate::app_state::AppState::from_gcx(gcx).await;
+    let app = crate::app_state::app_state_from_gcx(gcx).await;
     crate::buddy::actor::report_error_persisted(
         app,
         BUDDY_ERROR_TYPE,

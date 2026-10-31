@@ -52,7 +52,7 @@ pub async fn mix_setup_messages(
     }
 
     sp_text = system_prompt_add_extra_instructions(
-        crate::app_state::AppState::from_gcx(gcx.clone()).await,
+        crate::app_state::app_state_from_gcx(gcx.clone()).await,
         sp_text,
         get_tools_for_mode(gcx.clone(), "setup", None)
             .await

@@ -293,7 +293,7 @@ use crate::global_context::GlobalContextCtx;
 
     pub(super) async fn make_app_with_workspace(root: &Path) -> (Arc<GlobalContext>, AppState) {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         *app.workspace
             .documents_state
             .workspace_folders

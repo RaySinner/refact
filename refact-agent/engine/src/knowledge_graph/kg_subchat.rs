@@ -60,7 +60,7 @@ pub async fn enrich_knowledge_metadata(
     let parent_chat_id = parent_chat_id.map(|s| s.to_string());
     let gcx2 = gcx.clone();
     crate::buddy::workflows::buddy_wrap_workflow(
-        crate::app_state::AppState::from_gcx(gcx).await,
+        crate::app_state::app_state_from_gcx(gcx).await,
         "kg_enrich",
         "📚",
         12,
@@ -152,7 +152,7 @@ pub async fn check_deprecation(
     let parent_chat_id = parent_chat_id.map(|s| s.to_string());
     let gcx2 = gcx.clone();
     crate::buddy::workflows::buddy_wrap_workflow(
-        crate::app_state::AppState::from_gcx(gcx).await,
+        crate::app_state::app_state_from_gcx(gcx).await,
         "kg_deprecate",
         "🗑",
         5,

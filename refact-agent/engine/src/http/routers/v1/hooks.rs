@@ -355,7 +355,7 @@ mod tests {
         let gcx = crate::global_context::tests::make_test_gcx().await;
         *gcx.documents_state.workspace_folders.lock().unwrap() =
             vec![workspace.path().to_path_buf()];
-        (workspace, AppState::from_gcx(gcx).await)
+        (workspace, crate::app_state::app_state_from_gcx(gcx).await)
     }
 
     fn router(app: AppState) -> axum::Router {
@@ -419,7 +419,7 @@ mod tests {
         *gcx.documents_state.workspace_folders.lock().unwrap() =
             vec![workspace.path().to_path_buf()];
         Arc::get_mut(&mut gcx).unwrap().cmdline.daemon_auth_token = Some("secret".to_string());
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         let router = router(app);
 
         let (status, _) =

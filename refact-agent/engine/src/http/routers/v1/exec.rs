@@ -782,7 +782,7 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let gcx = crate::global_context::tests::make_test_gcx().await;
         *gcx.documents_state.workspace_folders.lock().unwrap() = vec![temp.path().to_path_buf()];
-        (temp, AppState::from_gcx(gcx).await)
+        (temp, crate::app_state::app_state_from_gcx(gcx).await)
     }
 
     async fn json_response(router: axum::Router, request: Request<Body>) -> (StatusCode, Value) {

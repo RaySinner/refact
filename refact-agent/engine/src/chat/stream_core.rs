@@ -3301,7 +3301,7 @@ mod tests {
             error: None,
             source_paths: Vec::new(),
         };
-        AppState::from_gcx(gcx).await
+        crate::app_state::app_state_from_gcx(gcx).await
     }
 
     #[tokio::test]

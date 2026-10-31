@@ -455,7 +455,7 @@ mod tests {
         let workspace = tempfile::tempdir().unwrap();
         *gcx.documents_state.workspace_folders.lock().unwrap() =
             vec![workspace.path().to_path_buf()];
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         let mut config = ProjectInformationConfig::default();
         config.sections.system_info.enabled = false;
         config.sections.environment_instructions.enabled = false;

@@ -1806,7 +1806,7 @@ mod tests {
     ) -> (Arc<GlobalContext>, AppState, Arc<AMutex<AtCommandsContext>>) {
         let gcx = crate::global_context::tests::make_test_gcx().await;
         install_test_caps(&gcx).await;
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         if let Some(workspace) = workspace {
             std::fs::create_dir_all(workspace).unwrap();
             *app.workspace.documents_state.workspace_folders.lock().unwrap() = vec![

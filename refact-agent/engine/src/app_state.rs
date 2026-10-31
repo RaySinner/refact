@@ -89,7 +89,7 @@ impl EngineChatSessionFacade {
         command: refact_chat_api::ChatCommand,
         priority: bool,
     ) -> Result<(), String> {
-        let app = AppState::from_gcx(self.gcx.clone()).await;
+        let app = app_state_from_gcx(self.gcx.clone()).await;
         match command {
             refact_chat_api::ChatCommand::DeliverMessages { delivery } => {
                 return chat::deliver_to_chat(app, chat_id, delivery)
@@ -148,7 +148,7 @@ impl ChatSessionFacade for EngineChatSessionFacade {
         delivery: refact_core::chat_types::PendingDelivery,
     ) -> Result<refact_core::chat_types::DeliveryOutcome, String> {
         chat::deliver_to_chat(
-            AppState::from_gcx(self.gcx.clone()).await,
+            app_state_from_gcx(self.gcx.clone()).await,
             chat_id,
             delivery,
         )
@@ -163,7 +163,7 @@ impl ChatSessionFacade for EngineChatSessionFacade {
         cancel: bool,
     ) -> Result<(), String> {
         chat::update_pending_delivery_in_chat(
-            AppState::from_gcx(self.gcx.clone()).await,
+            app_state_from_gcx(self.gcx.clone()).await,
             chat_id,
             delivery_id,
             push,
@@ -173,7 +173,7 @@ impl ChatSessionFacade for EngineChatSessionFacade {
     }
 
     async fn session_snapshot(&self, chat_id: &str) -> Result<ChatSessionSnapshot, String> {
-        let app = AppState::from_gcx(self.gcx.clone()).await;
+        let app = app_state_from_gcx(self.gcx.clone()).await;
         let session_arc =
             chat::get_or_create_session_with_trajectory(app.chat_ctx(), &self.gcx.chat_sessions, chat_id)
                 .await;
@@ -188,7 +188,7 @@ impl ChatSessionFacade for EngineChatSessionFacade {
     }
 
     async fn update_session(&self, chat_id: &str, update: ChatSessionUpdate) -> Result<(), String> {
-        let app = AppState::from_gcx(self.gcx.clone()).await;
+        let app = app_state_from_gcx(self.gcx.clone()).await;
         let session_arc =
             chat::get_or_create_session_with_trajectory(app.chat_ctx(), &self.gcx.chat_sessions, chat_id)
                 .await;
@@ -210,7 +210,7 @@ impl ChatSessionFacade for EngineChatSessionFacade {
     }
 
     async fn create_session(&self, request: CreateSessionRequest) -> Result<(), String> {
-        let app = AppState::from_gcx(self.gcx.clone()).await;
+        let app = app_state_from_gcx(self.gcx.clone()).await;
         let session_arc = chat::get_or_create_session_with_trajectory(
             app.chat_ctx(),
             &self.gcx.chat_sessions,
@@ -264,7 +264,7 @@ impl ChatSessionFacade for EngineChatSessionFacade {
         };
         if let Some(session_arc) = session_arc {
             trajectories::maybe_save_trajectory_with_intent(
-                AppState::from_gcx(self.gcx.clone()).await,
+                app_state_from_gcx(self.gcx.clone()).await,
                 session_arc,
                 crate::chat::types::TrajectoryCommitIntent::Required,
             )
@@ -281,22 +281,10 @@ impl ChatSessionFacade for EngineChatSessionFacade {
     }
 }
 
-#[derive(Clone)]
-pub struct AppState {
-    pub gcx: SharedGlobalContext,
-    pub ctx: ChatCtx,
-    pub tool: ToolCtx,
-    pub runtime: RuntimeServices,
-    pub paths: PathServices,
-    pub model: ModelServices,
-    pub workspace: WorkspaceServices,
-    pub chat: ChatServices,
-    pub buddy: BuddyServices,
-    pub integrations: IntegrationServices,
-    pub activity_sink: Arc<dyn ActivitySink>,
-    pub buddy_event_sink: Arc<dyn BuddyEventSink>,
-    pub tool_registry: Arc<dyn ToolRegistry>,
-    pub agents: Arc<BackgroundAgentRegistry>,
+pub use refact_runtime_api::AppState;
+
+pub async fn app_state_from_gcx(gcx: SharedGlobalContext) -> AppState {
+    gcx.app_state(gcx.clone())
 }
 
 pub struct EngineSubchatLauncher {
@@ -520,7 +508,7 @@ impl EngineHookRunner {
 #[async_trait]
 impl HookRunner for EngineHookRunner {
     async fn project_dir(&self) -> String {
-        let app = AppState::from_gcx(self.gcx.clone()).await;
+        let app = app_state_from_gcx(self.gcx.clone()).await;
         crate::ext::hooks_runner::get_project_dir_string(app).await
     }
 
@@ -529,7 +517,7 @@ impl HookRunner for EngineHookRunner {
         event: crate::ext::hooks::HookEvent,
         payload: crate::ext::hooks_runner::HookPayload,
     ) -> Vec<crate::ext::hooks_runner::HookResult> {
-        let app = AppState::from_gcx(self.gcx.clone()).await;
+        let app = app_state_from_gcx(self.gcx.clone()).await;
         crate::ext::hooks_runner::run_hooks(app, event, payload).await
     }
 }
@@ -818,7 +806,7 @@ impl TrajectoryStore for EngineTrajectoryStore {
         intent: TrajectoryCommitIntent,
     ) {
         trajectories::maybe_save_trajectory_with_intent(
-            AppState::from_gcx(self.gcx.clone()).await,
+            app_state_from_gcx(self.gcx.clone()).await,
             session_arc,
             intent,
         )
@@ -831,7 +819,7 @@ impl TrajectoryStore for EngineTrajectoryStore {
         intent: TrajectoryCommitIntent,
     ) -> Result<bool, String> {
         trajectories::try_save_trajectory_with_intent(
-            AppState::from_gcx(self.gcx.clone()).await,
+            app_state_from_gcx(self.gcx.clone()).await,
             session_arc,
             intent,
         )
@@ -843,7 +831,7 @@ impl TrajectoryStore for EngineTrajectoryStore {
         session_arc: Arc<AMutex<ChatSession>>,
     ) -> Result<(), String> {
         trajectories::flush_trajectory_for_session(
-            AppState::from_gcx(self.gcx.clone()).await,
+            app_state_from_gcx(self.gcx.clone()).await,
             session_arc,
         )
         .await
@@ -1033,7 +1021,7 @@ impl PromptAssembler for EnginePromptAssembler {
         crate::ext::skills_context::SkillsTrackingInfo,
     ) {
         crate::chat::prompts::prepend_the_right_system_prompt_and_maybe_more_initial_messages(
-            AppState::from_gcx(self.gcx.clone()).await,
+            app_state_from_gcx(self.gcx.clone()).await,
             messages,
             chat_meta,
             task_meta,
@@ -1068,7 +1056,7 @@ impl ChatToolExecutor for EngineChatToolExecutor {
         options: crate::chat::tools::ExecuteToolsOptions,
     ) -> (Vec<ChatMessage>, bool) {
         crate::chat::tools::execute_tools(
-            AppState::from_gcx(self.gcx.clone()).await,
+            app_state_from_gcx(self.gcx.clone()).await,
             tool_calls,
             messages,
             thread,
@@ -1883,7 +1871,7 @@ impl ToolRegistry for AppToolRegistry {
         }
         {
             let mut cgcx = ccx.lock().await;
-            cgcx.app = AppState::from_gcx(gcx.clone()).await;
+            cgcx.app = app_state_from_gcx(gcx.clone()).await;
         }
         let tool_call_id = tool_call_id.to_string();
         lookup_span.finish_tool(PerfOutcome::Success, 1, 1, None);
@@ -1977,7 +1965,7 @@ impl ToolRegistry for AppToolRegistry {
         }
         {
             let mut cgcx = ccx.lock().await;
-            cgcx.app = AppState::from_gcx(gcx).await;
+            cgcx.app = app_state_from_gcx(gcx).await;
         }
         lookup_span.finish_tool(PerfOutcome::Success, 1, 1, None);
         let runtime_span = perf_diagnostics::span(PerfComponent::ToolRuntime, None, None);
@@ -2126,7 +2114,7 @@ impl BuddyEventSink for AppBuddyEventSink {
         workflow_summary: &str,
         status: &str,
     ) -> Option<(String, Option<String>)> {
-        let app = AppState::from_gcx(self.gcx.clone()).await;
+        let app = app_state_from_gcx(self.gcx.clone()).await;
         let snapshot = self.snapshot().await?;
         let pulse_one_liner = format!(
             "{} pending ops, {} recent stuck task alerts",
@@ -2150,7 +2138,7 @@ impl BuddyEventSink for AppBuddyEventSink {
 
     async fn build_pulse_message(&self) -> Option<ChatMessage> {
         crate::buddy::pulse_inject::build_buddy_pulse_message(
-            AppState::from_gcx(self.gcx.clone()).await,
+            app_state_from_gcx(self.gcx.clone()).await,
         )
         .await
     }
@@ -2201,76 +2189,6 @@ impl EngineNotificationEventSender {
 impl NotificationEventSender for EngineNotificationEventSender {
     fn send(&self, event: NotificationEvent) -> usize {
         self.tx.send(event).unwrap_or(0)
-    }
-}
-
-impl AppState {
-    pub async fn from_gcx(gcx: SharedGlobalContext) -> Self {
-        gcx.app_state(gcx.clone())
-    }
-
-    pub fn chat_ctx(&self) -> ChatCtx {
-        self.ctx.clone()
-    }
-}
-
-impl FromRef<AppState> for SharedGlobalContext {
-    fn from_ref(app: &AppState) -> Self {
-        app.gcx.clone()
-    }
-}
-
-impl From<AppState> for SharedGlobalContext {
-    fn from(app: AppState) -> Self {
-        app.gcx.clone()
-    }
-}
-
-impl From<&AppState> for SharedGlobalContext {
-    fn from(app: &AppState) -> Self {
-        app.gcx.clone()
-    }
-}
-
-impl FromRef<AppState> for RuntimeServices {
-    fn from_ref(app: &AppState) -> Self {
-        app.runtime.clone()
-    }
-}
-
-impl FromRef<AppState> for PathServices {
-    fn from_ref(app: &AppState) -> Self {
-        app.paths.clone()
-    }
-}
-
-impl FromRef<AppState> for ModelServices {
-    fn from_ref(app: &AppState) -> Self {
-        app.model.clone()
-    }
-}
-
-impl FromRef<AppState> for WorkspaceServices {
-    fn from_ref(app: &AppState) -> Self {
-        app.workspace.clone()
-    }
-}
-
-impl FromRef<AppState> for ChatServices {
-    fn from_ref(app: &AppState) -> Self {
-        app.chat.clone()
-    }
-}
-
-impl FromRef<AppState> for BuddyServices {
-    fn from_ref(app: &AppState) -> Self {
-        app.buddy.clone()
-    }
-}
-
-impl FromRef<AppState> for IntegrationServices {
-    fn from_ref(app: &AppState) -> Self {
-        app.integrations.clone()
     }
 }
 

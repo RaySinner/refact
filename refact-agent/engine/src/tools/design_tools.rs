@@ -2361,7 +2361,7 @@ mod tests {
 
     #[tokio::test]
     async fn image_region_accepts_artifact_paths_and_bare_artifact_names() {
-        let app = crate::app_state::AppState::from_gcx(
+        let app = crate::app_state::app_state_from_gcx(
             crate::global_context::tests::make_test_gcx().await,
         )
         .await;
@@ -2632,7 +2632,7 @@ mod tests {
 
     #[tokio::test]
     async fn visual_diff_confirms_only_explicit_baseline_updates() {
-        let app = crate::app_state::AppState::from_gcx(
+        let app = crate::app_state::app_state_from_gcx(
             crate::global_context::tests::make_test_gcx().await,
         )
         .await;

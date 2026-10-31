@@ -94,7 +94,7 @@ mod tests {
     #[tokio::test]
     async fn monitor_marks_old_running_record_with_progress() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         let (record, _, _) = app
             .agents
             .create(CreateAgentRequest {
@@ -147,7 +147,7 @@ mod tests {
         let workspace = tempfile::tempdir().unwrap();
         *gcx.documents_state.workspace_folders.lock().unwrap() =
             vec![workspace.path().to_path_buf()];
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         let session = Arc::new(tokio::sync::Mutex::new(
             crate::chat::types::ChatSession::new("parent-monitor-deferred".to_string()),
         ));

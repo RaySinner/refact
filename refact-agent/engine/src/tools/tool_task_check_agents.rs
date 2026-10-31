@@ -1412,7 +1412,7 @@ mod tests {
     ) -> Arc<AMutex<AtCommandsContext>> {
         Arc::new(AMutex::new(
             AtCommandsContext::new_from_app(
-                AppState::from_gcx(gcx).await,
+                crate::app_state::app_state_from_gcx(gcx).await,
                 4096,
                 20,
                 false,
@@ -1585,7 +1585,7 @@ mod tests {
             ..Default::default()
         };
         let gcx = write_task_board(temp.path(), board).await;
-        let chat_facade = AppState::from_gcx(gcx.clone()).await.chat.facade.clone();
+        let chat_facade = crate::app_state::app_state_from_gcx(gcx.clone()).await.chat.facade.clone();
 
         let statuses = get_agent_statuses_for_ctx(&gcx.chat_ctx(gcx.clone()), chat_facade, "task-1")
             .await
@@ -1633,7 +1633,7 @@ mod tests {
         let gcx = write_task_board(temp.path(), board).await;
         insert_live_session(gcx.clone(), "agent-chat-a", SessionState::Generating).await;
         insert_live_session(gcx.clone(), "agent-chat-b", SessionState::Paused).await;
-        let chat_facade = AppState::from_gcx(gcx.clone()).await.chat.facade.clone();
+        let chat_facade = crate::app_state::app_state_from_gcx(gcx.clone()).await.chat.facade.clone();
 
         let statuses = get_agent_statuses_for_ctx(&gcx.chat_ctx(gcx.clone()), chat_facade, "task-1")
             .await

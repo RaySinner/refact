@@ -370,7 +370,7 @@ mod tests {
     async fn runner_completion_is_queued_in_actual_inbox_not_only_sse() {
         use crate::agents::types::{BgAgentKind, CreateAgentRequest};
         let (gcx, _workspace) = test_gcx_with_workspace().await;
-        let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         let session = test_session(&gcx, "runner-completion").await;
         let (record, _, _) = app
             .agents
@@ -617,7 +617,7 @@ mod tests {
     #[tokio::test]
     async fn append_completion_during_stream_preserves_draft_and_queues_delivery() {
         let (gcx, _workspace) = test_gcx_with_workspace().await;
-        let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         let chat_id = "append-completion-during-stream";
         let session = test_session(&gcx, chat_id).await;
         {
@@ -650,7 +650,7 @@ mod tests {
     #[tokio::test]
     async fn preempt_completion_cancels_the_draft_and_lands_now() {
         let (gcx, _workspace) = test_gcx_with_workspace().await;
-        let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         let chat_id = "preempt-completion-cancels-draft";
         let session = test_session(&gcx, chat_id).await;
         {
@@ -679,7 +679,7 @@ mod tests {
     #[tokio::test]
     async fn when_idle_completion_waits_for_the_turn_to_finish() {
         let (gcx, _workspace) = test_gcx_with_workspace().await;
-        let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         let chat_id = "when-idle-completion-waits";
         let session = test_session(&gcx, chat_id).await;
         {
@@ -722,7 +722,7 @@ mod tests {
     #[tokio::test]
     async fn duplicate_process_completion_delivery_is_idempotent() {
         let (gcx, _workspace) = test_gcx_with_workspace().await;
-        let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         let chat_id = "duplicate-process-completion-idempotent";
         let session = test_session(&gcx, chat_id).await;
         let event = completion_event("exec_duplicate_completion", chat_id, PushMode::Append);
@@ -751,7 +751,7 @@ mod tests {
     #[tokio::test]
     async fn closed_chat_delivery_reports_failure_instead_of_claiming_success() {
         let (gcx, _workspace) = test_gcx_with_workspace().await;
-        let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         let chat_id = "closed-chat-completion-error";
         let session = test_session(&gcx, chat_id).await;
         session.lock().await.closed = true;
@@ -769,7 +769,7 @@ mod tests {
     #[tokio::test]
     async fn ordinary_idle_session_gets_the_completion_message_immediately() {
         let (gcx, _workspace) = test_gcx_with_workspace().await;
-        let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         let chat_id = "ordinary-process-completion";
         let session = test_session(&gcx, chat_id).await;
 

@@ -27,7 +27,7 @@ use crate::call_validation::{ChatToolCall, ChatToolFunction};
 #[tokio::test]
 async fn completion_side_effects_do_not_block_generation_on_buddy_lock() {
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = AppState::from_gcx(gcx).await;
+    let app = crate::app_state::app_state_from_gcx(gcx).await;
     let buddy_guard = app.buddy.buddy.lock().await;
     let session_arc = Arc::new(AMutex::new(ChatSession::new(
         "completion-side-effects".to_string(),
@@ -743,7 +743,7 @@ fn mcp_lazy_hint_targets_the_active_context() {
 async fn resolved_new_chat_default_persists_through_checkpoint_writer() {
     let root = tempfile::tempdir().unwrap();
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     *app.workspace
         .documents_state
         .workspace_folders

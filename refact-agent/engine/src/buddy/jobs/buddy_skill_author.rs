@@ -335,7 +335,7 @@ mod tests {
         let scan = scan_skill_author(dir.path());
         let spec = build_skill_author_spec(&test_context(dir.path(), None), &scan).unwrap();
         let ctx = test_context(dir.path(), Some(serialize_scan(&spec.signal_hash, &scan)));
-        let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+        let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
 
         assert!(BuddySkillAuthorJob.should_run(gcx, &ctx).await);
         let candidate = scan.candidate.unwrap();

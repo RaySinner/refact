@@ -196,7 +196,7 @@ mod tests {
         parent_chat_id: &str,
     ) -> (AppState, Arc<tokio::sync::Mutex<ChatSession>>) {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         let session = Arc::new(tokio::sync::Mutex::new(ChatSession::new(
             parent_chat_id.to_string(),
         )));

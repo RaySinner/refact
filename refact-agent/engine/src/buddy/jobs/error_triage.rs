@@ -131,7 +131,7 @@ mod tests {
     #[tokio::test]
     async fn repeated_cluster_signature_is_suppressed() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = crate::app_state::AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         let job = ErrorTriageJob;
 
         let first = job

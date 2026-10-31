@@ -166,14 +166,14 @@ pub async fn start_server(
                 } else {
                     None
                 };
-                let app_state = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+                let app_state = crate::app_state::app_state_from_gcx(gcx.clone()).await;
                 let gui_origins = gui_public_origin_candidates(port);
                 let router = make_refact_http_server(app_state).layer(Extension(gui_origins));
                 let gcx_for_shutdown = gcx.clone();
                 let shutdown = async move {
                     crate::global_context::block_until_signal(ask_shutdown_receiver, shutdown_flag)
                         .await;
-                    let app = crate::app_state::AppState::from_gcx(gcx_for_shutdown).await;
+                    let app = crate::app_state::app_state_from_gcx(gcx_for_shutdown).await;
                     if let Err(errors) =
                         crate::chat::trajectories::flush_all_trajectories(app.clone()).await
                     {

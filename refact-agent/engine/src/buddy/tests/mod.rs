@@ -187,7 +187,7 @@ pub(super) fn chat_msg(role: &str, content: &str) -> crate::call_validation::Cha
 
 pub(super) async fn make_gcx_with_buddy() -> AppState {
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = crate::app_state::AppState::from_gcx(gcx).await;
+    let app = crate::app_state::app_state_from_gcx(gcx).await;
     let buddy_arc = app.buddy.buddy.clone();
     *buddy_arc.lock().await = Some(make_service());
     app

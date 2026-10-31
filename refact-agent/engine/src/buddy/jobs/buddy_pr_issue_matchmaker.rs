@@ -313,7 +313,7 @@ mod tests {
         assert!(diff_changed_lines_counted(&stale_ctx).await >= 10);
         assert_eq!(DIFF_CHECKS.load(Ordering::SeqCst), 1);
         let job = BuddyPrIssueMatchmakerJob;
-        let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+        let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
         let small_cache = serialize_cache(&PrIssueMatchmakerCache {
             checked_at: Utc::now(),
             changed_lines: 0,

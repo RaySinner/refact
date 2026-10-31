@@ -382,7 +382,7 @@ fn issue_provider_debug_redacts_tokens() {
 #[tokio::test]
 async fn issue_success_side_effects_are_centralized() {
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     *app.buddy.buddy.lock().await = Some(make_service());
     for dedupe in ["native error", "mcp issue title"] {
         record_issue_success(
@@ -535,7 +535,7 @@ async fn investigation_log_tail_reads_bounded_and_redacts() {
     tokio::fs::write(&log_path, content).await.unwrap();
 
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let mut app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let mut app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     app.runtime.cmdline = Arc::new(crate::global_context::CommandLine {
         logs_to_file: log_path.to_string_lossy().into_owned(),
         ..(*app.runtime.cmdline).clone()
@@ -1010,7 +1010,7 @@ async fn test_greeting_triggers_on_first_launch() {
     let job = GreetingJob;
     let ctx = make_job_context(BuddyOnboarding::default(), 0, BuddyJobState::default());
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     assert!(job.should_run(app, &ctx).await);
 }
 
@@ -1021,7 +1021,7 @@ async fn test_first_launch_greeting_has_short_ttl() {
     let job = GreetingJob;
     let ctx = make_job_context(BuddyOnboarding::default(), 0, BuddyJobState::default());
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
 
     let result = job.execute(app, ctx).await;
     let speech = result.speech.expect("greeting should produce speech");
@@ -1067,7 +1067,7 @@ async fn test_error_triage_clusters_by_type() {
     let job = ErrorTriageJob;
     let ctx = make_job_context(BuddyOnboarding::default(), 5, BuddyJobState::default());
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     assert!(job.should_run(app.clone(), &ctx).await);
     let result = job.execute(app, ctx).await;
     assert!(
@@ -1088,7 +1088,7 @@ async fn test_config_watcher_detects_missing_agents_md() {
     let mut ctx = make_job_context(BuddyOnboarding::default(), 0, BuddyJobState::default());
     ctx.project_root = dir.path().to_path_buf();
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     let result = job.execute(app, ctx).await;
     assert!(
         result.suggestion.is_some(),
@@ -1168,7 +1168,7 @@ async fn test_tour_job_runs_only_once() {
     };
     let fresh_ctx = make_job_context(onboarding.clone(), 0, BuddyJobState::default());
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     assert!(
         job.should_run(app.clone(), &fresh_ctx).await,
         "tour must run on first tick"
@@ -1202,7 +1202,7 @@ async fn test_tour_speech_has_short_ttl() {
         BuddyJobState::default(),
     );
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     {
         let (tx, _) = tokio::sync::broadcast::channel(16);
         let mut state = crate::buddy::state::default_buddy_state();
@@ -1271,7 +1271,7 @@ async fn test_proactive_disabled_still_allows_greeting() {
     );
     let ctx = make_job_context(BuddyOnboarding::default(), 0, BuddyJobState::default());
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     assert!(
         job.should_run(app, &ctx).await,
         "greeting must run even when proactive_enabled=false"

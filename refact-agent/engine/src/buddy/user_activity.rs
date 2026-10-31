@@ -12,7 +12,7 @@ mod tests {
     #[tokio::test]
     async fn post_user_action_endpoint_writes_to_ring() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app_state = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+        let app_state = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         let activity_path = app_state
             .paths
             .cache_dir
@@ -39,7 +39,7 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
 
-        let ring_arc = AppState::from_gcx(gcx).await.buddy.user_activity.clone();
+        let ring_arc = crate::app_state::app_state_from_gcx(gcx).await.buddy.user_activity.clone();
         let ring = ring_arc.lock().await;
         assert_eq!(ring.snapshot().len(), 1);
         drop(ring);

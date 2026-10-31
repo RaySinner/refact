@@ -184,7 +184,7 @@ async fn try_refresh_claude_code(
                     None,
                 );
                 crate::buddy::actor::buddy_enqueue_event(
-                    crate::app_state::AppState::from_gcx((*gcx).clone()).await,
+                    crate::app_state::app_state_from_gcx((*gcx).clone()).await,
                     ev,
                 )
                 .await;
@@ -218,7 +218,7 @@ async fn try_refresh_claude_code(
                         Some("high"),
                     );
                     crate::buddy::actor::buddy_enqueue_event(
-                        crate::app_state::AppState::from_gcx((*gcx).clone()).await,
+                        crate::app_state::app_state_from_gcx((*gcx).clone()).await,
                         ev,
                     )
                     .await;
@@ -236,7 +236,7 @@ async fn try_refresh_claude_code(
                     Some("high"),
                 );
                 crate::buddy::actor::buddy_enqueue_event(
-                    crate::app_state::AppState::from_gcx((*gcx).clone()).await,
+                    crate::app_state::app_state_from_gcx((*gcx).clone()).await,
                     ev,
                 )
                 .await;
@@ -660,7 +660,7 @@ async fn try_refresh_openai_codex(
                     None,
                 );
                 crate::buddy::actor::buddy_enqueue_event(
-                    crate::app_state::AppState::from_gcx((*gcx).clone()).await,
+                    crate::app_state::app_state_from_gcx((*gcx).clone()).await,
                     ev,
                 )
                 .await;
@@ -717,7 +717,7 @@ async fn try_refresh_openai_codex(
                         Some("high"),
                     );
                     crate::buddy::actor::buddy_enqueue_event(
-                        crate::app_state::AppState::from_gcx((*gcx).clone()).await,
+                        crate::app_state::app_state_from_gcx((*gcx).clone()).await,
                         ev,
                     )
                     .await;
@@ -735,7 +735,7 @@ async fn try_refresh_openai_codex(
                     Some("high"),
                 );
                 crate::buddy::actor::buddy_enqueue_event(
-                    crate::app_state::AppState::from_gcx((*gcx).clone()).await,
+                    crate::app_state::app_state_from_gcx((*gcx).clone()).await,
                     ev,
                 )
                 .await;
@@ -871,7 +871,7 @@ async fn try_refresh_xai_oauth(
                     None,
                 );
                 crate::buddy::actor::buddy_enqueue_event(
-                    crate::app_state::AppState::from_gcx((*gcx).clone()).await,
+                    crate::app_state::app_state_from_gcx((*gcx).clone()).await,
                     ev,
                 )
                 .await;
@@ -928,7 +928,7 @@ async fn try_refresh_xai_oauth(
                         Some("high"),
                     );
                     crate::buddy::actor::buddy_enqueue_event(
-                        crate::app_state::AppState::from_gcx((*gcx).clone()).await,
+                        crate::app_state::app_state_from_gcx((*gcx).clone()).await,
                         ev,
                     )
                     .await;
@@ -946,7 +946,7 @@ async fn try_refresh_xai_oauth(
                     Some("high"),
                 );
                 crate::buddy::actor::buddy_enqueue_event(
-                    crate::app_state::AppState::from_gcx((*gcx).clone()).await,
+                    crate::app_state::app_state_from_gcx((*gcx).clone()).await,
                     ev,
                 )
                 .await;
@@ -1092,7 +1092,7 @@ async fn try_refresh_google_antigravity(
                     None,
                 );
                 crate::buddy::actor::buddy_enqueue_event(
-                    crate::app_state::AppState::from_gcx((*gcx).clone()).await,
+                    crate::app_state::app_state_from_gcx((*gcx).clone()).await,
                     ev,
                 )
                 .await;
@@ -1153,7 +1153,7 @@ async fn try_refresh_google_antigravity(
                         Some("high"),
                     );
                     crate::buddy::actor::buddy_enqueue_event(
-                        crate::app_state::AppState::from_gcx((*gcx).clone()).await,
+                        crate::app_state::app_state_from_gcx((*gcx).clone()).await,
                         ev,
                     )
                     .await;
@@ -1171,7 +1171,7 @@ async fn try_refresh_google_antigravity(
                     Some("high"),
                 );
                 crate::buddy::actor::buddy_enqueue_event(
-                    crate::app_state::AppState::from_gcx((*gcx).clone()).await,
+                    crate::app_state::app_state_from_gcx((*gcx).clone()).await,
                     ev,
                 )
                 .await;

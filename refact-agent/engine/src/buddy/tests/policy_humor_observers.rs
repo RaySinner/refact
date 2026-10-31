@@ -243,7 +243,7 @@ async fn humor_uses_cache_before_calling_generator() {
     });
     let mut svc = HumorService::new_with_generator(gen);
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     let pulse = BuddyPulse::default();
     let kind = BuddyFactKind::TaskStuck;
 
@@ -268,7 +268,7 @@ async fn humor_budget_enforced() {
     });
     let mut svc = HumorService::new_with_generator(gen);
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     let pulse = BuddyPulse::default();
 
     let kinds = [
@@ -299,7 +299,7 @@ async fn humor_no_fallback_on_empty_lines() {
     use super::humor::HumorService;
     let mut svc = HumorService::new_with_generator(std::sync::Arc::new(EmptyGenerator));
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     let pulse = BuddyPulse::default();
     let mut opp = make_opportunity("opp-nf", "ck-nf");
     apply_humor_plan(
@@ -326,7 +326,7 @@ async fn humor_cache_expiry() {
     });
     let mut svc = HumorService::new_with_generator(gen);
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     let pulse = BuddyPulse::default();
     let kind = BuddyFactKind::TaskStuck;
 
@@ -368,7 +368,7 @@ async fn humor_timeout_returns_none_quickly() {
     use super::humor::{HumorService, HUMOR_TIMEOUT_SECS};
     let mut svc = HumorService::new_with_generator(std::sync::Arc::new(SlowTimeoutGenerator));
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     let pulse = BuddyPulse::default();
     let mut opp = make_opportunity("opp-timeout", "ck-timeout");
     let start = std::time::Instant::now();
@@ -424,7 +424,7 @@ async fn parallel_observer_execution_not_sequentially_additive() {
         Arc::new(SleepObserver { id: "sleep-b" }),
     ];
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     let start = std::time::Instant::now();
     let facts = super::actor::observe_buddy_facts_parallel(
         observers,
@@ -1115,7 +1115,7 @@ async fn buddy_open_view_errors_without_service() {
     use crate::tools::tool_buddy_open_view::ToolBuddyOpenView;
     use crate::tools::tools_description::Tool;
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     let ccx = make_tool_ccx(app.clone()).await;
     let mut tool = ToolBuddyOpenView {
         config_path: String::new(),
@@ -1135,7 +1135,7 @@ async fn buddy_open_setup_flow_emits_setup_mode() {
     use crate::tools::tools_description::Tool;
     let (svc, mut rx) = make_service_with_events();
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     *app.buddy.buddy.lock().await = Some(svc);
     let ccx = make_tool_ccx(app.clone()).await;
     let mut tool = ToolBuddyOpenSetupFlow {
@@ -1160,7 +1160,7 @@ async fn buddy_setup_speech_tools_error_without_service() {
     use crate::tools::tool_buddy_say::{ToolBuddyRenderControls, ToolBuddySay};
     use crate::tools::tools_description::Tool;
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     let ccx = make_tool_ccx(app.clone()).await;
 
     let mut setup = ToolBuddyOpenSetupFlow {
@@ -1438,7 +1438,7 @@ async fn buddy_worktree_pulse_includes_worktree_stats() {
         .output()
         .unwrap();
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     let cache_dir = app.paths.cache_dir.clone();
     let service =
         crate::worktrees::service::WorktreeService::new(cache_dir, source.clone()).unwrap();
@@ -1554,7 +1554,7 @@ async fn pulse_builds_all_subpulses() {
     use super::facts::FactStore;
     use super::pulse::build_pulse;
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     let store = FactStore::new();
     let pulse = build_pulse(app, std::path::Path::new("/tmp"), &store).await;
     assert!(pulse.generated_at.is_some(), "generated_at must be set");
@@ -1641,7 +1641,7 @@ async fn actor_humor_attached_when_allowed() {
         }
     }
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     let mut opp = make_opportunity("humor-opp", "humor-opp-key");
     opp.humor_allowed = true;
     opp.priority = BuddyPriority::Normal;

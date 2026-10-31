@@ -161,7 +161,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("refact-agent/engine")).unwrap();
         std::fs::write(dir.path().join("refact-agent/engine/Cargo.toml"), "").unwrap();
-        let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+        let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
         let ctx = test_context(dir.path());
         let job = RefactSelfCriticJob;
 

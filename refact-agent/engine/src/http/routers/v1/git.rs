@@ -228,7 +228,7 @@ pub async fn handle_v1_git_commit(
                 }));
                 let buddy_title = format!("Committed: {}", pname);
                 crate::buddy::actor::buddy_apply(
-                    crate::app_state::AppState::from_gcx(gcx.clone()).await,
+                    crate::app_state::app_state_from_gcx(gcx.clone()).await,
                     crate::buddy::actor::BuddyMutation {
                         runtime_event: Some(crate::buddy::actor::make_runtime_event(
                             "git_commit",
@@ -436,7 +436,7 @@ mod tests {
     }
 
     async fn post_commit_response(gcx: Arc<GlobalContext>, commit: Value) -> (StatusCode, Value) {
-        let app = crate::app_state::AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         let router = crate::http::routers::make_refact_http_server(app);
         let response = router
             .oneshot(

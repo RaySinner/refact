@@ -181,7 +181,7 @@ mod tests {
             vec![workspace.path().to_path_buf()];
         *gcx.documents_state.workspace_files.lock().unwrap() = vec![file_path.clone()];
 
-        (AppState::from_gcx(gcx).await, workspace, file_path)
+        (crate::app_state::app_state_from_gcx(gcx).await, workspace, file_path)
     }
 
     fn ast_file_symbols_body(file_path: &PathBuf) -> hyper::body::Bytes {

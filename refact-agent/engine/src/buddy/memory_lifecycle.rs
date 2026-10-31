@@ -2726,7 +2726,7 @@ mod tests {
     async fn test_gcx_with_workspace(dir: &Path) -> AppState {
         let gcx = crate::global_context::tests::make_test_gcx().await;
         {
-            *crate::app_state::AppState::from_gcx(gcx.clone())
+            *crate::app_state::app_state_from_gcx(gcx.clone())
                 .await
                 .workspace
                 .documents_state
@@ -2734,7 +2734,7 @@ mod tests {
                 .lock()
                 .unwrap() = vec![dir.to_path_buf()];
         }
-        AppState::from_gcx(gcx).await
+        crate::app_state::app_state_from_gcx(gcx).await
     }
 
     fn frontmatter_and_body(text: &str) -> (KnowledgeFrontmatter, String) {
@@ -4295,7 +4295,7 @@ mod buddy_memory_tools_checked_tests {
         tokio::fs::create_dir_all(&knowledge_dir).await.unwrap();
         let gcx = crate::global_context::tests::make_test_gcx().await;
         {
-            *crate::app_state::AppState::from_gcx(gcx.clone())
+            *crate::app_state::app_state_from_gcx(gcx.clone())
                 .await
                 .workspace
                 .documents_state
@@ -4303,7 +4303,7 @@ mod buddy_memory_tools_checked_tests {
                 .lock()
                 .unwrap() = vec![dir.path().to_path_buf()];
         }
-        let gcx = AppState::from_gcx(gcx).await;
+        let gcx = crate::app_state::app_state_from_gcx(gcx).await;
         let path = knowledge_dir
             .join("..")
             .join("knowledge")

@@ -1035,7 +1035,7 @@ async fn test_settings_update_service_response_includes_storage_metadata() {
 async fn test_settings_update_fallback_response_includes_storage_metadata() {
     let dir = tempfile::tempdir().unwrap();
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     {
         *app.workspace
             .documents_state

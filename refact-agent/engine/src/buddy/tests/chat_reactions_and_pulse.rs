@@ -780,7 +780,7 @@ async fn investigation_enrich_context_resolves_diagnostic_ids() {
     use crate::http::routers::v1::buddy_opportunities::enrich_investigation_context;
 
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     let diag = DiagnosticContext {
         error_type: "timeout".to_string(),
         error_message: "request timed out".to_string(),
@@ -825,7 +825,7 @@ async fn investigation_enrich_context_caps_log_excerpt_to_4000_chars() {
     {
         gcx.caps_state.write().await.caps = Some(Arc::new(CodeAssistantCaps::default()));
     }
-    let mut app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let mut app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     app.runtime.cmdline = Arc::new(crate::global_context::CommandLine {
         logs_to_file: log_path.to_string_lossy().into_owned(),
         ..(*app.runtime.cmdline).clone()
@@ -923,7 +923,7 @@ async fn pulse_task_total_and_by_status_populated() {
     use super::pulse::build_pulse;
 
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     let dir = tempfile::tempdir().unwrap();
     {
         *app.workspace
@@ -974,7 +974,7 @@ async fn pulse_task_current_state_and_recent_alerts_are_separate() {
     use crate::tasks::types::TaskStatus;
 
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     let dir = tempfile::tempdir().unwrap();
     {
         *app.workspace
@@ -1489,7 +1489,7 @@ async fn bug_reaction_not_blocked_by_humor_cooldown() {
         crate::buddy::voice_service::test_voice_service_with_responses(vec![None, None]);
     let _guard = crate::buddy::voice_service::install_test_voice_service(service).await;
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     *app.buddy.buddy.lock().await = Some(make_service());
 
     maybe_enqueue_chat_reaction(

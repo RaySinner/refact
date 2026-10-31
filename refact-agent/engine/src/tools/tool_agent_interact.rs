@@ -722,7 +722,7 @@ mod tests {
         background_agent_id: Option<String>,
     ) -> (AppState, Arc<AMutex<AtCommandsContext>>) {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         let ccx = Arc::new(AMutex::new(
             AtCommandsContext::new_from_app(
                 app.clone(),
@@ -1074,7 +1074,7 @@ mod tests {
     #[tokio::test]
     async fn unloaded_subchat_context_restores_background_agent_identity() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         let child = create(&app, "parent", "child").await;
         app.agents
             .mark_running(&child.agent_id, "subchat-unloaded-child".to_string())
@@ -1104,7 +1104,7 @@ mod tests {
     #[tokio::test]
     async fn stateful_child_session_restores_identity_for_parent_tools() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         let (_workspace, _parent_session) = parent_delivery_fixture(&app, "parent").await;
         let child = create(&app, "parent", "child").await;
         app.agents
@@ -1255,7 +1255,7 @@ mod tests {
 #[tokio::test]
     async fn room_members_can_message_each_other() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         let workspace = room_workspace();
         *gcx.documents_state.workspace_folders.lock().unwrap() = vec![workspace.path().to_path_buf()];
 
@@ -1308,7 +1308,7 @@ mod tests {
     #[tokio::test]
     async fn agents_on_different_cards_still_cannot_message() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         let workspace = room_workspace();
         *gcx.documents_state.workspace_folders.lock().unwrap() = vec![workspace.path().to_path_buf()];
 
@@ -1349,7 +1349,7 @@ mod tests {
     #[tokio::test]
     async fn room_message_carries_author_chat_id() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         let workspace = room_workspace();
         *gcx.documents_state.workspace_folders.lock().unwrap() =
             vec![workspace.path().to_path_buf()];
@@ -1389,7 +1389,7 @@ mod tests {
     #[tokio::test]
     async fn room_message_carries_role_for_accent() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         let workspace = room_workspace();
         *gcx.documents_state.workspace_folders.lock().unwrap() =
             vec![workspace.path().to_path_buf()];
@@ -1434,7 +1434,7 @@ mod tests {
     #[tokio::test]
     async fn provenance_survives_trajectory_roundtrip() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         let workspace = room_workspace();
         *gcx.documents_state.workspace_folders.lock().unwrap() =
             vec![workspace.path().to_path_buf()];
@@ -1491,7 +1491,7 @@ mod tests {
     #[tokio::test]
     async fn room_message_defaults_to_all_members() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         let workspace = room_workspace();
         *gcx.documents_state.workspace_folders.lock().unwrap() = vec![workspace.path().to_path_buf()];
 
@@ -1557,7 +1557,7 @@ mod tests {
     #[tokio::test]
     async fn room_message_can_target_single_member() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         let workspace = room_workspace();
         *gcx.documents_state.workspace_folders.lock().unwrap() = vec![workspace.path().to_path_buf()];
 
@@ -1615,7 +1615,7 @@ mod tests {
     #[tokio::test]
     async fn room_member_with_agent_id_can_message_peer() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         let workspace = room_workspace();
         *gcx.documents_state.workspace_folders.lock().unwrap() = vec![workspace.path().to_path_buf()];
 
@@ -1669,7 +1669,7 @@ mod tests {
     #[tokio::test]
     async fn room_member_can_message_peer_by_role() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         let workspace = room_workspace();
         *gcx.documents_state.workspace_folders.lock().unwrap() = vec![workspace.path().to_path_buf()];
 
@@ -1723,7 +1723,7 @@ mod tests {
     #[tokio::test]
     async fn room_broadcast_works_when_caller_has_agent_id() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         let workspace = room_workspace();
         *gcx.documents_state.workspace_folders.lock().unwrap() = vec![workspace.path().to_path_buf()];
 
@@ -1777,7 +1777,7 @@ mod tests {
     #[tokio::test]
     async fn foreign_card_members_cannot_receive_message() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         let workspace = room_workspace();
         *gcx.documents_state.workspace_folders.lock().unwrap() = vec![workspace.path().to_path_buf()];
 
@@ -1834,7 +1834,7 @@ mod tests {
         // neighbour is simply not in this session. If this test ever fails because
         // the two sessions were merged, the whole context-isolation story is gone.
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         let workspace = room_workspace();
         *gcx.documents_state.workspace_folders.lock().unwrap() = vec![workspace.path().to_path_buf()];
 

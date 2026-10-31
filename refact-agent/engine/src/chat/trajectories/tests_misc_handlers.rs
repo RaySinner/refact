@@ -1163,7 +1163,7 @@ use super::test_support::*;
     async fn trajectory_worktree_old_json_without_worktree_loads_none() {
         let dir = tempfile::tempdir().unwrap();
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         {
             *app.workspace
                 .documents_state
@@ -1199,7 +1199,7 @@ use super::test_support::*;
         {
             *gcx.documents_state.workspace_folders.lock().unwrap() = vec![source.clone()];
         }
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         let traj_dir = source.join(".refact").join("trajectories");
         tokio::fs::create_dir_all(&traj_dir).await.unwrap();
         let untrusted = json!({
@@ -1256,7 +1256,7 @@ use super::test_support::*;
         {
             *gcx.documents_state.workspace_folders.lock().unwrap() = vec![source.clone()];
         }
-        let _app = AppState::from_gcx(gcx.clone()).await;
+        let _app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
 
         let task_id = "task-legacy";
         let agent_id = "agent-1";
@@ -1403,7 +1403,7 @@ use super::test_support::*;
         {
             *gcx.documents_state.workspace_folders.lock().unwrap() = vec![source.clone()];
         }
-        let _app = AppState::from_gcx(gcx.clone()).await;
+        let _app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
 
         let task_id = "task-legacy-mismatch";
         let agent_id = "agent-1";

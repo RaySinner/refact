@@ -315,7 +315,7 @@ mod tests {
     #[tokio::test]
     async fn phrase_bank_runs_once_per_day_at_digest_hour() {
         let dir = tempfile::tempdir().unwrap();
-        let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+        let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
         let hour = Local::now().hour() as u8;
         let mut ctx = test_context(dir.path());
         ctx.settings.daily_digest_hour = Some(hour);
@@ -367,7 +367,7 @@ mod tests {
             crate::buddy::voice_service::test_voice_service_with_responses(vec![response]);
         let _guard = crate::buddy::voice_service::install_test_voice_service(service).await;
         let dir = tempfile::tempdir().unwrap();
-        let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+        let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
         let mut ctx = test_context(dir.path());
         ctx.pulse.tasks.total = 7;
         ctx.pulse.tasks.recent_stuck_alerts_1h = 2;
@@ -421,7 +421,7 @@ mod tests {
             crate::buddy::voice_service::test_voice_service_with_responses(vec![response]);
         let _guard = crate::buddy::voice_service::install_test_voice_service(service).await;
         let dir = tempfile::tempdir().unwrap();
-        let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+        let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
         let mut ctx = test_context(dir.path());
         ctx.pulse
             .diagnostics
@@ -500,7 +500,7 @@ mod tests {
         );
         let _guard = crate::buddy::voice_service::install_test_voice_service(service).await;
         let dir = tempfile::tempdir().unwrap();
-        let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+        let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
         let mut ctx = test_context(dir.path());
         let job = ChatPhraseBankJob;
 
@@ -528,7 +528,7 @@ mod tests {
             crate::buddy::voice_service::test_voice_service_with_responses(vec![response]);
         let _guard = crate::buddy::voice_service::install_test_voice_service(service).await;
         let dir = tempfile::tempdir().unwrap();
-        let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+        let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
         let ctx = test_context(dir.path());
 
         let bank = build_chat_phrase_bank(gcx, &ctx, Utc::now()).await;
@@ -563,7 +563,7 @@ mod tests {
             crate::buddy::voice_service::test_voice_service_with_responses(vec![response]);
         let _guard = crate::buddy::voice_service::install_test_voice_service(service).await;
         let dir = tempfile::tempdir().unwrap();
-        let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+        let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
         let ctx = test_context(dir.path());
 
         let bank = build_chat_phrase_bank(gcx, &ctx, Utc::now())

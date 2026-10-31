@@ -631,7 +631,7 @@ mod tests {
             .map(|path| path.to_path_buf())
             .collect();
         set_privacy(gcx.clone(), Vec::new());
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         (gcx, crate::http::routers::make_refact_http_server(app))
     }
 
@@ -902,7 +902,7 @@ mod tests {
             crate::global_context::tests::make_test_gcx_with_dirs(cache_dir, config_dir).await;
         *gcx.documents_state.workspace_folders.lock().unwrap() = vec![source.to_path_buf()];
         set_privacy(gcx.clone(), Vec::new());
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         (
             worktree_root,
             gcx,
@@ -1177,7 +1177,7 @@ mod tests {
             crate::global_context::tests::make_test_gcx_with_dirs(cache_dir, config_dir).await;
         *gcx.documents_state.workspace_folders.lock().unwrap() = vec![source.path().to_path_buf()];
         set_privacy(gcx.clone(), Vec::new());
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         let router = crate::http::routers::make_refact_http_server(app);
 
         let (status, _) = get_json(

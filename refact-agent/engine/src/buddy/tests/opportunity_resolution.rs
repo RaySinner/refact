@@ -35,7 +35,7 @@ async fn humor_attach_does_not_hold_buddy_lock() {
         Arc::new(tokio::sync::Mutex::new(Some(make_service())));
 
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     let pulse = BuddyPulse::default();
 
     // Task A: hold humor lock for 200ms (simulates attach_humor outside buddy lock).
@@ -244,7 +244,7 @@ async fn pulse_populates_all_subpulse_counts() {
     use crate::caps::CodeAssistantCaps;
 
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
 
     {
         let mut caps = CodeAssistantCaps::default();
@@ -339,7 +339,7 @@ async fn accept_dismiss_action_via_accept_route_is_single_resolution() {
     let _ = rx.try_recv();
 
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     let outcome = dispatch_action(app.clone(), "opp-acc-dm", &BuddyAction::Dismiss)
         .await
         .unwrap();
@@ -380,7 +380,7 @@ async fn draft_customization_change_dispatches() {
     use crate::http::routers::v1::buddy_opportunities::dispatch_action;
 
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     let buddy_svc = make_service();
     *app.buddy.buddy.lock().await = Some(buddy_svc);
 
@@ -444,7 +444,7 @@ async fn accept_route_response_shape_for_defaults_draft() {
     use crate::http::routers::v1::buddy_opportunities::dispatch_action;
 
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     {
         let (etx, _) = broadcast::channel(16);
         let buddy_svc = BuddyService::new(
@@ -521,7 +521,7 @@ async fn defaults_update_with_valid_draft_consumes_after_save() {
         dir.path().to_path_buf(),
     )
     .await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
 
     let mut svc = make_service();
     let draft = svc
@@ -573,7 +573,7 @@ async fn defaults_update_wrong_draft_kind_returns_conflict_and_keeps_draft() {
         dir.path().to_path_buf(),
     )
     .await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
 
     let mut svc = make_service();
     let draft = svc
@@ -619,7 +619,7 @@ async fn defaults_update_parse_invalid_draft_returns_422_and_keeps_draft() {
         dir.path().to_path_buf(),
     )
     .await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
 
     let mut svc = make_service();
     let draft = svc
@@ -666,7 +666,7 @@ async fn defaults_update_without_draft_id_still_saves() {
         dir.path().to_path_buf(),
     )
     .await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
 
     let body = serde_json::json!({
         "chat": { "model": "openai/gpt-4o" },
@@ -698,7 +698,7 @@ async fn make_project_defaults_app(
     if let Some(project_dir) = project_dir {
         *gcx.documents_state.workspace_folders.lock().unwrap() = vec![project_dir.to_path_buf()];
     }
-    let app = crate::app_state::AppState::from_gcx(gcx).await;
+    let app = crate::app_state::app_state_from_gcx(gcx).await;
     (dir, app)
 }
 
@@ -932,7 +932,7 @@ async fn accept_route_terminal_status_returns_409() {
     use hyper::StatusCode;
 
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     let mut svc = make_service();
     let mut opp = make_opportunity("opp-terminal-accept", "ck-terminal-accept");
     opp.status = OpportunityStatus::Dismissed;
@@ -962,7 +962,7 @@ async fn accept_after_dismiss_returns_409() {
     use hyper::StatusCode;
 
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     let mut svc = make_service();
     let mut opp = make_opportunity("opp-dismiss-then-accept", "ck-dismiss-then-accept");
     opp.proposed_actions = vec![BuddyAction::OpenPage {
@@ -1005,7 +1005,7 @@ async fn expired_opportunity_cannot_be_accepted() {
     use hyper::StatusCode;
 
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     let mut svc = make_service();
     let mut opp = make_opportunity("opp-expired-accept", "ck-expired-accept");
     opp.status = OpportunityStatus::Expired;
@@ -1057,7 +1057,7 @@ async fn concurrent_accepts_only_one_succeeds() {
     use hyper::StatusCode;
 
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     let mut svc = make_service();
     let mut opp = make_opportunity("opp-concurrent-accept", "ck-concurrent-accept");
     opp.proposed_actions = vec![BuddyAction::OpenPage {
@@ -1106,7 +1106,7 @@ async fn dismiss_action_through_accept_route_results_in_dismissed_not_accepted()
     };
 
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     let mut svc = make_service();
     let mut opp = make_opportunity("opp-accept-dismiss-action", "ck-accept-dismiss-action");
     opp.proposed_actions = vec![BuddyAction::Dismiss];
@@ -1165,7 +1165,7 @@ async fn accept_route_with_action_index_1_returns_second_action_without_navigati
     while rx.try_recv().is_ok() {}
 
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     *app.buddy.buddy.lock().await = Some(svc);
 
     let response = handle_v1_buddy_opportunity_accept(
@@ -1197,7 +1197,7 @@ async fn failed_dispatch_leaves_opportunity_retryable_and_clears_claim() {
     use hyper::StatusCode;
 
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     let mut svc = make_service();
     let mut opp = make_opportunity("opp-dispatch-fails", "ck-dispatch-fails");
     opp.proposed_actions = vec![BuddyAction::DraftCustomizationChange {
@@ -1245,7 +1245,7 @@ async fn failed_marketplace_install_leaves_opportunity_retryable() {
     use hyper::StatusCode;
 
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     let mut svc = make_service();
     let mut opp = make_opportunity("opp-marketplace-fails", "ck-marketplace-fails");
     opp.proposed_actions = vec![BuddyAction::OfferMarketplaceInstall {
@@ -1292,7 +1292,7 @@ async fn successful_marketplace_install_accepts_opportunity() {
     };
 
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     let mut svc = make_service();
     let mut opp = make_opportunity("opp-marketplace-ok", "ck-marketplace-ok");
     opp.proposed_actions = vec![BuddyAction::OfferMarketplaceInstall {

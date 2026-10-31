@@ -330,7 +330,7 @@ mod tests {
     async fn workflow_wrapper_rejects_invalid_id_before_event_or_transcript() {
         let dir = tempfile::tempdir().unwrap();
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         {
             *app.workspace
                 .documents_state
@@ -377,7 +377,7 @@ mod tests {
     async fn workflow_wrapper_failure_fallback_transcript_uses_report_not_raw_error() {
         let dir = tempfile::tempdir().unwrap();
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         {
             *app.workspace
                 .documents_state
@@ -421,7 +421,7 @@ mod tests {
     async fn workflow_wrapper_failure_has_single_durable_failure_runtime_surface() {
         let dir = tempfile::tempdir().unwrap();
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         {
             *app.workspace
                 .documents_state

@@ -514,7 +514,7 @@ mod tests {
         status: &str,
     ) -> Result<Response<Body>, ScratchError> {
         handle_v1_knowledge_update_memory(
-            axum::extract::State(crate::app_state::AppState::from_gcx(gcx.clone()).await),
+            axum::extract::State(crate::app_state::app_state_from_gcx(gcx.clone()).await),
             Bytes::from(
                 json!({
                     "file_path": path.to_string_lossy(),
@@ -533,7 +533,7 @@ mod tests {
         archive: bool,
     ) -> Result<Response<Body>, ScratchError> {
         handle_v1_knowledge_delete_memory(
-            axum::extract::State(crate::app_state::AppState::from_gcx(gcx.clone()).await),
+            axum::extract::State(crate::app_state::app_state_from_gcx(gcx.clone()).await),
             Bytes::from(
                 json!({
                     "file_path": path.to_string_lossy(),

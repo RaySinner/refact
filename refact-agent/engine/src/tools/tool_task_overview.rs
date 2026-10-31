@@ -834,7 +834,7 @@ mod tests {
         messages: Vec<ChatMessage>,
         n_ctx: usize,
     ) -> Arc<AMutex<AtCommandsContext>> {
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         Arc::new(AMutex::new(
             AtCommandsContext::new_from_app(
                 app,

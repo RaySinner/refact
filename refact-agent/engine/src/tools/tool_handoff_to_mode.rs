@@ -565,7 +565,7 @@ async fn finalize_handoff_inner(
     };
     let reason = parse_optional_string(args, "reason").unwrap_or_default();
 
-    let chat_facade = crate::app_state::AppState::from_gcx(gcx.clone())
+    let chat_facade = crate::app_state::app_state_from_gcx(gcx.clone())
         .await
         .chat
         .facade;
@@ -1056,7 +1056,7 @@ mod deferred_tests {
     async fn handoff_queue_keeps_sibling_calls_and_allows_same_mode_restart() {
         use crate::call_validation::{ChatToolCall, ChatToolFunction};
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         let mut session = crate::chat::types::ChatSession::new("queue-source".into());
         session.thread.mode = "agent".into();
         session.add_message(ChatMessage::new("user".into(), "Restart".into()));

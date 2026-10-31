@@ -18,7 +18,7 @@ mod tests {
         }
         let ccx = Arc::new(AMutex::new(
             AtCommandsContext::new_from_app(
-                crate::app_state::AppState::from_gcx(gcx.clone()).await,
+                crate::app_state::app_state_from_gcx(gcx.clone()).await,
                 1000,
                 1,
                 false,

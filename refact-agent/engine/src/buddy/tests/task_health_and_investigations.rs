@@ -173,7 +173,7 @@ async fn task_abandoned_not_emitted_when_only_session_missing() {
     use crate::tasks::storage::{create_task, load_board, load_task_meta, save_board, save_task_meta};
 
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     let dir = tempfile::tempdir().unwrap();
     {
         *app.workspace
@@ -248,7 +248,7 @@ async fn task_cluster_duplicate_emits_with_real_touched_files() {
     use super::observers::{BuddyObserver, ObserverContext};
 
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     let dir = tempfile::tempdir().unwrap();
     {
         *app.workspace
@@ -388,7 +388,7 @@ async fn task_agent_monitor_writes_heartbeat_on_message() {
     use crate::tasks::storage::{create_task, load_board, save_board};
 
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     let dir = tempfile::tempdir().unwrap();
     {
         *app.workspace
@@ -473,7 +473,7 @@ async fn target_files_persisted_through_api() {
     use crate::tasks::storage::load_board;
 
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     let dir = tempfile::tempdir().unwrap();
     {
         *app.workspace
@@ -629,7 +629,7 @@ async fn launch_investigation_action_writes_static_prompt_and_envelope() {
         *gcx.documents_state.workspace_folders.lock().unwrap() = vec![dir.path().to_path_buf()];
         gcx.caps_state.write().await.caps = None;
     }
-    let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
 
     let outcome = dispatch_action(
         app.clone(),

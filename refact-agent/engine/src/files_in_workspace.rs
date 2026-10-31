@@ -1777,7 +1777,7 @@ pub async fn on_workspaces_init(gcx: Arc<GlobalContext>) -> i32 {
     }
     // Project competitor import runs only here for normal startup and workspace add/remove changes.
     let _ = crate::ext::competitor_import::run_project_import(
-        crate::app_state::AppState::from_gcx(gcx.clone()).await,
+        crate::app_state::app_state_from_gcx(gcx.clone()).await,
     )
     .await;
     watcher_init(gcx.clone()).await;
@@ -2838,7 +2838,7 @@ pub async fn files_in_workspace_init_task(gcx: Arc<GlobalContext>) {
         None,
     );
     crate::buddy::actor::buddy_enqueue_event(
-        crate::app_state::AppState::from_gcx(gcx.clone()).await,
+        crate::app_state::app_state_from_gcx(gcx.clone()).await,
         ev,
     )
     .await;
@@ -2879,7 +2879,7 @@ pub async fn files_in_workspace_init_task(gcx: Arc<GlobalContext>) {
         "completed",
         None,
     );
-    crate::buddy::actor::buddy_enqueue_event(crate::app_state::AppState::from_gcx(gcx).await, ev)
+    crate::buddy::actor::buddy_enqueue_event(crate::app_state::app_state_from_gcx(gcx).await, ev)
         .await;
 }
 

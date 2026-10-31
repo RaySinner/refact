@@ -805,7 +805,7 @@ mod tests {
         let _lock = perf_diagnostics::PERF_RECORDER_TEST_LOCK.lock().unwrap();
         let (_guard, sink) = install_perf_recorder();
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let base_app = AppState::from_gcx(gcx).await;
+        let base_app = crate::app_state::app_state_from_gcx(gcx).await;
         let test_tools = registry.clone();
         let app = AppState {
             tool_registry: Arc::new(
@@ -903,7 +903,7 @@ mod tests {
             barrier: barrier.clone(),
         };
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let base_app = AppState::from_gcx(gcx).await;
+        let base_app = crate::app_state::app_state_from_gcx(gcx).await;
         let fixture = registry.clone();
         let app = AppState {
             tool_registry: Arc::new(
@@ -1170,7 +1170,7 @@ mod tests {
             ..Default::default()
         };
         let ccx =
-            build_tool_execution_context(AppState::from_gcx(gcx).await, 4096, &[], &thread, None)
+            build_tool_execution_context(crate::app_state::app_state_from_gcx(gcx).await, 4096, &[], &thread, None)
                 .await
                 .unwrap();
         let ccx = ccx.lock().await;
@@ -1353,7 +1353,7 @@ mod tests {
         let (_guard, sink) = install_perf_recorder();
 
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         let calls = vec![
             ChatToolCall {
                 id: "call-cat".to_string(),
@@ -1505,7 +1505,7 @@ mod tests {
     #[tokio::test]
     async fn escalation_does_not_require_confirmation() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         let thread = ThreadParams {
             id: "escalation-confirmation".to_string(),
             model: "model".to_string(),
@@ -1572,7 +1572,7 @@ mod tests {
 
         let (_guard, sink) = install_perf_recorder();
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         let thread = ThreadParams {
             id: "escalation-invalid".to_string(),
             model: "model".to_string(),
@@ -1948,7 +1948,7 @@ source:
     #[tokio::test]
     async fn tool_approved_pushed_on_decision() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         {
             let user_activity = app.buddy.user_activity.clone();
             let mut ring = user_activity.lock().await;
@@ -1970,7 +1970,7 @@ source:
 
     async fn make_gcx_with_buddy() -> AppState {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         let (tx, _) = tokio::sync::broadcast::channel(16);
         let mut state = refact_buddy_core::state::default_buddy_state();
         state.identity.name = "Pixel".to_string();
@@ -4062,7 +4062,7 @@ mod interruptible_wait_tests {
         use refact_core::chat_types::{PendingDelivery, PushMode};
         for push in [PushMode::Append, PushMode::WhenIdle] {
             let gcx = crate::global_context::tests::make_test_gcx().await;
-            let base_app = AppState::from_gcx(gcx).await;
+            let base_app = crate::app_state::app_state_from_gcx(gcx).await;
             let app = AppState {
                 tool_registry: Arc::new(
                     crate::app_state::AppToolRegistry::with_fixture_tool_factory(

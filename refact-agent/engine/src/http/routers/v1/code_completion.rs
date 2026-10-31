@@ -312,7 +312,7 @@ mod tests {
             use_vecdb: false,
             rag_tokens_n: 0,
         };
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         (gcx, app, post)
     }
 

@@ -578,7 +578,7 @@ async fn run_background_subchat(
         if let Some(runner) = runner {
             if config.stateful {
                 if let Some(chat_id) = config.chat_id.as_deref() {
-                    let app = AppState::from_gcx(gcx.clone()).await;
+                    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
                     crate::subchat::install_stateful_subchat_session(
                         &app, chat_id, &config, &messages,
                     )

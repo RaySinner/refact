@@ -343,7 +343,7 @@ mod tests {
             .write()
             .await
             .insert("chat-1".to_string(), session);
-        (workspace, AppState::from_gcx(gcx).await)
+        (workspace, crate::app_state::app_state_from_gcx(gcx).await)
     }
 
     #[test]
@@ -501,7 +501,7 @@ mod tests {
             .unwrap()
             .serve(router.into_make_service());
         let server_task = tokio::spawn(server);
-        let app = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+        let app = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
         let job = command_job(Delivery::Webhook {
             url: format!("http://127.0.0.1:{port}/hook"),
             token: Some("secret".to_string()),
@@ -555,7 +555,7 @@ mod tests {
             ),
         )
         .unwrap();
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         let job = command_job(Delivery::Notifier {
             integration_id: "notifier_telegram".to_string(),
             target: Some("target-chat".to_string()),
@@ -572,7 +572,7 @@ mod tests {
 
     #[tokio::test]
     async fn notifier_delivery_missing_integration_errors() {
-        let app = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+        let app = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
         let job = command_job(Delivery::Notifier {
             integration_id: "notifier_telegram".to_string(),
             target: None,

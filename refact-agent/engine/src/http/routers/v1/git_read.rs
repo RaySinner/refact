@@ -939,7 +939,7 @@ mod tests {
             .unwrap()
             .to_string_lossy()
             .to_string();
-        let app = crate::app_state::AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         let router = crate::http::routers::make_refact_http_server(app);
 
         let (status, payload) = get_json(&router, "/v1/git/status").await;
@@ -968,7 +968,7 @@ mod tests {
         let missing = holder.path().join("missing-root");
         *gcx.documents_state.workspace_folders.lock().unwrap() = Vec::new();
         *gcx.documents_state.workspace_vcs_roots.lock().unwrap() = vec![missing.clone()];
-        let app = crate::app_state::AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         let router = crate::http::routers::make_refact_http_server(app);
         let uri = format!("/v1/git/status?root={}", missing.to_string_lossy());
 
@@ -986,7 +986,7 @@ mod tests {
         let missing = holder.path().join("missing-root");
         *gcx.documents_state.workspace_folders.lock().unwrap() = Vec::new();
         *gcx.documents_state.workspace_vcs_roots.lock().unwrap() = vec![missing];
-        let app = crate::app_state::AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         let router = crate::http::routers::make_refact_http_server(app);
 
         for uri in ["/v1/git/status", "/v1/git/branches", "/v1/git/log"] {
@@ -1003,7 +1003,7 @@ mod tests {
         Repository::init(active.path()).unwrap();
         *gcx.documents_state.workspace_vcs_roots.lock().unwrap() =
             vec![active.path().to_path_buf()];
-        let app = crate::app_state::AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         let router = crate::http::routers::make_refact_http_server(app);
 
         for bad_path in ["../evil", "/etc/passwd"] {

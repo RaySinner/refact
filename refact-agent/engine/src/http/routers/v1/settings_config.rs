@@ -566,7 +566,7 @@ mod tests {
 
     async fn trajectory_settings_app() -> AppState {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        AppState::from_gcx(gcx).await
+        crate::app_state::app_state_from_gcx(gcx).await
     }
 
     /// The field metadata table and `runtime_settings::validate` are two
@@ -871,7 +871,7 @@ mod tests {
         let mutable = Arc::get_mut(&mut gcx).expect("test owns context");
         mutable.config_dir = temp.path().join("config");
         *mutable.documents_state.workspace_folders.lock().unwrap() = vec![project.clone()];
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
 
         let absent = handle_v1_indexing_settings_get(
             State(app.clone()),
@@ -960,7 +960,7 @@ mod tests {
         let mut gcx = crate::global_context::tests::make_test_gcx().await;
         let mutable = Arc::get_mut(&mut gcx).expect("test owns context");
         *mutable.documents_state.workspace_folders.lock().unwrap() = vec![project.clone()];
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
 
         let default = handle_v1_skills_settings_get(State(app.clone()))
             .await
@@ -982,7 +982,7 @@ mod tests {
     #[tokio::test]
     async fn skills_without_project_root_is_bad_request() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         let error = handle_v1_skills_settings_get(State(app)).await.unwrap_err();
         assert_eq!(error.status_code, StatusCode::BAD_REQUEST);
         assert!(error.message.contains("no project root"));

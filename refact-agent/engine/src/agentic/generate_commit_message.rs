@@ -45,7 +45,7 @@ pub async fn generate_commit_message_by_diff_with_abort(
     let gcx2 = gcx.clone();
     let parent_chat_id = parent_chat_id.map(|id| id.to_string());
     crate::buddy::workflows::buddy_wrap_workflow(
-        crate::app_state::AppState::from_gcx(gcx).await,
+        crate::app_state::app_state_from_gcx(gcx).await,
         "commit_message",
         "📦",
         5,

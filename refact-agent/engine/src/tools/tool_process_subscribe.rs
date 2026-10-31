@@ -778,7 +778,7 @@ mod tests {
             .await
             .insert(chat_id.to_string(), session.clone());
         let ccx = AtCommandsContext::new_with_abort(
-            AppState::from_gcx(gcx.clone()).await,
+            crate::app_state::app_state_from_gcx(gcx.clone()).await,
             4096,
             20,
             false,
@@ -1022,7 +1022,7 @@ mod tests {
         let workspace = tempfile::tempdir().unwrap();
         *gcx.documents_state.workspace_folders.lock().unwrap() =
             vec![workspace.path().to_path_buf()];
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         session.lock().await.closed = true;
         let mut events = (0..25)
             .map(|n| SubscribeEvent::Line(n.to_string()))
@@ -1213,7 +1213,7 @@ mod tests {
         let (_other_gcx, other_ccx, _other_session) = test_context("subscribe-other-chat").await;
         {
             let mut ccx_lock = other_ccx.lock().await;
-            ccx_lock.app = AppState::from_gcx(gcx.clone()).await;
+            ccx_lock.app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         }
         let process_id = spawn_background(&gcx, "subscribe-owner-chat", long_sleep_command()).await;
         let mut tool = ToolProcessSubscribe {
@@ -1240,7 +1240,7 @@ mod tests {
         let (gcx, _ccx, _session) = test_context(chat_id).await;
         let process_id = spawn_background(&gcx, chat_id, short_sleep_command()).await;
         let handle = spawn_process_subscription(
-            AppState::from_gcx(gcx.clone()).await,
+            crate::app_state::app_state_from_gcx(gcx.clone()).await,
             gcx.exec_registry.clone(),
             process_id.clone(),
             chat_id.to_string(),
@@ -1267,7 +1267,7 @@ mod tests {
         let (gcx, _ccx, _session) = test_context(chat_id).await;
         let process_id = spawn_background(&gcx, chat_id, long_sleep_command()).await;
         let handle = spawn_process_subscription(
-            AppState::from_gcx(gcx.clone()).await,
+            crate::app_state::app_state_from_gcx(gcx.clone()).await,
             gcx.exec_registry.clone(),
             process_id.clone(),
             chat_id.to_string(),

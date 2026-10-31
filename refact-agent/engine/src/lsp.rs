@@ -367,7 +367,7 @@ impl LspBackend {
     pub async fn get_completions(&self, params: CompletionParams1) -> Result<CompletionRes> {
         let mut post = self.flat_params_to_code_completion_post(&params).await?;
 
-        let app = AppState::from_gcx(self.gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(self.gcx.clone()).await;
         let res = handle_v1_code_completion(app, &mut post)
             .await
             .map_err(|e| internal_error(e))?;

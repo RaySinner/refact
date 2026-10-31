@@ -162,7 +162,7 @@ impl CronRunner {
             }
             let chat_id = task.chat_id().map(str::to_string);
             if let Some(chat_id) = &chat_id {
-                let app = AppState::from_gcx(self.gcx.clone()).await;
+                let app = crate::app_state::app_state_from_gcx(self.gcx.clone()).await;
                 let restored =
                     try_restore_session_if_trajectory_exists(app.chat_ctx(), &self.gcx.chat_sessions, chat_id)
                         .await;
@@ -376,7 +376,7 @@ impl CronRunner {
             ChatFireStatus::Busy => {}
             ChatFireStatus::Missing => {
                 if task.durable {
-                    let app = AppState::from_gcx(self.gcx.clone()).await;
+                    let app = crate::app_state::app_state_from_gcx(self.gcx.clone()).await;
                     let restored = try_restore_session_if_trajectory_exists(
                         app.chat_ctx(),
                         &self.gcx.chat_sessions,
@@ -541,7 +541,7 @@ impl CronRunner {
                     ChatFireStatus::Busy => {}
                     ChatFireStatus::Missing => {
                         if task.durable {
-                            let app = AppState::from_gcx(self.gcx.clone()).await;
+                            let app = crate::app_state::app_state_from_gcx(self.gcx.clone()).await;
                             let restored = try_restore_session_if_trajectory_exists(
                                 app.chat_ctx(),
                                 &self.gcx.chat_sessions,
@@ -1028,7 +1028,7 @@ impl CronRunner {
             sessions.get(chat_id).cloned()
         }
         .ok_or_else(|| format!("Chat session {chat_id} not found"))?;
-        let app = AppState::from_gcx(self.gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(self.gcx.clone()).await;
         let event_message = if missed {
             cron_fire_message_with_missed(task, final_fire, missed)
         } else {
@@ -1063,7 +1063,7 @@ impl CronRunner {
                 task.id
             )
         })?;
-        let app = AppState::from_gcx(self.gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(self.gcx.clone()).await;
         let result = run_command(&app, task, cmd).await;
         if let Err(error) = self
             .deliver_command_result(&app, task, cmd, final_fire, fired_at_ms, missed, &result)
@@ -1153,7 +1153,7 @@ impl CronRunner {
             )
         })?;
         let chat_id = format!("cron_{}_{}", task.id, task.fire_count);
-        let app = AppState::from_gcx(self.gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(self.gcx.clone()).await;
         let session_arc =
             get_or_create_session_with_trajectory(app.chat_ctx(), &app.chat.sessions, &chat_id).await;
         let event_message = if missed {
@@ -1180,7 +1180,7 @@ impl CronRunner {
         if !self.gcx.chat_sessions.read().await.contains_key(chat_id) {
             return;
         }
-        let app = AppState::from_gcx(self.gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(self.gcx.clone()).await;
         if let Err(error) = deliver_notice(
             &app,
             chat_id,
@@ -1201,7 +1201,7 @@ impl CronRunner {
         if !self.gcx.chat_sessions.read().await.contains_key(chat_id) {
             return;
         }
-        let app = AppState::from_gcx(self.gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(self.gcx.clone()).await;
         if let Err(error) = deliver_notice(
             &app,
             chat_id,

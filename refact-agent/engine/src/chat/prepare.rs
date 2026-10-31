@@ -1064,7 +1064,7 @@ mod tests {
     ) -> Arc<GlobalContext> {
         let gcx = gcx_with_modes(modes).await;
         {
-            let app = AppState::from_gcx(gcx.clone()).await;
+            let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
             let mut state = app.model.caps.write().await;
             state.caps = Some(Arc::new(caps_with_model(model_id)));
             state.last_attempted_ts = std::time::SystemTime::now()
@@ -1107,7 +1107,7 @@ mod tests {
         tools: Vec<ToolDesc>,
         frozen_request_prefix: Option<FrozenRequestPrefix>,
     ) -> Result<PreparedChat, String> {
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         let ctx = app.chat_ctx();
         let model_id = "test/frozen-model";
         let ccx = AtCommandsContext::new_from_app(
@@ -1190,7 +1190,7 @@ mod tests {
         .await;
         let tools = vec![handoff_tool_desc()];
 
-        let ctx = AppState::from_gcx(gcx).await.chat_ctx();
+        let ctx = crate::app_state::app_state_from_gcx(gcx).await.chat_ctx();
         let first = build_canonical_openai_tools(ctx.clone(), &tools, false, true).await;
         let second = build_canonical_openai_tools(ctx, &tools, false, true).await;
 
@@ -1723,7 +1723,7 @@ mod tests {
 
         let gcx = gcx_with_modes(vec![mode_config("agent", "Agent", "Do agent work")]).await;
         {
-            let app = AppState::from_gcx(gcx.clone()).await;
+            let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
             let mut state = app.model.caps.write().await;
             state.caps = Some(Arc::new(caps));
             state.last_attempted_ts = std::time::SystemTime::now()
@@ -1732,7 +1732,7 @@ mod tests {
                 .as_secs();
         }
 
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         let tokenizer = crate::tokens::cached_tokenizer(
             gcx.clone(),
             &crate::caps::BaseModelRecord {
@@ -1897,7 +1897,7 @@ mod tests {
 
         let gcx = gcx_with_modes(vec![mode_config("agent", "Agent", "Do agent work")]).await;
         {
-            let app = AppState::from_gcx(gcx.clone()).await;
+            let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
             let mut state = app.model.caps.write().await;
             state.caps = Some(Arc::new(caps));
             state.last_attempted_ts = std::time::SystemTime::now()
@@ -1906,7 +1906,7 @@ mod tests {
                 .as_secs();
         }
 
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         let tokenizer = crate::tokens::cached_tokenizer(
             gcx.clone(),
             &crate::caps::BaseModelRecord {

@@ -620,7 +620,7 @@ mod tests {
     #[tokio::test]
     async fn cache_guard_pass_returns_pass_outcome() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         let session = crate::chat::types::ChatSession::new("test-pass".to_string());
         let session_arc = Arc::new(tokio::sync::Mutex::new(session));
         let body = json!({"messages": [{"role": "user", "content": "hi"}]});
@@ -1022,7 +1022,7 @@ mod tests {
         supports_cache_control: bool,
     ) -> AppState {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         let pricing = crate::providers::traits::ModelPricing {
             prompt: 2.5,
             generated: 10.0,

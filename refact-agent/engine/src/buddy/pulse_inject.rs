@@ -546,7 +546,7 @@ mod tests {
             tx,
             None,
         );
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         let buddy_arc = app.buddy.buddy.clone();
         *buddy_arc.lock().await = Some(service);
         app

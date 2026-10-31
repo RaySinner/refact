@@ -30,7 +30,7 @@ impl BenchmarkFixture {
             .lock()
             .map_err(|_| "benchmark workspace folders lock poisoned".to_string())? =
             vec![canonicalize_normalized_path(workspace.clone())];
-        let mut app = AppState::from_gcx(gcx.clone()).await;
+        let mut app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         app.tool_registry = Arc::new(AppToolRegistry::with_fixture_tool_factory(
             gcx.clone(),
             deterministic_tool_factory(tool_count),

@@ -767,7 +767,7 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let gcx = crate::global_context::tests::make_test_gcx().await;
         *gcx.documents_state.workspace_folders.lock().unwrap() = vec![temp.path().to_path_buf()];
-        let app = crate::app_state::AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         let ccx = Arc::new(AMutex::new(
             AtCommandsContext::new_from_app(
                 app.clone(),

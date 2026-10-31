@@ -63,7 +63,7 @@ async fn cache_maintenance_background_task(
 pub use refact_core::background_tasks::BackgroundTasksHolder;
 
 pub async fn start_full_soak_background_tasks(gcx: Arc<GlobalContext>) -> BackgroundTasksHolder {
-    let app_state = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app_state = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     let goal_monitor_app = app_state.clone();
     let background_agent_monitor_app = app_state.clone();
     let cache_maintenance_app = app_state.clone();
@@ -99,7 +99,7 @@ pub async fn start_full_soak_background_tasks(gcx: Arc<GlobalContext>) -> Backgr
         tokio::spawn({
             let gcx = gcx.clone();
             async move {
-                let app = crate::app_state::AppState::from_gcx(gcx).await;
+                let app = crate::app_state::app_state_from_gcx(gcx).await;
                 crate::buddy::actor::buddy_background_task(app).await
             }
         }),
@@ -121,7 +121,7 @@ pub async fn start_background_tasks(
     }
     let gcx_for_knowledge_index = gcx.clone();
     let gcx_for_stats = gcx.clone();
-    let app_state = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app_state = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     let goal_monitor_app = app_state.clone();
     let background_agent_monitor_app = app_state.clone();
     let cache_maintenance_app = app_state.clone();
@@ -173,7 +173,7 @@ pub async fn start_background_tasks(
         ),
         tokio::spawn(
             crate::integrations::browser_runtime::browser_monitor_background_task(
-                crate::app_state::AppState::from_gcx(gcx.clone()).await,
+                crate::app_state::app_state_from_gcx(gcx.clone()).await,
             ),
         ),
         tokio::spawn(crate::stats::writer::stats_writer_task(
@@ -189,7 +189,7 @@ pub async fn start_background_tasks(
         tokio::spawn({
             let gcx = gcx.clone();
             async move {
-                let app = crate::app_state::AppState::from_gcx(gcx).await;
+                let app = crate::app_state::app_state_from_gcx(gcx).await;
                 crate::buddy::actor::buddy_background_task(app).await
             }
         }),

@@ -192,7 +192,7 @@ mod tests {
     async fn health_watcher_first_unhealthy_is_runtime_only_without_suggestion() {
         let job = HealthWatcherJob;
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         app.model.caps.write().await.caps = Some(Arc::new(CodeAssistantCaps::default()));
 
         let result = job.execute(app, test_context(None)).await;
@@ -206,7 +206,7 @@ mod tests {
     async fn health_watcher_recovered_state_produces_setup_suggestion_when_models_disappear() {
         let job = HealthWatcherJob;
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         app.model.caps.write().await.caps = Some(Arc::new(CodeAssistantCaps::default()));
 
         let result = job.execute(app, test_context(Some("healthy"))).await;
@@ -220,7 +220,7 @@ mod tests {
     async fn health_watcher_suppresses_suggestion_when_proactive_is_disabled_but_keeps_event() {
         let job = HealthWatcherJob;
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         app.model.caps.write().await.caps = Some(Arc::new(CodeAssistantCaps::default()));
         let mut ctx = test_context(Some("healthy"));
         ctx.settings.proactive_enabled = false;
@@ -238,7 +238,7 @@ mod tests {
     async fn health_watcher_suppresses_suggestion_when_unread_cap_is_full_but_keeps_event() {
         let job = HealthWatcherJob;
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         app.model.caps.write().await.caps = Some(Arc::new(CodeAssistantCaps::default()));
         let mut ctx = test_context(Some("healthy"));
         ctx.suggestion_state = (0..crate::buddy::scheduler::MAX_UNREAD_SUGGESTIONS)
@@ -258,7 +258,7 @@ mod tests {
     async fn health_watcher_should_run_only_for_visible_health_policy() {
         let job = HealthWatcherJob;
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         let mut healthy_caps = CodeAssistantCaps::default();
         healthy_caps.chat_models.insert(
             "provider/model".to_string(),

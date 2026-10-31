@@ -170,7 +170,7 @@ fn queue_wait_notice_text_is_stable_so_dedup_can_collapse_it() {
 #[tokio::test]
 async fn compression_blocked_queue_stays_quiet_before_the_threshold() {
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = AppState::from_gcx(gcx).await;
+    let app = crate::app_state::app_state_from_gcx(gcx).await;
     let session_arc = Arc::new(AMutex::new(ChatSession::new("queue-wait".to_string())));
     app.chat
         .sessions
@@ -231,7 +231,7 @@ async fn compression_blocked_queue_stays_quiet_before_the_threshold() {
 #[tokio::test(start_paused = true)]
 async fn queue_notify_idle_processors_do_not_wake_without_notifications() {
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = AppState::from_gcx(gcx).await;
+    let app = crate::app_state::app_state_from_gcx(gcx).await;
     let session_arc = Arc::new(AMutex::new(ChatSession::new(
         "queue-notify-idle".to_string(),
     )));
@@ -261,7 +261,7 @@ async fn queue_notify_idle_processors_do_not_wake_without_notifications() {
 #[tokio::test]
 async fn queue_notify_processes_commands_enqueued_before_and_after_wait_registration() {
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     let before_wait = Arc::new(AMutex::new(ChatSession::new(
         "queue-notify-before".to_string(),
     )));
@@ -310,7 +310,7 @@ async fn queue_notify_processes_commands_enqueued_before_and_after_wait_registra
 #[tokio::test]
 async fn process_command_queue_restarts_after_enqueue_races_processor_teardown() {
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = AppState::from_gcx(gcx).await;
+    let app = crate::app_state::app_state_from_gcx(gcx).await;
     let session_arc = Arc::new(AMutex::new(ChatSession::new(
         "queue-notify-teardown".to_string(),
     )));
@@ -352,7 +352,7 @@ async fn process_command_queue_restarts_after_enqueue_races_processor_teardown()
 #[tokio::test]
 async fn process_command_queue_wakes_for_paused_decision_enqueued_after_wait() {
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = AppState::from_gcx(gcx).await;
+    let app = crate::app_state::app_state_from_gcx(gcx).await;
     let session_arc = Arc::new(AMutex::new(ChatSession::new(
         "queue-notify-paused".to_string(),
     )));
@@ -416,7 +416,7 @@ async fn process_command_queue_wakes_for_paused_decision_enqueued_after_wait() {
 #[tokio::test]
 async fn process_command_queue_wakes_for_waiting_ide_callback_enqueued_after_wait() {
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = AppState::from_gcx(gcx).await;
+    let app = crate::app_state::app_state_from_gcx(gcx).await;
     let session_arc = Arc::new(AMutex::new(ChatSession::new(
         "queue-notify-waiting-ide".to_string(),
     )));
@@ -479,7 +479,7 @@ async fn queue_notify_rapid_enqueues_leave_no_stranded_commands() {
     const COMMAND_COUNT: usize = 10_000;
 
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = AppState::from_gcx(gcx).await;
+    let app = crate::app_state::app_state_from_gcx(gcx).await;
     let session_arc = Arc::new(AMutex::new(ChatSession::new(
         "queue-notify-rapid".to_string(),
     )));
@@ -610,7 +610,7 @@ async fn mode_switch_diff_uses_resolved_overlay_defaults() {
         },
     );
 
-    let app = AppState::from_gcx(gcx).await;
+    let app = crate::app_state::app_state_from_gcx(gcx).await;
     let mut session = ChatSession::new("mode-switch-overlay".to_string());
     session.thread.mode = "explore".to_string();
     session.thread.model = "test/model".to_string();
@@ -650,7 +650,7 @@ fn test_find_allowed_command_empty_queue() {
 #[tokio::test]
 async fn clean_background_processes_command_kills_chat_scoped() {
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     let killed_background = register_running_process(
         &gcx,
         "exec_clean_chat_background",
@@ -729,7 +729,7 @@ async fn clean_background_processes_command_kills_chat_scoped() {
 #[tokio::test]
 async fn chat_started_pushed_on_first_user_message() {
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     push_user_activity(
         app.clone(),
         UserAction::ChatStarted {
@@ -1289,7 +1289,7 @@ async fn worktree_setparams_attach_by_id_resolves_registry_and_scopes_create() {
     {
         *gcx.documents_state.workspace_folders.lock().unwrap() = vec![source.clone()];
     }
-    let app = AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     let service = WorktreeService::new(cache, source.clone()).unwrap();
     let created = service
         .create_worktree(crate::worktrees::types::CreateWorktreeRequest {
@@ -1328,7 +1328,7 @@ async fn worktree_setparams_attach_by_id_resolves_registry_and_scopes_create() {
 #[tokio::test]
 async fn worktree_setparams_same_id_skips_registry_lookup() {
     let gcx = crate::global_context::tests::make_test_gcx().await;
-    let app = AppState::from_gcx(gcx).await;
+    let app = crate::app_state::app_state_from_gcx(gcx).await;
     let mut thread = ThreadParams::default();
     thread.worktree = Some(sample_worktree("wt-existing"));
 
@@ -1359,7 +1359,7 @@ async fn worktree_setparams_detach_clears_registry_reference() {
     {
         *gcx.documents_state.workspace_folders.lock().unwrap() = vec![source.clone()];
     }
-    let app = AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     let service = WorktreeService::new(cache, source.clone()).unwrap();
     let created = service
         .create_worktree(crate::worktrees::types::CreateWorktreeRequest {
@@ -1401,7 +1401,7 @@ async fn worktree_branch_reference_preserves_scope_for_new_chat() {
     {
         *gcx.documents_state.workspace_folders.lock().unwrap() = vec![source.clone()];
     }
-    let app = AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     let service = WorktreeService::new(cache, source).unwrap();
     let created = service
         .create_worktree(crate::worktrees::types::CreateWorktreeRequest {

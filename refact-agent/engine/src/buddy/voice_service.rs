@@ -925,7 +925,7 @@ mod tests {
 
     #[tokio::test]
     async fn voice_returns_fallback_when_renderer_returns_none() {
-        let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+        let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
         let renderer = TestVoiceRenderer::new(vec![None]);
         let service = VoiceService::new_with_renderer(renderer.clone());
         let persona = persona("helper_sprite");
@@ -940,7 +940,7 @@ mod tests {
 
     #[tokio::test]
     async fn voice_cache_hits_count_as_recent_lines() {
-        let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+        let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
         let renderer = TestVoiceRenderer::new(vec![Some("cached sparkle".to_string())]);
         let service = VoiceService::new_with_renderer(renderer.clone());
         let persona = persona("helper_sprite");
@@ -957,7 +957,7 @@ mod tests {
 
     #[tokio::test]
     async fn voice_avoids_saying_same_cached_line_twice() {
-        let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+        let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
         let renderer = TestVoiceRenderer::new(vec![Some("cached sparkle".to_string())]);
         let service = VoiceService::new_with_renderer(renderer.clone());
         let persona = persona("helper_sprite");
@@ -977,7 +977,7 @@ mod tests {
 
     #[tokio::test]
     async fn voice_caps_output_at_max_chars() {
-        let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+        let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
         let renderer = TestVoiceRenderer::new(vec![Some("a".repeat(VOICE_MAX_CHARS + 40))]);
         let service = VoiceService::new_with_renderer(renderer);
         let persona = persona("helper_sprite");
@@ -1001,7 +1001,7 @@ mod tests {
 
     #[tokio::test]
     async fn voice_strips_newlines() {
-        let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+        let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
         let renderer = TestVoiceRenderer::new(vec![Some("hello\nbuddy\r\nnow".to_string())]);
         let service = VoiceService::new_with_renderer(renderer);
         let persona = persona("helper_sprite");
@@ -1038,7 +1038,7 @@ mod tests {
 
     #[tokio::test]
     async fn chat_reaction_voice_prompt_guides_humor_without_raw_echo() {
-        let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+        let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
         let renderer = TestVoiceRenderer::new(vec![Some("tiny gremlin line".to_string())]);
         let service = VoiceService::new_with_renderer(renderer.clone());
         let persona = persona("helper_sprite");
@@ -1067,7 +1067,7 @@ mod tests {
 
     #[tokio::test]
     async fn chat_reaction_voice_prompt_guides_interaction_insight() {
-        let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+        let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
         let renderer = TestVoiceRenderer::new(vec![Some("iteration checkpoint".to_string())]);
         let service = VoiceService::new_with_renderer(renderer.clone());
         let persona = persona("helper_sprite");
@@ -1093,7 +1093,7 @@ mod tests {
 
     #[tokio::test]
     async fn chat_reaction_voice_prompt_guides_ambient_check_in() {
-        let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+        let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
         let renderer = TestVoiceRenderer::new(vec![Some("soft companion blip".to_string())]);
         let service = VoiceService::new_with_renderer(renderer.clone());
         let persona = persona("helper_sprite");
@@ -1119,7 +1119,7 @@ mod tests {
 
     #[tokio::test]
     async fn chat_reaction_voice_uses_chat_reaction_limit() {
-        let gcx = AppState::from_gcx(crate::global_context::tests::make_test_gcx().await).await;
+        let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
         let renderer =
             TestVoiceRenderer::new(vec![Some("x".repeat(CHAT_REACTION_VOICE_MAX_CHARS + 40))]);
         let service = VoiceService::new_with_renderer(renderer);

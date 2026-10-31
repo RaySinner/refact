@@ -1165,7 +1165,7 @@ mod tests {
             .unwrap();
         codegraph.connect_usages().await.unwrap();
         *gcx.codegraph.lock().await = Some(codegraph);
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         make_refact_http_server(app)
     }
 
@@ -1187,7 +1187,7 @@ mod tests {
             .unwrap();
         codegraph.connect_usages().await.unwrap();
         *gcx.codegraph.lock().await = Some(codegraph);
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         (make_refact_http_server(app), caller_path)
     }
 
@@ -1259,7 +1259,7 @@ mod tests {
             .unwrap();
         codegraph.connect_usages().await.unwrap();
         *gcx.codegraph.lock().await = Some(codegraph);
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         (make_refact_http_server(app), dir)
     }
 
@@ -1277,7 +1277,7 @@ mod tests {
         codegraph.connect_usages().await.unwrap();
         codegraph.enqueue_files(&["src/pending.rs".to_string()]);
         *gcx.codegraph.lock().await = Some(codegraph);
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         make_refact_http_server(app)
     }
 
@@ -1301,7 +1301,7 @@ mod tests {
         codegraph.connect_usages().await.unwrap();
         codegraph.enqueue_files(&["src/pending.rs".to_string()]);
         *gcx.codegraph.lock().await = Some(codegraph);
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         make_refact_http_server(app)
     }
 
@@ -1326,7 +1326,7 @@ mod tests {
             .await
             .unwrap();
         *gcx.codegraph.lock().await = Some(codegraph);
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         make_refact_http_server(app)
     }
 
@@ -1340,7 +1340,7 @@ mod tests {
         codegraph.index_file("src/b.rs", &b, "rust").await.unwrap();
         codegraph.index_file("src/c.rs", &c, "rust").await.unwrap();
         *gcx.codegraph.lock().await = Some(codegraph);
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         make_refact_http_server(app)
     }
 
@@ -1354,7 +1354,7 @@ mod tests {
         codegraph.connect_usages().await.unwrap();
         codegraph.enqueue_files(&["src/pending.rs".to_string()]);
         *gcx.codegraph.lock().await = Some(codegraph);
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         make_refact_http_server(app)
     }
 
@@ -1411,7 +1411,7 @@ mod tests {
             .unwrap();
         codegraph.connect_usages().await.unwrap();
         *gcx.codegraph.lock().await = Some(codegraph);
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         (make_refact_http_server(app), dir)
     }
 
@@ -1421,13 +1421,13 @@ mod tests {
         *gcx.documents_state.workspace_folders.lock().unwrap() = vec![dir.path().to_path_buf()];
         let codegraph = Arc::new(refact_codegraph::CodeGraphService::open_in_memory().unwrap());
         *gcx.codegraph.lock().await = Some(codegraph);
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         (make_refact_http_server(app), dir)
     }
 
     async fn router_without_codegraph() -> axum::Router {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         make_refact_http_server(app)
     }
 
@@ -1963,7 +1963,7 @@ mod tests {
         codegraph.index_file(&b_abs, &b_v2, "rust").await.unwrap();
         codegraph.connect_usages().await.unwrap();
         *gcx.codegraph.lock().await = Some(codegraph);
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
         (make_refact_http_server(app), dir)
     }
 

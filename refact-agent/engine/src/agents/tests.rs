@@ -81,7 +81,7 @@ async fn app_with_parent_session(
     let gcx = crate::global_context::tests::make_test_gcx().await;
     let workspace = tempdir().expect("workspace");
     *gcx.documents_state.workspace_folders.lock().unwrap() = vec![workspace.path().to_path_buf()];
-    let app = AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     let session = Arc::new(tokio::sync::Mutex::new(ChatSession::new(
         parent_chat_id.to_string(),
     )));

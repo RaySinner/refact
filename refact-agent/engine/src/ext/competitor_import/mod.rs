@@ -379,7 +379,7 @@ mod tests {
     }
 
     async fn set_allow_all_privacy(gcx: crate::global_context::SharedGlobalContext) -> AppState {
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         let config_dir = app.paths.config_dir.clone();
         tokio::fs::write(
             config_dir.join("privacy.yaml"),
@@ -388,13 +388,13 @@ mod tests {
         .await
         .unwrap();
         crate::privacy::load_privacy_if_needed(gcx.clone()).await;
-        AppState::from_gcx(gcx).await
+        crate::app_state::app_state_from_gcx(gcx).await
     }
 
     #[tokio::test]
     async fn project_import_without_workspaces_is_empty_noop() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx).await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
 
         let summary = run_project_import(app).await;
 
@@ -1107,7 +1107,7 @@ mod tests {
     #[tokio::test]
     async fn runtime_event_emit_is_noop_without_buddy_service() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         let summary = runtime_event_summary(ImportStatus::Created, ImportScope::Global);
 
         emit_buddy_import_events(app.clone(), &summary).await;
@@ -1128,7 +1128,7 @@ mod tests {
             tx,
             None,
         );
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         *app.buddy.buddy.lock().await = Some(service);
         let summary = runtime_event_summary(ImportStatus::Created, ImportScope::Global);
 
@@ -1147,7 +1147,7 @@ mod tests {
     #[tokio::test]
     async fn cache_invalidation_ignores_unchanged_outcomes() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         let mut summary = ImportSummary::default();
         summary.add_outcome(ImportOutcome {
             candidate: ImportCandidateSummary {

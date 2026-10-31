@@ -1721,7 +1721,7 @@ pub async fn run_subchat(
         config.tool_name, config.model, config.stateful
     );
 
-    let app = AppState::from_gcx(gcx.clone()).await;
+    let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
     let ctx = app.chat_ctx();
 
     let chat_id = stable_subchat_chat_id(&config, || format!("subchat-{}", Uuid::new_v4()));
@@ -4052,7 +4052,7 @@ mod subchat_tests {
         let gcx = make_test_gcx().await;
         Arc::new(tokio::sync::Mutex::new(
             crate::at_commands::at_commands::AtCommandsContext::new_from_app(
-                crate::app_state::AppState::from_gcx(gcx).await,
+                crate::app_state::app_state_from_gcx(gcx).await,
                 4096,
                 1,
                 false,
@@ -4384,7 +4384,7 @@ mod subchat_tests {
         assert_eq!(final_saved.messages[0].content.content_text_only(), "final");
 
         let progress = Arc::new(StdMutex::new(final_messages));
-        let app = crate::app_state::AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         save_failed_subchat_trajectory(&app, chat_id, &config, &progress, "failed").await;
         let failed_saved = crate::chat::trajectories::load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), chat_id)
             .await

@@ -446,7 +446,7 @@ use super::test_support::*;
     async fn wake_up_at_round_trips_through_trajectory_save_and_load() {
         let dir = tempfile::tempdir().unwrap();
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         {
             *app.workspace
                 .documents_state
@@ -632,7 +632,7 @@ use super::test_support::*;
     async fn goal_round_trips_through_trajectory_save_and_load() {
         let dir = tempfile::tempdir().unwrap();
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         {
             *app.workspace
                 .documents_state
@@ -706,7 +706,7 @@ use super::test_support::*;
     async fn wake_up_at_is_none_in_trajectories_created_before_field_existed() {
         let dir = tempfile::tempdir().unwrap();
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         {
             *app.workspace
                 .documents_state
@@ -743,7 +743,7 @@ use super::test_support::*;
     async fn goal_ledger_round_trips_and_replay_wins_over_missing_snapshot() {
         let dir = tempfile::tempdir().unwrap();
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         {
             *app.workspace
                 .documents_state
@@ -785,7 +785,7 @@ use super::test_support::*;
     async fn trajectory_snapshot_roundtrip_preserves_waiting_for_card_ids() {
         let dir = tempfile::tempdir().unwrap();
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         {
             *app.workspace
                 .documents_state
@@ -956,7 +956,7 @@ use super::test_support::*;
     async fn trajectory_save_removes_malformed_worktree_extra_from_json() {
         let dir = tempfile::tempdir().unwrap();
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         {
             *app.workspace
                 .documents_state
@@ -1008,7 +1008,7 @@ use super::test_support::*;
         {
             *gcx.documents_state.workspace_folders.lock().unwrap() = vec![source.clone()];
         }
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         let service = WorktreeService::new(cache, source.clone()).unwrap();
         let created = service
             .create_worktree(crate::worktrees::types::CreateWorktreeRequest {
@@ -1064,7 +1064,7 @@ use super::test_support::*;
         {
             *gcx.documents_state.workspace_folders.lock().unwrap() = vec![source.clone()];
         }
-        let app = AppState::from_gcx(gcx.clone()).await;
+        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         let service = WorktreeService::new(cache, source.clone()).unwrap();
         let created = service
             .create_worktree(crate::worktrees::types::CreateWorktreeRequest {

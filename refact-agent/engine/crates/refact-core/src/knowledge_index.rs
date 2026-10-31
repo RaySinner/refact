@@ -21,6 +21,48 @@ pub struct KnowledgeCard {
     pub file_path: PathBuf,
 }
 
+pub fn format_related_memories_section(
+    cards: &[KnowledgeCard],
+    exclude_path: Option<&Path>,
+) -> String {
+    let mut shown = Vec::new();
+    for c in cards {
+        if let Some(ex) = exclude_path {
+            if c.file_path == ex {
+                continue;
+            }
+        }
+        let mut line = format!("- {} ({})", c.title, c.file_path.display());
+        let desc = c
+            .description
+            .as_deref()
+            .map(|x| x.trim())
+            .filter(|x| !x.is_empty())
+            .map(|x| x.to_string())
+            .or_else(|| {
+                c.summary
+                    .as_deref()
+                    .map(|x| x.trim())
+                    .filter(|x| !x.is_empty())
+                    .map(|x| x.to_string())
+            });
+        if let Some(d) = desc {
+            line.push_str(&format!("\n  {}", d));
+        }
+        shown.push(line);
+        if shown.len() >= 5 {
+            break;
+        }
+    }
+    if shown.is_empty() {
+        return String::new();
+    }
+    format!(
+        "\n\n## Related memories (short form)\n\n{}\n\nNote: these are heuristic matches and may be unrelated. To load full content of any memory above, call `cat(paths=\"<path>\")` using the memory file path shown above.",
+        shown.join("\n")
+    )
+}
+
 #[derive(Debug, Default)]
 pub struct KnowledgeIndex {
     by_filename: HashMap<String, Vec<KnowledgeCard>>,

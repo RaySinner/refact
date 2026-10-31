@@ -10,6 +10,10 @@ use crate::files_in_workspace::{detect_vcs_for_a_file_path, CacheCorrection};
 use crate::fuzzy_search::fuzzy_search;
 use crate::worktrees::scope::ExecutionScope;
 
+pub use refact_runtime_api::files_correction::{
+    check_if_its_inside_a_workspace_or_config_for_ctx, get_unscoped_project_dirs_for_ctx,
+};
+
 pub use refact_files::path_utils::{
     preprocess_path_for_normalization, canonical_path, canonicalize_normalized_path,
     any_glob_matches_path, serialize_path, deserialize_path, CommandSimplifiedDirExt,
@@ -255,11 +259,6 @@ pub async fn get_unscoped_project_dirs(gcx: Arc<GlobalContext>) -> Vec<PathBuf> 
     get_project_dirs(gcx).await
 }
 
-pub async fn get_unscoped_project_dirs_for_ctx(ctx: &crate::chat::ctx::ChatCtx) -> Vec<PathBuf> {
-    let workspace_folders = ctx.workspace.workspace_folders.lock().unwrap().clone();
-    project_dirs_for_unscoped_paths(ctx.paths.cache_dir.as_path(), workspace_folders.as_slice())
-}
-
 #[allow(dead_code)]
 pub async fn get_project_dirs_with_execution_scope(
     gcx: Arc<GlobalContext>,
@@ -395,42 +394,6 @@ pub async fn check_if_its_inside_a_workspace_or_config(
     path: &Path,
 ) -> Result<(), String> {
     check_if_its_inside_a_workspace_or_config_for_ctx(&gcx.chat_ctx(gcx.clone()), path).await
-}
-
-pub async fn check_if_its_inside_a_workspace_or_config_for_ctx(
-    ctx: &crate::chat::ctx::ChatCtx,
-    path: &Path,
-) -> Result<(), String> {
-    path_inside_workspace_or_config(
-        get_unscoped_project_dirs_for_ctx(ctx).await,
-        ctx.paths.config_dir.as_path(),
-        path,
-    )
-}
-
-fn path_inside_workspace_or_config(
-    workspace_folders: Vec<PathBuf>,
-    config_dir: &Path,
-    path: &Path,
-) -> Result<(), String> {
-    let path = canonicalize_normalized_path(path.to_path_buf());
-    let workspace_folders_normalized = workspace_folders
-        .iter()
-        .map(|path| canonicalize_normalized_path(path.clone()))
-        .collect::<Vec<_>>();
-    let config_dir = canonicalize_normalized_path(config_dir.to_path_buf());
-
-    if workspace_folders_normalized
-        .iter()
-        .any(|dir| path.starts_with(dir))
-        || path.starts_with(&config_dir)
-    {
-        Ok(())
-    } else {
-        Err(format!(
-            "Path '{path:?}' is outside of project directories:\n{workspace_folders_normalized:?}"
-        ))
-    }
 }
 
 pub fn registered_worktree_roots(cache_dir: &Path) -> Vec<PathBuf> {

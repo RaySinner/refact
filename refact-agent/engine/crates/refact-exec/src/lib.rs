@@ -1,3 +1,4 @@
+pub mod command_policy;
 pub mod env;
 pub mod observe;
 pub mod path_enrichment;

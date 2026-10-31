@@ -12,7 +12,8 @@ use serde_yaml::{Mapping as YamlMapping, Value as YamlValue};
 use tokio::sync::mpsc;
 
 pub use refact_core::knowledge_index::{
-    KnowledgeCard, KnowledgeIndex, KnowledgeSearchFilters, KnowledgeSearchHit,
+    format_related_memories_section, KnowledgeCard, KnowledgeIndex, KnowledgeSearchFilters,
+    KnowledgeSearchHit,
 };
 
 fn path_has_any_relative_component(path: &Path, root: &Path, components: &[&str]) -> bool {
@@ -206,48 +207,6 @@ fn task_card_from_mapping(
         updated: yaml_string(mapping, "updated_at"),
         file_path: path.to_path_buf(),
     }
-}
-
-pub fn format_related_memories_section(
-    cards: &[KnowledgeCard],
-    exclude_path: Option<&Path>,
-) -> String {
-    let mut shown = Vec::new();
-    for c in cards {
-        if let Some(ex) = exclude_path {
-            if c.file_path == ex {
-                continue;
-            }
-        }
-        let mut line = format!("- {} ({})", c.title, c.file_path.display());
-        let desc = c
-            .description
-            .as_deref()
-            .map(|x| x.trim())
-            .filter(|x| !x.is_empty())
-            .map(|x| x.to_string())
-            .or_else(|| {
-                c.summary
-                    .as_deref()
-                    .map(|x| x.trim())
-                    .filter(|x| !x.is_empty())
-                    .map(|x| x.to_string())
-            });
-        if let Some(d) = desc {
-            line.push_str(&format!("\n  {}", d));
-        }
-        shown.push(line);
-        if shown.len() >= 5 {
-            break;
-        }
-    }
-    if shown.is_empty() {
-        return String::new();
-    }
-    format!(
-        "\n\n## Related memories (short form)\n\n{}\n\nNote: these are heuristic matches and may be unrelated. To load full content of any memory above, call `cat(paths=\"<path>\")` using the memory file path shown above.",
-        shown.join("\n")
-    )
 }
 
 async fn knowledge_dir_candidates(gcx: Arc<GlobalContext>) -> Vec<PathBuf> {

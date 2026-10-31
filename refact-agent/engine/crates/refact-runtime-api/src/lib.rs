@@ -14,7 +14,9 @@ use refact_tasks::events::TaskEventEnvelope;
 use refact_tool_api::{build_registry_from_names, ToolDesc};
 
 pub mod command_line;
+pub mod command_policy;
 pub mod chat_ctx;
+pub mod files_correction;
 pub mod global_context;
 pub mod terminal_security;
 pub mod tool_catalog;

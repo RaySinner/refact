@@ -4681,6 +4681,7 @@ dependencies = [
  "refact-perf",
  "refact-privacy",
  "refact-providers",
+ "refact-sandbox",
  "refact-scratchpads",
  "refact-stats",
  "refact-tasks",

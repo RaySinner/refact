@@ -12,6 +12,7 @@ refact-tasks = { path = "../refact-tasks" }
 refact-caps-core = { path = "../refact-caps-core" }
 refact-core = { path = "../refact-core" }
 refact-exec = { path = "../refact-exec" }
+refact-sandbox = { path = "../refact-sandbox" }
 refact-files = { path = "../refact-files" }
 refact-scratchpads = { path = "../refact-scratchpads" }
 refact-context-api = { path = "../refact-context-api", features = ["http-client"] }

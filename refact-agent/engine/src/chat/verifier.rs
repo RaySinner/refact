@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use chrono::Utc;
-use serde_json::{json, Value};
+use serde_json::json;
 
 use crate::chat::internal_roles::{event, EventSubkind};
 use crate::global_context::GlobalContextCtx;
@@ -24,6 +24,15 @@ use crate::tasks::types::{
     BoardCard, StatusUpdate, VerificationOutcome, VerificationResult, VerifierReport,
     VerifierReportClassification,
 };
+use refact_runtime_api::verifier::CardVerifier;
+
+pub use refact_chat_api::verifier::{
+    outcome_is_infrastructure, ExpectedCardState, VerifyCardRequest,
+};
+pub use refact_runtime_api::verifier::{
+    load_expected_card_state_for_ctx, schedule_card_verifier_after_finish_for_ctx,
+    verify_card_for_ctx,
+};
 
 const VERIFY_TIMEOUT: Duration = Duration::from_secs(600);
 const DRAIN_TIMEOUT: Duration = Duration::from_secs(10);
@@ -33,26 +42,36 @@ const MAX_DIFF_LINES: usize = 200;
 const VERIFIER_SOURCE: &str = "chat.verifier";
 const STALE_VERIFIER_WRITE: &str = "stale verifier write";
 
-#[derive(Clone, Debug, PartialEq, Default)]
-pub struct ExpectedCardState {
-    pub board_rev: u64,
-    card_fingerprint: Value,
-}
+pub struct EngineCardVerifier;
 
-impl ExpectedCardState {
-    pub fn from_card(board_rev: u64, card: &BoardCard) -> Self {
-        Self {
-            board_rev,
-            card_fingerprint: verifier_card_fingerprint(card),
-        }
+#[async_trait]
+impl CardVerifier for EngineCardVerifier {
+    async fn load_expected_card_state(
+        &self,
+        ctx: &ChatCtx,
+        task_id: &str,
+        card_id: &str,
+    ) -> Result<ExpectedCardState, String> {
+        load_expected_card_state_for_ctx_impl(ctx, task_id, card_id).await
     }
 
-    pub fn matches_card(&self, card: &BoardCard) -> bool {
-        self.card_fingerprint == verifier_card_fingerprint(card)
+    async fn verify_card(
+        &self,
+        ctx: &ChatCtx,
+        request: VerifyCardRequest,
+    ) -> Result<VerifierReport, String> {
+        verify_card_for_ctx_impl(ctx, request).await
     }
 
-    pub fn matches_board_card(&self, board_rev: u64, card: &BoardCard) -> bool {
-        board_rev >= self.board_rev && self.matches_card(card)
+    async fn schedule_card_verifier_after_finish(
+        &self,
+        ctx: &ChatCtx,
+        task_id: String,
+        card_id: String,
+        expected_state: ExpectedCardState,
+    ) {
+        schedule_card_verifier_after_finish_for_ctx_impl(ctx, task_id, card_id, expected_state)
+            .await;
     }
 }
 
@@ -64,7 +83,7 @@ pub async fn load_expected_card_state(
     load_expected_card_state_for_ctx(&gcx.chat_ctx(gcx.clone()), task_id, card_id).await
 }
 
-pub async fn load_expected_card_state_for_ctx(
+async fn load_expected_card_state_for_ctx_impl(
     ctx: &ChatCtx,
     task_id: &str,
     card_id: &str,
@@ -76,34 +95,6 @@ pub async fn load_expected_card_state_for_ctx(
     Ok(ExpectedCardState::from_card(board.rev, card))
 }
 
-fn verifier_card_fingerprint(card: &BoardCard) -> Value {
-    json!({
-        "id": &card.id,
-        "title": &card.title,
-        "column": &card.column,
-        "priority": &card.priority,
-        "depends_on": &card.depends_on,
-        "instructions": &card.instructions,
-        "assignee": &card.assignee,
-        "agent_chat_id": &card.agent_chat_id,
-        "final_report": &card.final_report,
-        "final_report_structured": &card.final_report_structured,
-        "verifier_report": &card.verifier_report,
-        "created_at": &card.created_at,
-        "started_at": &card.started_at,
-        "completed_at": &card.completed_at,
-        "agent_branch": &card.agent_branch,
-        "agent_worktree": &card.agent_worktree,
-        "agent_worktree_name": &card.agent_worktree_name,
-        "base_branch": &card.base_branch,
-        "base_commit": &card.base_commit,
-        "ab_variants": &card.ab_variants,
-        "team_members": &card.team_members,
-        "target_files": &card.target_files,
-        "scope_guard_mode": &card.scope_guard_mode,
-    })
-}
-
 fn stale_verifier_error(task_id: &str, card_id: &str) -> String {
     format!(
         "{} for task {} card {}: current card state no longer matches the verifier request",
@@ -113,14 +104,6 @@ fn stale_verifier_error(task_id: &str, card_id: &str) -> String {
 
 fn is_stale_verifier_error(error: &str) -> bool {
     error.starts_with(STALE_VERIFIER_WRITE)
-}
-
-#[derive(Clone, Debug)]
-pub struct VerifyCardRequest {
-    pub task_id: String,
-    pub card_id: String,
-    pub expected_state: Option<ExpectedCardState>,
-    pub custom_command: Option<String>,
 }
 
 #[async_trait]
@@ -290,7 +273,7 @@ pub async fn schedule_card_verifier_after_finish(
     .await;
 }
 
-pub async fn schedule_card_verifier_after_finish_for_ctx(
+async fn schedule_card_verifier_after_finish_for_ctx_impl(
     ctx: &ChatCtx,
     task_id: String,
     card_id: String,
@@ -315,7 +298,7 @@ pub async fn verify_card(
     verify_card_for_ctx(&gcx.chat_ctx(gcx.clone()), request).await
 }
 
-pub async fn verify_card_for_ctx(
+async fn verify_card_for_ctx_impl(
     ctx: &ChatCtx,
     request: VerifyCardRequest,
 ) -> Result<VerifierReport, String> {
@@ -452,15 +435,6 @@ pub async fn verify_card_for_ctx(
         return Err(stale_verifier_error(&request.task_id, &request.card_id));
     }
     Ok(report)
-}
-
-pub(crate) fn outcome_is_infrastructure(outcome: &VerificationOutcome) -> bool {
-    matches!(
-        outcome,
-        VerificationOutcome::InfrastructureFailed
-            | VerificationOutcome::Rejected
-            | VerificationOutcome::PolicyDenied
-    )
 }
 
 fn classify_verifier_report(

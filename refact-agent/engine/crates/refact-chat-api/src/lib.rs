@@ -24,6 +24,7 @@ pub mod trajectory_event;
 pub mod trajectory_meta;
 pub mod types;
 pub mod vectorization_queue;
+pub mod verifier;
 pub mod wait_interrupt;
 
 pub use goal_ledger::{

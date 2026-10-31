@@ -7,7 +7,8 @@ use tokio::sync::Mutex as AMutex;
 
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
-use crate::chat::verifier::{verify_card_for_ctx, VerifyCardRequest};
+use refact_chat_api::verifier::VerifyCardRequest;
+use refact_runtime_api::verifier::verify_card_for_ctx;
 use crate::tools::task_tool_helpers::require_bound_planner_task;
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
 

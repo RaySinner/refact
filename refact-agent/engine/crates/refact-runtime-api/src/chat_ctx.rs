@@ -32,6 +32,7 @@ use tokio::sync::{Mutex as AMutex, RwLock as ARwLock};
 use crate::services::{
     BuddyServices, ChatServices, ModelServices, PathServices, RuntimeServices,
 };
+use crate::verifier::CardVerifier;
 use crate::{
     ActivitySink, BuddyEventSink, CapsProvider, ModeConfigProvider, TerminalSecurityConfig,
     ToolCatalogGenerations, ToolRegistry,
@@ -297,6 +298,7 @@ pub struct ChatCtx {
     pub tool_registry: Arc<dyn ToolRegistry>,
     pub activity_sink: Arc<dyn ActivitySink>,
     pub buddy_event_sink: Arc<dyn BuddyEventSink>,
+    pub card_verifier: Arc<dyn CardVerifier>,
     pub card_verifier_tasks: Arc<AMutex<tokio::task::JoinSet<()>>>,
     pub privacy_policy_load: Arc<StdRwLock<PolicyLoad>>,
     pub tool_catalog_generations: Arc<ToolCatalogGenerations>,

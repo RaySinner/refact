@@ -15,7 +15,8 @@ use crate::tools::tools_description::{
 use crate::global_context::GlobalContextCtx;
 use crate::call_validation::{ChatMessage, ChatContent, ContextEnum};
 use crate::at_commands::at_commands::AtCommandsContext;
-use crate::chat::verifier::{load_expected_card_state, outcome_is_infrastructure};
+use refact_chat_api::verifier::outcome_is_infrastructure;
+use refact_runtime_api::verifier::load_expected_card_state_for_ctx;
 use crate::global_context::GlobalContext;
 use crate::tasks::storage;
 use crate::tools::task_tool_helpers::require_bound_planner_task;
@@ -881,7 +882,7 @@ async fn merge_registered_task_worktree(
         }
     };
     let post_merge_expected_state = if auto_revert {
-        Some(load_expected_card_state(gcx.clone(), task_id, card_id).await?)
+        Some(load_expected_card_state_for_ctx(&gcx.chat_ctx(gcx.clone()), task_id, card_id).await?)
     } else {
         None
     };
@@ -1375,7 +1376,7 @@ Then call `merge_agent` again."#,
             };
 
         let post_merge_expected_state = if auto_revert {
-            Some(load_expected_card_state(gcx.clone(), &task_id, card_id).await?)
+            Some(load_expected_card_state_for_ctx(&gcx.chat_ctx(gcx.clone()), &task_id, card_id).await?)
         } else {
             None
         };

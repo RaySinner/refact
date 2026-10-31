@@ -8,6 +8,7 @@ refact-core = { path = "../refact-core" }
 refact-caps-core = { path = "../refact-caps-core" }
 refact-tool-api = { path = "../refact-tool-api" }
 refact-privacy = { path = "../refact-privacy" }
+refact-tasks = { path = "../refact-tasks" }
 refact-ext = { path = "../refact-ext" }
 refact-perf = { path = "../refact-perf" }
 tracing.workspace = true

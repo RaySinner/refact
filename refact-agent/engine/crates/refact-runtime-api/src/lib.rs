@@ -24,6 +24,7 @@ pub mod tool_ctx;
 pub mod app_state;
 pub mod at_commands_ctx;
 pub mod tool_trait;
+pub mod verifier;
 
 pub use chat_ctx::{
     ChatCtx, ChatIntegrationScope, ChatToolExecutor, ChatWorkspace, ExecPolicyProvider, HookRunner,

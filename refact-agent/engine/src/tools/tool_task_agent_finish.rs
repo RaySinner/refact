@@ -10,7 +10,8 @@ use tokio::sync::Mutex as AMutex;
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::global_context::GlobalContextCtx;
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
-use crate::chat::verifier::{schedule_card_verifier_after_finish_for_ctx, ExpectedCardState};
+use refact_chat_api::verifier::ExpectedCardState;
+use refact_runtime_api::verifier::schedule_card_verifier_after_finish_for_ctx;
 use crate::tasks::storage;
 use crate::tasks::types::{
     AbVariantFinish, AbVariantInfo, BoardCard, FinalReport, StatusUpdate, SuggestedCard,

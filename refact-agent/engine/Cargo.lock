@@ -4068,6 +4068,7 @@ dependencies = [
  "refact-ext",
  "refact-perf",
  "refact-privacy",
+ "refact-tasks",
  "refact-tool-api",
  "regex",
  "serde",

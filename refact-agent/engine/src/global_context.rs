@@ -23,6 +23,7 @@ use crate::app_state::{
 use crate::caps::CodeAssistantCaps;
 use crate::chat::ctx::{ChatCtx, ChatIntegrationScope, ChatWorkspace};
 use crate::chat::EngineSessionsHandle;
+use crate::chat::verifier::EngineCardVerifier;
 use crate::caps::providers::get_latest_provider_mtime;
 use crate::providers::load_providers_from_config;
 use crate::providers::quota::ProviderQuotaCache;
@@ -124,6 +125,7 @@ impl GlobalContextCtx for GlobalContext {
             tool_registry: Arc::new(AppToolRegistry::new(gcx.clone())),
             activity_sink: Arc::new(AppActivitySink::new(self.user_activity.clone())),
             buddy_event_sink: Arc::new(AppBuddyEventSink::new(gcx.clone(), self.buddy.clone())),
+            card_verifier: Arc::new(EngineCardVerifier),
             card_verifier_tasks: self.card_verifier_tasks.clone(),
             privacy_policy_load: self.privacy_policy_load.clone(),
             tool_catalog_generations: self.tool_catalog_generations.clone(),

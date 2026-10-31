@@ -19,7 +19,9 @@ use crate::at_commands::at_ast_definition::AtAstDefinition;
 use crate::at_commands::at_tree::AtTree;
 use crate::at_commands::at_web::AtWeb;
 
-pub use refact_runtime_api::{AtCommand, AtCommandsContext, AtParam, MAX_SUBCHAT_DEPTH};
+pub use refact_runtime_api::{
+    vec_context_file_to_context_tools, AtCommand, AtCommandsContext, AtParam, MAX_SUBCHAT_DEPTH,
+};
 
 pub async fn at_commands_new_from_app(
     app: AppState,
@@ -184,12 +186,6 @@ pub async fn at_commands_dict(app: AppState) -> HashMap<String, Arc<dyn AtComman
     }
 
     result
-}
-
-pub fn vec_context_file_to_context_tools(x: Vec<ContextFile>) -> Vec<ContextEnum> {
-    x.into_iter()
-        .map(|i| ContextEnum::ContextFile(i))
-        .collect::<Vec<ContextEnum>>()
 }
 
 pub fn filter_only_context_file_from_context_tool(tools: &Vec<ContextEnum>) -> Vec<ContextFile> {

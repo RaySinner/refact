@@ -19,7 +19,6 @@ use crate::call_validation::{
 };
 use crate::files_in_workspace;
 use crate::files_in_workspace::{on_did_change, on_did_delete};
-use crate::app_state::AppState;
 use crate::global_context::{CommandLine, GlobalContext};
 use crate::http::routers::v1::code_completion::handle_v1_code_completion;
 

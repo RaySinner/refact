@@ -1,7 +1,6 @@
 #[allow(unused_imports)]
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Instant;
 use tokio::sync::{Mutex as AMutex};
 use tracing::{info, warn};
 use uuid::Uuid;
@@ -10,7 +9,6 @@ use refact_buddy_core::types::BuddyRuntimeEvent;
 use crate::app_state::AppState;
 
 use crate::call_validation::{ChatContent, ChatMessage, ChatMeta, is_agentic_mode_id};
-use crate::scratchpad_abstract::HasTokenizerAndEot;
 use crate::knowledge::enrichment::{
     enrich_messages_with_knowledge, enrichment_identity_from_context, enrichment_query_fingerprint,
     record_enrichment_identity_on_user_message,
@@ -19,15 +17,11 @@ use crate::chat::perf_diagnostics::{self, PerfComponent, PerfOutcome};
 
 use crate::chat::types::*;
 use crate::chat::prompts::prepend_the_right_system_prompt_and_maybe_more_initial_messages;
-use crate::chat::stream_core::{StreamCollector, LlmStreamError, ABORT_ERROR_MESSAGE};
-use crate::chat::config::tokens;
+use crate::chat::stream_core::{LlmStreamError, ABORT_ERROR_MESSAGE};
 use refact_core::provider_types::{ModelTypeDefaults, ProviderDefaults};
 
 use super::support::*;
-use super::retry::*;
 use super::recovery::*;
-use super::run_loop::*;
-use super::stream::*;
 
 pub(in crate::chat::generation) fn model_type_defaults_for_thread<'a>(
     user_defaults: &'a ProviderDefaults,

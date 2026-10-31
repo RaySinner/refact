@@ -8,7 +8,6 @@ use tracing::info;
 use uuid::Uuid;
 use futures::future::join_all;
 
-use indexmap::IndexMap;
 
 use crate::app_state::AppState;
 use crate::at_commands::at_commands::AtCommandsContext;

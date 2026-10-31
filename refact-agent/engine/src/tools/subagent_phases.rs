@@ -14,7 +14,6 @@ use crate::chat::ctx::{ExplicitSubchatSpec, TraceParent};
 use crate::global_context::GlobalContext;
 use crate::tools::tool_helpers::{load_code_subagent_config, CodeSubagentConfig};
 use crate::worktrees::scope::ExecutionScope;
-use refact_runtime_api::SubchatLauncherHandle;
 
 pub const DEFAULT_MAX_FILES: usize = 30;
 pub const DEFAULT_GATHER_MAX_STEPS: usize = 10;

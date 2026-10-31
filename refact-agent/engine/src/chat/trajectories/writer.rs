@@ -1,5 +1,5 @@
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex as StdMutex, OnceLock};
+use std::sync::{Mutex as StdMutex, OnceLock};
 use std::time::{Duration, Instant, UNIX_EPOCH};
 use serde::Serialize;
 use tokio::fs;

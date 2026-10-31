@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use refact_runtime_api::SessionsHandle;
-use tokio::sync::{Mutex as AMutex, RwLock as ARwLock};
+use tokio::sync::RwLock as ARwLock;
 
 use super::types::*;
 

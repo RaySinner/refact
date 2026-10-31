@@ -12,7 +12,7 @@ use crate::chat::ctx::{SubchatConfig, SubchatLauncher, ToolsPolicy, TraceParent}
 use crate::tasks::storage;
 use crate::tools::task_tool_helpers::require_bound_planner_task;
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
-use refact_runtime_api::{ChatSessionFacade, SubchatLauncherHandle};
+use refact_runtime_api::{ChatSessionFacade};
 
 const TOOL_ARG_LIMIT: usize = 300;
 const TRANSCRIPT_CHAR_BUDGET: usize = 35_000;

@@ -19,7 +19,7 @@ use refact_scheduler_core::schedule::{
 };
 use refact_scheduler_core::store::scheduled_tasks_path;
 use refact_scheduler_core::types::{
-    Action, AgentTarget, Delivery, Job, Trigger, DEFAULT_RECURRING_AUTO_EXPIRE_AFTER_MS,
+    Action, AgentTarget, Delivery, Job, Trigger,
 };
 
 pub(crate) const WAKE_LEAD_MS: u64 = 90_000;

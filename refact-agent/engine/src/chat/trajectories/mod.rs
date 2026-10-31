@@ -112,10 +112,6 @@ pub(crate) use writer::{
 };
 #[cfg(any(test, feature = "bench"))]
 pub(crate) use writer::TrajectoryWriterRolloutGuard;
-use writer::{
-    atomic_write_json, atomic_write_json_with_tmp_path, consume_trajectory_self_write,
-    unique_trajectory_tmp_path, TrajectorySelfWriteScope,
-};
 #[cfg(test)]
 pub(crate) use writer::clear_all_trajectory_self_writes;
 #[cfg(test)]
@@ -135,7 +131,6 @@ pub(crate) use model::{
     trajectory_list_data_is_displayable_chat, trajectory_snapshot_from_session,
     TrajectoryListCandidate, TrajectoryListData,
 };
-use model::{clamp_goal_snapshot_for_load, get_session_runtime_for_trajectory_source};
 
 // Re-exports from paths
 pub use paths::{
@@ -151,13 +146,6 @@ pub(crate) use paths::{
     index_dir_for_trajectory_file, is_trajectory_id_mismatch_error, list_chat_folder_dirs,
     list_task_trajectory_dirs, list_trajectory_dirs, prune_buddy_conversations_throttled,
     trajectory_id_mismatch_error,
-};
-use paths::{
-    ensure_existing_trajectory_file_matches, find_normal_trajectory_file, fix_tool_call_indexes,
-    get_or_create_buddy_conversations_dir, normal_trajectory_candidate_paths, parse_stored_messages,
-    prune_internal_traces_throttled, read_existing_trajectory_object, read_valid_trajectory_candidate,
-    should_vectorize_trajectory, trajectory_candidate_paths, PruneThrottle, ValidTrajectoryCandidate,
-    PRUNE_THROTTLE_MAX_ENTRIES,
 };
 #[cfg(test)]
 use paths::{
@@ -178,12 +166,6 @@ pub(crate) use load::{
     safe_new_nested_trajectory_file, safe_new_task_trajectory_file,
     trajectory_path_stem_matches_id, trajectory_source_path_is_allowed,
     validate_loaded_worktree_strict, verified_planner_linked_root_chat_id,
-};
-use load::{
-    effective_trajectory_source_for_path, is_known_trajectory_top_level_key,
-    preserve_existing_trajectory_metadata, sanitize_worktree_extra,
-    title_generation_backing_file_matches, trajectory_candidate_has_minimum_schema,
-    trajectory_root_id_matches, trajectory_source_matches_hint, trajectory_worktree_from_extra,
 };
 
 // Re-exports from store
@@ -220,12 +202,6 @@ pub use reload::{
 pub(crate) use reload::{
     new_legacy_incomplete_frozen_request_prefix, persist_loaded_trajectory_repair_raw,
 };
-use reload::{
-    apply_external_delete_with_revalidation, apply_loaded_external_update_with_repair,
-    can_apply_external_reload, loaded_trajectory_source, parsed_rfc3339_utc,
-    persist_loaded_trajectory_repair, raw_frozen_prefix_has_tools, repair_transition_frozen_prefix,
-    session_is_stale_refresh_candidate, ExternalDeleteRevalidationOutcome,
-};
 #[cfg(test)]
 use reload::{persist_frozen_prefix, trajectory_commit_contract};
 #[cfg(test)]
@@ -233,11 +209,6 @@ pub(crate) use reload::trajectory_commit_contract_for_test;
 
 // Re-exports from watcher
 pub use watcher::start_trajectory_watcher;
-use watcher::{
-    is_trajectory_temporary_file, is_under_task_root, should_dispatch_trajectory_path,
-    task_trajectory_context_from_path, trajectory_source_identity_from_path,
-    trajectory_watcher_message_for_path,
-};
 #[cfg(test)]
 pub(crate) use watcher::{process_trajectory_change, reset_test_trajectory_watcher_task};
 #[cfg(test)]
@@ -262,13 +233,11 @@ pub(crate) use queries::{
     TokenTotals,
 };
 use queries::{
-    allowed_real_dir_symlink_target, calculate_line_changes_from_chat_messages,
+    calculate_line_changes_from_chat_messages,
     calculate_task_progress_from_chat_messages, calculate_token_totals_from_chat_messages,
     canonical_child_path_under_root, count_user_messages, ensure_real_dir_tree, is_placeholder_title,
-    is_real_dir, is_real_dir_sync, is_real_file, safe_new_trajectory_file_in_dir,
+    is_real_dir, is_real_file, safe_new_trajectory_file_in_dir,
     safe_trajectory_file_in_dir, spawn_task_name_generation_task, spawn_title_generation_task,
-    hydrate_trajectory_list_page, trajectory_list_candidate_matches_hydrated_data,
-    TRAJECTORY_META_TITLE_MAX_CHARS,
 };
 #[cfg(test)]
 pub(crate) use queries::TITLE_GENERATION_LLM_TIMEOUT;

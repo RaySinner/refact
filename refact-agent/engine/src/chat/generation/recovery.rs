@@ -10,10 +10,8 @@ use crate::buddy::chat_reactions::{maybe_enqueue_chat_activity_reaction, ChatAct
 use crate::subchat::{resolve_subchat_config_with_parent, run_subchat};
 
 use crate::call_validation::{ChatContent, ChatMessage};
-use crate::scratchpad_abstract::HasTokenizerAndEot;
 
 use crate::chat::types::*;
-use crate::chat::stream_core::StreamCollector;
 use crate::ext::hooks::HookEvent;
 use crate::ext::hooks_runner::{HookPayload, get_project_dir_string, run_hooks};
 use crate::chat::diagnostics::make_ui_only_error_message;
@@ -21,10 +19,7 @@ use crate::chat::history_limit::ContextPressure;
 use refact_core::llm_types::BaseModelRecord;
 
 use super::support::*;
-use super::retry::*;
 use super::preamble::*;
-use super::run_loop::*;
-use super::stream::*;
 
 pub(in crate::chat::generation) fn is_claude_code_model(model: &BaseModelRecord) -> bool {
     model.wire_format == crate::llm::WireFormat::AnthropicMessages && !model.auth_token.is_empty()

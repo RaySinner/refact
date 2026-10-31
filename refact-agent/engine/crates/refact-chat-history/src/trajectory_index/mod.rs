@@ -58,9 +58,7 @@ use coordinator::*;
 use entries::*;
 use generation::*;
 use journal::*;
-use listing::*;
 use rebuild::*;
-use rollout::*;
 
 pub use coordinator::{trajectory_index_coordinator_background_task, TrajectoryIndexCoordinator};
 pub use entries::{

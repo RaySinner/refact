@@ -1,10 +1,9 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex as StdMutex, RwLock as StdRwLock};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use async_trait::async_trait;
-use axum::extract::FromRef;
 use refact_buddy_core::snapshot::BuddySnapshot;
 use refact_buddy_core::types::{BuddyRuntimeEvent, BuddySuggestion};
 use refact_buddy_core::user_action::UserAction;
@@ -18,36 +17,29 @@ use refact_runtime_api::{
 pub const TOOL_CATALOG_SNAPSHOTS_ENV: &str = "REFACT_TOOL_CATALOG_SNAPSHOTS";
 use tokio::sync::{Mutex as AMutex, Notify};
 
-use crate::agents::registry::BackgroundAgentRegistry;
 use crate::global_context::GlobalContextCtx;
 use crate::buddy::actor::BuddyService;
 use crate::buddy::events::BuddyEvent;
 use crate::buddy::user_activity::UserActivityRing;
 use crate::chat::ctx::{
-    CapsProvider, ChatCtx, ChatToolExecutor, ExecPolicyProvider, HookRunner, ModeConfigProvider,
+    CapsProvider, ChatToolExecutor, ExecPolicyProvider, HookRunner, ModeConfigProvider,
     ProjectTreeProvider, PromptAssembler, SubchatLauncher, TrajectoryStore,
 };
 use crate::chat::perf_diagnostics::{self, PerfComponent, PerfOutcome};
-use crate::chat::trajectory_index::TrajectoryIndexCoordinator;
 use crate::chat::types::{ChatSession, EnqueueCommandOutcome, ThreadParams, TrajectoryCommitIntent};
 use crate::chat::trajectories::{self, TrajectoryEvent};
-use crate::chat::{self, process_command_queue, SessionsMap};
-use crate::completion_cache::CompletionCache;
+use crate::chat::{self, process_command_queue};
 use crate::files_blocklist::IndexingEverywhere;
-use crate::files_in_workspace::DocumentsState;
 pub use crate::global_context::{AtCommandsPreviewCache, CommandLine, ToolCatalogGenerations};
 use crate::global_context::SharedGlobalContext;
 use crate::global_context::TerminalSecurityConfig;
 use crate::call_validation::SubchatParameters;
 use crate::subchat::{ExplicitSubchatSpec, SubchatConfig, SubchatResult, TraceParent, WrapUpConfig};
 use crate::http::routers::v1::sidebar::NotificationEvent;
-use crate::knowledge_index::KnowledgeIndex;
-use crate::privacy::PrivacySettings;
 use crate::tasks::events::TaskEventEnvelope;
-use crate::tools::ctx::{FilesProvider, ToolCtx};
+use crate::tools::ctx::FilesProvider;
 pub use refact_caps_core::caps_state::CapsState;
 pub use refact_core::tokenizer_state::TokenizerState;
-use refact_core::vecdb_types::VecdbSearch;
 use refact_runtime_api::{
     ChatSessionFacade, ChatSessionSnapshot, ChatSessionUpdate, CreateSessionRequest,
     NotificationEventSender, TaskEventEnvelopeSender, TrajectoryEventSender,

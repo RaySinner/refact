@@ -24,7 +24,7 @@ use crate::caps::CodeAssistantCaps;
 use crate::chat::ctx::{ChatCtx, ChatIntegrationScope, ChatWorkspace};
 use crate::chat::EngineSessionsHandle;
 use crate::caps::providers::get_latest_provider_mtime;
-use crate::providers::{ProviderRegistry, load_providers_from_config};
+use crate::providers::load_providers_from_config;
 use crate::providers::quota::ProviderQuotaCache;
 use crate::completion_cache::CompletionCache;
 use crate::custom_error::ScratchError;

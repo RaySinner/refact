@@ -20,7 +20,6 @@ use tracing::debug;
 use uuid::Uuid;
 
 use crate::buddy::types::{BuddyChatPhrase, BuddyPersonalityProfile, BuddySpeechItem};
-use crate::global_context::GlobalContextCtx;
 use crate::call_validation::{ChatContent, ChatMessage, ChatModelType, SubchatParameters};
 use crate::app_state::AppState;
 

@@ -24,7 +24,7 @@ use super::paths::{
 };
 use super::{
     canonical_child_path_under_root, ensure_real_dir_tree, is_real_dir, is_real_file,
-    safe_new_trajectory_file_in_dir, safe_trajectory_file_in_dir, TRAJECTORY_LABEL_MAX_CHARS,
+    safe_new_trajectory_file_in_dir, TRAJECTORY_LABEL_MAX_CHARS,
 };
 use super::reload::{parsed_rfc3339_utc, raw_frozen_prefix_has_tools, repair_transition_frozen_prefix};
 use super::store::{

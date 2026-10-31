@@ -9,7 +9,6 @@ use tracing::warn;
 use crate::app_state::AppState;
 
 use crate::call_validation::{ChatContent, ChatMessage};
-use crate::scratchpad_abstract::HasTokenizerAndEot;
 use crate::chat::perf_diagnostics;
 
 use crate::chat::goal_monitor::handle_goal_turn_end;
@@ -18,7 +17,6 @@ use crate::chat::trajectories::{
     check_external_reload_pending, maybe_save_trajectory_background_with_intent,
 };
 use crate::chat::tools::{process_tool_calls_once, ToolStepOutcome};
-use crate::chat::stream_core::StreamCollector;
 use crate::chat::config::tokens;
 use crate::chat::diagnostics::{make_ui_only_retry_status_message, safe_provider_error_diagnostic};
 

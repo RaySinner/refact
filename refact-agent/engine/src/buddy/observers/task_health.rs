@@ -4,7 +4,6 @@ use chrono::{DateTime, Utc};
 use serde_yaml::Value as YamlValue;
 
 use crate::buddy::observers::{BuddyObserver, ObserverContext};
-use crate::global_context::GlobalContextCtx;
 use crate::buddy::settings::BuddySettings;
 use crate::buddy::types::{BuddyFact, BuddyFactKind};
 use crate::app_state::AppState;

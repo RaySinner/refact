@@ -2,19 +2,13 @@
 use std::sync::Arc;
 
 use crate::call_validation::ChatMessage;
-use crate::scratchpad_abstract::HasTokenizerAndEot;
 
-use crate::chat::types::*;
-use crate::chat::stream_core::{StreamCollector, LlmStreamError};
+use crate::chat::stream_core::LlmStreamError;
 use crate::chat::diagnostics::safe_provider_error_diagnostic;
 use crate::chat::history_limit::ContextPressure;
 use refact_core::llm_types::BaseModelRecord;
 
 use super::support::*;
-use super::preamble::*;
-use super::recovery::*;
-use super::run_loop::*;
-use super::stream::*;
 
 pub(in crate::chat::generation) fn is_responses_incomplete_stream_error(
     error: &LlmStreamError,

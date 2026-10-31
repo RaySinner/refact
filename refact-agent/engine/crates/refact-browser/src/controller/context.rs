@@ -6,18 +6,15 @@ use super::single_step::{perform_locator_handlers_checkpoint, wait_for_pending_n
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use base64::Engine;
 use headless_chrome::Tab;
-use serde_json::Value;
 
 use refact_integrations::browser_locators::{self, parse_element_info, INSPECT_ELEMENT_JS};
-use refact_integrations::browser_models::*;
 use crate::BrowserRuntime;
 use refact_browser::{
     ActionKind, ActionabilityDiagnostic, ActionabilityDriver, CdpKeyboardDispatcher,
     CdpMouseDispatcher, ElementHandle, HitTargetController, HitTargetPoint, HitTargetResult,
-    Keyboard, KeyboardDispatcher, LocatorGenerationOptions, LocatorHandlerRegistry, LocatorOutcome,
-    MainFrameCssPoint, Mouse, MouseButton, MouseDispatcher, Ref, ScrollStrategy, TabScopedHandle,
+    Keyboard, LocatorGenerationOptions, LocatorHandlerRegistry, LocatorOutcome,
+    MainFrameCssPoint, Mouse, MouseButton, Ref, ScrollStrategy, TabScopedHandle,
     WorldManager,
 };
 use refact_core::image_policy::ImagePolicy;

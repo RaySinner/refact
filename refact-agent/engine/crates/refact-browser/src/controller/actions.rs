@@ -1,7 +1,6 @@
 use super::*;
 
 use super::context::{BrowserActionDriver, CONSOLE_POLL_INTERVAL_MS, DragActionabilityDriver, NAVIGATION_LIFECYCLE_EVENT, REPORT_STABILITY_INTERVAL_MS, ResolveElementError, TAP_AMBIGUOUS_TARGET, TAP_REQUIRES_TOUCH, call_handle_json, clamp_timeout_ms, eval_js_value, generate_locator_echo, release_locator_handles, resolve_element_typed, resolve_interactable, resolve_locator_handles, resolve_scoped_element, strict_locator_handle};
-use super::single_step::{wait_for_load_state};
 
 
 pub(crate) fn uses_actionability_engine(step: &BrowserStep) -> bool {

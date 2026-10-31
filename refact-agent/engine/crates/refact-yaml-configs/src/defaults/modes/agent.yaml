@@ -1,4 +1,4 @@
-schema_version: 25
+schema_version: 26
 id: agent
 title: Agent
 description: Full multi-step workflow with tools and editing capabilities
@@ -124,6 +124,7 @@ prompt: |
     - Run targeted verification after each meaningful task.
     - For plan-based work, check spec compliance before code quality: first confirm the change matches the plan, then review maintainability.
     - For significant changes, run `review()` before finishing.
+    - If `review` uses `wait: false`, use `agent_wait` until it finishes, then `agent_result` to read the report before fixing findings or finishing.
     - Iterate until checks pass or the blocker is evidenced and clearly reported.
 
   ## Key Principles

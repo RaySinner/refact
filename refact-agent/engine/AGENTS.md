@@ -461,7 +461,7 @@ Tool trait: `tool_execute(&mut self, ccx, tool_call_id, args) -> Result<(bool, V
 
 ### Background subagents and coordination
 
-`subagent` is the only tool that creates new background agents. It always starts a stateful child
+`subagent` creates general-purpose background subagents. It always starts a stateful child
 trajectory and returns immediately; completion is pushed to the parent. Omitting `tools` preserves the
 child's inherit-all policy; an explicit comma-separated list is validated against the registered tool
 catalog. `model_name` selects a concrete configured chat model and takes precedence over `model_type`,
@@ -481,6 +481,36 @@ with `expects_reply`; a parent answers a question with its `reply_to` id. `progr
 child's concise status line. Existing lifecycle tools are `agent_list`, `agent_status`, `agent_wait`,
 `agent_result`, and `agent_cancel` (which cancels descendants by default). Agent records and their live
 introspection fields are emitted through snapshots and `background_agent_updated` SSE events.
+
+#### Tool agents
+
+Tools that invoke a model internally must register as background agents through
+`crate::agents::tool_agent::ToolAgentHandle`; otherwise the GUI sees only ordinary tool output.
+`review` implements this contract; the other model-invoking tools are deferred to a later iteration.
+
+Attach `ToolAgentHandle::extras` to the tool result's `extra` metadata:
+
+| Key | Value |
+|---|---|
+| `background_agent_id` | Registered agent id |
+| `background_agent_kind` | `tool` |
+| `background_agent_status` | `running`, `completed`, `failed`, or `cancelled` |
+| `child_chat_id` | Openable, writable trajectory chat id |
+| `parent_chat_id` | Chat owning the tool call |
+| `model` | Resolved model id |
+| `model_type` | Model slot, or `null` when not supplied |
+| `title` | Agent card title |
+
+`BackgroundAgentSummary.parent_tool_call_id` links the tool call to its live card before the result
+arrives. Emit progress and terminal state through the handle so snapshots and SSE stay current.
+
+- Execution is blocking by default (`wait: true`): return the report inline while the card stays live.
+  `review(wait: false)` returns a running agent immediately; completion is pushed to the parent.
+  Use `agent_wait` until terminal, then `agent_result` to collect the report.
+- Never hold `AMutex<AtCommandsContext>` across the model run: clone the required data out of `ccx`
+  and drop the guard before awaiting work, so parallel tool calls do not serialize on that mutex.
+- Cancellation is agent-local via the abort flag set by `app.agents.cancel`; propagate/check that flag
+  in model work. Cancelling one tool agent must not cancel its `join_all` siblings.
 
 ### CodeGraph tools
 

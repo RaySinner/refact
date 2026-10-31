@@ -57,6 +57,7 @@ pub trait GlobalContextCtx {
 impl GlobalContextCtx for GlobalContext {
     fn chat_ctx(&self, gcx: SharedGlobalContext) -> ChatCtx {
         ChatCtx {
+            knowledge_builder: Arc::new(crate::knowledge_index::EngineKnowledgeBuilder),
             task_storage_runtime: self.task_storage_runtime.clone(),
             runtime: RuntimeServices {
                 shutdown_flag: self.shutdown_flag.clone(),

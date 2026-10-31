@@ -287,6 +287,7 @@ pub trait ChatToolExecutor: Send + Sync {
 
 #[derive(Clone)]
 pub struct ChatCtx {
+    pub knowledge_builder: Arc<dyn crate::knowledge_index::KnowledgeBuilder>,
     pub task_storage_runtime: Arc<dyn crate::task_storage::TaskStorageRuntime>,
     pub runtime: RuntimeServices,
     pub paths: PathServices,

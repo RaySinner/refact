@@ -3235,7 +3235,7 @@ impl Tool for ToolDeadCode {
             false,
             match requested_path {
                 Some(requested_path) => {
-                    crate::privacy::load_privacy_if_needed(gcx.clone()).await;
+                    refact_runtime_api::privacy::load_privacy_if_needed(gcx.clone()).await;
                     tool_message_with_records(
                         &gcx,
                         tool_call_id,
@@ -3331,7 +3331,7 @@ impl Tool for ToolCodeHealth {
         let file_path = resolved_file.indexed_path;
         let coverage_path = resolved_file.read_path.clone();
         let gcx = ccx.lock().await.app.gcx.clone();
-        crate::privacy::load_privacy_if_needed(gcx.clone()).await;
+        refact_runtime_api::privacy::load_privacy_if_needed(gcx.clone()).await;
         let mut record_paths = vec![resolved_file.read_path.clone()];
         let text = crate::files_in_workspace::get_file_text_from_memory_or_disk(
             gcx.clone(),
@@ -4583,7 +4583,7 @@ impl Tool for ToolSecurityScan {
         let resolved_file = resolve_codegraph_file(ccx.clone(), &requested_file_path).await?;
         let file_path = resolved_file.indexed_path;
         let gcx = ccx.lock().await.app.gcx.clone();
-        crate::privacy::load_privacy_if_needed(gcx.clone()).await;
+        refact_runtime_api::privacy::load_privacy_if_needed(gcx.clone()).await;
         let record_path = resolved_file.read_path.clone();
         let text = crate::files_in_workspace::get_file_text_from_memory_or_disk(
             gcx.clone(),
@@ -4715,7 +4715,7 @@ impl Tool for ToolPrBlast {
             resolved_changed_files.push(resolve_codegraph_filter_path(ccx.clone(), path).await?);
         }
         let gcx = ccx.lock().await.app.gcx.clone();
-        crate::privacy::load_privacy_if_needed(gcx.clone()).await;
+        refact_runtime_api::privacy::load_privacy_if_needed(gcx.clone()).await;
         let service = gcx
             .codegraph
             .lock()
@@ -6517,8 +6517,8 @@ mod tests {
             .unwrap()
             .as_secs()
             + 60;
-        *gcx.privacy_settings.write().unwrap() = Arc::new(crate::privacy::PrivacySettings {
-            privacy_rules: crate::privacy::FilePrivacySettings {
+        *gcx.privacy_settings.write().unwrap() = Arc::new(refact_core::privacy_types::PrivacySettings {
+            privacy_rules: refact_core::privacy_types::FilePrivacySettings {
                 only_send_to_servers_I_control: Vec::new(),
                 blocked: Vec::new(),
             },

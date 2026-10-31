@@ -19,7 +19,7 @@ use crate::files_correction::{
     correct_to_nearest_dir_path, correct_to_nearest_filename, paths_from_anywhere,
 };
 use crate::files_in_workspace::{filter_privacy_allowed_files, ls_files_limited};
-use crate::knowledge_index::format_related_memories_section;
+use refact_core::knowledge_index::format_related_memories_section;
 use crate::tools::scope_utils::{
     format_scope_notices, is_worktree_root_alias, list_execution_scope_root_limited,
     list_scoped_files_under_dir_limited, resolve_existing_path_with_execution_scope,
@@ -310,7 +310,7 @@ mod privacy_and_bounds_tests {
     use super::*;
     use crate::at_commands::at_commands::AtCommandsContext;
     use crate::call_validation::{ChatContent, ContextEnum};
-    use crate::privacy::{FilePrivacySettings, PrivacySettings};
+    use refact_core::privacy_types::{FilePrivacySettings, PrivacySettings};
     use crate::worktrees::types::WorktreeMeta;
     use std::fs;
     use std::path::PathBuf;

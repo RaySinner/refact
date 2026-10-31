@@ -2,6 +2,7 @@ pub mod destination;
 pub mod derived;
 pub mod gate;
 pub mod heuristic;
+pub mod legacy;
 pub mod matching;
 pub mod policy;
 pub mod record;
@@ -12,6 +13,7 @@ pub mod testing;
 pub use destination::{Destination, DestinationId, DestinationKind};
 pub use derived::{new_derived_privacy_zones, DerivedPrivacyZones, DerivedZone};
 pub use gate::{clear, records_from_messages, Cleared, PrivacyAuditError, PrivacyAudited, Refusal};
+pub use legacy::{check_file_privacy, check_file_privacy_for_read_preparation};
 pub use matching::{compile_patterns, CompiledPolicy, PolicyError};
 pub use policy::{
     load_policy, merge_project, migrate_legacy, parse_policy_yaml, LegacyPrivacyPolicy, PolicyLoad,

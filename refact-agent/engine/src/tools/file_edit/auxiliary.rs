@@ -11,7 +11,8 @@ use crate::files_correction::{
 };
 use crate::files_in_workspace::get_file_text_from_memory_or_disk;
 use crate::global_context::GlobalContext;
-use crate::privacy::{check_file_privacy, FilePrivacyLevel, PrivacySettings};
+use refact_privacy::check_file_privacy;
+use refact_core::privacy_types::{FilePrivacyLevel, PrivacySettings};
 use crate::tasks::types::ScopeGuardMode;
 use crate::tools::ctx::ToolCtx;
 use crate::worktrees::scope::ExecutionScope;
@@ -836,7 +837,7 @@ mod tests {
         use crate::call_validation::{ChatContent, ContextEnum};
         use crate::chat::types::TaskMeta;
         use crate::global_context::GlobalContext;
-        use crate::privacy::{FilePrivacySettings, PrivacySettings};
+        use refact_core::privacy_types::{FilePrivacySettings, PrivacySettings};
         use crate::tasks::types::{BoardCard, ScopeGuardMode, TaskBoard};
         use crate::tools::file_edit::auxiliary::{check_scope_guard, fast_enqueue_for_edit};
         use crate::tools::file_edit::tool_apply_patch::tool_apply_patch_exec;

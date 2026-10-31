@@ -4366,6 +4366,7 @@ dependencies = [
  "indexmap 1.9.3",
  "libc",
  "refact-core",
+ "refact-tool-api",
  "serde",
  "serde_json",
  "strip-ansi-escapes",

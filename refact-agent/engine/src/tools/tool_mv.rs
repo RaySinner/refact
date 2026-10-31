@@ -19,8 +19,9 @@ use crate::tools::tools_description::{
     MatchConfirmDeny, MatchConfirmDenyResult, Tool, ToolDesc, ToolSource, ToolSourceType,
     json_schema_from_params,
 };
-use crate::integrations::integr_abstract::IntegrationConfirmation;
-use crate::privacy::{check_file_privacy, FilePrivacyLevel};
+use refact_tool_api::IntegrationConfirmation;
+use refact_privacy::check_file_privacy;
+use refact_core::privacy_types::FilePrivacyLevel;
 use crate::tools::file_edit::auxiliary::resolve_path_with_scope;
 
 pub struct ToolMv {
@@ -85,7 +86,7 @@ impl Tool for ToolMv {
             )
         };
 
-        let privacy_settings = crate::privacy::load_privacy_if_needed_for_policy(
+        let privacy_settings = refact_runtime_api::privacy::load_privacy_if_needed_for_policy(
             &tool.privacy_policy_load,
             &tool.workspace.privacy_settings,
             tool.paths.config_dir.as_path(),

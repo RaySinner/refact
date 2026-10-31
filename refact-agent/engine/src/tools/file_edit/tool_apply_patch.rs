@@ -4,8 +4,10 @@ use crate::call_validation::{ChatContent, ChatMessage, ContextEnum, DiffChunk};
 use crate::chat::ctx::ChatCtx;
 use crate::files_correction::check_if_its_inside_a_workspace_or_config_for_ctx;
 use crate::global_context::GlobalContext;
-use crate::integrations::integr_abstract::IntegrationConfirmation;
-use crate::privacy::{check_file_privacy, load_privacy_if_needed_for_policy, FilePrivacyLevel};
+use refact_tool_api::IntegrationConfirmation;
+use refact_privacy::check_file_privacy;
+use refact_runtime_api::privacy::load_privacy_if_needed_for_policy;
+use refact_core::privacy_types::FilePrivacyLevel;
 use crate::tools::ctx::ToolCtx;
 use crate::tools::file_edit::auxiliary::{
     check_scope_guard, convert_edit_to_diffchunks, fast_enqueue_for_edit_for_ctx,
@@ -27,7 +29,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::Mutex as AMutex;
-use crate::knowledge_index::format_related_memories_section;
+use refact_core::knowledge_index::format_related_memories_section;
 
 pub struct ToolApplyPatch {
     pub config_path: String,

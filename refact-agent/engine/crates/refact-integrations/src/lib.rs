@@ -2,6 +2,7 @@ pub mod browser_actions;
 pub mod browser_locators;
 pub mod browser_models;
 pub mod browser_types;
+pub mod integr_abstract;
 pub mod mcp;
 pub mod process_io_utils;
 pub mod sessions;

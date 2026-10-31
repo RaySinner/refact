@@ -272,7 +272,7 @@ mod tests {
     use crate::files_in_workspace::Document;
     use crate::llm::adapter::{AdapterSettings, LlmWireAdapter};
     use crate::llm::adapters::openai_chat::OpenAiChatAdapter;
-    use crate::privacy::{FilePrivacySettings, PrivacySettings};
+    use refact_core::privacy_types::{FilePrivacySettings, PrivacySettings};
     use crate::tools::tools_list::get_tools_for_mode;
 
     const CHAT_ID: &str = "set-plan-chat";

@@ -23,7 +23,7 @@ use crate::chat::ctx::ChatCtx;
 use crate::file_filter::KNOWLEDGE_FOLDER_NAME;
 use crate::files_correction::get_unscoped_project_dirs_for_ctx;
 use crate::knowledge_graph::kg_structs::KnowledgeFrontmatter;
-use crate::knowledge_index::KnowledgeCard;
+use refact_core::knowledge_index::KnowledgeCard;
 use crate::memories::{
     get_global_knowledge_dir_for_ctx, normalize_memory_tags,
     update_memory_document_frontmatter_for_ctx,

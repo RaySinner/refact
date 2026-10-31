@@ -11,7 +11,7 @@ use crate::tools::tools_description::{
     Tool, ToolDesc, ToolSource, ToolSourceType, json_schema_from_params,
 };
 use crate::memories::{memories_add_enriched, EnrichmentParams};
-use crate::knowledge_index::format_related_memories_section;
+use refact_core::knowledge_index::format_related_memories_section;
 use refact_core::string_utils::redact_sensitive;
 
 pub struct ToolCreateKnowledge {

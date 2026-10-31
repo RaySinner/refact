@@ -1,8 +1,8 @@
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum, DiffChunk};
 use crate::global_context::GlobalContext;
-use crate::integrations::integr_abstract::IntegrationConfirmation;
-use crate::privacy::load_privacy_if_needed;
+use refact_tool_api::IntegrationConfirmation;
+use refact_runtime_api::privacy::load_privacy_if_needed;
 use crate::tools::file_edit::auxiliary::{
     append_scope_warnings, check_scope_guard, convert_edit_to_diffchunks, edit_result_summary,
     fast_enqueue_for_edit, parse_path_for_update, parse_string_arg, scope_warnings_to_tool_message,
@@ -19,7 +19,7 @@ use std::path::PathBuf;
 use crate::worktrees::scope::ExecutionScope;
 use std::sync::Arc;
 use tokio::sync::Mutex as AMutex;
-use crate::knowledge_index::format_related_memories_section;
+use refact_core::knowledge_index::format_related_memories_section;
 
 pub struct ToolUpdateTextDocByLines {
     pub config_path: String,

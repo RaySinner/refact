@@ -982,7 +982,7 @@ mod worktree_scope_read_tools {
     use crate::at_commands::{AtFile, AtTree};
     use crate::at_commands::execute_at::AtCommandMember;
     use crate::call_validation::{ChatContent, ContextEnum};
-    use crate::privacy::{FilePrivacySettings, PrivacySettings};
+    use refact_core::privacy_types::{FilePrivacySettings, PrivacySettings};
     use crate::tools::tool_cat::ToolCat;
     use crate::tools::tool_tree::ToolTree;
     use crate::tools::tools_description::Tool;

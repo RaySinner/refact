@@ -25,7 +25,7 @@ use crate::files_in_workspace::{
     prepare_file_read_context,
 };
 use crate::scratchpads::multimodality::MultimodalElement;
-use crate::knowledge_index::format_related_memories_section;
+use refact_core::knowledge_index::format_related_memories_section;
 use crate::tools::scope_utils::{
     format_scope_notices, list_scoped_files_under_dir_limited_for_model_context,
     resolve_existing_path_with_execution_scope_for_model_context,
@@ -300,7 +300,7 @@ impl Tool for ToolCat {
             tool_call_id: tool_call_id.clone(),
             ..Default::default()
         };
-        crate::privacy::load_privacy_if_needed(gcx.clone()).await;
+        refact_runtime_api::privacy::load_privacy_if_needed(gcx.clone()).await;
         let records = crate::privacy::records::declared_file_records(
             &gcx,
             filenames_present.iter().map(PathBuf::from),
@@ -1005,7 +1005,7 @@ async fn paths_and_symbols_to_cat_with_path_ranges(
 mod tests {
     use super::*;
     use crate::app_state::AppState;
-    use crate::privacy::{FilePrivacySettings, PrivacySettings};
+    use refact_core::privacy_types::{FilePrivacySettings, PrivacySettings};
     use crate::tools::settings_guard::SettingsGuard;
     use serial_test::serial;
 

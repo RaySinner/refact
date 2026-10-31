@@ -27,7 +27,7 @@ use crate::tools::tools_description::{
     Tool, ToolDesc, ToolSource, ToolSourceType, json_schema_from_params,
 };
 use crate::call_validation::{ChatMessage, ChatContent, ContextEnum, ContextFile};
-use crate::knowledge_index::format_related_memories_section;
+use refact_core::knowledge_index::format_related_memories_section;
 use crate::tools::native_enrichment::{workspace_roots, NativeReferences};
 use crate::worktrees::scope::ExecutionScope;
 
@@ -585,7 +585,7 @@ impl Tool for ToolSearch {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::privacy::{FilePrivacySettings, PrivacySettings};
+    use refact_core::privacy_types::{FilePrivacySettings, PrivacySettings};
     use crate::worktrees::types::WorktreeMeta;
     use std::fs;
     use std::sync::atomic::AtomicBool;

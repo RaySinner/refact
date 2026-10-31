@@ -154,7 +154,7 @@ impl Tool for ToolDesignSystem {
         let workspace_root = std::fs::canonicalize(&workspace_root)
             .map_err(|error| format!("failed to resolve workspace root: {error}"))?;
         let scope = resolve_scope(&workspace_root, args.scope.as_deref())?;
-        crate::privacy::load_privacy_if_needed(gcx.clone()).await;
+        refact_runtime_api::privacy::load_privacy_if_needed(gcx.clone()).await;
         let paths = collect_scan_paths(&scope);
         let paths = crate::files_in_workspace::filter_privacy_allowed_files_for_model_context(
             gcx.clone(),

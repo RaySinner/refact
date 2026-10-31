@@ -13,7 +13,7 @@ use crate::exec::{ExecMode, ExecProcessFilter, ExecProcessSnapshot, ExecStatusKi
 use crate::files_correction::get_active_project_path_for_services;
 use crate::postprocessing::pp_command_output::OutputFilter;
 use crate::tools::file_edit::auxiliary::active_execution_scope;
-use crate::integrations::integr_abstract::IntegrationConfirmation;
+use refact_tool_api::IntegrationConfirmation;
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
 use crate::worktrees::scope::ExecutionScope;
 

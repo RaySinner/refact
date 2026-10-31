@@ -21,9 +21,8 @@ use crate::global_context::GlobalContextCtx;
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
 #[cfg(test)]
 use crate::global_context::GlobalContext;
-use crate::knowledge_index::{
-    build_knowledge_index_for_ctx, KnowledgeSearchFilters, KnowledgeSearchHit,
-};
+use refact_core::knowledge_index::{KnowledgeSearchFilters, KnowledgeSearchHit};
+use refact_runtime_api::knowledge_index::build_knowledge_index_for_ctx;
 use crate::postprocessing::pp_command_output::OutputFilter;
 use crate::chat::ctx::ChatCtx;
 use refact_runtime_api::task_storage::find_task_dir_for_ctx;

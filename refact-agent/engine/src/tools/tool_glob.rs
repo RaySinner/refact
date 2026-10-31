@@ -15,7 +15,8 @@ use crate::files_in_workspace::{
     check_file_privacy_for_read_preparation_with_context, prepare_file_read_context,
 };
 use crate::postprocessing::pp_command_output::OutputFilter;
-use crate::privacy::{check_file_privacy_for_read_preparation, load_privacy_if_needed};
+use refact_privacy::check_file_privacy_for_read_preparation;
+use refact_runtime_api::privacy::load_privacy_if_needed;
 use crate::tools::scope_utils::{
     format_scope_notices, resolve_scope_with_execution_scope_limited_for_model_context,
     validate_scope_files,
@@ -82,7 +83,7 @@ fn run_glob(
     pattern: &Pattern,
     files_in_scope: &[String],
     max_results: usize,
-    privacy_settings: Arc<crate::privacy::PrivacySettings>,
+    privacy_settings: Arc<refact_core::privacy_types::PrivacySettings>,
     abort_flag: &AtomicBool,
 ) -> Result<GlobOutcome, String> {
     let opts = glob_match_options();
@@ -255,7 +256,7 @@ impl Tool for ToolGlob {
             output_filter: Some(OutputFilter::no_limits()),
             ..Default::default()
         };
-        crate::privacy::load_privacy_if_needed(gcx.clone()).await;
+        refact_runtime_api::privacy::load_privacy_if_needed(gcx.clone()).await;
         let records = crate::privacy::records::declared_file_records(
             &gcx,
             outcome.matches.iter().map(PathBuf::from),
@@ -277,9 +278,9 @@ mod tests {
     use std::fs;
     use std::sync::atomic::AtomicBool;
 
-    fn permissive_privacy() -> Arc<crate::privacy::PrivacySettings> {
-        Arc::new(crate::privacy::PrivacySettings {
-            privacy_rules: crate::privacy::FilePrivacySettings {
+    fn permissive_privacy() -> Arc<refact_core::privacy_types::PrivacySettings> {
+        Arc::new(refact_core::privacy_types::PrivacySettings {
+            privacy_rules: refact_core::privacy_types::FilePrivacySettings {
                 only_send_to_servers_I_control: Vec::new(),
                 blocked: Vec::new(),
             },
@@ -351,8 +352,8 @@ mod tests {
 
     #[test]
     fn privacy_blocks_paths_from_output() {
-        let privacy = Arc::new(crate::privacy::PrivacySettings {
-            privacy_rules: crate::privacy::FilePrivacySettings {
+        let privacy = Arc::new(refact_core::privacy_types::PrivacySettings {
+            privacy_rules: refact_core::privacy_types::FilePrivacySettings {
                 only_send_to_servers_I_control: Vec::new(),
                 blocked: vec!["**/*.pem".to_string()],
             },

@@ -27,12 +27,14 @@ use crate::files_correction::{
     get_active_project_path, preprocess_path_for_normalization,
 };
 use crate::global_context::GlobalContext;
-use crate::integrations::integr_abstract::IntegrationConfirmation;
+use refact_tool_api::IntegrationConfirmation;
 use crate::postprocessing::pp_command_output::{
     output_mini_postprocessing, parse_output_filter_args, OutputFilter,
 };
 use crate::chat::ctx::ChatCtx;
-use crate::privacy::{check_file_privacy, load_privacy_if_needed_for_policy, FilePrivacyLevel};
+use refact_privacy::check_file_privacy;
+use refact_runtime_api::privacy::load_privacy_if_needed_for_policy;
+use refact_core::privacy_types::FilePrivacyLevel;
 use crate::tools::ctx::ToolCtx;
 use crate::tools::file_edit::auxiliary::{active_execution_scope, scoped_path_warnings};
 use crate::tools::shell_gate;
@@ -179,7 +181,7 @@ impl Tool for ToolProcessStart {
                 ccx_lock.derived_privacy_zones.clone(),
             )
         };
-        crate::privacy::load_privacy_if_needed_for_policy(
+        refact_runtime_api::privacy::load_privacy_if_needed_for_policy(
             &tool.privacy_policy_load,
             &tool.workspace.privacy_settings,
             tool.paths.config_dir.as_path(),
@@ -535,7 +537,7 @@ impl Tool for ToolProcessRead {
                 ccx_lock.derived_privacy_zones.clone(),
             )
         };
-        crate::privacy::load_privacy_if_needed_for_policy(
+        refact_runtime_api::privacy::load_privacy_if_needed_for_policy(
             &tool.privacy_policy_load,
             &tool.workspace.privacy_settings,
             tool.paths.config_dir.as_path(),
@@ -756,7 +758,7 @@ impl Tool for ToolProcessWait {
                 ccx_lock.derived_privacy_zones.clone(),
             )
         };
-        crate::privacy::load_privacy_if_needed_for_policy(
+        refact_runtime_api::privacy::load_privacy_if_needed_for_policy(
             &tool.privacy_policy_load,
             &tool.workspace.privacy_settings,
             tool.paths.config_dir.as_path(),

@@ -7,7 +7,7 @@ use crate::caps::resolve_chat_model;
 use crate::chat::perf_diagnostics::{self, PerfComponent, PerfOutcome};
 use crate::custom_error::YamlError;
 use crate::global_context::{try_load_caps_quickly_if_not_present, GlobalContext};
-use crate::integrations::integr_abstract::IntegrationTrait;
+use refact_runtime_api::integr_abstract::IntegrationTrait;
 use crate::integrations::running_integrations::load_integrations;
 use crate::yaml_configs::customization_registry::{
     get_project_registry, should_expose_subagent_as_config_tool,
@@ -187,7 +187,7 @@ pub fn provider_of_model(model_id: &str) -> &str {
 }
 
 pub async fn tool_access_policy(gcx: Arc<GlobalContext>) -> Arc<refact_privacy::PrivacyPolicy> {
-    crate::privacy::load_privacy_if_needed(gcx.clone()).await;
+    refact_runtime_api::privacy::load_privacy_if_needed(gcx.clone()).await;
     gcx.privacy_policy_load.read().unwrap().policy.clone()
 }
 
@@ -1050,7 +1050,7 @@ mod tests {
             serde_json::json!({})
         }
 
-        fn integr_common(&self) -> crate::integrations::integr_abstract::IntegrationCommon {
+        fn integr_common(&self) -> refact_integrations::integr_abstract::IntegrationCommon {
             Default::default()
         }
 

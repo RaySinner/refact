@@ -7,7 +7,7 @@ use tokio::sync::Mutex as AMutex;
 
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum, ContextFile};
-use crate::integrations::integr_abstract::IntegrationConfirmation;
+use refact_tool_api::IntegrationConfirmation;
 use crate::postprocessing::pp_command_output::OutputFilter;
 use crate::tools::tools_description::{
     json_schema_from_params, Tool, ToolDesc, ToolSource, ToolSourceType,

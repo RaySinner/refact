@@ -13,7 +13,7 @@ use crate::tools::tools_description::{
 use crate::call_validation::{ChatMessage, ChatContent, ContextEnum};
 use crate::memories::memories_search;
 use crate::knowledge_graph::build_knowledge_graph;
-use crate::knowledge_index::format_related_memories_section;
+use refact_core::knowledge_index::format_related_memories_section;
 use crate::postprocessing::pp_command_output::OutputFilter;
 use crate::tools::native_enrichment::{workspace_roots, NativeReferences};
 
@@ -213,7 +213,7 @@ impl Tool for ToolGetKnowledge {
                     output_filter: Some(OutputFilter::no_limits()),
                     ..Default::default()
                 };
-                crate::privacy::load_privacy_if_needed(gcx.clone()).await;
+                refact_runtime_api::privacy::load_privacy_if_needed(gcx.clone()).await;
                 let records = crate::privacy::records::declared_file_records(
                     &gcx,
                     unique_memories

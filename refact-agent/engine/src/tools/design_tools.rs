@@ -2008,9 +2008,9 @@ impl Tool for ToolVisualDiff {
 
     fn confirm_deny_rules(
         &self,
-    ) -> Option<crate::integrations::integr_abstract::IntegrationConfirmation> {
+    ) -> Option<refact_tool_api::IntegrationConfirmation> {
         Some(
-            crate::integrations::integr_abstract::IntegrationConfirmation {
+            refact_tool_api::IntegrationConfirmation {
                 ask_user: vec!["update_baseline".to_string()],
                 deny: Vec::new(),
             },

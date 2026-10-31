@@ -23,7 +23,7 @@ use crate::tools::tools_description::{
     Tool, ToolDesc, ToolSource, ToolSourceType, json_schema_from_params,
 };
 use crate::call_validation::{ChatMessage, ChatContent, ContextEnum, ContextFile};
-use crate::knowledge_index::{KnowledgeCard, KnowledgeIndex};
+use refact_core::knowledge_index::{KnowledgeCard, KnowledgeIndex};
 use crate::postprocessing::pp_command_output::OutputFilter;
 use crate::tools::native_enrichment::{workspace_roots, NativeReferences};
 use crate::worktrees::scope::ExecutionScope;
@@ -101,7 +101,7 @@ fn related_memory_entities(symbols_str: &str) -> Vec<String> {
 }
 
 async fn compute_related_memories(
-    index: &Arc<AMutex<crate::knowledge_index::KnowledgeIndex>>,
+    index: &Arc<AMutex<refact_core::knowledge_index::KnowledgeIndex>>,
     mut files: Vec<String>,
     symbols_str: &str,
     abort_flag: &Arc<AtomicBool>,
@@ -521,7 +521,7 @@ impl Tool for ToolAstDefinition {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::privacy::{FilePrivacySettings, PrivacySettings};
+    use refact_core::privacy_types::{FilePrivacySettings, PrivacySettings};
     use refact_core::worktree_meta::WorktreeMeta;
     use std::fs;
     use std::path::PathBuf;

@@ -1478,7 +1478,7 @@ The agent will call `agent_finish()` when done. Use `check_agents` to monitor pr
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::privacy::{FilePrivacySettings, PrivacySettings};
+    use refact_core::privacy_types::{FilePrivacySettings, PrivacySettings};
     use refact_runtime_api::task_storage as storage;
     use crate::tasks::types::{BoardCard, TaskBoard, TaskMeta, TaskStatus};
     use std::path::Path;

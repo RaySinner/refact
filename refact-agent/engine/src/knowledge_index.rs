@@ -15,6 +15,19 @@ pub use refact_core::knowledge_index::{
     format_related_memories_section, KnowledgeCard, KnowledgeIndex, KnowledgeSearchFilters,
     KnowledgeSearchHit,
 };
+pub use refact_runtime_api::knowledge_index::{build_knowledge_index_for_ctx, KnowledgeBuilder};
+
+pub struct EngineKnowledgeBuilder;
+
+#[async_trait::async_trait]
+impl KnowledgeBuilder for EngineKnowledgeBuilder {
+    async fn build_knowledge_index_for_ctx(
+        &self,
+        ctx: &crate::chat::ctx::ChatCtx,
+    ) -> KnowledgeIndex {
+        build_knowledge_index_for_ctx_impl(ctx).await
+    }
+}
 
 fn path_has_any_relative_component(path: &Path, root: &Path, components: &[&str]) -> bool {
     let relative = path.strip_prefix(root).unwrap_or(path);
@@ -407,7 +420,7 @@ async fn knowledge_dirs_for_index_for_ctx(ctx: &crate::chat::ctx::ChatCtx) -> Ve
     dirs.into_iter().filter(|dir| dir.exists()).collect()
 }
 
-pub async fn build_knowledge_index_for_ctx(ctx: &crate::chat::ctx::ChatCtx) -> KnowledgeIndex {
+async fn build_knowledge_index_for_ctx_impl(ctx: &crate::chat::ctx::ChatCtx) -> KnowledgeIndex {
     let mut index = KnowledgeIndex::empty();
 
     scan_knowledge_dirs(&mut index, knowledge_dirs_for_index_for_ctx(ctx).await).await;

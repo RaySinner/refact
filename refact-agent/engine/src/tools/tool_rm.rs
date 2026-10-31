@@ -15,13 +15,15 @@ use crate::files_correction::{
     get_unscoped_project_dirs, preprocess_path_for_normalization,
 };
 use crate::files_in_workspace::remove_memory_documents_under_path;
-use crate::privacy::{check_file_privacy, load_privacy_if_needed, FilePrivacyLevel};
+use refact_privacy::check_file_privacy;
+use refact_runtime_api::privacy::load_privacy_if_needed;
+use refact_core::privacy_types::FilePrivacyLevel;
 use crate::tools::file_edit::auxiliary::resolve_path_with_scope;
 use crate::tools::tools_description::{
     MatchConfirmDeny, MatchConfirmDenyResult, Tool, ToolDesc, ToolSource, ToolSourceType,
     json_schema_from_params,
 };
-use crate::integrations::integr_abstract::IntegrationConfirmation;
+use refact_tool_api::IntegrationConfirmation;
 
 pub struct ToolRm {
     pub config_path: String,

@@ -28,7 +28,7 @@ use crate::tools::scope_utils::{
 use crate::tools::tools_description::{
     Tool, ToolDesc, ToolSource, ToolSourceType, json_schema_from_params,
 };
-use crate::knowledge_index::format_related_memories_section;
+use refact_core::knowledge_index::format_related_memories_section;
 use crate::tools::native_enrichment::{workspace_roots, NativeReferences};
 
 pub struct ToolRegexSearch {
@@ -582,7 +582,7 @@ impl Tool for ToolRegexSearch {
             output_filter: Some(OutputFilter::no_limits()), // Already compressed internally
             ..Default::default()
         };
-        crate::privacy::load_privacy_if_needed(gcx.clone()).await;
+        refact_runtime_api::privacy::load_privacy_if_needed(gcx.clone()).await;
         let records = crate::privacy::records::declared_file_records(&gcx, scanned_paths)?;
         crate::privacy::records::merge_records(&mut tool_message, records);
         references.attach(&mut tool_message);
@@ -604,8 +604,8 @@ mod tests {
 
     async fn make_gcx() -> Arc<GlobalContext> {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        *gcx.privacy_settings.write().unwrap() = Arc::new(crate::privacy::PrivacySettings {
-            privacy_rules: crate::privacy::FilePrivacySettings {
+        *gcx.privacy_settings.write().unwrap() = Arc::new(refact_core::privacy_types::PrivacySettings {
+            privacy_rules: refact_core::privacy_types::FilePrivacySettings {
                 only_send_to_servers_I_control: Vec::new(),
                 blocked: Vec::new(),
             },

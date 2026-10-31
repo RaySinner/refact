@@ -29,11 +29,13 @@ use crate::files_correction::check_if_its_inside_a_workspace_or_config_for_ctx;
 use crate::files_correction::get_active_project_path;
 use crate::files_correction::preprocess_path_for_normalization;
 use crate::global_context::GlobalContext;
-use crate::integrations::integr_abstract::IntegrationConfirmation;
+use refact_tool_api::IntegrationConfirmation;
 use crate::postprocessing::pp_command_output::{
     output_mini_postprocessing, parse_output_filter_args, OutputFilter,
 };
-use crate::privacy::{check_file_privacy, load_privacy_if_needed_for_policy, FilePrivacyLevel};
+use refact_privacy::check_file_privacy;
+use refact_runtime_api::privacy::load_privacy_if_needed_for_policy;
+use refact_core::privacy_types::FilePrivacyLevel;
 use crate::tools::file_edit::auxiliary::{active_execution_scope, scoped_path_warnings};
 use crate::tools::shell_gate;
 use crate::tools::tools_description::{
@@ -106,7 +108,7 @@ impl Tool for ToolShell {
                 ccx_lock.derived_privacy_zones.clone(),
             )
         };
-        crate::privacy::load_privacy_if_needed_for_policy(
+        refact_runtime_api::privacy::load_privacy_if_needed_for_policy(
             &tool.privacy_policy_load,
             &tool.workspace.privacy_settings,
             tool.paths.config_dir.as_path(),

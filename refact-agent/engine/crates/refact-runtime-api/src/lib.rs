@@ -31,6 +31,9 @@ pub mod task_storage;
  pub mod verifier;
  pub mod wait_interrupt;
 
+pub use context_tools::vec_context_file_to_context_tools;
+pub use wait_interrupt::WaitInterrupt;
+
 pub use chat_ctx::{
     ChatCtx, ChatIntegrationScope, ChatToolExecutor, ChatWorkspace, ExecPolicyProvider, HookRunner,
     ProjectTreeProvider, PromptAssembler, SubchatLauncher, TrajectoryStore,

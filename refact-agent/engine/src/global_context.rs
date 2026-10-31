@@ -200,6 +200,7 @@ impl GlobalContextCtx for GlobalContext {
             tool_registry: Arc::new(AppToolRegistry::new(gcx.clone())),
             privacy_policy_load: self.privacy_policy_load.clone(),
             files: Arc::new(EngineFilesProvider::new(gcx.clone())),
+            at_command_executor: Arc::new(crate::at_commands::executor::EngineAtCommandExecutor),
             trajectories: Arc::new(EngineTrajectoryStore::new(gcx.clone())),
             subchat: Arc::new(EngineSubchatLauncher::new(gcx.clone())),
             mode_config: Arc::new(EngineModeConfigProvider::new(gcx.clone())),

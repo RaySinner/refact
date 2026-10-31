@@ -25,6 +25,8 @@ pub mod services;
 pub mod tool_ctx;
 pub mod app_state;
 pub mod at_commands_ctx;
+pub mod at_command_executor;
+pub mod at_tree;
 pub mod tool_trait;
 pub mod task_storage;
  pub mod context_tools;
@@ -53,6 +55,7 @@ pub use services::{
 };
 
 pub use app_state::AppState;
+pub use at_command_executor::AtCommandExecutor;
 pub use at_commands_ctx::{
     AtCommand, AtCommandMember, AtCommandsContext, AtParam, MAX_SUBCHAT_DEPTH,
 };

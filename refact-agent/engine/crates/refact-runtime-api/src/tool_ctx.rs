@@ -48,6 +48,7 @@ pub struct ToolCtx {
     pub tool_registry: Arc<dyn ToolRegistry>,
     pub privacy_policy_load: Arc<StdRwLock<PolicyLoad>>,
     pub files: Arc<dyn FilesProvider>,
+    pub at_command_executor: Arc<dyn crate::AtCommandExecutor>,
     pub trajectories: Arc<dyn TrajectoryStoreHandle>,
     pub subchat: Arc<dyn SubchatLauncherHandle>,
     pub mode_config: Arc<dyn ModeConfigProvider>,

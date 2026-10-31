@@ -979,8 +979,7 @@ pub fn validate_scope_files(files: Vec<String>, scope: &str) -> Result<Vec<Strin
 mod worktree_scope_read_tools {
     use super::*;
     use crate::at_commands::at_commands::{AtCommand, AtCommandsContext};
-    use crate::at_commands::at_file::AtFile;
-    use crate::at_commands::at_tree::AtTree;
+    use crate::at_commands::{AtFile, AtTree};
     use crate::at_commands::execute_at::AtCommandMember;
     use crate::call_validation::{ChatContent, ContextEnum};
     use crate::privacy::{FilePrivacySettings, PrivacySettings};

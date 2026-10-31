@@ -7,3 +7,9 @@ pub mod at_tree;
 pub mod at_web;
 pub mod at_web_search;
 pub mod execute_at;
+pub mod executor;
+
+#[cfg(test)]
+pub(crate) use at_file::AtFile;
+#[cfg(test)]
+pub(crate) use at_tree::AtTree;

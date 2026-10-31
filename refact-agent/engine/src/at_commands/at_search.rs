@@ -11,6 +11,8 @@ use crate::at_commands::execute_at::AtCommandMember;
 use crate::call_validation::{ContextEnum, ContextFile};
 use crate::vecdb;
 
+pub use refact_runtime_api::at_command_executor::execute_at_search;
+
 pub fn text_on_clip(query: &String, from_tool_call: bool) -> String {
     if !from_tool_call {
         return query.clone();
@@ -83,7 +85,7 @@ pub fn hits_to_context_files(hits: Vec<refact_codegraph::CodeHit>) -> Vec<Contex
         .collect()
 }
 
-pub async fn execute_at_search(
+pub(super) async fn execute_at_search_impl(
     ccx: Arc<AMutex<AtCommandsContext>>,
     query: &String,
     vecdb_scope_filter_mb: Option<String>,

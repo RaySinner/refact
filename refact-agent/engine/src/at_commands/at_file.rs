@@ -20,6 +20,10 @@ use crate::tools::scope_utils::{
 use crate::tools::ctx::ToolCtx;
 use crate::worktrees::scope::ExecutionScope;
 
+pub use refact_runtime_api::at_command_executor::{
+    file_repair_candidates, return_one_candidate_or_a_good_error,
+};
+
 pub async fn resolve_file_path_directly(
     tool: &ToolCtx,
     path_with_colon: &str,
@@ -187,7 +191,7 @@ fn put_colon_back_to_arg(value: &mut String, colon: &Option<ColonLinesRange>) {
     }
 }
 
-pub async fn file_repair_candidates(
+pub(super) async fn file_repair_candidates_impl(
     tool: &ToolCtx,
     value: &String,
     top_n: usize,
@@ -211,7 +215,7 @@ pub async fn file_repair_candidates(
         .collect()
 }
 
-pub async fn return_one_candidate_or_a_good_error(
+pub(super) async fn return_one_candidate_or_a_good_error_impl(
     tool: &ToolCtx,
     file_path: &String,
     candidates: &Vec<String>,

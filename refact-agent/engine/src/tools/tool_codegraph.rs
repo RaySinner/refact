@@ -13,7 +13,9 @@ use sha2::{Digest, Sha256};
 use tokio::sync::Mutex as AMutex;
 
 use crate::at_commands::at_commands::AtCommandsContext;
-use crate::at_commands::at_file::{file_repair_candidates, return_one_candidate_or_a_good_error};
+use refact_runtime_api::at_command_executor::{
+    file_repair_candidates, return_one_candidate_or_a_good_error,
+};
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
 use crate::codegraph::code_intel_api::*;
 use crate::files_correction::{

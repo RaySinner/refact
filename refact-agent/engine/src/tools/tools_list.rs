@@ -319,11 +319,9 @@ async fn tool_available_from_gcx(
     }
 }
 
-impl ToolGroup {
-    pub async fn retain_available_tools(&mut self, gcx: Arc<GlobalContext>) {
-        let tool_available = tool_available_from_gcx(gcx.clone()).await;
-        self.tools.retain(|tool| tool_available(tool));
-    }
+pub async fn retain_available_tools(tool_group: &mut ToolGroup, gcx: Arc<GlobalContext>) {
+    let tool_available = tool_available_from_gcx(gcx.clone()).await;
+    tool_group.tools.retain(|tool| tool_available(tool));
 }
 
 pub(crate) fn builtin_system_tools(config_path: String) -> Vec<Box<dyn Tool + Send>> {
@@ -852,7 +850,7 @@ async fn get_builtin_tools(gcx: Arc<GlobalContext>) -> Vec<ToolGroup> {
     ];
 
     for tool_group in tool_groups.iter_mut() {
-        tool_group.retain_available_tools(gcx.clone()).await;
+        retain_available_tools(tool_group, gcx.clone()).await;
     }
 
     tool_groups
@@ -906,7 +904,7 @@ pub async fn get_integration_tools(gcx: Arc<GlobalContext>) -> Vec<ToolGroup> {
     tool_groups.extend(sorted_mcp.into_iter().map(|(_, group)| group));
 
     for tool_group in tool_groups.iter_mut() {
-        tool_group.retain_available_tools(gcx.clone()).await;
+        retain_available_tools(tool_group, gcx.clone()).await;
     }
 
     span.finish_tool(PerfOutcome::Success, 1, tool_groups.len() as u64, None);

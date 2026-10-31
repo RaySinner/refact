@@ -2637,7 +2637,7 @@ mod tests {
         )
         .await;
         let ccx = Arc::new(AMutex::new(
-            AtCommandsContext::new_from_app(
+            crate::at_commands::at_commands::at_commands_new_from_app(
                 app,
                 4096,
                 10,

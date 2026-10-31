@@ -581,7 +581,7 @@ pub async fn run_goal_verifier(
     };
     let tokenizer_arc = crate::tokens::cached_tokenizer(gcx.clone(), &model_rec.base).await?;
     let t = HasTokenizerAndEot::new(tokenizer_arc);
-    let ccx = AtCommandsContext::new_from_app(
+    let ccx = crate::at_commands::at_commands::at_commands_new_from_app(
         app.clone(),
         effective_n_ctx,
         CHAT_TOP_N,

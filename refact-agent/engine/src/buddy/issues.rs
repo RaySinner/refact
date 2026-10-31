@@ -333,7 +333,7 @@ pub async fn investigation_logs(
     collected_at: Option<&str>,
 ) -> Result<String, String> {
     let ccx = Arc::new(AMutex::new(
-        AtCommandsContext::new_from_app(
+        crate::at_commands::at_commands::at_commands_new_from_app(
             app.clone(),
             4000,
             20,
@@ -380,7 +380,7 @@ pub async fn investigation_logs(
 
 pub async fn investigation_internal_context(app: AppState) -> Result<String, String> {
     let ccx = Arc::new(AMutex::new(
-        AtCommandsContext::new_from_app(
+        crate::at_commands::at_commands::at_commands_new_from_app(
             app.clone(),
             4000,
             20,
@@ -468,7 +468,7 @@ pub async fn create_issue_via_mcp(
         &recent_errors,
     )?;
 
-    let mut ccx_inner = AtCommandsContext::new_from_app(
+    let mut ccx_inner = crate::at_commands::at_commands::at_commands_new_from_app(
         app.clone(),
         4000,
         20,

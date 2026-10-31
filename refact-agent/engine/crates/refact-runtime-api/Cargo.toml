@@ -27,7 +27,9 @@ refact-stats = { path = "../refact-stats" }
 refact-integrations = { path = "../refact-integrations" }
 refact-browser = { path = "../refact-browser" }
 refact-yaml-configs = { path = "../refact-yaml-configs" }
+refact-worktrees = { path = "../refact-worktrees" }
 async-trait = "0.1.73"
+indexmap.workspace = true
 axum = { version = "0.6.20", features = ["default", "http2"] }
 reqwest.workspace = true
 serde.workspace = true

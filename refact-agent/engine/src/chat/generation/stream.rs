@@ -1103,7 +1103,7 @@ pub async fn run_llm_generation(
         }
     }
 
-    let ccx = AtCommandsContext::new_from_app(
+    let ccx = crate::at_commands::at_commands::at_commands_new_from_app(
         app.clone(),
         effective_n_ctx,
         CHAT_TOP_N,

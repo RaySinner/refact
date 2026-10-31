@@ -1110,7 +1110,7 @@ mod tests {
         let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         let ctx = app.chat_ctx();
         let model_id = "test/frozen-model";
-        let ccx = AtCommandsContext::new_from_app(
+        let ccx = crate::at_commands::at_commands::at_commands_new_from_app(
             app,
             8192,
             1,
@@ -1779,7 +1779,7 @@ mod tests {
         };
         assert!(!thread_default.strip_reasoning_from_prompt_effective());
 
-        let ccx = AtCommandsContext::new_from_app(
+        let ccx = crate::at_commands::at_commands::at_commands_new_from_app(
             app.clone(),
             8192,
             1,
@@ -1833,7 +1833,7 @@ mod tests {
         };
         assert!(thread_true.strip_reasoning_from_prompt_effective());
 
-        let ccx_true = AtCommandsContext::new_from_app(
+        let ccx_true = crate::at_commands::at_commands::at_commands_new_from_app(
             app.clone(),
             8192,
             1,
@@ -1953,7 +1953,7 @@ mod tests {
             ..Default::default()
         };
 
-        let ccx = AtCommandsContext::new_from_app(
+        let ccx = crate::at_commands::at_commands::at_commands_new_from_app(
             app.clone(),
             8192,
             1,

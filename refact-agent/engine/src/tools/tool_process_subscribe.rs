@@ -777,7 +777,7 @@ mod tests {
             .write()
             .await
             .insert(chat_id.to_string(), session.clone());
-        let ccx = AtCommandsContext::new_with_abort(
+        let ccx = crate::at_commands::at_commands::at_commands_new_with_abort(
             crate::app_state::app_state_from_gcx(gcx.clone()).await,
             4096,
             20,

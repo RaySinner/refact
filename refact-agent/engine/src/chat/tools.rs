@@ -156,7 +156,7 @@ async fn build_tool_execution_context(
     let messages = refact_core::active_context::active_context(messages)
         .map_err(|error| error.to_string())?
         .messages;
-    let ccx = AtCommandsContext::new_with_abort(
+    let ccx = crate::at_commands::at_commands::at_commands_new_with_abort(
         app.clone(),
         n_ctx,
         CHAT_TOP_N,
@@ -2628,7 +2628,7 @@ async fn check_tools_confirmation_with_pool(
     let mut denials = Vec::new();
 
     let ccx = Arc::new(AMutex::new(
-        AtCommandsContext::new_from_app(
+        crate::at_commands::at_commands::at_commands_new_from_app(
             app.clone(),
             1000,
             1,
@@ -4084,7 +4084,7 @@ mod interruptible_wait_tests {
                 .await
                 .insert("live-wait".into(), session.clone());
             let ccx = Arc::new(AMutex::new(
-                AtCommandsContext::new_from_app(
+                crate::at_commands::at_commands::at_commands_new_from_app(
                     app.clone(),
                     4096,
                     20,

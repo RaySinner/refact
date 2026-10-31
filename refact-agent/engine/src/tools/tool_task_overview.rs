@@ -836,7 +836,7 @@ mod tests {
     ) -> Arc<AMutex<AtCommandsContext>> {
         let app = crate::app_state::app_state_from_gcx(gcx).await;
         Arc::new(AMutex::new(
-            AtCommandsContext::new_from_app(
+            crate::at_commands::at_commands::at_commands_new_from_app(
                 app,
                 n_ctx,
                 20,

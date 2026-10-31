@@ -295,28 +295,7 @@ pub async fn execute_at_commands_in_query(
     (context_enums, highlight_members)
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct AtCommandMember {
-    pub kind: String,
-    pub text: String,
-    pub pos1: usize,
-    pub pos2: usize,
-    pub ok: bool,
-    pub reason: Option<String>,
-}
-
-impl AtCommandMember {
-    pub fn new(kind: String, text: String, pos1: usize, pos2: usize) -> Self {
-        Self {
-            kind,
-            text,
-            pos1,
-            pos2,
-            ok: true,
-            reason: None,
-        }
-    }
-}
+pub use refact_runtime_api::AtCommandMember;
 
 pub fn parse_words_from_line(line: &String) -> Vec<(String, usize, usize)> {
     fn trim_punctuation(s: &str) -> &str {

@@ -1,10 +1,9 @@
 use indexmap::IndexMap;
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64};
+use std::sync::atomic::AtomicBool;
 use tokio::sync::mpsc;
 
-use async_trait::async_trait;
 use tokio::sync::Mutex as AMutex;
 
 use crate::call_validation::{
@@ -12,7 +11,6 @@ use crate::call_validation::{
 };
 use crate::app_state::AppState;
 use crate::chat::types::TaskMeta;
-use crate::tools::ctx::ToolCtx;
 use crate::worktrees::scope::ExecutionScope;
 use crate::worktrees::types::WorktreeMeta;
 
@@ -20,205 +18,121 @@ use crate::at_commands::at_file::AtFile;
 use crate::at_commands::at_ast_definition::AtAstDefinition;
 use crate::at_commands::at_tree::AtTree;
 use crate::at_commands::at_web::AtWeb;
-use crate::at_commands::execute_at::AtCommandMember;
 
-pub const MAX_SUBCHAT_DEPTH: usize = 5;
+pub use refact_runtime_api::{AtCommand, AtCommandsContext, AtParam, MAX_SUBCHAT_DEPTH};
 
-pub struct AtCommandsContext {
-    pub app: AppState,
-    pub tool: ToolCtx,
-    pub n_ctx: usize,
-    pub top_n: usize,
-    pub tokens_for_rag: usize,
-    pub messages: Vec<ChatMessage>,
-    #[allow(dead_code)]
-    pub is_preview: bool,
-    pub pp_skeleton: bool,
-    #[allow(dead_code)]
-    pub correction_only_up_to_step: usize,
-    pub chat_id: String,
-    pub root_chat_id: String,
-    pub current_model: String,
-    pub task_meta: Option<TaskMeta>,
-    pub execution_scope: Option<ExecutionScope>,
-    pub derived_privacy_zones: crate::privacy::records::DerivedPrivacyZones,
-    pub subchat_depth: usize,
-    pub tool_access_bypass: bool,
-    pub background_agent_id: Option<String>,
-
-    pub at_commands: HashMap<String, Arc<dyn AtCommand + Send>>,
-    pub subchat_tool_parameters: IndexMap<String, SubchatParameters>,
-    pub postprocess_parameters: PostprocessSettings,
-
-    pub subchat_tx: Arc<AMutex<mpsc::UnboundedSender<serde_json::Value>>>,
-    pub subchat_rx: Arc<AMutex<mpsc::UnboundedReceiver<serde_json::Value>>>,
-    pub abort_flag: Arc<AtomicBool>,
-    pub activity_stamp: Option<Arc<AtomicU64>>,
+pub async fn at_commands_new_from_app(
+    app: AppState,
+    n_ctx: usize,
+    top_n: usize,
+    is_preview: bool,
+    messages: Vec<ChatMessage>,
+    chat_id: String,
+    root_chat_id: Option<String>,
+    current_model: String,
+    task_meta: Option<TaskMeta>,
+    worktree: Option<WorktreeMeta>,
+) -> AtCommandsContext {
+    at_commands_new_with_abort(
+        app,
+        n_ctx,
+        top_n,
+        is_preview,
+        messages,
+        chat_id,
+        root_chat_id,
+        current_model,
+        task_meta,
+        worktree,
+        None,
+    )
+    .await
 }
 
-impl AtCommandsContext {
-    pub async fn new_from_app(
-        app: AppState,
-        n_ctx: usize,
-        top_n: usize,
-        is_preview: bool,
-        messages: Vec<ChatMessage>,
-        chat_id: String,
-        root_chat_id: Option<String>,
-        current_model: String,
-        task_meta: Option<TaskMeta>,
-        worktree: Option<WorktreeMeta>,
-    ) -> Self {
-        Self::new_with_abort(
-            app,
-            n_ctx,
-            top_n,
-            is_preview,
-            messages,
-            chat_id,
-            root_chat_id,
-            current_model,
-            task_meta,
-            worktree,
-            None,
-        )
-        .await
-    }
+pub async fn at_commands_new_with_abort(
+    app: AppState,
+    n_ctx: usize,
+    top_n: usize,
+    is_preview: bool,
+    messages: Vec<ChatMessage>,
+    chat_id: String,
+    root_chat_id: Option<String>,
+    current_model: String,
+    task_meta: Option<TaskMeta>,
+    worktree: Option<WorktreeMeta>,
+    abort_flag: Option<Arc<AtomicBool>>,
+) -> AtCommandsContext {
+    let execution_scope = worktree.map(|worktree| ExecutionScope::from_worktree(&worktree));
+    at_commands_new_with_abort_and_execution_scope(
+        app,
+        n_ctx,
+        top_n,
+        is_preview,
+        messages,
+        chat_id,
+        root_chat_id,
+        current_model,
+        task_meta,
+        execution_scope,
+        abort_flag,
+    )
+    .await
+}
 
-    pub async fn new_with_abort(
-        app: AppState,
-        n_ctx: usize,
-        top_n: usize,
-        is_preview: bool,
-        messages: Vec<ChatMessage>,
-        chat_id: String,
-        root_chat_id: Option<String>,
-        current_model: String,
-        task_meta: Option<TaskMeta>,
-        worktree: Option<WorktreeMeta>,
-        abort_flag: Option<Arc<AtomicBool>>,
-    ) -> Self {
-        let execution_scope = worktree.map(|worktree| ExecutionScope::from_worktree(&worktree));
-        Self::new_with_abort_and_execution_scope(
-            app,
-            n_ctx,
-            top_n,
-            is_preview,
-            messages,
-            chat_id,
-            root_chat_id,
-            current_model,
-            task_meta,
-            execution_scope,
-            abort_flag,
-        )
-        .await
-    }
-
-    pub async fn new_with_abort_and_execution_scope(
-        app: AppState,
-        n_ctx: usize,
-        top_n: usize,
-        is_preview: bool,
-        messages: Vec<ChatMessage>,
-        chat_id: String,
-        root_chat_id: Option<String>,
-        current_model: String,
-        task_meta: Option<TaskMeta>,
-        execution_scope: Option<ExecutionScope>,
-        abort_flag: Option<Arc<AtomicBool>>,
-    ) -> Self {
-        let (tx, rx) = mpsc::unbounded_channel::<serde_json::Value>();
-        let effective_root = root_chat_id.unwrap_or_else(|| chat_id.clone());
-        let session = app.chat.sessions.read().await.get(&chat_id).cloned();
-        let derived_privacy_zones = match session {
-            Some(session) => {
-                let session = session.lock().await;
-                session.derived_privacy_zones.clone()
-            }
-            None => crate::privacy::records::new_derived_privacy_zones(),
-        };
-        let background_agent_id = if !chat_id.starts_with("subchat-") {
-            None
-        } else {
-            app.agents.find_agent_id_by_child_chat_id(&chat_id).await
-        };
-        AtCommandsContext {
-            app: app.clone(),
-            tool: app.tool.clone(),
-            n_ctx,
-            top_n,
-            tokens_for_rag: (n_ctx / 4).max(64).min(n_ctx),
-            messages,
-            is_preview,
-            pp_skeleton: true,
-            correction_only_up_to_step: 0,
-            chat_id,
-            root_chat_id: effective_root,
-            current_model,
-            task_meta,
-            execution_scope,
-            derived_privacy_zones,
-            subchat_depth: 0,
-            tool_access_bypass: false,
-            background_agent_id,
-            at_commands: at_commands_dict(app).await,
-            subchat_tool_parameters: IndexMap::new(),
-            postprocess_parameters: PostprocessSettings::new(),
-            subchat_tx: Arc::new(AMutex::new(tx)),
-            subchat_rx: Arc::new(AMutex::new(rx)),
-            abort_flag: abort_flag.unwrap_or_else(|| Arc::new(AtomicBool::new(false))),
-            activity_stamp: None,
+pub async fn at_commands_new_with_abort_and_execution_scope(
+    app: AppState,
+    n_ctx: usize,
+    top_n: usize,
+    is_preview: bool,
+    messages: Vec<ChatMessage>,
+    chat_id: String,
+    root_chat_id: Option<String>,
+    current_model: String,
+    task_meta: Option<TaskMeta>,
+    execution_scope: Option<ExecutionScope>,
+    abort_flag: Option<Arc<AtomicBool>>,
+) -> AtCommandsContext {
+    let (tx, rx) = mpsc::unbounded_channel::<serde_json::Value>();
+    let effective_root = root_chat_id.unwrap_or_else(|| chat_id.clone());
+    let session = app.chat.sessions.read().await.get(&chat_id).cloned();
+    let derived_privacy_zones = match session {
+        Some(session) => {
+            let session = session.lock().await;
+            session.derived_privacy_zones.clone()
         }
-    }
-
-    #[cfg(test)]
-    pub fn execution_scope_root(&self) -> Option<std::path::PathBuf> {
-        self.execution_scope
-            .as_ref()
-            .map(|scope| scope.effective_root().to_path_buf())
-    }
-
-    #[cfg(test)]
-    pub fn effective_project_dirs(&self) -> Vec<std::path::PathBuf> {
-        self.execution_scope
-            .as_ref()
-            .map(|scope| scope.effective_project_dirs())
-            .unwrap_or_default()
-    }
-
-    pub fn execution_scope_worktree(&self) -> Option<WorktreeMeta> {
-        self.execution_scope
-            .as_ref()
-            .map(|scope| scope.worktree().clone())
-    }
-}
-
-#[async_trait]
-pub trait AtCommand: Send + Sync {
-    fn params(&self) -> &Vec<Box<dyn AtParam>>;
-    // returns (messages_for_postprocessing, text_on_clip)
-    async fn at_execute(
-        &self,
-        ccx: Arc<AMutex<AtCommandsContext>>,
-        cmd: &mut AtCommandMember,
-        args: &mut Vec<AtCommandMember>,
-    ) -> Result<(Vec<ContextEnum>, String), String>;
-    fn depends_on(&self) -> Vec<String> {
-        vec![]
-    } // "ast", "vecdb"
-}
-
-#[async_trait]
-pub trait AtParam: Send + Sync {
-    async fn is_value_valid(&self, ccx: Arc<AMutex<AtCommandsContext>>, value: &String) -> bool;
-    async fn param_completion(
-        &self,
-        ccx: Arc<AMutex<AtCommandsContext>>,
-        value: &String,
-    ) -> Vec<String>;
-    fn param_completion_valid(&self) -> bool {
-        false
+        None => crate::privacy::records::new_derived_privacy_zones(),
+    };
+    let background_agent_id = if !chat_id.starts_with("subchat-") {
+        None
+    } else {
+        app.agents.find_agent_id_by_child_chat_id(&chat_id).await
+    };
+    AtCommandsContext {
+        app: app.clone(),
+        tool: app.tool.clone(),
+        n_ctx,
+        top_n,
+        tokens_for_rag: (n_ctx / 4).max(64).min(n_ctx),
+        messages,
+        is_preview,
+        pp_skeleton: true,
+        correction_only_up_to_step: 0,
+        chat_id,
+        root_chat_id: effective_root,
+        current_model,
+        task_meta,
+        execution_scope,
+        derived_privacy_zones,
+        subchat_depth: 0,
+        tool_access_bypass: false,
+        background_agent_id,
+        at_commands: at_commands_dict(app).await,
+        subchat_tool_parameters: IndexMap::new(),
+        postprocess_parameters: PostprocessSettings::new(),
+        subchat_tx: Arc::new(AMutex::new(tx)),
+        subchat_rx: Arc::new(AMutex::new(rx)),
+        abort_flag: abort_flag.unwrap_or_else(|| Arc::new(AtomicBool::new(false))),
+        activity_stamp: None,
     }
 }
 
@@ -327,7 +241,7 @@ mod tests {
     async fn subchat_worktree_at_commands_context_has_execution_scope() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
         let (_temp, worktree) = sample_worktree();
-        let ccx = AtCommandsContext::new_from_app(
+        let ccx = at_commands_new_from_app(
             crate::app_state::app_state_from_gcx(gcx).await,
             4096,
             20,

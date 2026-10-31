@@ -17,7 +17,7 @@ mod tests {
             *gcx.documents_state.workspace_folders.lock().unwrap() = vec![std::env::temp_dir()];
         }
         let ccx = Arc::new(AMutex::new(
-            AtCommandsContext::new_from_app(
+            crate::at_commands::at_commands::at_commands_new_from_app(
                 crate::app_state::app_state_from_gcx(gcx.clone()).await,
                 1000,
                 1,

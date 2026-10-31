@@ -1026,7 +1026,7 @@ mod tests {
             loaded_ts: u64::MAX / 2,
         });
         Arc::new(AMutex::new(
-            AtCommandsContext::new_from_app(
+            crate::at_commands::at_commands::at_commands_new_from_app(
                 crate::app_state::app_state_from_gcx(gcx).await,
                 4096,
                 20,

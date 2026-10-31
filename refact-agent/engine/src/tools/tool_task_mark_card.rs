@@ -329,7 +329,7 @@ mod tests {
         task_meta: Option<ThreadTaskMeta>,
     ) -> Arc<AMutex<AtCommandsContext>> {
         Arc::new(AMutex::new(
-            AtCommandsContext::new_from_app(
+            crate::at_commands::at_commands::at_commands_new_from_app(
                 crate::app_state::app_state_from_gcx(gcx).await,
                 4096,
                 20,

@@ -11,6 +11,7 @@ use headless_chrome::protocol::cdp::{Page, Runtime};
 use refact_core::image_policy::ImagePolicy;
 use refact_lsp::call_validation::ChatContent;
 use refact_lsp::chat::browser_context::maybe_insert_browser_context;
+use refact_lsp::global_context::GlobalContextCtx;
 use refact_lsp::integrations::browser_controller::execute_steps as execute_fixture_steps_with_policy;
 use refact_lsp::integrations::browser_controller::execute_steps as execute_steps_with_policy;
 use refact_lsp::integrations::browser_controller::execute_request_with_runtime;
@@ -804,7 +805,7 @@ async fn navigated_fixture_context_contains_screenshot_image() {
         command_line,
     )
     .await;
-    let app = refact_lsp::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = refact_lsp::app_state::app_state_from_gcx(gcx.clone()).await;
     case.runtime.reattach(CHAT_ID);
     refact_lsp::integrations::browser_runtime::register_browser_runtime(app, case.runtime).await;
 
@@ -909,7 +910,7 @@ async fn dead_cdp_transport_is_relaunched_and_the_batch_is_retried_once() {
         command_line,
     )
     .await;
-    let app = refact_lsp::app_state::AppState::from_gcx(gcx.clone()).await;
+    let app = refact_lsp::app_state::app_state_from_gcx(gcx.clone()).await;
     case.runtime.reattach(CHAT_ID);
     let dead_runtime_id = refact_lsp::integrations::browser_runtime::register_browser_runtime(
         app.clone(),
@@ -7203,13 +7204,13 @@ async fn design_tool_context(case: BrowserCase, chat_id: &str) -> DesignToolCase
         command_line,
     )
     .await;
-    let app = refact_lsp::app_state::AppState::from_gcx(gcx).await;
+    let app = refact_lsp::app_state::app_state_from_gcx(gcx).await;
     case.runtime.reattach(chat_id);
     refact_lsp::integrations::browser_runtime::register_browser_runtime(app.clone(), case.runtime)
         .await;
     DesignToolCase {
         ccx: Arc::new(tokio::sync::Mutex::new(
-            refact_lsp::at_commands::at_commands::AtCommandsContext::new_from_app(
+            refact_lsp::at_commands::at_commands::at_commands_new_from_app(
                 app,
                 4096,
                 10,

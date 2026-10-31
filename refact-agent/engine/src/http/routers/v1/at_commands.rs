@@ -244,7 +244,7 @@ pub async fn handle_v1_command_completion(
 
     let fake_n_ctx = 4096;
     let ccx: Arc<AMutex<AtCommandsContext>> = Arc::new(AMutex::new(
-        AtCommandsContext::new_from_app(
+        crate::at_commands::at_commands::at_commands_new_from_app(
             app.clone(),
             fake_n_ctx,
             top_n,
@@ -393,7 +393,7 @@ pub async fn handle_v1_command_preview(
         };
 
     let ccx = Arc::new(AMutex::new(
-        AtCommandsContext::new_from_app(
+        crate::at_commands::at_commands::at_commands_new_from_app(
             app.clone(),
             model_rec.base.n_ctx,
             crate::constants::CHAT_TOP_N,
@@ -523,7 +523,7 @@ pub async fn handle_v1_at_command_execute(
 
     let effective_n_ctx = post.n_ctx.min(model_rec.base.n_ctx).max(1);
 
-    let mut ccx = AtCommandsContext::new_from_app(
+    let mut ccx = crate::at_commands::at_commands::at_commands_new_from_app(
         app.clone(),
         effective_n_ctx,
         crate::constants::CHAT_TOP_N,

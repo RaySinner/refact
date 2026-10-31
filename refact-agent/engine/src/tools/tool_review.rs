@@ -1814,7 +1814,7 @@ mod tests {
             ];
         }
         let ccx = Arc::new(AMutex::new(
-            AtCommandsContext::new_from_app(
+            crate::at_commands::at_commands::at_commands_new_from_app(
                 app.clone(),
                 4096,
                 20,

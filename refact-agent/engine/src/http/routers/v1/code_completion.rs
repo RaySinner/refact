@@ -120,7 +120,7 @@ pub async fn handle_v1_code_completion(
     .await
     .map_err(|e| ScratchError::new(StatusCode::BAD_REQUEST, e))?;
     let ccx = Arc::new(AMutex::new(
-        AtCommandsContext::new_from_app(
+        crate::at_commands::at_commands::at_commands_new_from_app(
             app,
             model_rec.base.n_ctx,
             CODE_COMPLETION_TOP_N,
@@ -194,7 +194,7 @@ pub async fn handle_v1_code_completion_prompt(
     .map_err(|e| ScratchError::new(StatusCode::BAD_REQUEST, e))?;
 
     let ccx = Arc::new(AMutex::new(
-        AtCommandsContext::new_from_app(
+        crate::at_commands::at_commands::at_commands_new_from_app(
             app,
             model_rec.base.n_ctx,
             CODE_COMPLETION_TOP_N,

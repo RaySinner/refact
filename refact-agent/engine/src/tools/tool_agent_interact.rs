@@ -724,7 +724,7 @@ mod tests {
         let gcx = crate::global_context::tests::make_test_gcx().await;
         let app = crate::app_state::app_state_from_gcx(gcx).await;
         let ccx = Arc::new(AMutex::new(
-            AtCommandsContext::new_from_app(
+            crate::at_commands::at_commands::at_commands_new_from_app(
                 app.clone(),
                 4096,
                 20,
@@ -817,7 +817,7 @@ mod tests {
             .await
             .unwrap();
         let child_ccx = Arc::new(AMutex::new(
-            AtCommandsContext::new_from_app(
+            crate::at_commands::at_commands::at_commands_new_from_app(
                 app.clone(),
                 4096,
                 20,
@@ -1001,7 +1001,7 @@ mod tests {
         let (app, parent_ccx) = test_context("root", "root", None).await;
         let child = create(&app, "root", "child").await;
         let child_ccx = Arc::new(AMutex::new(
-            AtCommandsContext::new_from_app(
+            crate::at_commands::at_commands::at_commands_new_from_app(
                 app.clone(),
                 4096,
                 20,
@@ -1081,7 +1081,7 @@ mod tests {
             .await
             .unwrap();
 
-        let ccx = AtCommandsContext::new_from_app(
+        let ccx = crate::at_commands::at_commands::at_commands_new_from_app(
             app,
             4096,
             20,
@@ -1203,7 +1203,7 @@ mod tests {
             .parent_id = None;
 
         let ccx = Arc::new(AMutex::new(
-            AtCommandsContext::new_from_app(
+            crate::at_commands::at_commands::at_commands_new_from_app(
                 app.clone(),
                 4096,
                 20,
@@ -2014,7 +2014,7 @@ mod tests {
         card_id: &str,
     ) -> Arc<AMutex<AtCommandsContext>> {
         let ccx = Arc::new(AMutex::new(
-            AtCommandsContext::new_from_app(
+            crate::at_commands::at_commands::at_commands_new_from_app(
                 app.clone(),
                 4096,
                 20,

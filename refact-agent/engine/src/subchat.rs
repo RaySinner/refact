@@ -1744,7 +1744,7 @@ pub async fn run_subchat(
         install_stateful_subchat_session(&app, &chat_id, &config, &messages).await;
     }
     let ccx = Arc::new(AMutex::new(
-        AtCommandsContext::new_with_abort(
+        crate::at_commands::at_commands::at_commands_new_with_abort(
             app.clone(),
             config.n_ctx,
             1,
@@ -3458,6 +3458,7 @@ mod subchat_tests {
         PARENT_COMPACTION_DIAGNOSTIC_TRUNCATED, PARTIAL_OUTPUT_STREAM_ERROR,
     };
     use super::{final_step_wrap_up_message, needs_forced_final_answer};
+    use crate::global_context::GlobalContextCtx;
     use crate::chat::diagnostics::{
         SAFE_PROVIDER_ERROR_DIAGNOSTIC_MAX_CHARS, SAFE_PROVIDER_ERROR_DIAGNOSTIC_TRUNCATED,
     };
@@ -4051,7 +4052,7 @@ mod subchat_tests {
     ) -> Arc<tokio::sync::Mutex<crate::at_commands::at_commands::AtCommandsContext>> {
         let gcx = make_test_gcx().await;
         Arc::new(tokio::sync::Mutex::new(
-            crate::at_commands::at_commands::AtCommandsContext::new_from_app(
+            crate::at_commands::at_commands::at_commands_new_from_app(
                 crate::app_state::app_state_from_gcx(gcx).await,
                 4096,
                 1,

@@ -1094,7 +1094,7 @@ async fn make_tool_ccx(
     gcx: AppState,
 ) -> Arc<tokio::sync::Mutex<crate::at_commands::at_commands::AtCommandsContext>> {
     Arc::new(tokio::sync::Mutex::new(
-        crate::at_commands::at_commands::AtCommandsContext::new_from_app(
+        crate::at_commands::at_commands::at_commands_new_from_app(
             gcx,
             4000,
             20,

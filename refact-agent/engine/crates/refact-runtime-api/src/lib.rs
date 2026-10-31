@@ -22,6 +22,8 @@ pub mod ctx_traits;
 pub mod services;
 pub mod tool_ctx;
 pub mod app_state;
+pub mod at_commands_ctx;
+pub mod tool_trait;
 
 pub use chat_ctx::{
     ChatCtx, ChatIntegrationScope, ChatToolExecutor, ChatWorkspace, ExecPolicyProvider, HookRunner,
@@ -42,6 +44,10 @@ pub use services::{
 };
 
 pub use app_state::AppState;
+pub use at_commands_ctx::{
+    AtCommand, AtCommandMember, AtCommandsContext, AtParam, MAX_SUBCHAT_DEPTH,
+};
+pub use tool_trait::{Tool, ToolGroup};
 pub use refact_chat_api::{DeliveryOutcome as RuntimeDeliveryOutcome, SessionState, TaskMeta};
 pub use refact_chat_api::{PendingDelivery as RuntimePendingDelivery, PushMode as RuntimePushMode};
 pub use refact_chat_api::{ToolCatalogSnapshot, ToolPolicyInfo, ToolRegistryIndex, TurnToolPool};

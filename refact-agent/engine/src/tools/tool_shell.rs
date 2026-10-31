@@ -1145,7 +1145,7 @@ mod tests {
     ) -> (Arc<GlobalContext>, Arc<AMutex<AtCommandsContext>>) {
         let gcx = crate::global_context::tests::make_test_gcx().await;
         let ccx = Arc::new(AMutex::new(
-            AtCommandsContext::new_with_abort(
+            crate::at_commands::at_commands::at_commands_new_with_abort(
                 crate::app_state::app_state_from_gcx(gcx.clone()).await,
                 4096,
                 20,

@@ -95,7 +95,7 @@ async fn app_with_parent_session(
 
 async fn tool_context(app: AppState, chat_id: &str) -> Arc<tokio::sync::Mutex<AtCommandsContext>> {
     Arc::new(tokio::sync::Mutex::new(
-        AtCommandsContext::new_from_app(
+        crate::at_commands::at_commands::at_commands_new_from_app(
             app,
             4096,
             20,

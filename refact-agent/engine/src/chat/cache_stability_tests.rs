@@ -217,7 +217,7 @@ async fn prepare_request(
     boost_reasoning: bool,
 ) -> crate::chat::prepare::PreparedChat {
     let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
-    let ccx = AtCommandsContext::new_from_app(
+    let ccx = crate::at_commands::at_commands::at_commands_new_from_app(
         app,
         8192,
         1,

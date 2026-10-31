@@ -193,7 +193,7 @@ pub async fn handle_v1_tools_check_if_confirmation_needed(
     })?;
 
     let ccx = Arc::new(AMutex::new(
-        AtCommandsContext::new_from_app(
+        crate::at_commands::at_commands::at_commands_new_from_app(
             app.clone(),
             1000,
             1,

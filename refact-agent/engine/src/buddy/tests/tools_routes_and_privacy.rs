@@ -221,7 +221,7 @@ async fn tool_buddy_create_draft_rejects_oversized_content() {
     let app = make_gcx_with_buddy().await;
     let _gcx = app.gcx.clone();
     let ccx = Arc::new(tokio::sync::Mutex::new(
-        AtCommandsContext::new_from_app(
+        crate::at_commands::at_commands::at_commands_new_from_app(
             app.clone(),
             4000,
             20,

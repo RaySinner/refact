@@ -311,7 +311,7 @@ mod tests {
 
     async fn ccx(gcx: Arc<GlobalContext>) -> Arc<AMutex<AtCommandsContext>> {
         Arc::new(AMutex::new(
-            AtCommandsContext::new_from_app(
+            crate::at_commands::at_commands::at_commands_new_from_app(
                 crate::app_state::app_state_from_gcx(gcx).await,
                 4000,
                 20,

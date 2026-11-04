@@ -10,6 +10,7 @@ pub mod chunk_utils;
 pub mod custom_error;
 pub mod file_lock;
 pub mod image_policy;
+pub mod json_utils;
 pub mod knowledge_frontmatter;
 pub mod knowledge_index;
 pub mod llm_types;

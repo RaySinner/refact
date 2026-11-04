@@ -5,3 +5,4 @@ pub mod kg_query;
 pub mod kg_staleness;
 pub mod kg_structs;
 pub mod memo;
+pub mod memory_types;

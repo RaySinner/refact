@@ -1,6 +1,7 @@
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::global_context::GlobalContextCtx;
-use crate::call_validation::{ChatContent, ChatMessage, ContextEnum, DiffChunk};
+use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
+use refact_core::diff_chunk::DiffChunk;
 use crate::chat::ctx::ChatCtx;
 use refact_runtime_api::files_correction::check_if_its_inside_a_workspace_or_config_for_ctx;
 use crate::global_context::GlobalContext;

@@ -10,8 +10,8 @@ use crate::at_commands::at_commands::AtCommandsContext;
 use crate::tools::tools_description::{
     Tool, ToolDesc, ToolSource, ToolSourceType, json_schema_from_params,
 };
-use crate::call_validation::{ChatMessage, ChatContent, ContextEnum};
-use crate::memories::memories_search;
+use refact_core::chat_types::{ChatMessage, ChatContent, ContextEnum};
+use refact_runtime_api::memories::memories_search;
 use crate::knowledge_graph::build_knowledge_graph;
 use refact_core::knowledge_index::format_related_memories_section;
 use crate::postprocessing::pp_command_output::OutputFilter;
@@ -23,7 +23,7 @@ pub struct ToolGetKnowledge {
 
 fn add_knowledge_references(
     references: &mut NativeReferences,
-    memories: &[crate::memories::MemoRecord],
+    memories: &[refact_knowledge_graph::memo::MemoRecord],
     roots: &[std::path::PathBuf],
 ) {
     if memories.len() > 8 {
@@ -117,7 +117,7 @@ impl Tool for ToolGetKnowledge {
                     if doc.frontmatter.is_active() && !seen_memids.contains(&id) {
                         seen_memids.insert(id.clone());
                         let snippet: String = doc.content.chars().take(500).collect();
-                        unique_memories.push(crate::memories::MemoRecord {
+                        unique_memories.push(refact_knowledge_graph::memo::MemoRecord {
                             memid: id,
                             tags: doc.frontmatter.tags.clone(),
                             content: snippet,
@@ -238,7 +238,7 @@ mod tests {
 
     #[test]
     fn knowledge_references_use_native_query_artifact_and_workspace_path_metadata() {
-        let memory = crate::memories::MemoRecord {
+        let memory = refact_knowledge_graph::memo::MemoRecord {
             memid: "memory-1".to_string(),
             file_path: Some(crate::test_paths::abs(
                 "workspace/.refact/knowledge/memory.md",

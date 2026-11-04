@@ -1,5 +1,3 @@
-use serde::{Deserialize, Serialize};
-use std::hash::Hash;
 use axum::http::StatusCode;
 use ropey::Rope;
 
@@ -48,6 +46,7 @@ pub fn code_completion_post_validate(
 
 pub use refact_core::chat_types::ChatModelType;
 pub use refact_chat_api::{ChatMeta, SubchatParameters};
+pub use refact_core::diff_chunk::DiffChunk;
 
 /// Check if a mode ID is agentic (supports tool execution and knowledge enrichment).
 pub fn is_agentic_mode_id(mode_id: &str) -> bool {
@@ -70,29 +69,6 @@ pub async fn validate_mode_for_request(
     }
 
     Ok(canonical)
-}
-
-fn default_true() -> bool {
-    true
-}
-
-#[derive(Serialize, Deserialize, Clone, Hash, Debug, Eq, PartialEq, Default, Ord, PartialOrd)]
-pub struct DiffChunk {
-    pub file_name: String,
-    pub file_action: String, // edit, rename, add, remove
-    pub line1: usize,
-    pub line2: usize,
-    pub lines_remove: String,
-    pub lines_add: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub lines_before: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub lines_after: Option<String>,
-    #[serde(default)]
-    pub file_name_rename: Option<String>,
-    #[serde(default = "default_true", skip_serializing)]
-    pub is_file: bool,
-    pub application_details: String,
 }
 
 #[cfg(test)]

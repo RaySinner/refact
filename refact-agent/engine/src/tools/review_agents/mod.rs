@@ -261,7 +261,8 @@ mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    use crate::call_validation::{ChatModelType, SubchatParameters};
+    use refact_core::chat_types::{ChatModelType};
+    use refact_chat_api::{SubchatParameters};
     use crate::llm::params::CacheControl;
     use crate::chat::ctx::ExplicitSubchatSpec;
     use crate::tools::review_agents::runner::stage_trace_chat_id;

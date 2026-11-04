@@ -6,7 +6,7 @@ pub use refact_scope_utils::{
     ScopedResolvedPath, ScopedScopeFilter,
 };
 
-use crate::call_validation::ContextFile;
+use refact_core::chat_types::ContextFile;
 use crate::global_context::GlobalContextCtx;
 use refact_files::path_utils::canonical_path;
 use refact_files::workspace::{ls_files, ls_files_limited, LsFilesLimited};
@@ -981,7 +981,7 @@ mod worktree_scope_read_tools {
     use crate::at_commands::at_commands::{AtCommand, AtCommandsContext};
     use crate::at_commands::{AtFile, AtTree};
     use crate::at_commands::execute_at::AtCommandMember;
-    use crate::call_validation::{ChatContent, ContextEnum};
+    use refact_core::chat_types::{ChatContent, ContextEnum};
     use refact_core::privacy_types::{FilePrivacySettings, PrivacySettings};
     use crate::tools::tool_cat::ToolCat;
     use crate::tools::tool_tree::ToolTree;

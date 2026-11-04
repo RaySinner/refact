@@ -6,10 +6,7 @@ use std::sync::LazyLock;
 use std::time::Duration;
 use async_trait::async_trait;
 use refact_core::ast_types::{AstDefinition, SymbolType};
-use refact_chat_api::{
-    attach_tool_enrichment, ToolEnrichment, ToolEnrichmentKind, ToolEnrichmentProvenance,
-    ToolEnrichmentReference,
-};
+use refact_chat_api::{attach_tool_enrichment, ToolEnrichment, ToolEnrichmentKind, ToolEnrichmentProvenance, ToolEnrichmentReference};
 use serde_json::Value;
 use tokio::sync::Mutex as AMutex;
 
@@ -22,7 +19,7 @@ use crate::tools::ctx::ToolCtx;
 use crate::tools::tools_description::{
     Tool, ToolDesc, ToolSource, ToolSourceType, json_schema_from_params,
 };
-use crate::call_validation::{ChatMessage, ChatContent, ContextEnum, ContextFile};
+use refact_core::chat_types::{ChatMessage, ChatContent, ContextEnum, ContextFile};
 use refact_core::knowledge_index::{KnowledgeCard, KnowledgeIndex};
 use crate::postprocessing::pp_command_output::OutputFilter;
 use crate::tools::native_enrichment::{workspace_roots, NativeReferences};

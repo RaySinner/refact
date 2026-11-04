@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use tokio::sync::Mutex as AMutex;
 
 use crate::at_commands::at_commands::AtCommandsContext;
-use crate::call_validation::ContextEnum;
+use refact_core::chat_types::ContextEnum;
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
 
 const TITLE_MAX_CHARS: usize = 120;

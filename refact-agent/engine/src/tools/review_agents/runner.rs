@@ -5,7 +5,7 @@ use serde_json::Value;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::Mutex as AMutex;
 
-use crate::call_validation::{ChatContent, ChatMessage};
+use refact_core::chat_types::{ChatContent, ChatMessage};
 use crate::global_context::GlobalContextCtx;
 use crate::chat::types::TaskMeta;
 use crate::global_context::GlobalContext;
@@ -431,8 +431,8 @@ mod tests {
             ),
             label: stage_id.to_string(),
             subchat: ExplicitSubchatSpec {
-                params: crate::call_validation::SubchatParameters {
-                    subchat_model_type: crate::call_validation::ChatModelType::Default,
+                params: refact_chat_api::SubchatParameters {
+                    subchat_model_type: refact_core::chat_types::ChatModelType::Default,
                     subchat_model: "test-model".to_string(),
                     subchat_n_ctx: 100000,
                     subchat_max_new_tokens: 8000,

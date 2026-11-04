@@ -8,12 +8,12 @@ use tokio::sync::Mutex as AMutex;
 use async_trait::async_trait;
 
 use crate::at_commands::at_commands::AtCommandsContext;
-use crate::call_validation::ContextEnum;
+use refact_core::chat_types::ContextEnum;
 use crate::integrations::sessions::{IntegrationSession, get_session_hashmap_key};
 
 use crate::global_context::GlobalContext;
 use crate::http::routers::v1::browser_settings;
-use crate::call_validation::{ChatContent, ChatMessage};
+use refact_core::chat_types::{ChatContent, ChatMessage};
 use crate::scratchpads::multimodality::MultimodalElement;
 
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};

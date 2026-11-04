@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use tokio::sync::Mutex as AMutex;
 
 use crate::at_commands::at_commands::AtCommandsContext;
-use crate::call_validation::{ChatContent, ChatMessage, ContextEnum, ContextFile};
+use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum, ContextFile};
 use refact_tool_api::IntegrationConfirmation;
 use crate::postprocessing::pp_command_output::OutputFilter;
 use crate::tools::tools_description::{
@@ -29,7 +29,7 @@ const MAX_PER_MESSAGE_ENTRIES: usize = 200;
 const MAX_CONTEXT_ENTRIES: usize = 200;
 const MAX_TOOL_OUTPUT_ENTRIES: usize = 200;
 
-fn find_preserve_cutoff(messages: &[crate::call_validation::ChatMessage], turns: usize) -> usize {
+fn find_preserve_cutoff(messages: &[refact_core::chat_types::ChatMessage], turns: usize) -> usize {
     if turns == 0 {
         return messages.len();
     }
@@ -543,7 +543,7 @@ fn compress_chat_apply_head_messages(
 mod tests {
     use super::*;
     use refact_chat_history::trajectory_ops::{build_compression_report_message, TOOLS_TO_PRESERVE};
-    use crate::call_validation::{ChatToolCall, ChatToolFunction};
+    use refact_core::chat_types::{ChatToolCall, ChatToolFunction};
 
     fn user_message(text: &str) -> ChatMessage {
         ChatMessage {

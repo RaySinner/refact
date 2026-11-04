@@ -13,12 +13,12 @@ use crate::agents::spawn::{
 use crate::global_context::GlobalContextCtx;
 use crate::agents::types::BgAgentKind;
 use crate::at_commands::at_commands::{AtCommandsContext, MAX_SUBCHAT_DEPTH};
-use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
+use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use crate::chat::types::{GoalBudget, GoalCriterion};
 use crate::postprocessing::pp_command_output::OutputFilter;
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
 use crate::tools::tools_list::get_available_tools;
-use crate::yaml_configs::customization_registry::resolve_subagent_for_model;
+use refact_yaml_configs::customization_registry::resolve_subagent_for_model;
 
 pub const SUBAGENT_FORCE_TOOLS: &[&str] = &[
     "tasks_set",

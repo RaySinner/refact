@@ -11,7 +11,7 @@ use tokio::sync::Mutex as AMutex;
 
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::global_context::GlobalContextCtx;
-use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
+use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 #[cfg(test)]
 use crate::global_context::GlobalContext;
 use crate::postprocessing::pp_command_output::OutputFilter;

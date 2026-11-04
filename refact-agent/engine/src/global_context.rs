@@ -58,6 +58,7 @@ impl GlobalContextCtx for GlobalContext {
     fn chat_ctx(&self, gcx: SharedGlobalContext) -> ChatCtx {
         ChatCtx {
             knowledge_builder: Arc::new(crate::knowledge_index::EngineKnowledgeBuilder),
+            memory_runtime: self.memory_runtime.clone(),
             task_storage_runtime: self.task_storage_runtime.clone(),
             runtime: RuntimeServices {
                 shutdown_flag: self.shutdown_flag.clone(),
@@ -554,6 +555,8 @@ pub async fn create_global_context(
         .unwrap_or_else(|error| panic!("failed to initialize background agent registry: {error}"));
     let cx = GlobalContext {
         files_runtime: Arc::new(crate::files_in_workspace::EngineFilesRuntime),
+        scheduler_runtime: Arc::new(crate::scheduler::EngineSchedulerRuntime),
+        memory_runtime: Arc::new(crate::memories::EngineMemoryRuntime),
         task_storage_runtime: Arc::new(crate::tasks::storage::EngineTaskStorageRuntime),
         shutdown_flag: Arc::new(AtomicBool::new(false)),
         lsp_tcp_client_count: Arc::new(AtomicUsize::new(0)),
@@ -649,6 +652,8 @@ pub mod tests {
 
     pub async fn make_test_gcx() -> SharedGlobalContext {
         refact_test_support::make_test_gcx(
+            Arc::new(crate::scheduler::EngineSchedulerRuntime),
+            Arc::new(crate::memories::EngineMemoryRuntime),
             Arc::new(crate::tasks::storage::EngineTaskStorageRuntime),
             Arc::new(crate::files_in_workspace::EngineFilesRuntime),
         )
@@ -662,6 +667,8 @@ pub mod tests {
         refact_test_support::make_test_gcx_with_dirs(
             cache_dir,
             config_dir,
+            Arc::new(crate::scheduler::EngineSchedulerRuntime),
+            Arc::new(crate::memories::EngineMemoryRuntime),
             Arc::new(crate::tasks::storage::EngineTaskStorageRuntime),
             Arc::new(crate::files_in_workspace::EngineFilesRuntime),
         )

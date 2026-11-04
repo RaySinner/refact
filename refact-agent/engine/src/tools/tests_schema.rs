@@ -387,7 +387,7 @@ mod tests {
 
     async fn mode_tool_names(mode: &str, codegraph_on: bool) -> HashSet<String> {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        crate::yaml_configs::project_configs_bootstrap::global_configs_try_create_all(
+        refact_yaml_configs::project_configs_bootstrap::global_configs_try_create_all(
             &gcx.config_dir,
         )
         .await

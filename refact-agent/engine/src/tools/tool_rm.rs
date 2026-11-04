@@ -9,7 +9,8 @@ use serde_json::json;
 
 use crate::at_commands::at_commands::AtCommandsContext;
 use refact_runtime_api::at_command_executor::return_one_candidate_or_a_good_error;
-use crate::call_validation::{ChatMessage, ChatContent, ContextEnum, DiffChunk};
+use refact_core::chat_types::{ChatMessage, ChatContent, ContextEnum};
+use refact_core::diff_chunk::DiffChunk;
 use refact_files::path_utils::{canonical_path, preprocess_path_for_normalization};
 use refact_runtime_api::files_correction::{
     correct_to_nearest_dir_path, correct_to_nearest_filename, get_unscoped_project_dirs,

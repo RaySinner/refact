@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use crate::app_state::AppState;
 use crate::at_commands::at_commands::AtCommandsContext;
-use crate::call_validation::{ChatMessage, ChatContent, ContextEnum, ContextFile};
+use refact_core::chat_types::{ChatMessage, ChatContent, ContextEnum, ContextFile};
 use crate::chat::ctx::ChatCtx;
 use crate::chat::internal_roles::{event, EventSubkind};
 use crate::global_context::GlobalContext;

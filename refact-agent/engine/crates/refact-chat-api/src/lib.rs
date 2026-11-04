@@ -3216,3 +3216,5 @@ mod tests {
         assert_eq!(json["action"], "summarize");
     }
 }
+
+pub mod room_provenance;

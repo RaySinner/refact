@@ -1,3 +1,4 @@
+use refact_scheduler_core::schedule::scheduler_timezone;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -10,13 +11,13 @@ use serde_json::{json, Value};
 use tokio::sync::{Mutex as AMutex, Notify};
 
 use crate::at_commands::at_commands::AtCommandsContext;
-use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
+use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use crate::chat::internal_roles::{event, EventSubkind};
 use refact_runtime_api::files_correction::get_active_project_path_for_services;
-use crate::scheduler::schedule::parse_schedule;
-use crate::scheduler::{
+use refact_scheduler_core::schedule::parse_schedule;
+use refact_scheduler_core::{
     delivery_kind, human_schedule_for_trigger as scheduler_human_schedule_for_trigger, next_run_ms,
-    push_from_value, push_schema, scheduler_timezone, session_cron_store, Action, AgentTarget,
+    push_from_value, push_schema, session_cron_store, Action, AgentTarget,
     CronStore, Delivery, Job, JsonFileCronStore, Trigger, delivery_from_value,
 };
 use refact_core::chat_types::PushMode;
@@ -404,7 +405,7 @@ fn runtime_for_project(
     Ok(CronCreateRuntime {
         session_store: session_cron_store(),
         durable_store,
-        change_notify: crate::scheduler::runner_change_notify(),
+        change_notify: refact_scheduler_core::runner_change_notify(),
         now_ms,
         timezone,
         chat_id,
@@ -694,7 +695,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::scheduler::{scheduled_tasks_path, InMemoryCronStore};
+    use refact_scheduler_core::{scheduled_tasks_path, InMemoryCronStore};
 
     fn fixed_now_ms() -> u64 {
         Utc.with_ymd_and_hms(2026, 3, 1, 0, 0, 0)
@@ -784,7 +785,7 @@ mod tests {
             .await,
         ));
         let before = session_cron_store().list().await.len();
-        let change_notify = crate::scheduler::runner_change_notify();
+        let change_notify = refact_scheduler_core::runner_change_notify();
         let notified = change_notify.notified();
         let mut tool = ToolCronCreate {
             config_path: String::new(),

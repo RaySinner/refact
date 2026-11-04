@@ -9,12 +9,12 @@ use chrono::{DateTime, Utc};
 
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
 use crate::global_context::GlobalContextCtx;
-use crate::call_validation::{ChatMessage, ChatContent, ContextEnum, ContextFile};
+use refact_core::chat_types::{ChatMessage, ChatContent, ContextEnum, ContextFile};
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::chat::ctx::{CapsProvider, ChatCtx};
 use crate::chat::internal_roles::{event, EventSubkind};
 use crate::chat::trajectories::resolve_task_planner_controller_chat_id;
-use crate::tasks::rooms;
+use refact_tasks::rooms;
 use refact_runtime_api::task_storage as storage;
 use crate::tasks::types::{BoardCard, StatusUpdate};
 use crate::global_context::GlobalContext;
@@ -2832,8 +2832,8 @@ mod tests {
         // pair would overwrite each other, so `validate_team` must refuse it.
         let mut card = test_card("T-1", "doing", None);
         card.team_members = vec![
-            crate::tasks::rooms::new_room_member("implementer", "a1", "agent-T-1-a1", None, None, None, vec![]),
-            crate::tasks::rooms::new_room_member("refactorer", "a2", "agent-T-1-a2", None, None, None, vec![]),
+            refact_tasks::rooms::new_room_member("implementer", "a1", "agent-T-1-a1", None, None, None, vec![]),
+            refact_tasks::rooms::new_room_member("refactorer", "a2", "agent-T-1-a2", None, None, None, vec![]),
         ];
         card.team_members[0].target_files = vec!["src/lib.rs".into()];
         card.team_members[1].target_files = vec!["src/lib.rs".into()];
@@ -2850,8 +2850,8 @@ mod tests {
         // legitimate one, because roles are labels and nobody is required to write.
         let mut card = test_card("T-1", "doing", None);
         card.team_members = vec![
-            crate::tasks::rooms::new_room_member("researcher", "a1", "agent-T-1-a1", None, None, None, vec![]),
-            crate::tasks::rooms::new_room_member("дизайнер", "a2", "agent-T-1-a2", None, None, None, vec![]),
+            refact_tasks::rooms::new_room_member("researcher", "a1", "agent-T-1-a1", None, None, None, vec![]),
+            refact_tasks::rooms::new_room_member("дизайнер", "a2", "agent-T-1-a2", None, None, None, vec![]),
         ];
 
         assert!(check_spawn_precondition(&card).is_ok());
@@ -2861,8 +2861,8 @@ mod tests {
     fn spawn_rejects_duplicate_room_identity() {
         let mut card = test_card("T-1", "doing", None);
         card.team_members = vec![
-            crate::tasks::rooms::new_room_member("architect", "same", "agent-T-1-a", None, None, None, vec![]),
-            crate::tasks::rooms::new_room_member("coder", "same", "agent-T-1-b", None, None, None, vec![]),
+            refact_tasks::rooms::new_room_member("architect", "same", "agent-T-1-a", None, None, None, vec![]),
+            refact_tasks::rooms::new_room_member("coder", "same", "agent-T-1-b", None, None, None, vec![]),
         ];
 
         let error = check_spawn_precondition(&card).unwrap_err();
@@ -2875,8 +2875,8 @@ mod tests {
     fn spawn_rejects_running_architect_beside_active_peer() {
         let mut card = test_card("T-1", "doing", None);
         card.team_members = vec![
-            crate::tasks::rooms::new_room_member("architect", "a1", "agent-T-1-a1", None, None, None, vec![]),
-            crate::tasks::rooms::new_room_member("coder", "a2", "agent-T-1-a2", None, None, None, vec![]),
+            refact_tasks::rooms::new_room_member("architect", "a1", "agent-T-1-a1", None, None, None, vec![]),
+            refact_tasks::rooms::new_room_member("coder", "a2", "agent-T-1-a2", None, None, None, vec![]),
         ];
         card.team_members[0].member_status = Some(crate::tasks::types::TeamStatus::Running);
         card.team_members[1].member_status = Some(crate::tasks::types::TeamStatus::Running);

@@ -13,7 +13,7 @@ use crate::at_commands::at_web_search::{
 use crate::tools::tools_description::{
     Tool, ToolDesc, ToolSource, ToolSourceType, json_schema_from_params,
 };
-use crate::call_validation::{ChatMessage, ChatContent, ContextEnum};
+use refact_core::chat_types::{ChatMessage, ChatContent, ContextEnum};
 
 pub struct ToolWebSearch {
     pub config_path: String,

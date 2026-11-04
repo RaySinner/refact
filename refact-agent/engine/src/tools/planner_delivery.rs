@@ -14,7 +14,7 @@ use std::sync::Arc;
 use chrono::Utc;
 use serde_json::Value;
 
-use crate::call_validation::{ChatContent, ChatMessage};
+use refact_core::chat_types::{ChatContent, ChatMessage};
 use crate::chat::ctx::ChatCtx;
 use refact_runtime_api::task_storage as storage;
 use crate::tasks::types::{BoardCard, StatusUpdate};

@@ -13,7 +13,7 @@ use crate::tools::tools_description::{
     Tool, ToolDesc, ToolSource, ToolSourceType, json_schema_from_params,
 };
 use crate::global_context::GlobalContextCtx;
-use crate::call_validation::{ChatMessage, ChatContent, ContextEnum};
+use refact_core::chat_types::{ChatMessage, ChatContent, ContextEnum};
 use crate::at_commands::at_commands::AtCommandsContext;
 use refact_chat_api::verifier::outcome_is_infrastructure;
 use refact_runtime_api::verifier::load_expected_card_state_for_ctx;

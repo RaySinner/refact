@@ -10,8 +10,8 @@ use tokio::sync::Mutex as AMutex;
 use tokio::sync::OwnedMutexGuard;
 
 use crate::at_commands::at_commands::AtCommandsContext;
-use crate::buddy::jobs::autonomous_chats::redact_and_cap_text;
-use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
+use refact_buddy_core::autonomous_redaction::redact_and_cap_text;
+use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use crate::chat::ctx::ChatCtx;
 use refact_runtime_api::files_correction::get_unscoped_project_dirs_for_ctx;
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};

@@ -8,7 +8,7 @@ use tokio::sync::Mutex as AMutex;
 use tokio::task::JoinSet;
 
 use crate::at_commands::at_commands::AtCommandsContext;
-use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
+use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use crate::app_state::AppState;
 use refact_runtime_api::task_storage as storage;
 use crate::tasks::types::{BoardCard, TaskBoard};
@@ -312,7 +312,7 @@ fn validate_spawn_agent_cards(
             // still has to sit in 'planned' so a batch cannot race a card the planner has not
             // released yet.
             let topping_up_room = !card.team_members.is_empty();
-            if let Some(error) = crate::tasks::rooms::reject_spawn_into_card(card) {
+            if let Some(error) = refact_tasks::rooms::reject_spawn_into_card(card) {
                 errors[idx] = Some(error);
                 continue;
             }

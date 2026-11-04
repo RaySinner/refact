@@ -14,7 +14,7 @@ use refact_runtime_api::at_command_executor::{
 use crate::tools::tools_description::{
     Tool, ToolDesc, ToolSource, ToolSourceType, json_schema_from_params,
 };
-use crate::call_validation::{ChatMessage, ChatContent, ContextEnum, ContextFile};
+use refact_core::chat_types::{ChatMessage, ChatContent, ContextEnum, ContextFile};
 use refact_files::path_utils::{canonical_path, preprocess_path_for_normalization};
 use refact_runtime_api::files_correction::{correct_to_nearest_dir_path, get_project_dirs};
 use refact_runtime_api::files_in_workspace::{

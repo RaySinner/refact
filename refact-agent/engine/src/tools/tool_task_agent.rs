@@ -6,7 +6,7 @@ use tokio::sync::Mutex as AMutex;
 use chrono::Utc;
 
 use crate::at_commands::at_commands::AtCommandsContext;
-use crate::call_validation::{ChatMessage, ChatContent, ContextEnum};
+use refact_core::chat_types::{ChatMessage, ChatContent, ContextEnum};
 use refact_chat_api::TaskMeta;
 use crate::tools::tools_description::{
     Tool, ToolDesc, ToolSource, ToolSourceType, json_schema_from_params,

@@ -1,5 +1,6 @@
 use crate::at_commands::at_commands::AtCommandsContext;
-use crate::call_validation::{ChatContent, ChatMessage, ContextEnum, DiffChunk};
+use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
+use refact_core::diff_chunk::DiffChunk;
 use crate::global_context::GlobalContext;
 use refact_tool_api::IntegrationConfirmation;
 use refact_runtime_api::privacy::load_privacy_if_needed;

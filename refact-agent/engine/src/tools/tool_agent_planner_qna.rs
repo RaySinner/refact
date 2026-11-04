@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::app_state::AppState;
-use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
+use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use refact_runtime_api::task_storage as storage;
 use crate::tasks::types::{BoardCard, StatusUpdate};
 use crate::tools::task_tool_helpers::require_bound_planner_task;

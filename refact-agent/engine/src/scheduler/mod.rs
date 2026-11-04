@@ -139,3 +139,12 @@ mod tests {
         );
     }
 }
+
+pub struct EngineSchedulerRuntime;
+
+#[async_trait::async_trait]
+impl refact_runtime_api::scheduler::SchedulerRuntime for EngineSchedulerRuntime {
+    async fn active_durable_cron_store_for_services(&self, paths: &crate::app_state::PathServices, workspace: &crate::app_state::WorkspaceServices) -> Result<Option<std::sync::Arc<dyn CronStore>>, String> {
+        active_durable_cron_store_for_services(paths, workspace).await
+    }
+}

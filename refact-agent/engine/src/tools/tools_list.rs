@@ -1,3 +1,4 @@
+use refact_yaml_configs::customization_registry::should_expose_subagent_as_config_tool;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -9,8 +10,8 @@ use crate::custom_error::YamlError;
 use crate::global_context::{try_load_caps_quickly_if_not_present, GlobalContext};
 use refact_runtime_api::integr_abstract::IntegrationTrait;
 use crate::integrations::running_integrations::load_integrations;
-use crate::yaml_configs::customization_registry::{
-    get_project_registry, should_expose_subagent_as_config_tool,
+use refact_runtime_api::customization_registry::{
+    get_project_registry,
 };
 
 use super::tool_config_subagent::ToolConfigSubagent;
@@ -944,8 +945,8 @@ mod tests {
     use std::sync::Arc;
 
     use crate::tools::tools_description::{ToolSource, ToolSourceType};
-    use crate::yaml_configs::customization_registry::RegistryCache;
-    use crate::yaml_configs::customization_types::{
+    use refact_yaml_configs::registry_cache::RegistryCache;
+    use refact_yaml_configs::customization_types::{
         ProjectRegistry, SubagentConfig, SubagentMessages, SubagentPrompts, SubchatConfig,
     };
 
@@ -1016,7 +1017,7 @@ mod tests {
             _ccx: Arc<tokio::sync::Mutex<crate::at_commands::at_commands::AtCommandsContext>>,
             _tool_call_id: &String,
             _args: &HashMap<String, serde_json::Value>,
-        ) -> Result<(bool, Vec<crate::call_validation::ContextEnum>), String> {
+        ) -> Result<(bool, Vec<refact_core::chat_types::ContextEnum>), String> {
             unreachable!("test tools are only used to build the catalog")
         }
 
@@ -1125,7 +1126,7 @@ mod tests {
             _ccx: Arc<tokio::sync::Mutex<crate::at_commands::at_commands::AtCommandsContext>>,
             _tool_call_id: &String,
             _args: &HashMap<String, serde_json::Value>,
-        ) -> Result<(bool, Vec<crate::call_validation::ContextEnum>), String> {
+        ) -> Result<(bool, Vec<refact_core::chat_types::ContextEnum>), String> {
             unreachable!("test tools are only used to build the lazy catalog")
         }
 
@@ -1324,7 +1325,7 @@ mod tests {
     #[tokio::test]
     async fn available_tools_include_only_builtin_background_subagent_for_default_config() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        crate::yaml_configs::project_configs_bootstrap::global_configs_try_create_all(
+        refact_yaml_configs::project_configs_bootstrap::global_configs_try_create_all(
             &gcx.config_dir,
         )
         .await
@@ -1346,7 +1347,7 @@ mod tests {
     #[tokio::test]
     async fn task_planner_includes_web_tools() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        crate::yaml_configs::project_configs_bootstrap::global_configs_try_create_all(
+        refact_yaml_configs::project_configs_bootstrap::global_configs_try_create_all(
             &gcx.config_dir,
         )
         .await
@@ -1447,7 +1448,7 @@ mod tests {
 
     async fn task_prompt_contract_gcx() -> Arc<GlobalContext> {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        crate::yaml_configs::project_configs_bootstrap::global_configs_try_create_all(
+        refact_yaml_configs::project_configs_bootstrap::global_configs_try_create_all(
             &gcx.config_dir,
         )
         .await
@@ -1461,7 +1462,7 @@ mod tests {
 
     fn read_default_task_mode(
         mode_id: &str,
-    ) -> crate::yaml_configs::customization_types::ModeConfig {
+    ) -> refact_yaml_configs::customization_types::ModeConfig {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("crates")
             .join("refact-yaml-configs")
@@ -1731,7 +1732,7 @@ mod tests {
     async fn yaml_configs_design_workflows_load_and_reference_registered_tools() {
         let gcx = task_prompt_contract_gcx().await;
         let registry =
-            crate::yaml_configs::customization_registry::load_registry_from_dir(&gcx.config_dir)
+            refact_yaml_configs::customization_registry::load_registry_from_dir(&gcx.config_dir)
                 .await;
         assert!(registry.errors.is_empty(), "{:?}", registry.errors);
 
@@ -1863,7 +1864,7 @@ mod tests {
     async fn design_prompt_chrome_examples_parse_through_the_real_browser_dialect() {
         let gcx = task_prompt_contract_gcx().await;
         let registry =
-            crate::yaml_configs::customization_registry::load_registry_from_dir(&gcx.config_dir)
+            refact_yaml_configs::customization_registry::load_registry_from_dir(&gcx.config_dir)
                 .await;
         assert!(registry.errors.is_empty(), "{:?}", registry.errors);
 
@@ -1964,7 +1965,8 @@ pub async fn get_tools_for_mode(
     mode_id: &str,
     model_id: Option<&str>,
 ) -> Vec<Box<dyn Tool + Send>> {
-    use crate::yaml_configs::customization_registry::{get_mode_config, map_legacy_mode_to_id};
+    use refact_runtime_api::customization_registry::get_mode_config;
+use refact_chat_api::setparams::map_legacy_mode_to_id;
     use std::collections::HashSet;
 
     let mode_id = map_legacy_mode_to_id(mode_id);
@@ -2012,7 +2014,7 @@ pub async fn get_tools_for_mode(
         .iter()
         .map(|(_, tool)| tool.tool_description().name)
         .collect();
-    crate::yaml_configs::mode_validation::warn_unknown_mode_tools(
+    refact_runtime_api::customization_registry::warn_unknown_mode_tools(
         gcx.clone(),
         mode_id,
         &mode_config.tools,

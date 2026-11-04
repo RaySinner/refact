@@ -16,7 +16,7 @@ use crate::chat::trajectories::{
     chat_id_is_planner_for_task, resolve_task_planner_controller_chat_id,
     verified_planner_linked_root_chat_id,
 };
-use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
+use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use crate::postprocessing::pp_command_output::OutputFilter;
 use refact_runtime_api::task_storage as storage;
 use crate::tools::tool_task_documents::{
@@ -28,7 +28,8 @@ use refact_runtime_api::SessionState;
 use crate::tools::tools_description::{
     MatchConfirmDeny, MatchConfirmDenyResult, Tool, ToolDesc, ToolSource, ToolSourceType,
 };
-use crate::yaml_configs::customization_registry::{get_mode_config, map_legacy_mode_to_id};
+use refact_runtime_api::customization_registry::get_mode_config;
+use refact_chat_api::setparams::map_legacy_mode_to_id;
 
 fn parse_string_list(args: &HashMap<String, Value>, key: &str) -> Vec<String> {
     match args.get(key) {
@@ -1054,7 +1055,7 @@ mod deferred_tests {
 
     #[tokio::test]
     async fn handoff_queue_keeps_sibling_calls_and_allows_same_mode_restart() {
-        use crate::call_validation::{ChatToolCall, ChatToolFunction};
+        use refact_core::chat_types::{ChatToolCall, ChatToolFunction};
         let gcx = crate::global_context::tests::make_test_gcx().await;
         let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
         let mut session = crate::chat::types::ChatSession::new("queue-source".into());

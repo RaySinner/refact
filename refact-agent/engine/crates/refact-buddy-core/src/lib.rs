@@ -33,3 +33,4 @@ pub mod workflows;
 
 pub use queue::*;
 pub use stalled_turn::*;
+pub mod autonomous_redaction;

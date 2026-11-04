@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use serde::Deserialize;
 
-use crate::call_validation::ChatMessage;
+use refact_core::chat_types::ChatMessage;
 use crate::global_context::GlobalContextCtx;
 use crate::global_context::{try_load_caps_quickly_if_not_present, GlobalContext};
 use crate::json_utils::extract_json_object;
@@ -95,7 +95,7 @@ async fn validate_command_inner(
         return None;
     };
 
-    let subagent = crate::yaml_configs::customization_registry::get_subagent_config(
+    let subagent = refact_runtime_api::customization_registry::get_subagent_config(
         gcx.clone(),
         "shell_command_validator",
         Some(&model),

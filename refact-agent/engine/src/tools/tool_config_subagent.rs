@@ -8,11 +8,11 @@ use crate::tools::tools_description::{
     Tool, ToolDesc, ToolSource, ToolSourceType, json_schema_from_params,
 };
 use serde_json::json;
-use crate::call_validation::{ChatMessage, ChatContent, ContextEnum};
+use refact_core::chat_types::{ChatMessage, ChatContent, ContextEnum};
 use crate::chat::internal_roles::{event, EventSubkind};
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::postprocessing::pp_command_output::OutputFilter;
-use crate::yaml_configs::customization_types::SubagentConfig;
+use refact_yaml_configs::customization_types::SubagentConfig;
 
 pub struct ToolConfigSubagent {
     pub config: SubagentConfig,

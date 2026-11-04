@@ -21,8 +21,8 @@ use serde_json::{json, Value};
 use tokio::sync::Mutex as AMutex;
 
 use crate::at_commands::at_commands::AtCommandsContext;
-use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
-use crate::codegraph::code_intel_api::ToolJson;
+use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
+use refact_code_intel_api::ToolJson;
 use crate::integrations::browser_controller;
 use crate::integrations::browser_runtime::{find_runtime_for_chat, BrowserRuntime, ChatRuntimeLookup};
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};

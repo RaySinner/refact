@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use tokio::sync::Mutex as AMutex;
 
 use crate::at_commands::at_commands::AtCommandsContext;
-use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
+use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use crate::chat::ctx::ModeConfigProvider;
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
 
@@ -58,7 +58,7 @@ async fn planner_mode_config(
     Ok(ccx_lock.tool.mode_config.clone())
 }
 
-fn render_registry(registry: &crate::yaml_configs::customization_types::ProjectRegistry) -> String {
+fn render_registry(registry: &refact_yaml_configs::customization_types::ProjectRegistry) -> String {
     let mut subagents: Vec<_> = registry.subagents.iter().collect();
     subagents.sort_by(|(a, _), (b, _)| a.cmp(b));
 
@@ -180,9 +180,9 @@ mod tests {
 
     fn insert_registry(
         gcx: &Arc<GlobalContext>,
-        registry: crate::yaml_configs::customization_types::ProjectRegistry,
+        registry: refact_yaml_configs::customization_types::ProjectRegistry,
     ) {
-        use crate::yaml_configs::customization_registry::RegistryCache;
+        use refact_yaml_configs::registry_cache::RegistryCache;
         gcx.project_registry_cache.write().unwrap().cache.insert(
             gcx.config_dir.clone(),
             RegistryCache {
@@ -215,7 +215,7 @@ mod tests {
 
     #[tokio::test]
     async fn tool_agent_registry_renders_registered_agents() {
-        use crate::yaml_configs::customization_types::{
+        use refact_yaml_configs::customization_types::{
             GatherFilesConfig, ProjectRegistry, SubagentConfig, SubagentMessages,
             SubagentPrompts, SubchatConfig,
         };
@@ -262,14 +262,14 @@ mod tests {
 
     #[test]
     fn render_registry_empty() {
-        let registry = crate::yaml_configs::customization_types::ProjectRegistry::default();
+        let registry = refact_yaml_configs::customization_types::ProjectRegistry::default();
         let output = render_registry(&registry);
         assert!(output.contains("_No agent definitions loaded._"));
     }
 
     #[test]
     fn render_registry_includes_all_fields() {
-        use crate::yaml_configs::customization_types::{
+        use refact_yaml_configs::customization_types::{
             GatherFilesConfig, ProjectRegistry, SubagentConfig, SubagentMessages,
             SubagentPrompts, SubchatConfig,
         };
@@ -309,7 +309,7 @@ mod tests {
 
     #[test]
     fn render_registry_decision_maker_and_read_only() {
-        use crate::yaml_configs::customization_types::{
+        use refact_yaml_configs::customization_types::{
             GatherFilesConfig, ProjectRegistry, SubagentConfig, SubagentMessages,
             SubagentPrompts, SubchatConfig,
         };

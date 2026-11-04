@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use serde::Deserialize;
 
-use crate::call_validation::SubchatParameters;
+use refact_chat_api::SubchatParameters;
 use crate::global_context::GlobalContextCtx;
 use crate::caps::resolve_chat_model;
 use crate::global_context::{try_load_caps_quickly_if_not_present, GlobalContext};
@@ -119,7 +119,7 @@ pub struct ReviewConfig {
 }
 
 pub async fn load_review_config(gcx: Arc<GlobalContext>) -> Result<ReviewConfig, String> {
-    let subagent = crate::yaml_configs::customization_registry::get_subagent_config(
+    let subagent = refact_runtime_api::customization_registry::get_subagent_config(
         gcx.clone(),
         REVIEW_SUBAGENT_ID,
         None,
@@ -260,7 +260,7 @@ stages:
     #[test]
     fn review_stage_spec_is_always_autonomous() {
         let base = SubchatParameters {
-            subchat_model_type: crate::call_validation::ChatModelType::Default,
+            subchat_model_type: refact_core::chat_types::ChatModelType::Default,
             subchat_model: String::new(),
             subchat_n_ctx: 100000,
             subchat_max_new_tokens: 8000,

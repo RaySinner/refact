@@ -6,7 +6,7 @@ use serde_json::Value;
 use tokio::sync::Mutex as AMutex;
 
 use crate::at_commands::at_commands::AtCommandsContext;
-use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
+use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use crate::ext::config_dirs::get_ext_dirs;
 use crate::ext::skills::load_skill_full;
 use crate::ext::skills_context::expand_skill_includes;

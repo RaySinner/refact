@@ -13,7 +13,7 @@ use refact_core::chat_types::{PendingDelivery, PushMode};
 use crate::agents::types::{BackgroundAgent, BgAgentStatus};
 use crate::app_state::AppState;
 use crate::at_commands::at_commands::AtCommandsContext;
-use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
+use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use crate::global_context::GlobalContext;
 use crate::postprocessing::pp_command_output::OutputFilter;
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
@@ -245,7 +245,7 @@ pub(crate) async fn resolve_room_peers(
 ) -> Option<Vec<RoomPeer>> {
     let board = refact_runtime_api::task_storage::load_board(gcx, task_id).await.ok()?;
     let card = board.get_card(caller_card_id)?;
-    let author = crate::tasks::rooms::room_member_provenance(card, caller_chat_id)?;
+    let author = refact_chat_api::room_provenance::room_member_provenance(card, caller_chat_id)?;
     match to {
         Some(target) => {
             let peer_member = card
@@ -272,7 +272,7 @@ pub(crate) async fn resolve_room_peers(
                         })
                         .find(|member| {
                             member.role.trim().eq_ignore_ascii_case(target.trim())
-                                || crate::tasks::rooms::member_provenance(card, member)
+                                || refact_chat_api::room_provenance::member_provenance(card, member)
                                     .display_name
                                     .trim()
                                     .eq_ignore_ascii_case(target.trim())
@@ -1919,7 +1919,7 @@ mod tests {
             .iter()
             .enumerate()
             .map(|(index, chat)| {
-                let mut member = crate::tasks::rooms::new_room_member(
+                let mut member = refact_tasks::rooms::new_room_member(
                     roles[index.min(roles.len() - 1)],
                     &format!("agent-id-{index}"),
                     chat,

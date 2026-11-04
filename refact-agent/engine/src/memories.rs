@@ -269,82 +269,8 @@ fn compute_content_hash_hex(content: &str) -> String {
     hex::encode(h.finalize())
 }
 
-fn normalize_memory_tag(tag: &str) -> Option<String> {
-    let raw = tag.trim().to_lowercase();
-    if raw.is_empty() {
-        return None;
-    }
-
-    let alias = match raw.as_str() {
-        "rs" | "rust" => "language:rust",
-        "py" | "python" => "language:python",
-        "ts" | "typescript" => "language:typescript",
-        "js" | "javascript" => "language:javascript",
-        "tsx" => "language:typescript-react",
-        "jsx" => "language:javascript-react",
-        "c++" | "cpp" => "language:cpp",
-        "c#" | "csharp" => "language:csharp",
-        "behavior_learner" | "behavior-learner" => "workflow:behavior-learner",
-        "knowledge_graph" | "knowledge-graph" => "domain:knowledge-graph",
-        "playwright" | "playwright mcp" | "playwright-mcp" => "tool:playwright-mcp",
-        "chrome" | "chrome tool" | "chrome-tool" => "tool:chrome",
-        _ => raw.as_str(),
-    };
-
-    let preserve_underscores = alias.starts_with("entity:") || alias.starts_with("symbol:");
-    let mut normalized = String::new();
-    let mut last_was_dash = false;
-
-    for ch in alias.chars() {
-        match ch {
-            'a'..='z' | '0'..='9' | ':' | '/' | '.' => {
-                normalized.push(ch);
-                last_was_dash = false;
-            }
-            '_' if preserve_underscores => {
-                normalized.push(ch);
-                last_was_dash = false;
-            }
-            '-' | '_' | ' ' | '\t' => {
-                if !last_was_dash && !normalized.is_empty() {
-                    normalized.push('-');
-                    last_was_dash = true;
-                }
-            }
-            _ => {}
-        }
-    }
-
-    let normalized = normalized
-        .trim_matches('-')
-        .chars()
-        .take(96)
-        .collect::<String>();
-    if normalized.len() >= 2 {
-        Some(normalized)
-    } else {
-        None
-    }
-}
-
-pub fn normalize_memory_tags(tags: &[String], max_tags: usize) -> Vec<String> {
-    let mut seen = HashSet::new();
-    let mut out = Vec::new();
-
-    for tag in tags {
-        let Some(normalized) = normalize_memory_tag(tag) else {
-            continue;
-        };
-        if seen.insert(normalized.clone()) {
-            out.push(normalized);
-        }
-        if out.len() >= max_tags {
-            break;
-        }
-    }
-
-    out
-}
+use refact_knowledge_graph::memory_types::normalize_memory_tag;
+pub use refact_knowledge_graph::memory_types::normalize_memory_tags;
 
 fn push_memory_tag(tags: &mut Vec<String>, tag: &str) {
     let Some(normalized) = normalize_memory_tag(tag) else {
@@ -654,9 +580,7 @@ pub async fn get_global_knowledge_dir(gcx: Arc<GlobalContext>) -> PathBuf {
     get_global_knowledge_dir_for_ctx(&gcx.chat_ctx(gcx.clone()))
 }
 
-pub fn get_global_knowledge_dir_for_ctx(ctx: &ChatCtx) -> PathBuf {
-    ctx.paths.config_dir.join("knowledge")
-}
+pub use refact_runtime_api::memories::get_global_knowledge_dir_for_ctx;
 
 async fn get_all_knowledge_dirs(gcx: Arc<GlobalContext>) -> Vec<PathBuf> {
     let mut dirs: Vec<PathBuf> = get_project_dirs(gcx.clone())
@@ -734,24 +658,7 @@ pub async fn memories_add_for_ctx(
     Ok(file_path)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum MemoryWriteOutcome {
-    Created(PathBuf),
-    DuplicateTouched(PathBuf),
-}
-
-impl MemoryWriteOutcome {
-    pub fn path(&self) -> &PathBuf {
-        match self {
-            MemoryWriteOutcome::Created(path) => path,
-            MemoryWriteOutcome::DuplicateTouched(path) => path,
-        }
-    }
-
-    pub fn created(&self) -> bool {
-        matches!(self, MemoryWriteOutcome::Created(_))
-    }
-}
+pub use refact_knowledge_graph::memory_types::MemoryWriteOutcome;
 
 pub async fn touch_memory_observation(
     gcx: Arc<GlobalContext>,
@@ -1969,29 +1876,7 @@ where
     update_memory_document_frontmatter_for_ctx(&gcx.chat_ctx(gcx.clone()), doc_path, update).await
 }
 
-pub async fn update_memory_document_frontmatter_for_ctx<F>(
-    ctx: &ChatCtx,
-    doc_path: &Path,
-    update: F,
-) -> Result<bool, String>
-where
-    F: FnOnce(&mut KnowledgeFrontmatter) -> Result<bool, String>,
-{
-    let existing_text = fs::read_to_string(doc_path)
-        .await
-        .map_err(|e| format!("Failed to read memory file: {}", e))?;
-    let (mut frontmatter, content_start) = KnowledgeFrontmatter::parse(&existing_text);
-    if content_start == 0 && existing_text.starts_with("---") {
-        return Err("Failed to parse memory frontmatter".to_string());
-    }
-    let body = existing_text.get(content_start..).unwrap_or("").to_string();
-    if !update(&mut frontmatter)? {
-        return Ok(false);
-    }
-    rewrite_memory_document_for_ctx(ctx, doc_path, &frontmatter, &body)
-        .await
-        .map(|_| true)
-}
+pub use refact_runtime_api::memories::update_memory_document_frontmatter_for_ctx;
 
 pub async fn rewrite_memory_document(
     gcx: Arc<GlobalContext>,
@@ -2149,13 +2034,7 @@ pub fn extract_file_paths(content: &str) -> Vec<String> {
         .collect()
 }
 
-pub struct EnrichmentParams {
-    pub base_tags: Vec<String>,
-    pub base_filenames: Vec<String>,
-    pub base_kind: String,
-    pub base_title: Option<String>,
-    pub source_chat_id: Option<String>,
-}
+pub use refact_knowledge_graph::memory_types::EnrichmentParams;
 
 pub async fn memories_add_enriched(
     ccx: Arc<AMutex<AtCommandsContext>>,
@@ -3135,5 +3014,69 @@ mod firewall_tests {
 
         let records = memories_search(gcx, "codegraph", 5, 0, None).await.unwrap();
         assert!(records.is_empty());
+    }
+}
+
+pub struct EngineMemoryRuntime;
+
+#[async_trait::async_trait]
+impl refact_runtime_api::memories::MemoryRuntime for EngineMemoryRuntime {
+    async fn memories_search(
+        &self,
+        gcx: Arc<GlobalContext>,
+        query: &str,
+        top_n_memories: usize,
+        top_n_trajectories: usize,
+        exclude_trajectory_id: Option<&str>,
+    ) -> Result<Vec<MemoRecord>, String> {
+        memories_search(
+            gcx,
+            query,
+            top_n_memories,
+            top_n_trajectories,
+            exclude_trajectory_id,
+        )
+        .await
+    }
+    async fn memories_add_enriched(
+        &self,
+        ccx: Arc<AMutex<AtCommandsContext>>,
+        content: &str,
+        params: EnrichmentParams,
+    ) -> Result<PathBuf, String> {
+        memories_add_enriched(ccx, content, params).await
+    }
+    async fn touch_memory_observation_for_ctx(
+        &self,
+        ctx: &ChatCtx,
+        doc_path: &Path,
+    ) -> Result<(), String> {
+        touch_memory_observation_for_ctx(ctx, doc_path).await
+    }
+    async fn memories_upsert_by_signal_key_for_ctx(
+        &self,
+        ctx: &ChatCtx,
+        signal_key: &str,
+        frontmatter: &KnowledgeFrontmatter,
+        content: &str,
+    ) -> Result<MemoryWriteOutcome, String> {
+        memories_upsert_by_signal_key_for_ctx(ctx, signal_key, frontmatter, content).await
+    }
+    async fn memories_add_dedup_for_ctx(
+        &self,
+        ctx: &ChatCtx,
+        frontmatter: &KnowledgeFrontmatter,
+        content: &str,
+    ) -> Result<MemoryWriteOutcome, String> {
+        memories_add_dedup_for_ctx(ctx, frontmatter, content).await
+    }
+    async fn rewrite_memory_document_for_ctx(
+        &self,
+        ctx: &ChatCtx,
+        doc_path: &Path,
+        frontmatter: &KnowledgeFrontmatter,
+        body: &str,
+    ) -> Result<(), String> {
+        rewrite_memory_document_for_ctx(ctx, doc_path, frontmatter, body).await
     }
 }

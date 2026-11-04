@@ -1,12 +1,9 @@
 use std::collections::HashSet;
 use std::path::{Component, Path, PathBuf};
 
-use refact_chat_api::{
-    attach_tool_enrichment, ToolEnrichment, ToolEnrichmentKind, ToolEnrichmentProvenance,
-    ToolEnrichmentReference,
-};
+use refact_chat_api::{attach_tool_enrichment, ToolEnrichment, ToolEnrichmentKind, ToolEnrichmentProvenance, ToolEnrichmentReference};
 
-use crate::call_validation::{ChatMessage, ContextFile};
+use refact_core::chat_types::{ChatMessage, ContextFile};
 use crate::global_context::GlobalContext;
 use crate::worktrees::scope::ExecutionScope;
 

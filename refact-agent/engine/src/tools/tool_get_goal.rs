@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 use tokio::sync::Mutex as AMutex;
 
 use crate::at_commands::at_commands::AtCommandsContext;
-use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
+use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use crate::chat::goal_role;
 use crate::chat::types::ChatSession;
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
@@ -179,7 +179,7 @@ mod tests {
     #[tokio::test]
     async fn goal_lifecycle_smoke() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        crate::yaml_configs::project_configs_bootstrap::global_configs_try_create_all(
+        refact_yaml_configs::project_configs_bootstrap::global_configs_try_create_all(
             &gcx.config_dir,
         )
         .await
@@ -319,7 +319,7 @@ mod tests {
     #[tokio::test]
     async fn available_in_plan_supporting_modes() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        crate::yaml_configs::project_configs_bootstrap::global_configs_try_create_all(
+        refact_yaml_configs::project_configs_bootstrap::global_configs_try_create_all(
             &gcx.config_dir,
         )
         .await

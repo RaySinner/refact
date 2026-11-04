@@ -16,8 +16,8 @@ use crate::at_commands::at_commands::AtCommandsContext;
 use refact_runtime_api::at_command_executor::{
     file_repair_candidates, return_one_candidate_or_a_good_error,
 };
-use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
-use crate::codegraph::code_intel_api::*;
+use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
+use refact_code_intel_api::*;
 use refact_files::path_utils::{canonicalize_normalized_path, preprocess_path_for_normalization};
 use refact_runtime_api::files_correction::{get_project_dirs, resolve_codegraph_queue_path};
 use refact_worktrees::path_mappings::registered_worktree_path_mappings;
@@ -52,18 +52,9 @@ const HEALTH_GRAPH_SNAPSHOT_MAX_ATTEMPTS: usize = 2;
 
 type GitCacheKey = (PathBuf, Option<Oid>, usize);
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct SuggestedReviewer {
-    pub author: String,
-    pub score: f64,
-}
+pub use refact_code_intel_api::SuggestedReviewer;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct PrBlastIndexState {
-    pub queued: usize,
-    pub cross_file_edges: i64,
-    pub cross_file_ready: bool,
-}
+pub use refact_code_intel_api::PrBlastIndexState;
 
 #[derive(Default)]
 struct GitMiningCache {
@@ -92,17 +83,7 @@ pub(crate) struct GitRiskAssembly {
     pub(crate) recent_commit_risks: Vec<RecentCommitRiskSummary>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct HealthImpactContributor {
-    pub biomarker: String,
-    pub category: String,
-    pub dimension: refact_codehealth::biomarkers::Dimension,
-    pub severity: refact_codehealth::biomarkers::Severity,
-    pub line: usize,
-    pub detail: String,
-    pub deduction: f64,
-    pub capped: bool,
-}
+pub use refact_code_intel_api::HealthImpactContributor;
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct HealthFunctionSummary {
@@ -188,13 +169,7 @@ struct HealthCacheEntry {
     core: HealthFileCore,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct RecentCommitRiskSummary {
-    pub sha: String,
-    pub summary: String,
-    pub risk: f64,
-    pub top_factor_names: Vec<String>,
-}
+pub use refact_code_intel_api::RecentCommitRiskSummary;
 
 #[derive(Default)]
 struct CrossFileCloneCache {
@@ -2787,12 +2762,7 @@ impl Tool for ToolCodegraphOverview {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct HealthFinding {
-    #[serde(flatten)]
-    pub finding: refact_codehealth::biomarkers::Finding,
-    pub hot_path: bool,
-}
+pub use refact_code_intel_api::HealthFinding;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct FunctionKey {

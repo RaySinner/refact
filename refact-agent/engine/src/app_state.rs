@@ -526,6 +526,10 @@ impl EngineModeConfigProvider {
 
 #[async_trait]
 impl ModeConfigProvider for EngineModeConfigProvider {
+    async fn warn_unknown_mode_tools(&self, mode_id: &str, declared: &[String], registered: &std::collections::HashSet<String>) {
+        crate::yaml_configs::mode_validation::warn_unknown_mode_tools(self.gcx.clone(), mode_id, declared, registered).await;
+    }
+
     async fn get_project_registry(
         &self,
     ) -> Option<crate::yaml_configs::customization_types::ProjectRegistry> {

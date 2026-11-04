@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashSet};
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::global_context::GlobalContext;
@@ -19,26 +19,7 @@ fn claim_first_report(key: String) -> bool {
     }
 }
 
-pub fn unknown_tool_names(declared: &[String], registered: &HashSet<String>) -> Vec<String> {
-    declared
-        .iter()
-        .filter(|name| !registered.contains(name.as_str()))
-        .cloned()
-        .collect::<BTreeSet<String>>()
-        .into_iter()
-        .collect()
-}
-
-pub fn dropped_tool_names(base_tools: &[String], resolved_tools: &[String]) -> Vec<String> {
-    let kept: HashSet<&str> = resolved_tools.iter().map(|name| name.as_str()).collect();
-    base_tools
-        .iter()
-        .filter(|name| !kept.contains(name.as_str()))
-        .cloned()
-        .collect::<BTreeSet<String>>()
-        .into_iter()
-        .collect()
-}
+pub use refact_yaml_configs::mode_validation::{unknown_tool_names, dropped_tool_names};
 
 fn summarize_tools(names: &[String]) -> String {
     if names.len() <= MAX_LISTED_TOOLS {

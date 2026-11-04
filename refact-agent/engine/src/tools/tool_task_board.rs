@@ -7,11 +7,11 @@ use tokio::sync::Mutex as AMutex;
 use chrono::{DateTime, Utc};
 
 use crate::at_commands::at_commands::AtCommandsContext;
-use crate::call_validation::{ChatMessage, ChatContent, ContextEnum};
+use refact_core::chat_types::{ChatMessage, ChatContent, ContextEnum};
 use crate::tools::tools_description::{
     Tool, ToolDesc, ToolSource, ToolSourceType, json_schema_from_params,
 };
-use crate::tasks::rooms::parse_team_members;
+use refact_tasks::rooms::parse_team_members;
 use refact_runtime_api::task_storage as storage;
 use crate::tasks::types::{AbVariants, BoardCard, ScopeGuardMode, TaskBoard};
 use crate::tasks::events::{TaskEvent, emit_task_event_for_services};

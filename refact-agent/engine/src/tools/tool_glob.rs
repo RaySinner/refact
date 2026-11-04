@@ -9,7 +9,7 @@ use serde_json::Value;
 use tokio::sync::Mutex as AMutex;
 
 use crate::at_commands::at_commands::AtCommandsContext;
-use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
+use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use refact_runtime_api::files_correction::shortify_paths;
 use refact_runtime_api::files_in_workspace::{
     check_file_privacy_for_read_preparation_with_context, prepare_file_read_context,

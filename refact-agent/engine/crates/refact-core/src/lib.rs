@@ -29,3 +29,5 @@ pub mod tokenizer_state;
 pub mod trajectory_settings;
 pub mod vecdb_types;
 pub mod worktree_meta;
+
+pub mod diff_chunk;

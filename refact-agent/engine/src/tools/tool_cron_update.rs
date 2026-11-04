@@ -1,3 +1,4 @@
+use refact_runtime_api::scheduler::active_durable_cron_store_for_services;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -7,10 +8,10 @@ use serde_json::{json, Value};
 use tokio::sync::Mutex as AMutex;
 
 use crate::at_commands::at_commands::AtCommandsContext;
-use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
-use crate::scheduler::schedule::parse_schedule;
-use crate::scheduler::{
-    active_durable_cron_store_for_services, push_from_value, push_schema, session_cron_store,
+use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
+use refact_scheduler_core::schedule::parse_schedule;
+use refact_scheduler_core::{
+ push_from_value, push_schema, session_cron_store,
     CronStore, Job, Trigger,
 };
 use refact_core::chat_types::PushMode;
@@ -71,11 +72,11 @@ impl ToolCronUpdate {
         if self.test_session_store.is_some() {
             return Ok(self.test_durable_store.clone());
         }
-        let (paths, workspace) = {
+        let (gcx, paths, workspace) = {
             let ccx_lock = ccx.lock().await;
-            (ccx_lock.app.paths.clone(), ccx_lock.app.workspace.clone())
+            (ccx_lock.app.gcx.clone(), ccx_lock.app.paths.clone(), ccx_lock.app.workspace.clone())
         };
-        active_durable_cron_store_for_services(&paths, &workspace).await
+        active_durable_cron_store_for_services(&gcx, &paths, &workspace).await
     }
 
     fn now_ms(&self) -> u64 {
@@ -138,7 +139,7 @@ impl Tool for ToolCronUpdate {
         if !store.replace(job.clone()).await? {
             return Err(format!("Scheduled task `{}` not found", job.id));
         }
-        crate::scheduler::runner_change_notify().notify_waiters();
+        refact_scheduler_core::runner_change_notify().notify_waiters();
 
         Ok((
             false,
@@ -268,7 +269,7 @@ fn parse_schedule_update(input: &CronUpdateInput, now_ms: u64) -> Result<Trigger
 }
 
 fn set_prompt(job: &mut Job, prompt: String) {
-    if let crate::scheduler::Action::AgentTurn { prompt: target, .. } = &mut job.action {
+    if let refact_scheduler_core::Action::AgentTurn { prompt: target, .. } = &mut job.action {
         *target = prompt;
     }
 }
@@ -316,7 +317,7 @@ fn unix_now_ms() -> u64 {
 mod tests {
     use super::*;
     use crate::app_state::AppState;
-    use crate::scheduler::{
+    use refact_scheduler_core::{
         InMemoryCronStore, JsonFileCronStore, DEFAULT_RECURRING_AUTO_EXPIRE_AFTER_MS,
     };
 

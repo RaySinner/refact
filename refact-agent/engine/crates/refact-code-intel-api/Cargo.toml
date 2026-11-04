@@ -1,0 +1,11 @@
+[package]
+name = "refact-code-intel-api"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+refact-codegraph = { path = "../refact-codegraph" }
+refact-codehealth = { path = "../refact-codehealth" }
+refact-git-intel = { path = "../refact-git-intel" }

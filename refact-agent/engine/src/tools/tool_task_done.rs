@@ -7,11 +7,12 @@ use tokio::sync::Mutex as AMutex;
 use tracing::error;
 
 use crate::at_commands::at_commands::AtCommandsContext;
-use crate::call_validation::{ChatMessage, ChatContent, ContextEnum};
+use refact_core::chat_types::{ChatMessage, ChatContent, ContextEnum};
 use crate::tools::tools_description::{
     Tool, ToolDesc, ToolSource, ToolSourceType, json_schema_from_params,
 };
-use crate::memories::{memories_add_enriched, EnrichmentParams};
+use refact_runtime_api::memories::memories_add_enriched;
+use refact_knowledge_graph::memory_types::EnrichmentParams;
 use crate::http::routers::v1::sidebar::NotificationEvent;
 
 fn spawn_memory_enrichment_task(

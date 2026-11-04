@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+refact-scheduler-core = { path = "../refact-scheduler-core" }
 refact-chat-api = { path = "../refact-chat-api" }
 refact-tool-api = { path = "../refact-tool-api" }
 refact-buddy-core = { path = "../refact-buddy-core" }

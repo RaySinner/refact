@@ -12,7 +12,7 @@ use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::buddy::actor::{
-    buddy_apply, make_runtime_event, redact_sensitive, render_buddy_activity_title,
+    buddy_apply, make_runtime_event, render_buddy_activity_title,
     render_buddy_runtime_event, validate_workflow_id, BuddyMutation,
 };
 use crate::buddy::voice_service::VoiceIntent;

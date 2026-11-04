@@ -6,7 +6,7 @@ use serde_json::{json, Map, Value};
 use tokio::sync::Mutex as AMutex;
 
 use crate::at_commands::at_commands::AtCommandsContext;
-use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
+use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use crate::chat::goal_verifier::{
     apply_goal_verdict_guarded_with_delivery, begin_goal_verification_if_needed, run_goal_verifier,
     GoalVerificationApplyOutcome, GoalVerificationBegin, GoalVerdict,
@@ -258,7 +258,7 @@ mod tests {
         Arc<AMutex<AtCommandsContext>>,
     ) {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        crate::yaml_configs::project_configs_bootstrap::global_configs_try_create_all(
+        refact_yaml_configs::project_configs_bootstrap::global_configs_try_create_all(
             &gcx.config_dir,
         )
         .await
@@ -333,7 +333,7 @@ mod tests {
     #[tokio::test]
     async fn available_in_plan_supporting_modes() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        crate::yaml_configs::project_configs_bootstrap::global_configs_try_create_all(
+        refact_yaml_configs::project_configs_bootstrap::global_configs_try_create_all(
             &gcx.config_dir,
         )
         .await

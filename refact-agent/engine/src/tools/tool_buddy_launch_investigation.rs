@@ -8,7 +8,7 @@ use uuid::Uuid;
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::buddy::actor::redact_sensitive;
 use crate::buddy::types::BuddyThreadMeta;
-use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
+use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use crate::chat::internal_roles::{event, EventSubkind};
 use refact_chat_history::trajectory_snapshot::TrajectorySnapshot;
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};

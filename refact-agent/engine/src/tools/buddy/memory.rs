@@ -1,3 +1,4 @@
+use refact_knowledge_graph::memory_types::normalize_memory_tags;
 use std::collections::{HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
@@ -16,16 +17,16 @@ use crate::buddy::memory_lifecycle::{
     MemoryCreatePayload, MemoryLifecycleOp, MemoryLifecyclePayload, MemoryOpStatus, MemoryOpType,
     MemorySource,
 };
-use crate::buddy::jobs::autonomous_chats::redact_and_cap_text;
+use refact_buddy_core::autonomous_redaction::redact_and_cap_text;
 use crate::buddy::storage::enqueue_memory_op;
-use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
+use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use crate::chat::ctx::ChatCtx;
 use crate::file_filter::KNOWLEDGE_FOLDER_NAME;
 use refact_runtime_api::files_correction::get_unscoped_project_dirs_for_ctx;
 use crate::knowledge_graph::kg_structs::KnowledgeFrontmatter;
 use refact_core::knowledge_index::KnowledgeCard;
-use crate::memories::{
-    get_global_knowledge_dir_for_ctx, normalize_memory_tags,
+use refact_runtime_api::memories::{
+    get_global_knowledge_dir_for_ctx,
     update_memory_document_frontmatter_for_ctx,
 };
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
@@ -519,7 +520,7 @@ async fn create_memory(
             .map(|text| refact_buddy_core::memory_dedup::near_duplicate(&content, text))
             .unwrap_or(false);
         if is_near_duplicate
-            && crate::memories::touch_memory_observation_for_ctx(ctx, &existing)
+            && refact_runtime_api::memories::touch_memory_observation_for_ctx(ctx, &existing)
                 .await
                 .is_ok()
         {
@@ -532,7 +533,7 @@ async fn create_memory(
             content_hash: Some(content_hash.clone()),
             ..Default::default()
         };
-        let outcome = crate::memories::memories_upsert_by_signal_key_for_ctx(
+        let outcome = refact_runtime_api::memories::memories_upsert_by_signal_key_for_ctx(
             ctx,
             source_id,
             &refreshed,
@@ -566,7 +567,7 @@ async fn create_memory(
         last_observed: Some(Utc::now().to_rfc3339()),
         ..Default::default()
     };
-    let outcome = crate::memories::memories_add_dedup_for_ctx(ctx, &frontmatter, &content).await?;
+    let outcome = refact_runtime_api::memories::memories_add_dedup_for_ctx(ctx, &frontmatter, &content).await?;
     if !outcome.created() {
         return Ok(CreateOutcome::Skipped(outcome.path().clone()));
     }

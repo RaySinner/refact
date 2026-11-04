@@ -10,8 +10,8 @@ use tokio::sync::Mutex as AMutex;
 use walkdir::{DirEntry, WalkDir};
 
 use crate::at_commands::at_commands::AtCommandsContext;
-use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
-use crate::codegraph::code_intel_api::ToolJson;
+use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
+use refact_code_intel_api::ToolJson;
 use crate::postprocessing::pp_command_output::OutputFilter;
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
 

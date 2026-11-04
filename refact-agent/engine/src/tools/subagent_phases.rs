@@ -6,7 +6,7 @@ use serde_json::json;
 use tokio::sync::Mutex as AMutex;
 
 use crate::at_commands::at_commands::AtCommandsContext;
-use crate::call_validation::{ChatMessage, ChatContent};
+use refact_core::chat_types::{ChatMessage, ChatContent};
 use crate::chat::ctx::SubchatLauncher;
 use crate::chat::internal_roles::{event, EventSubkind};
 use refact_runtime_api::files_correction::correct_to_nearest_filename;

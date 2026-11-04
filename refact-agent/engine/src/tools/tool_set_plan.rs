@@ -8,14 +8,14 @@ use tokio::io::AsyncReadExt;
 use tokio::sync::Mutex as AMutex;
 
 use crate::at_commands::at_commands::AtCommandsContext;
-use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
+use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use crate::chat::internal_roles::{self, EventSubkind};
 use crate::chat::plan_role::{self, PlanInstallReport};
 use crate::chat::types::{ChatSession, PendingDelivery, PushMode};
 use crate::tools::tools_description::{
     json_schema_from_params, Tool, ToolDesc, ToolSource, ToolSourceType,
 };
-use crate::yaml_configs::customization_registry::map_legacy_mode_to_id;
+use refact_chat_api::setparams::map_legacy_mode_to_id;
 
 const MAX_PLAN_FILE_BYTES: u64 = (internal_roles::MAX_PLAN_BODY_CHARS * 4 + 16 * 1024) as u64;
 
@@ -266,7 +266,7 @@ mod tests {
     }
 
     use crate::app_state::AppState;
-    use crate::call_validation::{ChatToolCall, ChatToolFunction};
+    use refact_core::chat_types::{ChatToolCall, ChatToolFunction};
     use crate::chat::internal_roles::{EVENT_ROLE, PLAN_ROLE};
     use crate::chat::types::{ChatEvent, ChatSession, EventEnvelope};
     use refact_files::documents_state::Document;
@@ -285,7 +285,7 @@ mod tests {
         tokio::sync::broadcast::Receiver<Arc<String>>,
     ) {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        crate::yaml_configs::project_configs_bootstrap::global_configs_try_create_all(
+        refact_yaml_configs::project_configs_bootstrap::global_configs_try_create_all(
             &gcx.config_dir,
         )
         .await
@@ -891,7 +891,7 @@ mod tests {
     #[tokio::test]
     async fn not_available_in_no_tools_mode() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        crate::yaml_configs::project_configs_bootstrap::global_configs_try_create_all(
+        refact_yaml_configs::project_configs_bootstrap::global_configs_try_create_all(
             &gcx.config_dir,
         )
         .await

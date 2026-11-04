@@ -51,6 +51,7 @@ pub trait FilesProvider: Send + Sync {
 
 #[async_trait]
 pub trait ModeConfigProvider: Send + Sync {
+    async fn warn_unknown_mode_tools(&self, mode_id: &str, declared: &[String], registered: &std::collections::HashSet<String>);
     async fn get_project_registry(&self) -> Option<ProjectRegistry>;
     async fn get_mode_config(&self, mode_id: &str, model_id: Option<&str>) -> Option<ModeConfig>;
     async fn get_subagent_config(

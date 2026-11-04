@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::global_context::GlobalContext;
-use crate::yaml_configs::customization_registry::get_subagent_config;
+use refact_runtime_api::customization_registry::get_subagent_config;
 
 pub struct CodeSubagentConfig {
     pub gather_system_prompt: Option<String>,

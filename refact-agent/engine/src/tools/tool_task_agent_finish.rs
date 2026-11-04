@@ -9,7 +9,7 @@ use tokio::sync::Mutex as AMutex;
 
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::global_context::GlobalContextCtx;
-use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
+use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use refact_chat_api::verifier::ExpectedCardState;
 use refact_runtime_api::verifier::schedule_card_verifier_after_finish_for_ctx;
 use refact_runtime_api::task_storage as storage;
@@ -598,7 +598,7 @@ fn mark_room_member_finished(
 /// answer instead of N.
 fn finalize_room_card(
     card: &mut BoardCard,
-    reports: &crate::tasks::rooms::RoomReports,
+    reports: &refact_tasks::rooms::RoomReports,
     commit_hash: Option<&str>,
 ) {
     let room_success = reports.failed.is_empty();
@@ -1072,7 +1072,7 @@ impl Tool for ToolTaskAgentFinish {
                         &report_clone,
                         &completed_at,
                     )?;
-                    let reports = crate::tasks::rooms::collect_room_reports(card);
+                    let reports = refact_tasks::rooms::collect_room_reports(card);
                     let room_complete = reports.room_complete();
                     if room_complete {
                         finalize_room_card(card, &reports, commit_hash.as_deref());
@@ -2024,7 +2024,7 @@ mod tests {
 
         mark_room_member_finished(&mut card, "agent-coder-chat", true, &report, "2026-01-01T01:00:00Z").unwrap();
 
-        let reports = crate::tasks::rooms::collect_room_reports(&card);
+        let reports = refact_tasks::rooms::collect_room_reports(&card);
         assert!(!reports.room_complete());
         assert_eq!(reports.outstanding, vec!["reviewer".to_string()]);
         assert_eq!(card.column, "doing", "card is not finalized while incomplete");
@@ -2038,7 +2038,7 @@ mod tests {
         mark_room_member_finished(&mut card, "agent-coder-chat", true, &report, "2026-01-01T01:00:00Z").unwrap();
         mark_room_member_finished(&mut card, "agent-reviewer-chat", true, &report, "2026-01-01T02:00:00Z").unwrap();
 
-        let reports = crate::tasks::rooms::collect_room_reports(&card);
+        let reports = refact_tasks::rooms::collect_room_reports(&card);
         assert!(reports.room_complete());
         finalize_room_card(&mut card, &reports, Some("abc123"));
 
@@ -2059,7 +2059,7 @@ mod tests {
         mark_room_member_finished(&mut card, "agent-coder-chat", true, &good, "2026-01-01T01:00:00Z").unwrap();
         mark_room_member_finished(&mut card, "agent-reviewer-chat", false, &bad, "2026-01-01T02:00:00Z").unwrap();
 
-        let reports = crate::tasks::rooms::collect_room_reports(&card);
+        let reports = refact_tasks::rooms::collect_room_reports(&card);
         assert!(reports.room_complete());
         finalize_room_card(&mut card, &reports, None);
 

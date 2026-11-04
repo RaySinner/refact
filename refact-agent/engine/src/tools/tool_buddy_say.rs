@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::buddy::types::{BuddyControl, BuddySpeechItem};
-use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
+use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
 
 const ADVERTISED_CONTROL_ACTIONS: &[&str] = &[

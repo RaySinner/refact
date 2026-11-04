@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 use tokio::sync::Mutex as AMutex;
 
 use crate::at_commands::at_commands::AtCommandsContext;
-use crate::call_validation::{ChatContent, ChatMessage, ChatToolCall, ChatUsage, ContextEnum};
+use refact_core::chat_types::{ChatContent, ChatMessage, ChatToolCall, ChatUsage, ContextEnum};
 use refact_runtime_api::task_storage as storage;
 use crate::tasks::types::{AbVariantInfo, BoardCard};
 use crate::tools::task_tool_helpers::{
@@ -834,7 +834,7 @@ mod tests {
         ChatToolCall {
             id: "call-1".to_string(),
             index: Some(0),
-            function: crate::call_validation::ChatToolFunction {
+            function: refact_core::chat_types::ChatToolFunction {
                 name: name.to_string(),
                 arguments: arguments.to_string(),
             },
@@ -934,7 +934,7 @@ mod tests {
                 ChatMessage {
                     role: "assistant".to_string(),
                     content: ChatContent::SimpleText("Earlier".to_string()),
-                    usage: Some(crate::call_validation::ChatUsage {
+                    usage: Some(refact_core::chat_types::ChatUsage {
                         prompt_tokens: 10_000,
                         completion_tokens: 5_000,
                         total_tokens: 15_000,
@@ -955,7 +955,7 @@ mod tests {
                             "replacement": "new code"
                         }),
                     )]),
-                    usage: Some(crate::call_validation::ChatUsage {
+                    usage: Some(refact_core::chat_types::ChatUsage {
                         prompt_tokens: 20_000,
                         completion_tokens: 3_000,
                         total_tokens: 23_000,

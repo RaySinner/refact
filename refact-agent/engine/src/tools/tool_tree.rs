@@ -13,7 +13,7 @@ use refact_runtime_api::at_tree::{BuildBudget, TreeNode, MAX_TREE_PATHS};
 use crate::tools::tools_description::{
     Tool, ToolDesc, ToolSource, ToolSourceType, json_schema_from_params,
 };
-use crate::call_validation::{ChatMessage, ChatContent, ContextEnum};
+use refact_core::chat_types::{ChatMessage, ChatContent, ContextEnum};
 use crate::postprocessing::pp_command_output::OutputFilter;
 use refact_runtime_api::files_correction::{
     correct_to_nearest_dir_path, correct_to_nearest_filename, paths_from_anywhere,
@@ -310,7 +310,7 @@ impl Tool for ToolTree {
 mod privacy_and_bounds_tests {
     use super::*;
     use crate::at_commands::at_commands::AtCommandsContext;
-    use crate::call_validation::{ChatContent, ContextEnum};
+    use refact_core::chat_types::{ChatContent, ContextEnum};
     use refact_core::privacy_types::{FilePrivacySettings, PrivacySettings};
     use crate::worktrees::types::WorktreeMeta;
     use std::fs;

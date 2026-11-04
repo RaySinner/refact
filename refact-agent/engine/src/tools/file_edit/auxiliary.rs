@@ -3,7 +3,7 @@ use crate::global_context::GlobalContextCtx;
 use refact_runtime_api::at_command_executor::{
     file_repair_candidates, return_one_candidate_or_a_good_error,
 };
-use crate::call_validation::DiffChunk;
+use refact_core::diff_chunk::DiffChunk;
 use refact_files::path_utils::{canonicalize_normalized_path, preprocess_path_for_normalization};
 use refact_runtime_api::files_correction::{
     check_if_its_inside_a_workspace_or_config, correct_to_nearest_dir_path,
@@ -835,7 +835,7 @@ mod tests {
 
     mod worktree_scope_tools {
         use crate::at_commands::at_commands::AtCommandsContext;
-        use crate::call_validation::{ChatContent, ContextEnum};
+        use refact_core::chat_types::{ChatContent, ContextEnum};
         use crate::chat::types::TaskMeta;
         use crate::global_context::GlobalContext;
         use refact_core::privacy_types::{FilePrivacySettings, PrivacySettings};

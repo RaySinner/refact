@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 use tokio::sync::Mutex as AMutex;
 
 use crate::at_commands::at_commands::{AtCommandsContext, MAX_SUBCHAT_DEPTH};
-use crate::call_validation::{ChatContent, ChatMessage, ChatToolCall, ContextEnum};
+use refact_core::chat_types::{ChatContent, ChatMessage, ChatToolCall, ContextEnum};
 use crate::chat::ctx::{SubchatConfig, SubchatLauncher, ToolsPolicy, TraceParent};
 use refact_runtime_api::task_storage as storage;
 use crate::tools::task_tool_helpers::require_bound_planner_task;

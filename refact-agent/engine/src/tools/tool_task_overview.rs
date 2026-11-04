@@ -11,7 +11,7 @@ use tokio::fs;
 use tokio::sync::Mutex as AMutex;
 
 use crate::at_commands::at_commands::AtCommandsContext;
-use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
+use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use crate::chat::history_limit::{compute_context_budget, ContextBudgetReport, ContextPressure};
 use refact_runtime_api::task_storage as storage;
 use crate::tasks::types::{BoardCard, TaskBoard};

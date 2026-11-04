@@ -15,7 +15,7 @@ use crate::exec::command_policy::{
 };
 
 use crate::at_commands::at_commands::AtCommandsContext;
-use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
+use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use crate::exec::{
     generate_short_description, sanitize_short_description, ExecMode, ExecOutputChunk,
     ExecOutputStream, ExecOwnerMeta, ExecProcessFilter, ExecProcessId, ExecProcessSnapshot,

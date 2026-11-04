@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use crate::app_state::AppState;
 use crate::at_commands::at_commands::AtCommandsContext;
-use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
+use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use crate::chat::ctx::ChatCtx;
 use crate::chat::internal_roles::{event, EventSubkind};
 use refact_chat_api::verifier::ExpectedCardState;

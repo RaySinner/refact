@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use tokio::sync::Mutex as AMutex;
 
 use crate::at_commands::at_commands::AtCommandsContext;
-use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
+use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use crate::chat::goal_role;
 use crate::chat::internal_roles;
 use crate::chat::types::{ChatSession, PendingDelivery, PushMode};
@@ -149,7 +149,7 @@ mod tests {
 
     use refact_chat_api::GoalBudget;
     use crate::app_state::AppState;
-    use crate::call_validation::{ChatToolCall, ChatToolFunction};
+    use refact_core::chat_types::{ChatToolCall, ChatToolFunction};
     use crate::chat::internal_roles::{EVENT_ROLE, GOAL_ROLE};
     use crate::llm::adapter::{AdapterSettings, LlmWireAdapter};
     use crate::llm::adapters::openai_chat::OpenAiChatAdapter;
@@ -164,7 +164,7 @@ mod tests {
         Arc<AMutex<AtCommandsContext>>,
     ) {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        crate::yaml_configs::project_configs_bootstrap::global_configs_try_create_all(
+        refact_yaml_configs::project_configs_bootstrap::global_configs_try_create_all(
             &gcx.config_dir,
         )
         .await
@@ -496,7 +496,7 @@ mod tests {
     #[tokio::test]
     async fn available_in_plan_supporting_modes() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        crate::yaml_configs::project_configs_bootstrap::global_configs_try_create_all(
+        refact_yaml_configs::project_configs_bootstrap::global_configs_try_create_all(
             &gcx.config_dir,
         )
         .await

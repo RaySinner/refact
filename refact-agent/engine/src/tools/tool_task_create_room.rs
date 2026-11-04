@@ -17,16 +17,16 @@ use serde_json::{json, Value};
 use tokio::sync::Mutex as AMutex;
 
 use crate::at_commands::at_commands::AtCommandsContext;
-use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
+use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use crate::app_state::AppState;
 use crate::tasks::events::{TaskEvent, emit_task_event_for_services};
-use crate::tasks::rooms;
+use refact_tasks::rooms;
 use refact_runtime_api::task_storage as storage;
 use crate::tasks::types::{BoardCard, StatusUpdate, TeamMember};
 use crate::tools::tools_description::{
     json_schema_from_params, Tool, ToolDesc, ToolSource, ToolSourceType,
 };
-use crate::yaml_configs::customization_types::SubagentConfig;
+use refact_yaml_configs::customization_types::SubagentConfig;
 
 /// Longest description quoted for one available agent in an unknown-name error.
 const AVAILABLE_DESCRIPTION_LIMIT: usize = 80;

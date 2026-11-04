@@ -4106,6 +4106,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "refact-code-intel-api"
+version = "0.1.0"
+dependencies = [
+ "refact-codegraph",
+ "refact-codehealth",
+ "refact-git-intel",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "refact-codegraph"
 version = "0.1.0"
 dependencies = [
@@ -4477,6 +4488,7 @@ dependencies = [
  "refact-caps-core",
  "refact-chat-api",
  "refact-chat-history",
+ "refact-code-intel-api",
  "refact-codegraph",
  "refact-codegraph-parsers",
  "refact-codehealth",
@@ -4684,6 +4696,7 @@ dependencies = [
  "refact-privacy",
  "refact-providers",
  "refact-sandbox",
+ "refact-scheduler-core",
  "refact-scratchpads",
  "refact-stats",
  "refact-tasks",

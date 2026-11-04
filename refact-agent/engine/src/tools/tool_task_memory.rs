@@ -18,7 +18,7 @@ use walkdir::WalkDir;
 
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::global_context::GlobalContextCtx;
-use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
+use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 #[cfg(test)]
 use crate::global_context::GlobalContext;
 use refact_core::knowledge_index::{KnowledgeSearchFilters, KnowledgeSearchHit};

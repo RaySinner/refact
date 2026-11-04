@@ -12,7 +12,7 @@ use tokio::sync::Mutex as AMutex;
 use crate::agents::tool_agent::{ToolAgentHandle, ToolAgentSpec};
 use crate::app_state::AppState;
 use crate::at_commands::at_commands::AtCommandsContext;
-use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
+use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use crate::chat::trajectories::save_trajectory_as_with_intent_checked;
 use crate::chat::types::{ChatSession, PushMode, SessionState, ThreadParams, TrajectoryCommitIntent};
 use crate::global_context::GlobalContext;
@@ -2315,8 +2315,8 @@ mod tests {
             ),
             label: "diff".to_string(),
             subchat: crate::subchat::ExplicitSubchatSpec {
-                params: crate::call_validation::SubchatParameters {
-                    subchat_model_type: crate::call_validation::ChatModelType::Default,
+                params: refact_chat_api::SubchatParameters {
+                    subchat_model_type: refact_core::chat_types::ChatModelType::Default,
                     subchat_model: "test-provider/test-model".to_string(),
                     subchat_n_ctx: 100_000,
                     subchat_max_new_tokens: 8000,

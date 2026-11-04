@@ -4708,6 +4708,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "structopt",
+ "tempfile",
  "tokio",
  "tracing",
 ]

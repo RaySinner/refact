@@ -57,13 +57,7 @@ impl BuddyServicesHandle for EngineBuddyServicesHandle {
     }
 }
 
-pub fn buddy_services_from_handle(handle: &std::sync::Arc<dyn BuddyServicesHandle>) -> BuddyServices {
-    handle
-        .as_any()
-        .downcast_ref::<BuddyServices>()
-        .expect("engine buddy services handle")
-        .clone()
-}
+pub use refact_runtime_api::buddy_runtime::buddy_services_from_handle;
 
 #[derive(Clone)]
 pub struct EngineChatSessionFacade {

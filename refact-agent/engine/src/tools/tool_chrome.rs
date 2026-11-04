@@ -20,6 +20,7 @@ use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType
 
 use crate::integrations::browser_actions::{self, BrowserAction, DeviceType};
 use crate::integrations::browser_controller;
+use refact_runtime_api::buddy_runtime::report_error_persisted;
 use crate::integrations::browser_models::{ExecutionReport, parse_browser_action_request};
 use crate::integrations::browser_runtime::{
     BrowserLaunchOptions, BrowserProxyOptions, BrowserRuntime, find_runtime_by_chat_id,
@@ -1231,7 +1232,7 @@ impl Tool for ToolChrome {
         {
             Ok(log) => log,
             Err(e) => {
-                crate::buddy::actor::report_error_persisted(
+                report_error_persisted(
                     app.clone(),
                     "browser_error",
                     &e,
@@ -1312,7 +1313,7 @@ impl Tool for ToolChrome {
                 Err(e) => {
                     let err_msg = format!("Failed to execute typed browser request: {}.", e);
                     tool_log.push(err_msg.clone());
-                    crate::buddy::actor::report_error_persisted(
+                    report_error_persisted(
                         app.clone(),
                         "browser_error",
                         &err_msg,
@@ -1362,7 +1363,7 @@ impl Tool for ToolChrome {
                         tool_failed = true;
                         let err_msg = format!("Failed to execute command: {}.", e);
                         tool_log.push(err_msg.clone());
-                        crate::buddy::actor::report_error_persisted(
+                        report_error_persisted(
                             app.clone(),
                             "browser_error",
                             &err_msg,

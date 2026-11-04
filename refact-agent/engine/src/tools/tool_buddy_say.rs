@@ -6,7 +6,7 @@ use tokio::sync::Mutex as AMutex;
 use uuid::Uuid;
 
 use crate::at_commands::at_commands::AtCommandsContext;
-use crate::buddy::types::{BuddyControl, BuddySpeechItem};
+use refact_buddy_core::types::{BuddyControl, BuddySpeechItem};
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
 

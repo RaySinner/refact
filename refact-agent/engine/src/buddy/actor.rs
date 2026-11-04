@@ -11,7 +11,6 @@ use crate::app_state::AppState;
 pub use refact_buddy_core::actor::*;
 pub use refact_buddy_core::runtime_writer::{run_runtime_queue_writer, RuntimeQueueWriteOp};
 use refact_buddy_core::user_action::UserAction;
-use super::events::BuddyEvent;
 use super::facts::FactStore;
 use super::humor::{HumorPlan, HumorService};
 use super::memory_lifecycle::detect_memory_lifecycle_ops_from_knowledge_dirs;
@@ -340,13 +339,7 @@ pub async fn buddy_complete_event(app: AppState, dedupe_key: &str, status: &str)
     }
 }
 
-pub async fn buddy_enqueue_event(app: AppState, event: BuddyRuntimeEvent) {
-    let buddy_arc = app.chat_ctx().buddy.buddy.clone();
-    let mut lock = buddy_arc.lock().await;
-    if let Some(svc) = lock.as_mut() {
-        svc.enqueue_runtime_event(event);
-    }
-}
+pub use refact_runtime_api::buddy_runtime::buddy_enqueue_event;
 
 pub async fn resolve_buddy_chat_model(app: AppState) -> String {
     let ctx = app.chat_ctx();
@@ -494,30 +487,9 @@ pub async fn complete_quest_with_voice(
     }
 }
 
-pub async fn report_error_persisted(
-    app: AppState,
-    error_type: &str,
-    error_msg: &str,
-    source: Option<&str>,
-    chat_id: Option<&str>,
-) {
-    report_error_persisted_with_model(app, error_type, error_msg, source, chat_id, None).await;
-}
-
-pub async fn report_error_persisted_with_model(
-    app: AppState,
-    error_type: &str,
-    error_msg: &str,
-    source: Option<&str>,
-    chat_id: Option<&str>,
-    model_id: Option<&str>,
-) {
-    let buddy_arc = app.chat_ctx().buddy.buddy.clone();
-    let mut lock = buddy_arc.lock().await;
-    if let Some(svc) = lock.as_mut() {
-        svc.report_error_with_model(error_type, error_msg, source, chat_id, model_id);
-    }
-}
+pub use refact_runtime_api::buddy_runtime::{
+    report_error_persisted, report_error_persisted_with_model,
+};
 
 pub async fn latest_project_root(app: AppState) -> Result<std::path::PathBuf, String> {
     let ctx = app.chat_ctx();
@@ -597,27 +569,7 @@ pub async fn resolve_diagnostic(
 
     fallback.ok_or_else(|| "provide diagnostic reference or error".to_string())
 }
-pub async fn buddy_apply(app: AppState, m: BuddyMutation) {
-    let buddy_arc = app.chat_ctx().buddy.buddy.clone();
-    let mut lock = buddy_arc.lock().await;
-    let Some(svc) = lock.as_mut() else { return };
-    if let Some(ev) = m.runtime_event {
-        svc.enqueue_runtime_event(ev);
-    }
-    if m.xp > 0 {
-        svc.grant_xp(m.xp);
-    }
-    if let Some(activity) = m.activity {
-        svc.add_activity(activity);
-    }
-    if let Some(mood) = m.mood {
-        svc.state.semantic.mood = mood;
-        svc.dirty = true;
-        let _ = svc.events_tx.send(BuddyEvent::StateUpdated {
-            state: svc.state.clone(),
-        });
-    }
-}
+pub use refact_runtime_api::buddy_runtime::buddy_apply;
 
 pub async fn buddy_background_task(app: AppState) {
     let ctx = app.chat_ctx();

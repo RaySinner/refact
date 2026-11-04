@@ -41,3 +41,6 @@ serde_yaml = "0.9"
 tracing = "0.1"
 structopt = "0.3"
 tokio.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

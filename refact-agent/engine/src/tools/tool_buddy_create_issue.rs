@@ -102,7 +102,7 @@ impl Tool for ToolBuddyCreateIssue {
             .ok_or_else(|| {
                 "buddy_create_issue: missing required string argument 'title'".to_string()
             })?;
-        let title = crate::buddy::issues::sanitize_issue_title(title);
+        let title = refact_buddy_core::issue_sanitizers::sanitize_issue_title(title);
         let body = args
             .get("body")
             .and_then(|v| v.as_str())
@@ -111,7 +111,7 @@ impl Tool for ToolBuddyCreateIssue {
             .ok_or_else(|| {
                 "buddy_create_issue: missing required string argument 'body'".to_string()
             })?;
-        let body = crate::buddy::issues::sanitize_issue_body(body);
+        let body = refact_buddy_core::issue_sanitizers::sanitize_issue_body(body);
         let confidence = args
             .get("confidence")
             .and_then(|v| v.as_str())
@@ -161,7 +161,7 @@ impl Tool for ToolBuddyCreateIssue {
                     .collect::<Vec<_>>()
             })
             .unwrap_or_else(|| vec!["bug".to_string(), "buddy".to_string()]);
-        let labels = crate::buddy::issues::sanitize_labels(&labels);
+        let labels = refact_buddy_core::issue_sanitizers::sanitize_labels(&labels);
         let provider = args
             .get("provider")
             .and_then(|v| v.as_str())

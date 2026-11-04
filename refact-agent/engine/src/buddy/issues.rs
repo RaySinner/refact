@@ -698,23 +698,7 @@ pub(crate) fn redact_diagnostic_text(text: &str) -> String {
     result
 }
 
-pub(crate) fn sanitize_title(raw: &str) -> String {
-    let single: String = raw.chars().filter(|&c| c != '\n' && c != '\r').collect();
-    if single.chars().count() > 120 {
-        single.chars().take(120).collect()
-    } else {
-        single
-    }
-}
-
-pub(crate) fn sanitize_body(raw: &str) -> String {
-    let escaped = raw.replace("```", "'''");
-    if escaped.chars().count() > 4000 {
-        escaped.chars().take(4000).collect()
-    } else {
-        escaped
-    }
-}
+pub(crate) use refact_buddy_core::issue_sanitizers::{sanitize_body, sanitize_title};
 
 fn format_issue_body(ctx: &DiagnosticContext) -> String {
     let mut body = format!(
@@ -748,32 +732,9 @@ pub(crate) fn issue_title_and_body(ctx: &DiagnosticContext) -> (String, String) 
     (title, body)
 }
 
-fn redact_issue_text(text: &str) -> String {
-    let mut result = redact_sensitive(text);
-    if let Ok(home) = std::env::var("HOME") {
-        if !home.is_empty() {
-            result = result.replace(&home, "~");
-        }
-    }
-    result
-}
-
-pub fn sanitize_issue_title(raw: &str) -> String {
-    sanitize_title(&redact_issue_text(raw))
-}
-
-pub fn sanitize_issue_body(raw: &str) -> String {
-    sanitize_body(&redact_issue_text(raw))
-}
-
-pub fn sanitize_labels(raw: &[String]) -> Vec<String> {
-    raw.iter()
-        .map(|label| redact_sensitive(label))
-        .map(|label| label.chars().take(50).collect::<String>())
-        .filter(|label| !label.trim().is_empty())
-        .take(5)
-        .collect()
-}
+pub use refact_buddy_core::issue_sanitizers::{
+    sanitize_issue_body, sanitize_issue_title, sanitize_labels,
+};
 
 fn native_issue_args(
     repo_name: &str,

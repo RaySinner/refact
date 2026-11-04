@@ -9,6 +9,7 @@ pub mod diagnostics;
 pub mod drafts;
 pub mod events;
 pub mod facts;
+pub mod issue_sanitizers;
 pub mod memory_dedup;
 pub mod memory_lifecycle_model;
 pub mod opportunities;

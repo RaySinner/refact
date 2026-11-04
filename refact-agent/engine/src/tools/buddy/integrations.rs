@@ -98,7 +98,7 @@ fn prepare_forwarded_args(args: &HashMap<String, Value>) -> Result<HashMap<Strin
                     .map(|s| s.to_string())
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let processed: Vec<Value> = crate::buddy::issues::sanitize_labels(&raw)
+        let processed: Vec<Value> = refact_buddy_core::issue_sanitizers::sanitize_labels(&raw)
             .into_iter()
             .map(Value::String)
             .collect();

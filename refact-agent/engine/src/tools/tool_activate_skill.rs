@@ -108,7 +108,7 @@ impl Tool for ToolActivateSkill {
         let (sessions_map, chat_id) = {
             let cgcx = ccx.lock().await;
             (
-                crate::chat::sessions_map_from_handle(&cgcx.tool.chat.sessions),
+                refact_runtime_api::session_handles::sessions_map_from_handle(&cgcx.tool.chat.sessions),
                 cgcx.chat_id.clone(),
             )
         };
@@ -229,7 +229,7 @@ impl Tool for ToolDeactivateSkill {
         let (sessions_map, chat_id) = {
             let cgcx = ccx.lock().await;
             (
-                crate::chat::sessions_map_from_handle(&cgcx.tool.chat.sessions),
+                refact_runtime_api::session_handles::sessions_map_from_handle(&cgcx.tool.chat.sessions),
                 cgcx.chat_id.clone(),
             )
         };

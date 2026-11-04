@@ -192,7 +192,7 @@ impl Tool for ToolShell {
                 ))),
             )
         };
-        let sessions_map = crate::chat::sessions_map_from_handle(&tool.chat.sessions);
+        let sessions_map = refact_runtime_api::session_handles::sessions_map_from_handle(&tool.chat.sessions);
         let chat_mode = chat_mode_for_exec_for_sessions(&sessions_map, &chat_id).await;
         let policy = match build_exec_request_for_ctx(
             &chat,

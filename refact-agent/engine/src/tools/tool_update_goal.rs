@@ -55,7 +55,7 @@ impl Tool for ToolUpdateGoal {
         let (sessions_map, chat_id) = {
             let guard = ccx.lock().await;
             (
-                crate::chat::sessions_map_from_handle(&guard.tool.chat.sessions),
+                refact_runtime_api::session_handles::sessions_map_from_handle(&guard.tool.chat.sessions),
                 guard.chat_id.clone(),
             )
         };

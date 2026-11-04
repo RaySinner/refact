@@ -364,3 +364,4 @@ pub trait NotificationEventSender: Send + Sync {
 pub mod scheduler;
 pub mod customization_registry;
 pub mod memories;
+pub mod session_handles;

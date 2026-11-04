@@ -99,13 +99,7 @@ impl SessionsHandle for EngineSessionsHandle {
     }
 }
 
-pub fn sessions_map_from_handle(handle: &std::sync::Arc<dyn SessionsHandle>) -> SessionsMap {
-    handle
-        .as_any()
-        .downcast_ref::<SessionsMap>()
-        .expect("engine sessions handle wraps SessionsMap")
-        .clone()
-}
+pub use refact_runtime_api::session_handles::sessions_map_from_handle;
 
 pub fn create_sessions_map() -> SessionsMap {
     Arc::new(ARwLock::new(HashMap::new()))

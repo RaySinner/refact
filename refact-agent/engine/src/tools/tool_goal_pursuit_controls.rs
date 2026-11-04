@@ -59,7 +59,7 @@ async fn session_for_chat(
     let (sessions_map, chat_id) = {
         let ccx = ccx.lock().await;
         (
-            crate::chat::sessions_map_from_handle(&ccx.tool.chat.sessions),
+            refact_runtime_api::session_handles::sessions_map_from_handle(&ccx.tool.chat.sessions),
             ccx.chat_id.clone(),
         )
     };

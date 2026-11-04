@@ -12,7 +12,7 @@ chrono-tz = "0.10"
 cron = "0.12"
 iana-time-zone = "0.1"
 regex.workspace = true
-uuid.workspace = true
+uuid = { workspace = true, features = ["v7"] }
 async-trait = "0.1.73"
 tokio = { workspace = true, features = ["sync"] }
 

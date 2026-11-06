@@ -45,4 +45,28 @@ describe("design tokens", () => {
   it("keeps light theme accent bound to Radix", () => {
     expect(tokensCss).toContain("--rf-color-accent: var(--accent-9, #006adc);");
   });
+
+  it("dresses the reader's own turn in the success colour", () => {
+    // Slot 7 is the `user` role. It must derive from --rf-color-success rather
+    // than a literal, so the reader's message follows the app's success green in
+    // both appearances and never inherits a neutral slate.
+    const slot7 = tokensCss.match(/--room-stripe-7:\s*([^;]+);/g);
+    const label7 = tokensCss.match(/--room-label-7:\s*([^;]+);/g);
+    expect(slot7).not.toBeNull();
+    expect(label7).not.toBeNull();
+    for (const declaration of [...(slot7 ?? []), ...(label7 ?? [])]) {
+      expect(declaration).toContain("var(--rf-color-success)");
+      expect(declaration).not.toMatch(/#[0-9a-f]{3,6}/i);
+    }
+  });
+
+  it("does not re-bridge slot 7 to a host token", () => {
+    // The VS Code adapter used to map slot 7 onto --vscode-descriptionForeground,
+    // which is what rendered the reader's bubble as neutral grey.
+    const vscodeAdapter = tokensCss.slice(
+      tokensCss.indexOf('[data-host="vscode"]'),
+    );
+    expect(vscodeAdapter).not.toContain("--room-stripe-7:");
+    expect(vscodeAdapter).not.toContain("--room-label-7:");
+  });
 });

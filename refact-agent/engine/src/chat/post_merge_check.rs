@@ -15,7 +15,7 @@ use crate::global_context::GlobalContext;
 use crate::tasks::storage;
 use crate::tasks::types::{BoardCard, BoardColumn, StatusUpdate, VerificationOutcome};
 
-pub const DEFAULT_POST_MERGE_CHECK_TIMEOUT_SECS: u64 = 300;
+pub use refact_chat_api::tools_facade::DEFAULT_POST_MERGE_CHECK_TIMEOUT_SECS;
 const MAX_OUTPUT_TAIL_CHARS: usize = 6000;
 const STALE_POST_MERGE_WRITE: &str = "stale post-merge write";
 

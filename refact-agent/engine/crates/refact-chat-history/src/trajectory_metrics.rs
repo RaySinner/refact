@@ -6,6 +6,34 @@ pub use refact_chat_api::trajectory_meta::{
 
 pub const TRAJECTORY_LABEL_MAX_CHARS: usize = TRAJECTORY_META_TITLE_MAX_CHARS;
 
+pub fn validate_trajectory_label(label: &str) -> Result<String, String> {
+    let label = label.split_whitespace().collect::<Vec<_>>().join(" ");
+    if label.is_empty() {
+        return Err("argument `label` must be non-empty".to_string());
+    }
+    if label.chars().count() > TRAJECTORY_LABEL_MAX_CHARS {
+        return Err(format!(
+            "argument `label` must be at most {TRAJECTORY_LABEL_MAX_CHARS} characters"
+        ));
+    }
+    Ok(label)
+}
+
+#[cfg(test)]
+mod label_tests {
+    use super::*;
+
+    #[test]
+    fn validates_required_non_empty_and_bounded_label() {
+        assert!(validate_trajectory_label("  ").is_err());
+        assert!(validate_trajectory_label(&"x".repeat(TRAJECTORY_LABEL_MAX_CHARS + 1)).is_err());
+        assert_eq!(
+            validate_trajectory_label("  valid\n label  ").unwrap(),
+            "valid label"
+        );
+    }
+}
+
 pub fn calculate_line_changes_from_messages(messages: &[serde_json::Value]) -> (i64, i64) {
     let mut total_added: i64 = 0;
     let mut total_removed: i64 = 0;

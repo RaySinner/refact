@@ -157,8 +157,9 @@ use paths::{
 pub use load::{
     load_generic_trajectory_for_chat, load_trajectory_for_chat, save_initial_task_chat_trajectory,
     save_trajectory_as, save_trajectory_as_with_intent, save_trajectory_as_with_intent_checked,
-    set_trajectory_label, validate_trajectory_label,
+    set_trajectory_label,
 };
+pub use refact_chat_history::trajectory_metrics::validate_trajectory_label;
 pub(crate) use load::{
     chat_id_is_planner_for_task, load_generic_trajectory_for_chat_matching_source,
     load_trajectory_candidate, resolve_task_planner_controller_chat_id,

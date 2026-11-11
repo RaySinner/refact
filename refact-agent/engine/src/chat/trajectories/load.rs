@@ -24,7 +24,7 @@ use super::paths::{
 };
 use super::{
     canonical_child_path_under_root, ensure_real_dir_tree, is_real_dir, is_real_file,
-    safe_new_trajectory_file_in_dir, TRAJECTORY_LABEL_MAX_CHARS,
+    safe_new_trajectory_file_in_dir,
 };
 use super::reload::{parsed_rfc3339_utc, raw_frozen_prefix_has_tools, repair_transition_frozen_prefix};
 use super::store::{
@@ -974,22 +974,9 @@ pub async fn load_trajectory_for_chat(
     load_trajectory_candidate(ctx, chat_id, candidate).await
 }
 
-pub fn validate_trajectory_label(label: &str) -> Result<String, String> {
-    let label = label.split_whitespace().collect::<Vec<_>>().join(" ");
-    if label.is_empty() {
-        return Err("argument `label` must be non-empty".to_string());
-    }
-    if label.chars().count() > TRAJECTORY_LABEL_MAX_CHARS {
-        return Err(format!(
-            "argument `label` must be at most {TRAJECTORY_LABEL_MAX_CHARS} characters"
-        ));
-    }
-    Ok(label)
-}
-
 pub async fn set_trajectory_label(app: AppState, chat_id: &str, label: &str) -> Result<(), String> {
     validate_trajectory_id(chat_id).map_err(|error| error.message)?;
-    let label = validate_trajectory_label(label)?;
+    let label = refact_chat_history::trajectory_metrics::validate_trajectory_label(label)?;
     let session_arc = app
         .chat
         .sessions

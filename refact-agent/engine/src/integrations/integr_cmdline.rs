@@ -192,24 +192,7 @@ pub fn replace_args(x: &str, args_str: &HashMap<String, String>) -> String {
     result
 }
 
-pub fn format_output(stdout_out: &str, stderr_out: &str) -> String {
-    let mut out = String::new();
-    if !stdout_out.is_empty() && stderr_out.is_empty() {
-        // special case: just clean output, nice
-        out.push_str(&format!("{}\n\n", stdout_out));
-    } else {
-        if !stdout_out.is_empty() {
-            out.push_str(&format!("STDOUT\n```\n{}```\n\n", stdout_out));
-        }
-        if !stderr_out.is_empty() {
-            out.push_str(&format!("STDERR\n```\n{}```\n\n", stderr_out));
-        }
-        if stdout_out.is_empty() && stderr_out.is_empty() {
-            out.push_str(&format!("Nothing in STDOUT/STDERR\n\n"));
-        }
-    }
-    out
-}
+pub use refact_integrations::process_io_utils::format_output;
 
 fn resolve_cmdline_workdir(command_workdir: &str, project_dirs: &[PathBuf]) -> Option<PathBuf> {
     if command_workdir.is_empty() {

@@ -318,7 +318,7 @@ impl Tool for ToolShell {
         let filtered_stderr = output_mini_postprocessing(&output_filter, &stderr);
 
         let mut out =
-            crate::integrations::integr_cmdline::format_output(&filtered_stdout, &filtered_stderr);
+            refact_integrations::process_io_utils::format_output(&filtered_stdout, &filtered_stderr);
         if let Some(warning) = sandbox_warning.as_ref() {
             out = format!("{warning}\n{out}");
         }

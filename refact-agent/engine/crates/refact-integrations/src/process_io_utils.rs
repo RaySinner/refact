@@ -103,3 +103,54 @@ impl AnsiStrippable for [u8] {
         String::from_utf8_lossy(&strip_ansi_escapes::strip(self)).to_string()
     }
 }
+pub fn format_output(stdout_out: &str, stderr_out: &str) -> String {
+    let mut out = String::new();
+    if !stdout_out.is_empty() && stderr_out.is_empty() {
+        // special case: just clean output, nice
+        out.push_str(&format!("{}\n\n", stdout_out));
+    } else {
+        if !stdout_out.is_empty() {
+            out.push_str(&format!("STDOUT\n```\n{}```\n\n", stdout_out));
+        }
+        if !stderr_out.is_empty() {
+            out.push_str(&format!("STDERR\n```\n{}```\n\n", stderr_out));
+        }
+        if stdout_out.is_empty() && stderr_out.is_empty() {
+            out.push_str(&format!("Nothing in STDOUT/STDERR\n\n"));
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn format_output_stdout_only_is_verbatim_with_double_newline() {
+        let stdout = "hello\nworld";
+        let output = format_output(stdout, "");
+        assert_eq!(output, "hello\nworld\n\n");
+    }
+
+    #[test]
+    fn format_output_stderr_only_uses_stderr_fence() {
+        let stderr = "boom";
+        let output = format_output("", stderr);
+        assert_eq!(output, "STDERR\n```\nboom```\n\n");
+    }
+
+    #[test]
+    fn format_output_both_streams_use_two_fenced_sections() {
+        let output = format_output("out", "err");
+        assert_eq!(output, "STDOUT\n```\nout```\n\nSTDERR\n```\nerr```\n\n");
+    }
+
+    #[test]
+    fn format_output_empty_streams_report_nothing_without_trimming() {
+        let output = format_output("", "");
+        assert_eq!(output, "Nothing in STDOUT/STDERR\n\n");
+        let trailing = format_output("tail\n", "");
+        assert_eq!(trailing, "tail\n\n\n");
+    }
+}

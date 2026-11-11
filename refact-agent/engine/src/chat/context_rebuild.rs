@@ -19,22 +19,7 @@ use refact_core::active_context::{
 };
 use crate::tools::tool_compress_chat::CompressChatApplyOutput;
 
-pub use refact_chat_api::PendingContextRebuild;
-
-pub fn request_rebuild(
-    session: &mut ChatSession,
-    request: PendingContextRebuild,
-) -> Result<(), String> {
-    if session.closed
-        || compression_attempt_active(session)
-        || session.pending_context_rebuild.is_some()
-        || session.pending_mode_handoff.is_some()
-    {
-        return Err("A context operation is already pending or the session is closed".into());
-    }
-    session.pending_context_rebuild = Some(request);
-    Ok(())
-}
+pub use refact_chat_api::pending_context_rebuild::{request_rebuild, PendingContextRebuild};
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct ManualCompressionPreview {
@@ -1640,26 +1625,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn reservation_rejects_second_owner() {
-        let mut s = ChatSession::new("rebuild-test".into());
-        assert!(request_rebuild(
-            &mut s,
-            PendingContextRebuild {
-                model: None,
-                trigger: "tool".into()
-            }
-        )
-        .is_ok());
-        assert!(request_rebuild(
-            &mut s,
-            PendingContextRebuild {
-                model: None,
-                trigger: "tool".into()
-            }
-        )
-        .is_err());
-    }
     #[tokio::test]
     async fn deterministic_recovery_sweeps_high_context_without_model_call() {
         let gcx = crate::global_context::tests::make_test_gcx().await;

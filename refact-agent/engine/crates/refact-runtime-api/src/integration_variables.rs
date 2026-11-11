@@ -169,6 +169,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         fs::create_dir_all(dir.path().join("sub")).unwrap();
         write_yaml(dir.path(), "variables.yaml", "VAR: v\n");
+        write_yaml(dir.path(), "secrets.yaml", "SECRET: s\n");
         let twisted = dir.path().join("sub").join("..").join("variables.yaml");
 
         let (variables_path, secrets_path) =

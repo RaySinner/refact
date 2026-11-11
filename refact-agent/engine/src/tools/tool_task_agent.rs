@@ -5,14 +5,14 @@ use serde_json::Value;
 use tokio::sync::Mutex as AMutex;
 use chrono::Utc;
 
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use refact_core::chat_types::{ChatMessage, ChatContent, ContextEnum};
 use refact_chat_api::TaskMeta;
 use crate::tools::tools_description::{
     Tool, ToolDesc, ToolSource, ToolSourceType, json_schema_from_params,
 };
 use refact_runtime_api::task_storage as storage;
-use crate::tasks::types::StatusUpdate;
+use refact_tasks::types::StatusUpdate;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct TaskAgentScope {
@@ -151,7 +151,7 @@ fn legacy_finish_tool_error(tool_name: &str) -> String {
     )
 }
 
-async fn get_task_ctx(ccx: &Arc<AMutex<AtCommandsContext>>) -> crate::chat::ctx::ChatCtx {
+async fn get_task_ctx(ccx: &Arc<AMutex<AtCommandsContext>>) -> refact_runtime_api::ChatCtx {
     ccx.lock().await.app.chat_ctx()
 }
 

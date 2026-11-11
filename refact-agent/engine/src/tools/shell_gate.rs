@@ -13,9 +13,9 @@ use refact_tool_api::{
     RiskEntry, RiskLevel,
 };
 
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use crate::global_context::GlobalContextCtx;
-use crate::chat::ctx::ChatCtx;
+use refact_runtime_api::ChatCtx;
 use crate::global_context::GlobalContext;
 use crate::tools::file_edit::auxiliary::active_execution_scope;
 use crate::tools::shell_gate_llm::{validate_command, LlmVerdict};
@@ -507,7 +507,7 @@ pub async fn load_policy(gcx: Arc<GlobalContext>) -> ShellGatePolicy {
     load_policy_for_ctx(&gcx.chat_ctx(gcx.clone())).await
 }
 
-pub async fn load_policy_for_ctx(ctx: &crate::chat::ctx::ChatCtx) -> ShellGatePolicy {
+pub async fn load_policy_for_ctx(ctx: &refact_runtime_api::ChatCtx) -> ShellGatePolicy {
     let Some(project_dir) =
         refact_runtime_api::files_correction::get_unscoped_project_dirs_for_ctx(ctx)
             .await

@@ -327,7 +327,7 @@ pub(crate) fn builtin_system_tools(config_path: String) -> Vec<Box<dyn Tool + Se
     vec![
         Box::new(crate::tools::tool_shell::ToolShell {
             cfg: crate::tools::tool_shell::SettingsShell {
-                output_filter: crate::postprocessing::pp_command_output::OutputFilter::default(),
+                output_filter: refact_postprocessing::pp_command_output::OutputFilter::default(),
             },
             config_path: config_path.clone(),
         }),
@@ -1012,7 +1012,7 @@ mod tests {
     impl Tool for IntegrationTestTool {
         async fn tool_execute(
             &mut self,
-            _ccx: Arc<tokio::sync::Mutex<crate::at_commands::at_commands::AtCommandsContext>>,
+            _ccx: Arc<tokio::sync::Mutex<refact_runtime_api::AtCommandsContext>>,
             _tool_call_id: &String,
             _args: &HashMap<String, serde_json::Value>,
         ) -> Result<(bool, Vec<refact_core::chat_types::ContextEnum>), String> {
@@ -1121,7 +1121,7 @@ mod tests {
     impl Tool for TestTool {
         async fn tool_execute(
             &mut self,
-            _ccx: Arc<tokio::sync::Mutex<crate::at_commands::at_commands::AtCommandsContext>>,
+            _ccx: Arc<tokio::sync::Mutex<refact_runtime_api::AtCommandsContext>>,
             _tool_call_id: &String,
             _args: &HashMap<String, serde_json::Value>,
         ) -> Result<(bool, Vec<refact_core::chat_types::ContextEnum>), String> {

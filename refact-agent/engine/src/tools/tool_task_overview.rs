@@ -10,11 +10,11 @@ use serde_yaml::Value as YamlValue;
 use tokio::fs;
 use tokio::sync::Mutex as AMutex;
 
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use crate::chat::history_limit::{compute_context_budget, ContextBudgetReport, ContextPressure};
 use refact_runtime_api::task_storage as storage;
-use crate::tasks::types::{BoardCard, TaskBoard};
+use refact_tasks::types::{BoardCard, TaskBoard};
 use crate::tools::tool_task_check_agents::{get_agent_statuses_for_ctx, AgentStatus};
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
 use refact_runtime_api::{ChatSessionFacade, SessionState};
@@ -33,7 +33,7 @@ impl ToolTaskOverview {
 
 struct OverviewContext {
     task_id: String,
-    ctx: crate::chat::ctx::ChatCtx,
+    ctx: refact_runtime_api::ChatCtx,
     chat_facade: Arc<dyn ChatSessionFacade>,
     messages: Vec<ChatMessage>,
     n_ctx: usize,
@@ -783,8 +783,8 @@ mod tests {
     use super::*;
     use crate::app_state::AppState;
     use crate::global_context::GlobalContext;
-    use crate::chat::types::TaskMeta as ThreadTaskMeta;
-    use crate::tasks::types::{TaskMeta, TaskStatus};
+    use refact_chat_api::TaskMeta as ThreadTaskMeta;
+    use refact_tasks::types::{TaskMeta, TaskStatus};
     use crate::tools::tools_description::Tool;
 
     fn fixed_now() -> DateTime<Utc> {

@@ -4,11 +4,11 @@ use async_trait::async_trait;
 use serde_json::Value;
 use tokio::sync::Mutex as AMutex;
 
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use crate::at_commands::at_web::execute_at_web_result;
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
 use refact_core::chat_types::{ChatMessage, ChatContent, ContextEnum};
-use crate::postprocessing::pp_command_output::OutputFilter;
+use refact_postprocessing::pp_command_output::OutputFilter;
 
 pub struct ToolWeb {
     pub config_path: String,

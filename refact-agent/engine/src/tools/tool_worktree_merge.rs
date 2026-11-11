@@ -5,14 +5,14 @@ use async_trait::async_trait;
 use serde_json::Value;
 use tokio::sync::Mutex as AMutex;
 
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use crate::global_context::GlobalContext;
 use crate::tools::tools_description::{
     json_schema_from_params, Tool, ToolDesc, ToolSource, ToolSourceType,
 };
-use crate::worktrees::service::WorktreeService;
-use crate::worktrees::types::{MergeWorktreeRequest, MergeWorktreeResponse, WorktreeMergeStrategy};
+use refact_worktrees::service::WorktreeService;
+use refact_worktrees::types::{MergeWorktreeRequest, MergeWorktreeResponse, WorktreeMergeStrategy};
 
 fn strategy_from_str(strategy: &str) -> Result<WorktreeMergeStrategy, String> {
     match strategy {
@@ -57,7 +57,7 @@ mod tests {
 
     fn merged_response_with_cleanup_warning() -> MergeWorktreeResponse {
         MergeWorktreeResponse {
-            cleanup: Some(crate::worktrees::types::WorktreeRemovalResult {
+            cleanup: Some(refact_worktrees::types::WorktreeRemovalResult {
                 worktree_deleted: true,
                 branch_deleted: false,
                 registry_deleted: true,

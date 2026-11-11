@@ -5,7 +5,7 @@ use refact_chat_api::{attach_tool_enrichment, ToolEnrichment, ToolEnrichmentKind
 
 use refact_core::chat_types::{ChatMessage, ContextFile};
 use crate::global_context::GlobalContext;
-use crate::worktrees::scope::ExecutionScope;
+use refact_worktrees::scope::ExecutionScope;
 
 const MAX_REFERENCES: usize = 32;
 

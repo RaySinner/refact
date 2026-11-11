@@ -264,7 +264,7 @@ mod tests {
     use refact_core::chat_types::{ChatModelType};
     use refact_chat_api::{SubchatParameters};
     use crate::llm::params::CacheControl;
-    use crate::chat::ctx::ExplicitSubchatSpec;
+    use refact_chat_api::ExplicitSubchatSpec;
     use crate::tools::review_agents::runner::stage_trace_chat_id;
     use crate::tools::review_agents::stages::embedded_catalog;
     use crate::tools::review_types::StageStatusKind;

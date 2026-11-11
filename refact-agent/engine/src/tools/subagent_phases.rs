@@ -5,15 +5,15 @@ use std::sync::Arc;
 use serde_json::json;
 use tokio::sync::Mutex as AMutex;
 
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use refact_core::chat_types::{ChatMessage, ChatContent};
-use crate::chat::ctx::SubchatLauncher;
-use crate::chat::internal_roles::{event, EventSubkind};
+use refact_runtime_api::SubchatLauncher;
+use refact_chat_api::internal_roles::{event, EventSubkind};
 use refact_runtime_api::files_correction::correct_to_nearest_filename;
-use crate::chat::ctx::{ExplicitSubchatSpec, TraceParent};
+use refact_chat_api::{ExplicitSubchatSpec, TraceParent};
 use crate::global_context::GlobalContext;
 use crate::tools::tool_helpers::{load_code_subagent_config, CodeSubagentConfig};
-use crate::worktrees::scope::ExecutionScope;
+use refact_worktrees::scope::ExecutionScope;
 
 pub const DEFAULT_MAX_FILES: usize = 30;
 pub const DEFAULT_GATHER_MAX_STEPS: usize = 10;

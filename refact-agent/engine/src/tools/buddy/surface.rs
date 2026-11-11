@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use tokio::sync::Mutex as AMutex;
 use uuid::Uuid;
 
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use crate::app_state::{AppState, BuddyServices};
 use refact_buddy_core::autonomous_redaction::redact_and_cap_text;
 use refact_buddy_core::actor::{make_runtime_event, BuddyMutation};

@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 use tokio::sync::Mutex as AMutex;
 
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use refact_chat_api::verifier::VerifyCardRequest;
 use refact_runtime_api::verifier::verify_card_for_ctx;
@@ -132,10 +132,10 @@ impl Tool for ToolTaskVerifyCard {
 mod tests {
     use super::*;
     use crate::app_state::AppState;
-    use crate::chat::types::TaskMeta as ThreadTaskMeta;
+    use refact_chat_api::TaskMeta as ThreadTaskMeta;
     use crate::global_context::GlobalContext;
     use refact_runtime_api::task_storage as storage;
-    use crate::tasks::types::{TaskBoard, TaskMeta as StoredTaskMeta, TaskStatus};
+    use refact_tasks::types::{TaskBoard, TaskMeta as StoredTaskMeta, TaskStatus};
     use std::path::Path;
 
     fn task_meta() -> StoredTaskMeta {
@@ -261,7 +261,7 @@ mod tests {
             .await
             .unwrap();
         let now = chrono::Utc::now().to_rfc3339();
-        let card = crate::tasks::types::BoardCard {
+        let card = refact_tasks::types::BoardCard {
             id: "T-1".to_string(),
             title: "Test card".to_string(),
             column: "done".to_string(),
@@ -288,7 +288,7 @@ mod tests {
             ab_variants: None,
             team_members: vec![],
             target_files: Vec::new(),
-            scope_guard_mode: crate::tasks::types::ScopeGuardMode::Off,
+            scope_guard_mode: refact_tasks::types::ScopeGuardMode::Off,
         };
         storage::save_board(
             gcx.clone(),

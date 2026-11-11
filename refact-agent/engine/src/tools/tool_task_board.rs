@@ -6,14 +6,14 @@ use serde_json::{json, Value};
 use tokio::sync::Mutex as AMutex;
 use chrono::{DateTime, Utc};
 
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use refact_core::chat_types::{ChatMessage, ChatContent, ContextEnum};
 use crate::tools::tools_description::{
     Tool, ToolDesc, ToolSource, ToolSourceType, json_schema_from_params,
 };
 use refact_tasks::rooms::parse_team_members;
 use refact_runtime_api::task_storage as storage;
-use crate::tasks::types::{AbVariants, BoardCard, ScopeGuardMode, TaskBoard};
+use refact_tasks::types::{AbVariants, BoardCard, ScopeGuardMode, TaskBoard};
 use crate::tasks::events::{TaskEvent, emit_task_event_for_services};
 use refact_runtime_api::SessionState;
 
@@ -118,7 +118,7 @@ struct CardBrief {
 #[derive(Serialize)]
 struct CardUpdatesOnly {
     id: String,
-    status_updates: Vec<crate::tasks::types::StatusUpdate>,
+    status_updates: Vec<refact_tasks::types::StatusUpdate>,
 }
 
 fn parse_mode(args: &HashMap<String, Value>) -> Result<BoardMode, String> {
@@ -1469,7 +1469,7 @@ mod tests {
     #[test]
     fn board_get_card_verbosity_filters_work() {
         let mut card = card("T-1", "Card", "done", "P0", vec![]);
-        card.status_updates.push(crate::tasks::types::StatusUpdate {
+        card.status_updates.push(refact_tasks::types::StatusUpdate {
             timestamp: "2026-05-16T00:00:00Z".to_string(),
             message: "updated".to_string(),
         });

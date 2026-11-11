@@ -8,7 +8,7 @@ use refact_core::chat_types::ChatMessage;
 use crate::global_context::GlobalContextCtx;
 use crate::global_context::{try_load_caps_quickly_if_not_present, GlobalContext};
 use refact_core::json_utils::extract_json_object;
-use crate::chat::ctx::{SubchatConfig, ToolsPolicy, TraceParent};
+use refact_chat_api::{SubchatConfig, ToolsPolicy, TraceParent};
 use crate::tools::shell_gate::ShellLlmValidation;
 
 #[derive(Clone, Debug, Deserialize)]

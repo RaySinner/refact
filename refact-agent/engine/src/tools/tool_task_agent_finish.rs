@@ -7,18 +7,18 @@ use chrono::Utc;
 use serde_json::{json, Value};
 use tokio::sync::Mutex as AMutex;
 
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use crate::global_context::GlobalContextCtx;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use refact_chat_api::verifier::ExpectedCardState;
 use refact_runtime_api::verifier::schedule_card_verifier_after_finish_for_ctx;
 use refact_runtime_api::task_storage as storage;
-use crate::tasks::types::{
+use refact_tasks::types::{
     AbVariantFinish, AbVariantInfo, BoardCard, FinalReport, StatusUpdate, SuggestedCard,
     TeamMemberReport, TeamStatus, VerificationResult,
 };
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
-use crate::worktrees::types::WorktreeMeta;
+use refact_worktrees::types::WorktreeMeta;
 
 async fn get_task_id(ccx: &Arc<AMutex<AtCommandsContext>>) -> Result<String, String> {
     let ccx_lock = ccx.lock().await;
@@ -122,7 +122,7 @@ async fn ensure_lock_for<T>(
 }
 
 async fn refresh_finish_heartbeat_if_current(
-    ctx: &crate::chat::ctx::ChatCtx,
+    ctx: &refact_runtime_api::ChatCtx,
     task_id: &str,
     card_id: &str,
     finish_chat_id: &str,
@@ -224,10 +224,10 @@ async fn git_output_checked(
 ) -> Result<std::process::Output, String> {
     let mut command = tokio::process::Command::new("git");
     command.args(args).current_dir(worktree_path);
-    let output = crate::worktrees::git::run_git_command(
+    let output = refact_worktrees::git::run_git_command(
         command,
         action,
-        crate::worktrees::git::GIT_COMMAND_TIMEOUT,
+        refact_worktrees::git::GIT_COMMAND_TIMEOUT,
     )
     .await
     .map_err(|e| format!("{} (worktree '{}')", e, worktree_path.display()))?;
@@ -262,10 +262,10 @@ async fn validate_git_worktree(worktree_path: &Path) -> Result<(), String> {
     command
         .args(["rev-parse", "--is-inside-work-tree"])
         .current_dir(worktree_path);
-    let output = crate::worktrees::git::run_git_command(
+    let output = refact_worktrees::git::run_git_command(
         command,
         "rev-parse --is-inside-work-tree",
-        crate::worktrees::git::GIT_COMMAND_TIMEOUT,
+        refact_worktrees::git::GIT_COMMAND_TIMEOUT,
     )
     .await
     .map_err(|e| format!("Failed to validate git worktree '{}': {}", worktree_path.display(), e))?;
@@ -813,10 +813,10 @@ async fn auto_commit_worktree_with_message(
                 "--no-gpg-sign",
             ])
             .current_dir(worktree_path);
-        crate::worktrees::git::run_git_command(
+        refact_worktrees::git::run_git_command(
             command,
             "commit",
-            crate::worktrees::git::GIT_COMMAND_TIMEOUT,
+            refact_worktrees::git::GIT_COMMAND_TIMEOUT,
         )
         .await
         .map_err(|e| {
@@ -1245,7 +1245,7 @@ impl Tool for ToolTaskAgentFinish {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tasks::types::{
+    use refact_tasks::types::{
         AbVariantInfo, AbVariants, BoardCard, TaskBoard, TaskMeta as StoredTaskMeta, TaskStatus,
         TeamStatus,
     };
@@ -1946,8 +1946,8 @@ mod tests {
         );
     }
 
-    fn room_member(role: &str, chat: &str, status: TeamStatus) -> crate::tasks::types::TeamMember {
-        crate::tasks::types::TeamMember {
+    fn room_member(role: &str, chat: &str, status: TeamStatus) -> refact_tasks::types::TeamMember {
+        refact_tasks::types::TeamMember {
             role: role.to_string(),
             agent_chat_id: Some(chat.to_string()),
             agent_id: Some(format!("agent-{}", chat)),

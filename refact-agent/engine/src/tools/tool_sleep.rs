@@ -16,10 +16,10 @@ use tokio::time::{sleep_until, Instant as TokioInstant};
 #[cfg(test)]
 use tokio::time::sleep;
 
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
-use crate::chat::internal_roles::{event, EventSubkind};
-use crate::postprocessing::pp_command_output::OutputFilter;
+use refact_chat_api::internal_roles::{event, EventSubkind};
+use refact_postprocessing::pp_command_output::OutputFilter;
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType, WaitInterrupt};
 #[cfg(test)]
 use crate::tools::tools_description::WaitInterruptCause;
@@ -334,9 +334,9 @@ async fn queue_ticks(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::at_commands::at_commands::AtCommandsContext;
+    use refact_runtime_api::AtCommandsContext;
     use refact_core::chat_types::{ChatToolCall, ChatToolFunction};
-    use crate::chat::types::ChatSession;
+    use refact_chat_api::ChatSession;
     use crate::llm::adapter::{AdapterSettings, LlmWireAdapter};
     use crate::llm::adapters::openai_chat::OpenAiChatAdapter;
     use std::sync::atomic::AtomicBool;

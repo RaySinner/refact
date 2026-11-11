@@ -5,11 +5,11 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 use tokio::sync::Mutex as AMutex;
 
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use crate::global_context::GlobalContextCtx;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use crate::chat::plan_role;
-use crate::chat::types::ChatSession;
+use refact_chat_api::ChatSession;
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
 
 pub struct ToolGetPlan {
@@ -119,7 +119,7 @@ impl Tool for ToolGetPlan {
 #[cfg(test)]
 fn session_from_snapshot(
     chat_id: String,
-    thread: crate::chat::types::ThreadParams,
+    thread: refact_chat_api::ThreadParams,
     messages: Vec<ChatMessage>,
 ) -> ChatSession {
     let mut session = ChatSession::new(chat_id);
@@ -132,7 +132,7 @@ fn session_from_snapshot(
 mod tests {
     use super::*;
     use crate::app_state::AppState;
-    use crate::chat::internal_roles;
+    use refact_chat_api::internal_roles;
     use crate::chat::trajectories::{
         load_trajectory_for_chat, save_trajectory_snapshot, TrajectorySnapshot,
     };

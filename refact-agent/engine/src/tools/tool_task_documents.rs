@@ -9,12 +9,12 @@ use serde_json::Value;
 use tokio::fs;
 use tokio::sync::Mutex as AMutex;
 
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use crate::global_context::GlobalContextCtx;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 #[cfg(test)]
 use crate::global_context::GlobalContext;
-use crate::postprocessing::pp_command_output::OutputFilter;
+use refact_postprocessing::pp_command_output::OutputFilter;
 use refact_runtime_api::task_storage as storage;
 use crate::tools::tools_description::{
     json_schema_from_params, Tool, ToolDesc, ToolSource, ToolSourceType,
@@ -559,7 +559,7 @@ async fn task_context(
 }
 
 pub(crate) async fn documents_dir_for_task_for_ctx(
-    ctx: &crate::chat::ctx::ChatCtx,
+    ctx: &refact_runtime_api::ChatCtx,
     task_id: &str,
 ) -> Result<PathBuf, String> {
     let task_dir = storage::find_task_dir_for_ctx(ctx, task_id).await?;
@@ -737,7 +737,7 @@ fn document_to_detail(doc: TaskDocument) -> TaskDocumentDetail {
 }
 
 pub async fn list_task_documents_for_api_for_ctx(
-    ctx: &crate::chat::ctx::ChatCtx,
+    ctx: &refact_runtime_api::ChatCtx,
     task_id: &str,
 ) -> Result<TaskDocumentListResponse, String> {
     let documents_dir = documents_dir_for_task_for_ctx(ctx, task_id).await?;
@@ -765,7 +765,7 @@ async fn emit_document_changed(
 }
 
 pub async fn get_task_document_for_api_for_ctx(
-    ctx: &crate::chat::ctx::ChatCtx,
+    ctx: &refact_runtime_api::ChatCtx,
     task_id: &str,
     slug: &str,
     version: Option<u64>,
@@ -779,7 +779,7 @@ pub async fn get_task_document_for_api_for_ctx(
 }
 
 pub async fn create_task_document_for_api_for_ctx(
-    ctx: &crate::chat::ctx::ChatCtx,
+    ctx: &refact_runtime_api::ChatCtx,
     task_id: &str,
     request: CreateDocumentRequest,
 ) -> Result<TaskDocumentDetail, String> {
@@ -801,7 +801,7 @@ pub async fn create_task_document_for_api_for_ctx(
 }
 
 pub async fn update_task_document_for_api_for_ctx(
-    ctx: &crate::chat::ctx::ChatCtx,
+    ctx: &refact_runtime_api::ChatCtx,
     task_id: &str,
     slug: &str,
     content: String,
@@ -818,7 +818,7 @@ pub async fn update_task_document_for_api_for_ctx(
 }
 
 pub async fn append_task_document_for_api_for_ctx(
-    ctx: &crate::chat::ctx::ChatCtx,
+    ctx: &refact_runtime_api::ChatCtx,
     task_id: &str,
     slug: &str,
     section: String,
@@ -834,7 +834,7 @@ pub async fn append_task_document_for_api_for_ctx(
 }
 
 pub async fn delete_task_document_for_api_for_ctx(
-    ctx: &crate::chat::ctx::ChatCtx,
+    ctx: &refact_runtime_api::ChatCtx,
     task_id: &str,
     slug: &str,
 ) -> Result<(), String> {
@@ -845,7 +845,7 @@ pub async fn delete_task_document_for_api_for_ctx(
 }
 
 pub async fn pin_task_document_for_api_for_ctx(
-    ctx: &crate::chat::ctx::ChatCtx,
+    ctx: &refact_runtime_api::ChatCtx,
     task_id: &str,
     slug: &str,
     pinned: bool,
@@ -861,7 +861,7 @@ pub async fn pin_task_document_for_api_for_ctx(
 }
 
 pub async fn history_task_document_for_api_for_ctx(
-    ctx: &crate::chat::ctx::ChatCtx,
+    ctx: &refact_runtime_api::ChatCtx,
     task_id: &str,
     slug: &str,
 ) -> Result<TaskDocumentHistoryResponse, String> {

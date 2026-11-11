@@ -6,12 +6,12 @@ use chrono::{DateTime, Utc};
 use serde_json::{json, Value};
 use tokio::sync::Mutex as AMutex;
 
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
-use crate::chat::ctx::ChatCtx;
+use refact_runtime_api::ChatCtx;
 use crate::tasks::comments::{self, CreateCardComment};
 use refact_runtime_api::task_storage as storage;
-use crate::tasks::types::CardComment;
+use refact_tasks::types::CardComment;
 use crate::tools::task_tool_helpers::{human_age, optional_string, required_string};
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
 
@@ -351,10 +351,10 @@ impl Tool for ToolCardCommentList {
 mod tests {
     use super::*;
     use crate::app_state::AppState;
-    use crate::chat::types::TaskMeta as ThreadTaskMeta;
+    use refact_chat_api::TaskMeta as ThreadTaskMeta;
     use crate::http::routers::v1::tasks::{CreateCardCommentRequest, handle_create_card_comment};
     use crate::tasks::comments::COMMENT_CAP;
-    use crate::tasks::types::{BoardCard, TaskBoard, TaskMeta, TaskStatus};
+    use refact_tasks::types::{BoardCard, TaskBoard, TaskMeta, TaskStatus};
     use crate::tools::tools_description::Tool;
     use axum::extract::{Path, State};
     use axum::response::Json;

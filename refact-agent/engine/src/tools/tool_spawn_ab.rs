@@ -9,14 +9,14 @@ use tokio::sync::Mutex as AMutex;
 use uuid::Uuid;
 
 use crate::app_state::AppState;
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
-use crate::chat::ctx::ChatCtx;
-use crate::chat::internal_roles::{event, EventSubkind};
+use refact_runtime_api::ChatCtx;
+use refact_chat_api::internal_roles::{event, EventSubkind};
 use refact_chat_api::verifier::ExpectedCardState;
 use refact_runtime_api::verifier::schedule_card_verifier_after_finish_for_ctx;
 use refact_runtime_api::task_storage as storage;
-use crate::tasks::types::{AbVariantInfo, AbVariants, BoardCard, StatusUpdate};
+use refact_tasks::types::{AbVariantInfo, AbVariants, BoardCard, StatusUpdate};
 use crate::tools::task_tool_helpers::{wait_for_agent_abort, AGENT_ABORT_TIMEOUT};
 use crate::tools::tool_task_spawn_agent::{
     abandoned_worktrees_error, build_agent_prompt, build_agent_thread_params,
@@ -24,8 +24,8 @@ use crate::tools::tool_task_spawn_agent::{
     resolve_invoking_planner_chat_id, PreparedWorktree,
 };
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
-use crate::worktrees::service::WorktreeService;
-use crate::worktrees::types::WorktreeMeta;
+use refact_worktrees::service::WorktreeService;
+use refact_worktrees::types::WorktreeMeta;
 use refact_chat_api::ChatCommand;
 use refact_runtime_api::CreateSessionRequest;
 
@@ -196,7 +196,7 @@ fn variant_info(variant: &PreparedAbVariant) -> AbVariantInfo {
 
 async fn prepare_ab_worktrees(
     app: &AppState,
-    task_meta: &crate::tasks::types::TaskMeta,
+    task_meta: &refact_tasks::types::TaskMeta,
     task_id: &str,
     card_id: &str,
     model_a: String,
@@ -458,7 +458,7 @@ async fn promote_ab_winner_if_current(
     winner: &str,
     expected_state: ExpectedCardState,
     winner_variant: AbVariantInfo,
-    winner_finish: crate::tasks::types::AbVariantFinish,
+    winner_finish: refact_tasks::types::AbVariantFinish,
 ) -> Result<Option<ExpectedCardState>, String> {
     let card_id_owned = card_id.to_string();
     let task_id_owned = task_id.to_string();
@@ -954,7 +954,7 @@ impl Tool for ToolPickAbWinner {
 mod tests {
     use super::*;
     use crate::global_context::GlobalContext;
-    use crate::tasks::types::{AbVariantFinish, TaskBoard, TaskMeta, TaskStatus};
+    use refact_tasks::types::{AbVariantFinish, TaskBoard, TaskMeta, TaskStatus};
     use std::path::Path;
 
     fn run_git(cwd: &Path, args: &[&str]) -> String {
@@ -1137,7 +1137,7 @@ mod tests {
     async fn spawn_ab_planner_context_prefers_live_root_controller() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
         let mut planner_session =
-            crate::chat::types::ChatSession::new("controller-planner".to_string());
+            refact_chat_api::ChatSession::new("controller-planner".to_string());
         planner_session.thread.task_meta = Some(refact_chat_api::TaskMeta {
             task_id: "task-1".to_string(),
             role: "planner".to_string(),
@@ -1341,7 +1341,7 @@ mod tests {
 
     #[tokio::test]
     async fn spawn_ab_loser_cleanup_aborts_before_delete() {
-        use crate::chat::types::ChatSession;
+        use refact_chat_api::ChatSession;
         use refact_runtime_api::SessionState;
         use std::sync::atomic::Ordering;
         use tokio::sync::Mutex as AMutex;

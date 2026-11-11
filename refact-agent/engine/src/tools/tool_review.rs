@@ -11,12 +11,12 @@ use tokio::sync::Mutex as AMutex;
 
 use crate::agents::tool_agent::{ToolAgentHandle, ToolAgentSpec};
 use crate::app_state::AppState;
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use crate::chat::trajectories::save_trajectory_as_with_intent_checked;
-use crate::chat::types::{ChatSession, PushMode, SessionState, ThreadParams, TrajectoryCommitIntent};
+use refact_chat_api::types::{ChatSession, PushMode, SessionState, ThreadParams, TrajectoryCommitIntent};
 use crate::global_context::GlobalContext;
-use crate::postprocessing::pp_command_output::OutputFilter;
+use refact_postprocessing::pp_command_output::OutputFilter;
 use crate::tools::ctx::ToolCtx;
 use crate::tools::review_agents::config::{
     load_review_config, slot_model_id, stage_subchat_spec, ReviewConfig,
@@ -38,7 +38,7 @@ use crate::tools::review_types::{
 };
 use crate::tools::subagent_phases::resolve_gathered_file_path;
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
-use crate::worktrees::scope::ExecutionScope;
+use refact_worktrees::scope::ExecutionScope;
 
 pub struct ToolCodeReview {
     pub config_path: String,
@@ -1522,7 +1522,7 @@ mod tests {
     use crate::agents::registry::InboxMessage;
     use crate::agents::types::{BgAgentKind, BgAgentStatus};
     use crate::caps::caps::{BaseModelRecord, ChatModelRecord, CodeAssistantCaps};
-    use crate::chat::types::{PendingDelivery, PushMode};
+    use refact_chat_api::types::{PendingDelivery, PushMode};
     use crate::tools::review_agents::contract::Verdict;
     use crate::tools::review_agents::runner::{stage_subchat_config, StageProduct};
     use crate::tools::review_types::{

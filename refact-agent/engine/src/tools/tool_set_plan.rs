@@ -7,11 +7,11 @@ use serde_json::{json, Value};
 use tokio::io::AsyncReadExt;
 use tokio::sync::Mutex as AMutex;
 
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
-use crate::chat::internal_roles::{self, EventSubkind};
+use refact_chat_api::internal_roles::{self, EventSubkind};
 use crate::chat::plan_role::{self, PlanInstallReport};
-use crate::chat::types::{ChatSession, PendingDelivery, PushMode};
+use refact_chat_api::types::{ChatSession, PendingDelivery, PushMode};
 use crate::tools::tools_description::{
     json_schema_from_params, Tool, ToolDesc, ToolSource, ToolSourceType,
 };
@@ -267,8 +267,8 @@ mod tests {
 
     use crate::app_state::AppState;
     use refact_core::chat_types::{ChatToolCall, ChatToolFunction};
-    use crate::chat::internal_roles::{EVENT_ROLE, PLAN_ROLE};
-    use crate::chat::types::{ChatEvent, ChatSession, EventEnvelope};
+    use refact_chat_api::internal_roles::{EVENT_ROLE, PLAN_ROLE};
+    use refact_chat_api::types::{ChatEvent, ChatSession, EventEnvelope};
     use refact_files::documents_state::Document;
     use crate::llm::adapter::{AdapterSettings, LlmWireAdapter};
     use crate::llm::adapters::openai_chat::OpenAiChatAdapter;

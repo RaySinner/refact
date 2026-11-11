@@ -9,17 +9,19 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use tokio::sync::{mpsc, Mutex as AMutex};
 
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use crate::global_context::GlobalContextCtx;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
-use crate::chat::ctx::ChatCtx;
-use crate::exec::types::normalize_workspace_path;
-use crate::exec::command_policy::{
-    build_exec_request_for_ctx, chat_mode_for_exec_for_sessions, escalation_from_args,
-    queue_sandbox_audit_for_sessions, CommandKind, CommandPolicyInput, ExecEscalation, ExecSource,
+use refact_runtime_api::ChatCtx;
+use refact_exec::types::normalize_workspace_path;
+use refact_exec::command_policy::{
+    escalation_from_args, CommandKind, CommandPolicyInput, ExecEscalation, ExecSource,
+};
+use refact_runtime_api::command_policy::{
+    build_exec_request_for_ctx, chat_mode_for_exec_for_sessions, queue_sandbox_audit_for_sessions,
 };
 use crate::tools::ctx::ToolCtx;
-use crate::exec::{
+use refact_exec::{
     sanitize_short_description, ExecOutputChunk, ExecOutputStream, ExecOwnerMeta,
     ExecProcessSnapshot, ExecRawOutput, ExecReadResult, ExecStatus,
 };
@@ -30,7 +32,7 @@ use refact_runtime_api::files_correction::get_active_project_path;
 use refact_files::path_utils::preprocess_path_for_normalization;
 use crate::global_context::GlobalContext;
 use refact_tool_api::IntegrationConfirmation;
-use crate::postprocessing::pp_command_output::{
+use refact_postprocessing::pp_command_output::{
     output_mini_postprocessing, parse_output_filter_args, OutputFilter,
 };
 use refact_privacy::check_file_privacy;
@@ -41,7 +43,7 @@ use crate::tools::shell_gate;
 use crate::tools::tools_description::{
     json_schema_from_params, MatchConfirmDeny, Tool, ToolDesc, ToolSource, ToolSourceType,
 };
-use crate::worktrees::scope::ExecutionScope;
+use refact_worktrees::scope::ExecutionScope;
 use refact_core::chat_types::PushMode;
 
 #[derive(Deserialize, Serialize, Clone, Default)]
@@ -222,9 +224,9 @@ impl Tool for ToolShell {
         let sandbox_warning = policy.warning;
         let mut request = policy.request;
         request.mode = if parsed.run_in_background {
-            crate::exec::ExecMode::Background
+            refact_exec::ExecMode::Background
         } else {
-            crate::exec::ExecMode::Foreground
+            refact_exec::ExecMode::Foreground
         };
         request = request
             .with_owner(owner)
@@ -807,7 +809,7 @@ async fn attach_exec_path_references(
         .or(snapshot.meta.owner.workspace.as_deref())
         .unwrap_or_else(|| Path::new("."));
     let workspace = snapshot.meta.owner.workspace.as_deref().unwrap_or(cwd);
-    let collected = crate::exec::path_enrichment::collect_async(
+    let collected = refact_exec::path_enrichment::collect_async(
         command,
         cwd,
         &[workspace.to_path_buf()],
@@ -1076,8 +1078,8 @@ mod tests {
     use std::sync::atomic::{AtomicBool, Ordering};
 
     use crate::app_state::AppState;
-    use crate::exec::ExecProcessId;
-    use crate::exec::types::normalize_workspace_path;
+    use refact_exec::ExecProcessId;
+    use refact_exec::types::normalize_workspace_path;
     use crate::tools::tools_description::Tool;
 
     use super::*;

@@ -9,14 +9,14 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 use tokio::sync::Mutex as AMutex;
 
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use refact_runtime_api::task_storage as storage;
-use crate::tasks::types::{AbVariantInfo, BoardCard};
+use refact_tasks::types::{AbVariantInfo, BoardCard};
 use crate::tools::task_tool_helpers::{required_string, require_bound_planner_task};
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
-use crate::worktrees::service::WorktreeService;
-use crate::worktrees::types::{WorktreeRecordView, WorktreeReference};
+use refact_worktrees::service::WorktreeService;
+use refact_worktrees::types::{WorktreeRecordView, WorktreeReference};
 
 const DEFAULT_MAX_LINES: usize = 300;
 const GIT_DIFF_TIMEOUT: Duration = Duration::from_secs(10);
@@ -201,7 +201,7 @@ fn registered_error_allows_legacy_fallback(err: &str) -> bool {
 }
 
 async fn base_from_worktree_meta(
-    ctx: &crate::chat::ctx::ChatCtx,
+    ctx: &refact_runtime_api::ChatCtx,
     task_id: &str,
     card: &BoardCard,
 ) -> (Option<String>, Option<String>) {
@@ -295,7 +295,7 @@ fn validate_fallback_worktree_path(
             cache_root.display()
         ));
     }
-    let status = crate::worktrees::git::status_for_path(&worktree);
+    let status = refact_worktrees::git::status_for_path(&worktree);
     if !status.is_git_worktree {
         return Err(format!(
             "Agent worktree '{}' for card {} is not a git worktree.",
@@ -303,7 +303,7 @@ fn validate_fallback_worktree_path(
             card_id
         ));
     }
-    let top_level = crate::worktrees::git::run_git(&worktree, &["rev-parse", "--show-toplevel"])?;
+    let top_level = refact_worktrees::git::run_git(&worktree, &["rev-parse", "--show-toplevel"])?;
     let top_level = canonical_existing_path(Path::new(top_level.trim()))?;
     if top_level != worktree {
         return Err(format!(
@@ -314,7 +314,7 @@ fn validate_fallback_worktree_path(
     }
     let workspace_root = canonical_existing_path(workspace_root)?;
     let common_dir = |root: &Path| -> Result<PathBuf, String> {
-        let output = crate::worktrees::git::run_git(root, &["rev-parse", "--git-common-dir"])?;
+        let output = refact_worktrees::git::run_git(root, &["rev-parse", "--git-common-dir"])?;
         let path = Path::new(output.trim());
         let path = if path.is_absolute() {
             path.to_path_buf()
@@ -330,11 +330,11 @@ fn validate_fallback_worktree_path(
             card_id
         ));
     }
-    crate::worktrees::git::ensure_checkout_on_branch(&worktree, "Agent worktree", branch)?;
+    refact_worktrees::git::ensure_checkout_on_branch(&worktree, "Agent worktree", branch)?;
     Ok(worktree)
 }
 
-async fn primary_workspace_root(ctx: &crate::chat::ctx::ChatCtx) -> Result<PathBuf, String> {
+async fn primary_workspace_root(ctx: &refact_runtime_api::ChatCtx) -> Result<PathBuf, String> {
     let project_dirs = refact_runtime_api::files_correction::get_unscoped_project_dirs_for_ctx(ctx).await;
     let workspace_root = project_dirs.first().ok_or("No workspace folder found")?;
     canonical_existing_path(workspace_root)
@@ -363,7 +363,7 @@ fn legacy_worktree_path(
 }
 
 async fn registered_worktree_path(
-    ctx: &crate::chat::ctx::ChatCtx,
+    ctx: &refact_runtime_api::ChatCtx,
     task_id: &str,
     card: &BoardCard,
     worktree_name: &str,
@@ -403,7 +403,7 @@ async fn registered_worktree_path(
 }
 
 async fn registered_worktree_path_for_card(
-    ctx: &crate::chat::ctx::ChatCtx,
+    ctx: &refact_runtime_api::ChatCtx,
     task_id: &str,
     card: &BoardCard,
     excluded_id: Option<&str>,
@@ -458,7 +458,7 @@ async fn registered_worktree_path_for_card(
 }
 
 async fn canonical_worktree(
-    ctx: &crate::chat::ctx::ChatCtx,
+    ctx: &refact_runtime_api::ChatCtx,
     task_id: &str,
     card: &BoardCard,
 ) -> Result<PathBuf, String> {
@@ -1048,7 +1048,7 @@ fn short_sha(value: &str) -> Option<&str> {
 mod tests {
     use super::*;
     use crate::app_state::AppState;
-    use crate::chat::types::TaskMeta as ThreadTaskMeta;
+    use refact_chat_api::TaskMeta as ThreadTaskMeta;
 
     #[test]
     fn downstream_base_resolution_prefers_card_over_task_legacy_fallback() {
@@ -1074,11 +1074,11 @@ mod tests {
         .unwrap();
         assert_eq!(legacy.refish, "task-commit");
     }
-    use crate::tasks::types::{TaskBoard, TaskMeta, TaskStatus};
+    use refact_tasks::types::{TaskBoard, TaskMeta, TaskStatus};
     use crate::tools::settings_guard::SettingsGuard;
     use crate::tools::tools_description::Tool;
     use serial_test::serial;
-    use crate::worktrees::types::CreateWorktreeRequest;
+    use refact_worktrees::types::CreateWorktreeRequest;
     use std::process::Command as StdCommand;
 
     fn run_git(cwd: &Path, args: &[&str]) -> String {
@@ -1241,7 +1241,7 @@ mod tests {
     ) -> (
         Arc<crate::global_context::GlobalContext>,
         PathBuf,
-        crate::worktrees::types::WorktreeRecordView,
+        refact_worktrees::types::WorktreeRecordView,
     ) {
         let source = temp.path().join("source");
         std::fs::create_dir_all(&source).unwrap();
@@ -1846,7 +1846,7 @@ mod tests {
         let mut registry = service.load_registry().await.unwrap();
         registry.records[0].meta.task_id = None;
         registry.records[0].meta.card_id = None;
-        registry.records[0].references = vec![crate::worktrees::types::WorktreeReference {
+        registry.records[0].references = vec![refact_worktrees::types::WorktreeReference {
             kind: "task_agent".to_string(),
             task_id: Some("task-1".to_string()),
             card_id: Some("T-1".to_string()),

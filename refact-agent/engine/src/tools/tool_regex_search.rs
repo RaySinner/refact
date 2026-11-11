@@ -11,9 +11,9 @@ use serde_json::Value;
 use tokio::sync::Mutex as AMutex;
 use tracing::info;
 
-use crate::at_commands::at_commands::{vec_context_file_to_context_tools, AtCommandsContext};
+use refact_runtime_api::{vec_context_file_to_context_tools, AtCommandsContext};
 use refact_core::chat_types::{ChatMessage, ChatContent, ContextEnum, ContextFile};
-use crate::postprocessing::pp_command_output::OutputFilter;
+use refact_postprocessing::pp_command_output::OutputFilter;
 use refact_runtime_api::files_correction::shortify_paths;
 use refact_runtime_api::files_in_workspace::{
     check_file_privacy_for_read_preparation_with_context,

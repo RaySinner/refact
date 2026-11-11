@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 use tokio::sync::Mutex as AMutex;
 
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use crate::global_context::GlobalContextCtx;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use refact_runtime_api::task_storage as storage;
@@ -354,8 +354,8 @@ mod tests {
     use super::*;
     use refact_chat_api::ChatCommand;
     use crate::app_state::AppState;
-    use crate::chat::types::TaskMeta as ThreadTaskMeta;
-    use crate::tasks::types::{BoardCard, TaskBoard, TaskMeta, TaskStatus};
+    use refact_chat_api::TaskMeta as ThreadTaskMeta;
+    use refact_tasks::types::{BoardCard, TaskBoard, TaskMeta, TaskStatus};
     use crate::tools::tools_description::Tool;
     use refact_core::chat_types::{DeliveryOutcome, PendingDelivery};
     use refact_runtime_api::{

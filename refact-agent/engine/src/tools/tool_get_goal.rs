@@ -6,10 +6,10 @@ use refact_chat_api::GoalStatus;
 use serde_json::{json, Value};
 use tokio::sync::Mutex as AMutex;
 
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use crate::chat::goal_role;
-use crate::chat::types::ChatSession;
+use refact_chat_api::ChatSession;
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
 
 pub struct ToolGetGoal {
@@ -123,7 +123,7 @@ impl Tool for ToolGetGoal {
 mod tests {
     use super::*;
     use crate::app_state::AppState;
-    use crate::chat::internal_roles;
+    use refact_chat_api::internal_roles;
     use crate::tools::tool_set_goal::ToolSetGoal;
     use crate::tools::tool_update_goal::ToolUpdateGoal;
     use crate::tools::tools_list::get_tools_for_mode;

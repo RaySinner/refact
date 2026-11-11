@@ -6,16 +6,16 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 use tokio::sync::Mutex as AMutex;
 
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
-use crate::exec::types::normalize_workspace_path;
-use crate::exec::{ExecMode, ExecProcessFilter, ExecProcessSnapshot, ExecStatusKind};
+use refact_exec::types::normalize_workspace_path;
+use refact_exec::{ExecMode, ExecProcessFilter, ExecProcessSnapshot, ExecStatusKind};
 use refact_runtime_api::files_correction::get_active_project_path_for_services;
-use crate::postprocessing::pp_command_output::OutputFilter;
+use refact_postprocessing::pp_command_output::OutputFilter;
 use crate::tools::file_edit::auxiliary::active_execution_scope;
 use refact_tool_api::IntegrationConfirmation;
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
-use crate::worktrees::scope::ExecutionScope;
+use refact_worktrees::scope::ExecutionScope;
 
 pub struct ToolCleanBackgroundProcesses {
     pub config_path: String,
@@ -264,9 +264,9 @@ fn killed_value(snapshot: &ExecProcessSnapshot) -> Value {
 mod tests {
     use super::*;
     use crate::app_state::AppState;
-    use crate::exec::types::DEFAULT_EXEC_OUTPUT_LIMIT_BYTES;
-    use crate::chat::types::TaskMeta;
-    use crate::exec::{ExecOwnerMeta, ExecProcessId, ExecProcessMeta};
+    use refact_exec::types::DEFAULT_EXEC_OUTPUT_LIMIT_BYTES;
+    use refact_chat_api::TaskMeta;
+    use refact_exec::{ExecOwnerMeta, ExecProcessId, ExecProcessMeta};
     use crate::tools::tool_shell::ToolShell;
     use crate::tools::tools_description::{MatchConfirmDenyResult, Tool};
 

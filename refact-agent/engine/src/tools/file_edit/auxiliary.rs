@@ -1,4 +1,4 @@
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use crate::global_context::GlobalContextCtx;
 use refact_runtime_api::at_command_executor::{
     file_repair_candidates, return_one_candidate_or_a_good_error,
@@ -14,9 +14,9 @@ use refact_runtime_api::files_in_workspace::get_file_text_from_memory_or_disk;
 use crate::global_context::GlobalContext;
 use refact_privacy::check_file_privacy;
 use refact_core::privacy_types::{FilePrivacyLevel, PrivacySettings};
-use crate::tasks::types::ScopeGuardMode;
+use refact_tasks::types::ScopeGuardMode;
 use crate::tools::ctx::ToolCtx;
-use crate::worktrees::scope::ExecutionScope;
+use refact_worktrees::scope::ExecutionScope;
 use regex::{Match, Regex};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -834,12 +834,12 @@ mod tests {
     }
 
     mod worktree_scope_tools {
-        use crate::at_commands::at_commands::AtCommandsContext;
+        use refact_runtime_api::AtCommandsContext;
         use refact_core::chat_types::{ChatContent, ContextEnum};
-        use crate::chat::types::TaskMeta;
+        use refact_chat_api::TaskMeta;
         use crate::global_context::GlobalContext;
         use refact_core::privacy_types::{FilePrivacySettings, PrivacySettings};
-        use crate::tasks::types::{BoardCard, ScopeGuardMode, TaskBoard};
+        use refact_tasks::types::{BoardCard, ScopeGuardMode, TaskBoard};
         use crate::tools::file_edit::auxiliary::{check_scope_guard, fast_enqueue_for_edit};
         use crate::tools::file_edit::tool_apply_patch::tool_apply_patch_exec;
         use crate::tools::file_edit::tool_create_textdoc::tool_create_text_doc_exec;
@@ -852,8 +852,8 @@ mod tests {
         use crate::tools::tool_rm::ToolRm;
         use crate::tools::tool_shell::ToolShell;
         use crate::tools::tools_description::Tool;
-        use crate::worktrees::scope::ExecutionScope;
-        use crate::worktrees::types::{WorktreeMeta, WorktreeRegistry, WorktreeRegistryRecord};
+        use refact_worktrees::scope::ExecutionScope;
+        use refact_worktrees::types::{WorktreeMeta, WorktreeRegistry, WorktreeRegistryRecord};
         use serde_json::{json, Value};
         use std::collections::HashMap;
         use std::fs;

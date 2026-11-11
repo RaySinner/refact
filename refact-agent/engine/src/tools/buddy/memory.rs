@@ -10,7 +10,7 @@ use sha2::{Digest, Sha256};
 use tokio::sync::Mutex as AMutex;
 use walkdir::WalkDir;
 
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use crate::buddy::memory_lifecycle::{
     archive_memory_file_checked_for_ctx, compute_content_hash, find_memory_by_source_for_ctx,
     normalize_kind, normalize_tags, propose_supersede_for_near_duplicate_for_ctx,
@@ -20,7 +20,7 @@ use crate::buddy::memory_lifecycle::{
 use refact_buddy_core::autonomous_redaction::redact_and_cap_text;
 use crate::buddy::storage::enqueue_memory_op;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
-use crate::chat::ctx::ChatCtx;
+use refact_runtime_api::ChatCtx;
 use crate::file_filter::KNOWLEDGE_FOLDER_NAME;
 use refact_runtime_api::files_correction::get_unscoped_project_dirs_for_ctx;
 use crate::knowledge_graph::kg_structs::KnowledgeFrontmatter;
@@ -972,11 +972,11 @@ impl Tool for ToolBuddyMemoryMerge {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::at_commands::at_commands::AtCommandsContext;
+    use refact_runtime_api::AtCommandsContext;
     use crate::buddy::storage::load_memory_ops;
     use crate::global_context::GlobalContext;
     use crate::tools::tools_description::Tool;
-    use crate::worktrees::types::WorktreeMeta;
+    use refact_worktrees::types::WorktreeMeta;
     use std::collections::HashMap;
 
     async fn test_gcx(root: &Path) -> Arc<GlobalContext> {

@@ -10,7 +10,7 @@ use refact_chat_api::{attach_tool_enrichment, ToolEnrichment, ToolEnrichmentKind
 use serde_json::Value;
 use tokio::sync::Mutex as AMutex;
 
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use crate::global_context::GlobalContextCtx;
 use crate::tools::scope_utils::{
     format_scope_notices, remap_context_file_for_execution_scope_for_model_context,
@@ -21,9 +21,9 @@ use crate::tools::tools_description::{
 };
 use refact_core::chat_types::{ChatMessage, ChatContent, ContextEnum, ContextFile};
 use refact_core::knowledge_index::{KnowledgeCard, KnowledgeIndex};
-use crate::postprocessing::pp_command_output::OutputFilter;
+use refact_postprocessing::pp_command_output::OutputFilter;
 use crate::tools::native_enrichment::{workspace_roots, NativeReferences};
-use crate::worktrees::scope::ExecutionScope;
+use refact_worktrees::scope::ExecutionScope;
 use regex::Regex;
 
 const MAX_SYMBOLS: usize = 16;

@@ -1,4 +1,4 @@
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use refact_core::diff_chunk::DiffChunk;
 use crate::global_context::GlobalContext;
@@ -18,7 +18,7 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use crate::worktrees::scope::ExecutionScope;
+use refact_worktrees::scope::ExecutionScope;
 use std::sync::Arc;
 use tokio::sync::Mutex as AMutex;
 use refact_core::knowledge_index::format_related_memories_section;

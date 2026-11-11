@@ -1,8 +1,8 @@
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use crate::global_context::GlobalContextCtx;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use refact_core::diff_chunk::DiffChunk;
-use crate::chat::ctx::ChatCtx;
+use refact_runtime_api::ChatCtx;
 use refact_runtime_api::files_correction::check_if_its_inside_a_workspace_or_config_for_ctx;
 use crate::global_context::GlobalContext;
 use refact_tool_api::IntegrationConfirmation;
@@ -15,7 +15,7 @@ use crate::tools::file_edit::auxiliary::{
     normalize_line_endings, resolve_path_with_scope, restore_line_endings, write_file_for_ctx,
     ResolvedToolPath,
 };
-use crate::worktrees::scope::ExecutionScope;
+use refact_worktrees::scope::ExecutionScope;
 use crate::tools::file_edit::openai_apply_patch::{
     apply_update_chunks, parse_patch, validate_relative_path, FileOperation, ParsedPatch,
 };

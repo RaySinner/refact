@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::sync::Mutex as AMutex;
 
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use refact_code_intel_api::ToolJson;
 use crate::integrations::browser_controller;
@@ -870,7 +870,7 @@ async fn tool_context(
     crate::app_state::AppState,
     ChatRuntimeLookup,
     String,
-    Option<crate::worktrees::scope::ExecutionScope>,
+    Option<refact_worktrees::scope::ExecutionScope>,
 ) {
     let ccx = ccx.lock().await;
     (
@@ -908,7 +908,7 @@ async fn attached_runtime(
 }
 
 async fn image_policy_for_model(
-    caps: &dyn crate::chat::ctx::CapsProvider,
+    caps: &dyn refact_runtime_api::CapsProvider,
     model_id: &str,
 ) -> ImagePolicy {
     let Ok(caps) = caps.try_load_caps_quickly(0).await else {
@@ -1288,7 +1288,7 @@ fn design_artifacts_dir(cache_dir: &Path) -> PathBuf {
 
 fn project_root(
     gcx: &crate::global_context::GlobalContext,
-    execution_scope: Option<&crate::worktrees::scope::ExecutionScope>,
+    execution_scope: Option<&refact_worktrees::scope::ExecutionScope>,
 ) -> Result<PathBuf, String> {
     if let Some(scope) = execution_scope {
         scope.ensure_active_root()?;
@@ -1356,7 +1356,7 @@ async fn artifact_search_dirs(app: &crate::app_state::AppState) -> Vec<PathBuf> 
 
 async fn resolve_image_source(
     app: &crate::app_state::AppState,
-    execution_scope: Option<&crate::worktrees::scope::ExecutionScope>,
+    execution_scope: Option<&refact_worktrees::scope::ExecutionScope>,
     requested: &str,
 ) -> Result<PathBuf, String> {
     let raw = requested.trim();

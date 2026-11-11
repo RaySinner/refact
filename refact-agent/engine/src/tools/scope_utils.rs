@@ -11,7 +11,7 @@ use crate::global_context::GlobalContextCtx;
 use refact_files::path_utils::canonical_path;
 use refact_files::workspace::{ls_files, ls_files_limited, LsFilesLimited};
 use crate::tools::ctx::ToolCtx;
-use crate::worktrees::scope::ExecutionScope;
+use refact_worktrees::scope::ExecutionScope;
 
 /// Convert a PathBuf to a String with forward slashes on all platforms.
 fn path_to_string(p: &Path) -> String {
@@ -978,7 +978,7 @@ pub fn validate_scope_files(files: Vec<String>, scope: &str) -> Result<Vec<Strin
 #[cfg(test)]
 mod worktree_scope_read_tools {
     use super::*;
-    use crate::at_commands::at_commands::{AtCommand, AtCommandsContext};
+    use refact_runtime_api::{AtCommand, AtCommandsContext};
     use crate::at_commands::{AtFile, AtTree};
     use crate::at_commands::execute_at::AtCommandMember;
     use refact_core::chat_types::{ChatContent, ContextEnum};
@@ -986,7 +986,7 @@ mod worktree_scope_read_tools {
     use crate::tools::tool_cat::ToolCat;
     use crate::tools::tool_tree::ToolTree;
     use crate::tools::tools_description::Tool;
-    use crate::worktrees::types::WorktreeMeta;
+    use refact_worktrees::types::WorktreeMeta;
     use async_trait::async_trait;
     use serde_json::Value;
     use std::collections::HashMap;

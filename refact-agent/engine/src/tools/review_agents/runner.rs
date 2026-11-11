@@ -7,9 +7,9 @@ use tokio::sync::Mutex as AMutex;
 
 use refact_core::chat_types::{ChatContent, ChatMessage};
 use crate::global_context::GlobalContextCtx;
-use crate::chat::types::TaskMeta;
+use refact_chat_api::TaskMeta;
 use crate::global_context::GlobalContext;
-use crate::chat::ctx::{ExplicitSubchatSpec, TraceParent};
+use refact_chat_api::{ExplicitSubchatSpec, TraceParent};
 use crate::tools::review_agents::contract::{
     parse_stage_output, parse_verdict_output, StageOutput, Verdict, VerdictOutput, REPAIR_PROMPT,
 };
@@ -17,7 +17,7 @@ use crate::tools::review_agents::prompts::REVIEW_SYSTEM_PROMPT;
 use crate::tools::review_agents::stages::{StageContract, StageSpec};
 use crate::tools::review_types::{ReviewFinding, StageRun, StageStatusKind};
 use crate::tools::subagent_phases::get_last_assistant_content;
-use crate::worktrees::types::WorktreeMeta;
+use refact_worktrees::types::WorktreeMeta;
 
 pub fn now_ms() -> u64 {
     std::time::SystemTime::now()

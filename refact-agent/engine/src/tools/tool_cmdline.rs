@@ -5,7 +5,7 @@ mod tests {
 
     use tokio::sync::Mutex as AMutex;
 
-    use crate::at_commands::at_commands::AtCommandsContext;
+    use refact_runtime_api::AtCommandsContext;
     use refact_buddy_core::user_action::UserAction;
     use crate::integrations::integr_cmdline::{CmdlineToolConfig, ToolCmdline};
     use crate::tools::tools_description::Tool;

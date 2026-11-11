@@ -9,9 +9,9 @@ use crate::tools::tools_description::{
 };
 use serde_json::json;
 use refact_core::chat_types::{ChatMessage, ChatContent, ContextEnum};
-use crate::chat::internal_roles::{event, EventSubkind};
-use crate::at_commands::at_commands::AtCommandsContext;
-use crate::postprocessing::pp_command_output::OutputFilter;
+use refact_chat_api::internal_roles::{event, EventSubkind};
+use refact_runtime_api::AtCommandsContext;
+use refact_postprocessing::pp_command_output::OutputFilter;
 use refact_yaml_configs::customization_types::SubagentConfig;
 
 pub struct ToolConfigSubagent {
@@ -99,7 +99,7 @@ impl Tool for ToolConfigSubagent {
         tool_call_id: &String,
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
-        use crate::at_commands::at_commands::MAX_SUBCHAT_DEPTH;
+        use refact_runtime_api::MAX_SUBCHAT_DEPTH;
 
         let (
             subchat,

@@ -6,7 +6,7 @@ use tokio::sync::Mutex as AMutex;
 use async_trait::async_trait;
 use std::collections::HashMap;
 
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use crate::tools::tools_description::{
     Tool, ToolDesc, ToolSource, ToolSourceType, json_schema_from_params,
 };
@@ -14,7 +14,7 @@ use refact_core::chat_types::{ChatMessage, ChatContent, ContextEnum};
 use refact_runtime_api::memories::memories_search;
 use crate::knowledge_graph::build_knowledge_graph;
 use refact_core::knowledge_index::format_related_memories_section;
-use crate::postprocessing::pp_command_output::OutputFilter;
+use refact_postprocessing::pp_command_output::OutputFilter;
 use crate::tools::native_enrichment::{workspace_roots, NativeReferences};
 
 pub struct ToolGetKnowledge {

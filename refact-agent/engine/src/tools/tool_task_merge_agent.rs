@@ -14,14 +14,14 @@ use crate::tools::tools_description::{
 };
 use crate::global_context::GlobalContextCtx;
 use refact_core::chat_types::{ChatMessage, ChatContent, ContextEnum};
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use refact_chat_api::verifier::outcome_is_infrastructure;
 use refact_runtime_api::verifier::load_expected_card_state_for_ctx;
 use crate::global_context::GlobalContext;
 use refact_runtime_api::task_storage as storage;
 use crate::tools::task_tool_helpers::require_bound_planner_task;
-use crate::worktrees::service::{worktree_merge_lock, WorktreeService};
-use crate::worktrees::types::{
+use refact_worktrees::service::{worktree_merge_lock, WorktreeService};
+use refact_worktrees::types::{
     MergeWorktreeRequest, MergeWorktreeResponse, WorktreeMergeStrategy, WorktreeRecordView,
     WorktreeReference,
 };
@@ -69,7 +69,7 @@ fn append_post_merge_check_message(
     message: &mut String,
     result: &crate::chat::post_merge_check::PostMergeCheckResult,
 ) {
-    use crate::tasks::types::VerificationOutcome;
+    use refact_tasks::types::VerificationOutcome;
 
     if !result.checked {
         if let Some(reason) = result.skipped_reason.as_deref() {
@@ -269,7 +269,7 @@ fn ensure_legacy_agent_worktree_checkout(
     if agent_worktree_root == workspace_root {
         return Err("Agent worktree path points at the main workspace; refusing to auto-commit main workspace changes".to_string());
     }
-    let status = crate::worktrees::git::status_for_path(&agent_worktree_root);
+    let status = refact_worktrees::git::status_for_path(&agent_worktree_root);
     if !status.is_git_worktree {
         return Err(format!(
             "Agent worktree path '{}' is not a git worktree",
@@ -277,7 +277,7 @@ fn ensure_legacy_agent_worktree_checkout(
         ));
     }
     let agent_top_level =
-        crate::worktrees::git::run_git(&agent_worktree_root, &["rev-parse", "--show-toplevel"])?;
+        refact_worktrees::git::run_git(&agent_worktree_root, &["rev-parse", "--show-toplevel"])?;
     let agent_top_level = std::path::Path::new(agent_top_level.trim())
         .canonicalize()
         .map_err(|e| format!("Failed to canonicalize agent worktree root: {}", e))?;
@@ -288,9 +288,9 @@ fn ensure_legacy_agent_worktree_checkout(
         ));
     }
     let workspace_common_dir =
-        crate::worktrees::git::run_git(&workspace_root, &["rev-parse", "--git-common-dir"])?;
+        refact_worktrees::git::run_git(&workspace_root, &["rev-parse", "--git-common-dir"])?;
     let agent_common_dir =
-        crate::worktrees::git::run_git(&agent_worktree_root, &["rev-parse", "--git-common-dir"])?;
+        refact_worktrees::git::run_git(&agent_worktree_root, &["rev-parse", "--git-common-dir"])?;
     let canonical_git_dir =
         |root: &std::path::Path, common_dir: &str| -> Result<std::path::PathBuf, String> {
             let path = std::path::Path::new(common_dir.trim());
@@ -310,7 +310,7 @@ fn ensure_legacy_agent_worktree_checkout(
                 .to_string(),
         );
     }
-    crate::worktrees::git::ensure_checkout_on_branch(
+    refact_worktrees::git::ensure_checkout_on_branch(
         &agent_worktree_root,
         "Agent worktree",
         agent_branch,
@@ -319,7 +319,7 @@ fn ensure_legacy_agent_worktree_checkout(
 
 fn reference_matches_card(
     task_id: &str,
-    card: &crate::tasks::types::BoardCard,
+    card: &refact_tasks::types::BoardCard,
     reference: &WorktreeReference,
 ) -> bool {
     if reference.task_id.as_deref() == Some(task_id)
@@ -344,7 +344,7 @@ fn reference_matches_card(
 fn registered_record_matches_card(
     view: &WorktreeRecordView,
     task_id: &str,
-    card: &crate::tasks::types::BoardCard,
+    card: &refact_tasks::types::BoardCard,
 ) -> bool {
     if view.meta.task_id.as_deref() == Some(task_id)
         && view.meta.card_id.as_deref() == Some(card.id.as_str())
@@ -360,7 +360,7 @@ async fn worktree_id_is_valid_for_card(
     service: &WorktreeService,
     worktree_id: &str,
     task_id: &str,
-    card: &crate::tasks::types::BoardCard,
+    card: &refact_tasks::types::BoardCard,
 ) -> Result<WorktreeRecordView, String> {
     let view = service.get_worktree(worktree_id).await?;
     if !registered_record_matches_card(&view, task_id, card) {
@@ -389,11 +389,11 @@ fn render_concern_list(concerns: &[String]) -> String {
 
 fn verifier_merge_block_message(
     card_id: &str,
-    classification: crate::tasks::types::VerifierReportClassification,
+    classification: refact_tasks::types::VerifierReportClassification,
     concerns: &[String],
     failing_commands: &[&str],
 ) -> String {
-    use crate::tasks::types::VerifierReportClassification;
+    use refact_tasks::types::VerifierReportClassification;
     let rendered = render_concern_list(concerns);
 
     let is_verification_failed = classification == VerifierReportClassification::VerificationFailed
@@ -450,7 +450,7 @@ fn concern_is_infrastructure_only(concern: &str, infrastructure_commands: &[&str
 }
 
 fn ensure_verifier_allows_merge(
-    card: &crate::tasks::types::BoardCard,
+    card: &refact_tasks::types::BoardCard,
     force: bool,
     bypass_verifier: bool,
 ) -> Result<Option<String>, String> {
@@ -462,7 +462,7 @@ fn ensure_verifier_allows_merge(
     let Some(report) = card.verifier_report.as_ref() else {
         return Ok(None);
     };
-    use crate::tasks::types::{VerificationOutcome, VerifierReportClassification};
+    use refact_tasks::types::{VerificationOutcome, VerifierReportClassification};
 
     let command_failed = report.command_results.iter().any(|result| {
         matches!(result.outcome, VerificationOutcome::CommandFailed)
@@ -528,7 +528,7 @@ fn ensure_verifier_allows_merge(
 }
 
 fn ensure_card_done_allows_merge(
-    card: &crate::tasks::types::BoardCard,
+    card: &refact_tasks::types::BoardCard,
     force: bool,
 ) -> Result<Option<String>, String> {
     let column_ok = card.column == "done";
@@ -574,7 +574,7 @@ fn terminal_card_column(column: &str) -> bool {
 }
 
 fn force_merge_card_matches_current(
-    card: &crate::tasks::types::BoardCard,
+    card: &refact_tasks::types::BoardCard,
     expected_assignee: Option<&str>,
     expected_agent_chat_id: Option<&str>,
 ) -> bool {
@@ -585,7 +585,7 @@ fn force_merge_card_matches_current(
 fn force_merge_post_check_passed_or_absent(
     result: &Result<Option<crate::chat::post_merge_check::PostMergeCheckResult>, String>,
 ) -> bool {
-    use crate::tasks::types::VerificationOutcome;
+    use refact_tasks::types::VerificationOutcome;
 
     match result {
         Ok(None) => true,
@@ -597,7 +597,7 @@ fn force_merge_post_check_passed_or_absent(
 fn retained_post_merge_verification_failure(
     result: &Result<Option<crate::chat::post_merge_check::PostMergeCheckResult>, String>,
 ) -> Option<String> {
-    use crate::tasks::types::VerificationOutcome;
+    use refact_tasks::types::VerificationOutcome;
 
     let check = result.as_ref().ok()?.as_ref()?;
     if check.auto_reverted || (check.checked && check.outcome == VerificationOutcome::Passed) {
@@ -619,12 +619,12 @@ fn retained_post_merge_verification_failure(
 }
 
 fn retain_force_merge_without_finalizing(
-    card: &mut crate::tasks::types::BoardCard,
+    card: &mut refact_tasks::types::BoardCard,
     message: &str,
 ) -> bool {
     card.assignee = None;
     card.agent_chat_id = None;
-    card.status_updates.push(crate::tasks::types::StatusUpdate {
+    card.status_updates.push(refact_tasks::types::StatusUpdate {
         timestamp: chrono::Utc::now().to_rfc3339(),
         message: message.to_string(),
     });
@@ -632,7 +632,7 @@ fn retain_force_merge_without_finalizing(
 }
 
 fn finalize_force_merge_card_if_current(
-    card: &mut crate::tasks::types::BoardCard,
+    card: &mut refact_tasks::types::BoardCard,
     expected_assignee: Option<&str>,
     expected_agent_chat_id: Option<&str>,
 ) -> bool {
@@ -645,7 +645,7 @@ fn finalize_force_merge_card_if_current(
         let previous_column = card.column.clone();
         card.column = "done".to_string();
         card.completed_at = Some(now.clone());
-        card.status_updates.push(crate::tasks::types::StatusUpdate {
+        card.status_updates.push(refact_tasks::types::StatusUpdate {
             timestamp: now,
             message: format!(
                 "Force-merged by planner without the normal agent_finish path; marked done for manual review from column '{}'.",
@@ -844,7 +844,7 @@ async fn merge_registered_task_worktree(
         (task_meta.base_branch, task_meta.base_commit)
     };
     let target_branch = base_branch.clone().ok_or("Task has no base branch set")?;
-    let diff = crate::worktrees::git::diff_for_path(
+    let diff = refact_worktrees::git::diff_for_path(
         &registered.meta.root,
         base_commit.as_deref(),
         base_branch.as_deref(),
@@ -979,10 +979,10 @@ impl ToolTaskMergeAgent {
 async fn run_git_in(cwd: &std::path::Path, args: &[&str]) -> Result<String, String> {
     let mut command = tokio::process::Command::new("git");
     command.args(args).current_dir(cwd);
-    let output = crate::worktrees::git::run_git_command(
+    let output = refact_worktrees::git::run_git_command(
         command,
         &format!("{:?}", args),
-        crate::worktrees::git::GIT_COMMAND_TIMEOUT,
+        refact_worktrees::git::GIT_COMMAND_TIMEOUT,
     )
     .await?;
 
@@ -1060,10 +1060,10 @@ impl Tool for ToolTaskMergeAgent {
             command
                 .args(["rev-parse", "--is-inside-work-tree"])
                 .current_dir(workspace_root);
-            crate::worktrees::git::run_git_command(
+            refact_worktrees::git::run_git_command(
                 command,
                 "rev-parse --is-inside-work-tree",
-                crate::worktrees::git::GIT_COMMAND_TIMEOUT,
+                refact_worktrees::git::GIT_COMMAND_TIMEOUT,
             )
             .await
             .map(|o| o.status.success())
@@ -1199,7 +1199,7 @@ Then call `merge_agent` again."#,
             );
         }
 
-        let _auto_committed_legacy_worktree = crate::worktrees::git::commit_all(
+        let _auto_committed_legacy_worktree = refact_worktrees::git::commit_all(
             std::path::Path::new(agent_worktree),
             &format!("Card {}: {}", card_id, card.title),
         )?;
@@ -1237,10 +1237,10 @@ Then call `merge_agent` again."#,
             let worktree_status = if let Some(wt) = card.agent_worktree.as_ref() {
                 let mut command = tokio::process::Command::new("git");
                 command.args(["status", "--porcelain"]).current_dir(wt);
-                crate::worktrees::git::run_git_command(
+                refact_worktrees::git::run_git_command(
                     command,
                     "status --porcelain",
-                    crate::worktrees::git::GIT_COMMAND_TIMEOUT,
+                    refact_worktrees::git::GIT_COMMAND_TIMEOUT,
                 )
                 .await
                 .ok()
@@ -1390,7 +1390,7 @@ Then call `merge_agent` again."#,
         let merge_result = if strategy == "squash" {
             run_git_in(workspace_root, &["merge", "--squash", agent_branch]).await
         } else {
-            crate::worktrees::git::run_git_with_refact_author(
+            refact_worktrees::git::run_git_with_refact_author(
                 workspace_root,
                 &[
                     "merge",
@@ -1487,7 +1487,7 @@ Use `cat <file>` to see conflict markers in each file."#,
 
         let mut squash_nothing_to_commit = false;
         if strategy == "squash" {
-            let commit_result = crate::worktrees::git::run_git_with_refact_author(
+            let commit_result = refact_worktrees::git::run_git_with_refact_author(
                 workspace_root,
                 &["commit", "--no-gpg-sign", "-m", &commit_msg],
             );
@@ -1514,10 +1514,10 @@ Use `cat <file>` to see conflict markers in each file."#,
             status_command
                 .args(["status", "--porcelain"])
                 .current_dir(agent_worktree);
-            match crate::worktrees::git::run_git_command(
+            match refact_worktrees::git::run_git_command(
                 status_command,
                 "status --porcelain",
-                crate::worktrees::git::GIT_COMMAND_TIMEOUT,
+                refact_worktrees::git::GIT_COMMAND_TIMEOUT,
             )
             .await
             {
@@ -1622,7 +1622,7 @@ Use `cat <file>` to see conflict markers in each file."#,
                     if force && merge_auto_reverted {
                         card.assignee = None;
                         card.agent_chat_id = None;
-                        card.status_updates.push(crate::tasks::types::StatusUpdate {
+                        card.status_updates.push(refact_tasks::types::StatusUpdate {
                             timestamp: chrono::Utc::now().to_rfc3339(),
                             message: "Forced merge was auto-reverted after post-merge verification failed; the original card was not marked done and stale worktree, branch, and agent ownership references were cleared.".to_string(),
                         });
@@ -1635,7 +1635,7 @@ Use `cat <file>` to see conflict markers in each file."#,
                         if let Some(error) = post_merge_check_error.as_deref() {
                             card.assignee = None;
                             card.agent_chat_id = None;
-                            card.status_updates.push(crate::tasks::types::StatusUpdate {
+                            card.status_updates.push(refact_tasks::types::StatusUpdate {
                                 timestamp: chrono::Utc::now().to_rfc3339(),
                                 message: format!("Forced merge remains applied, but post-merge verification failed to run: {}. Stale worktree, branch, and agent ownership references were cleared; merge success was not inferred from verification.", error),
                             });
@@ -1721,9 +1721,9 @@ The agent's work has been successfully merged back to the main branch."#,
 mod worktree_merge_tool_tests {
     use super::*;
     use crate::app_state::AppState;
-    use crate::chat::types::TaskMeta as ThreadTaskMeta;
-    use crate::tasks::types::{BoardCard, TaskBoard, TaskMeta, TaskStatus, VerifierReport};
-    use crate::worktrees::types::CreateWorktreeRequest;
+    use refact_chat_api::TaskMeta as ThreadTaskMeta;
+    use refact_tasks::types::{BoardCard, TaskBoard, TaskMeta, TaskStatus, VerifierReport};
+    use refact_worktrees::types::CreateWorktreeRequest;
     use serde_json::json;
     use std::path::Path;
 
@@ -1885,7 +1885,7 @@ mod worktree_merge_tool_tests {
 
     fn merged_response_with_cleanup_warning() -> MergeWorktreeResponse {
         MergeWorktreeResponse {
-            cleanup: Some(crate::worktrees::types::WorktreeRemovalResult {
+            cleanup: Some(refact_worktrees::types::WorktreeRemovalResult {
                 worktree_deleted: true,
                 branch_deleted: false,
                 registry_deleted: true,
@@ -1916,7 +1916,7 @@ mod worktree_merge_tool_tests {
     #[test]
     fn post_merge_message_only_labels_command_failures_as_regressions() {
         use crate::chat::post_merge_check::PostMergeCheckResult;
-        use crate::tasks::types::VerificationOutcome;
+        use refact_tasks::types::VerificationOutcome;
 
         for (outcome, expected) in [
             (
@@ -1958,7 +1958,7 @@ mod worktree_merge_tool_tests {
     #[test]
     fn post_merge_message_does_not_invent_fix_card() {
         use crate::chat::post_merge_check::PostMergeCheckResult;
-        use crate::tasks::types::VerificationOutcome;
+        use refact_tasks::types::VerificationOutcome;
 
         let result = PostMergeCheckResult {
             checked: true,
@@ -2076,7 +2076,7 @@ mod worktree_merge_tool_tests {
 
     #[test]
     fn merge_agent_blocks_contradictory_passed_report() {
-        use crate::tasks::types::{
+        use refact_tasks::types::{
             VerificationOutcome, VerificationResult, VerifierReportClassification,
         };
 
@@ -2099,7 +2099,7 @@ mod worktree_merge_tool_tests {
 
     #[test]
     fn merge_agent_fails_closed_for_ambiguous_legacy_unknown_result() {
-        use crate::tasks::types::{VerificationResult, VerifierReportClassification};
+        use refact_tasks::types::{VerificationResult, VerifierReportClassification};
 
         let mut card = test_card("wt", "agent", Path::new("/tmp/worktree"));
         card.verifier_report = Some(VerifierReport {
@@ -2145,7 +2145,7 @@ mod worktree_merge_tool_tests {
 
     #[test]
     fn merge_agent_force_allows_human_review_with_review_concerns() {
-        use crate::tasks::types::{
+        use refact_tasks::types::{
             VerificationOutcome, VerificationResult, VerifierReportClassification,
         };
 
@@ -2169,7 +2169,7 @@ mod worktree_merge_tool_tests {
 
     #[test]
     fn merge_agent_force_allows_human_review_with_no_commands() {
-        use crate::tasks::types::VerifierReportClassification;
+        use refact_tasks::types::VerifierReportClassification;
 
         let mut card = test_card("wt", "agent", Path::new("/tmp/worktree"));
         card.verifier_report = Some(VerifierReport {
@@ -2188,7 +2188,7 @@ mod worktree_merge_tool_tests {
 
     #[test]
     fn merge_agent_bypass_verifier_allows_genuine_command_failure() {
-        use crate::tasks::types::{
+        use refact_tasks::types::{
             VerificationOutcome, VerificationResult, VerifierReportClassification,
         };
 
@@ -2216,7 +2216,7 @@ mod worktree_merge_tool_tests {
 
     #[test]
     fn merge_agent_force_allows_typed_launch_failure_without_command_results() {
-        use crate::tasks::types::VerifierReportClassification;
+        use refact_tasks::types::VerifierReportClassification;
 
         let mut card = test_card("wt", "agent", Path::new("/tmp/worktree"));
         let mut report = launch_failure_verifier_report();
@@ -2228,7 +2228,7 @@ mod worktree_merge_tool_tests {
 
     #[test]
     fn merge_agent_force_allows_mixed_passed_and_infrastructure_human_review() {
-        use crate::tasks::types::{
+        use refact_tasks::types::{
             VerificationOutcome, VerificationResult, VerifierReportClassification,
         };
 
@@ -2262,9 +2262,9 @@ mod worktree_merge_tool_tests {
     }
 
     fn infrastructure_human_review_report(
-        outcome: crate::tasks::types::VerificationOutcome,
+        outcome: refact_tasks::types::VerificationOutcome,
     ) -> VerifierReport {
-        use crate::tasks::types::{VerificationResult, VerifierReportClassification};
+        use refact_tasks::types::{VerificationResult, VerifierReportClassification};
 
         VerifierReport {
             passed: false,
@@ -2282,7 +2282,7 @@ mod worktree_merge_tool_tests {
 
     #[test]
     fn merge_agent_force_allows_rejected_command_human_review() {
-        use crate::tasks::types::VerificationOutcome;
+        use refact_tasks::types::VerificationOutcome;
 
         let mut card = test_card("wt", "agent", Path::new("/tmp/worktree"));
         card.verifier_report = Some(infrastructure_human_review_report(
@@ -2298,7 +2298,7 @@ mod worktree_merge_tool_tests {
 
     #[test]
     fn merge_agent_force_allows_policy_denied_command_human_review() {
-        use crate::tasks::types::VerificationOutcome;
+        use refact_tasks::types::VerificationOutcome;
 
         let mut card = test_card("wt", "agent", Path::new("/tmp/worktree"));
         card.verifier_report = Some(infrastructure_human_review_report(
@@ -2311,7 +2311,7 @@ mod worktree_merge_tool_tests {
 
     #[test]
     fn merge_agent_force_still_blocks_command_failed_result() {
-        use crate::tasks::types::VerificationOutcome;
+        use refact_tasks::types::VerificationOutcome;
 
         let mut card = test_card("wt", "agent", Path::new("/tmp/worktree"));
         card.verifier_report = Some(infrastructure_human_review_report(
@@ -2326,7 +2326,7 @@ mod worktree_merge_tool_tests {
 
     #[test]
     fn merge_agent_force_allows_no_commands_result() {
-        use crate::tasks::types::{
+        use refact_tasks::types::{
             VerificationOutcome, VerificationResult, VerifierReportClassification,
         };
 
@@ -2352,7 +2352,7 @@ mod worktree_merge_tool_tests {
 
     #[test]
     fn merge_agent_force_allows_mixed_passed_and_rejected_human_review() {
-        use crate::tasks::types::{
+        use refact_tasks::types::{
             VerificationOutcome, VerificationResult, VerifierReportClassification,
         };
 
@@ -2383,7 +2383,7 @@ mod worktree_merge_tool_tests {
 
     #[test]
     fn merge_agent_force_allows_rejected_command_with_semantic_concern() {
-        use crate::tasks::types::VerificationOutcome;
+        use refact_tasks::types::VerificationOutcome;
 
         let mut card = test_card("wt", "agent", Path::new("/tmp/worktree"));
         let mut report = infrastructure_human_review_report(VerificationOutcome::Rejected);
@@ -2398,7 +2398,7 @@ mod worktree_merge_tool_tests {
 
     #[test]
     fn merge_agent_strict_consistent_pass_is_unchanged() {
-        use crate::tasks::types::{
+        use refact_tasks::types::{
             VerificationOutcome, VerificationResult, VerifierReportClassification,
         };
 
@@ -3548,7 +3548,7 @@ mod worktree_merge_tool_tests {
     #[test]
     fn force_merge_finalization_requires_typed_pass_or_absent_check() {
         use crate::chat::post_merge_check::PostMergeCheckResult;
-        use crate::tasks::types::VerificationOutcome;
+        use refact_tasks::types::VerificationOutcome;
 
         let result = |checked, outcome| PostMergeCheckResult {
             checked,
@@ -3593,7 +3593,7 @@ mod worktree_merge_tool_tests {
     #[test]
     fn legacy_typed_failure_without_revert_clears_ownership_but_does_not_finalize() {
         use crate::chat::post_merge_check::PostMergeCheckResult;
-        use crate::tasks::types::VerificationOutcome;
+        use refact_tasks::types::VerificationOutcome;
 
         let result = Ok(Some(PostMergeCheckResult {
             checked: true,

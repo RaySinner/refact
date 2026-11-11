@@ -7,7 +7,7 @@ use serde_json::Value;
 use tokio::sync::Mutex as AMutex;
 use async_trait::async_trait;
 
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use refact_core::chat_types::ContextEnum;
 use crate::integrations::sessions::{IntegrationSession, get_session_hashmap_key};
 
@@ -1115,7 +1115,7 @@ fn chrome_input_schema() -> serde_json::Value {
 }
 
 async fn image_policy_for_model(
-    caps: &dyn crate::chat::ctx::CapsProvider,
+    caps: &dyn refact_runtime_api::CapsProvider,
     model_id: &str,
 ) -> ImagePolicy {
     let Ok(caps) = caps.try_load_caps_quickly(0).await else {

@@ -8,7 +8,7 @@ use crate::global_context::GlobalContextCtx;
 use crate::caps::resolve_chat_model;
 use crate::global_context::{try_load_caps_quickly_if_not_present, GlobalContext};
 use crate::llm::params::CacheControl;
-use crate::chat::ctx::ExplicitSubchatSpec;
+use refact_chat_api::ExplicitSubchatSpec;
 use crate::tools::review_types::ReviewDepth;
 
 pub const REVIEW_SUBAGENT_ID: &str = "review_agents";

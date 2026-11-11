@@ -12,7 +12,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use tokio::sync::Mutex as AMutex;
 
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use refact_runtime_api::at_command_executor::{
     file_repair_candidates, return_one_candidate_or_a_good_error,
 };
@@ -21,7 +21,7 @@ use refact_code_intel_api::*;
 use refact_files::path_utils::{canonicalize_normalized_path, preprocess_path_for_normalization};
 use refact_runtime_api::files_correction::{get_project_dirs, resolve_codegraph_queue_path};
 use refact_worktrees::path_mappings::registered_worktree_path_mappings;
-use crate::postprocessing::pp_command_output::OutputFilter;
+use refact_postprocessing::pp_command_output::OutputFilter;
 use crate::tools::scope_utils::resolve_existing_path_with_execution_scope_for_model_context;
 use crate::tools::tools_description::{
     json_schema_from_params, Tool, ToolDesc, ToolSource, ToolSourceType,
@@ -489,7 +489,7 @@ async fn resolve_codegraph_filter_path(
 }
 
 fn scoped_indexed_path(
-    scope: &crate::worktrees::scope::ExecutionScope,
+    scope: &refact_worktrees::scope::ExecutionScope,
     scoped_path: &Path,
 ) -> Result<PathBuf, String> {
     let relative = scoped_path
@@ -507,7 +507,7 @@ fn scoped_indexed_path(
 }
 
 fn scoped_codegraph_project_roots(
-    execution_scope: Option<&crate::worktrees::scope::ExecutionScope>,
+    execution_scope: Option<&refact_worktrees::scope::ExecutionScope>,
 ) -> Result<Option<CodegraphProjectRoots>, String> {
     let Some(scope) = execution_scope.filter(|scope| scope.is_enforced()) else {
         return Ok(None);
@@ -5713,7 +5713,7 @@ mod tests {
         let source_root = temp.path().join("source");
         std::fs::create_dir_all(worktree_root.join("src")).unwrap();
         std::fs::create_dir_all(source_root.join("src")).unwrap();
-        let worktree = crate::worktrees::types::WorktreeMeta {
+        let worktree = refact_worktrees::types::WorktreeMeta {
             id: "codegraph-scope".to_string(),
             kind: "chat".to_string(),
             root: worktree_root.clone(),
@@ -5727,7 +5727,7 @@ mod tests {
             agent_id: None,
             enforce: true,
         };
-        let scope = crate::worktrees::scope::ExecutionScope::from_worktree(&worktree);
+        let scope = refact_worktrees::scope::ExecutionScope::from_worktree(&worktree);
 
         let roots = scoped_codegraph_project_roots(Some(&scope))
             .unwrap()

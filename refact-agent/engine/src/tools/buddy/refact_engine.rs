@@ -13,7 +13,7 @@ use tokio::sync::Mutex as AMutex;
 use uuid::Uuid;
 use walkdir::WalkDir;
 
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
 

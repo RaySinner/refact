@@ -6,11 +6,11 @@ use chrono::{DateTime, Duration, Utc};
 use serde_json::{json, Value};
 use tokio::sync::Mutex as AMutex;
 
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use crate::global_context::GlobalContextCtx;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use refact_runtime_api::task_storage as storage;
-use crate::tasks::types::{AbVariantInfo, BoardCard, TaskBoard, TeamMember};
+use refact_tasks::types::{AbVariantInfo, BoardCard, TaskBoard, TeamMember};
 use crate::tools::task_tool_helpers::{human_age, require_bound_planner_task, truncate_chars};
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
 use refact_runtime_api::{ChatSessionFacade, SessionState};
@@ -372,7 +372,7 @@ fn parse_i64(args: &HashMap<String, Value>, key: &str) -> Result<Option<i64>, St
 }
 
 pub(crate) async fn get_agent_statuses_for_ctx(
-    ctx: &crate::chat::ctx::ChatCtx,
+    ctx: &refact_runtime_api::ChatCtx,
     chat_facade: Arc<dyn ChatSessionFacade>,
     task_id: &str,
 ) -> Result<Vec<AgentStatus>, String> {
@@ -1221,8 +1221,8 @@ impl Tool for ToolTaskCheckAgents {
 mod tests {
     use super::*;
     use crate::app_state::AppState;
-    use crate::chat::types::TaskMeta as ThreadTaskMeta;
-    use crate::tasks::types::{BoardCard, TaskBoard, TaskMeta as StoredTaskMeta, TaskStatus};
+    use refact_chat_api::TaskMeta as ThreadTaskMeta;
+    use refact_tasks::types::{BoardCard, TaskBoard, TaskMeta as StoredTaskMeta, TaskStatus};
     use crate::tools::tool_task_wait_for_agents::ToolTaskWaitForAgents;
     use crate::tools::tools_description::Tool;
 
@@ -1320,7 +1320,7 @@ mod tests {
     fn ab_doing_card(id: &str) -> BoardCard {
         let mut card = board_card(id, "doing", None);
         card.assignee = Some("ab".to_string());
-        card.ab_variants = Some(crate::tasks::types::AbVariants {
+        card.ab_variants = Some(refact_tasks::types::AbVariants {
             a: AbVariantInfo {
                 agent_id: "agent-a".to_string(),
                 chat_id: "agent-chat-a".to_string(),
@@ -1349,7 +1349,7 @@ mod tests {
         chat_id: &str,
         state: SessionState,
     ) {
-        let mut session = crate::chat::types::ChatSession::new(chat_id.to_string());
+        let mut session = refact_chat_api::ChatSession::new(chat_id.to_string());
         session.set_runtime_state(state, None);
         gcx.chat_sessions
             .write()
@@ -1653,7 +1653,7 @@ mod tests {
 
     #[tokio::test]
     async fn wait_agents_records_ab_variant_ids() {
-        use crate::chat::types::ChatSession;
+        use refact_chat_api::ChatSession;
         use std::sync::atomic::Ordering;
 
         let temp = tempfile::tempdir().unwrap();
@@ -1696,7 +1696,7 @@ mod tests {
 
     #[tokio::test]
     async fn wait_agents_invalid_wait_does_not_record_wait_state_or_abort() {
-        use crate::chat::types::ChatSession;
+        use refact_chat_api::ChatSession;
         use std::sync::atomic::Ordering;
 
         let temp = tempfile::tempdir().unwrap();
@@ -1919,13 +1919,13 @@ mod tests {
             TeamMember {
                 role: "coder".to_string(),
                 agent_chat_id: Some("agent-T-1-coder".to_string()),
-                member_status: Some(crate::tasks::types::TeamStatus::Running),
+                member_status: Some(refact_tasks::types::TeamStatus::Running),
                 ..Default::default()
             },
             TeamMember {
                 role: "reviewer".to_string(),
                 agent_chat_id: Some("agent-T-1-reviewer".to_string()),
-                member_status: Some(crate::tasks::types::TeamStatus::Running),
+                member_status: Some(refact_tasks::types::TeamStatus::Running),
                 ..Default::default()
             },
         ];

@@ -5,7 +5,7 @@ use tracing::warn;
 use async_trait::async_trait;
 use tokio::sync::Mutex as AMutex;
 
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use refact_runtime_api::at_command_executor::{
     return_one_candidate_or_a_good_error, tree_for_tools_ex,
 };
@@ -14,7 +14,7 @@ use crate::tools::tools_description::{
     Tool, ToolDesc, ToolSource, ToolSourceType, json_schema_from_params,
 };
 use refact_core::chat_types::{ChatMessage, ChatContent, ContextEnum};
-use crate::postprocessing::pp_command_output::OutputFilter;
+use refact_postprocessing::pp_command_output::OutputFilter;
 use refact_runtime_api::files_correction::{
     correct_to_nearest_dir_path, correct_to_nearest_filename, paths_from_anywhere,
 };
@@ -309,10 +309,10 @@ impl Tool for ToolTree {
 #[cfg(test)]
 mod privacy_and_bounds_tests {
     use super::*;
-    use crate::at_commands::at_commands::AtCommandsContext;
+    use refact_runtime_api::AtCommandsContext;
     use refact_core::chat_types::{ChatContent, ContextEnum};
     use refact_core::privacy_types::{FilePrivacySettings, PrivacySettings};
-    use crate::worktrees::types::WorktreeMeta;
+    use refact_worktrees::types::WorktreeMeta;
     use std::fs;
     use std::path::PathBuf;
 

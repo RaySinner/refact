@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 use tokio::sync::Mutex as AMutex;
 
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use crate::global_context::GlobalContextCtx;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use crate::chat::trajectories::{set_trajectory_label, TRAJECTORY_LABEL_MAX_CHARS};
@@ -87,7 +87,7 @@ mod tests {
     use super::*;
     use crate::app_state::AppState;
     use crate::chat::trajectories::load_trajectory_for_chat;
-    use crate::chat::types::ChatSession;
+    use refact_chat_api::ChatSession;
 
     async fn context(
         gcx: Arc<crate::global_context::GlobalContext>,

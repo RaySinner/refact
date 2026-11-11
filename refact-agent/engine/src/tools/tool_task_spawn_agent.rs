@@ -10,19 +10,19 @@ use chrono::{DateTime, Utc};
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
 use crate::global_context::GlobalContextCtx;
 use refact_core::chat_types::{ChatMessage, ChatContent, ContextEnum, ContextFile};
-use crate::at_commands::at_commands::AtCommandsContext;
-use crate::chat::ctx::{CapsProvider, ChatCtx};
-use crate::chat::internal_roles::{event, EventSubkind};
+use refact_runtime_api::AtCommandsContext;
+use refact_runtime_api::{CapsProvider, ChatCtx};
+use refact_chat_api::internal_roles::{event, EventSubkind};
 use crate::chat::trajectories::resolve_task_planner_controller_chat_id;
 use refact_tasks::rooms;
 use refact_runtime_api::task_storage as storage;
-use crate::tasks::types::{BoardCard, StatusUpdate};
+use refact_tasks::types::{BoardCard, StatusUpdate};
 use crate::global_context::GlobalContext;
-use crate::tasks::types::TaskMeta as StoredTaskMeta;
-use crate::worktrees::git;
-use crate::worktrees::service::WorktreeService;
+use refact_tasks::types::TaskMeta as StoredTaskMeta;
+use refact_worktrees::git;
+use refact_worktrees::service::WorktreeService;
 use refact_chat_api::{ChatCommand, TaskMeta, ThreadParams};
-use crate::worktrees::types::{CreateWorktreeRequest, WorktreeMeta};
+use refact_worktrees::types::{CreateWorktreeRequest, WorktreeMeta};
 use refact_runtime_api::CreateSessionRequest;
 
 const FILES_TO_OPEN_PER_FILE_LIMIT: usize = 256 * 1024;
@@ -139,7 +139,7 @@ impl PreparedWorktree {
         if self.branch_was_created {
             if let Some(branch) = self.meta.branch.as_deref() {
                 if let Err(e) =
-                    crate::worktrees::git::delete_branch(&self.meta.source_workspace_root, branch)
+                    refact_worktrees::git::delete_branch(&self.meta.source_workspace_root, branch)
                 {
                     tracing::warn!(
                         "Failed to delete leaked agent branch '{}' during cleanup_unlinked: {}",
@@ -230,7 +230,7 @@ fn map_task_base_branch_error(error: String, base_branch: Option<&str>) -> Strin
     format!("Failed to create task-agent worktree: {}", error)
 }
 
-pub(crate) fn find_abandoned_worktrees(board: &crate::tasks::types::TaskBoard) -> Vec<String> {
+pub(crate) fn find_abandoned_worktrees(board: &refact_tasks::types::TaskBoard) -> Vec<String> {
     board
         .cards
         .iter()
@@ -625,9 +625,9 @@ pub(crate) fn claim_room_slot(
             }
             member.tools = tools;
             member.member_status = Some(if parallel {
-                crate::tasks::types::TeamStatus::Running
+                refact_tasks::types::TeamStatus::Running
             } else {
-                crate::tasks::types::TeamStatus::Pending
+                refact_tasks::types::TeamStatus::Pending
             });
             writes
         };
@@ -656,9 +656,9 @@ pub(crate) fn claim_room_slot(
         tools,
     );
     member.member_status = Some(if member.allows_parallel() {
-        crate::tasks::types::TeamStatus::Running
+        refact_tasks::types::TeamStatus::Running
     } else {
-        crate::tasks::types::TeamStatus::Pending
+        refact_tasks::types::TeamStatus::Pending
     });
     mark_card_agent_started(
         card,
@@ -736,7 +736,7 @@ pub(crate) fn check_spawn_precondition(card: &BoardCard) -> Result<(), String> {
 }
 
 pub(crate) fn restore_original_card_if_current_agent(
-    board: &mut crate::tasks::types::TaskBoard,
+    board: &mut refact_tasks::types::TaskBoard,
     original_card: &BoardCard,
     guard_chat_id: &str,
 ) -> bool {
@@ -1480,7 +1480,7 @@ mod tests {
     use super::*;
     use refact_core::privacy_types::{FilePrivacySettings, PrivacySettings};
     use refact_runtime_api::task_storage as storage;
-    use crate::tasks::types::{BoardCard, TaskBoard, TaskMeta, TaskStatus};
+    use refact_tasks::types::{BoardCard, TaskBoard, TaskMeta, TaskStatus};
     use std::path::Path;
     use std::process::Command;
 
@@ -2004,7 +2004,7 @@ mod tests {
     #[tokio::test]
     async fn spawn_agent_planner_chat_id_uses_active_root_before_legacy_meta() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
-        let mut session = crate::chat::types::ChatSession::new("controller-planner".to_string());
+        let mut session = refact_chat_api::ChatSession::new("controller-planner".to_string());
         session.thread.task_meta = Some(refact_chat_api::TaskMeta {
             task_id: "task-1".to_string(),
             role: "planner".to_string(),
@@ -2612,7 +2612,7 @@ mod tests {
         assert_eq!(paths, vec!["/foo/bar.txt", "/baz.txt"]);
     }
 
-    fn reserved_slot(role: &str, writes: Option<bool>) -> crate::tasks::types::TeamMember {
+    fn reserved_slot(role: &str, writes: Option<bool>) -> refact_tasks::types::TeamMember {
         rooms::planned_room_member(rooms::RoomSlot {
             role: role.to_string(),
             mandate: None,
@@ -2648,7 +2648,7 @@ mod tests {
         assert_eq!(card.team_members.len(), 2);
         assert_eq!(
             card.team_members[0].member_status,
-            Some(crate::tasks::types::TeamStatus::Pending)
+            Some(refact_tasks::types::TeamStatus::Pending)
         );
         assert!(
             card.agent_chat_id.is_none(),
@@ -2693,7 +2693,7 @@ mod tests {
         );
         assert_eq!(
             card.team_members[1].member_status,
-            Some(crate::tasks::types::TeamStatus::Running)
+            Some(refact_tasks::types::TeamStatus::Running)
         );
 
         // Primary owner promotion: the card's scalars now point at the coder, and the card moved
@@ -2776,7 +2776,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             card.team_members[1].member_status,
-            Some(crate::tasks::types::TeamStatus::Running)
+            Some(refact_tasks::types::TeamStatus::Running)
         );
         assert_eq!(
             card.assignee.as_deref(),
@@ -2822,7 +2822,7 @@ mod tests {
         assert_eq!(card.team_members[0].role, "coder");
         assert_eq!(
             card.team_members[0].member_status,
-            Some(crate::tasks::types::TeamStatus::Running)
+            Some(refact_tasks::types::TeamStatus::Running)
         );
     }
 
@@ -2878,8 +2878,8 @@ mod tests {
             refact_tasks::rooms::new_room_member("architect", "a1", "agent-T-1-a1", None, None, None, vec![]),
             refact_tasks::rooms::new_room_member("coder", "a2", "agent-T-1-a2", None, None, None, vec![]),
         ];
-        card.team_members[0].member_status = Some(crate::tasks::types::TeamStatus::Running);
-        card.team_members[1].member_status = Some(crate::tasks::types::TeamStatus::Running);
+        card.team_members[0].member_status = Some(refact_tasks::types::TeamStatus::Running);
+        card.team_members[1].member_status = Some(refact_tasks::types::TeamStatus::Running);
 
         let error = check_spawn_precondition(&card).unwrap_err();
 

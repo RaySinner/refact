@@ -12,10 +12,10 @@ use crate::global_context::GlobalContextCtx;
 use refact_core::chat_types::{PendingDelivery, PushMode};
 use crate::agents::types::{BackgroundAgent, BgAgentStatus};
 use crate::app_state::AppState;
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use crate::global_context::GlobalContext;
-use crate::postprocessing::pp_command_output::OutputFilter;
+use refact_postprocessing::pp_command_output::OutputFilter;
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
 
 pub struct ToolAgentsOverview {
@@ -340,8 +340,8 @@ async fn deliver_room_message(
     let targets: Vec<String> = peers.iter().map(|peer| peer.chat_id.clone()).collect();
     for peer in peers {
         let author_json = serde_json::to_value(&peer.author).unwrap_or(serde_json::Value::Null);
-        let mut message = crate::chat::internal_roles::event(
-            crate::chat::internal_roles::EventSubkind::SystemNotice,
+        let mut message = refact_chat_api::internal_roles::event(
+            refact_chat_api::internal_roles::EventSubkind::SystemNotice,
             "agents.room_message",
             json!({
                 "card_id": card_id,
@@ -621,8 +621,8 @@ impl Tool for ToolAgentMessage {
             app,
             &to,
             PendingDelivery::new(
-                vec![crate::chat::internal_roles::event(
-                    crate::chat::internal_roles::EventSubkind::SystemNotice,
+                vec![refact_chat_api::internal_roles::event(
+                    refact_chat_api::internal_roles::EventSubkind::SystemNotice,
                     "agents.message",
                     json!({"from": "parent"}),
                     format!("[message from parent]\n{message_text}"),
@@ -694,7 +694,7 @@ mod tests {
     use std::sync::atomic::Ordering;
 
     use crate::agents::types::{BgAgentKind, CreateAgentRequest};
-    use crate::chat::types::ChatSession;
+    use refact_chat_api::ChatSession;
     use crate::tools::tools_description::Tool;
 
     fn request(parent_chat_id: &str, title: &str) -> CreateAgentRequest {
@@ -1063,7 +1063,7 @@ mod tests {
             .await
             .unwrap();
         let mut messages = Vec::new();
-        crate::chat::ctx::drain_background_agent_inbox(&ccx, &mut messages).await;
+        crate::subchat::drain_background_agent_inbox(&ccx, &mut messages).await;
         assert_eq!(messages.len(), 1);
         assert!(messages[0]
             .content
@@ -1111,7 +1111,7 @@ mod tests {
             .mark_running(&child.agent_id, "subchat-child-chat".to_string())
             .await
             .unwrap();
-        let config = crate::chat::ctx::SubchatConfig {
+        let config = refact_chat_api::SubchatConfig {
             tool_name: "subagent".to_string(),
             stateful: true,
             autonomous_no_confirm: false,
@@ -1122,7 +1122,7 @@ mod tests {
             parent_id: Some("parent".to_string()),
             link_type: Some("subagent".to_string()),
             root_chat_id: Some("parent".to_string()),
-            tools: crate::chat::ctx::ToolsPolicy::All,
+            tools: refact_chat_api::ToolsPolicy::All,
             max_steps: 1,
             prepend_system_prompt: false,
             wrap_up: None,
@@ -1145,9 +1145,9 @@ mod tests {
             final_step_force_answer: false,
             buddy_meta: None,
             step_progress: None,
-            trace_parent: crate::chat::ctx::TraceParent::rooted("parent", "parent"),
+            trace_parent: refact_chat_api::TraceParent::rooted("parent", "parent"),
         };
-        crate::chat::ctx::install_stateful_subchat_session(&app, "subchat-child-chat", &config, &[])
+        crate::subchat::install_stateful_subchat_session(&app, "subchat-child-chat", &config, &[])
             .await;
         let thread = app
             .chat
@@ -1164,7 +1164,7 @@ mod tests {
         crate::chat::trajectories::save_trajectory_as_with_intent(&gcx.chat_ctx(gcx.clone()),
             &thread,
             &[],
-            crate::chat::types::TrajectoryCommitIntent::Required,
+            refact_chat_api::TrajectoryCommitIntent::Required,
         )
         .await;
         tokio::time::timeout(std::time::Duration::from_secs(30), async {
@@ -1263,7 +1263,7 @@ mod tests {
         refact_runtime_api::task_storage::save_board(
             gcx.clone(),
             "task-room",
-            &crate::tasks::types::TaskBoard {
+            &refact_tasks::types::TaskBoard {
                 cards: vec![board_card],
                 ..Default::default()
             },
@@ -1315,7 +1315,7 @@ mod tests {
         refact_runtime_api::task_storage::save_board(
             gcx.clone(),
             "task-room",
-            &crate::tasks::types::TaskBoard {
+            &refact_tasks::types::TaskBoard {
                 cards: vec![
                     room_board_card(&["agent-T-1-arch", "agent-T-1-code"]),
                     room_board_card_for("T-2", &["agent-T-2-arch", "agent-T-2-code"]),
@@ -1357,7 +1357,7 @@ mod tests {
         refact_runtime_api::task_storage::save_board(
             gcx.clone(),
             "task-room",
-            &crate::tasks::types::TaskBoard {
+            &refact_tasks::types::TaskBoard {
                 cards: vec![room_board_card(&["agent-T-1-arch", "agent-T-1-code"])],
                 ..Default::default()
             },
@@ -1397,7 +1397,7 @@ mod tests {
         refact_runtime_api::task_storage::save_board(
             gcx.clone(),
             "task-room",
-            &crate::tasks::types::TaskBoard {
+            &refact_tasks::types::TaskBoard {
                 cards: vec![room_board_card(&["agent-T-1-arch", "agent-T-1-code"])],
                 ..Default::default()
             },
@@ -1442,7 +1442,7 @@ mod tests {
         refact_runtime_api::task_storage::save_board(
             gcx.clone(),
             "task-room",
-            &crate::tasks::types::TaskBoard {
+            &refact_tasks::types::TaskBoard {
                 cards: vec![room_board_card(&["agent-T-1-arch", "agent-T-1-code"])],
                 ..Default::default()
             },
@@ -1498,7 +1498,7 @@ mod tests {
         refact_runtime_api::task_storage::save_board(
             gcx.clone(),
             "task-room",
-            &crate::tasks::types::TaskBoard {
+            &refact_tasks::types::TaskBoard {
                 cards: vec![room_board_card(&[
                     "agent-T-1-arch",
                     "agent-T-1-code",
@@ -1564,7 +1564,7 @@ mod tests {
         refact_runtime_api::task_storage::save_board(
             gcx.clone(),
             "task-room",
-            &crate::tasks::types::TaskBoard {
+            &refact_tasks::types::TaskBoard {
                 cards: vec![room_board_card(&[
                     "agent-T-1-arch",
                     "agent-T-1-code",
@@ -1623,7 +1623,7 @@ mod tests {
         refact_runtime_api::task_storage::save_board(
             gcx.clone(),
             "task-room",
-            &crate::tasks::types::TaskBoard {
+            &refact_tasks::types::TaskBoard {
                 cards: vec![board_card],
                 ..Default::default()
             },
@@ -1677,7 +1677,7 @@ mod tests {
         refact_runtime_api::task_storage::save_board(
             gcx.clone(),
             "task-room",
-            &crate::tasks::types::TaskBoard {
+            &refact_tasks::types::TaskBoard {
                 cards: vec![board_card],
                 ..Default::default()
             },
@@ -1731,7 +1731,7 @@ mod tests {
         refact_runtime_api::task_storage::save_board(
             gcx.clone(),
             "task-room",
-            &crate::tasks::types::TaskBoard {
+            &refact_tasks::types::TaskBoard {
                 cards: vec![board_card],
                 ..Default::default()
             },
@@ -1784,7 +1784,7 @@ mod tests {
         refact_runtime_api::task_storage::save_board(
             gcx.clone(),
             "task-room",
-            &crate::tasks::types::TaskBoard {
+            &refact_tasks::types::TaskBoard {
                 cards: vec![
                     room_board_card(&["agent-T-1-arch", "agent-T-1-code"]),
                     room_board_card_for("T-2", &["agent-T-2-arch", "agent-T-2-code"]),
@@ -1841,7 +1841,7 @@ mod tests {
         refact_runtime_api::task_storage::save_board(
             gcx.clone(),
             "task-room",
-            &crate::tasks::types::TaskBoard {
+            &refact_tasks::types::TaskBoard {
                 cards: vec![room_board_card(&["agent-T-1-arch", "agent-T-1-code"])],
                 ..Default::default()
             },
@@ -1906,14 +1906,14 @@ mod tests {
             .unwrap_or_else(|| panic!("room message {needle:?} must carry provenance"))
     }
 
-    fn room_board_card(chats: &[&str]) -> crate::tasks::types::BoardCard {
+    fn room_board_card(chats: &[&str]) -> refact_tasks::types::BoardCard {
         room_board_card_for("T-1", chats)
     }
 
     fn room_board_card_for(
         card_id: &str,
         chats: &[&str],
-    ) -> crate::tasks::types::BoardCard {
+    ) -> refact_tasks::types::BoardCard {
         let roles = ["architect", "coder"];
         let members = chats
             .iter()
@@ -1928,11 +1928,11 @@ mod tests {
                     None,
                     vec![],
                 );
-                member.member_status = Some(crate::tasks::types::TeamStatus::Running);
+                member.member_status = Some(refact_tasks::types::TeamStatus::Running);
                 member
             })
             .collect();
-        crate::tasks::types::BoardCard {
+        refact_tasks::types::BoardCard {
             id: card_id.to_string(),
             title: format!("Card {card_id}"),
             column: "doing".to_string(),

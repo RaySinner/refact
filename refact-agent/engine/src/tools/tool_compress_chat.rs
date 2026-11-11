@@ -5,10 +5,10 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 use tokio::sync::Mutex as AMutex;
 
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum, ContextFile};
 use refact_tool_api::IntegrationConfirmation;
-use crate::postprocessing::pp_command_output::OutputFilter;
+use refact_postprocessing::pp_command_output::OutputFilter;
 use crate::tools::tools_description::{
     json_schema_from_params, Tool, ToolDesc, ToolSource, ToolSourceType,
 };
@@ -554,8 +554,8 @@ mod tests {
     }
 
     fn event_message(text: &str) -> ChatMessage {
-        crate::chat::internal_roles::event(
-            crate::chat::internal_roles::EventSubkind::SystemNotice,
+        refact_chat_api::internal_roles::event(
+            refact_chat_api::internal_roles::EventSubkind::SystemNotice,
             "test.compress_chat",
             json!({}),
             text.to_string(),

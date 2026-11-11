@@ -12,10 +12,10 @@ use crate::agents::spawn::{
 };
 use crate::global_context::GlobalContextCtx;
 use crate::agents::types::BgAgentKind;
-use crate::at_commands::at_commands::{AtCommandsContext, MAX_SUBCHAT_DEPTH};
+use refact_runtime_api::{AtCommandsContext, MAX_SUBCHAT_DEPTH};
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
-use crate::chat::types::{GoalBudget, GoalCriterion};
-use crate::postprocessing::pp_command_output::OutputFilter;
+use refact_chat_api::types::{GoalBudget, GoalCriterion};
+use refact_postprocessing::pp_command_output::OutputFilter;
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
 use crate::tools::tools_list::get_available_tools;
 use refact_yaml_configs::customization_registry::resolve_subagent_for_model;
@@ -447,7 +447,7 @@ fn normalize_explicit_tools(
 }
 
 async fn resolve_model(
-    caps: &Arc<dyn crate::chat::ctx::CapsProvider>,
+    caps: &Arc<dyn refact_runtime_api::CapsProvider>,
     model_name: Option<&str>,
     model_type: Option<&str>,
     parent_model: &str,
@@ -696,7 +696,7 @@ mod tests {
 
     use crate::app_state::AppState;
     use crate::caps::{BaseModelRecord, ChatModelRecord, CodeAssistantCaps};
-    use crate::chat::ctx::{SubchatResult, ToolsPolicy};
+    use refact_chat_api::{SubchatResult, ToolsPolicy};
     use serial_test::serial;
 
     fn args() -> HashMap<String, Value> {
@@ -1058,7 +1058,7 @@ mod tests {
     async fn omitted_tools_inherit_parent_mode_tools_and_force_tools() {
         let ccx = test_context("restricted-parent").await;
         let app = ccx.lock().await.app.clone();
-        let parent_session = Arc::new(AMutex::new(crate::chat::types::ChatSession::new(
+        let parent_session = Arc::new(AMutex::new(refact_chat_api::ChatSession::new(
             "restricted-parent".to_string(),
         )));
         parent_session.lock().await.thread.mode = "NO_TOOLS".to_string();

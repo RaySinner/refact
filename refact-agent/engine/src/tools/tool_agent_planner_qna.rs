@@ -7,11 +7,11 @@ use serde_json::{json, Value};
 use tokio::sync::Mutex as AMutex;
 use uuid::Uuid;
 
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use crate::app_state::AppState;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use refact_runtime_api::task_storage as storage;
-use crate::tasks::types::{BoardCard, StatusUpdate};
+use refact_tasks::types::{BoardCard, StatusUpdate};
 use crate::tools::task_tool_helpers::require_bound_planner_task;
 use crate::tools::planner_delivery::{self, CardTarget, CardGuard};
 use refact_core::chat_types::DeliveryOutcome;
@@ -662,8 +662,8 @@ impl Tool for ToolTaskQuestionsList {
 mod tests {
     use super::*;
     use crate::app_state::AppState;
-    use crate::chat::types::TaskMeta as ThreadTaskMeta;
-    use crate::tasks::types::{BoardCard, TaskBoard, TaskMeta, TaskStatus};
+    use refact_chat_api::TaskMeta as ThreadTaskMeta;
+    use refact_tasks::types::{BoardCard, TaskBoard, TaskMeta, TaskStatus};
     use crate::tools::settings_guard::SettingsGuard;
     use crate::tools::tools_description::Tool;
     use serial_test::serial;
@@ -1075,7 +1075,7 @@ mod tests {
     }
     #[tokio::test]
     async fn planner_reply_records_once_and_delivers_live_with_each_push_mode() {
-        use crate::chat::types::{ChatSession, SessionState, PushMode};
+        use refact_chat_api::types::{ChatSession, SessionState, PushMode};
         for (raw, expected) in [
             (None, PushMode::Append),
             (Some("append"), PushMode::Append),
@@ -1238,7 +1238,7 @@ mod tests {
     }
     #[tokio::test]
     async fn blocking_question_defaults_to_append_and_propagates_explicit_modes() {
-        use crate::chat::types::{ChatSession, SessionState, PushMode};
+        use refact_chat_api::types::{ChatSession, SessionState, PushMode};
         for (raw, expected) in [
             (None, PushMode::Append),
             (Some("preempt"), PushMode::Preempt),
@@ -1296,7 +1296,7 @@ mod tests {
     }
     #[tokio::test]
     async fn planner_reply_default_append_lands_on_idle_live_session() {
-        use crate::chat::types::ChatSession;
+        use refact_chat_api::ChatSession;
         let temp = tempfile::tempdir().unwrap();
         let gcx = write_task(
             temp.path(),
@@ -1349,7 +1349,7 @@ mod tests {
     }
     #[tokio::test]
     async fn planner_reply_to_idle_agent_is_delivered_and_missing_card_is_rejected() {
-        use crate::chat::types::ChatSession;
+        use refact_chat_api::ChatSession;
         let temp = tempfile::tempdir().unwrap();
         let gcx = write_task(
             temp.path(),

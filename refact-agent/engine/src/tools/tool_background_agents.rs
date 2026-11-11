@@ -8,9 +8,9 @@ use serde_json::{json, Value};
 use tokio::sync::Mutex as AMutex;
 
 use crate::agents::types::{AgentListFilter, BackgroundAgent, BgAgentKind, BgAgentStatus};
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
-use crate::postprocessing::pp_command_output::OutputFilter;
+use refact_postprocessing::pp_command_output::OutputFilter;
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
 
 const DEFAULT_LIMIT: usize = 20;
@@ -950,7 +950,7 @@ mod tests {
 
     use crate::agents::types::{AgentCompletion, CreateAgentRequest};
     use crate::app_state::AppState;
-    use crate::chat::types::ChatSession;
+    use refact_chat_api::ChatSession;
     use crate::tools::tools_description::Tool;
     use serde_json::json;
     use tempfile::TempDir;

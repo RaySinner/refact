@@ -6,10 +6,10 @@ use chrono::{DateTime, Utc};
 use serde_json::{json, Value};
 use tokio::sync::Mutex as AMutex;
 
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use refact_core::chat_types::{ChatContent, ChatMessage, ChatToolCall, ChatUsage, ContextEnum};
 use refact_runtime_api::task_storage as storage;
-use crate::tasks::types::{AbVariantInfo, BoardCard};
+use refact_tasks::types::{AbVariantInfo, BoardCard};
 use crate::tools::task_tool_helpers::{
     human_age_at, required_string, require_bound_planner_task, truncate_chars,
 };
@@ -617,8 +617,8 @@ impl Tool for ToolAgentPulse {
 mod tests {
     use super::*;
     use crate::app_state::AppState;
-    use crate::chat::types::TaskMeta as ThreadTaskMeta;
-    use crate::tasks::types::{StatusUpdate, TaskBoard, TaskMeta, TaskStatus};
+    use refact_chat_api::TaskMeta as ThreadTaskMeta;
+    use refact_tasks::types::{StatusUpdate, TaskBoard, TaskMeta, TaskStatus};
     use crate::tools::tools_description::Tool;
     use refact_chat_api::{ChatCommand, ThreadParams};
     use refact_runtime_api::{ChatSessionUpdate, CreateSessionRequest, RuntimeTrajectorySnapshot};
@@ -719,7 +719,7 @@ mod tests {
     fn ab_test_card() -> BoardCard {
         let mut card = test_card(None);
         card.assignee = Some("ab".to_string());
-        card.ab_variants = Some(crate::tasks::types::AbVariants {
+        card.ab_variants = Some(refact_tasks::types::AbVariants {
             a: AbVariantInfo {
                 agent_id: "agent-a".to_string(),
                 chat_id: "agent-chat-a".to_string(),
@@ -1049,7 +1049,7 @@ mod tests {
 
     #[tokio::test]
     async fn pulse_uses_live_session_activity_when_session_present() {
-        use crate::chat::types::ChatSession;
+        use refact_chat_api::ChatSession;
         use std::time::{Duration, Instant};
 
         let temp = tempfile::tempdir().unwrap();

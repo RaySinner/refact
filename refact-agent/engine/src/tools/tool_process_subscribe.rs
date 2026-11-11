@@ -11,18 +11,18 @@ use tokio::task::JoinHandle;
 
 use refact_core::chat_types::{PendingDelivery, PushMode};
 
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use crate::global_context::GlobalContextCtx;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
-use crate::chat::internal_roles::{event, EventSubkind};
-use crate::exec::types::normalize_workspace_path;
-use crate::exec::{ExecOutputChunk, ExecOutputStream, ExecProcessId, ExecRegistry};
+use refact_chat_api::internal_roles::{event, EventSubkind};
+use refact_exec::types::normalize_workspace_path;
+use refact_exec::{ExecOutputChunk, ExecOutputStream, ExecProcessId, ExecRegistry};
 use refact_runtime_api::files_correction::get_active_project_path;
 use crate::global_context::SharedGlobalContext;
-use crate::postprocessing::pp_command_output::OutputFilter;
+use refact_postprocessing::pp_command_output::OutputFilter;
 use crate::tools::file_edit::auxiliary::active_execution_scope;
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
-use crate::worktrees::scope::ExecutionScope;
+use refact_worktrees::scope::ExecutionScope;
 
 const DEFAULT_MAX_DURATION_MS: u64 = 30_000;
 const MIN_MAX_DURATION_MS: u64 = 1_000;
@@ -757,9 +757,9 @@ fn parse_usize_arg(
 mod tests {
     use super::*;
     use crate::app_state::AppState;
-    use crate::chat::internal_roles::EVENT_ROLE;
-    use crate::chat::types::{ChatSession, SessionState};
-    use crate::exec::{ExecMode, ExecOwnerMeta, ExecSpawnRequest};
+    use refact_chat_api::internal_roles::EVENT_ROLE;
+    use refact_chat_api::types::{ChatSession, SessionState};
+    use refact_exec::{ExecMode, ExecOwnerMeta, ExecSpawnRequest};
     use crate::global_context::GlobalContext;
     use crate::tools::settings_guard::SettingsGuard;
     use serial_test::serial;

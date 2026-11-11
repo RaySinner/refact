@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use itertools::Itertools;
 use tokio::sync::Mutex as AMutex;
 
-use crate::at_commands::at_commands::{vec_context_file_to_context_tools, AtCommandsContext};
+use refact_runtime_api::{vec_context_file_to_context_tools, AtCommandsContext};
 use crate::global_context::GlobalContextCtx;
 use refact_runtime_api::at_command_executor::execute_at_search;
 use refact_runtime_api::files_in_workspace::{
@@ -29,7 +29,7 @@ use crate::tools::tools_description::{
 use refact_core::chat_types::{ChatMessage, ChatContent, ContextEnum, ContextFile};
 use refact_core::knowledge_index::format_related_memories_section;
 use crate::tools::native_enrichment::{workspace_roots, NativeReferences};
-use crate::worktrees::scope::ExecutionScope;
+use refact_worktrees::scope::ExecutionScope;
 
 pub struct ToolSearch {
     pub config_path: String,
@@ -586,7 +586,7 @@ impl Tool for ToolSearch {
 mod tests {
     use super::*;
     use refact_core::privacy_types::{FilePrivacySettings, PrivacySettings};
-    use crate::worktrees::types::WorktreeMeta;
+    use refact_worktrees::types::WorktreeMeta;
     use std::fs;
     use std::sync::atomic::AtomicBool;
 

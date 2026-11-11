@@ -5,11 +5,11 @@ use serde_json::Value;
 use tokio::sync::Mutex as AMutex;
 use uuid::Uuid;
 
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use crate::buddy::actor::redact_sensitive;
 use crate::buddy::types::BuddyThreadMeta;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
-use crate::chat::internal_roles::{event, EventSubkind};
+use refact_chat_api::internal_roles::{event, EventSubkind};
 use refact_chat_history::trajectory_snapshot::TrajectorySnapshot;
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
 

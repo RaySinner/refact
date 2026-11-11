@@ -16,15 +16,15 @@ use tracing::info;
 use uuid::Uuid;
 use walkdir::WalkDir;
 
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use crate::global_context::GlobalContextCtx;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 #[cfg(test)]
 use crate::global_context::GlobalContext;
 use refact_core::knowledge_index::{KnowledgeSearchFilters, KnowledgeSearchHit};
 use refact_runtime_api::knowledge_index::build_knowledge_index_for_ctx;
-use crate::postprocessing::pp_command_output::OutputFilter;
-use crate::chat::ctx::ChatCtx;
+use refact_postprocessing::pp_command_output::OutputFilter;
+use refact_runtime_api::ChatCtx;
 use refact_runtime_api::task_storage::find_task_dir_for_ctx;
 use crate::tools::tools_description::{
     Tool, ToolDesc, ToolSource, ToolSourceType, json_schema_from_params,
@@ -650,7 +650,7 @@ fn safe_relative_path(path: &Path) -> bool {
 }
 
 fn planner_task_id_from_meta(
-    task_meta: Option<&crate::chat::types::TaskMeta>,
+    task_meta: Option<&refact_chat_api::TaskMeta>,
     tool_name: &str,
 ) -> Result<String, String> {
     let meta = task_meta.ok_or_else(|| {
@@ -2634,8 +2634,8 @@ pub async fn load_task_memories(
 mod tests {
     use super::*;
     use crate::app_state::AppState;
-    use crate::at_commands::at_commands::AtCommandsContext;
-    use crate::chat::types::TaskMeta;
+    use refact_runtime_api::AtCommandsContext;
+    use refact_chat_api::TaskMeta;
     use crate::tools::tools_description::Tool;
     use chrono::TimeZone;
     use serde_json::json;

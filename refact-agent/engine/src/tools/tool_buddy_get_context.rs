@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use serde_json::Value;
 use tokio::sync::Mutex as AMutex;
 
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
 
@@ -277,7 +277,7 @@ async fn read_mcp_summary(config_dir: &std::path::Path) -> String {
     format!("MCP servers: {}", mcp_names.join(", "))
 }
 
-async fn read_modes_summary(mode_config: &dyn crate::chat::ctx::ModeConfigProvider) -> String {
+async fn read_modes_summary(mode_config: &dyn refact_runtime_api::ModeConfigProvider) -> String {
     let Some(registry) = mode_config.get_project_registry().await else {
         return "no mode registry available".to_string();
     };

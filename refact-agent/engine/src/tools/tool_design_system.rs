@@ -9,10 +9,10 @@ use serde_json::{json, Map, Value};
 use tokio::sync::Mutex as AMutex;
 use walkdir::{DirEntry, WalkDir};
 
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use refact_code_intel_api::ToolJson;
-use crate::postprocessing::pp_command_output::OutputFilter;
+use refact_postprocessing::pp_command_output::OutputFilter;
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
 
 const DEFAULT_MAX_FINDINGS: usize = 100;

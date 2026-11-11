@@ -8,21 +8,21 @@ use tokio::sync::Mutex as AMutex;
 use uuid::Uuid;
 
 use crate::app_state::AppState;
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use refact_core::chat_types::{ChatMessage, ChatContent, ContextEnum, ContextFile};
-use crate::chat::ctx::ChatCtx;
-use crate::chat::internal_roles::{event, EventSubkind};
+use refact_runtime_api::ChatCtx;
+use refact_chat_api::internal_roles::{event, EventSubkind};
 use crate::global_context::GlobalContext;
 use refact_runtime_api::task_storage as storage;
-use crate::tasks::types::{BoardCard, StatusUpdate};
+use refact_tasks::types::{BoardCard, StatusUpdate};
 use crate::tools::task_tool_helpers::{wait_for_agent_abort, AGENT_ABORT_TIMEOUT};
 use crate::tools::tool_task_spawn_agent::{
     build_agent_prompt, build_agent_thread_params, mark_card_agent_started, prepare_agent_worktree,
     resolve_agent_model, restore_original_card_if_current_agent,
 };
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
-use crate::worktrees::service::WorktreeService;
-use crate::worktrees::types::WorktreeMeta;
+use refact_worktrees::service::WorktreeService;
+use refact_worktrees::types::WorktreeMeta;
 use refact_chat_api::ChatCommand;
 use refact_runtime_api::CreateSessionRequest;
 
@@ -435,7 +435,7 @@ impl ToolTaskRestartAgent {
         app: &AppState,
         task_id: &str,
         planner_chat_id: &str,
-        task_meta: &crate::tasks::types::TaskMeta,
+        task_meta: &refact_tasks::types::TaskMeta,
         card_id: &str,
         card_title: &str,
         card_instructions: &str,
@@ -798,7 +798,7 @@ impl ToolTaskRestartAgent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tasks::types::{BoardCard, TaskBoard};
+    use refact_tasks::types::{BoardCard, TaskBoard};
 
     #[tokio::test]
     async fn restart_agent_context_file_message_has_declared_record() {

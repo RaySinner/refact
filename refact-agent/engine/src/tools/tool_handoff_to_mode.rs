@@ -11,13 +11,13 @@ use crate::agentic::mode_transition::{
     ParsedDecisions, insert_goal_messages_before_plan, transfer_goal_ownership,
 };
 use crate::global_context::GlobalContextCtx;
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use crate::chat::trajectories::{
     chat_id_is_planner_for_task, resolve_task_planner_controller_chat_id,
     verified_planner_linked_root_chat_id,
 };
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
-use crate::postprocessing::pp_command_output::OutputFilter;
+use refact_postprocessing::pp_command_output::OutputFilter;
 use refact_runtime_api::task_storage as storage;
 use crate::tools::tool_task_documents::{
     create_document_at, documents_dir_for_task_for_ctx, next_available_slug_at,
@@ -184,7 +184,7 @@ async fn ensure_task_for_planner_handoff(
 }
 
 async fn create_initial_plan_document(
-    ctx: &crate::chat::ctx::ChatCtx,
+    ctx: &refact_runtime_api::ChatCtx,
     task_id: &str,
     plan_text: &str,
 ) -> Result<String, String> {
@@ -234,7 +234,7 @@ pub(crate) fn transition_report(
     ])
 }
 
-pub(crate) fn transition_fingerprint(session: &crate::chat::types::ChatSession) -> Value {
+pub(crate) fn transition_fingerprint(session: &refact_chat_api::ChatSession) -> Value {
     json!({"thread": session.thread, "goal": session.goal, "ledger": session.goal_ledger,
         "deliveries": session.pending_deliveries_for_snapshot()})
 }
@@ -261,19 +261,19 @@ fn handoff_completion_messages(
 }
 
 fn publish_handoff_completion(
-    source: &mut crate::chat::types::ChatSession,
+    source: &mut refact_chat_api::ChatSession,
     updated: Vec<ChatMessage>,
     message: ChatMessage,
 ) {
     source.replace_messages(updated);
-    source.emit(crate::chat::types::ChatEvent::MessageUpdated {
+    source.emit(refact_chat_api::ChatEvent::MessageUpdated {
         message_id: message.message_id.clone(),
         message,
     });
 }
 
 pub(crate) fn transition_source_goal(
-    session: &crate::chat::types::ChatSession,
+    session: &refact_chat_api::ChatSession,
 ) -> Option<refact_chat_api::GoalSnapshot> {
     let mut goal = session.goal.clone();
     if let Some(state) = refact_chat_api::reduce_goal_ledger(&session.goal_ledger) {
@@ -321,7 +321,7 @@ pub(crate) fn transition_goal(
 /// two durable owners. The caller holds the source lock throughout this commit.
 pub(crate) async fn persist_transition(
     gcx: Arc<crate::global_context::GlobalContext>,
-    source: &mut crate::chat::types::ChatSession,
+    source: &mut refact_chat_api::ChatSession,
     snapshot: &TrajectorySnapshot,
     transfer: &crate::agentic::mode_transition::GoalTransferResult,
 ) -> Result<(), String> {
@@ -547,7 +547,7 @@ impl Tool for ToolHandoffToMode {
 
 async fn finalize_handoff_inner(
     gcx: Arc<crate::global_context::GlobalContext>,
-    session_arc: &Arc<AMutex<crate::chat::types::ChatSession>>,
+    session_arc: &Arc<AMutex<refact_chat_api::ChatSession>>,
     payload: Value,
 ) -> Result<(), String> {
     let args: HashMap<String, Value> =
@@ -908,7 +908,7 @@ async fn finalize_handoff_inner(
 
 pub async fn finalize_pending_handoff(
     gcx: Arc<crate::global_context::GlobalContext>,
-    session_arc: &Arc<AMutex<crate::chat::types::ChatSession>>,
+    session_arc: &Arc<AMutex<refact_chat_api::ChatSession>>,
     payload: Value,
 ) -> Result<(), String> {
     {
@@ -935,7 +935,7 @@ mod deferred_tests {
 
     #[test]
     fn report_transfer_preserves_archive_and_ledger_stop_wins() {
-        let mut session = crate::chat::types::ChatSession::new("source".into());
+        let mut session = refact_chat_api::ChatSession::new("source".into());
         session.install_goal("agent", "Ship safely", true, Default::default());
         let active = session.messages.clone();
         let mut raw = vec![ChatMessage::new("user".into(), "immutable archive".into())];
@@ -980,7 +980,7 @@ mod deferred_tests {
 
     #[test]
     fn completed_handoff_updates_actual_ack_and_emits_navigation_event() {
-        let mut session = crate::chat::types::ChatSession::new("source".into());
+        let mut session = refact_chat_api::ChatSession::new("source".into());
         session.add_message(ChatMessage {
             role: "tool".into(),
             tool_call_id: "handoff".into(),
@@ -1019,7 +1019,7 @@ mod deferred_tests {
 
     #[test]
     fn completed_handoff_emits_message_updated_for_existing_ack() {
-        let mut session = crate::chat::types::ChatSession::new("source".into());
+        let mut session = refact_chat_api::ChatSession::new("source".into());
         session.add_message(ChatMessage {
             role: "tool".into(),
             tool_call_id: "handoff".into(),
@@ -1058,7 +1058,7 @@ mod deferred_tests {
         use refact_core::chat_types::{ChatToolCall, ChatToolFunction};
         let gcx = crate::global_context::tests::make_test_gcx().await;
         let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
-        let mut session = crate::chat::types::ChatSession::new("queue-source".into());
+        let mut session = refact_chat_api::ChatSession::new("queue-source".into());
         session.thread.mode = "agent".into();
         session.add_message(ChatMessage::new("user".into(), "Restart".into()));
         session.add_message(ChatMessage {

@@ -7,11 +7,11 @@ use serde_json::{json, Value};
 use tokio::sync::Mutex as AMutex;
 use tokio::task::JoinSet;
 
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use crate::app_state::AppState;
 use refact_runtime_api::task_storage as storage;
-use crate::tasks::types::{BoardCard, TaskBoard};
+use refact_tasks::types::{BoardCard, TaskBoard};
 use crate::tools::tool_task_board::ToolTaskBoardCreateCard;
 use crate::tools::tool_task_mark_card::{ToolTaskMarkCardDone, ToolTaskMarkCardFailed};
 use crate::tools::tool_task_merge_agent::ToolTaskMergeAgent;
@@ -1274,7 +1274,7 @@ mod tests {
     use super::*;
     use crate::app_state::AppState;
     use crate::global_context::GlobalContext;
-    use crate::tasks::types::{TaskMeta as StoredTaskMeta, TaskStatus};
+    use refact_tasks::types::{TaskMeta as StoredTaskMeta, TaskStatus};
     use chrono::Utc;
     use refact_chat_api::TaskMeta as ThreadTaskMeta;
 

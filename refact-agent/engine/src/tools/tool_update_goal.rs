@@ -5,11 +5,11 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 use tokio::sync::Mutex as AMutex;
 
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use crate::chat::goal_role;
-use crate::chat::internal_roles;
-use crate::chat::types::{ChatSession, PendingDelivery, PushMode};
+use refact_chat_api::internal_roles;
+use refact_chat_api::types::{ChatSession, PendingDelivery, PushMode};
 use crate::tools::tools_description::{
     json_schema_from_params, Tool, ToolDesc, ToolSource, ToolSourceType,
 };
@@ -150,7 +150,7 @@ mod tests {
     use refact_chat_api::GoalBudget;
     use crate::app_state::AppState;
     use refact_core::chat_types::{ChatToolCall, ChatToolFunction};
-    use crate::chat::internal_roles::{EVENT_ROLE, GOAL_ROLE};
+    use refact_chat_api::internal_roles::{EVENT_ROLE, GOAL_ROLE};
     use crate::llm::adapter::{AdapterSettings, LlmWireAdapter};
     use crate::llm::adapters::openai_chat::OpenAiChatAdapter;
     use crate::tools::tools_list::get_tools_for_mode;

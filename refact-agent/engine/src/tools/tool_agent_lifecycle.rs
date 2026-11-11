@@ -9,15 +9,15 @@ use chrono::Utc;
 use serde_json::{json, Value};
 use tokio::sync::Mutex as AMutex;
 
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use crate::global_context::GlobalContextCtx;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use crate::global_context::GlobalContext;
 use refact_runtime_api::task_storage as storage;
-use crate::tasks::types::{BoardCard, StatusUpdate};
+use refact_tasks::types::{BoardCard, StatusUpdate};
 use crate::tools::planner_delivery::{self, CardGuard, CardTarget};
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
-use crate::worktrees::service::WorktreeService;
+use refact_worktrees::service::WorktreeService;
 use refact_chat_api::ChatCommand;
 use refact_runtime_api::{ChatSessionFacade, SessionState};
 
@@ -548,10 +548,10 @@ async fn cleanup_agent_worktree(target: CleanupTarget) -> CleanupResult {
                 command
                     .args(["worktree", "remove", &worktree_arg, "--force"])
                     .current_dir(&workspace_root);
-                crate::worktrees::git::run_git_command(
+                refact_worktrees::git::run_git_command(
                     command,
                     "worktree remove",
-                    crate::worktrees::git::GIT_COMMAND_TIMEOUT,
+                    refact_worktrees::git::GIT_COMMAND_TIMEOUT,
                 )
                 .await
                 .map(|output| output.status.success())
@@ -564,10 +564,10 @@ async fn cleanup_agent_worktree(target: CleanupTarget) -> CleanupResult {
             if let Some(branch) = branch.as_deref() {
                 let mut command = tokio::process::Command::new("git");
                 command.args(["branch", "-D", branch]).current_dir(&workspace_root);
-                let deleted = crate::worktrees::git::run_git_command(
+                let deleted = refact_worktrees::git::run_git_command(
                     command,
                     "branch -D",
-                    crate::worktrees::git::GIT_COMMAND_TIMEOUT,
+                    refact_worktrees::git::GIT_COMMAND_TIMEOUT,
                 )
                 .await
                 .map(|output| output.status.success())
@@ -1022,8 +1022,8 @@ mod tests {
     use super::*;
     use refact_core::chat_types::{DeliveryOutcome, PendingDelivery, PushMode};
     use crate::app_state::AppState;
-    use crate::chat::types::TaskMeta as ThreadTaskMeta;
-    use crate::tasks::types::{TaskBoard, TaskMeta, TaskStatus};
+    use refact_chat_api::TaskMeta as ThreadTaskMeta;
+    use refact_tasks::types::{TaskBoard, TaskMeta, TaskStatus};
     use crate::tools::tools_description::Tool;
     use refact_runtime_api::{
         ChatSessionSnapshot, ChatSessionUpdate, CreateSessionRequest, RuntimeTrajectorySnapshot,
@@ -1460,7 +1460,7 @@ mod tests {
         let service =
             WorktreeService::new(gcx.cache_dir.clone(), source.canonicalize().unwrap()).unwrap();
         let created = service
-            .create_worktree(crate::worktrees::types::CreateWorktreeRequest {
+            .create_worktree(refact_worktrees::types::CreateWorktreeRequest {
                 branch: Some("refact/task/task-1/card/T-39/agent".to_string()),
                 kind: Some("task_agent".to_string()),
                 task_id: Some("task-1".to_string()),
@@ -1572,7 +1572,7 @@ mod tests {
         let service =
             WorktreeService::new(gcx.cache_dir.clone(), source.canonicalize().unwrap()).unwrap();
         let created = service
-            .create_worktree(crate::worktrees::types::CreateWorktreeRequest {
+            .create_worktree(refact_worktrees::types::CreateWorktreeRequest {
                 branch: Some("refact/task/task-1/card/T-39/agent".to_string()),
                 kind: Some("task_agent".to_string()),
                 task_id: Some("task-1".to_string()),

@@ -5,16 +5,16 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 use tokio::sync::Mutex as AMutex;
 
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
-use crate::exec::types::normalize_workspace_path;
-use crate::exec::{ExecOutputChunk, ExecProcessId, ExecProcessSnapshot, ExecWriteStdinResult};
+use refact_exec::types::normalize_workspace_path;
+use refact_exec::{ExecOutputChunk, ExecProcessId, ExecProcessSnapshot, ExecWriteStdinResult};
 use refact_runtime_api::files_correction::get_active_project_path;
-use crate::postprocessing::pp_command_output::{output_mini_postprocessing, OutputFilter};
+use refact_postprocessing::pp_command_output::{output_mini_postprocessing, OutputFilter};
 use crate::tools::file_edit::auxiliary::active_execution_scope;
 use crate::tools::tool_process::{process_value, read_value, status_label};
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
-use crate::worktrees::scope::ExecutionScope;
+use refact_worktrees::scope::ExecutionScope;
 
 const DEFAULT_YIELD_TIME_MS: u64 = 250;
 const MAX_YIELD_TIME_MS: u64 = 10_000;

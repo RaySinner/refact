@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use tokio::sync::Mutex as AMutex;
 use serde_json::json;
 
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use refact_runtime_api::at_command_executor::return_one_candidate_or_a_good_error;
 use refact_core::chat_types::{ChatMessage, ChatContent, ContextEnum};
 use refact_core::diff_chunk::DiffChunk;

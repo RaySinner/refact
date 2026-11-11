@@ -8,20 +8,22 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 use tokio::sync::Mutex as AMutex;
 
-use crate::exec::ExecRegistry;
-use crate::exec::command_policy::{
-    build_exec_request_for_ctx, chat_mode_for_exec_for_sessions, escalation_from_args,
-    queue_sandbox_audit_for_sessions, CommandKind, CommandPolicyInput, ExecEscalation, ExecSource,
+use refact_exec::ExecRegistry;
+use refact_exec::command_policy::{
+    escalation_from_args, CommandKind, CommandPolicyInput, ExecEscalation, ExecSource,
+};
+use refact_runtime_api::command_policy::{
+    build_exec_request_for_ctx, chat_mode_for_exec_for_sessions, queue_sandbox_audit_for_sessions,
 };
 
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
-use crate::exec::{
+use refact_exec::{
     generate_short_description, sanitize_short_description, ExecMode, ExecOutputChunk,
     ExecOutputStream, ExecOwnerMeta, ExecProcessFilter, ExecProcessId, ExecProcessSnapshot,
     ExecReadResult, ExecReadinessProbe, ExecServiceLookup, ExecStatus,
 };
-use crate::exec::types::{current_timestamp_ms, normalize_workspace_path};
+use refact_exec::types::{current_timestamp_ms, normalize_workspace_path};
 use refact_files::path_utils::{
     canonical_path, canonicalize_normalized_path, preprocess_path_for_normalization,
 };
@@ -30,10 +32,10 @@ use refact_runtime_api::files_correction::{
 };
 use crate::global_context::GlobalContext;
 use refact_tool_api::IntegrationConfirmation;
-use crate::postprocessing::pp_command_output::{
+use refact_postprocessing::pp_command_output::{
     output_mini_postprocessing, parse_output_filter_args, OutputFilter,
 };
-use crate::chat::ctx::ChatCtx;
+use refact_runtime_api::ChatCtx;
 use refact_privacy::check_file_privacy;
 use refact_runtime_api::privacy::load_privacy_if_needed_for_policy;
 use refact_core::privacy_types::FilePrivacyLevel;
@@ -43,7 +45,7 @@ use crate::tools::shell_gate;
 use crate::tools::tools_description::{
     json_schema_from_params, MatchConfirmDeny, Tool, ToolDesc, ToolSource, ToolSourceType,
 };
-use crate::worktrees::scope::ExecutionScope;
+use refact_worktrees::scope::ExecutionScope;
 use refact_core::chat_types::PushMode;
 
 const PROCESS_TRANSCRIPT_MAX_BYTES: usize = 2 * 1024 * 1024;
@@ -53,7 +55,7 @@ const TOOL_PTY_COLS: u16 = 120;
 const TTY_DESCRIPTION: &str = "If true, run the command attached to a pseudo-terminal (PTY). Enables interactive stdin via process_write_stdin and merges stdout+stderr into a single combined stream. Defeats some pipe-only output buffering. Defaults to true, except on Windows, where a pty cannot currently deliver output and pipes are used instead.";
 
 static PATH_ENRICHMENT_CACHE: LazyLock<
-    Mutex<HashMap<(String, u64, u64), crate::exec::path_enrichment::CollectedPathEnrichment>>,
+    Mutex<HashMap<(String, u64, u64), refact_exec::path_enrichment::CollectedPathEnrichment>>,
 > = LazyLock::new(|| Mutex::new(HashMap::new()));
 
 async fn read_disk_log_tail(path: &std::path::Path) -> Result<(String, bool), String> {
@@ -1583,7 +1585,7 @@ fn process_start_args_from_shell_service(
 
 async fn authorize_process_access(
     gcx: Arc<GlobalContext>,
-    registry: &crate::exec::ExecRegistry,
+    registry: &refact_exec::ExecRegistry,
     execution_scope: Option<&ExecutionScope>,
     chat_id: &str,
     process_id: &ExecProcessId,
@@ -1786,7 +1788,7 @@ async fn attach_exec_path_references(
     let collected = if let Some(collected) = cached {
         collected
     } else {
-        let collected = crate::exec::path_enrichment::collect_async(
+        let collected = refact_exec::path_enrichment::collect_async(
             command,
             cwd,
             &[workspace.to_path_buf()],
@@ -2009,8 +2011,8 @@ mod tests {
     }
 
     use crate::app_state::AppState;
-    use crate::exec::spill::SpillTarget;
-    use crate::exec::{ExecProcessMeta, ExecStatusKind};
+    use refact_exec::spill::SpillTarget;
+    use refact_exec::{ExecProcessMeta, ExecStatusKind};
 
     async fn test_ccx() -> (Arc<GlobalContext>, Arc<AMutex<AtCommandsContext>>) {
         test_ccx_with_chat("chat").await
@@ -2045,8 +2047,8 @@ mod tests {
         Arc::new(AMutex::new(ccx))
     }
 
-    fn task_meta(role: &str) -> crate::chat::types::TaskMeta {
-        crate::chat::types::TaskMeta {
+    fn task_meta(role: &str) -> refact_chat_api::TaskMeta {
+        refact_chat_api::TaskMeta {
             task_id: "task".to_string(),
             role: role.to_string(),
             agent_id: None,

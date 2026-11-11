@@ -9,9 +9,9 @@ use crate::tools::tools_description::{
     Tool, ToolDesc, ToolSource, ToolSourceType, json_schema_from_params,
 };
 use refact_core::chat_types::{ChatMessage, ChatContent, ContextEnum};
-use crate::at_commands::at_commands::AtCommandsContext;
+use refact_runtime_api::AtCommandsContext;
 use refact_runtime_api::task_storage as storage;
-use crate::tasks::types::StatusUpdate;
+use refact_tasks::types::StatusUpdate;
 
 async fn get_task_id(
     ccx: &Arc<AMutex<AtCommandsContext>>,
@@ -243,9 +243,9 @@ impl Tool for ToolTaskMarkCardFailed {
 mod tests {
     use super::*;
     use crate::app_state::AppState;
-    use crate::chat::types::TaskMeta as ThreadTaskMeta;
+    use refact_chat_api::TaskMeta as ThreadTaskMeta;
     use crate::global_context::GlobalContext;
-    use crate::tasks::types::{
+    use refact_tasks::types::{
         BoardCard, ScopeGuardMode, TaskBoard, TaskMeta as StoredTaskMeta, TaskStatus,
     };
     use serde_json::json;

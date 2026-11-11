@@ -228,7 +228,7 @@ pub async fn list_trajectory_entries_from_index_or_rebuild(
     .await
 }
 
-pub(super) async fn list_trajectory_entries_from_index_or_rebuild_with_counter_scope(
+pub(crate) async fn list_trajectory_entries_from_index_or_rebuild_with_counter_scope(
     dir: &Path,
     source_hint: Option<TrajectorySourceIdentity>,
     listing_counter_scope: &TrajectoryIndexListingCounterScope,

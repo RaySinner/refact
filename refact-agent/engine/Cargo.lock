@@ -3987,7 +3987,9 @@ dependencies = [
 name = "refact-at-web"
 version = "0.1.0"
 dependencies = [
+ "html2text",
  "percent-encoding",
+ "refact-chat-api",
  "refact-core",
  "reqwest",
  "select",
@@ -4374,6 +4376,7 @@ dependencies = [
 name = "refact-integrations"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "chrono",
  "home",
  "indexmap 1.9.3",

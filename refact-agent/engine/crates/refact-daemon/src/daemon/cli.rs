@@ -2781,6 +2781,7 @@ mod tests {
                         json: true
                     }
                 },
+                String::new(),
                 &mut out
             )
             .await
@@ -2800,6 +2801,7 @@ mod tests {
                         json: true
                     }
                 },
+                String::new(),
                 &mut out
             )
             .await
@@ -2834,6 +2836,7 @@ mod tests {
                 CliOptions {
                     command: CliCommand::Ps { json: false }
                 },
+                String::new(),
                 &mut out
             )
             .await
@@ -2855,6 +2858,7 @@ mod tests {
                         json: true
                     }
                 },
+                String::new(),
                 &mut out
             )
             .await
@@ -2876,6 +2880,7 @@ mod tests {
                         json: true
                     }
                 },
+                String::new(),
                 &mut out
             )
             .await
@@ -2899,6 +2904,7 @@ mod tests {
                         json: true
                     }
                 },
+                String::new(),
                 &mut out
             )
             .await
@@ -2914,6 +2920,7 @@ mod tests {
                 CliOptions {
                     command: CliCommand::Status { json: false }
                 },
+                String::new(),
                 &mut out
             )
             .await
@@ -2952,6 +2959,7 @@ mod tests {
                     json: true,
                 },
             },
+            String::new(),
             &mut out,
         )
         .await
@@ -2970,6 +2978,7 @@ mod tests {
                     json: true,
                 },
             },
+            String::new(),
             &mut out,
         )
         .await

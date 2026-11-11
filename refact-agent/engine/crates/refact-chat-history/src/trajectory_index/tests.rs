@@ -1,4 +1,5 @@
 use super::*;
+use super::listing::list_trajectory_entries_from_index_or_rebuild_with_counter_scope;
 use refact_perf::perf_diagnostics::{self, MemoryPerfSink, PerfClock, PerfComponent, PerfRecorder};
 use serde_json::json;
 use std::sync::Arc;

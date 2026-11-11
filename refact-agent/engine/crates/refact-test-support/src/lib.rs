@@ -187,6 +187,7 @@ pub async fn make_test_gcx_with_dirs(
         trajectory_vectorization_queue: Arc::new(AMutex::new(Default::default())),
         cmdline,
         http_client,
+        context_factory: std::sync::Arc::new(refact_runtime_api::ContextFactorySlot::new()),
         cache_dir,
         config_dir,
         caps_state: Arc::new(ARwLock::new(CapsState {

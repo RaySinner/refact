@@ -15,6 +15,7 @@ use refact_tool_api::{build_registry_from_names, ToolDesc};
 
 pub mod command_line;
 pub mod command_policy;
+pub mod context_factory;
 pub mod chat_ctx;
 pub mod files_correction;
 pub mod files_in_workspace;
@@ -45,6 +46,8 @@ pub use chat_ctx::{
     ChatCtx, ChatIntegrationScope, ChatToolExecutor, ChatWorkspace, ExecPolicyProvider, HookRunner,
     ProjectTreeProvider, PromptAssembler, SubchatLauncher, TrajectoryStore,
 };
+pub use context_factory::{ContextFactory, ContextFactorySlot};
+pub use global_context::{app_state_from_gcx, GlobalContextCtx};
 pub use command_line::CommandLine;
 pub use terminal_security::{TerminalSecurityConfig, TerminalSecurityMode};
 pub use tool_catalog::{

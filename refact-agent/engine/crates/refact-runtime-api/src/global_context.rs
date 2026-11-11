@@ -132,6 +132,9 @@ pub struct GlobalContext {
     /// Exclusive per-workspace leases held for the whole engine lifetime; dropping the context
     /// closes the lock descriptors and lets another engine take over the workspace.
     pub workspace_leases: Arc<StdMutex<WorkspaceLeaseSet>>,
+    /// Installed by the engine right after construction; lets this crate build
+    /// `ChatCtx`/`ToolCtx`/`AppState` without depending on engine handle types.
+    pub context_factory: Arc<crate::context_factory::ContextFactorySlot>,
 }
 
 pub type SharedGlobalContext = Arc<GlobalContext>;
@@ -164,6 +167,33 @@ impl HttpClientAccess for GlobalContext {
     fn http_client(&self) -> reqwest::Client {
         self.http_client.clone()
     }
+}
+
+/// Composite-context builders. They live here so every crate (including `refact-tools`)
+/// can reach them; the bodies are delegated to the engine-installed factory.
+pub trait GlobalContextCtx {
+    fn chat_ctx(&self, gcx: SharedGlobalContext) -> crate::chat_ctx::ChatCtx;
+    fn tool_ctx(&self, gcx: SharedGlobalContext) -> crate::tool_ctx::ToolCtx;
+    fn app_state(&self, gcx: SharedGlobalContext) -> crate::app_state::AppState;
+}
+
+impl GlobalContextCtx for GlobalContext {
+    fn chat_ctx(&self, gcx: SharedGlobalContext) -> crate::chat_ctx::ChatCtx {
+        self.context_factory.get().chat_ctx(gcx)
+    }
+
+    fn tool_ctx(&self, gcx: SharedGlobalContext) -> crate::tool_ctx::ToolCtx {
+        self.context_factory.get().tool_ctx(gcx)
+    }
+
+    fn app_state(&self, gcx: SharedGlobalContext) -> crate::app_state::AppState {
+        self.context_factory.get().app_state(gcx)
+    }
+}
+
+pub async fn app_state_from_gcx(gcx: SharedGlobalContext) -> crate::app_state::AppState {
+    use GlobalContextCtx as _;
+    gcx.app_state(gcx.clone())
 }
 
 pub fn build_shared_http_client_builder() -> reqwest::ClientBuilder {

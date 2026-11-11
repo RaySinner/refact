@@ -17,14 +17,18 @@ use refact_runtime_api::{
 pub const TOOL_CATALOG_SNAPSHOTS_ENV: &str = "REFACT_TOOL_CATALOG_SNAPSHOTS";
 use tokio::sync::{Mutex as AMutex, Notify};
 
-use crate::global_context::GlobalContextCtx;
+pub use refact_runtime_api::{app_state_from_gcx, ContextFactory, GlobalContextCtx};
 use crate::buddy::actor::BuddyService;
 use crate::buddy::events::BuddyEvent;
 use crate::buddy::user_activity::UserActivityRing;
 use crate::chat::ctx::{
-    CapsProvider, ChatToolExecutor, ExecPolicyProvider, HookRunner, ModeConfigProvider,
-    ProjectTreeProvider, PromptAssembler, SubchatLauncher, TrajectoryStore,
+    CapsProvider, ChatCtx, ChatIntegrationScope, ChatToolExecutor, ChatWorkspace,
+    ExecPolicyProvider, HookRunner, ModeConfigProvider, ProjectTreeProvider, PromptAssembler,
+    SubchatLauncher, TrajectoryStore,
 };
+use crate::chat::EngineSessionsHandle;
+use crate::chat::verifier::EngineCardVerifier;
+use crate::tools::ctx::{ToolChatScope, ToolCodeIntelScope, ToolCtx, ToolWorkspaceScope};
 use crate::chat::perf_diagnostics::{self, PerfComponent, PerfOutcome};
 use crate::chat::types::{ChatSession, EnqueueCommandOutcome, ThreadParams, TrajectoryCommitIntent};
 use crate::chat::trajectories::{self, TrajectoryEvent};
@@ -269,8 +273,203 @@ impl ChatSessionFacade for EngineChatSessionFacade {
 
 pub use refact_runtime_api::AppState;
 
-pub async fn app_state_from_gcx(gcx: SharedGlobalContext) -> AppState {
-    gcx.app_state(gcx.clone())
+/// Engine implementation of the `ContextFactory` seam: it is the only place that knows how
+/// to build the composite contexts from concrete engine handles.
+pub struct EngineContextFactory;
+
+impl ContextFactory for EngineContextFactory {
+    fn chat_ctx(&self, gcx: SharedGlobalContext) -> ChatCtx {
+        ChatCtx {
+            knowledge_builder: Arc::new(crate::knowledge_index::EngineKnowledgeBuilder),
+            memory_runtime: gcx.memory_runtime.clone(),
+            task_storage_runtime: gcx.task_storage_runtime.clone(),
+            runtime: RuntimeServices {
+                shutdown_flag: gcx.shutdown_flag.clone(),
+                cmdline: Arc::new(gcx.cmdline.clone()),
+                http_client: gcx.http_client.clone(),
+                ask_shutdown_sender: gcx.ask_shutdown_sender.clone(),
+                exec_registry: gcx.exec_registry.clone(),
+            },
+            paths: PathServices {
+                cache_dir: gcx.cache_dir.clone(),
+                config_dir: gcx.config_dir.clone(),
+                app_searchable_id: gcx.app_searchable_id.lock().unwrap().clone(),
+            },
+            model: ModelServices {
+                caps: gcx.caps_state.clone(),
+                tokenizers: gcx.tokenizer_state.clone(),
+                providers: gcx.providers.clone(),
+                llm_stats_sender: gcx.llm_stats_sender.lock().unwrap().clone(),
+            },
+            workspace: ChatWorkspace {
+                workspace_folders: gcx.documents_state.workspace_folders.clone(),
+                vec_db: gcx.vec_db.clone(),
+                vec_db_error: gcx.vec_db_error.clone(),
+                knowledge_index: gcx.knowledge_index.clone(),
+                at_commands_preview_cache: gcx.at_commands_preview_cache.clone(),
+                privacy_settings: gcx.privacy_settings.read().unwrap().clone(),
+                enrichment_generation: gcx.enrichment_generation.clone(),
+                memory_document_map: gcx.documents_state.memory_document_map.clone(),
+            },
+            chat: ChatServices {
+                sessions: gcx.chat_sessions.clone(),
+                facade: Arc::new(EngineChatSessionFacade::new(gcx.clone())),
+                trajectory_index_coordinator: gcx.trajectory_index_coordinator.clone(),
+                trajectory_events_tx: gcx
+                    .trajectory_events_tx
+                    .clone()
+                    .expect("trajectory event sender is not initialized"),
+                workspace_changed_tx: gcx
+                    .workspace_changed_tx
+                    .clone()
+                    .expect("workspace changed sender is not initialized"),
+                task_events_tx: gcx
+                    .task_events_tx
+                    .clone()
+                    .expect("task event sender is not initialized"),
+                task_events_seq: gcx
+                    .task_events_seq
+                    .clone()
+                    .expect("task event sequence is not initialized"),
+                notification_events_tx: gcx
+                    .notification_events_tx
+                    .clone()
+                    .expect("notification event sender is not initialized"),
+            },
+            buddy: BuddyServices {
+                buddy: gcx.buddy.clone(),
+                buddy_events_tx: gcx
+                    .buddy_events_tx
+                    .clone()
+                    .expect("buddy event sender is not initialized"),
+                user_activity: gcx.user_activity.clone(),
+            },
+            integrations: ChatIntegrationScope {
+                browser_runtimes: gcx.browser_runtimes.clone(),
+            },
+            agents: gcx.agents.clone(),
+            tool_registry: Arc::new(AppToolRegistry::new(gcx.clone())),
+            activity_sink: Arc::new(AppActivitySink::new(gcx.user_activity.clone())),
+            buddy_event_sink: Arc::new(AppBuddyEventSink::new(gcx.clone(), gcx.buddy.clone())),
+            card_verifier: Arc::new(EngineCardVerifier),
+            card_verifier_tasks: gcx.card_verifier_tasks.clone(),
+            privacy_policy_load: gcx.privacy_policy_load.clone(),
+            tool_catalog_generations: gcx.tool_catalog_generations.clone(),
+            project_registry_cache: gcx.project_registry_cache.clone(),
+            trajectory_vectorization_queue: gcx.trajectory_vectorization_queue.clone(),
+            subchat: Arc::new(EngineSubchatLauncher::new(gcx.clone())),
+            project_tree: Arc::new(EngineProjectTreeProvider::new(gcx.clone())),
+            hooks: Arc::new(EngineHookRunner::new(gcx.clone())),
+            mode_config: Arc::new(EngineModeConfigProvider::new(gcx.clone())),
+            caps: Arc::new(EngineCapsProvider::new(gcx.clone())),
+            exec_policy: Arc::new(EngineExecPolicyProvider::new(gcx.clone())),
+            trajectories: Arc::new(EngineTrajectoryStore::new(gcx.clone())),
+            prompts: Arc::new(EnginePromptAssembler::new(gcx.clone())),
+            tool_executor: Arc::new(EngineChatToolExecutor::new(gcx.clone())),
+        }
+    }
+
+    fn tool_ctx(&self, gcx: SharedGlobalContext) -> ToolCtx {
+        ToolCtx {
+            runtime: RuntimeServices {
+                shutdown_flag: gcx.shutdown_flag.clone(),
+                cmdline: Arc::new(gcx.cmdline.clone()),
+                http_client: gcx.http_client.clone(),
+                ask_shutdown_sender: gcx.ask_shutdown_sender.clone(),
+                exec_registry: gcx.exec_registry.clone(),
+            },
+            paths: PathServices {
+                cache_dir: gcx.cache_dir.clone(),
+                config_dir: gcx.config_dir.clone(),
+                app_searchable_id: gcx.app_searchable_id.lock().unwrap().clone(),
+            },
+            model: ModelServices {
+                caps: gcx.caps_state.clone(),
+                tokenizers: gcx.tokenizer_state.clone(),
+                providers: gcx.providers.clone(),
+                llm_stats_sender: gcx.llm_stats_sender.lock().unwrap().clone(),
+            },
+            chat: ToolChatScope {
+                sessions: Arc::new(EngineSessionsHandle(gcx.chat_sessions.clone())),
+                facade: Arc::new(EngineChatSessionFacade::new(gcx.clone())),
+                notification_events_tx: gcx
+                    .notification_events_tx
+                    .clone()
+                    .expect("notification event sender is not initialized"),
+            },
+            buddy: Arc::new(EngineBuddyServicesHandle(BuddyServices {
+                buddy: gcx.buddy.clone(),
+                buddy_events_tx: gcx
+                    .buddy_events_tx
+                    .clone()
+                    .expect("buddy event sender is not initialized"),
+                user_activity: gcx.user_activity.clone(),
+            })),
+            integrations: IntegrationServices {
+                integration_sessions: gcx.integration_sessions.clone(),
+                browser_runtimes: gcx.browser_runtimes.clone(),
+                ext_cache_generation: gcx.ext_cache_generation.clone(),
+                project_registry_cache: gcx.project_registry_cache.clone(),
+                init_shadow_repos_lock: gcx.init_shadow_repos_lock.clone(),
+                git_operations_abort_flag: gcx.git_operations_abort_flag.clone(),
+            },
+            workspace: ToolWorkspaceScope {
+                knowledge_index: gcx.knowledge_index.clone(),
+                privacy_settings: gcx.privacy_settings.clone(),
+                workspace_files: gcx.documents_state.workspace_files.clone(),
+            },
+            codeintel: ToolCodeIntelScope {
+                codegraph: gcx.codegraph.clone(),
+            },
+            agents: gcx.agents.clone(),
+            tool_registry: Arc::new(AppToolRegistry::new(gcx.clone())),
+            privacy_policy_load: gcx.privacy_policy_load.clone(),
+            files: Arc::new(EngineFilesProvider::new(gcx.clone())),
+            at_command_executor: Arc::new(crate::at_commands::executor::EngineAtCommandExecutor),
+            trajectories: Arc::new(EngineTrajectoryStore::new(gcx.clone())),
+            subchat: Arc::new(EngineSubchatLauncher::new(gcx.clone())),
+            mode_config: Arc::new(EngineModeConfigProvider::new(gcx.clone())),
+            caps: Arc::new(EngineCapsProvider::new(gcx.clone())),
+        }
+    }
+
+    fn app_state(&self, gcx: SharedGlobalContext) -> AppState {
+        let ctx = self.chat_ctx(gcx.clone());
+        let tool = self.tool_ctx(gcx.clone());
+        AppState {
+            gcx: gcx.clone(),
+            runtime: ctx.runtime.clone(),
+            paths: ctx.paths.clone(),
+            model: ctx.model.clone(),
+            workspace: WorkspaceServices {
+                files_runtime: gcx.files_runtime.clone(),
+                documents_state: gcx.documents_state.clone(),
+                privacy_settings: ctx.workspace.privacy_settings.clone(),
+                indexing_everywhere: gcx.indexing_everywhere.clone(),
+                completions_cache: gcx.completions_cache.clone(),
+                vec_db: ctx.workspace.vec_db.clone(),
+                vec_db_error: ctx.workspace.vec_db_error.clone(),
+                knowledge_index: ctx.workspace.knowledge_index.clone(),
+                at_commands_preview_cache: ctx.workspace.at_commands_preview_cache.clone(),
+            },
+            chat: ctx.chat.clone(),
+            buddy: ctx.buddy.clone(),
+            integrations: IntegrationServices {
+                integration_sessions: gcx.integration_sessions.clone(),
+                browser_runtimes: ctx.integrations.browser_runtimes.clone(),
+                ext_cache_generation: gcx.ext_cache_generation.clone(),
+                project_registry_cache: ctx.project_registry_cache.clone(),
+                init_shadow_repos_lock: gcx.init_shadow_repos_lock.clone(),
+                git_operations_abort_flag: gcx.git_operations_abort_flag.clone(),
+            },
+            activity_sink: ctx.activity_sink.clone(),
+            buddy_event_sink: ctx.buddy_event_sink.clone(),
+            tool_registry: ctx.tool_registry.clone(),
+            agents: ctx.agents.clone(),
+            ctx,
+            tool,
+        }
+    }
 }
 
 pub struct EngineSubchatLauncher {

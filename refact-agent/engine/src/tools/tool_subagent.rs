@@ -492,7 +492,7 @@ async fn resolve_model(
         .is_none()
         .then(|| effective_model_type.map(str::to_string))
         .flatten();
-    let model = crate::caps::resolve_chat_model(caps, &model_id)
+    let model = refact_caps_core::model_resolve::resolve_chat_model(caps, &model_id)
         .map_err(|error| format!("model `{model_id}` is not available: {error}"))?;
     Ok((model.base.id.clone(), selected_type))
 }
@@ -592,7 +592,7 @@ fn build_subagent_prompt(
 }
 
 fn build_background_start_tool_result(
-    handle: &crate::agents::spawn::SpawnHandle,
+    handle: &refact_agents_core::spawn::SpawnHandle,
     task: &str,
     parent_chat_id: &str,
     model: &str,
@@ -751,7 +751,7 @@ mod tests {
     async fn test_context(parent_chat_id: &str) -> Arc<AMutex<AtCommandsContext>> {
         let gcx = crate::global_context::tests::make_test_gcx().await;
         install_test_caps(gcx.clone()).await;
-        let app = crate::app_state::app_state_from_gcx(gcx).await;
+        let app = refact_runtime_api::app_state_from_gcx(gcx).await;
         Arc::new(AMutex::new(
             crate::at_commands::at_commands::at_commands_new_from_app(
                 app,

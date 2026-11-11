@@ -1043,7 +1043,7 @@ mod tests {
     }
 
     async fn test_app(gcx: &Arc<GlobalContext>) -> AppState {
-        crate::app_state::app_state_from_gcx(gcx.clone()).await
+        refact_runtime_api::app_state_from_gcx(gcx.clone()).await
     }
 
     async fn setup_repo_task() -> (Arc<GlobalContext>, tempfile::TempDir, std::path::PathBuf) {
@@ -1151,7 +1151,7 @@ mod tests {
         );
         let ccx = Arc::new(tokio::sync::Mutex::new(
             crate::at_commands::at_commands::at_commands_new_from_app(
-                crate::app_state::app_state_from_gcx(gcx.clone()).await,
+                refact_runtime_api::app_state_from_gcx(gcx.clone()).await,
                 4096,
                 20,
                 false,

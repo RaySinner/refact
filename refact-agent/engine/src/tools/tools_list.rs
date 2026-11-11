@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-use crate::caps::resolve_chat_model;
+use refact_caps_core::model_resolve::resolve_chat_model;
 use crate::chat::perf_diagnostics::{self, PerfComponent, PerfOutcome};
 use crate::custom_error::YamlError;
 use crate::global_context::{try_load_caps_quickly_if_not_present, GlobalContext};

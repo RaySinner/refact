@@ -1350,7 +1350,7 @@ mod tests {
     async fn planner_ccx(gcx: Arc<GlobalContext>) -> Arc<AMutex<AtCommandsContext>> {
         Arc::new(AMutex::new(
             crate::at_commands::at_commands::at_commands_new_from_app(
-                crate::app_state::app_state_from_gcx(gcx).await,
+                refact_runtime_api::app_state_from_gcx(gcx).await,
                 4096,
                 20,
                 false,

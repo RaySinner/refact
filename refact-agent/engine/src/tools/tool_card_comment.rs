@@ -9,7 +9,7 @@ use tokio::sync::Mutex as AMutex;
 use refact_runtime_api::AtCommandsContext;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use refact_runtime_api::ChatCtx;
-use crate::tasks::comments::{self, CreateCardComment};
+use crate::tasks::{comments, comments::CreateCardComment};
 use refact_runtime_api::task_storage as storage;
 use refact_tasks::types::CardComment;
 use crate::tools::task_tool_helpers::{human_age, optional_string, required_string};
@@ -353,7 +353,7 @@ mod tests {
     use crate::app_state::AppState;
     use refact_chat_api::TaskMeta as ThreadTaskMeta;
     use crate::http::routers::v1::tasks::{CreateCardCommentRequest, handle_create_card_comment};
-    use crate::tasks::comments::COMMENT_CAP;
+    use refact_tasks::comments_cap::COMMENT_CAP;
     use refact_tasks::types::{BoardCard, TaskBoard, TaskMeta, TaskStatus};
     use crate::tools::tools_description::Tool;
     use axum::extract::{Path, State};
@@ -473,7 +473,7 @@ mod tests {
     ) -> Arc<AMutex<AtCommandsContext>> {
         Arc::new(AMutex::new(
             crate::at_commands::at_commands::at_commands_new_from_app(
-                crate::app_state::app_state_from_gcx(gcx).await,
+                refact_runtime_api::app_state_from_gcx(gcx).await,
                 4096,
                 20,
                 false,
@@ -501,7 +501,7 @@ mod tests {
         reply_to: Option<String>,
     ) -> Result<TaskBoard, (hyper::StatusCode, String)> {
         Ok(handle_create_card_comment(
-            State(crate::app_state::app_state_from_gcx(gcx).await),
+            State(refact_runtime_api::app_state_from_gcx(gcx).await),
             Path(("task-1".to_string(), card_id.to_string())),
             Json(CreateCardCommentRequest {
                 body: body.to_string(),

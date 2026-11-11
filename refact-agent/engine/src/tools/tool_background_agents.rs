@@ -1002,7 +1002,7 @@ mod tests {
             config.path().to_path_buf(),
         )
         .await;
-        let app = crate::app_state::app_state_from_gcx(gcx).await;
+        let app = refact_runtime_api::app_state_from_gcx(gcx).await;
         let ccx = Arc::new(AMutex::new(
             crate::at_commands::at_commands::at_commands_new_from_app(
                 app.clone(),

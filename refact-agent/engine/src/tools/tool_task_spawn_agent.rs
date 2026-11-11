@@ -1533,13 +1533,13 @@ mod tests {
     }
 
     async fn test_chat_ctx(gcx: &Arc<GlobalContext>) -> ChatCtx {
-        crate::app_state::app_state_from_gcx(gcx.clone())
+        refact_runtime_api::app_state_from_gcx(gcx.clone())
             .await
             .chat_ctx()
     }
 
     async fn test_caps_provider(gcx: &Arc<GlobalContext>) -> Arc<dyn CapsProvider> {
-        crate::app_state::app_state_from_gcx(gcx.clone()).await.tool.caps
+        refact_runtime_api::app_state_from_gcx(gcx.clone()).await.tool.caps
     }
 
     async fn test_gcx_with_privacy(blocked: Vec<String>) -> Arc<GlobalContext> {

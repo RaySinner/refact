@@ -581,7 +581,7 @@ async fn paths_and_symbols_to_cat_with_path_ranges(
     };
     let image_policy =
         match tool.caps.try_load_caps_quickly(0).await {
-            Ok(caps) => crate::caps::resolve_chat_model(caps, &current_model)
+            Ok(caps) => refact_caps_core::model_resolve::resolve_chat_model(caps, &current_model)
                 .map(|model| ImagePolicy::for_model(&model.base))
                 .unwrap_or_default(),
             Err(_) => ImagePolicy::default(),
@@ -1027,7 +1027,7 @@ mod tests {
         });
         Arc::new(AMutex::new(
             crate::at_commands::at_commands::at_commands_new_from_app(
-                crate::app_state::app_state_from_gcx(gcx).await,
+                refact_runtime_api::app_state_from_gcx(gcx).await,
                 4096,
                 20,
                 false,

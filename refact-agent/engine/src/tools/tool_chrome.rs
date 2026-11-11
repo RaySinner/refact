@@ -9,7 +9,7 @@ use async_trait::async_trait;
 
 use refact_runtime_api::AtCommandsContext;
 use refact_core::chat_types::ContextEnum;
-use crate::integrations::sessions::{IntegrationSession, get_session_hashmap_key};
+use refact_integrations::sessions::{IntegrationSession, get_session_hashmap_key};
 
 use crate::global_context::GlobalContext;
 use crate::http::routers::v1::browser_settings;
@@ -1121,7 +1121,7 @@ async fn image_policy_for_model(
     let Ok(caps) = caps.try_load_caps_quickly(0).await else {
         return ImagePolicy::default();
     };
-    crate::caps::resolve_chat_model(caps, model_id)
+    refact_caps_core::model_resolve::resolve_chat_model(caps, model_id)
         .map(|model| ImagePolicy::for_model(&model.base))
         .unwrap_or_default()
 }
@@ -2298,7 +2298,7 @@ async fn setup_chrome_session(
                     .to_string(),
             );
             remove_browser_runtime(
-                crate::app_state::app_state_from_gcx(gcx.clone()).await,
+                refact_runtime_api::app_state_from_gcx(gcx.clone()).await,
                 &runtime_id,
             )
             .await;
@@ -2315,7 +2315,7 @@ async fn setup_chrome_session(
     }
 
     if let Some((runtime_id, _)) = find_runtime_by_chat_id(
-        crate::app_state::app_state_from_gcx(gcx.clone()).await,
+        refact_runtime_api::app_state_from_gcx(gcx.clone()).await,
         chat_id,
     )
     .await
@@ -2387,7 +2387,7 @@ async fn setup_chrome_session(
         if let Err(e) = setup_recording_for_runtime(&mut rt) {
             tracing::warn!("Browser recording setup failed (non-fatal): {}", e);
         }
-        register_browser_runtime(crate::app_state::app_state_from_gcx(gcx.clone()).await, rt).await
+        register_browser_runtime(refact_runtime_api::app_state_from_gcx(gcx.clone()).await, rt).await
     };
 
     setup_log.push("No opened tabs at this moment.".to_string());

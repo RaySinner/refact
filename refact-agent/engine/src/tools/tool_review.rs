@@ -9,7 +9,8 @@ use serde_json::{json, Value};
 use tokio::sync::mpsc;
 use tokio::sync::Mutex as AMutex;
 
-use crate::agents::tool_agent::{ToolAgentHandle, ToolAgentSpec};
+use crate::agents::tool_agent::ToolAgentHandle;
+use refact_agents_core::tool_agent::ToolAgentSpec;
 use crate::app_state::AppState;
 use refact_runtime_api::AtCommandsContext;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
@@ -1973,7 +1974,7 @@ mod tests {
     ) -> (Arc<GlobalContext>, AppState, Arc<AMutex<AtCommandsContext>>) {
         let gcx = crate::global_context::tests::make_test_gcx().await;
         install_test_caps(&gcx).await;
-        let app = crate::app_state::app_state_from_gcx(gcx.clone()).await;
+        let app = refact_runtime_api::app_state_from_gcx(gcx.clone()).await;
         if let Some(workspace) = workspace {
             std::fs::create_dir_all(workspace).unwrap();
             *app.workspace.documents_state.workspace_folders.lock().unwrap() = vec![

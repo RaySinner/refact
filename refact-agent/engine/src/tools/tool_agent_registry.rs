@@ -144,7 +144,7 @@ mod tests {
         gcx: Arc<GlobalContext>,
         role: &str,
     ) -> Arc<AMutex<AtCommandsContext>> {
-        let app = crate::app_state::app_state_from_gcx(gcx).await;
+        let app = refact_runtime_api::app_state_from_gcx(gcx).await;
         Arc::new(AMutex::new(
             crate::at_commands::at_commands::at_commands_new_from_app(
                 app,

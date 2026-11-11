@@ -1217,9 +1217,9 @@ fn memory_to_api_entry(memory: TaskMemoryInboxEntry) -> TaskMemoryApiEntry {
 }
 
 async fn emit_memories_changed(ctx: &ChatCtx, task_id: &str) {
-    crate::tasks::events::emit_task_event_for_services(
+    refact_tasks::events_emit::emit_task_event_for_services(
         &ctx.chat,
-        crate::tasks::events::TaskEvent::TaskMemoriesChanged {
+        refact_tasks::events::TaskEvent::TaskMemoriesChanged {
             task_id: task_id.to_string(),
         },
     )
@@ -1855,7 +1855,7 @@ impl Tool for ToolTaskMemorySave {
         atomic_write_text(&file_path, &full_content)
             .await
             .map_err(|e| format!("Failed to write memory file: {}", e))?;
-        crate::tasks::events::emit_task_event_for_services(&app.chat, crate::tasks::events::TaskEvent::TaskMemoriesChanged { task_id: task_id.clone() }).await;
+        refact_tasks::events_emit::emit_task_event_for_services(&app.chat, refact_tasks::events::TaskEvent::TaskMemoriesChanged { task_id: task_id.clone() }).await;
 
         info!("Task memory saved: {}", file_path.display());
 
@@ -2072,7 +2072,7 @@ impl Tool for ToolTaskMemoryTriageDone {
             .transpose()?
             .unwrap_or_else(Utc::now);
         write_memory_inbox_cursor(&task_dir, cursor).await?;
-        crate::tasks::events::emit_task_event_for_services(&app.chat, crate::tasks::events::TaskEvent::TaskMemoriesChanged { task_id: task_id.clone() }).await;
+        refact_tasks::events_emit::emit_task_event_for_services(&app.chat, refact_tasks::events::TaskEvent::TaskMemoriesChanged { task_id: task_id.clone() }).await;
         Ok(task_memory_tool_output(
             tool_call_id,
             format!(
@@ -2131,7 +2131,7 @@ impl Tool for ToolTaskMemoryPin {
         let pinned = required_bool_arg(args, "pinned")?;
         let memories_dir = get_task_memories_dir(&app.chat_ctx(), &task_id).await?;
         let (path, changed) = set_task_memory_pinned(&memories_dir, &memory_id, pinned).await?;
-        crate::tasks::events::emit_task_event_for_services(&app.chat, crate::tasks::events::TaskEvent::TaskMemoriesChanged { task_id: task_id.clone() }).await;
+        refact_tasks::events_emit::emit_task_event_for_services(&app.chat, refact_tasks::events::TaskEvent::TaskMemoriesChanged { task_id: task_id.clone() }).await;
         info!(
             "Task memory pin updated: {} pinned={} changed={}",
             path.display(),
@@ -2198,7 +2198,7 @@ impl Tool for ToolTaskMemoryArchive {
         let memory_id = required_string_arg(args, "memory_id")?;
         let memories_dir = get_task_memories_dir(&app.chat_ctx(), &task_id).await?;
         let (source_path, dest_path) = archive_task_memory(&memories_dir, &memory_id).await?;
-        crate::tasks::events::emit_task_event_for_services(&app.chat, crate::tasks::events::TaskEvent::TaskMemoriesChanged { task_id: task_id.clone() }).await;
+        refact_tasks::events_emit::emit_task_event_for_services(&app.chat, refact_tasks::events::TaskEvent::TaskMemoriesChanged { task_id: task_id.clone() }).await;
         info!(
             "Task memory archived: {} -> {}",
             source_path.display(),
@@ -2263,7 +2263,7 @@ impl Tool for ToolTaskMemoryUnarchive {
         let memory_id = required_string_arg(args, "memory_id")?;
         let memories_dir = get_task_memories_dir(&app.chat_ctx(), &task_id).await?;
         let (source_path, dest_path) = unarchive_task_memory(&memories_dir, &memory_id).await?;
-        crate::tasks::events::emit_task_event_for_services(&app.chat, crate::tasks::events::TaskEvent::TaskMemoriesChanged { task_id: task_id.clone() }).await;
+        refact_tasks::events_emit::emit_task_event_for_services(&app.chat, refact_tasks::events::TaskEvent::TaskMemoriesChanged { task_id: task_id.clone() }).await;
         info!(
             "Task memory unarchived: {} -> {}",
             source_path.display(),

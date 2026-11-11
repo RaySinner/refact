@@ -754,9 +754,9 @@ async fn emit_document_changed(
     task_id: &str,
     slug: &str,
 ) {
-    crate::tasks::events::emit_task_event_for_services(
+    refact_tasks::events_emit::emit_task_event_for_services(
         chat,
-        crate::tasks::events::TaskEvent::TaskDocumentChanged {
+        refact_tasks::events::TaskEvent::TaskDocumentChanged {
             task_id: task_id.to_string(),
             slug: Some(slug.to_string()),
         },

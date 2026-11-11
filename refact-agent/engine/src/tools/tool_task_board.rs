@@ -14,7 +14,8 @@ use crate::tools::tools_description::{
 use refact_tasks::rooms::parse_team_members;
 use refact_runtime_api::task_storage as storage;
 use refact_tasks::types::{AbVariants, BoardCard, ScopeGuardMode, TaskBoard};
-use crate::tasks::events::{TaskEvent, emit_task_event_for_services};
+use refact_tasks::events::TaskEvent;
+use refact_tasks::events_emit::emit_task_event_for_services;
 use refact_runtime_api::SessionState;
 
 fn make_source() -> ToolSource {

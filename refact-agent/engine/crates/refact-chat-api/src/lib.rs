@@ -17,6 +17,7 @@ pub mod pending_context_rebuild;
 pub mod plan_role;
 pub mod subchat_types;
 pub mod session;
+pub mod session_plan_role;
 pub mod setparams;
 pub mod tool_catalog;
 pub mod tool_enrichment;

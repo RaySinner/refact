@@ -7,7 +7,7 @@ use tokio::sync::Mutex as AMutex;
 
 use refact_runtime_api::AtCommandsContext;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
-use crate::ext::config_dirs::get_ext_dirs;
+use refact_ext::config_dirs::get_ext_dirs;
 use crate::ext::skills::load_skill_full;
 use crate::ext::skills_context::expand_skill_includes;
 use crate::tools::tools_description::{
@@ -143,8 +143,15 @@ impl Tool for ToolActivateSkill {
             }
         }
 
-        let app = ccx.lock().await.app.clone();
-        let ext_dirs = get_ext_dirs(app).await;
+        let (config_dir, workspace_dirs) = {
+            let app = ccx.lock().await.app.clone();
+            let workspace_dirs = refact_runtime_api::files_correction::get_project_dirs(
+                app.gcx.clone(),
+            )
+            .await;
+            (app.paths.config_dir.clone(), workspace_dirs)
+        };
+        let ext_dirs = get_ext_dirs(&config_dir, &workspace_dirs).await;
         let activated = activate_skill_inner(&ext_dirs, &name).await?;
 
         {

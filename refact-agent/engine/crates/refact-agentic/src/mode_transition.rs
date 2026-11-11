@@ -7,6 +7,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 use refact_chat_api::{GoalBudget, GoalEvent, GoalProgress, GoalSnapshot, GoalStatus};
+use refact_context_api::PathsAccess;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextFile, MultimodalElement};
 
 const MAX_FILE_SIZE: usize = 1024 * 1024;
@@ -1584,6 +1585,60 @@ pub async fn assemble_new_chat(
         None,
     )
     .await
+}
+
+/// Paths-only context snapshot used by [`assemble_new_chat_for_context`]; the engine
+/// keeps the `GlobalContext`-backed call sites.
+#[derive(Clone, Debug)]
+pub struct AgenticPathContext {
+    cache_dir: PathBuf,
+    config_dir: PathBuf,
+    workspace_folders: Vec<PathBuf>,
+}
+
+impl AgenticPathContext {
+    pub fn from_context<T: PathsAccess + ?Sized>(context: &T) -> Self {
+        Self {
+            cache_dir: context.cache_dir(),
+            config_dir: context.config_dir(),
+            workspace_folders: context.workspace_folders(),
+        }
+    }
+}
+
+impl PathsAccess for AgenticPathContext {
+    fn cache_dir(&self) -> PathBuf {
+        self.cache_dir.clone()
+    }
+
+    fn config_dir(&self) -> PathBuf {
+        self.config_dir.clone()
+    }
+
+    fn workspace_folders(&self) -> Vec<PathBuf> {
+        self.workspace_folders.clone()
+    }
+}
+
+pub fn check_cancelled(request: &ReconstructionRequest<'_>) -> Result<(), String> {
+    if request
+        .abort_flag
+        .as_ref()
+        .is_some_and(|f| f.load(std::sync::atomic::Ordering::Acquire))
+    {
+        Err("Context reconstruction cancelled".into())
+    } else {
+        Ok(())
+    }
+}
+
+pub async fn assemble_new_chat_for_context<T: PathsAccess + ?Sized>(
+    context: &T,
+    original_messages: &[ChatMessage],
+    decisions: &ParsedDecisions,
+) -> Result<Vec<ChatMessage>, String> {
+    let workspace_dirs = context.workspace_folders();
+    assemble_new_chat(original_messages, decisions, &workspace_dirs).await
 }
 
 async fn assemble_with_budget(

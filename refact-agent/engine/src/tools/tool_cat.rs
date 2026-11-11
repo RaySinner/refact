@@ -728,7 +728,8 @@ async fn paths_and_symbols_to_cat_with_path_ranges(
             };
             let path_buf = PathBuf::from(candidate);
             let indexing_everywhere =
-                crate::files_blocklist::reload_indexing_everywhere_if_needed(gcx.clone()).await;
+                refact_runtime_api::gcx_helpers::reload_indexing_everywhere_for_gcx(&gcx, false)
+                    .await;
             let listing = ls_files_limited(
                 &indexing_everywhere,
                 &path_buf,

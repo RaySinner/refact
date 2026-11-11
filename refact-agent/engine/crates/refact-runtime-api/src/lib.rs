@@ -49,7 +49,8 @@ pub use chat_ctx::{
 };
 pub use context_factory::{ContextFactory, ContextFactorySlot};
 pub use gcx_helpers::{
-    declared_file_records, privacy_record_scope, tool_enrichment_from_path_references,
+    declared_file_records, privacy_record_scope, reload_indexing_everywhere_for_gcx,
+    tool_enrichment_from_path_references,
 };
 pub use global_context::{app_state_from_gcx, GlobalContextCtx};
 pub use command_line::CommandLine;

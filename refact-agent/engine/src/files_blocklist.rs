@@ -28,46 +28,11 @@ pub async fn reload_global_indexing_only(gcx: Arc<GlobalContext>) -> IndexingEve
 pub async fn reload_indexing_everywhere_if_needed(
     gcx: Arc<GlobalContext>,
 ) -> Arc<IndexingEverywhere> {
-    reload_indexing_everywhere(gcx, false).await
+    refact_runtime_api::gcx_helpers::reload_indexing_everywhere_for_gcx(&gcx, false).await
 }
 
 pub async fn reload_indexing_everywhere_now(gcx: Arc<GlobalContext>) -> Arc<IndexingEverywhere> {
-    reload_indexing_everywhere(gcx, true).await
-}
-
-async fn reload_indexing_everywhere(
-    gcx: Arc<GlobalContext>,
-    force: bool,
-) -> Arc<IndexingEverywhere> {
-    let cache_key = Arc::as_ptr(&gcx) as usize;
-    let (config_dir, indexing_yaml, workspace_vcs_roots) = (
-        gcx.config_dir.clone(),
-        gcx.cmdline.indexing_yaml.clone(),
-        gcx.documents_state
-            .workspace_vcs_roots
-            .lock()
-            .unwrap()
-            .clone(),
-    );
-    if force {
-        refact_files::indexing_settings::reload_indexing_everywhere_now(
-            &config_dir,
-            &indexing_yaml,
-            &workspace_vcs_roots,
-            &gcx.indexing_everywhere,
-            cache_key,
-        )
-        .await
-    } else {
-        refact_files::indexing_settings::reload_indexing_everywhere_if_needed(
-            &config_dir,
-            &indexing_yaml,
-            &workspace_vcs_roots,
-            &gcx.indexing_everywhere,
-            cache_key,
-        )
-        .await
-    }
+    refact_runtime_api::gcx_helpers::reload_indexing_everywhere_for_gcx(&gcx, true).await
 }
 
 #[cfg(test)]

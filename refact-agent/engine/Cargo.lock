@@ -3960,6 +3960,7 @@ dependencies = [
  "dunce",
  "lazy_static",
  "refact-chat-api",
+ "refact-context-api",
  "refact-core",
  "regex",
  "serde",

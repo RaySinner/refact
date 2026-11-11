@@ -198,3 +198,374 @@ pub fn update(mutate: impl FnOnce(&mut TrajectoryRuntimeSettings)) {
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     mutate(&mut active);
 }
+
+pub fn settings_path(config_dir: &std::path::Path) -> std::path::PathBuf {
+    config_dir.join("trajectory-settings.yaml")
+}
+
+pub async fn load_from_path(
+    path: &std::path::Path,
+) -> Result<TrajectoryRuntimeSettings, String> {
+    match tokio::fs::read_to_string(path).await {
+        Ok(contents) => serde_yaml::from_str(&contents)
+            .map_err(|error| format!("invalid trajectory settings in {}: {error}", path.display())),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            Ok(TrajectoryRuntimeSettings::default())
+        }
+        Err(error) => Err(format!(
+            "cannot read trajectory settings {}: {error}",
+            path.display()
+        )),
+    }
+}
+
+pub fn validate(settings: &TrajectoryRuntimeSettings) -> Result<(), String> {
+    validate_usize(
+        "internal_traces_keep_per_folder",
+        settings.internal_traces_keep_per_folder,
+        10,
+        10_000,
+    )?;
+    validate_u64(
+        "internal_trace_prune_interval_secs",
+        settings.internal_trace_prune_interval_secs,
+        60,
+        86_400,
+    )?;
+    validate_usize(
+        "buddy_conversations_keep",
+        settings.buddy_conversations_keep,
+        10,
+        100_000,
+    )?;
+    validate_u64(
+        "buddy_conversations_prune_interval_secs",
+        settings.buddy_conversations_prune_interval_secs,
+        60,
+        86_400,
+    )?;
+    validate_u64(
+        "buddy_conversations_prune_min_age_secs",
+        settings.buddy_conversations_prune_min_age_secs,
+        60,
+        365 * 86_400,
+    )?;
+    validate_u64(
+        "session_idle_timeout_secs",
+        settings.session_idle_timeout_secs,
+        60,
+        86_400,
+    )?;
+    validate_u64(
+        "session_cleanup_interval_secs",
+        settings.session_cleanup_interval_secs,
+        10,
+        86_400,
+    )?;
+    validate_u64(
+        "stream_idle_timeout_secs",
+        settings.stream_idle_timeout_secs,
+        10,
+        86_400,
+    )?;
+    validate_u64(
+        "stream_total_timeout_secs",
+        settings.stream_total_timeout_secs,
+        60,
+        172_800,
+    )?;
+    validate_usize("max_queue_size", settings.max_queue_size, 1, 10_000)?;
+    validate_usize(
+        "event_channel_capacity",
+        settings.event_channel_capacity,
+        16,
+        1_000_000,
+    )?;
+    validate_usize(
+        "recent_request_ids_capacity",
+        settings.recent_request_ids_capacity,
+        1,
+        100_000,
+    )?;
+    if let Some(value) = settings.max_parallel_tools {
+        validate_usize("max_parallel_tools", value, 1, 10_000)?;
+    }
+    validate_usize(
+        "max_images_per_message",
+        settings.max_images_per_message,
+        1,
+        1_000,
+    )?;
+    validate_usize("max_file_size", settings.max_file_size, 1_024, 50_000_000)?;
+    validate_usize(
+        "auto_enrichment_total_token_cap",
+        settings.auto_enrichment_total_token_cap,
+        64,
+        32_000,
+    )?;
+    validate_usize(
+        "auto_enrichment_card_token_cap",
+        settings.auto_enrichment_card_token_cap,
+        32,
+        16_000,
+    )?;
+    if settings.auto_enrichment_card_token_cap > settings.auto_enrichment_total_token_cap {
+        return Err(
+            "auto_enrichment_card_token_cap must not exceed auto_enrichment_total_token_cap"
+                .to_string(),
+        );
+    }
+    validate_usize(
+        "auto_enrichment_knowledge_top_n",
+        settings.auto_enrichment_knowledge_top_n,
+        1,
+        20,
+    )?;
+    validate_usize(
+        "auto_enrichment_trajectory_top_n",
+        settings.auto_enrichment_trajectory_top_n,
+        1,
+        20,
+    )?;
+    validate_usize(
+        "pp_max_tool_budget_tokens",
+        settings.pp_max_tool_budget_tokens,
+        4_096,
+        2_000_000,
+    )?;
+    validate_usize(
+        "pp_max_per_file_budget_tokens",
+        settings.pp_max_per_file_budget_tokens,
+        1_024,
+        2_000_000,
+    )?;
+    validate_usize(
+        "pp_max_line_length_chars",
+        settings.pp_max_line_length_chars,
+        80,
+        1_000_000,
+    )?;
+    validate_usize(
+        "pp_tokens_for_text_percent",
+        settings.pp_tokens_for_text_percent,
+        1,
+        100,
+    )?;
+    validate_usize(
+        "git_intel_max_commits",
+        settings.git_intel_max_commits,
+        100,
+        1_000_000,
+    )?;
+    validate_usize(
+        "git_intel_deep_walk_limit",
+        settings.git_intel_deep_walk_limit,
+        100,
+        5_000_000,
+    )?;
+    validate_usize(
+        "git_intel_max_files_per_commit_cochange",
+        settings.git_intel_max_files_per_commit_cochange,
+        10,
+        100_000,
+    )?;
+    validate_usize(
+        "git_intel_max_files_per_commit_entropy",
+        settings.git_intel_max_files_per_commit_entropy,
+        5,
+        100_000,
+    )?;
+    validate_usize(
+        "codegraph_dead_code_max_results",
+        settings.codegraph_dead_code_max_results,
+        50,
+        1_000_000,
+    )?;
+    validate_usize(
+        "codegraph_exec_flow_max_nodes",
+        settings.codegraph_exec_flow_max_nodes,
+        50,
+        1_000_000,
+    )?;
+    validate_usize(
+        "vecdb_trajectory_split_bytes",
+        settings.vecdb_trajectory_split_bytes,
+        256,
+        1_048_576,
+    )?;
+    validate_usize(
+        "cat_max_input_paths",
+        settings.cat_max_input_paths,
+        1,
+        100_000,
+    )?;
+    validate_usize("cat_max_lines", settings.cat_max_lines, 100, 1_000_000)?;
+    validate_usize(
+        "cat_max_file_bytes",
+        settings.cat_max_file_bytes,
+        4_096,
+        268_435_456,
+    )?;
+    validate_usize(
+        "cat_max_expanded_files",
+        settings.cat_max_expanded_files,
+        1,
+        100_000,
+    )?;
+    validate_usize(
+        "get_logs_max_tail_bytes",
+        settings.get_logs_max_tail_bytes,
+        4_096,
+        268_435_456,
+    )?;
+    validate_usize(
+        "planner_qna_question_limit",
+        settings.planner_qna_question_limit,
+        200,
+        1_000_000,
+    )?;
+    validate_usize(
+        "planner_qna_answer_limit",
+        settings.planner_qna_answer_limit,
+        200,
+        1_000_000,
+    )?;
+    validate_usize(
+        "hist_search_preview_chars",
+        settings.hist_search_preview_chars,
+        100,
+        100_000,
+    )?;
+    validate_usize(
+        "agent_diff_max_output_bytes",
+        settings.agent_diff_max_output_bytes,
+        4_096,
+        268_435_456,
+    )?;
+    validate_usize(
+        "process_subscribe_preview_bytes",
+        settings.process_subscribe_preview_bytes,
+        50,
+        100_000,
+    )?;
+    validate_usize(
+        "review_diff_char_cap",
+        settings.review_diff_char_cap,
+        4_096,
+        8_388_608,
+    )?;
+    validate_usize(
+        "review_max_diff_patch_bytes",
+        settings.review_max_diff_patch_bytes,
+        4_096,
+        268_435_456,
+    )?;
+    validate_usize("task_agent_max_retries", settings.task_agent_max_retries, 0, 10)?;
+    validate_usize(
+        "tool_loop_guard_threshold",
+        settings.tool_loop_guard_threshold,
+        1,
+        100,
+    )?;
+    validate_usize(
+        "max_investigation_tool_calls_per_turn",
+        settings.max_investigation_tool_calls_per_turn,
+        1,
+        100,
+    )?;
+    validate_usize(
+        "tool_loop_stagnation_threshold",
+        settings.tool_loop_stagnation_threshold,
+        2,
+        50,
+    )
+}
+
+fn validate_usize(name: &str, value: usize, minimum: usize, maximum: usize) -> Result<(), String> {
+    if !(minimum..=maximum).contains(&value) {
+        return Err(format!(
+            "{name} must be between {minimum} and {maximum}; got {value}"
+        ));
+    }
+    Ok(())
+}
+
+fn validate_u64(name: &str, value: u64, minimum: u64, maximum: u64) -> Result<(), String> {
+    if !(minimum..=maximum).contains(&value) {
+        return Err(format!(
+            "{name} must be between {minimum} and {maximum}; got {value}"
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tweaked() -> TrajectoryRuntimeSettings {
+        TrajectoryRuntimeSettings {
+            pp_max_tool_budget_tokens: 262_144,
+            pp_max_per_file_budget_tokens: 65_536,
+            pp_max_line_length_chars: 4_096,
+            pp_tokens_for_text_percent: 42,
+            git_intel_max_commits: 1_234,
+            git_intel_deep_walk_limit: 23_456,
+            git_intel_max_files_per_commit_cochange: 321,
+            git_intel_max_files_per_commit_entropy: 77,
+            codegraph_dead_code_max_results: 654,
+            codegraph_exec_flow_max_nodes: 987,
+            vecdb_trajectory_split_bytes: 4_096,
+            ..TrajectoryRuntimeSettings::default()
+        }
+    }
+
+    #[test]
+    fn old_yaml_without_new_keys_loads_with_new_defaults() {
+        let legacy = "\
+internal_traces_keep_per_folder: 25
+session_idle_timeout_secs: 120
+max_queue_size: 7
+trajectory_writer_enabled: false
+";
+        let loaded: TrajectoryRuntimeSettings = serde_yaml::from_str(legacy).unwrap();
+        let defaults = TrajectoryRuntimeSettings::default();
+        assert_eq!(loaded.internal_traces_keep_per_folder, 25);
+        assert_eq!(loaded.session_idle_timeout_secs, 120);
+        assert_eq!(loaded.max_queue_size, 7);
+        assert!(!loaded.trajectory_writer_enabled);
+        assert_eq!(
+            loaded.pp_max_tool_budget_tokens,
+            defaults.pp_max_tool_budget_tokens
+        );
+        assert_eq!(loaded.git_intel_max_commits, defaults.git_intel_max_commits);
+        assert_eq!(
+            loaded.codegraph_exec_flow_max_nodes,
+            defaults.codegraph_exec_flow_max_nodes
+        );
+        assert_eq!(
+            loaded.vecdb_trajectory_split_bytes,
+            defaults.vecdb_trajectory_split_bytes
+        );
+        assert_eq!(loaded.review_diff_char_cap, defaults.review_diff_char_cap);
+        assert_eq!(loaded.cat_max_input_paths, defaults.cat_max_input_paths);
+        assert!(loaded.cat_line_ranges_enabled);
+        assert_eq!(
+            loaded.task_agent_max_retries,
+            defaults.task_agent_max_retries
+        );
+        assert_eq!(loaded.task_agent_max_retries, 3);
+        assert!(validate(&loaded).is_ok());
+    }
+
+    #[test]
+    fn empty_yaml_yields_defaults_and_full_round_trip_is_stable() {
+        let empty: TrajectoryRuntimeSettings = serde_yaml::from_str("{}").unwrap();
+        assert_eq!(empty, TrajectoryRuntimeSettings::default());
+        let yaml = serde_yaml::to_string(&tweaked()).unwrap();
+        assert_eq!(
+            serde_yaml::from_str::<TrajectoryRuntimeSettings>(&yaml).unwrap(),
+            tweaked()
+        );
+    }
+}

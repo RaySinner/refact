@@ -215,8 +215,10 @@ impl Tool for ToolTree {
                     }
 
                     let indexing_everywhere =
-                        crate::files_blocklist::reload_indexing_everywhere_if_needed(gcx.clone())
-                            .await;
+                        refact_runtime_api::gcx_helpers::reload_indexing_everywhere_for_gcx(
+                            &gcx, false,
+                        )
+                        .await;
                     let listing = ls_files_limited(
                         &indexing_everywhere,
                         &true_path,

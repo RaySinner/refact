@@ -1,18 +1,17 @@
 pub use refact_agentic::mode_transition::{
-    ConversationMetadata, FileReference, ParsedDecisions, ReconstructionHints,
-    ReconstructionOutcome, ReconstructionRequest, TransitionContextBudget,
-    assemble_new_chat as assemble_new_chat_pure, calculate_transition_context_budget,
-    carried_goal_messages, carried_plan_messages, context_file_rendered_symbols,
+    assemble_new_chat_for_context, calculate_transition_context_budget, carried_goal_messages,
+    carried_plan_messages, check_cancelled, context_file_rendered_symbols,
     count_images_in_messages, current_base_goal_message, extract_conversation_metadata,
     extract_initial_plan_text, format_annotated_messages, format_budget_summary, format_file_list,
     format_memory_list, insert_goal_messages_before_plan, is_goal_delta_event,
     make_pinned_plan_message, message_symbols, normalize_goal_message_content, parse_llm_response,
-    push_context_file_with_budget, text_symbols, transfer_goal_ownership, GoalTransferResult,
-    truncate_utf8,
+    push_context_file_with_budget, text_symbols, transfer_goal_ownership, truncate_utf8,
+    AgenticPathContext, ConversationMetadata, FileReference, GoalTransferResult, ParsedDecisions,
+    ReconstructionHints, ReconstructionOutcome, ReconstructionRequest, TransitionContextBudget,
 };
 
 use std::path::PathBuf;
-use std::sync::{Arc, atomic::Ordering};
+use std::sync::Arc;
 
 use refact_context_api::PathsAccess;
 
@@ -26,49 +25,6 @@ use crate::subchat::{
 use crate::yaml_configs::customization_registry::get_subagent_config;
 
 const SUBAGENT_ID: &str = "mode_transition";
-
-#[derive(Clone, Debug)]
-pub struct AgenticPathContext {
-    cache_dir: PathBuf,
-    config_dir: PathBuf,
-    workspace_folders: Vec<PathBuf>,
-}
-
-impl AgenticPathContext {
-    pub fn from_context<T: PathsAccess + ?Sized>(context: &T) -> Self {
-        Self {
-            cache_dir: context.cache_dir(),
-            config_dir: context.config_dir(),
-            workspace_folders: context.workspace_folders(),
-        }
-    }
-}
-
-impl PathsAccess for AgenticPathContext {
-    fn cache_dir(&self) -> PathBuf {
-        self.cache_dir.clone()
-    }
-
-    fn config_dir(&self) -> PathBuf {
-        self.config_dir.clone()
-    }
-
-    fn workspace_folders(&self) -> Vec<PathBuf> {
-        self.workspace_folders.clone()
-    }
-}
-
-fn check_cancelled(request: &ReconstructionRequest<'_>) -> Result<(), String> {
-    if request
-        .abort_flag
-        .as_ref()
-        .is_some_and(|f| f.load(Ordering::Acquire))
-    {
-        Err("Context reconstruction cancelled".into())
-    } else {
-        Ok(())
-    }
-}
 
 struct MessageAudit<'a>(&'a [ChatMessage]);
 impl refact_privacy::PrivacyAudited for MessageAudit<'_> {
@@ -395,14 +351,13 @@ pub async fn assemble_new_chat<T: PathsAccess + ?Sized>(
     original_messages: &[ChatMessage],
     decisions: &ParsedDecisions,
 ) -> Result<Vec<ChatMessage>, String> {
-    let workspace_dirs = context.workspace_folders();
-    assemble_new_chat_pure(original_messages, decisions, &workspace_dirs).await
+    assemble_new_chat_for_context(context, original_messages, decisions).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::AtomicBool;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use crate::call_validation::{ChatContent, ChatMessage, ContextFile};
 
     #[test]

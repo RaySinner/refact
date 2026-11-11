@@ -19,6 +19,7 @@ pub mod context_factory;
 pub mod chat_ctx;
 pub mod files_correction;
 pub mod files_in_workspace;
+pub mod gcx_helpers;
 pub mod global_context;
 pub mod integr_abstract;
 pub mod knowledge_index;
@@ -47,6 +48,9 @@ pub use chat_ctx::{
     ProjectTreeProvider, PromptAssembler, SubchatLauncher, TrajectoryStore,
 };
 pub use context_factory::{ContextFactory, ContextFactorySlot};
+pub use gcx_helpers::{
+    declared_file_records, privacy_record_scope, tool_enrichment_from_path_references,
+};
 pub use global_context::{app_state_from_gcx, GlobalContextCtx};
 pub use command_line::CommandLine;
 pub use terminal_security::{TerminalSecurityConfig, TerminalSecurityMode};

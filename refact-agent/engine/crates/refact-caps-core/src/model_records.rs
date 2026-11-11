@@ -1,7 +1,11 @@
 use serde::{Deserialize, Serialize};
 
+use std::sync::Arc;
+use indexmap::IndexMap;
 use refact_core::llm_types::{BaseModelRecord, HasBaseModelRecord, default_true};
 use refact_core::provider_types::{LiveModelFields, ModelPricing};
+
+use crate::code_assistant_caps::CodeAssistantCaps;
 
 #[derive(Debug, Serialize, Clone, Deserialize)]
 pub struct ChatModelRecord {
@@ -282,6 +286,30 @@ pub fn strip_model_from_finetune(model: &str) -> String {
     model.split(":").next().unwrap().to_string()
 }
 
+pub fn resolve_model<'a, T>(
+    models: &'a IndexMap<String, Arc<T>>,
+    model_id: &str,
+) -> Result<Arc<T>, String> {
+    models
+        .get(model_id)
+        .or_else(|| models.get(&strip_model_from_finetune(model_id)))
+        .cloned()
+        .ok_or(format!(
+            "Model '{}' not found. Server has the following models: {:?}",
+            model_id,
+            models.keys()
+        ))
+}
+
+pub fn resolve_buddy_chat_model(caps: &CodeAssistantCaps) -> String {
+    let buddy = caps.defaults.chat_buddy_model.trim();
+    if !buddy.is_empty() && resolve_model(&caps.chat_models, buddy).is_ok() {
+        buddy.to_string()
+    } else {
+        String::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -512,5 +540,37 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(decoded.name, "openai_responses_2");
+    }
+
+    #[test]
+    fn resolve_model_falls_back_to_the_unfinetuned_name() {
+        let mut models: IndexMap<String, Arc<ChatModelRecord>> = IndexMap::new();
+        models.insert(
+            "provider/base".to_string(),
+            Arc::new(ChatModelRecord::default()),
+        );
+
+        assert!(resolve_model(&models, "provider/base").is_ok());
+        assert!(resolve_model(&models, "provider/base:ft-123").is_ok());
+        assert!(resolve_model(&models, "provider/missing").is_err());
+    }
+
+    #[test]
+    fn resolve_buddy_chat_model_requires_a_resolvable_buddy_model() {
+        let mut caps = CodeAssistantCaps {
+            chat_models: IndexMap::new(),
+            ..Default::default()
+        };
+        assert_eq!(resolve_buddy_chat_model(&caps), "");
+
+        caps.defaults.chat_buddy_model = "provider/missing".to_string();
+        assert_eq!(resolve_buddy_chat_model(&caps), "");
+
+        caps.chat_models.insert(
+            "provider/buddy".to_string(),
+            Arc::new(ChatModelRecord::default()),
+        );
+        caps.defaults.chat_buddy_model = " provider/buddy ".to_string();
+        assert_eq!(resolve_buddy_chat_model(&caps), "provider/buddy");
     }
 }

@@ -347,12 +347,7 @@ pub async fn resolve_buddy_chat_model(app: AppState) -> String {
     let Some(caps) = caps_state.caps.as_ref() else {
         return String::new();
     };
-    let buddy = caps.defaults.chat_buddy_model.trim();
-    if !buddy.is_empty() && crate::caps::resolve_model(&caps.chat_models, buddy).is_ok() {
-        buddy.to_string()
-    } else {
-        String::new()
-    }
+    refact_caps_core::model_records::resolve_buddy_chat_model(caps)
 }
 
 pub async fn buddy_snapshot(app: AppState) -> Option<BuddySnapshot> {

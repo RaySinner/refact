@@ -18,6 +18,7 @@ pub mod memory_plane;
 pub mod model_caps;
 pub mod models_dev;
 pub mod net_utils;
+pub mod nicer_logs;
 pub mod path_classifier;
 pub mod privacy_types;
 pub mod provider_types;

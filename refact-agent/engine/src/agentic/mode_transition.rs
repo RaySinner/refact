@@ -1,5 +1,6 @@
 pub use refact_agentic::mode_transition::{
-    ConversationMetadata, FileReference, ParsedDecisions, TransitionContextBudget,
+    ConversationMetadata, FileReference, ParsedDecisions, ReconstructionHints,
+    ReconstructionOutcome, ReconstructionRequest, TransitionContextBudget,
     assemble_new_chat as assemble_new_chat_pure, calculate_transition_context_budget,
     carried_goal_messages, carried_plan_messages, context_file_rendered_symbols,
     count_images_in_messages, current_base_goal_message, extract_conversation_metadata,
@@ -11,10 +12,7 @@ pub use refact_agentic::mode_transition::{
 };
 
 use std::path::PathBuf;
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
-};
+use std::sync::{Arc, atomic::Ordering};
 
 use refact_context_api::PathsAccess;
 
@@ -58,28 +56,6 @@ impl PathsAccess for AgenticPathContext {
     fn workspace_folders(&self) -> Vec<PathBuf> {
         self.workspace_folders.clone()
     }
-}
-
-pub type ReconstructionHints = ParsedDecisions;
-
-pub struct ReconstructionRequest<'a> {
-    pub messages: &'a [ChatMessage],
-    pub target_mode: &'a str,
-    pub target_mode_description: &'a str,
-    pub parent_chat_id: Option<&'a str>,
-    pub model_override: Option<String>,
-    pub abort_flag: Option<Arc<AtomicBool>>,
-    pub hints: Option<ReconstructionHints>,
-    pub target_budget_symbols: Option<usize>,
-    pub preserve_goal_messages: bool,
-}
-
-pub struct ReconstructionOutcome {
-    pub messages: Vec<ChatMessage>,
-    pub decisions: ParsedDecisions,
-    pub model: String,
-    pub budget: TransitionContextBudget,
-    pub reread_paths: Vec<String>,
 }
 
 fn check_cancelled(request: &ReconstructionRequest<'_>) -> Result<(), String> {
@@ -264,6 +240,8 @@ async fn analyze_reconstruction(
     Ok((decisions, model, budget))
 }
 
+/// Engine wrapper over `refact_agentic::mode_transition::assemble_reconstruction`: the analysis,
+/// privacy clearing and subchat run need `GlobalContext`, while `ReconstructionRequest` lives in the crate.
 pub async fn reconstruct_context(
     gcx: Arc<GlobalContext>,
     request: ReconstructionRequest<'_>,
@@ -424,6 +402,7 @@ pub async fn assemble_new_chat<T: PathsAccess + ?Sized>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::AtomicBool;
     use crate::call_validation::{ChatContent, ChatMessage, ContextFile};
 
     #[test]

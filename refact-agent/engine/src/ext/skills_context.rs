@@ -1,15 +1,16 @@
-use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::app_state::AppState;
 use crate::call_validation::{ChatContent, ChatMessage, ContextFile};
 use crate::ext::config_dirs::{get_ext_dirs, ExtDirs};
-use crate::ext::skills::{load_skill_full, load_skill_indices, load_skill_linked_file, SkillFull};
+use crate::ext::skills::{load_skill_full, load_skill_indices, SkillFull};
 use crate::ext::skills_matcher::select_relevant_skills;
 
 pub const SKILLS_CONTEXT_MARKER: &str = "skills_context";
 
-pub use refact_ext::skills_context::SkillsTrackingInfo;
+pub use refact_ext::skills_context::{
+    expand_skill_includes, SkillsTrackingInfo, MAX_INCLUDES,
+};
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -36,31 +37,6 @@ pub async fn load_skills_config(app: AppState) -> SkillsConfig {
         Ok(content) => serde_yaml::from_str(&content).unwrap_or_default(),
         Err(_) => SkillsConfig::default(),
     }
-}
-
-const MAX_INCLUDES: usize = 5;
-
-pub async fn expand_skill_includes(body: &str, skill_dir: &Path) -> String {
-    let mut new_lines = Vec::new();
-    let mut include_count = 0;
-    for line in body.lines() {
-        let trimmed = line.trim();
-        if let Some(path) = trimmed.strip_prefix("@include ") {
-            if include_count < MAX_INCLUDES {
-                if let Some(content) = load_skill_linked_file(skill_dir, path.trim()).await {
-                    new_lines.push(content);
-                    include_count += 1;
-                    continue;
-                } else {
-                    tracing::warn!("Failed to load @include file: {}", path.trim());
-                }
-            } else {
-                tracing::warn!("Skipping @include (max {} includes reached)", MAX_INCLUDES);
-            }
-        }
-        new_lines.push(line.to_string());
-    }
-    new_lines.join("\n")
 }
 
 fn build_skills_prompt_markdown(
@@ -254,7 +230,7 @@ pub async fn build_skills_context_messages_tracked(
 mod tests {
     use super::*;
     use crate::ext::config_dirs::ExtDirs;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     fn make_ext_dirs(root: &Path) -> ExtDirs {
         ExtDirs {

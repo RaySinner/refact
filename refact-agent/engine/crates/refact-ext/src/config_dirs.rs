@@ -61,6 +61,41 @@ pub fn source_for_dir(
     }
 }
 
+pub async fn get_ext_dirs(config_dir: &Path, workspace_dirs: &[PathBuf]) -> ExtDirs {
+    let mut global_dirs = Vec::new();
+    if let Some(home) = home::home_dir() {
+        global_dirs.push(home.join(".claude"));
+    }
+    global_dirs.push(config_dir.to_path_buf());
+
+    let mut installed_dirs = Vec::new();
+    let installed_root = config_dir.join("plugins").join("installed");
+    if let Ok(mut entries) = tokio::fs::read_dir(&installed_root).await {
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let path = entry.path();
+            if path.is_dir() {
+                installed_dirs.push(path);
+            }
+        }
+    }
+    installed_dirs.sort();
+
+    let mut project_dirs = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for dir in workspace_dirs {
+        if seen.insert(dir.clone()) {
+            project_dirs.push(dir.join(".claude"));
+            project_dirs.push(dir.join(".refact"));
+        }
+    }
+
+    ExtDirs {
+        global_dirs,
+        installed_dirs,
+        project_dirs,
+    }
+}
+
 pub async fn collect_md_files_recursive(dir: &Path) -> Vec<PathBuf> {
     let mut result = Vec::new();
     collect_md_non_recursive(dir, &mut result).await;
@@ -154,6 +189,28 @@ mod tests {
         if let CommandSource::InstalledPlugin(name) = src {
             assert_eq!(name, "my-plugin");
         }
+    }
+
+    #[tokio::test]
+    async fn test_get_ext_dirs_builds_project_and_config_dirs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config_dir = tmp.path().join("config");
+        let installed_dir = config_dir.join("plugins").join("installed").join("plugin-a");
+        tokio::fs::create_dir_all(&installed_dir).await.unwrap();
+
+        let workspace = vec![PathBuf::from("/proj"), PathBuf::from("/proj")];
+        let ext_dirs = get_ext_dirs(&config_dir, &workspace).await;
+
+        assert_eq!(
+            ext_dirs.project_dirs,
+            vec![
+                PathBuf::from("/proj/.claude"),
+                PathBuf::from("/proj/.refact")
+            ],
+            "duplicate workspace dirs must be deduplicated"
+        );
+        assert_eq!(ext_dirs.installed_dirs, vec![installed_dir]);
+        assert!(ext_dirs.global_dirs.contains(&config_dir));
     }
 
     #[test]

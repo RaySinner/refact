@@ -4334,6 +4334,7 @@ version = "0.1.0"
 dependencies = [
  "dunce",
  "glob",
+ "home",
  "itertools 0.14.0",
  "notify",
  "rayon",

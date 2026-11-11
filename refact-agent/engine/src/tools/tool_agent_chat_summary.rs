@@ -9,7 +9,6 @@ use tokio::sync::Mutex as AMutex;
 use refact_runtime_api::{AtCommandsContext, MAX_SUBCHAT_DEPTH};
 use refact_core::chat_types::{ChatContent, ChatMessage, ChatToolCall, ContextEnum};
 use refact_chat_api::{SubchatConfig, ToolsPolicy, TraceParent};
-use refact_runtime_api::SubchatLauncher;
 use refact_runtime_api::task_storage as storage;
 use crate::tools::task_tool_helpers::require_bound_planner_task;
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
@@ -345,7 +344,7 @@ async fn run_summary_subchat(
     ) = {
         let ccx_lock = ccx.lock().await;
         (
-            ccx_lock.tool.subchat.clone(),
+            ccx_lock.app.ctx.subchat.clone(),
             ccx_lock.current_model.clone(),
             ccx_lock.chat_id.clone(),
             ccx_lock.root_chat_id.clone(),
@@ -356,10 +355,6 @@ async fn run_summary_subchat(
             ccx_lock.execution_scope_worktree(),
         )
     };
-    let subchat = subchat
-        .as_any()
-        .downcast_ref::<crate::app_state::EngineSubchatLauncher>()
-        .expect("engine subchat launcher handle");
 
     if parent_depth + 1 >= MAX_SUBCHAT_DEPTH {
         return Err(format!(

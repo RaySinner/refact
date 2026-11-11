@@ -7,7 +7,6 @@ use tokio::sync::Mutex as AMutex;
 
 use refact_runtime_api::AtCommandsContext;
 use refact_core::chat_types::{ChatMessage, ChatContent};
-use refact_runtime_api::SubchatLauncher;
 use refact_chat_api::internal_roles::{event, EventSubkind};
 use refact_runtime_api::files_correction::correct_to_nearest_filename;
 use refact_chat_api::{ExplicitSubchatSpec, TraceParent};
@@ -498,11 +497,7 @@ pub async fn gather_files_phase_with_plan(
     ));
 
     tracing::info!("{}: starting file-gathering subagent", attribution_id);
-    let subchat = ccx.lock().await.app.tool.subchat.clone();
-    let subchat = subchat
-        .as_any()
-        .downcast_ref::<crate::app_state::EngineSubchatLauncher>()
-        .expect("engine subchat launcher handle");
+    let subchat = ccx.lock().await.app.ctx.subchat.clone();
     let result = subchat.run_subchat(messages.clone(), subchat_config).await?;
 
     let response = get_last_assistant_content(&result.messages);

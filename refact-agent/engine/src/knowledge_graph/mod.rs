@@ -13,6 +13,8 @@ use crate::files_correction::get_project_dirs;
 use crate::global_context::GlobalContext;
 use refact_knowledge_graph::kg_structs::KnowledgeGraph;
 
+/// Engine wrapper: resolves the knowledge dirs from `GlobalContext` and delegates the
+/// pure graph construction to `refact_knowledge_graph::kg_builder::build_knowledge_graph`.
 pub async fn build_knowledge_graph(gcx: Arc<GlobalContext>) -> KnowledgeGraph {
     let project_dirs = get_project_dirs(gcx.clone()).await;
     let mut knowledge_dirs: Vec<PathBuf> = project_dirs

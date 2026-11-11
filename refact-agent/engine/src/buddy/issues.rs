@@ -592,32 +592,21 @@ pub async fn resolve_or_synthesize_context(
             .await;
     }
 
-    let has_error = error
-        .as_deref()
-        .map(|e| !e.trim().is_empty())
-        .unwrap_or(false);
-    if !has_error && source_file.is_none() && tool_name.is_none() {
-        return Err(
-            "provide a diagnostic reference (diagnostic_id, diagnostic_index, or collected_at), \
-             OR reproduction context (source_file or tool_name) together with either an `error` \
-             or the issue title/body"
-                .to_string(),
-        );
-    }
-
-    let message = match error {
-        Some(err) if !err.trim().is_empty() => err,
-        _ => format!("{title}\n\n{body}"),
-    };
-    let mut ctx = crate::buddy::diagnostics::collect_diagnostics_from_error(&message);
-    ctx.source_file = source_file;
-    ctx.tool_name = tool_name;
-    Ok(ctx)
+    refact_buddy_core::issue_context::synthesize_issue_context(
+        error,
+        source_file,
+        tool_name,
+        title,
+        body,
+    )
 }
 
 /// File a confirmed agent issue from a resolved/synthesized context, preferring GitHub MCP
 /// and falling back to the native gh/glab path. The standard integration, auto-creation,
 /// rate-limit, dedup, and redaction gates still apply.
+///
+/// Engine wrapper: provider detection, MCP handling and the buddy service state need
+/// `AppState`; the pure context synthesis lives in `refact_buddy_core::issue_context`.
 pub async fn create_confirmed_issue(
     app: AppState,
     context: &DiagnosticContext,

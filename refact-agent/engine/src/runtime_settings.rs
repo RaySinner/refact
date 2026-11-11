@@ -49,6 +49,8 @@ fn install_crate_limits(settings: &TrajectoryRuntimeSettings) {
     );
 }
 
+/// Applies limits through crates that depend on `refact-core`, so this stays an
+/// engine wrapper over `refact_core::trajectory_settings::set`/`update`.
 pub fn install_startup(settings: TrajectoryRuntimeSettings) {
     install_crate_limits(&settings);
     refact_vecdb::vdb_thread::install_vecdb_path_coalescing_setting(
@@ -75,6 +77,9 @@ pub fn install_startup(settings: TrajectoryRuntimeSettings) {
     refact_core::trajectory_settings::set(settings);
 }
 
+/// Engine wrapper: pushes live limits into crates that depend on `refact-core`
+/// (postprocessing, git-intel, codegraph, vecdb, chat-history, chat-api), so the crate
+/// snapshot itself is updated via `refact_core::trajectory_settings::update`.
 pub fn install_live(settings: &TrajectoryRuntimeSettings) {
     let active_before = current();
     install_crate_limits(settings);

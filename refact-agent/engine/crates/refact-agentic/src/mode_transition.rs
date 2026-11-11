@@ -1,5 +1,7 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 use lazy_static::lazy_static;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -73,6 +75,28 @@ pub struct TransitionContextBudget {
     pub files_symbols: usize,
     pub messages_symbols: usize,
     pub max_images: usize,
+}
+
+pub type ReconstructionHints = ParsedDecisions;
+
+pub struct ReconstructionRequest<'a> {
+    pub messages: &'a [ChatMessage],
+    pub target_mode: &'a str,
+    pub target_mode_description: &'a str,
+    pub parent_chat_id: Option<&'a str>,
+    pub model_override: Option<String>,
+    pub abort_flag: Option<Arc<AtomicBool>>,
+    pub hints: Option<ReconstructionHints>,
+    pub target_budget_symbols: Option<usize>,
+    pub preserve_goal_messages: bool,
+}
+
+pub struct ReconstructionOutcome {
+    pub messages: Vec<ChatMessage>,
+    pub decisions: ParsedDecisions,
+    pub model: String,
+    pub budget: TransitionContextBudget,
+    pub reread_paths: Vec<String>,
 }
 
 pub fn text_symbols(text: &str) -> usize {

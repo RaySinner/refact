@@ -328,7 +328,7 @@ impl SubscriptionState {
             event_count: 0,
             recent_event_times: VecDeque::new(),
             active_summary: None,
-            preview_bytes: crate::runtime_settings::current().process_subscribe_preview_bytes,
+            preview_bytes: refact_core::trajectory_settings::current().process_subscribe_preview_bytes,
         }
     }
 

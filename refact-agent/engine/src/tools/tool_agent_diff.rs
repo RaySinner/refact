@@ -553,7 +553,7 @@ async fn run_git(worktree: &Path, args: &[&str], timeout: Duration) -> Result<St
 
     let mut stdout = child.stdout.take().unwrap();
     let mut stderr = child.stderr.take().unwrap();
-    let max_output_bytes = crate::runtime_settings::current().agent_diff_max_output_bytes;
+    let max_output_bytes = refact_core::trajectory_settings::current().agent_diff_max_output_bytes;
     let mut buf = Vec::with_capacity(64 * 1024);
     let mut chunk = [0u8; 8192];
     let mut capped = false;
@@ -1981,7 +1981,7 @@ mod tests {
             .await
             .unwrap();
 
-        let limit = crate::runtime_settings::current().agent_diff_max_output_bytes;
+        let limit = refact_core::trajectory_settings::current().agent_diff_max_output_bytes;
         assert!(
             output.contains("agent_diff_max_output_bytes ="),
             "expected a quantified truncation footer, got tail: {}",

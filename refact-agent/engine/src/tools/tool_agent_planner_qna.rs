@@ -365,7 +365,7 @@ impl Tool for ToolAgentAskPlanner {
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
         let (app, task_id, card_id, planner_chat_id) = agent_scope(&ccx).await?;
-        let question_limit = crate::runtime_settings::current().planner_qna_question_limit;
+        let question_limit = refact_core::trajectory_settings::current().planner_qna_question_limit;
         let (question, question_notice) = truncate_chars_with_notice(
             &required_string(args, "question")?,
             question_limit,
@@ -513,7 +513,7 @@ impl Tool for ToolPlannerReply {
         let task_id = planner_task_id(&ccx, args, "planner_reply").await?;
         let card_id = required_string(args, "card_id")?;
         let question_id = required_question_id(args)?;
-        let answer_limit = crate::runtime_settings::current().planner_qna_answer_limit;
+        let answer_limit = refact_core::trajectory_settings::current().planner_qna_answer_limit;
         let (answer, answer_notice) = truncate_chars_with_notice(
             &required_string(args, "answer")?,
             answer_limit,

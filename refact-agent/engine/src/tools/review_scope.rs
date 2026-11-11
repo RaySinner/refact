@@ -11,7 +11,7 @@ use crate::tools::review_types::{ReviewDiffSummary, ReviewScopeSummary, ScopeMod
 const ADJACENT_EXPANSION_CAP: usize = 40;
 
 fn max_diff_patch_bytes() -> usize {
-    crate::runtime_settings::current().review_max_diff_patch_bytes
+    refact_core::trajectory_settings::current().review_max_diff_patch_bytes
 }
 
 const GENERATED_MARKERS: &[&str] = &[

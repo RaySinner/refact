@@ -262,7 +262,7 @@ pub(crate) struct BoundedLogTail {
 pub(crate) async fn read_bounded_log_tail_with_notice(
     log_path: &std::path::Path,
 ) -> Result<BoundedLogTail, String> {
-    let limit = crate::runtime_settings::current().get_logs_max_tail_bytes;
+    let limit = refact_core::trajectory_settings::current().get_logs_max_tail_bytes;
     let max_bytes = limit as u64;
     let mut file = tokio::fs::File::open(log_path)
         .await
@@ -465,13 +465,13 @@ mod tests {
         let path = dir.path().join("rustbinary.2026-07-01");
         let content = format!(
             "old-start\n{}\nrecent-tail",
-            "x".repeat(crate::runtime_settings::current().get_logs_max_tail_bytes + 1024)
+            "x".repeat(refact_core::trajectory_settings::current().get_logs_max_tail_bytes + 1024)
         );
         tokio::fs::write(&path, content).await.unwrap();
 
         let tail = read_log_content(&path).await.unwrap();
 
-        assert!(tail.len() <= crate::runtime_settings::current().get_logs_max_tail_bytes);
+        assert!(tail.len() <= refact_core::trajectory_settings::current().get_logs_max_tail_bytes);
         assert!(!tail.contains("old-start"));
         assert!(tail.contains("recent-tail"));
     }

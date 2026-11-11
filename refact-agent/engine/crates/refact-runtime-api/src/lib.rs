@@ -24,6 +24,7 @@ pub mod global_context;
 pub mod integr_abstract;
 pub mod knowledge_index;
 pub mod privacy;
+pub mod runtime_settings;
 pub mod terminal_security;
 pub mod tool_catalog;
 pub mod ctx_traits;

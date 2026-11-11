@@ -3,7 +3,14 @@ name = "refact-runtime-api"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = []
+test-util = []
+
 [dependencies]
+refact-postprocessing = { path = "../refact-postprocessing" }
+refact-git-intel = { path = "../refact-git-intel" }
+refact-vecdb = { path = "../refact-vecdb" }
 refact-scheduler-core = { path = "../refact-scheduler-core" }
 refact-chat-api = { path = "../refact-chat-api" }
 refact-tool-api = { path = "../refact-tool-api" }
@@ -43,4 +50,5 @@ structopt = "0.3"
 tokio.workspace = true
 
 [dev-dependencies]
+serial_test = "3"
 tempfile.workspace = true

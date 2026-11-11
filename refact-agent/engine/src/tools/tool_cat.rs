@@ -50,7 +50,7 @@ struct CatLimits {
 
 impl CatLimits {
     fn current() -> Self {
-        let settings = crate::runtime_settings::current();
+        let settings = refact_core::trajectory_settings::current();
         Self {
             max_input_paths: settings.cat_max_input_paths,
             max_lines: settings.cat_max_lines,

@@ -1,4 +1,5 @@
-use crate::runtime_settings::TrajectoryRuntimeSettings;
+use refact_core::trajectory_settings::TrajectoryRuntimeSettings;
+use refact_runtime_api::runtime_settings::{install_live, reset_for_test};
 
 pub struct SettingsGuard;
 
@@ -6,13 +7,13 @@ impl SettingsGuard {
     pub fn install(mutate: impl FnOnce(&mut TrajectoryRuntimeSettings)) -> Self {
         let mut settings = TrajectoryRuntimeSettings::default();
         mutate(&mut settings);
-        crate::runtime_settings::install_live(&settings);
+        install_live(&settings);
         Self
     }
 }
 
 impl Drop for SettingsGuard {
     fn drop(&mut self) {
-        crate::runtime_settings::reset_for_test();
+        reset_for_test();
     }
 }

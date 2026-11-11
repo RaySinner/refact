@@ -6,7 +6,7 @@ const MAX_LISTED_FILES: usize = 400;
 const MAX_LISTED_FINDINGS: usize = 60;
 
 fn diff_char_cap() -> usize {
-    crate::runtime_settings::current().review_diff_char_cap
+    refact_core::trajectory_settings::current().review_diff_char_cap
 }
 
 pub const REVIEW_SYSTEM_PROMPT: &str = r#"You are one stage of a code review. You investigate with tools and report what you can prove.
@@ -377,7 +377,7 @@ mod tests {
     fn review_prompt_reads_the_diff_cap_from_the_runtime_setting() {
         assert_eq!(
             diff_char_cap(),
-            crate::runtime_settings::current().review_diff_char_cap
+            refact_core::trajectory_settings::current().review_diff_char_cap
         );
         assert!(diff_char_cap() >= 4_096);
     }

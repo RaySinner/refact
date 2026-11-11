@@ -66,7 +66,7 @@ impl Tool for ToolSearchTrajectories {
         let output = if memories.is_empty() {
             "No relevant trajectories found.".to_string()
         } else {
-            let preview_chars = crate::runtime_settings::current().hist_search_preview_chars;
+            let preview_chars = refact_core::trajectory_settings::current().hist_search_preview_chars;
             let mut result = format!("Found {} relevant trajectories:\n\n", memories.len());
             for m in memories.iter() {
                 result.push_str("───────────────────────────────────────\n");
@@ -130,7 +130,7 @@ mod tests {
         });
 
         assert_eq!(
-            crate::runtime_settings::current().hist_search_preview_chars,
+            refact_core::trajectory_settings::current().hist_search_preview_chars,
             25
         );
         let notice = hist_search_preview_notice(25, 900, 25);

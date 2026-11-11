@@ -8,6 +8,7 @@ use crate::caps::resolve_chat_model;
 use crate::chat::perf_diagnostics::{self, PerfComponent, PerfOutcome};
 use crate::custom_error::YamlError;
 use crate::global_context::{try_load_caps_quickly_if_not_present, GlobalContext};
+use refact_integrations::mcp::mcp_naming::server_name_from_config_path;
 use refact_runtime_api::integr_abstract::IntegrationTrait;
 use crate::integrations::running_integrations::load_integrations;
 use refact_runtime_api::customization_registry::{
@@ -205,9 +206,7 @@ pub fn mcp_tool_allowed(
     if provider.is_empty() {
         return false;
     }
-    let server = crate::integrations::mcp::mcp_interactions::server_name_from_config_path(
-        &desc.source.config_path,
-    );
+    let server = server_name_from_config_path(&desc.source.config_path);
     policy.tool_access.mcp_allowed(provider, &server)
 }
 
@@ -223,8 +222,7 @@ pub async fn mcp_config_allowed_for_model(
     if model_id.is_empty() {
         return false;
     }
-    let server =
-        crate::integrations::mcp::mcp_interactions::server_name_from_config_path(config_path);
+    let server = server_name_from_config_path(config_path);
     policy
         .tool_access
         .mcp_allowed(provider_of_model(model_id), &server)

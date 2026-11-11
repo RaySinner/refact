@@ -57,26 +57,13 @@ fn pending_interactions() -> &'static AMutex<HashMap<String, PendingInteraction>
     PENDING_INTERACTIONS.get_or_init(|| AMutex::new(HashMap::new()))
 }
 
+pub use refact_integrations::mcp::mcp_naming::server_name_from_config_path;
+
 fn now_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64
-}
-
-pub fn server_name_from_config_path(config_path: &str) -> String {
-    let stem = std::path::Path::new(config_path)
-        .file_stem()
-        .map(|s| s.to_string_lossy().to_string())
-        .unwrap_or_else(|| config_path.to_string());
-    for prefix in ["mcp_http_", "mcp_sse_", "mcp_stdio_", "mcp_"] {
-        if let Some(rest) = stem.strip_prefix(prefix) {
-            if !rest.is_empty() {
-                return rest.to_string();
-            }
-        }
-    }
-    stem
 }
 
 pub async fn create_mcp_interaction(
@@ -159,20 +146,6 @@ pub async fn wait_for_mcp_interaction_response(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_server_name_from_config_path() {
-        assert_eq!(
-            server_name_from_config_path("/x/integrations.d/mcp_http_github.yaml"),
-            "github"
-        );
-        assert_eq!(
-            server_name_from_config_path("/x/integrations.d/mcp_linear.yaml"),
-            "linear"
-        );
-        assert_eq!(server_name_from_config_path("/x/mcp_.yaml"), "mcp_");
-        assert_eq!(server_name_from_config_path("plain.yaml"), "plain");
-    }
 
     #[tokio::test]
     async fn test_interaction_respond_roundtrip() {

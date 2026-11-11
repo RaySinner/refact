@@ -12,6 +12,21 @@ pub fn config_prefix_for_transport(transport: &str) -> &'static str {
     }
 }
 
+pub fn server_name_from_config_path(config_path: &str) -> String {
+    let stem = std::path::Path::new(config_path)
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| config_path.to_string());
+    for prefix in ["mcp_http_", "mcp_sse_", "mcp_stdio_", "mcp_"] {
+        if let Some(rest) = stem.strip_prefix(prefix) {
+            if !rest.is_empty() {
+                return rest.to_string();
+            }
+        }
+    }
+    stem
+}
+
 pub fn detect_transport(config_name: &str) -> String {
     for (transport, prefix) in MCP_TRANSPORT_PREFIXES {
         if config_name.starts_with(prefix) {
@@ -324,6 +339,46 @@ fn sanitize_suggested_name(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_server_name_from_config_path() {
+        assert_eq!(
+            server_name_from_config_path("/x/integrations.d/mcp_http_github.yaml"),
+            "github"
+        );
+        assert_eq!(
+            server_name_from_config_path("/x/integrations.d/mcp_linear.yaml"),
+            "linear"
+        );
+        assert_eq!(server_name_from_config_path("/x/mcp_.yaml"), "mcp_");
+        assert_eq!(server_name_from_config_path("plain.yaml"), "plain");
+    }
+
+    #[test]
+    fn test_server_name_from_config_path_prefix_and_edge_cases() {
+        assert_eq!(
+            server_name_from_config_path("/x/integrations.d/mcp_stdio_postgres.yaml"),
+            "postgres"
+        );
+        assert_eq!(
+            server_name_from_config_path("/x/integrations.d/mcp_sse_remote.yaml"),
+            "remote"
+        );
+        assert_eq!(
+            server_name_from_config_path("/x/integrations.d/mcp_http_prod.api.yaml"),
+            "prod.api"
+        );
+        assert_eq!(
+            server_name_from_config_path("/x/integrations.d/mcp_not_a_prefix.yaml"),
+            "not_a_prefix"
+        );
+        assert_eq!(server_name_from_config_path("mcp_stdio_win"), "win");
+        assert_eq!(server_name_from_config_path("no_extension"), "no_extension");
+        assert_eq!(server_name_from_config_path("C:\\x\\mcp_stdio_win.yaml"), "win");
+        assert_eq!(server_name_from_config_path("/x/mcp_sse_.yaml"), "sse_");
+        assert_eq!(server_name_from_config_path("/x/mcp_stdio_.yaml"), "stdio_");
+        assert_eq!(server_name_from_config_path("/x/mcp_http_.yaml"), "http_");
+    }
 
     #[test]
     fn test_validate_config_filename_rejects_traversal() {

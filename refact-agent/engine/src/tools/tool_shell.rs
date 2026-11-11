@@ -119,7 +119,7 @@ impl Tool for ToolShell {
             &chat.tool_catalog_generations,
         )
         .await;
-        let privacy_scope = crate::privacy::records::PrivacyRecordScope::from_gcx(&gcx);
+        let privacy_scope = crate::privacy::records::privacy_record_scope(&gcx);
         let current_model = ccx.lock().await.current_model.clone();
         let destination = crate::privacy::records::provider_destination(&current_model);
         let observe_reason =

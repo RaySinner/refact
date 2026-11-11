@@ -109,6 +109,27 @@ fn registered_worktree_path_mappings_uncached(
     mappings
 }
 
+pub fn registered_alias_paths(
+    path: &Path,
+    mappings: &[RegisteredWorktreePathMapping],
+) -> Vec<PathBuf> {
+    let path = canonicalize_normalized_path(path.to_path_buf());
+    let mut aliases = vec![path.clone()];
+    for mapping in mappings {
+        if let Ok(suffix) = path.strip_prefix(&mapping.root) {
+            aliases.push(canonicalize_normalized_path(
+                mapping.source_root.join(suffix),
+            ));
+        }
+        if let Ok(suffix) = path.strip_prefix(&mapping.source_root) {
+            aliases.push(canonicalize_normalized_path(mapping.root.join(suffix)));
+        }
+    }
+    aliases.sort();
+    aliases.dedup();
+    aliases
+}
+
 pub fn map_registered_worktree_path(
     path: &Path,
     mappings: &[RegisteredWorktreePathMapping],

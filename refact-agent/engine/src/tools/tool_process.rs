@@ -194,7 +194,7 @@ impl Tool for ToolProcessStart {
             &chat.tool_catalog_generations,
         )
         .await;
-        let privacy_scope = crate::privacy::records::PrivacyRecordScope::from_gcx(&gcx);
+        let privacy_scope = crate::privacy::records::privacy_record_scope(&gcx);
         let destination = crate::privacy::records::provider_destination(&current_model);
         let observe_reason =
             crate::privacy::records::shell_observation_reason_for_session_with_policy(
@@ -550,7 +550,7 @@ impl Tool for ToolProcessRead {
             &chat.tool_catalog_generations,
         )
         .await;
-        let privacy_scope = crate::privacy::records::PrivacyRecordScope::from_gcx(&gcx);
+        let privacy_scope = crate::privacy::records::privacy_record_scope(&gcx);
         let destination = crate::privacy::records::provider_destination(&current_model);
         let process_id = parse_process_id(args)?;
         let snapshot = authorize_process_access(
@@ -771,7 +771,7 @@ impl Tool for ToolProcessWait {
             &chat.tool_catalog_generations,
         )
         .await;
-        let privacy_scope = crate::privacy::records::PrivacyRecordScope::from_gcx(&gcx);
+        let privacy_scope = crate::privacy::records::privacy_record_scope(&gcx);
         let destination = crate::privacy::records::provider_destination(&current_model);
         let process_id = parse_process_id(args)?;
         authorize_process_access(

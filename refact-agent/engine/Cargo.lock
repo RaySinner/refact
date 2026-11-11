@@ -4626,6 +4626,8 @@ dependencies = [
  "glob",
  "refact-core",
  "refact-exec",
+ "refact-files",
+ "refact-worktrees",
  "serde",
  "serde_json",
  "serde_yaml",

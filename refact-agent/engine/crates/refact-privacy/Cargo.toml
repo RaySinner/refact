@@ -10,6 +10,8 @@ test-util = []
 [dependencies]
 refact-core = { path = "../refact-core" }
 refact-exec = { path = "../refact-exec" }
+refact-files = { path = "../refact-files" }
+refact-worktrees = { path = "../refact-worktrees" }
 dunce = "1.0.5"
 glob = "0.3.1"
 serde = { version = "1", features = ["derive"] }

@@ -322,7 +322,7 @@ pub async fn reconstruct_context(
             )
             .await?;
             let record = crate::privacy::records::declared_file_record(
-                &crate::privacy::records::PrivacyRecordScope::from_gcx(&gcx),
+                &crate::privacy::records::privacy_record_scope(&gcx),
                 &canonical,
             )?;
             let mut audit = ChatMessage::default();

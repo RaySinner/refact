@@ -43,7 +43,7 @@ pub async fn postprocess_tool_results(
         truncation_exempt_tool_call_ids,
     )
     .await;
-    let privacy_scope = crate::privacy::records::PrivacyRecordScope::from_gcx(&gcx);
+    let privacy_scope = crate::privacy::records::privacy_record_scope(&gcx);
     let outcome = match crate::privacy::records::attach_declared_output_files(
         &privacy_scope,
         &mut messages,

@@ -17,7 +17,9 @@ use chrono::Utc;
 use refact_codegraph::QueuedPath;
 
 use refact_buddy_core::user_action::UserAction;
-use crate::files_correction::{canonical_path, resolve_codegraph_queue_path, CommandSimplifiedDirExt};
+use crate::files_correction::{
+    canonical_path, registered_alias_paths, resolve_codegraph_queue_path, CommandSimplifiedDirExt,
+};
 use crate::global_context::GlobalContextCtx;
 use crate::git::operations::git_ls_files;
 use crate::global_context::{get_app_searchable_id, GlobalContext};
@@ -412,29 +414,6 @@ pub(crate) async fn get_file_text_from_memory_or_disk_for_model_context_impl(
         None,
     )
     .await
-}
-
-pub(crate) fn registered_alias_paths(
-    path: &Path,
-    mappings: &[crate::files_correction::RegisteredWorktreePathMapping],
-) -> Vec<PathBuf> {
-    let path = crate::files_correction::canonicalize_normalized_path(path.to_path_buf());
-    let mut aliases = vec![path.clone()];
-    for mapping in mappings {
-        if let Ok(suffix) = path.strip_prefix(&mapping.root) {
-            aliases.push(crate::files_correction::canonicalize_normalized_path(
-                mapping.source_root.join(suffix),
-            ));
-        }
-        if let Ok(suffix) = path.strip_prefix(&mapping.source_root) {
-            aliases.push(crate::files_correction::canonicalize_normalized_path(
-                mapping.root.join(suffix),
-            ));
-        }
-    }
-    aliases.sort();
-    aliases.dedup();
-    aliases
 }
 
 pub fn strictest_zone_for_path(

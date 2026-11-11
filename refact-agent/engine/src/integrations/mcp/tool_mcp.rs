@@ -624,7 +624,7 @@ fn attach_mcp_observation_status(
     observed_reads_before: &std::collections::HashSet<std::path::PathBuf>,
     message: &mut ChatMessage,
 ) {
-    let privacy_scope = crate::privacy::records::PrivacyRecordScope::from_gcx(gcx);
+    let privacy_scope = crate::privacy::records::privacy_record_scope(gcx);
     crate::privacy::record_observation_status(&gcx.privacy_observation_runtime, &status);
     match status {
         refact_exec::ObservationStatus::Observed(access)

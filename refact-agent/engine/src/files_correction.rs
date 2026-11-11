@@ -57,7 +57,8 @@ pub(crate) async fn paths_from_anywhere_impl(global_context: Arc<GlobalContext>)
 pub use refact_worktrees::path_mappings::{
     dedupe_paths, map_registered_worktree_path, normalize_path_for_unscoped_paths,
     normalize_path_for_unscoped_root_selection, project_dirs_for_unscoped_paths,
-    registered_worktree_path_mappings, RegisteredWorktreePathMapping, WorktreePathMappings,
+    registered_alias_paths, registered_worktree_path_mappings, RegisteredWorktreePathMapping,
+    WorktreePathMappings,
 };
 
 pub use refact_runtime_api::files_correction::resolve_codegraph_queue_path;

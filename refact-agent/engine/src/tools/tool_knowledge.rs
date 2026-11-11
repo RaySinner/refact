@@ -220,7 +220,7 @@ impl Tool for ToolGetKnowledge {
                         .iter()
                         .filter_map(|memory| memory.file_path.clone()),
                 )?;
-                crate::privacy::records::merge_records(&mut message, records);
+                refact_privacy::merge_records(&mut message, records);
                 references.attach(&mut message);
                 message
             })],

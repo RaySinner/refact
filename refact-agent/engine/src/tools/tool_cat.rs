@@ -303,7 +303,7 @@ impl Tool for ToolCat {
             &gcx,
             filenames_present.iter().map(PathBuf::from),
         )?;
-        crate::privacy::records::merge_records(&mut tool_message, records);
+        refact_privacy::merge_records(&mut tool_message, records);
         references.attach(&mut tool_message);
         results.push(ContextEnum::ChatMessage(tool_message));
 

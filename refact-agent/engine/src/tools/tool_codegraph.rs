@@ -258,7 +258,7 @@ fn tool_message_with_records(
     let mut messages = tool_message(tool_call_id, text);
     let records = crate::privacy::records::declared_file_records(gcx, paths)?;
     if let Some(ContextEnum::ChatMessage(message)) = messages.first_mut() {
-        crate::privacy::records::merge_records(message, records);
+        refact_privacy::merge_records(message, records);
     }
     Ok(messages)
 }

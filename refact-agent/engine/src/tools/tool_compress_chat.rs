@@ -1252,7 +1252,7 @@ mod tests {
     #[test]
     fn summarization_records_survive_ctx_apply_tool_truncation() {
         let mut tool = tool_message("old_call", &"tool output ".repeat(100));
-        crate::privacy::records::attach_record(&mut tool, secrets_record());
+        refact_privacy::attach_record(&mut tool, secrets_record());
         let messages = vec![
             user_message("old user"),
             assistant_tool_call_message("old_call", "shell"),

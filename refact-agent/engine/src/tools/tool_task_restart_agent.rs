@@ -42,7 +42,7 @@ fn context_file_message(
         tool_call_id: "initial_files".to_string(),
         ..Default::default()
     };
-    crate::privacy::records::merge_records(&mut message, records);
+    refact_privacy::merge_records(&mut message, records);
     Ok(message)
 }
 

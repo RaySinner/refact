@@ -740,66 +740,9 @@ pub fn resolve_shell_ask(message: &mut ChatMessage, accepted: bool) -> bool {
     true
 }
 
-pub fn attach_record(message: &mut ChatMessage, record: FileRecord) {
-    merge_records(message, std::iter::once(record));
-}
-
-pub(crate) fn record_is_persistable(record: &FileRecord) -> bool {
-    record.zone != "normal" || matches!(record.attribution, Attribution::Declared)
-}
-
-pub fn merge_records(message: &mut ChatMessage, records: impl IntoIterator<Item = FileRecord>) {
-    let mut privacy = message
-        .extra
-        .remove("privacy")
-        .and_then(|value| serde_json::from_value::<PrivacyRecord>(value).ok())
-        .unwrap_or_default();
-    let mut seen = privacy.files.iter().cloned().collect::<HashSet<_>>();
-    for record in records {
-        if !record_is_persistable(&record) {
-            continue;
-        }
-        if seen.insert(record.clone()) {
-            privacy.files.push(record);
-        }
-    }
-    if !privacy.files.is_empty() {
-        message.extra.insert(
-            "privacy".to_string(),
-            serde_json::to_value(privacy).expect("privacy records should serialize"),
-        );
-    }
-}
-
-pub fn records_to_carry(
-    sources: &[ChatMessage],
-) -> Result<Vec<FileRecord>, refact_privacy::PrivacyAuditError> {
-    refact_privacy::records_from_messages(sources).map(|indexed| {
-        let mut seen = HashSet::with_capacity(indexed.len());
-        indexed
-            .into_iter()
-            .filter_map(|(_, record)| {
-                (record_is_persistable(&record) && seen.insert(record.clone())).then_some(record)
-            })
-            .collect()
-    })
-}
-
-pub fn merge_message_records(
-    message: &mut ChatMessage,
-    sources: &[ChatMessage],
-) -> Result<(), refact_privacy::PrivacyAuditError> {
-    let records = records_to_carry(sources)?;
-    merge_records(message, records);
-    Ok(())
-}
-
-pub fn carry_records_into(
-    message: &mut ChatMessage,
-    sources: &[ChatMessage],
-) -> Result<(), refact_privacy::PrivacyAuditError> {
-    merge_message_records(message, sources)
-}
+pub use refact_privacy::message_records::{
+    attach_record, carry_records_into, merge_message_records, merge_records, records_to_carry,
+};
 
 fn file_record(
     scope: &PrivacyRecordScope,

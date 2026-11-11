@@ -11,7 +11,7 @@ pub struct CompressedTrajectory {
 }
 
 fn source_records(messages: &[ChatMessage]) -> Result<Vec<refact_privacy::FileRecord>, String> {
-    crate::privacy::records::records_to_carry(messages).map_err(|error| error.to_string())
+    refact_privacy::records_to_carry(messages).map_err(|error| error.to_string())
 }
 
 pub async fn compress_trajectory(

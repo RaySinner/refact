@@ -584,7 +584,7 @@ impl Tool for ToolRegexSearch {
         };
         refact_runtime_api::privacy::load_privacy_if_needed(gcx.clone()).await;
         let records = crate::privacy::records::declared_file_records(&gcx, scanned_paths)?;
-        crate::privacy::records::merge_records(&mut tool_message, records);
+        refact_privacy::merge_records(&mut tool_message, records);
         references.attach(&mut tool_message);
         results.push(ContextEnum::ChatMessage(tool_message));
 

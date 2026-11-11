@@ -866,7 +866,7 @@ mod tests {
             source_paths: Vec::new(),
         };
         let mut message = ChatMessage::new("user".to_string(), "use the secret".to_string());
-        crate::privacy::records::attach_record(
+        refact_privacy::attach_record(
             &mut message,
             FileRecord {
                 path: secret.to_string_lossy().into_owned(),

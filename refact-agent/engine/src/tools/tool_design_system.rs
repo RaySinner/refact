@@ -201,7 +201,7 @@ impl Tool for ToolDesignSystem {
         })];
         let records = crate::privacy::records::declared_file_records(&gcx, record_paths)?;
         if let Some(ContextEnum::ChatMessage(message)) = messages.first_mut() {
-            crate::privacy::records::merge_records(message, records);
+            refact_privacy::merge_records(message, records);
         }
         Ok((false, messages))
     }

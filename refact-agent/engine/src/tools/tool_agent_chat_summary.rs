@@ -407,7 +407,7 @@ async fn run_summary_subchat(
     };
 
     let mut messages = vec![ChatMessage::new("user".to_string(), prompt)];
-    crate::privacy::records::carry_records_into(&mut messages[0], source_messages)
+    refact_privacy::carry_records_into(&mut messages[0], source_messages)
         .map_err(|error| error.to_string())?;
     let result = tokio::time::timeout(
         Duration::from_secs(SUMMARY_TIMEOUT_SECS),

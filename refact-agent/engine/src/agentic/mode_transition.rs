@@ -243,7 +243,7 @@ async fn analyze_reconstruction(
         cap /= 2;
     };
     let mut analysis = ChatMessage::new("user".into(), prompt);
-    crate::privacy::records::carry_records_into(&mut analysis, request.messages)
+    refact_privacy::carry_records_into(&mut analysis, request.messages)
         .map_err(|e| e.to_string())?;
     crate::privacy::destinations::clear_for_model(
         &gcx.privacy_policy_load,
@@ -326,7 +326,7 @@ pub async fn reconstruct_context(
                 &canonical,
             )?;
             let mut audit = ChatMessage::default();
-            crate::privacy::records::attach_record(&mut audit, record.clone());
+            refact_privacy::attach_record(&mut audit, record.clone());
             crate::privacy::destinations::clear_for_model(
                 &gcx.privacy_policy_load,
                 MessageAudit(std::slice::from_ref(&audit)),
@@ -373,9 +373,9 @@ pub async fn reconstruct_context(
         if message.message_id.is_empty() {
             message.message_id = uuid::Uuid::new_v4().to_string();
         }
-        crate::privacy::records::carry_records_into(message, request.messages)
+        refact_privacy::carry_records_into(message, request.messages)
             .map_err(|e| e.to_string())?;
-        crate::privacy::records::merge_records(message, reread_records.clone());
+        refact_privacy::merge_records(message, reread_records.clone());
     }
     check_cancelled(&request)?;
     Ok(ReconstructionOutcome {
@@ -448,7 +448,7 @@ mod tests {
     #[test]
     fn reconstruction_audit_keeps_source_records() {
         let mut source = ChatMessage::new("user".into(), "source".into());
-        crate::privacy::records::attach_record(
+        refact_privacy::attach_record(
             &mut source,
             refact_privacy::FileRecord {
                 path: "secret.rs".into(),
@@ -457,7 +457,7 @@ mod tests {
             },
         );
         let mut narrative = ChatMessage::new("user".into(), "summary".into());
-        crate::privacy::records::carry_records_into(&mut narrative, &[source]).unwrap();
+        refact_privacy::carry_records_into(&mut narrative, &[source]).unwrap();
         let records = refact_privacy::records_from_messages(&[narrative]).unwrap();
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].1.zone, "private");

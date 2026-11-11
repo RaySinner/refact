@@ -635,7 +635,7 @@ fn attach_mcp_observation_status(
                 .into_iter()
                 .filter(|path| !observed_reads_before.contains(path));
             match crate::privacy::records::observed_file_records(&privacy_scope, paths) {
-                Ok(records) => crate::privacy::records::merge_records(message, records),
+                Ok(records) => refact_privacy::merge_records(message, records),
                 Err(reason) => attach_observation_unavailable(message, reason),
             }
         }

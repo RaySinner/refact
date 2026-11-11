@@ -705,7 +705,7 @@ fn apply_subchat_report_policy(
         return Ok(());
     }
 
-    crate::privacy::records::merge_records(
+    refact_privacy::merge_records(
         &mut messages[report_index],
         records.into_iter().map(|(_, record)| record),
     );

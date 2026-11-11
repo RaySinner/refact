@@ -1,6 +1,7 @@
 pub mod destination;
 pub mod derived;
 pub mod gate;
+pub mod message_records;
 pub mod heuristic;
 pub mod legacy;
 pub mod matching;
@@ -18,6 +19,9 @@ pub use matching::{compile_patterns, CompiledPolicy, PolicyError};
 pub use policy::{
     load_policy, merge_project, migrate_legacy, parse_policy_yaml, LegacyPrivacyPolicy, PolicyLoad,
     PrivacyPolicy, ProviderToolAccess, ShellBehavior, SubagentPolicy, ToolAccess, Zone,
+};
+pub use message_records::{
+    attach_record, carry_records_into, merge_message_records, merge_records, records_to_carry,
 };
 pub use record::{Attribution, FileRecord, PrivacyRecord};
 pub use runtime_state::{

@@ -261,7 +261,7 @@ impl Tool for ToolGlob {
             &gcx,
             outcome.matches.iter().map(PathBuf::from),
         )?;
-        crate::privacy::records::merge_records(&mut tool_message, records);
+        refact_privacy::merge_records(&mut tool_message, records);
         let results = vec![ContextEnum::ChatMessage(tool_message)];
 
         Ok((false, results))

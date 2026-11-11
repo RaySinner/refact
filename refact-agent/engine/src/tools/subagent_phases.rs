@@ -268,7 +268,7 @@ pub fn build_gather_seed_messages(external_messages: &[ChatMessage]) -> Vec<Chat
             content: ChatContent::SimpleText(item.text.clone()),
             ..Default::default()
         };
-        crate::privacy::records::carry_records_into(
+        refact_privacy::carry_records_into(
             &mut message,
             std::slice::from_ref(&external_messages[item.idx]),
         )
@@ -675,7 +675,7 @@ mod tests {
             zone: "secrets".to_string(),
             attribution: refact_privacy::Attribution::Declared,
         };
-        crate::privacy::records::merge_records(&mut source, [record.clone()]);
+        refact_privacy::merge_records(&mut source, [record.clone()]);
 
         let seed = build_gather_seed_messages(&[source]);
         let privacy: refact_privacy::PrivacyRecord =

@@ -13,7 +13,7 @@ use crate::tools::tools_description::{
 };
 use refact_runtime_api::memories::memories_add_enriched;
 use refact_knowledge_graph::memory_types::EnrichmentParams;
-use crate::http::routers::v1::sidebar::NotificationEvent;
+use refact_chat_api::notification_event::NotificationEvent;
 
 fn spawn_memory_enrichment_task(
     ccx: Arc<AMutex<AtCommandsContext>>,

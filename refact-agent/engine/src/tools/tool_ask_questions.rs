@@ -9,7 +9,7 @@ use tokio::sync::Mutex as AMutex;
 use refact_runtime_api::AtCommandsContext;
 use refact_core::chat_types::{ChatMessage, ChatContent, ContextEnum};
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
-use crate::http::routers::v1::sidebar::{NotificationEvent, NotificationQuestion};
+use refact_chat_api::notification_event::{NotificationEvent, NotificationQuestion};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct QuestionItem {

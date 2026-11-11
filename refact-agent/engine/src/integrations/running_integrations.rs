@@ -1,9 +1,13 @@
 use std::sync::Arc;
 use indexmap::IndexMap;
 
+use async_trait::async_trait;
+
 use crate::custom_error::YamlError;
 use crate::global_context::GlobalContext;
 use crate::integrations::integr_abstract::IntegrationTrait;
+
+use refact_integrations::running::{IntegrationRecordInput, IntegrationSetupSink};
 
 /// Loads and set up integrations from config files.
 ///
@@ -50,45 +54,58 @@ pub async fn load_integrations(
         false,
     );
 
-    let mut integrations_map = IndexMap::new();
-    for rec in records {
-        if !is_inside_container && !rec.on_your_laptop {
-            continue;
-        }
-        if is_inside_container && !rec.when_isolated {
-            continue;
-        }
-        if !rec.integr_config_exists {
-            continue;
-        }
-        let mut integr = match crate::integrations::integration_from_name(&rec.integr_name) {
+    let record_inputs: Vec<IntegrationRecordInput> = records
+        .into_iter()
+        .map(|rec| IntegrationRecordInput {
+            integr_name: rec.integr_name,
+            integr_config_path: rec.integr_config_path,
+            integr_config_exists: rec.integr_config_exists,
+            on_your_laptop: rec.on_your_laptop,
+            when_isolated: rec.when_isolated,
+            config_unparsed: rec.config_unparsed,
+        })
+        .collect();
+
+    let mut sink = IntegrationMapSink {
+        gcx: gcx.clone(),
+        integrations_map: IndexMap::new(),
+    };
+    let load_errors = refact_integrations::running::load_integrations(
+        record_inputs,
+        is_inside_container,
+        &mut sink,
+    )
+    .await;
+    error_log.extend(load_errors);
+
+    (sink.integrations_map, error_log)
+}
+
+struct IntegrationMapSink {
+    gcx: Arc<GlobalContext>,
+    integrations_map: IndexMap<String, Box<dyn IntegrationTrait + Send + Sync>>,
+}
+
+#[async_trait]
+impl IntegrationSetupSink for IntegrationMapSink {
+    async fn setup_integration(
+        &mut self,
+        integr_name: &str,
+        integr_config_path: String,
+        config_unparsed: &serde_json::Value,
+    ) -> Result<(), serde_json::Error> {
+        let mut integr = match crate::integrations::integration_from_name(integr_name) {
             Ok(x) => x,
             Err(e) => {
-                tracing::error!("don't have integration {}: {}", rec.integr_name, e);
-                continue;
+                tracing::error!("don't have integration {}: {}", integr_name, e);
+                return Ok(());
             }
         };
-        let should_be_fine = integr
-            .integr_settings_apply(
-                gcx.clone(),
-                rec.integr_config_path.clone(),
-                &rec.config_unparsed,
-            )
-            .await;
-        if let Err(err) = should_be_fine {
-            let error_line = err.line();
-            error_log.push(YamlError {
-                path: rec.integr_config_path.clone(),
-                error_line,
-                error_msg: format!("failed to apply settings: {}", err),
-            });
-        }
-        integrations_map.insert(rec.integr_name.clone(), integr);
+        integr
+            .integr_settings_apply(self.gcx.clone(), integr_config_path.clone(), config_unparsed)
+            .await?;
+        self.integrations_map
+            .insert(integr_name.to_string(), integr);
+        Ok(())
     }
-
-    for e in error_log.iter() {
-        tracing::error!("{e}");
-    }
-
-    (integrations_map, error_log)
 }

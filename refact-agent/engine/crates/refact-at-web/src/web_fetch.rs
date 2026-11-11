@@ -1,0 +1,342 @@
+use std::collections::HashMap;
+use std::time::Duration;
+
+use tracing::{info, warn};
+
+use reqwest::Client;
+use select::predicate::{Attr, Name};
+use html2text::render::text_renderer::{TaggedLine, TextDecorator};
+use serde_json::Value;
+use refact_chat_api::sanitize_http_url;
+
+const JINA_READER_BASE_URL: &str = "https://r.jina.ai/";
+const JINA_TIMEOUT_SECS: u64 = 60;
+const FALLBACK_TIMEOUT_SECS: u64 = 10;
+
+#[derive(Clone, Debug)]
+pub struct WebFetchResult {
+    pub text: String,
+    pub requested_url: String,
+    pub final_url: String,
+    pub status: u16,
+    pub content_type: Option<String>,
+    pub source: &'static str,
+}
+
+pub async fn execute_at_web(
+    url: &str,
+    options: Option<&HashMap<String, Value>>,
+) -> Result<String, String> {
+    Ok(execute_at_web_result(url, options).await?.text)
+}
+
+pub async fn execute_at_web_result(
+    url: &str,
+    options: Option<&HashMap<String, Value>>,
+) -> Result<WebFetchResult, String> {
+    match fetch_with_jina_reader(url, options).await {
+        Ok(result) => {
+            info!("successfully fetched {} via Jina Reader", url);
+            Ok(result)
+        }
+        Err(jina_err) => {
+            warn!(
+                "Jina Reader failed for {}: {}, falling back to simple fetch",
+                url, jina_err
+            );
+            match fetch_simple(url).await {
+                Ok(result) => {
+                    info!("successfully fetched {} via simple fetch (fallback)", url);
+                    Ok(result)
+                }
+                Err(simple_err) => {
+                    Err(format!("Both Jina Reader and simple fetch failed.\nJina error: {}\nSimple fetch error: {}", jina_err, simple_err))
+                }
+            }
+        }
+    }
+}
+
+async fn fetch_with_jina_reader(
+    url: &str,
+    options: Option<&HashMap<String, Value>>,
+) -> Result<WebFetchResult, String> {
+    // Public web reads carry no provider credentials and need ordinary site redirects.
+    let client = Client::builder()
+        .redirect(reqwest::redirect::Policy::limited(10))
+        .timeout(Duration::from_secs(JINA_TIMEOUT_SECS))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let jina_url = format!("{}{}", JINA_READER_BASE_URL, url);
+    let mut request = client
+        .get(&jina_url)
+        .header("User-Agent", "RefactAgent/1.0");
+
+    let mut is_streaming = false;
+
+    if let Some(opts) = options {
+        if let Some(Value::String(v)) = opts.get("respond_with") {
+            request = request.header("x-respond-with", v.as_str());
+        }
+        if let Some(Value::String(v)) = opts.get("target_selector") {
+            request = request.header("x-target-selector", v.as_str());
+        }
+        if let Some(Value::String(v)) = opts.get("wait_for_selector") {
+            request = request.header("x-wait-for-selector", v.as_str());
+        }
+        if let Some(Value::Number(n)) = opts.get("timeout") {
+            if let Some(t) = n.as_u64() {
+                request = request.header("x-timeout", t.to_string());
+            }
+        }
+        if let Some(Value::Bool(true)) = opts.get("no_cache") {
+            request = request.header("x-no-cache", "true");
+        }
+        if let Some(Value::Number(n)) = opts.get("cache_tolerance") {
+            if let Some(t) = n.as_u64() {
+                request = request.header("x-cache-tolerance", t.to_string());
+            }
+        }
+        if let Some(Value::Bool(true)) = opts.get("with_generated_alt") {
+            request = request.header("x-with-generated-alt", "true");
+        }
+        if let Some(Value::Bool(true)) = opts.get("streaming") {
+            request = request.header("Accept", "text/event-stream");
+            is_streaming = true;
+        }
+        if let Some(Value::String(v)) = opts.get("set_cookie") {
+            request = request.header("x-set-cookie", v.as_str());
+        }
+        if let Some(Value::String(v)) = opts.get("proxy_url") {
+            request = request.header("x-proxy-url", v.as_str());
+        }
+    }
+
+    let response = request.send().await.map_err(|e| e.to_string())?;
+    let status = response.status().as_u16();
+    let final_url = response
+        .url()
+        .as_str()
+        .strip_prefix(JINA_READER_BASE_URL)
+        .unwrap_or(url)
+        .to_string();
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .map(ToString::to_string);
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "Jina Reader returned status: {}",
+            response.status()
+        ));
+    }
+
+    let text = if is_streaming {
+        parse_streaming_response(response).await?
+    } else {
+        response.text().await.map_err(|e| e.to_string())?
+    };
+
+    if text.trim().is_empty() {
+        return Err("Jina Reader returned empty content".to_string());
+    }
+
+    Ok(WebFetchResult {
+        text,
+        requested_url: sanitize_http_url(url).unwrap_or_default(),
+        final_url: sanitize_http_url(&final_url).unwrap_or_default(),
+        status,
+        content_type,
+        source: "jina_reader",
+    })
+}
+
+async fn parse_streaming_response(response: reqwest::Response) -> Result<String, String> {
+    let text = response.text().await.map_err(|e| e.to_string())?;
+    let mut last_content = String::new();
+
+    for line in text.lines() {
+        if let Some(data) = line.strip_prefix("data: ") {
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
+                if let Some(content) = json.get("content").and_then(|c| c.as_str()) {
+                    last_content = content.to_string();
+                }
+            } else if !data.trim().is_empty() {
+                last_content = data.to_string();
+            }
+        }
+    }
+
+    if last_content.is_empty() {
+        Ok(text)
+    } else {
+        Ok(last_content)
+    }
+}
+
+#[derive(Clone, Copy)]
+struct CustomTextConversion;
+
+impl TextDecorator for CustomTextConversion {
+    type Annotation = ();
+
+    fn decorate_link_start(&mut self, _url: &str) -> (String, Self::Annotation) {
+        ("[".to_string(), ())
+    }
+
+    fn decorate_link_end(&mut self) -> String {
+        "]".to_string()
+    }
+
+    fn decorate_em_start(&self) -> (String, Self::Annotation) {
+        ("*".to_string(), ())
+    }
+
+    fn decorate_em_end(&self) -> String {
+        "*".to_string()
+    }
+
+    fn decorate_strong_start(&self) -> (String, Self::Annotation) {
+        ("**".to_string(), ())
+    }
+
+    fn decorate_strong_end(&self) -> String {
+        "**".to_string()
+    }
+
+    fn decorate_strikeout_start(&self) -> (String, Self::Annotation) {
+        ("".to_string(), ())
+    }
+
+    fn decorate_strikeout_end(&self) -> String {
+        "".to_string()
+    }
+
+    fn decorate_code_start(&self) -> (String, Self::Annotation) {
+        ("`".to_string(), ())
+    }
+
+    fn decorate_code_end(&self) -> String {
+        "`".to_string()
+    }
+
+    fn decorate_preformat_first(&self) -> Self::Annotation {}
+    fn decorate_preformat_cont(&self) -> Self::Annotation {}
+
+    fn decorate_image(&mut self, _src: &str, title: &str) -> (String, Self::Annotation) {
+        (format!("[{}]", title), ())
+    }
+
+    fn header_prefix(&self, level: usize) -> String {
+        "#".repeat(level) + " "
+    }
+
+    fn quote_prefix(&self) -> String {
+        "> ".to_string()
+    }
+
+    fn unordered_item_prefix(&self) -> String {
+        "* ".to_string()
+    }
+
+    fn ordered_item_prefix(&self, i: i64) -> String {
+        format!("{}. ", i)
+    }
+
+    fn make_subblock_decorator(&self) -> Self {
+        *self
+    }
+
+    fn finalise(&mut self, lines: Vec<String>) -> Vec<TaggedLine<()>> {
+        lines
+            .into_iter()
+            .map(|line| TaggedLine::from_string(line, &()))
+            .collect()
+    }
+}
+
+fn find_content(html: String) -> String {
+    let document = select::document::Document::from(html.as_str());
+    let content_ids = vec![
+        "content",
+        "I_content",
+        "main-content",
+        "main_content",
+        "CONTENT",
+    ];
+    for id in content_ids {
+        if let Some(node) = document.find(Attr("id", id)).next() {
+            return node.html();
+        }
+    }
+    if let Some(node) = document.find(Name("article")).next() {
+        return node.html();
+    }
+    if let Some(node) = document.find(Name("main")).next() {
+        return node.html();
+    }
+    html
+}
+
+async fn fetch_html(url: &str, timeout: Duration) -> Result<WebFetchResult, String> {
+    // Public web reads carry no provider credentials and need ordinary site redirects.
+    let client = Client::builder()
+        .redirect(reqwest::redirect::Policy::limited(10))
+        .timeout(timeout)
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let response = client
+        .get(url)
+        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+        .header(
+            "Accept",
+            "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        )
+        .header("Accept-Language", "en-US,en;q=0.5")
+        .header("Connection", "keep-alive")
+        .header("Upgrade-Insecure-Requests", "1")
+        .header("Cache-Control", "max-age=0")
+        .header("DNT", "1")
+        .header("Referer", "https://www.google.com/")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let status = response.status().as_u16();
+    let final_url = response.url().to_string();
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .map(ToString::to_string);
+    if !response.status().is_success() {
+        return Err(format!(
+            "unable to fetch url: {}; status: {}",
+            url,
+            response.status()
+        ));
+    }
+    let text = response.text().await.map_err(|e| e.to_string())?;
+    Ok(WebFetchResult {
+        text,
+        requested_url: sanitize_http_url(url).unwrap_or_default(),
+        final_url: sanitize_http_url(&final_url).unwrap_or_default(),
+        status,
+        content_type,
+        source: "simple_fetch",
+    })
+}
+
+async fn fetch_simple(url: &str) -> Result<WebFetchResult, String> {
+    let mut result = fetch_html(url, Duration::from_secs(FALLBACK_TIMEOUT_SECS)).await?;
+    let html = find_content(result.text);
+
+    result.text = html2text::config::with_decorator(CustomTextConversion)
+        .string_from_read(&html.as_bytes()[..], 200)
+        .map_err(|_| "Unable to convert html to text".to_string())?;
+    Ok(result)
+}

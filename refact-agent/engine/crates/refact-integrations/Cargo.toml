@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 refact-core = { path = "../refact-core" }
 refact-tool-api = { path = "../refact-tool-api" }
+async-trait = "0.1.73"
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true

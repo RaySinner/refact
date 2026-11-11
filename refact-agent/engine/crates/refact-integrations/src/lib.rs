@@ -5,6 +5,7 @@ pub mod browser_types;
 pub mod integr_abstract;
 pub mod mcp;
 pub mod process_io_utils;
+pub mod running;
 pub mod sessions;
 pub mod utils;
 pub mod yaml_schema;

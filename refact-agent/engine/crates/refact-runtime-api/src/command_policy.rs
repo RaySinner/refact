@@ -9,6 +9,7 @@ use refact_exec::types::{ExecSandboxMode, ExecSandboxSpec};
 use refact_exec::{ExecAuditMeta, ExecEnvPolicy, ExecMode, ExecSpawnRequest};
 use serde_json::json;
 
+use crate::global_context::GlobalContextCtx;
 use crate::{ChatCtx, TerminalSecurityMode};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -314,6 +315,28 @@ fn escalation_audit(escalation: &ExecEscalation, source: ExecSource) -> SandboxA
             escalation.justification
         ),
     }
+}
+
+pub async fn build_exec_request_for_gcx(
+    gcx: crate::global_context::SharedGlobalContext,
+    input: CommandPolicyInput<'_>,
+) -> Result<ExecRequestPolicy, ExecPolicyError> {
+    build_exec_request_for_ctx(&gcx.chat_ctx(gcx.clone()), input).await
+}
+
+pub async fn queue_sandbox_audit_for_gcx(
+    gcx: crate::global_context::SharedGlobalContext,
+    chat_id: &str,
+    audit: SandboxAuditRecord,
+) {
+    queue_sandbox_audit_for_sessions(&gcx.chat_sessions, chat_id, audit).await;
+}
+
+pub async fn chat_mode_for_exec_for_gcx(
+    gcx: crate::global_context::SharedGlobalContext,
+    chat_id: &str,
+) -> Option<ChatMode> {
+    chat_mode_for_exec_for_sessions(&gcx.chat_sessions, chat_id).await
 }
 
 pub async fn queue_sandbox_audit_for_sessions(

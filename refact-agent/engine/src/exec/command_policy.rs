@@ -1,34 +1,12 @@
-use std::sync::Arc;
-
-use crate::global_context::{GlobalContext, GlobalContextCtx};
-
 pub use refact_exec::command_policy::{
     escalation_from_args, ChatMode, CommandKind, CommandPolicyInput, ExecEscalation,
     ExecEscalationMode, ExecSource,
 };
 pub use refact_runtime_api::command_policy::{
-    build_exec_request_for_ctx, chat_mode_for_exec_for_sessions, queue_sandbox_audit_for_sessions,
-    ExecPolicyError, ExecRequestPolicy, SandboxAuditRecord,
+    build_exec_request_for_ctx, build_exec_request_for_gcx as build_exec_request,
+    chat_mode_for_exec_for_sessions, queue_sandbox_audit_for_sessions, ExecPolicyError,
+    ExecRequestPolicy, SandboxAuditRecord,
 };
-
-pub async fn build_exec_request(
-    gcx: Arc<GlobalContext>,
-    input: CommandPolicyInput<'_>,
-) -> Result<ExecRequestPolicy, ExecPolicyError> {
-    build_exec_request_for_ctx(&gcx.chat_ctx(gcx.clone()), input).await
-}
-
-pub async fn queue_sandbox_audit(
-    gcx: Arc<GlobalContext>,
-    chat_id: &str,
-    audit: SandboxAuditRecord,
-) {
-    queue_sandbox_audit_for_sessions(&gcx.chat_sessions, chat_id, audit).await;
-}
-
-pub async fn chat_mode_for_exec(gcx: Arc<GlobalContext>, chat_id: &str) -> Option<ChatMode> {
-    chat_mode_for_exec_for_sessions(&gcx.chat_sessions, chat_id).await
-}
 
 #[cfg(test)]
 mod tests {
@@ -36,6 +14,7 @@ mod tests {
     use crate::exec::ExecEnvPolicy;
     use std::collections::HashMap;
     use std::path::PathBuf;
+    use std::sync::Arc;
 
     #[tokio::test]
     async fn policy_sets_scrubbed_environment_and_each_audit_source() {

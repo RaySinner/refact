@@ -4,23 +4,11 @@ use crate::chat::SessionsMap;
 use crate::global_context::GlobalContext;
 
 pub use refact_tasks::events::{TaskEvent, TaskEventEnvelope};
-pub use refact_tasks::events_emit::emit_task_event_via;
+pub use refact_tasks::events_emit::{emit_task_event_for_services, emit_task_event_via};
 use refact_tasks::types::TaskMeta;
 
 pub async fn emit_task_event(gcx: Arc<GlobalContext>, event: TaskEvent) {
     emit_task_event_via(&gcx.task_events_tx, &gcx.task_events_seq, event).await;
-}
-
-pub async fn emit_task_event_for_services(
-    chat: &crate::app_state::ChatServices,
-    event: TaskEvent,
-) {
-    emit_task_event_via(
-        &Some(chat.task_events_tx.clone()),
-        &Some(chat.task_events_seq.clone()),
-        event,
-    )
-    .await;
 }
 
 async fn enrich_task_meta_with_session_state(sessions: &SessionsMap, meta: &mut TaskMeta) {

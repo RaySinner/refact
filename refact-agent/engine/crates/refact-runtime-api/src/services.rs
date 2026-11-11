@@ -92,6 +92,16 @@ pub struct ChatServices {
     pub notification_events_tx: tokio::sync::broadcast::Sender<NotificationEvent>,
 }
 
+impl refact_tasks::events_emit::TaskEventSink for ChatServices {
+    fn task_events_tx(&self) -> &tokio::sync::broadcast::Sender<TaskEventEnvelope> {
+        &self.task_events_tx
+    }
+
+    fn task_events_seq(&self) -> &Arc<AtomicU64> {
+        &self.task_events_seq
+    }
+}
+
 #[derive(Clone)]
 pub struct BuddyServices {
     pub buddy: Arc<AMutex<Option<BuddyService>>>,

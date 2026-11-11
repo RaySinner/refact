@@ -3,6 +3,11 @@ use std::sync::Arc;
 
 use crate::events::{TaskEvent, TaskEventEnvelope};
 
+pub trait TaskEventSink {
+    fn task_events_tx(&self) -> &tokio::sync::broadcast::Sender<TaskEventEnvelope>;
+    fn task_events_seq(&self) -> &Arc<std::sync::atomic::AtomicU64>;
+}
+
 pub async fn emit_task_event_via(
     task_events_tx: &Option<tokio::sync::broadcast::Sender<TaskEventEnvelope>>,
     task_events_seq: &Option<Arc<std::sync::atomic::AtomicU64>>,
@@ -13,6 +18,15 @@ pub async fn emit_task_event_via(
         let envelope = TaskEventEnvelope { seq, event };
         let _ = tx.send(envelope);
     }
+}
+
+pub async fn emit_task_event_for_services<S: TaskEventSink>(sink: &S, event: TaskEvent) {
+    emit_task_event_via(
+        &Some(sink.task_events_tx().clone()),
+        &Some(sink.task_events_seq().clone()),
+        event,
+    )
+    .await;
 }
 
 #[cfg(test)]

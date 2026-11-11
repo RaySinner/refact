@@ -365,3 +365,4 @@ pub mod scheduler;
 pub mod customization_registry;
 pub mod memories;
 pub mod session_handles;
+pub mod integration_variables;

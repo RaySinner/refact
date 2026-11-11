@@ -214,7 +214,7 @@ impl Tool for ToolProcessStart {
             parse_start_args(&tool, &chat, gcx.clone(), args, execution_scope.as_ref()).await?;
         let mut error_log = Vec::new();
         let env_variables =
-            crate::integrations::setting_up_integrations::get_vars_for_replacements(
+            refact_runtime_api::integration_variables::get_vars_for_replacements(
                 gcx.clone(),
                 &mut error_log,
             )

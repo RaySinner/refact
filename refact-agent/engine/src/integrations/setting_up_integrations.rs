@@ -338,70 +338,7 @@ pub async fn get_vars_for_replacements(
     gcx: Arc<GlobalContext>,
     error_log: &mut Vec<YamlError>,
 ) -> HashMap<String, String> {
-    let (config_dir, variables_yaml, secrets_yaml) = {
-        (
-            gcx.config_dir.clone(),
-            gcx.cmdline.variables_yaml.clone(),
-            gcx.cmdline.secrets_yaml.clone(),
-        )
-    };
-    let variables_yaml_path = if variables_yaml.is_empty() {
-        config_dir.join("variables.yaml")
-    } else {
-        crate::files_correction::canonical_path(&variables_yaml)
-    };
-    let secrets_yaml_path = if secrets_yaml.is_empty() {
-        config_dir.join("secrets.yaml")
-    } else {
-        crate::files_correction::canonical_path(&secrets_yaml)
-    };
-    let mut variables = HashMap::new();
-
-    // Helper function to read and parse a YAML file
-    async fn read_and_parse_yaml(
-        path: &PathBuf,
-        error_log: &mut Vec<YamlError>,
-    ) -> Result<HashMap<String, String>, ()> {
-        if !path.exists() {
-            return Ok(HashMap::new());
-        }
-
-        match fs::read_to_string(path) {
-            Ok(content) => match serde_yaml::from_str::<HashMap<String, String>>(&content) {
-                Ok(parsed_yaml) => Ok(parsed_yaml),
-                Err(e) => {
-                    tracing::warn!("Failed to parse {}: {}", path.display(), e);
-                    error_log.push(YamlError {
-                        path: path.to_string_lossy().to_string(),
-                        error_line: e.location().map(|loc| loc.line()).unwrap_or(0),
-                        error_msg: format!("Failed to parse {}: {}", path.display(), e),
-                    });
-                    Err(())
-                }
-            },
-            Err(e) => {
-                tracing::info!("Failed to read {}: {}", path.display(), e);
-                error_log.push(YamlError {
-                    path: path.to_string_lossy().to_string(),
-                    error_line: 0,
-                    error_msg: format!("Failed to read {}: {}", path.display(), e),
-                });
-                Err(())
-            }
-        }
-    }
-
-    // Read and parse secrets.yaml
-    if let Ok(secrets_yaml) = read_and_parse_yaml(&secrets_yaml_path, error_log).await {
-        variables.extend(secrets_yaml);
-    }
-
-    // Read and parse variables.yaml
-    if let Ok(variables_yaml) = read_and_parse_yaml(&variables_yaml_path, error_log).await {
-        variables.extend(variables_yaml);
-    }
-
-    variables
+    refact_runtime_api::integration_variables::get_vars_for_replacements(gcx, error_log).await
 }
 
 pub fn join_config_path(config_dir: &PathBuf, integr_name: &str) -> String {

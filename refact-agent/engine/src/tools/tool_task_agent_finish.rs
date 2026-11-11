@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use tokio::sync::Mutex as AMutex;
 
 use refact_runtime_api::AtCommandsContext;
-use crate::global_context::GlobalContextCtx;
+use refact_runtime_api::GlobalContextCtx;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use refact_chat_api::verifier::ExpectedCardState;
 use refact_runtime_api::verifier::schedule_card_verifier_after_finish_for_ctx;

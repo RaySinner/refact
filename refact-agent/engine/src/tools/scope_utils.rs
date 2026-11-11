@@ -7,7 +7,7 @@ pub use refact_scope_utils::{
 };
 
 use refact_core::chat_types::ContextFile;
-use crate::global_context::GlobalContextCtx;
+use refact_runtime_api::GlobalContextCtx;
 use refact_files::path_utils::canonical_path;
 use refact_files::workspace::{ls_files, ls_files_limited, LsFilesLimited};
 use crate::tools::ctx::ToolCtx;

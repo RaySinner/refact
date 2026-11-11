@@ -6,7 +6,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::Mutex as AMutex;
 
 use refact_core::chat_types::{ChatContent, ChatMessage};
-use crate::global_context::GlobalContextCtx;
+use refact_runtime_api::GlobalContextCtx;
 use refact_chat_api::TaskMeta;
 use crate::global_context::GlobalContext;
 use refact_chat_api::{ExplicitSubchatSpec, TraceParent};

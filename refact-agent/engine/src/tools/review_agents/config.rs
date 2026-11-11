@@ -4,7 +4,7 @@ use std::sync::Arc;
 use serde::Deserialize;
 
 use refact_chat_api::SubchatParameters;
-use crate::global_context::GlobalContextCtx;
+use refact_runtime_api::GlobalContextCtx;
 use crate::caps::resolve_chat_model;
 use crate::global_context::{try_load_caps_quickly_if_not_present, GlobalContext};
 use crate::llm::params::CacheControl;

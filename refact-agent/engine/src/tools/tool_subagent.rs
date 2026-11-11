@@ -10,7 +10,7 @@ use crate::agents::spawn::{
 
     NotifyParent, SpawnGoal, SpawnRequest, SpawnWorktreeMode, spawn_background_agent,
 };
-use crate::global_context::GlobalContextCtx;
+use refact_runtime_api::GlobalContextCtx;
 use crate::agents::types::BgAgentKind;
 use refact_runtime_api::{AtCommandsContext, MAX_SUBCHAT_DEPTH};
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};

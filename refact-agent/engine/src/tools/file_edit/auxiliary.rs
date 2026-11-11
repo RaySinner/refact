@@ -1,5 +1,5 @@
 use refact_runtime_api::AtCommandsContext;
-use crate::global_context::GlobalContextCtx;
+use refact_runtime_api::GlobalContextCtx;
 use refact_runtime_api::at_command_executor::{
     file_repair_candidates, return_one_candidate_or_a_good_error,
 };

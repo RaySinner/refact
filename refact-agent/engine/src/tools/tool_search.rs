@@ -10,7 +10,7 @@ use itertools::Itertools;
 use tokio::sync::Mutex as AMutex;
 
 use refact_runtime_api::{vec_context_file_to_context_tools, AtCommandsContext};
-use crate::global_context::GlobalContextCtx;
+use refact_runtime_api::GlobalContextCtx;
 use refact_runtime_api::at_command_executor::execute_at_search;
 use refact_runtime_api::files_in_workspace::{
     get_file_text_from_memory_or_disk_for_model_context,

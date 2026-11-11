@@ -11,7 +11,7 @@ use serde_json::Value;
 use tokio::sync::Mutex as AMutex;
 
 use refact_runtime_api::AtCommandsContext;
-use crate::global_context::GlobalContextCtx;
+use refact_runtime_api::GlobalContextCtx;
 use crate::tools::scope_utils::{
     format_scope_notices, remap_context_file_for_execution_scope_for_model_context,
 };

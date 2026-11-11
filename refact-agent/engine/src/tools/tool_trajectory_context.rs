@@ -6,7 +6,7 @@ use tokio::sync::Mutex as AMutex;
 use tokio::fs;
 
 use refact_runtime_api::AtCommandsContext;
-use crate::global_context::GlobalContextCtx;
+use refact_runtime_api::GlobalContextCtx;
 use refact_core::chat_types::{ChatMessage, ChatContent, ContextEnum};
 use crate::tools::tools_description::{
     Tool, ToolDesc, ToolSource, ToolSourceType, json_schema_from_params,

@@ -5,7 +5,7 @@ use std::time::Duration;
 use serde::Deserialize;
 
 use refact_core::chat_types::ChatMessage;
-use crate::global_context::GlobalContextCtx;
+use refact_runtime_api::GlobalContextCtx;
 use crate::global_context::{try_load_caps_quickly_if_not_present, GlobalContext};
 use refact_core::json_utils::extract_json_object;
 use refact_chat_api::{SubchatConfig, ToolsPolicy, TraceParent};

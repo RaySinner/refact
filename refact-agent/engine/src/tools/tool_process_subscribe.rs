@@ -12,7 +12,7 @@ use tokio::task::JoinHandle;
 use refact_core::chat_types::{PendingDelivery, PushMode};
 
 use refact_runtime_api::AtCommandsContext;
-use crate::global_context::GlobalContextCtx;
+use refact_runtime_api::GlobalContextCtx;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use refact_chat_api::internal_roles::{event, EventSubkind};
 use refact_exec::types::normalize_workspace_path;

@@ -76,7 +76,7 @@ impl Tool for ToolBuddyOpenView {
             })
             .unwrap_or_default();
 
-        let buddy_arc = crate::app_state::buddy_services_from_handle(&ccx.lock().await.tool.buddy)
+        let buddy_arc = refact_runtime_api::buddy_runtime::buddy_services_from_handle(&ccx.lock().await.tool.buddy)
             .buddy
             .clone();
         let lock = buddy_arc.lock().await;

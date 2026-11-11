@@ -171,7 +171,7 @@ impl Tool for ToolBuddyGetContext {
                 }
                 "setup_status" => {
                     let content = read_setup_status(
-                        &crate::app_state::buddy_services_from_handle(&tool.buddy),
+                        &refact_runtime_api::buddy_runtime::buddy_services_from_handle(&tool.buddy),
                         &project_root,
                     )
                     .await;

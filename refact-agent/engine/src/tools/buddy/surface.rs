@@ -145,7 +145,7 @@ impl Tool for ToolBuddyLogActivity {
         let icon = cap(optional_str(args, "icon").as_deref().unwrap_or("✨"), 16);
         let (app, context_chat_id) = context(ccx).await;
         let buddy_services =
-            crate::app_state::buddy_services_from_handle(&app.tool.buddy);
+            refact_runtime_api::buddy_runtime::buddy_services_from_handle(&app.tool.buddy);
         if !buddy_initialized(&buddy_services).await {
             return ok_message(
                 tool_call_id,
@@ -206,7 +206,7 @@ impl Tool for ToolBuddySpeak {
         let intent = required_str(args, "intent")?.to_string();
         validate(&intent, VALID_INTENTS, "intent")?;
         let (app, _) = context(ccx).await;
-        let buddy_arc = crate::app_state::buddy_services_from_handle(&app.tool.buddy)
+        let buddy_arc = refact_runtime_api::buddy_runtime::buddy_services_from_handle(&app.tool.buddy)
             .buddy
             .clone();
         let mut lock = buddy_arc.lock().await;
@@ -268,7 +268,7 @@ impl Tool for ToolBuddyRuntimeEvent {
             .filter(|s| !s.is_empty());
         let (app, _) = context(ccx).await;
         let buddy_services =
-            crate::app_state::buddy_services_from_handle(&app.tool.buddy);
+            refact_runtime_api::buddy_runtime::buddy_services_from_handle(&app.tool.buddy);
         if !buddy_initialized(&buddy_services).await {
             return ok_message(
                 tool_call_id,

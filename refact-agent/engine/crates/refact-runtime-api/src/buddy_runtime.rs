@@ -247,7 +247,6 @@ mod tests {
             }
         }
         assert!(saw_state_updated);
-        assert!(saw_state_updated);
     }
 
     #[tokio::test]

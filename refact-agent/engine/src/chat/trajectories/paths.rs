@@ -2,7 +2,6 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex as StdMutex, OnceLock};
 use std::sync::atomic::Ordering;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use axum::http::StatusCode;
 use futures::FutureExt;
 use serde::de::{Deserializer as _, IgnoredAny, MapAccess, Visitor};
 use tokio::fs;
@@ -14,7 +13,6 @@ use crate::call_validation::ChatMessage;
 use crate::chat::ctx::ChatCtx;
 use crate::chat::trajectory_index;
 use crate::chat::types::TrajectorySourceIdentity;
-use crate::custom_error::ScratchError;
 use crate::files_correction::get_unscoped_project_dirs_for_ctx;
 
 use super::load::{
@@ -1204,21 +1202,4 @@ pub(super) fn trajectory_metadata_disk_reads_for_chat(chat_id: &str) -> usize {
 }
 
 
-pub fn validate_trajectory_id(id: &str) -> Result<(), ScratchError> {
-    if id.is_empty() || id.len() > 128 {
-        return Err(ScratchError::new(
-            StatusCode::BAD_REQUEST,
-            "Invalid trajectory id".to_string(),
-        ));
-    }
-    if !id
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-    {
-        return Err(ScratchError::new(
-            StatusCode::BAD_REQUEST,
-            "Invalid trajectory id".to_string(),
-        ));
-    }
-    Ok(())
-}
+pub use refact_chat_history::trajectory_paths::validate_trajectory_id;

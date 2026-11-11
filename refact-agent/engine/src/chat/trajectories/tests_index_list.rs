@@ -1,7 +1,6 @@
 use super::*;
 use crate::global_context::GlobalContextCtx;
 use super::test_support::*;
-    use crate::chat::diagnostics::{is_ui_only_message, make_ui_only_error_message};
     use crate::chat::perf_diagnostics::{self, MemoryPerfSink, PerfClock, PerfRecorder};
     use crate::chat::types::{
         ActiveCommandContext, ChatEvent, CompressionPhase, CompressionReason, EventEnvelope,
@@ -820,11 +819,3 @@ use super::test_support::*;
         assert_eq!(ids, vec!["top-chat", "backfill-chat"]);
         assert!(!has_more);
     }
-
-    #[test]
-    fn test_validate_trajectory_id_rejects_path_traversal() {
-        assert!(validate_trajectory_id("../etc/passwd").is_err());
-        assert!(validate_trajectory_id("..").is_err());
-        assert!(validate_trajectory_id("a/../b").is_err());
-    }
-

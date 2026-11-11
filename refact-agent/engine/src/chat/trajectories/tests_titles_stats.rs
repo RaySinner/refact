@@ -1,7 +1,6 @@
 use super::*;
 use crate::global_context::GlobalContextCtx;
 use super::test_support::*;
-    use crate::chat::diagnostics::{is_ui_only_message, make_ui_only_error_message};
     use crate::chat::perf_diagnostics::{self, MemoryPerfSink, PerfClock, PerfRecorder};
     use crate::chat::types::{
         ActiveCommandContext, ChatEvent, CompressionPhase, CompressionReason, EventEnvelope,
@@ -407,53 +406,6 @@ use super::test_support::*;
 
         assert!(ids.contains("valid-chat"));
         assert!(!ids.contains("other-chat"));
-    }
-
-    #[test]
-    fn test_validate_trajectory_id_rejects_forward_slash() {
-        assert!(validate_trajectory_id("a/b").is_err());
-        assert!(validate_trajectory_id("/absolute").is_err());
-    }
-
-    #[test]
-    fn test_validate_trajectory_id_rejects_backslash() {
-        assert!(validate_trajectory_id("a\\b").is_err());
-        assert!(validate_trajectory_id("\\windows\\path").is_err());
-    }
-
-    #[test]
-    fn test_validate_trajectory_id_rejects_null_byte() {
-        assert!(validate_trajectory_id("test\0id").is_err());
-    }
-
-    #[test]
-    fn test_validate_trajectory_id_accepts_valid() {
-        assert!(validate_trajectory_id("abc-123").is_ok());
-        assert!(validate_trajectory_id("chat_456").is_ok());
-        assert!(validate_trajectory_id("550e8400-e29b-41d4-a716-446655440000").is_ok());
-        assert!(validate_trajectory_id("planner-task-1").is_ok());
-        assert!(validate_trajectory_id("A1b2C3").is_ok());
-    }
-
-    #[test]
-    fn test_validate_trajectory_id_rejects_empty() {
-        assert!(validate_trajectory_id("").is_err());
-    }
-
-    #[test]
-    fn test_validate_trajectory_id_rejects_too_long() {
-        let long_id = "a".repeat(129);
-        assert!(validate_trajectory_id(&long_id).is_err());
-        let max_id = "a".repeat(128);
-        assert!(validate_trajectory_id(&max_id).is_ok());
-    }
-
-    #[test]
-    fn test_validate_trajectory_id_rejects_invalid_chars() {
-        assert!(validate_trajectory_id("has space").is_err());
-        assert!(validate_trajectory_id("has.dot").is_err());
-        assert!(validate_trajectory_id("has@symbol").is_err());
-        assert!(validate_trajectory_id("has#hash").is_err());
     }
 
     #[test]
@@ -953,4 +905,3 @@ use super::test_support::*;
     async fn external_remove_clears_checking_compression_state_and_snapshot() {
         assert_external_remove_clears_active_compression(CompressionPhase::Checking).await;
     }
-

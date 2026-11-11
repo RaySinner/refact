@@ -1,7 +1,6 @@
 use super::*;
 use crate::global_context::GlobalContextCtx;
 use super::test_support::*;
-    use crate::chat::diagnostics::{is_ui_only_message, make_ui_only_error_message};
     use crate::chat::perf_diagnostics::{self, MemoryPerfSink, PerfClock, PerfRecorder};
     use crate::chat::types::{
         ActiveCommandContext, ChatEvent, CompressionPhase, CompressionReason, EventEnvelope,
@@ -310,17 +309,6 @@ use super::test_support::*;
         assert!(snapshot_none.active_skill.is_none());
     }
 
-    #[test]
-    fn trajectory_snapshot_from_session_captures_wake_up_at() {
-        let wake_up_at = chrono::Utc::now() + chrono::Duration::minutes(5);
-        let mut session = ChatSession::new("wake-snapshot".to_string());
-        session.wake_up_at = Some(wake_up_at);
-
-        let snapshot = trajectory_snapshot_from_session(&session);
-
-        assert_eq!(snapshot.wake_up_at, Some(wake_up_at));
-    }
-
     #[tokio::test]
     async fn reopen_preserves_pinned_plan() {
         let dir = tempfile::tempdir().unwrap();
@@ -473,30 +461,6 @@ use super::test_support::*;
             .await
             .unwrap();
         assert_eq!(loaded.wake_up_at, Some(wake_up_at));
-    }
-
-    #[test]
-    fn trajectory_snapshot_from_session_preserves_goal_projection() {
-        let mut session = ChatSession::new("goal-snapshot".to_string());
-        session.install_goal("agent", "ship the goal", true, GoalBudget::default());
-        session.goal.as_mut().unwrap().progress = GoalProgress {
-            turns_used: 2,
-            tokens_used: 345,
-            started_at_ms: 123,
-            no_progress_turns: 1,
-            last_nudge_at_ms: 456,
-            cost_used_cents: 0,
-        };
-        session.refresh_goal_runtime_mirror();
-
-        let snapshot = trajectory_snapshot_from_session(&session);
-        let goal = snapshot.goal.expect("goal snapshot");
-
-        assert_eq!(goal.content, "ship the goal");
-        assert_eq!(goal.status, GoalStatus::Active);
-        assert_eq!(goal.progress.turns_used, 2);
-        assert_eq!(goal.progress.tokens_used, 345);
-        assert_eq!(goal.progress.no_progress_turns, 1);
     }
 
     #[test]
@@ -828,99 +792,6 @@ use super::test_support::*;
     }
 
     #[test]
-    fn trajectory_worktree_snapshot_from_session_captures_thread_worktree() {
-        let worktree = trajectory_worktree_sample();
-        let mut session = ChatSession::new("wt-snapshot".to_string());
-        session.thread.worktree = Some(worktree.clone());
-        let snapshot = trajectory_snapshot_from_session(&session);
-        assert_eq!(snapshot.worktree, Some(worktree));
-    }
-
-    #[test]
-    fn trajectory_snapshot_from_session_filters_empty_assistant_messages() {
-        let mut session = ChatSession::new("empty-assistant-snapshot".to_string());
-        session.messages.push(ChatMessage {
-            role: "user".to_string(),
-            content: ChatContent::SimpleText("hello".to_string()),
-            ..Default::default()
-        });
-        session.messages.push(ChatMessage {
-            role: "assistant".to_string(),
-            content: ChatContent::SimpleText("   \n".to_string()),
-            ..Default::default()
-        });
-        session.messages.push(ChatMessage {
-            role: "error".to_string(),
-            content: ChatContent::SimpleText("LLM error".to_string()),
-            ..Default::default()
-        });
-
-        let snapshot = trajectory_snapshot_from_session(&session);
-
-        assert_eq!(snapshot.messages.len(), 2);
-        assert_eq!(snapshot.messages[0].role, "user");
-        assert_eq!(snapshot.messages[1].role, "error");
-    }
-
-    #[test]
-    fn trajectory_snapshot_from_session_preserves_ui_only_messages() {
-        let mut session = ChatSession::new("ui-only-snapshot".to_string());
-        session
-            .messages
-            .push(ChatMessage::new("user".to_string(), "visible".to_string()));
-        session
-            .messages
-            .push(make_ui_only_error_message("context_length_exceeded"));
-
-        let snapshot = trajectory_snapshot_from_session(&session);
-
-        assert_eq!(snapshot.messages.len(), 2);
-        assert_eq!(snapshot.messages[0].role, "user");
-        assert_eq!(snapshot.messages[1].role, "error");
-        assert!(is_ui_only_message(&snapshot.messages[1]));
-    }
-
-    #[test]
-    fn trajectory_snapshot_from_session_filters_metadata_only_assistant_messages() {
-        use crate::call_validation::ChatUsage;
-
-        let mut session = ChatSession::new("metadata-only-assistant-snapshot".to_string());
-        session.messages.push(ChatMessage {
-            role: "user".to_string(),
-            content: ChatContent::SimpleText("hello".to_string()),
-            ..Default::default()
-        });
-        session.messages.push(ChatMessage {
-            role: "assistant".to_string(),
-            usage: Some(ChatUsage {
-                prompt_tokens: 10,
-                completion_tokens: 0,
-                total_tokens: 10,
-                cache_creation_tokens: None,
-                cache_read_tokens: None,
-                metering_usd: None,
-            }),
-            extra: serde_json::Map::from_iter([(
-                "openai_response_id".to_string(),
-                json!("resp_123"),
-            )]),
-            ..Default::default()
-        });
-        session.messages.push(ChatMessage {
-            role: "assistant".to_string(),
-            content: ChatContent::SimpleText("visible".to_string()),
-            ..Default::default()
-        });
-
-        let snapshot = trajectory_snapshot_from_session(&session);
-
-        assert_eq!(snapshot.messages.len(), 2);
-        assert_eq!(snapshot.messages[0].role, "user");
-        assert_eq!(snapshot.messages[1].role, "assistant");
-        assert_eq!(snapshot.messages[1].content.content_text_only(), "visible");
-    }
-
-    #[test]
     fn trajectory_worktree_meta_creation_omits_unvalidated_worktree() {
         let worktree = trajectory_worktree_sample();
         let mut extra = serde_json::Map::new();
@@ -1206,4 +1077,3 @@ use super::test_support::*;
             Some(claude_code_identity)
         );
     }
-

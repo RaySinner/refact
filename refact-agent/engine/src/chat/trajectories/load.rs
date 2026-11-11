@@ -598,21 +598,7 @@ pub(super) fn trajectory_candidate_has_minimum_schema(
     false
 }
 
-pub(crate) fn trajectory_path_stem_matches_id(path: &Path, id: &str) -> bool {
-    let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) else {
-        return false;
-    };
-    if stem == id {
-        return true;
-    }
-    warn!(
-        "Ignoring trajectory {} in list: filename id mismatch, expected {}, found {}",
-        path.display(),
-        stem,
-        id
-    );
-    false
-}
+pub(crate) use refact_chat_history::trajectory_paths::trajectory_path_stem_matches_id;
 
 pub(crate) async fn load_trajectory_candidate(
     ctx: &ChatCtx,

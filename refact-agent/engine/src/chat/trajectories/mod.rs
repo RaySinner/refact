@@ -100,7 +100,12 @@ use watcher::*;
 use writer::*;
 
 pub use refact_chat_history::trajectory_event::TrajectoryEvent;
-pub use refact_chat_history::trajectory_snapshot::TrajectorySnapshot;
+pub use refact_chat_history::trajectory_paths::{
+    trajectory_path_stem_matches_id, validate_trajectory_id,
+};
+pub use refact_chat_history::trajectory_snapshot::{
+    trajectory_snapshot_from_session, TrajectorySnapshot,
+};
 
 // Re-exports from writer
 pub use writer::{
@@ -128,8 +133,7 @@ pub use model::{
     LoadedTrajectory, TrajectoryData, TrajectoryMeta, TrajectoryRepairPatch,
 };
 pub(crate) use model::{
-    trajectory_list_data_is_displayable_chat, trajectory_snapshot_from_session,
-    TrajectoryListCandidate, TrajectoryListData,
+    trajectory_list_data_is_displayable_chat, TrajectoryListCandidate, TrajectoryListData,
 };
 
 // Re-exports from paths
@@ -137,8 +141,8 @@ pub use paths::{
     chat_folder_name, find_trajectory_or_buddy_path, find_trajectory_path,
     find_trajectory_path_for_active_chat, get_all_trajectories_dirs, get_buddy_conversations_dir,
     get_global_trajectories_dir, get_trajectories_dir, global_trajectories_dir_path,
-    internal_trace_link_type, is_internal_trace_link_type, validate_trajectory_id,
-    TrajectoryVectorizationQueue, INTERNAL_TRACE_LINK_PREFIX, UNATTRIBUTED_TRACES_DIR,
+    internal_trace_link_type, is_internal_trace_link_type, TrajectoryVectorizationQueue,
+    INTERNAL_TRACE_LINK_PREFIX, UNATTRIBUTED_TRACES_DIR,
 };
 pub(crate) use paths::{
     enqueue_trajectory_vectorization, find_normal_trajectory_path, find_trajectory_file,
@@ -165,8 +169,8 @@ pub(crate) use load::{
     load_trajectory_candidate, resolve_task_planner_controller_chat_id,
     resolve_trajectory_data_save_path, safe_new_buddy_trajectory_file,
     safe_new_nested_trajectory_file, safe_new_task_trajectory_file,
-    trajectory_path_stem_matches_id, trajectory_source_path_is_allowed,
-    validate_loaded_worktree_strict, verified_planner_linked_root_chat_id,
+    trajectory_source_path_is_allowed, validate_loaded_worktree_strict,
+    verified_planner_linked_root_chat_id,
 };
 
 // Re-exports from store

@@ -1,7 +1,6 @@
 use super::*;
 use crate::global_context::GlobalContextCtx;
 use super::test_support::*;
-    use crate::chat::diagnostics::{is_ui_only_message, make_ui_only_error_message};
     use crate::chat::perf_diagnostics::{self, MemoryPerfSink, PerfClock, PerfRecorder};
     use crate::chat::types::{
         ActiveCommandContext, ChatEvent, CompressionPhase, CompressionReason, EventEnvelope,
@@ -1872,24 +1871,5 @@ use super::test_support::*;
             session.messages[0].content.content_text_only(),
             "keep after missing update"
         );
-    }
-
-    #[test]
-    fn trajectory_snapshot_from_session_preserves_ui_only_diagnostics() {
-        let mut session = ChatSession::new("ui-only-snapshot".to_string());
-        let diagnostic = make_ui_only_error_message("context_length_exceeded");
-        session
-            .messages
-            .push(ChatMessage::new("user".to_string(), "Hello".to_string()));
-        session.messages.push(diagnostic.clone());
-
-        let snapshot = trajectory_snapshot_from_session(&session);
-
-        assert_eq!(snapshot.messages.len(), 2);
-        assert!(snapshot.messages.iter().any(|message| {
-            message.message_id == diagnostic.message_id
-                && message.role == "error"
-                && is_ui_only_message(message)
-        }));
     }
 

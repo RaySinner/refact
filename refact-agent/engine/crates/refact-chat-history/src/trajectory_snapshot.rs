@@ -1,8 +1,9 @@
 use refact_chat_api::{
-    BuddyThreadMeta, ClaudeCodeIdentity, FrozenRequestPrefix, GoalLedgerEntry, GoalSnapshot,
-    TaskMeta, ThreadParams, WorktreeMeta,
+    has_displayable_assistant_content, BuddyThreadMeta, ChatSession, ClaudeCodeIdentity,
+    FrozenRequestPrefix, GoalLedgerEntry, GoalSnapshot, TaskMeta, ThreadParams, WorktreeMeta,
 };
 use refact_core::chat_types::{ChatMessage, PendingDelivery};
+use refact_perf::perf_diagnostics::{self, PerfComponent, PerfOutcome};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -130,10 +131,48 @@ impl TrajectorySnapshot {
     }
 }
 
+pub fn trajectory_snapshot_from_session(session: &ChatSession) -> TrajectorySnapshot {
+    let span = perf_diagnostics::span(
+        PerfComponent::TrajectorySnapshot,
+        Some(&session.chat_id),
+        None,
+    );
+    let messages = session
+        .messages
+        .iter()
+        .filter(|message| message.role != "assistant" || has_displayable_assistant_content(message))
+        .cloned()
+        .collect();
+
+    let mut snapshot = TrajectorySnapshot::from_thread_parts(
+        session.chat_id.clone(),
+        &session.thread,
+        messages,
+        session.created_at.clone(),
+        session.trajectory_version,
+    );
+    snapshot.wake_up_at = session.wake_up_at;
+    snapshot.waiting_for_card_ids = session.waiting_for_card_ids.clone();
+    snapshot.goal = session.goal.clone();
+    snapshot.goal_ledger = session.goal_ledger.clone();
+    snapshot.goal_verification_blocked_until_ms = session.goal_verification_blocked_until_ms;
+    snapshot.pending_deliveries = session.pending_deliveries_for_snapshot();
+    span.finish(
+        PerfOutcome::Success,
+        None,
+        Some(snapshot.messages.len() as u64),
+        Some(session.trajectory_version),
+        Some(session.command_queue.len() as u64),
+    );
+    snapshot
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use refact_chat_api::diagnostics::{is_ui_only_message, make_ui_only_error_message};
     use refact_chat_api::{GoalBudget, GoalLedgerOp, GoalProgress, GoalStatus};
+    use refact_core::chat_types::ChatContent;
 
     fn goal_snapshot() -> GoalSnapshot {
         GoalSnapshot {
@@ -337,5 +376,169 @@ mod tests {
             decoded.waiting_for_card_ids,
             vec!["T-1".to_string(), "T-2".to_string()]
         );
+    }
+
+    #[test]
+    fn trajectory_snapshot_from_session_captures_wake_up_at() {
+        let wake_up_at = chrono::Utc::now() + chrono::Duration::minutes(5);
+        let mut session = ChatSession::new("wake-snapshot".to_string());
+        session.wake_up_at = Some(wake_up_at);
+
+        let snapshot = trajectory_snapshot_from_session(&session);
+
+        assert_eq!(snapshot.wake_up_at, Some(wake_up_at));
+    }
+
+    #[test]
+    fn trajectory_snapshot_from_session_preserves_goal_projection() {
+        let mut session = ChatSession::new("goal-snapshot".to_string());
+        session.install_goal("agent", "ship the goal", true, GoalBudget::default());
+        session.goal.as_mut().unwrap().progress = GoalProgress {
+            turns_used: 2,
+            tokens_used: 345,
+            started_at_ms: 123,
+            no_progress_turns: 1,
+            last_nudge_at_ms: 456,
+            cost_used_cents: 0,
+        };
+        session.refresh_goal_runtime_mirror();
+
+        let snapshot = trajectory_snapshot_from_session(&session);
+        let goal = snapshot.goal.expect("goal snapshot");
+
+        assert_eq!(goal.content, "ship the goal");
+        assert_eq!(goal.status, GoalStatus::Active);
+        assert_eq!(goal.progress.turns_used, 2);
+        assert_eq!(goal.progress.tokens_used, 345);
+        assert_eq!(goal.progress.no_progress_turns, 1);
+    }
+
+    fn trajectory_worktree_sample() -> WorktreeMeta {
+        WorktreeMeta {
+            id: "wt-1".to_string(),
+            kind: "task_agent".to_string(),
+            root: std::path::PathBuf::from("/tmp/refact-wt"),
+            source_workspace_root: std::path::PathBuf::from("/tmp/refact-src"),
+            repo_root: std::path::PathBuf::from("/tmp/refact-src"),
+            branch: Some("refact/task/card".to_string()),
+            base_branch: Some("main".to_string()),
+            base_commit: Some("abc123".to_string()),
+            task_id: Some("task-1".to_string()),
+            card_id: Some("card-1".to_string()),
+            agent_id: Some("agent-1".to_string()),
+            enforce: true,
+        }
+    }
+
+    #[test]
+    fn trajectory_worktree_snapshot_from_session_captures_thread_worktree() {
+        let worktree = trajectory_worktree_sample();
+        let mut session = ChatSession::new("wt-snapshot".to_string());
+        session.thread.worktree = Some(worktree.clone());
+        let snapshot = trajectory_snapshot_from_session(&session);
+        assert_eq!(snapshot.worktree, Some(worktree));
+    }
+
+    #[test]
+    fn trajectory_snapshot_from_session_filters_empty_assistant_messages() {
+        let mut session = ChatSession::new("empty-assistant-snapshot".to_string());
+        session.messages.push(ChatMessage {
+            role: "user".to_string(),
+            content: ChatContent::SimpleText("hello".to_string()),
+            ..Default::default()
+        });
+        session.messages.push(ChatMessage {
+            role: "assistant".to_string(),
+            content: ChatContent::SimpleText("   \n".to_string()),
+            ..Default::default()
+        });
+        session.messages.push(ChatMessage {
+            role: "error".to_string(),
+            content: ChatContent::SimpleText("LLM error".to_string()),
+            ..Default::default()
+        });
+
+        let snapshot = trajectory_snapshot_from_session(&session);
+
+        assert_eq!(snapshot.messages.len(), 2);
+        assert_eq!(snapshot.messages[0].role, "user");
+        assert_eq!(snapshot.messages[1].role, "error");
+    }
+
+    #[test]
+    fn trajectory_snapshot_from_session_preserves_ui_only_messages() {
+        let mut session = ChatSession::new("ui-only-snapshot".to_string());
+        session
+            .messages
+            .push(ChatMessage::new("user".to_string(), "visible".to_string()));
+        session
+            .messages
+            .push(make_ui_only_error_message("context_length_exceeded"));
+
+        let snapshot = trajectory_snapshot_from_session(&session);
+
+        assert_eq!(snapshot.messages.len(), 2);
+        assert_eq!(snapshot.messages[0].role, "user");
+        assert_eq!(snapshot.messages[1].role, "error");
+        assert!(is_ui_only_message(&snapshot.messages[1]));
+    }
+
+    #[test]
+    fn trajectory_snapshot_from_session_filters_metadata_only_assistant_messages() {
+        use refact_core::chat_types::ChatUsage;
+
+        let mut session = ChatSession::new("metadata-only-assistant-snapshot".to_string());
+        session.messages.push(ChatMessage {
+            role: "user".to_string(),
+            content: ChatContent::SimpleText("hello".to_string()),
+            ..Default::default()
+        });
+        session.messages.push(ChatMessage {
+            role: "assistant".to_string(),
+            usage: Some(ChatUsage {
+                prompt_tokens: 10,
+                completion_tokens: 0,
+                total_tokens: 10,
+                cache_creation_tokens: None,
+                cache_read_tokens: None,
+                metering_usd: None,
+            }),
+            extra: serde_json::Map::from_iter([(
+                "openai_response_id".to_string(),
+                serde_json::json!("resp_123"),
+            )]),
+            ..Default::default()
+        });
+        session.messages.push(ChatMessage {
+            role: "assistant".to_string(),
+            content: ChatContent::SimpleText("visible".to_string()),
+            ..Default::default()
+        });
+
+        let snapshot = trajectory_snapshot_from_session(&session);
+
+        assert_eq!(snapshot.messages.len(), 2);
+        assert_eq!(snapshot.messages[0].role, "user");
+        assert_eq!(snapshot.messages[1].role, "assistant");
+        assert_eq!(snapshot.messages[1].content.content_text_only(), "visible");
+    }
+
+    #[test]
+    fn trajectory_snapshot_from_session_preserves_ui_only_diagnostics() {
+        let mut session = ChatSession::new("ui-only-snapshot".to_string());
+        let diagnostic = make_ui_only_error_message("context_length_exceeded");
+        session
+            .messages
+            .push(ChatMessage::new("user".to_string(), "Hello".to_string()));
+        session.messages.push(diagnostic.clone());
+
+        let snapshot = trajectory_snapshot_from_session(&session);
+
+        assert_eq!(snapshot.messages.len(), 2);
+        assert!(snapshot.messages.iter().any(|message| {
+            message.message_id == diagnostic.message_id
+                && message.role == "error"
+                && is_ui_only_message(message)
+        }));
     }
 }

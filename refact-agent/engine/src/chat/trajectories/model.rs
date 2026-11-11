@@ -1,18 +1,14 @@
 use std::sync::Arc;
 
-use crate::call_validation::ChatMessage;
-use crate::chat::perf_diagnostics::{self, PerfComponent, PerfOutcome};
-use crate::chat::session::has_displayable_assistant_content;
 use crate::chat::types::{
-    ChatSession, SessionState, ThreadParams, TrajectorySourceIdentity,
-    TrajectorySourceIdentitySessionExt,
+    SessionState, ThreadParams, TrajectorySourceIdentity, TrajectorySourceIdentitySessionExt,
 };
 use crate::chat::SessionsMap;
 use crate::global_context::GlobalContext;
 use crate::worktrees::types::WorktreeMeta;
-use refact_chat_history::trajectory_snapshot::TrajectorySnapshot;
 
 pub use refact_chat_history::trajectory_model::*;
+pub(crate) use refact_chat_history::trajectory_snapshot::trajectory_snapshot_from_session;
 
 pub async fn get_session_state_for_chat(
     sessions: &SessionsMap,
@@ -51,42 +47,6 @@ pub(super) async fn get_session_runtime_for_trajectory_source(
         }
         None => (SessionState::Idle.to_string(), None, None),
     }
-}
-
-pub(crate) fn trajectory_snapshot_from_session(session: &ChatSession) -> TrajectorySnapshot {
-    let span = perf_diagnostics::span(
-        PerfComponent::TrajectorySnapshot,
-        Some(&session.chat_id),
-        None,
-    );
-    let messages = session
-        .messages
-        .iter()
-        .filter(|message| message.role != "assistant" || has_displayable_assistant_content(message))
-        .cloned()
-        .collect();
-
-    let mut snapshot = TrajectorySnapshot::from_thread_parts(
-        session.chat_id.clone(),
-        &session.thread,
-        messages,
-        session.created_at.clone(),
-        session.trajectory_version,
-    );
-    snapshot.wake_up_at = session.wake_up_at;
-    snapshot.waiting_for_card_ids = session.waiting_for_card_ids.clone();
-    snapshot.goal = session.goal.clone();
-    snapshot.goal_ledger = session.goal_ledger.clone();
-    snapshot.goal_verification_blocked_until_ms = session.goal_verification_blocked_until_ms;
-    snapshot.pending_deliveries = session.pending_deliveries_for_snapshot();
-    span.finish(
-        PerfOutcome::Success,
-        None,
-        Some(snapshot.messages.len() as u64),
-        Some(session.trajectory_version),
-        Some(session.command_queue.len() as u64),
-    );
-    snapshot
 }
 
 pub async fn apply_mode_defaults_to_thread(

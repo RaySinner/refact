@@ -13,6 +13,7 @@ pub mod trajectory_index;
 pub mod trajectory_metrics;
 pub mod trajectory_model;
 pub mod trajectory_ops;
+pub mod trajectory_paths;
 pub mod trajectory_snapshot;
 
 #[cfg(test)]

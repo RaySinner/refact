@@ -5,6 +5,7 @@ pub mod message_records;
 pub mod heuristic;
 pub mod legacy;
 pub mod matching;
+pub mod observation_reason;
 pub mod policy;
 pub mod record;
 pub mod runtime_state;
@@ -16,6 +17,11 @@ pub use derived::{new_derived_privacy_zones, DerivedPrivacyZones, DerivedZone};
 pub use gate::{clear, records_from_messages, Cleared, PrivacyAuditError, PrivacyAudited, Refusal};
 pub use legacy::{check_file_privacy, check_file_privacy_for_read_preparation};
 pub use matching::{compile_patterns, CompiledPolicy, PolicyError};
+pub use observation_reason::{
+    provider_destination, shell_observation_needed, shell_observation_needed_for_session,
+    shell_observation_reason_for_policy, shell_observation_reason_for_session_with_policy,
+    ObservationReason,
+};
 pub use policy::{
     load_policy, merge_project, migrate_legacy, parse_policy_yaml, LegacyPrivacyPolicy, PolicyLoad,
     PrivacyPolicy, ProviderToolAccess, ShellBehavior, SubagentPolicy, ToolAccess, Zone,

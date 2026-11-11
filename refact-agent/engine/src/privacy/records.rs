@@ -3,10 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
-use refact_privacy::{
-    Attribution, Destination, DestinationId, DestinationKind, FileRecord, PrivacyRecord,
-    ShellBehavior,
-};
+use refact_privacy::{Attribution, Destination, FileRecord, PrivacyRecord, ShellBehavior};
 use refact_exec::ObservationStatus;
 use refact_chat_api::{
     ToolEnrichment, ToolEnrichmentKind, ToolEnrichmentProvenance, ToolEnrichmentReference,
@@ -21,6 +18,12 @@ use crate::global_context::GlobalContext;
 pub const SHELL_WITHHELD_MESSAGE: &str = "Output withheld by user privacy policy — the command ran, but its output read guarded files and cannot be shown.";
 pub const SHELL_APPROVAL_MESSAGE: &str =
     "Output awaiting user approval — this command read guarded files.";
+
+pub use refact_privacy::observation_reason::{
+    provider_destination, shell_observation_needed, shell_observation_needed_for_session,
+    shell_observation_reason_for_policy, shell_observation_reason_for_session_with_policy,
+    ObservationReason,
+};
 
 const INHERITED_ZONE_NOTE: &str = "\nEntries marked inherited carry a session-derived label taken from an earlier guarded read in this chat rather than from a configured rule, and they clear when the session ends or via POST /v1/privacy/derived/clear.";
 
@@ -61,96 +64,6 @@ impl PrivacyRecordScope {
     fn workspace_folders(&self) -> Vec<PathBuf> {
         self.workspace_folders.lock().unwrap().clone()
     }
-}
-
-pub fn provider_destination(model_id: &str) -> Destination {
-    Destination {
-        id: DestinationId(
-            model_id
-                .split_once('/')
-                .map_or(model_id, |(provider, _)| provider)
-                .to_string(),
-        ),
-        kind: DestinationKind::Provider,
-        display_name: model_id.to_string(),
-    }
-}
-
-/// Counts only: never carries paths, patterns or zone names, so it is safe to log.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct ObservationReason {
-    pub blocked_patterns: usize,
-    pub guarded_zones: usize,
-    pub derived_labels: usize,
-}
-
-impl ObservationReason {
-    pub fn needed(&self) -> bool {
-        self.blocked_patterns > 0 || self.guarded_zones > 0 || self.derived_labels > 0
-    }
-}
-
-pub fn shell_observation_reason_for_policy(
-    privacy_policy_load: &Arc<RwLock<super::PolicyLoad>>,
-    destination: &Destination,
-) -> ObservationReason {
-    let policy = privacy_policy_load.read().unwrap().policy.clone();
-    ObservationReason {
-        blocked_patterns: policy.blocked.len(),
-        guarded_zones: policy
-            .zones
-            .iter()
-            .filter(|zone| !destination.matches_send_to(&zone.send_to))
-            .count(),
-        derived_labels: 0,
-    }
-}
-
-pub fn shell_observation_reason_for_session_with_policy(
-    privacy_policy_load: &Arc<RwLock<super::PolicyLoad>>,
-    destination: &Destination,
-    derived_zones: &DerivedPrivacyZones,
-) -> ObservationReason {
-    let mut reason = shell_observation_reason_for_policy(privacy_policy_load, destination);
-    let derived_zone_names = derived_zones
-        .read()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .values()
-        .map(|derived| derived.zone.clone())
-        .collect::<Vec<_>>();
-    let policy = privacy_policy_load.read().unwrap().policy.clone();
-    reason.derived_labels = derived_zone_names
-        .iter()
-        .filter(|name| {
-            *name == "blocked"
-                || policy
-                    .zones
-                    .iter()
-                    .find(|zone| zone.name == **name)
-                    .is_some_and(|zone| !destination.matches_send_to(&zone.send_to))
-        })
-        .count();
-    reason
-}
-
-pub fn shell_observation_needed(
-    privacy_policy_load: &Arc<RwLock<super::PolicyLoad>>,
-    destination: &Destination,
-) -> bool {
-    shell_observation_reason_for_policy(privacy_policy_load, destination).needed()
-}
-
-pub fn shell_observation_needed_for_session(
-    privacy_policy_load: &Arc<RwLock<super::PolicyLoad>>,
-    destination: &Destination,
-    derived_zones: &DerivedPrivacyZones,
-) -> bool {
-    shell_observation_reason_for_session_with_policy(
-        privacy_policy_load,
-        destination,
-        derived_zones,
-    )
-    .needed()
 }
 
 pub(crate) async fn filter_path_enrichment_for_model_context(
@@ -1642,61 +1555,6 @@ mod tests {
             &gcx.privacy_policy_load,
             &provider_destination("untrusted/model")
         ));
-    }
-
-    #[tokio::test]
-    async fn observation_reason_counts_match_the_boolean_decision() {
-        let temp = tempfile::tempdir().unwrap();
-        let secret = temp.path().join("secret.txt");
-        std::fs::write(&secret, "secret").unwrap();
-        let gcx = gcx_with_policy(&secret, &["trusted"], ShellBehavior::Withhold).await;
-        let allowed = provider_destination("trusted/model");
-        let guarded = provider_destination("untrusted/model");
-        let derived_zones = new_derived_privacy_zones();
-
-        let allowed_reason =
-            shell_observation_reason_for_policy(&gcx.privacy_policy_load, &allowed);
-        assert_eq!(allowed_reason.blocked_patterns, 0);
-        assert_eq!(allowed_reason.guarded_zones, 0);
-        assert_eq!(allowed_reason.derived_labels, 0);
-        assert!(!allowed_reason.needed());
-        assert_eq!(
-            allowed_reason.needed(),
-            shell_observation_needed(&gcx.privacy_policy_load, &allowed)
-        );
-
-        let guarded_reason =
-            shell_observation_reason_for_policy(&gcx.privacy_policy_load, &guarded);
-        assert_eq!(guarded_reason.guarded_zones, 1);
-        assert!(guarded_reason.needed());
-        assert_eq!(
-            guarded_reason.needed(),
-            shell_observation_needed(&gcx.privacy_policy_load, &guarded)
-        );
-
-        derived_zones.write().unwrap().insert(
-            temp.path().join("derived.txt"),
-            DerivedZone {
-                zone: "blocked".to_string(),
-                origin: None,
-            },
-        );
-        let session_reason = shell_observation_reason_for_session_with_policy(
-            &gcx.privacy_policy_load,
-            &allowed,
-            &derived_zones,
-        );
-        assert_eq!(session_reason.guarded_zones, 0);
-        assert_eq!(session_reason.derived_labels, 1);
-        assert!(session_reason.needed());
-        assert_eq!(
-            session_reason.needed(),
-            shell_observation_needed_for_session(
-                &gcx.privacy_policy_load,
-                &allowed,
-                &derived_zones
-            )
-        );
     }
 
     #[test]

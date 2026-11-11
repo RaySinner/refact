@@ -1,7 +1,13 @@
+pub mod delivery;
+pub mod host;
+pub mod push;
 pub mod registry;
+pub mod spawn;
 pub mod storage;
+pub mod tool_agent;
 pub mod types;
 
+pub use host::AgentHost;
 pub use registry::{AgentRuntime, BackgroundAgentRegistry, InboxMessage};
 pub use types::{
     AgentCompletion, AgentListFilter, AgentQuestion, AgentQuestionSummary, BackgroundAgent,

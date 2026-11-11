@@ -1259,7 +1259,7 @@ async fn set_completion_message_id_allows_pending_and_deferred_retry_markers_to_
 }
 
 #[tokio::test]
-async fn push_completion_to_parent_is_idempotent() {
+async fn completion_push_to_parent_is_idempotent() {
     let (_gcx, app, session_arc, _workspace) = app_with_parent_session("parent-push").await;
     let record = create_agent(&app.agents, "parent-push", BgAgentKind::Delegate).await;
     let completed = app
@@ -1295,7 +1295,7 @@ async fn push_completion_to_parent_is_idempotent() {
 }
 
 #[tokio::test]
-async fn push_completion_to_parent_marks_pending_when_session_not_loaded_and_flush_retries() {
+async fn completion_push_to_parent_marks_pending_when_session_not_loaded_and_flush_retries() {
     let (_gcx, app, _session_arc, _workspace) = app_with_parent_session("parent-flush").await;
     _session_arc.lock().await.add_message(ChatMessage::new(
         "user".to_string(),

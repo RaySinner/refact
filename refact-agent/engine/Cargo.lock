@@ -3972,8 +3972,10 @@ dependencies = [
 name = "refact-agents-core"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "chrono",
  "refact-chat-api",
+ "refact-core",
  "serde",
  "serde_json",
  "tempfile",

@@ -18,7 +18,7 @@ use crate::app_state::AppState;
 use crate::at_commands::at_commands::MAX_SUBCHAT_DEPTH;
 use crate::call_validation::{ChatContent, ChatMessage};
 use crate::chat::internal_roles::{event, EventSubkind};
-use crate::chat::types::{ChatEvent, GoalBudget, GoalCriterion, TaskMeta};
+use crate::chat::types::{GoalBudget, GoalCriterion, TaskMeta};
 use crate::global_context::GlobalContext;
 use crate::subchat::{
     SubchatConfig, SubchatProgress, SubchatResult, resolve_subchat_config_with_parent,
@@ -123,13 +123,7 @@ pub enum NotifyParent {
     Silent,
 }
 
-pub struct SpawnHandle {
-    pub agent_id: String,
-    pub child_chat_id: String,
-    pub worktree_branch: Option<String>,
-    pub auto_merge: Option<bool>,
-    pub completion_rx: oneshot::Receiver<BackgroundAgent>,
-}
+pub use refact_agents_core::spawn::{emit_background_agent_update, SpawnHandle};
 
 pub async fn spawn_background_agent(
     app: AppState,
@@ -966,44 +960,6 @@ fn format_notice_files(files: &[String]) -> String {
     } else {
         files.join(", ")
     }
-}
-
-pub async fn emit_background_agent_update(app: AppState, record: &BackgroundAgent) {
-    let mut destinations = vec![record.parent_chat_id.clone()];
-    if let Some(root_chat_id) = record.parent_root_chat_id.as_ref() {
-        if root_chat_id != &record.parent_chat_id {
-            destinations.push(root_chat_id.clone());
-        }
-    }
-    for chat_id in destinations {
-        emit_background_agent_update_to_session(&app, record, &chat_id).await;
-    }
-}
-
-async fn emit_background_agent_update_to_session(
-    app: &AppState,
-    record: &BackgroundAgent,
-    chat_id: &str,
-) {
-    let session_arc = {
-        let sessions = app.chat.sessions.read().await;
-        sessions.get(chat_id).cloned()
-    };
-    let Some(session_arc) = session_arc else {
-        return;
-    };
-    let mut session = session_arc.lock().await;
-    if session.closed {
-        return;
-    }
-    let agent = crate::agents::types::BackgroundAgentSummary::from(record);
-    session.upsert_background_agent(agent.clone());
-    let seq = session.event_seq.saturating_add(1);
-    session.emit(ChatEvent::BackgroundAgentUpdated {
-        chat_id: chat_id.to_string(),
-        seq,
-        agent,
-    });
 }
 
 fn status_paths(root: &Path) -> Vec<String> {

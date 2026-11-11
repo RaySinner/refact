@@ -1,7 +1,10 @@
 use std::sync::Arc;
 
 use axum::extract::FromRef;
+use async_trait::async_trait;
+use refact_agents_core::AgentHost;
 use refact_agents_core::registry::BackgroundAgentRegistry;
+use refact_chat_api::{DeliveryOutcome, PendingDelivery, SessionsMap};
 
 use crate::chat_ctx::ChatCtx;
 use crate::tool_ctx::ToolCtx;
@@ -10,7 +13,7 @@ use crate::services::{
     BuddyServices, ChatServices, IntegrationServices, ModelServices, PathServices, RuntimeServices,
     WorkspaceServices,
 };
-use crate::{ActivitySink, BuddyEventSink, ToolRegistry};
+use crate::{ActivitySink, BuddyEventSink, ChatSessionFacade, ToolRegistry};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -33,6 +36,25 @@ pub struct AppState {
 impl AppState {
     pub fn chat_ctx(&self) -> ChatCtx {
         self.ctx.clone()
+    }
+}
+
+#[async_trait]
+impl AgentHost for AppState {
+    fn agents(&self) -> &Arc<BackgroundAgentRegistry> {
+        &self.agents
+    }
+
+    fn sessions(&self) -> &SessionsMap {
+        &self.chat.sessions
+    }
+
+    async fn deliver(
+        &self,
+        chat_id: &str,
+        delivery: PendingDelivery,
+    ) -> Result<DeliveryOutcome, String> {
+        self.chat.facade.deliver_messages(chat_id, delivery).await
     }
 }
 

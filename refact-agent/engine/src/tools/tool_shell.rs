@@ -119,7 +119,7 @@ impl Tool for ToolShell {
             &chat.tool_catalog_generations,
         )
         .await;
-        let privacy_scope = crate::privacy::records::privacy_record_scope(&gcx);
+        let privacy_scope = refact_runtime_api::gcx_helpers::privacy_record_scope(&gcx);
         let current_model = ccx.lock().await.current_model.clone();
         let destination = crate::privacy::records::provider_destination(&current_model);
         let observe_reason =
@@ -826,7 +826,7 @@ async fn attach_exec_path_references(
         .await;
     refact_chat_api::attach_tool_enrichment_to_extra(
         extra,
-        crate::privacy::records::tool_enrichment_from_path_references(enrichment),
+        refact_runtime_api::gcx_helpers::tool_enrichment_from_path_references(enrichment),
     );
 }
 

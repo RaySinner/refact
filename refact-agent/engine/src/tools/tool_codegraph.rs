@@ -256,7 +256,7 @@ fn tool_message_with_records(
     paths: impl IntoIterator<Item = PathBuf>,
 ) -> Result<Vec<ContextEnum>, String> {
     let mut messages = tool_message(tool_call_id, text);
-    let records = crate::privacy::records::declared_file_records(gcx, paths)?;
+    let records = refact_runtime_api::gcx_helpers::declared_file_records(gcx, paths)?;
     if let Some(ContextEnum::ChatMessage(message)) = messages.first_mut() {
         refact_privacy::merge_records(message, records);
     }

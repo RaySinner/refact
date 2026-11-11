@@ -199,7 +199,7 @@ impl Tool for ToolDesignSystem {
             output_filter: Some(design_system_output_filter()),
             ..Default::default()
         })];
-        let records = crate::privacy::records::declared_file_records(&gcx, record_paths)?;
+        let records = refact_runtime_api::gcx_helpers::declared_file_records(&gcx, record_paths)?;
         if let Some(ContextEnum::ChatMessage(message)) = messages.first_mut() {
             refact_privacy::merge_records(message, records);
         }

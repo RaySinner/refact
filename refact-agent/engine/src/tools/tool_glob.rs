@@ -257,7 +257,7 @@ impl Tool for ToolGlob {
             ..Default::default()
         };
         refact_runtime_api::privacy::load_privacy_if_needed(gcx.clone()).await;
-        let records = crate::privacy::records::declared_file_records(
+        let records = refact_runtime_api::gcx_helpers::declared_file_records(
             &gcx,
             outcome.matches.iter().map(PathBuf::from),
         )?;

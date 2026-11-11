@@ -975,7 +975,7 @@ fn context_file_message(
     gcx: &Arc<GlobalContext>,
     context_files: Vec<ContextFile>,
 ) -> Result<ChatMessage, String> {
-    let records = crate::privacy::records::declared_file_records(
+    let records = refact_runtime_api::gcx_helpers::declared_file_records(
         gcx,
         context_files
             .iter()

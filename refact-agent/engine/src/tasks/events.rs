@@ -1,10 +1,10 @@
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
 
 use crate::chat::SessionsMap;
 use crate::global_context::GlobalContext;
 
 pub use refact_tasks::events::{TaskEvent, TaskEventEnvelope};
+pub use refact_tasks::events_emit::emit_task_event_via;
 use refact_tasks::types::TaskMeta;
 
 pub async fn emit_task_event(gcx: Arc<GlobalContext>, event: TaskEvent) {
@@ -21,18 +21,6 @@ pub async fn emit_task_event_for_services(
         event,
     )
     .await;
-}
-
-pub async fn emit_task_event_via(
-    task_events_tx: &Option<tokio::sync::broadcast::Sender<TaskEventEnvelope>>,
-    task_events_seq: &Option<Arc<std::sync::atomic::AtomicU64>>,
-    event: TaskEvent,
-) {
-    if let (Some(tx), Some(seq_counter)) = (task_events_tx, task_events_seq) {
-        let seq = seq_counter.fetch_add(1, Ordering::SeqCst);
-        let envelope = TaskEventEnvelope { seq, event };
-        let _ = tx.send(envelope);
-    }
 }
 
 async fn enrich_task_meta_with_session_state(sessions: &SessionsMap, meta: &mut TaskMeta) {

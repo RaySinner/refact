@@ -4,8 +4,7 @@ use uuid::Uuid;
 use crate::tasks::storage;
 use crate::tasks::types::{CardComment, TaskBoard};
 
-pub(crate) const COMMENT_CAP: usize = 500;
-pub(crate) const COMMENT_BODY_MAX_CHARS: usize = 4000;
+pub use refact_tasks::comments_cap::{COMMENT_BODY_MAX_CHARS, COMMENT_CAP};
 
 #[derive(Clone)]
 pub(crate) struct CreateCardComment {

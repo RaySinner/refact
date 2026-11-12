@@ -164,7 +164,24 @@ pub trait ExecPolicyProvider: Send + Sync {
 
 #[async_trait]
 pub trait TrajectoryStore: Send + Sync {
-    async fn load_trajectory_for_chat(&self, chat_id: &str) -> Option<LoadedTrajectory>;
+    async fn find_trajectory_or_buddy_candidate(
+        &self,
+        chat_id: &str,
+    ) -> Option<refact_chat_history::trajectory_paths::ValidTrajectoryCandidate>;
+    async fn load_trajectory_candidate(
+        &self,
+        chat_id: &str,
+        candidate: refact_chat_history::trajectory_paths::ValidTrajectoryCandidate,
+    ) -> Option<LoadedTrajectory>;
+    async fn persist_trajectory_snapshot_with_intent(
+        &self,
+        snapshot: refact_chat_history::trajectory_snapshot::TrajectorySnapshot,
+        intent: TrajectoryCommitIntent,
+    ) -> Result<(), String>;
+    async fn load_trajectory_for_chat(&self, chat_id: &str) -> Option<LoadedTrajectory> {
+        let candidate = self.find_trajectory_or_buddy_candidate(chat_id).await?;
+        self.load_trajectory_candidate(chat_id, candidate).await
+    }
     async fn refresh_session_from_trajectory_if_stale(
         &self,
         chat_id: &str,

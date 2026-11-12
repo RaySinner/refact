@@ -9,7 +9,9 @@ use refact_files::indexing_settings::IndexingEverywhere;
 use refact_privacy::model_context::PrivacyRecordScope;
 use refact_privacy::FileRecord;
 
-use crate::global_context::SharedGlobalContext;
+use refact_chat_history::trajectory_snapshot::TrajectorySnapshot;
+
+use crate::global_context::{GlobalContextCtx, SharedGlobalContext};
 
 pub fn privacy_record_scope(gcx: &SharedGlobalContext) -> PrivacyRecordScope {
     PrivacyRecordScope {
@@ -94,4 +96,12 @@ pub async fn reload_indexing_everywhere_for_gcx(
         )
         .await
     }
+}
+
+pub async fn save_trajectory_snapshot_for_gcx(
+    gcx: &SharedGlobalContext,
+    snapshot: TrajectorySnapshot,
+) -> Result<(), String> {
+    let ctx = gcx.chat_ctx(gcx.clone());
+    crate::trajectory_runtime::save_trajectory_snapshot_for_ctx(&ctx, snapshot).await
 }

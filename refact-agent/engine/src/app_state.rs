@@ -943,11 +943,38 @@ impl EngineTrajectoryStore {
 
 #[async_trait]
 impl TrajectoryStore for EngineTrajectoryStore {
-    async fn load_trajectory_for_chat(
+    async fn find_trajectory_or_buddy_candidate(
         &self,
         chat_id: &str,
+    ) -> Option<trajectories::ValidTrajectoryCandidate> {
+        trajectories::find_trajectory_or_buddy_file(&self.gcx.chat_ctx(self.gcx.clone()), chat_id)
+            .await
+    }
+
+    async fn load_trajectory_candidate(
+        &self,
+        chat_id: &str,
+        candidate: trajectories::ValidTrajectoryCandidate,
     ) -> Option<trajectories::LoadedTrajectory> {
-        trajectories::load_trajectory_for_chat(&self.gcx.chat_ctx(self.gcx.clone()), chat_id).await
+        trajectories::load_trajectory_candidate(
+            &self.gcx.chat_ctx(self.gcx.clone()),
+            chat_id,
+            candidate,
+        )
+        .await
+    }
+
+    async fn persist_trajectory_snapshot_with_intent(
+        &self,
+        snapshot: trajectories::TrajectorySnapshot,
+        intent: TrajectoryCommitIntent,
+    ) -> Result<(), String> {
+        trajectories::persist_trajectory_snapshot_with_intent(
+            self.gcx.clone(),
+            snapshot,
+            intent,
+        )
+        .await
     }
 
     async fn refresh_session_from_trajectory_if_stale(

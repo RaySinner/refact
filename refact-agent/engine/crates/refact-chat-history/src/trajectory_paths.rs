@@ -1,8 +1,14 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use axum::http::StatusCode;
 use refact_core::custom_error::ScratchError;
 use tracing::warn;
+
+pub struct ValidTrajectoryCandidate {
+    pub path: PathBuf,
+    pub content: String,
+    pub json: serde_json::Value,
+}
 
 pub fn validate_trajectory_id(id: &str) -> Result<(), ScratchError> {
     if id.is_empty() || id.len() > 128 {

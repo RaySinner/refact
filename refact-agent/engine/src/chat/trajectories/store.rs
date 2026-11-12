@@ -43,38 +43,7 @@ pub async fn save_trajectory_snapshot(
     gcx: Arc<GlobalContext>,
     snapshot: TrajectorySnapshot,
 ) -> Result<(), String> {
-    save_trajectory_snapshot_for_ctx(&gcx.chat_ctx(gcx.clone()), snapshot).await
-}
-
-pub(crate) async fn save_trajectory_snapshot_for_ctx(
-    ctx: &ChatCtx,
-    snapshot: TrajectorySnapshot,
-) -> Result<(), String> {
-    let message_count = snapshot.messages.len() as u64;
-    let trajectory_version = snapshot.version;
-    let span = perf_diagnostics::span(
-        PerfComponent::TrajectoryCommit,
-        Some(&snapshot.chat_id),
-        None,
-    );
-    let result = persist_trajectory_snapshot_with_intent_ctx(
-        ctx,
-        snapshot,
-        TrajectoryCommitIntent::Required,
-    )
-    .await;
-    span.finish(
-        if result.is_ok() {
-            PerfOutcome::Success
-        } else {
-            PerfOutcome::Failure
-        },
-        None,
-        Some(message_count),
-        Some(trajectory_version),
-        None,
-    );
-    result
+    refact_runtime_api::gcx_helpers::save_trajectory_snapshot_for_gcx(&gcx, snapshot).await
 }
 
 pub(super) struct DetachedTrajectoryWriterState {

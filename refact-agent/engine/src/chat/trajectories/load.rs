@@ -6,7 +6,7 @@ use uuid::Uuid;
 use crate::app_state::AppState;
 use crate::call_validation::{ChatContent, ChatMessage};
 use crate::chat::ctx::ChatCtx;
-use crate::chat::types::{TaskMeta, ThreadParams, TrajectoryCommitIntent, TrajectorySourceIdentity};
+use crate::chat::types::{ThreadParams, TrajectoryCommitIntent, TrajectorySourceIdentity};
 use crate::files_correction::get_unscoped_project_dirs_for_ctx;
 use crate::worktrees::service::WorktreeService;
 use crate::worktrees::types::WorktreeMeta;
@@ -16,21 +16,19 @@ use refact_chat_history::trajectory_snapshot::TrajectorySnapshot;
 use super::model::{clamp_goal_snapshot_for_load, LoadedTrajectory, TrajectoryData};
 use super::paths::{
     chat_folder_name, find_normal_trajectory_file, find_trajectory_file,
-    find_trajectory_or_buddy_file, fix_tool_call_indexes, get_all_task_roots,
-    get_all_trajectories_dirs, get_buddy_conversations_dir, get_or_create_buddy_conversations_dir,
-    get_trajectories_dir, list_task_trajectory_dirs, parse_stored_messages,
-    read_existing_trajectory_object, read_valid_trajectory_candidate, trajectory_candidate_paths,
-    validate_trajectory_id, ValidTrajectoryCandidate,
+    fix_tool_call_indexes, get_all_task_roots, get_all_trajectories_dirs,
+    get_buddy_conversations_dir, get_or_create_buddy_conversations_dir, get_trajectories_dir,
+    list_task_trajectory_dirs, parse_stored_messages, read_existing_trajectory_object,
+    read_valid_trajectory_candidate, trajectory_candidate_paths, validate_trajectory_id,
+    ValidTrajectoryCandidate,
 };
 use super::{
     canonical_child_path_under_root, ensure_real_dir_tree, is_real_dir, is_real_file,
     safe_new_trajectory_file_in_dir,
 };
 use super::reload::{parsed_rfc3339_utc, raw_frozen_prefix_has_tools, repair_transition_frozen_prefix};
-use super::store::{
-    persist_trajectory_snapshot_with_intent_ctx, save_trajectory_snapshot_for_ctx,
-    try_save_trajectory_with_intent,
-};
+use super::store::try_save_trajectory_with_intent;
+use refact_runtime_api::trajectory_runtime::save_trajectory_snapshot_for_ctx;
 use super::watcher::trajectory_source_identity_from_path;
 
 pub(super) fn is_known_trajectory_top_level_key(key: &str) -> bool {
@@ -952,14 +950,6 @@ pub(crate) async fn load_trajectory_candidate(
     })
 }
 
-pub async fn load_trajectory_for_chat(
-    ctx: &ChatCtx,
-    chat_id: &str,
-) -> Option<LoadedTrajectory> {
-    let candidate = find_trajectory_or_buddy_file(ctx, chat_id).await?;
-    load_trajectory_candidate(ctx, chat_id, candidate).await
-}
-
 pub async fn set_trajectory_label(app: AppState, chat_id: &str, label: &str) -> Result<(), String> {
     validate_trajectory_id(chat_id).map_err(|error| error.message)?;
     let label = refact_chat_history::trajectory_metrics::validate_trajectory_label(label)?;
@@ -986,86 +976,6 @@ pub async fn load_generic_trajectory_for_chat(
 ) -> Option<LoadedTrajectory> {
     let candidate = find_trajectory_file(ctx, chat_id).await?;
     load_trajectory_candidate(ctx, chat_id, candidate).await
-}
-
-pub(super) fn task_meta_is_planner_for_task(task_meta: Option<&TaskMeta>, task_id: &str) -> bool {
-    task_meta.is_some_and(|meta| meta.role == "planner" && meta.task_id == task_id)
-}
-
-pub(crate) async fn chat_id_is_planner_for_task(
-    ctx: &ChatCtx,
-    chat_id: &str,
-    task_id: &str,
-) -> bool {
-    let session_arc = {
-        let sessions = ctx.chat.sessions.read().await;
-        sessions.get(chat_id).cloned()
-    };
-    if let Some(session_arc) = session_arc {
-        let session = session_arc.lock().await;
-        if task_meta_is_planner_for_task(session.thread.task_meta.as_ref(), task_id) {
-            return true;
-        }
-    }
-
-    load_trajectory_for_chat(ctx, chat_id)
-        .await
-        .is_some_and(|loaded| {
-            task_meta_is_planner_for_task(loaded.thread.task_meta.as_ref(), task_id)
-        })
-}
-
-pub(crate) async fn verified_planner_linked_root_chat_id(
-    ctx: &ChatCtx,
-    current_chat_id: &str,
-    current_root_chat_id: Option<&str>,
-    task_meta: &TaskMeta,
-) -> Option<String> {
-    if task_meta.role == "planner" {
-        return None;
-    }
-    let root_chat_id =
-        current_root_chat_id.filter(|id| !id.is_empty() && *id != current_chat_id)?;
-    if task_meta.planner_chat_id.as_deref() == Some(root_chat_id) {
-        return Some(root_chat_id.to_string());
-    }
-    if chat_id_is_planner_for_task(ctx, root_chat_id, &task_meta.task_id).await {
-        return Some(root_chat_id.to_string());
-    }
-    None
-}
-
-pub(crate) async fn resolve_task_planner_controller_chat_id(
-    ctx: &ChatCtx,
-    current_chat_id: &str,
-    current_root_chat_id: Option<&str>,
-    task_meta: Option<&TaskMeta>,
-) -> String {
-    let Some(task_meta) = task_meta else {
-        return current_chat_id.to_string();
-    };
-    if let Some(root_chat_id) =
-        verified_planner_linked_root_chat_id(ctx, current_chat_id, current_root_chat_id, task_meta)
-            .await
-    {
-        return root_chat_id;
-    }
-    if task_meta.role == "planner" {
-        return task_meta
-            .planner_chat_id
-            .clone()
-            .filter(|id| {
-                !id.is_empty()
-                    && current_root_chat_id.filter(|root_id| *root_id != current_chat_id)
-                        != Some(id.as_str())
-            })
-            .unwrap_or_else(|| current_chat_id.to_string());
-    }
-    task_meta
-        .planner_chat_id
-        .clone()
-        .filter(|id| !id.is_empty())
-        .unwrap_or_else(|| current_chat_id.to_string())
 }
 
 pub(super) fn trajectory_source_matches_hint(
@@ -1269,64 +1179,12 @@ pub async fn save_trajectory_as_with_intent(
     messages: &[ChatMessage],
     intent: TrajectoryCommitIntent,
 ) {
-    if let Err(e) = save_trajectory_as_with_intent_checked(ctx, thread, messages, intent).await {
+    if let Err(e) =
+        refact_runtime_api::trajectory_runtime::save_trajectory_as_with_intent_checked(
+            ctx, thread, messages, intent,
+        )
+        .await
+    {
         warn!("Failed to save trajectory: {}", e);
     }
-}
-
-pub async fn save_trajectory_as_with_intent_checked(
-    ctx: &ChatCtx,
-    thread: &ThreadParams,
-    messages: &[ChatMessage],
-    intent: TrajectoryCommitIntent,
-) -> Result<(), String> {
-    if !intent.persists() {
-        return Ok(());
-    }
-    let snapshot = TrajectorySnapshot {
-        goal: None,
-        goal_ledger: Vec::new(),
-        pending_deliveries: Vec::new(),
-        goal_verification_blocked_until_ms: None,
-        chat_id: thread.id.clone(),
-        title: thread.title.clone(),
-        model: thread.model.clone(),
-        mode: thread.mode.clone(),
-        tool_use: thread.tool_use.clone(),
-        messages: messages.to_vec(),
-        created_at: chrono::Utc::now().to_rfc3339(),
-        boost_reasoning: thread.boost_reasoning.unwrap_or(false),
-        checkpoints_enabled: thread.checkpoints_enabled,
-        context_tokens_cap: thread.context_tokens_cap,
-        auto_compression_cap: thread.auto_compression_cap,
-        auto_compression_cap_pending: thread.auto_compression_cap_pending,
-        include_project_info: thread.include_project_info,
-        is_title_generated: thread.is_title_generated,
-        auto_approve_editing_tools: thread.auto_approve_editing_tools,
-        auto_approve_dangerous_commands: thread.auto_approve_dangerous_commands,
-        autonomous_no_confirm: thread.autonomous_no_confirm,
-        version: 1,
-        task_meta: thread.task_meta.clone(),
-        worktree: thread.worktree.clone(),
-        parent_id: thread.parent_id.clone(),
-        link_type: thread.link_type.clone(),
-        root_chat_id: thread.root_chat_id.clone(),
-        reasoning_effort: thread.reasoning_effort.clone(),
-        thinking_budget: thread.thinking_budget,
-        temperature: thread.temperature,
-        frequency_penalty: thread.frequency_penalty,
-        max_tokens: thread.max_tokens,
-        parallel_tool_calls: thread.parallel_tool_calls,
-        previous_response_id: thread.previous_response_id.clone(),
-        active_skill: thread.active_skill.clone(),
-        auto_enrichment_enabled: thread.auto_enrichment_enabled,
-        buddy_meta: thread.buddy_meta.clone(),
-        auto_compact_enabled: thread.auto_compact_enabled,
-        frozen_request_prefix: thread.frozen_request_prefix.clone(),
-        claude_code_identity: thread.claude_code_identity.clone(),
-        reactive_compact_attempts: thread.reactive_compact_attempts,
-        wake_up_at: None,
-        waiting_for_card_ids: Vec::new(),
-    };
-    persist_trajectory_snapshot_with_intent_ctx(ctx, snapshot, intent).await
 }

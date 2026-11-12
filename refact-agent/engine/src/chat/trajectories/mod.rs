@@ -106,6 +106,14 @@ pub use refact_chat_history::trajectory_paths::{
 pub use refact_chat_history::trajectory_snapshot::{
     trajectory_snapshot_from_session, TrajectorySnapshot,
 };
+pub use refact_runtime_api::trajectory_runtime::{
+    load_trajectory_for_chat, save_trajectory_as_with_intent_checked,
+};
+pub(crate) use refact_runtime_api::trajectory_runtime::{
+    chat_id_is_planner_for_task, resolve_task_planner_controller_chat_id,
+    verified_planner_linked_root_chat_id,
+};
+pub(crate) use paths::ValidTrajectoryCandidate;
 
 // Re-exports from writer
 pub use writer::{
@@ -159,18 +167,15 @@ use paths::{
 
 // Re-exports from load
 pub use load::{
-    load_generic_trajectory_for_chat, load_trajectory_for_chat, save_initial_task_chat_trajectory,
-    save_trajectory_as, save_trajectory_as_with_intent, save_trajectory_as_with_intent_checked,
-    set_trajectory_label,
+    load_generic_trajectory_for_chat, save_initial_task_chat_trajectory, save_trajectory_as,
+    save_trajectory_as_with_intent, set_trajectory_label,
 };
 pub use refact_chat_history::trajectory_metrics::validate_trajectory_label;
 pub(crate) use load::{
-    chat_id_is_planner_for_task, load_generic_trajectory_for_chat_matching_source,
-    load_trajectory_candidate, resolve_task_planner_controller_chat_id,
+    load_generic_trajectory_for_chat_matching_source, load_trajectory_candidate,
     resolve_trajectory_data_save_path, safe_new_buddy_trajectory_file,
     safe_new_nested_trajectory_file, safe_new_task_trajectory_file,
     trajectory_source_path_is_allowed, validate_loaded_worktree_strict,
-    verified_planner_linked_root_chat_id,
 };
 
 // Re-exports from store

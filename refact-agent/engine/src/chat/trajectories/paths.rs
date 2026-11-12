@@ -860,11 +860,7 @@ pub(super) async fn nested_chat_folder_candidate_paths(
     paths
 }
 
-pub(crate) struct ValidTrajectoryCandidate {
-    pub(crate) path: PathBuf,
-    pub(crate) content: String,
-    pub(crate) json: serde_json::Value,
-}
+pub(crate) use refact_chat_history::trajectory_paths::ValidTrajectoryCandidate;
 
 pub(super) async fn read_valid_trajectory_candidate(
     path: PathBuf,

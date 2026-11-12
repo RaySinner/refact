@@ -1,0 +1,14 @@
+pub mod browser_settings;
+pub mod buddy_drafts;
+pub mod buddy_pulse;
+pub mod chat_modes;
+pub mod customization;
+pub mod customization_editor;
+pub mod graceful_shutdown;
+pub mod knowledge_graph;
+pub mod mcp_marketplace_sources;
+pub mod project_configs;
+pub mod setup_status;
+pub mod stats;
+pub mod sync_files;
+pub mod workspace;

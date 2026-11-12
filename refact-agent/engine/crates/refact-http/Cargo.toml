@@ -1,0 +1,31 @@
+[package]
+name = "refact-http"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = []
+test-util = []
+
+[dependencies]
+async-trait = "0.1.73"
+astral-tokio-tar = "0.5.2"
+axum = { version = "0.6.20", features = ["default", "http2"] }
+dunce = "1.0.5"
+hyper = { version = "0.14", features = ["server", "stream"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = "0.9.31"
+tokio = { workspace = true, features = ["fs", "io-util", "macros", "rt", "sync"] }
+tracing = { workspace = true }
+uuid = { workspace = true }
+
+refact-browser = { path = "../refact-browser" }
+refact-buddy-core = { path = "../refact-buddy-core" }
+refact-core = { path = "../refact-core" }
+refact-runtime-api = { path = "../refact-runtime-api" }
+refact-stats = { path = "../refact-stats" }
+refact-yaml-configs = { path = "../refact-yaml-configs" }
+
+[dev-dependencies]
+tempfile = "3.8.1"

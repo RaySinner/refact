@@ -362,6 +362,26 @@ pub fn member_display_name(role: &str, position_in_role: usize, same_role_count:
     format!("{role} #{}", position_in_role.max(1))
 }
 
+/// Stamp the definition's behaviour onto a member that has not been spawned yet.
+pub fn apply_agent_behavior(
+    member: &mut TeamMember,
+    writes: bool,
+    decision_maker: bool,
+    room_role_hint: Option<String>,
+) {
+    member.writes = Some(writes);
+    member.decision_maker = Some(decision_maker);
+    if let Some(hint) = room_role_hint {
+        member.room_role_hint = Some(hint);
+    }
+}
+
+/// True when two chats belong to the same room, i.e. the same card.
+pub fn same_room(card: &BoardCard, left_chat_id: &str, right_chat_id: &str) -> bool {
+    card.team_member_by_chat_id(left_chat_id).is_some()
+        && card.team_member_by_chat_id(right_chat_id).is_some()
+}
+
 /// Members of the same room, as one line each, for a prompt or tool output.
 pub fn describe_room(card: &BoardCard) -> Vec<String> {
     let mut lines = Vec::with_capacity(card.team_members.len());

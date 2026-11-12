@@ -383,4 +383,8 @@ pub mod customization_registry;
 pub mod customization_registry_gcx;
 pub mod memories;
 pub mod session_handles;
+pub mod git_cleanup;
+pub mod ext_config_dirs;
+pub mod ext_hooks_runner;
+pub mod ext_plugins;
 pub mod integration_variables;

@@ -7,10 +7,11 @@ edition = "2021"
 serde_json.workspace = true
 serde.workspace = true
 serde_yaml = "0.9.31"
-tokio.workspace = true
+tokio = { workspace = true, features = ["fs", "sync"] }
 tracing.workspace = true
 uuid.workspace = true
 chrono = { version = "0.4.31", features = ["serde"] }
 
 [dev-dependencies]
 serde_json.workspace = true
+tempfile.workspace = true

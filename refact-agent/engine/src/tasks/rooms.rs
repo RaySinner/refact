@@ -1,32 +1,10 @@
-use crate::tasks::types::{BoardCard, TeamMember};
-
 pub use refact_tasks::rooms::*;
 pub use refact_chat_api::room_provenance::{member_provenance, room_member_provenance};
-
-/// Stamp the definition's behaviour onto a member that has not been spawned yet.
-pub fn apply_agent_behavior(
-    member: &mut TeamMember,
-    writes: bool,
-    decision_maker: bool,
-    room_role_hint: Option<String>,
-) {
-    member.writes = Some(writes);
-    member.decision_maker = Some(decision_maker);
-    if let Some(hint) = room_role_hint {
-        member.room_role_hint = Some(hint);
-    }
-}
-
-/// True when two chats belong to the same room, i.e. the same card.
-pub fn same_room(card: &BoardCard, left_chat_id: &str, right_chat_id: &str) -> bool {
-    card.team_member_by_chat_id(left_chat_id).is_some()
-        && card.team_member_by_chat_id(right_chat_id).is_some()
-}
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tasks::types::{TeamMemberReport, TeamStatus};
+    use crate::tasks::types::{BoardCard, TeamMember, TeamMemberReport, TeamStatus};
 
     fn card(id: &str, column: &str) -> BoardCard {
         BoardCard {

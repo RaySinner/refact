@@ -26,6 +26,7 @@ use crate::types::{
     BuddyActivity, BuddyChatPhraseBank, BuddyDraft, BuddyOpportunity, BuddyPulse, BuddyQuest,
     BuddyRuntimeEvent, BuddySpeechItem, BuddyState, BuddySuggestion, OpportunityStatus,
 };
+use crate::user_action::UserAction;
 use crate::voice_service::{SpeechIntent, SpeechIntentWireToken};
 
 const SUGGESTION_RATE_LIMIT_SECS: u64 = 300;
@@ -1527,6 +1528,27 @@ pub fn make_runtime_event(
     }
 }
 
+pub fn parse_commit_activity_from_log(output: &str) -> Vec<UserAction> {
+    output
+        .lines()
+        .filter_map(|line| {
+            let mut parts = line.splitn(3, '|');
+            let sha = parts.next()?.trim();
+            let _subject_slug = parts.next()?;
+            let message = parts.next()?.trim();
+            if sha.is_empty() {
+                return None;
+            }
+            Some(UserAction::CommitMade {
+                sha: sha.to_string(),
+                message_first_line: message.chars().take(80).collect(),
+                files: 0,
+                ts: Utc::now(),
+            })
+        })
+        .collect()
+}
+
 pub fn same_day_log_filter(line: &str, collected_at: &str) -> bool {
     let Some(prefix) = line.get(0..6) else {
         return false;
@@ -1560,5 +1582,55 @@ impl Default for BuddyMutation {
             activity: None,
             mood: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn commit_made_poller_pushes_new_shas() {
+        let mut ring =
+            crate::user_activity::UserActivityRing::new(std::path::PathBuf::from("/tmp/project"), 200);
+        ring.push(UserAction::CommitMade {
+            sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
+            message_first_line: "old".to_string(),
+            files: 0,
+            ts: Utc::now(),
+        });
+        let existing = ring
+            .snapshot()
+            .iter()
+            .filter_map(|action| match action {
+                UserAction::CommitMade { sha, .. } => Some(sha.clone()),
+                _ => None,
+            })
+            .collect::<HashSet<_>>();
+
+        for action in parse_commit_activity_from_log(
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|old|old\nbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|new|new commit",
+        ) {
+            if let UserAction::CommitMade { sha, .. } = &action {
+                if existing.contains(sha) {
+                    continue;
+                }
+            }
+            ring.push(action);
+        }
+
+        let actions = ring.snapshot();
+        assert_eq!(
+            actions
+                .iter()
+                .filter(|action| matches!(action, UserAction::CommitMade { .. }))
+                .count(),
+            2
+        );
+        assert!(actions.iter().any(|action| matches!(
+            action,
+            UserAction::CommitMade { sha, message_first_line, .. }
+                if sha == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" && message_first_line == "new commit"
+        )));
     }
 }

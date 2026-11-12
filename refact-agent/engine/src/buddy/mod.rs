@@ -1,5 +1,6 @@
 pub mod actor;
 pub mod autonomous_workflows;
+pub mod background;
 pub mod briefing;
 pub mod chat_interjection;
 pub mod chat_reactions;
@@ -24,6 +25,7 @@ pub mod runtime_queue;
 pub mod scheduler;
 pub mod settings;
 pub mod snapshot;
+pub mod speech;
 pub mod speech_policy;
 pub mod state;
 pub mod storage;

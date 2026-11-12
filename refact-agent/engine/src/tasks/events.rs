@@ -1,65 +1,16 @@
 use std::sync::Arc;
 
-use crate::chat::SessionsMap;
 use crate::global_context::GlobalContext;
 
 pub use refact_tasks::events::{TaskEvent, TaskEventEnvelope};
 pub use refact_tasks::events_emit::{emit_task_event_for_services, emit_task_event_via};
+pub use refact_runtime_api::task_storage::{
+    emit_task_updated_via, enrich_task_meta_with_session_state,
+};
 use refact_tasks::types::TaskMeta;
 
 pub async fn emit_task_event(gcx: Arc<GlobalContext>, event: TaskEvent) {
     emit_task_event_via(&gcx.task_events_tx, &gcx.task_events_seq, event).await;
-}
-
-async fn enrich_task_meta_with_session_state(sessions: &SessionsMap, meta: &mut TaskMeta) {
-    let all_session_arcs = {
-        let sessions = sessions.read().await;
-        sessions.values().cloned().collect::<Vec<_>>()
-    };
-
-    let mut has_paused = false;
-    let mut has_waiting_ide = false;
-    let mut has_waiting_user_input = false;
-    let mut has_generating = false;
-    let mut has_executing_tools = false;
-    let mut has_error = false;
-    for session_arc in all_session_arcs {
-        let session = session_arc.lock().await;
-        let is_planner =
-            session.thread.task_meta.as_ref().is_some_and(|task_meta| {
-                task_meta.role == "planner" && task_meta.task_id == meta.id
-            });
-        if !is_planner {
-            continue;
-        }
-        match session.runtime.state {
-            crate::chat::types::SessionState::Starting => {}
-            crate::chat::types::SessionState::Paused => has_paused = true,
-            crate::chat::types::SessionState::WaitingIde => has_waiting_ide = true,
-            crate::chat::types::SessionState::WaitingUserInput => has_waiting_user_input = true,
-            crate::chat::types::SessionState::Generating => has_generating = true,
-            crate::chat::types::SessionState::ExecutingTools => has_executing_tools = true,
-            crate::chat::types::SessionState::Error => has_error = true,
-            crate::chat::types::SessionState::Idle
-            | crate::chat::types::SessionState::Completed => {}
-        }
-    }
-
-    meta.planner_session_state = if has_paused {
-        Some(crate::chat::types::SessionState::Paused.to_string())
-    } else if has_waiting_ide {
-        Some(crate::chat::types::SessionState::WaitingIde.to_string())
-    } else if has_waiting_user_input {
-        Some(crate::chat::types::SessionState::WaitingUserInput.to_string())
-    } else if has_generating {
-        Some(crate::chat::types::SessionState::Generating.to_string())
-    } else if has_executing_tools {
-        Some(crate::chat::types::SessionState::ExecutingTools.to_string())
-    } else if has_error {
-        Some(crate::chat::types::SessionState::Error.to_string())
-    } else {
-        None
-    };
 }
 
 pub async fn enrich_task_with_session_state(gcx: Arc<GlobalContext>, task: &mut TaskMeta) {
@@ -80,22 +31,6 @@ pub async fn emit_task_updated(gcx: Arc<GlobalContext>, task_id: String, meta: T
         &gcx.task_events_seq,
         task_id,
         meta,
-    )
-    .await;
-}
-
-pub async fn emit_task_updated_via(
-    sessions: &SessionsMap,
-    task_events_tx: &Option<tokio::sync::broadcast::Sender<TaskEventEnvelope>>,
-    task_events_seq: &Option<Arc<std::sync::atomic::AtomicU64>>,
-    task_id: String,
-    mut meta: TaskMeta,
-) {
-    enrich_task_meta_with_session_state(sessions, &mut meta).await;
-    emit_task_event_via(
-        task_events_tx,
-        task_events_seq,
-        TaskEvent::TaskUpdated { task_id, meta },
     )
     .await;
 }

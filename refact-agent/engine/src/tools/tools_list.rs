@@ -5,12 +5,12 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use refact_caps_core::model_resolve::resolve_chat_model;
-use crate::chat::perf_diagnostics::{self, PerfComponent, PerfOutcome};
+use refact_perf::perf_diagnostics::{self, PerfComponent, PerfOutcome};
 use crate::custom_error::YamlError;
 use crate::global_context::{try_load_caps_quickly_if_not_present, GlobalContext};
 use refact_integrations::mcp::mcp_naming::server_name_from_config_path;
 use refact_runtime_api::integr_abstract::IntegrationTrait;
-use crate::integrations::running_integrations::load_integrations;
+use crate::integrations::load_integrations;
 use refact_runtime_api::customization_registry::{
     get_project_registry,
 };

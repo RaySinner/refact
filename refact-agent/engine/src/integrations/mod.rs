@@ -28,6 +28,8 @@ pub mod setup_chat;
 pub mod utils;
 pub mod yaml_schema;
 
+pub use running_integrations::load_integrations;
+
 use integr_abstract::IntegrationTrait;
 
 pub fn integration_from_name(n: &str) -> Result<Box<dyn IntegrationTrait + Send + Sync>, String> {

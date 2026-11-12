@@ -7,7 +7,7 @@ use tokio::sync::Mutex as AMutex;
 use uuid::Uuid;
 
 use refact_runtime_api::AtCommandsContext;
-use crate::app_state::{AppState, BuddyServices};
+use refact_runtime_api::{AppState, BuddyServices};
 use refact_buddy_core::autonomous_redaction::redact_and_cap_text;
 use refact_buddy_core::actor::{make_runtime_event, BuddyMutation};
 use refact_buddy_core::types::{BuddyActivity, BuddySpeechItem};

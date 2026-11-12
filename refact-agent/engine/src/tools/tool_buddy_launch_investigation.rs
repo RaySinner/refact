@@ -6,7 +6,7 @@ use tokio::sync::Mutex as AMutex;
 use uuid::Uuid;
 
 use refact_runtime_api::AtCommandsContext;
-use crate::buddy::actor::redact_sensitive;
+use refact_buddy_core::actor::redact_sensitive;
 use crate::buddy::types::BuddyThreadMeta;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use refact_chat_api::internal_roles::{event, EventSubkind};

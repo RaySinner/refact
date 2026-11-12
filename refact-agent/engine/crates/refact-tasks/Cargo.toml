@@ -8,6 +8,9 @@ serde_json.workspace = true
 serde.workspace = true
 serde_yaml = "0.9.31"
 tokio.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+chrono = { version = "0.4.31", features = ["serde"] }
 
 [dev-dependencies]
 serde_json.workspace = true

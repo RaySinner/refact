@@ -12,7 +12,7 @@ use crate::tools::tools_description::{
 };
 use refact_core::chat_types::{ChatMessage, ChatContent, ContextEnum};
 use refact_runtime_api::memories::memories_search;
-use crate::knowledge_graph::build_knowledge_graph;
+use refact_runtime_api::knowledge_graph::build_knowledge_graph;
 use refact_core::knowledge_index::format_related_memories_section;
 use refact_postprocessing::pp_command_output::OutputFilter;
 use crate::tools::native_enrichment::{workspace_roots, NativeReferences};

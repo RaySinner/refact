@@ -1,3 +1,4 @@
+pub mod comments;
 pub mod comments_cap;
 pub mod events;
 pub mod events_emit;

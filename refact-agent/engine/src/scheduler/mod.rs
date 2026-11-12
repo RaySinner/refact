@@ -2,6 +2,7 @@ pub mod cron_expr;
 pub mod delivery;
 pub mod exec_action;
 pub mod jitter;
+pub mod planning;
 pub mod retry;
 pub mod runner;
 pub mod schedule;

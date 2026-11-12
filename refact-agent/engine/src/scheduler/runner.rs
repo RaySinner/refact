@@ -3,8 +3,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use chrono::Utc;
-use serde_json::{json, Value};
+use serde_json::json;
 use tokio::sync::{Notify, Semaphore};
 use tokio::task::JoinHandle;
 use tokio::time::Instant as TokioInstant;
@@ -22,10 +21,21 @@ use crate::global_context::SharedGlobalContext;
 use crate::scheduler::scheduler_timezone;
 
 use super::delivery::{deliver, deliver_notice, deliver_scheduled_turn};
-use super::exec_action::{command_error_summary, run_command, CommandRunResult};
-use super::jitter::{jittered_next_run_ms_for, one_shot_jittered_next_run_ms_for, JitterConfig};
+use super::exec_action::{
+    command_error_summary, command_failure_can_retry, command_record_error, command_retry_text,
+    run_command, CommandRunResult,
+};
+use super::jitter::JitterConfig;
 use super::retry::{classify, retry_delay_ms};
-use super::schedule::{next_run_ms, recurring_missed_grace_state, MissedRunGraceConfig};
+use super::schedule::{
+    MissedRunGraceConfig, recurring_missed_grace_state, runner_enabled, scheduled_fire_at_ms,
+};
+use super::planning::{
+    command_job_has_non_chat_delivery, event_fire_count, job_is_isolated,
+    job_was_advanced_before_fire, missed_one_shot_task, now_ms, record_run,
+    runnable_chat_id, runnable_command_job, runnable_isolated_job,
+    task_can_use_cron_lane, task_final_after_fire,
+};
 use super::store::{CronStore, InMemoryCronStore, JsonFileCronStore};
 use super::types::{
     Action, AgentTarget, CommandSpec, CronRunRecord, Delivery, Job, SchedulerConfig, Trigger,
@@ -1252,17 +1262,6 @@ pub fn spawn_if_enabled(
     Some(tokio::spawn(async {}))
 }
 
-pub fn scheduler_enabled() -> bool {
-    std::env::var("REFACT_DISABLE_SCHEDULER").map_or(true, |value| {
-        let value = value.trim();
-        value.is_empty() || value == "0" || value.eq_ignore_ascii_case("false")
-    })
-}
-
-pub fn runner_enabled(config: &SchedulerConfig) -> bool {
-    config.enabled && scheduler_enabled()
-}
-
 #[derive(Debug, Eq, PartialEq)]
 enum ChatFireStatus {
     Fireable,
@@ -1291,115 +1290,6 @@ async fn chat_fire_status(gcx: &SharedGlobalContext, chat_id: &str) -> ChatFireS
         ChatFireStatus::Fireable
     } else {
         ChatFireStatus::Busy
-    }
-}
-
-fn runnable_chat_id(job: &Job) -> Result<&str, &'static str> {
-    if !runner_supported_trigger(&job.trigger) {
-        return Err("trigger is not supported by the chat runner yet");
-    }
-    match (&job.action, &job.delivery) {
-        (
-            Action::AgentTurn {
-                target: AgentTarget::ExistingChat { chat_id },
-                ..
-            },
-            Delivery::Chat,
-        ) if !chat_id.is_empty() => Ok(chat_id),
-        (Action::AgentTurn { .. }, Delivery::Chat) => Err("missing chat_id"),
-        (Action::AgentTurn { .. }, _) => Err("non-chat delivery is not supported yet"),
-        (Action::Command { .. }, _) => Err("command actions use the command runner"),
-    }
-}
-
-fn runnable_isolated_job(job: &Job) -> Result<(), &'static str> {
-    if !runner_supported_trigger(&job.trigger) {
-        return Err("trigger is not supported by the chat runner yet");
-    }
-    match (&job.action, &job.delivery) {
-        (
-            Action::AgentTurn {
-                target: AgentTarget::Isolated,
-                ..
-            },
-            Delivery::Chat,
-        ) => Ok(()),
-        (Action::AgentTurn { .. }, Delivery::Chat) => Err("target is not isolated"),
-        (Action::AgentTurn { .. }, _) => Err("non-chat delivery is not supported yet"),
-        (Action::Command { .. }, _) => Err("command actions use the command runner"),
-    }
-}
-
-fn runnable_command_job(job: &Job) -> Result<(), &'static str> {
-    if !runner_supported_trigger(&job.trigger) {
-        return Err("trigger is not supported by the command runner yet");
-    }
-    match (&job.action, &job.delivery) {
-        (Action::Command { argv, .. }, _) if argv.is_empty() => Err("command argv is empty"),
-        (
-            Action::Command {
-                target: AgentTarget::ExistingChat { chat_id },
-                ..
-            },
-            Delivery::Chat,
-        ) if chat_id.is_empty() => Err("missing chat_id"),
-        (Action::Command { .. }, Delivery::Chat) => Ok(()),
-        (Action::Command { .. }, _) => Ok(()),
-        (Action::AgentTurn { .. }, _) => Err("action is not command"),
-    }
-}
-
-fn runner_supported_trigger(trigger: &Trigger) -> bool {
-    matches!(
-        trigger,
-        Trigger::Cron { .. }
-            | Trigger::Interval { .. }
-            | Trigger::Once { .. }
-            | Trigger::Manual
-            | Trigger::Webhook { .. }
-    )
-}
-
-pub(crate) fn scheduled_thread_patch(task: &Job) -> Option<Value> {
-    let mut patch = serde_json::Map::new();
-    if let Some(mode) = task.mode() {
-        patch.insert("mode".to_string(), json!(mode));
-    }
-    if let Some(model) = job_model(task) {
-        patch.insert("model".to_string(), json!(model));
-    }
-    if patch.is_empty() {
-        None
-    } else {
-        Some(Value::Object(patch))
-    }
-}
-
-fn job_is_isolated(task: &Job) -> bool {
-    matches!(
-        &task.action,
-        Action::AgentTurn {
-            target: AgentTarget::Isolated,
-            ..
-        } | Action::Command {
-            target: AgentTarget::Isolated,
-            ..
-        }
-    )
-}
-
-fn command_job_has_non_chat_delivery(task: &Job) -> bool {
-    matches!(&task.action, Action::Command { .. }) && !matches!(task.delivery, Delivery::Chat)
-}
-
-fn task_can_use_cron_lane(task: &Job) -> bool {
-    matches!(task.action, Action::Command { .. }) || job_is_isolated(task)
-}
-
-fn job_model(task: &Job) -> Option<&str> {
-    match &task.action {
-        Action::AgentTurn { model, .. } => model.as_deref().filter(|model| !model.is_empty()),
-        _ => None,
     }
 }
 
@@ -1449,52 +1339,6 @@ fn cron_fire_message_with_missed(task: &Job, final_fire: bool, missed: bool) -> 
     )
 }
 
-fn event_fire_count(task: &Job) -> u32 {
-    if task
-        .last_fired_at_ms
-        .is_some_and(|fired_at_ms| job_was_advanced_before_fire(task, fired_at_ms))
-    {
-        task.fire_count
-    } else {
-        task.fire_count.saturating_add(1)
-    }
-}
-
-fn job_was_advanced_before_fire(task: &Job, fired_at_ms: u64) -> bool {
-    task.recurring
-        && task.last_status.as_deref() == Some("advanced")
-        && task
-            .last_fired_at_ms
-            .is_some_and(|last_fired_at_ms| last_fired_at_ms <= fired_at_ms)
-}
-
-fn command_record_error(result: &CommandRunResult) -> String {
-    command_error_summary(result)
-}
-
-fn command_failure_can_retry(result: &CommandRunResult) -> bool {
-    classify(&command_retry_text(result)).is_some()
-}
-
-fn command_retry_text(result: &CommandRunResult) -> String {
-    let mut text = String::new();
-    if result.stderr.to_ascii_lowercase().contains("timed out") {
-        text.push_str("timeout\n");
-    }
-    text.push_str(&result.stderr);
-    if !result.stdout.is_empty() {
-        if !text.is_empty() && !text.ends_with('\n') {
-            text.push('\n');
-        }
-        text.push_str(&result.stdout);
-    }
-    if text.trim().is_empty() {
-        command_error_summary(result)
-    } else {
-        text
-    }
-}
-
 fn catch_up_notice_message(missed_count: u64) -> ChatMessage {
     event(
         EventSubkind::SystemNotice,
@@ -1520,152 +1364,6 @@ fn auto_expired_notice_message(task: &Job) -> ChatMessage {
     )
 }
 
-pub(crate) fn scheduled_fire_at_ms(
-    task: &Job,
-    now: u64,
-    jitter_cfg: &JitterConfig,
-    grace_config: MissedRunGraceConfig,
-) -> Option<u64> {
-    if let Some(trigger_at_ms) = task.trigger_at_ms {
-        if task.is_paused() {
-            return Some(trigger_at_ms);
-        }
-    }
-    let tz = scheduler_timezone();
-    let from_ms = task.last_fired_at_ms.unwrap_or(task.created_at_ms);
-    let recurring_state = if task.recurring
-        && matches!(
-            task.trigger,
-            Trigger::Cron { .. } | Trigger::Interval { .. }
-        ) {
-        recurring_missed_grace_state(task, from_ms, now, tz, grace_config)
-    } else {
-        None
-    };
-    if recurring_state
-        .as_ref()
-        .is_some_and(|state| state.due_ms.is_some() && !state.should_fire)
-    {
-        return recurring_state.map(|state| state.next_future_ms);
-    }
-    let scheduled = match &task.trigger {
-        Trigger::Cron { .. } if task.recurring => {
-            jittered_next_run_ms_for(task, from_ms, &task.id, jitter_cfg, tz)
-        }
-        Trigger::Cron { .. } => {
-            one_shot_jittered_next_run_ms_for(task, from_ms, &task.id, jitter_cfg, tz)
-        }
-        Trigger::Interval { .. } | Trigger::Once { .. } => next_run_ms(task, from_ms, tz),
-        Trigger::Manual | Trigger::Webhook { .. } | Trigger::OnProcessExit { .. } => None,
-    };
-    let scheduled = if task.recurring || task.last_fired_at_ms.is_none() {
-        scheduled
-    } else {
-        None
-    };
-    match (scheduled, task.trigger_at_ms) {
-        (Some(scheduled), Some(trigger_at_ms)) => Some(scheduled.min(trigger_at_ms)),
-        (Some(scheduled), None) => Some(scheduled),
-        (None, Some(trigger_at_ms)) => Some(trigger_at_ms),
-        (None, None) => None,
-    }
-}
-
-async fn record_run(
-    store: &Arc<dyn CronStore>,
-    job_id: &str,
-    status: &str,
-    error: Option<String>,
-    now_ms: u64,
-    recent_runs_cap: usize,
-) -> Result<(), String> {
-    let mut task = store
-        .get(job_id)
-        .await
-        .ok_or_else(|| format!("Scheduled task {job_id} not found"))?;
-    let already_advanced = job_was_advanced_before_fire(&task, now_ms);
-    if already_advanced {
-        if let Some(run) = task
-            .recent_runs
-            .last_mut()
-            .filter(|run| run.at_ms == now_ms)
-        {
-            run.status = status.to_string();
-            run.error = error.clone();
-        } else {
-            task.recent_runs.push(CronRunRecord {
-                at_ms: now_ms,
-                status: status.to_string(),
-                error: error.clone(),
-            });
-            cap_recent_runs(&mut task, recent_runs_cap);
-        }
-    } else {
-        task.recent_runs.push(CronRunRecord {
-            at_ms: now_ms,
-            status: status.to_string(),
-            error: error.clone(),
-        });
-        cap_recent_runs(&mut task, recent_runs_cap);
-    }
-    task.last_status = Some(status.to_string());
-    task.last_error = error;
-    // A rejected agent prompt remains the same outstanding fire even after a
-    // restart or a long backoff. Do not let missed-run grace fast-forward it.
-    if status == "deferred" && matches!(task.action, Action::AgentTurn { .. }) {
-        task.trigger_at_ms.get_or_insert(now_ms);
-    }
-    if status == "fired" || status == "error" {
-        if !already_advanced {
-            task.last_fired_at_ms = Some(now_ms);
-            task.fire_count = task.fire_count.saturating_add(1);
-        }
-        if status == "fired" {
-            task.retry_attempts = 0;
-        }
-        if task
-            .trigger_at_ms
-            .is_some_and(|trigger_at_ms| trigger_at_ms <= now_ms)
-        {
-            task.trigger_at_ms = None;
-        }
-    }
-    if store.replace(task).await? {
-        Ok(())
-    } else {
-        Err(format!("Scheduled task {job_id} not found"))
-    }
-}
-
-fn cap_recent_runs(task: &mut Job, cap: usize) {
-    if cap == 0 {
-        task.recent_runs.clear();
-        return;
-    }
-    if task.recent_runs.len() > cap {
-        task.recent_runs.drain(0..task.recent_runs.len() - cap);
-    }
-}
-
-fn missed_one_shot_task(task: &Job, now: u64) -> bool {
-    !task.recurring
-        && matches!(task.trigger, Trigger::Cron { .. })
-        && task.last_fired_at_ms.is_none()
-        && task.fire_count == 0
-        && next_run_ms(task, task.created_at_ms, scheduler_timezone())
-            .is_some_and(|next| next < now)
-}
-
-fn task_final_after_fire(task: &Job, now: u64) -> bool {
-    task.recurring
-        && task.auto_expire_after_ms > 0
-        && now.saturating_sub(task.created_at_ms) > task.auto_expire_after_ms
-}
-
-fn now_ms() -> u64 {
-    Utc::now().timestamp_millis().max(0) as u64
-}
-
 async fn wait_for_shutdown(shutdown_flag: Arc<AtomicBool>) {
     while !shutdown_flag.load(Ordering::Relaxed) {
         tokio::time::sleep(Duration::from_millis(100)).await;
@@ -1676,7 +1374,7 @@ async fn wait_for_shutdown(shutdown_flag: Arc<AtomicBool>) {
 mod tests {
     use std::sync::atomic::Ordering;
 
-    use chrono::TimeZone;
+    use chrono::{TimeZone, Utc};
     use tokio::sync::Mutex as AMutex;
 
     use super::*;
@@ -1845,18 +1543,6 @@ mod tests {
             "/C".to_string(),
             "echo 429 Too Many Requests 1>&2 & exit 7".to_string(),
         ]
-    }
-
-    #[test]
-    fn command_timeout_failure_is_retryable() {
-        let result = CommandRunResult {
-            status: "error".to_string(),
-            stdout: String::new(),
-            stderr: "command timed out after 1 seconds".to_string(),
-            exit_code: None,
-        };
-
-        assert!(command_failure_can_retry(&result));
     }
 
     fn timezone_cron_task(id: &str, created_at_ms: u64) -> Job {

@@ -123,7 +123,7 @@ pub(crate) async fn deliver_scheduled_turn(
         "scheduler.cron".to_string(),
         true,
     );
-    delivery.thread_patch = super::runner::scheduled_thread_patch(job);
+    delivery.thread_patch = super::planning::scheduled_thread_patch(job);
     let _ = fired_at_ms;
     crate::chat::delivery::deliver_to_chat(app.clone(), chat_id, delivery).await
 }

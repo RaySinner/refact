@@ -15,16 +15,11 @@ use crate::exec::{
 use crate::files_correction::get_active_project_path;
 use crate::scheduler::types::{CommandSpec, Job};
 
+pub use refact_scheduler_core::command_result::*;
+
 const DEFAULT_COMMAND_TIMEOUT_SECS: u64 = 300;
 const MAX_COMMAND_TIMEOUT_SECS: u64 = 3600;
 const COMMAND_TRANSCRIPT_MAX_BYTES: usize = 2 * 1024 * 1024;
-
-pub struct CommandRunResult {
-    pub status: String,
-    pub stdout: String,
-    pub stderr: String,
-    pub exit_code: Option<i32>,
-}
 
 pub async fn run_command(app: &AppState, job: &Job, cmd: &CommandSpec) -> CommandRunResult {
     match run_command_inner(app, job, cmd).await {
@@ -148,14 +143,6 @@ pub fn command_error_notice_message(task: &Job, result: &CommandRunResult) -> Ch
         }),
         command_error_summary(result),
     )
-}
-
-pub fn command_error_summary(result: &CommandRunResult) -> String {
-    let stderr = result.stderr.trim();
-    if stderr.is_empty() {
-        return "Scheduled command failed".to_string();
-    }
-    format!("Scheduled command failed: {}", first_line(stderr))
 }
 
 fn validate_argv(argv: &[String]) -> Result<(), String> {
@@ -300,13 +287,6 @@ fn append_status_summary(stderr: &mut String, status: &ExecStatus, timeout_secs:
     stderr.push('\n');
 }
 
-fn first_line(value: &str) -> &str {
-    value
-        .lines()
-        .find(|line| !line.trim().is_empty())
-        .unwrap_or(value)
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
@@ -365,21 +345,6 @@ mod tests {
         let error = resolve_cwd(Some(&root), Some("../outside")).unwrap_err();
 
         assert_eq!(error, "cwd must stay within the active project");
-    }
-
-    #[test]
-    fn command_error_summary_prefers_stderr() {
-        let result = CommandRunResult {
-            status: "error".to_string(),
-            stdout: String::new(),
-            stderr: "boom\nmore".to_string(),
-            exit_code: Some(2),
-        };
-
-        assert_eq!(
-            command_error_summary(&result),
-            "Scheduled command failed: boom"
-        );
     }
 
     #[test]

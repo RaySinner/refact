@@ -861,6 +861,28 @@ pub fn apply_care_action(
     )
 }
 
+pub async fn load_state(project_root: &std::path::Path) -> BuddyState {
+    let path = project_root.join(".refact/buddy/state.json");
+    match tokio::fs::read_to_string(&path).await {
+        Ok(content) => match serde_json::from_str::<BuddyState>(&content) {
+            Ok(mut state) => {
+                sync_state(&mut state);
+                state
+            }
+            Err(e) => {
+                tracing::warn!("Failed to parse buddy state: {}, using defaults", e);
+                default_buddy_state()
+            }
+        },
+        Err(_) => default_buddy_state(),
+    }
+}
+
+pub async fn save_state(project_root: &std::path::Path, state: &BuddyState) -> Result<(), String> {
+    let path = project_root.join(".refact/buddy/state.json");
+    crate::storage::atomic_write_json(&path, state).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

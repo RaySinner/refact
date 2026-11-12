@@ -15,6 +15,9 @@ use refact_tool_api::{build_registry_from_names, ToolDesc};
 
 pub mod command_line;
 pub mod command_policy;
+pub mod codegraph_highlev;
+pub mod codegraph_status;
+pub mod config_files_bootstrap;
 pub mod context_factory;
 pub mod chat_ctx;
 pub mod files_correction;
@@ -24,8 +27,11 @@ pub mod global_context;
 pub mod integr_abstract;
 pub mod knowledge_graph;
 pub mod knowledge_index;
+pub mod mode_validation;
+pub mod project_information;
 pub mod privacy;
 pub mod runtime_settings;
+pub mod stats;
 pub mod terminal_security;
 pub mod tool_catalog;
 pub mod ctx_traits;
@@ -374,6 +380,7 @@ pub trait NotificationEventSender: Send + Sync {
 
 pub mod scheduler;
 pub mod customization_registry;
+pub mod customization_registry_gcx;
 pub mod memories;
 pub mod session_handles;
 pub mod integration_variables;

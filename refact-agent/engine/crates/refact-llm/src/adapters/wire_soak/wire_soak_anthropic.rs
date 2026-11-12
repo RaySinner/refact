@@ -1,5 +1,5 @@
 use refact_core::chat_types::{ChatContent, ChatMessage};
-use refact_llm::adapters::anthropic::AnthropicAdapter;
+use crate::adapters::anthropic::AnthropicAdapter;
 
 use super::wire_soak_helpers::{
     assert_no_literal_role_strings_in_body, assert_no_plan_history_in_body,

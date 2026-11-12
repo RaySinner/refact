@@ -1,6 +1,6 @@
 use refact_core::chat_types::{ChatContent, ChatMessage, ChatToolCall, ChatToolFunction};
-use refact_llm::adapter::{AdapterSettings, LlmWireAdapter};
-use refact_llm::canonical::LlmRequest;
+use crate::adapter::{AdapterSettings, LlmWireAdapter};
+use crate::canonical::LlmRequest;
 use serde_json::{Value, json};
 
 pub fn generate_mixed_corpus(seed: u64, len: usize) -> Vec<ChatMessage> {

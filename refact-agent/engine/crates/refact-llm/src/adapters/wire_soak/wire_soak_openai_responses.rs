@@ -1,4 +1,4 @@
-use refact_llm::adapters::openai_responses::OpenAiResponsesAdapter;
+use crate::adapters::openai_responses::OpenAiResponsesAdapter;
 
 use super::wire_soak_helpers::{
     assert_no_literal_role_strings_in_body, assert_no_plan_history_in_body,

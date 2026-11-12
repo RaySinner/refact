@@ -5,3 +5,6 @@ pub mod ollama;
 pub mod openai_chat;
 pub mod openai_responses;
 pub mod render_extra;
+
+#[cfg(test)]
+pub mod wire_soak;

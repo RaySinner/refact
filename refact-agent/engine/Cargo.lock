@@ -4416,6 +4416,7 @@ dependencies = [
 name = "refact-llm"
 version = "0.1.0"
 dependencies = [
+ "insta",
  "lazy_static",
  "rand 0.8.5",
  "refact-chat-api",
@@ -4686,6 +4687,8 @@ dependencies = [
  "async-trait",
  "axum",
  "chrono",
+ "filetime",
+ "futures",
  "indexmap 1.9.3",
  "refact-agents-core",
  "refact-browser",
@@ -4721,10 +4724,12 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "serial_test",
+ "sha2",
  "structopt",
  "tempfile",
  "tokio",
  "tracing",
+ "uuid",
 ]
 
 [[package]]

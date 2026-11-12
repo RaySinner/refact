@@ -1,24 +1,9 @@
-use std::sync::Arc;
-
-use crate::global_context::GlobalContext;
-use crate::stats::event::LlmCallEvent;
-
-pub async fn stats_writer_task(
-    gcx: Arc<GlobalContext>,
-    receiver: tokio::sync::mpsc::Receiver<LlmCallEvent>,
-) {
-    let stats_dir_fn = Arc::new(move || {
-        let gcx = gcx.clone();
-        Box::pin(async move { crate::stats::get_stats_dir(gcx).await })
-            as std::pin::Pin<Box<dyn std::future::Future<Output = std::path::PathBuf> + Send>>
-    });
-    refact_stats::writer::stats_writer_task(stats_dir_fn, receiver).await;
-}
+pub use refact_runtime_api::stats::stats_writer_task;
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::global_context::tests::make_test_gcx;
+    use crate::stats::event::LlmCallEvent;
 
     fn make_event(i: u64) -> LlmCallEvent {
         LlmCallEvent {
@@ -60,7 +45,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_writer_uses_workspace_dir_when_workspace_appears_after_startup() {
-        let gcx = make_test_gcx().await;
+        let gcx = crate::global_context::tests::make_test_gcx().await;
         let config_stats_dir = gcx.config_dir.join("stats");
         let workspace = tempfile::tempdir().unwrap();
         let workspace_stats_dir = workspace.path().join(".refact").join("stats");

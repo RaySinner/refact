@@ -1,5 +1,5 @@
 use refact_core::chat_types::ChatMessage;
-use refact_llm::adapters::openai_chat::OpenAiChatAdapter;
+use crate::adapters::openai_chat::OpenAiChatAdapter;
 
 use super::wire_soak_helpers::{
     assert_tool_result_immediately_follows_tool_call, assert_no_literal_role_strings_in_body,

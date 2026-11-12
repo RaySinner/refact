@@ -39,16 +39,20 @@ refact-yaml-configs = { path = "../refact-yaml-configs" }
 refact-worktrees = { path = "../refact-worktrees" }
 chrono = { version = "0.4.31", features = ["serde"] }
 async-trait = "0.1.73"
+futures = "0.3"
 indexmap.workspace = true
 axum = { version = "0.6.20", features = ["default", "http2"] }
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 serde_yaml = "0.9"
+sha2 = "0.10.8"
 tracing = "0.1"
 structopt = "0.3"
 tokio.workspace = true
 
 [dev-dependencies]
+filetime = "0.2.25"
 serial_test = "3"
 tempfile.workspace = true
+uuid.workspace = true

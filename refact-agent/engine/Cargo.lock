@@ -4392,6 +4392,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
+ "uuid",
  "which 7.0.3",
 ]
 

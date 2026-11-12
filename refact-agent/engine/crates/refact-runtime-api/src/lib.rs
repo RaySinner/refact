@@ -18,6 +18,7 @@ pub mod command_policy;
 pub mod codegraph_highlev;
 pub mod codegraph_status;
 pub mod config_files_bootstrap;
+pub mod caps_loader;
 pub mod context_factory;
 pub mod chat_ctx;
 pub mod files_correction;
@@ -56,7 +57,8 @@ pub use chat_ctx::{
     ChatCtx, ChatIntegrationScope, ChatToolExecutor, ChatWorkspace, ExecPolicyProvider, HookRunner,
     ProjectTreeProvider, PromptAssembler, SubchatLauncher, TrajectoryStore,
 };
-pub use context_factory::{ContextFactory, ContextFactorySlot};
+pub use caps_loader::try_load_caps_quickly_if_not_present;
+pub use context_factory::{CapsLoader, ContextFactory, ContextFactorySlot};
 pub use gcx_helpers::{
     declared_file_records, privacy_record_scope, reload_indexing_everywhere_for_gcx,
     tool_enrichment_from_path_references,

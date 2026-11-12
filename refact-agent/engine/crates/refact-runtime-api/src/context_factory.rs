@@ -1,9 +1,30 @@
+use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
+
+use async_trait::async_trait;
+use refact_caps_core::code_assistant_caps::CodeAssistantCaps;
 
 use crate::app_state::AppState;
 use crate::chat_ctx::ChatCtx;
+use crate::command_line::CommandLine;
 use crate::global_context::SharedGlobalContext;
 use crate::tool_ctx::ToolCtx;
+
+/// Seam over the engine caps stack (`caps::load_caps` and the project model
+/// defaults mtime probe). Both need engine-only provider machinery, so they stay
+/// in the engine and are reached through the installed factory.
+#[async_trait]
+pub trait CapsLoader: Send + Sync {
+    async fn load_caps(
+        &self,
+        cmdline: CommandLine,
+        gcx: SharedGlobalContext,
+    ) -> Result<Arc<CodeAssistantCaps>, String>;
+    async fn project_model_defaults_state(
+        &self,
+        gcx: SharedGlobalContext,
+    ) -> (Option<PathBuf>, u64);
+}
 
 /// Seam that lets `refact-runtime-api` build the composite context structs without
 /// knowing about the engine's handle implementations. The engine installs the real
@@ -12,6 +33,7 @@ pub trait ContextFactory: Send + Sync {
     fn chat_ctx(&self, gcx: SharedGlobalContext) -> ChatCtx;
     fn tool_ctx(&self, gcx: SharedGlobalContext) -> ToolCtx;
     fn app_state(&self, gcx: SharedGlobalContext) -> AppState;
+    fn caps_loader(&self) -> Arc<dyn CapsLoader>;
 }
 
 /// Interior-mutable slot on `GlobalContext`. `GlobalContext` is built inside a struct

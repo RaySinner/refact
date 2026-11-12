@@ -6,19 +6,15 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Mutex as StdMutex;
 use std::sync::RwLock as StdRwLock;
 use std::time::Duration;
-use hyper::StatusCode;
 use tokio::signal;
 use tokio::sync::{Mutex as AMutex, RwLock as ARwLock};
-use tracing::{error, info};
+use tracing::info;
 
 use crate::agents::registry::BackgroundAgentRegistry;
 use crate::app_state::{CapsState, TokenizerState, ToolCatalogCache};
-use crate::caps::CodeAssistantCaps;
-use crate::caps::providers::get_latest_provider_mtime;
 use crate::providers::load_providers_from_config;
 use crate::providers::quota::ProviderQuotaCache;
 use crate::completion_cache::CompletionCache;
-use crate::custom_error::ScratchError;
 use crate::exec::ExecRegistry;
 use crate::files_in_workspace::DocumentsState;
 use crate::privacy::{PrivacyObservationRuntimeState, PrivacySettings};
@@ -32,6 +28,7 @@ pub use refact_core::at_commands_preview_cache::AtCommandsPreviewCache;
 pub use refact_runtime_api::{
     CommandLine, TerminalSecurityConfig, TerminalSecurityMode, ToolCatalogGenerations,
 };
+pub use refact_runtime_api::caps_loader::try_load_caps_quickly_if_not_present;
 pub use refact_runtime_api::global_context::*;
 pub use refact_runtime_api::context_factory::{ContextFactory, ContextFactorySlot};
 pub use refact_runtime_api::{app_state_from_gcx, GlobalContextCtx};
@@ -68,9 +65,6 @@ async fn load_engine_global_config(
         .with_startup_overrides(cmdline.no_scheduler);
     (scheduler, config.hooks, config.terminal_security)
 }
-
-const CAPS_RELOAD_BACKOFF: u64 = 60; // seconds
-const CAPS_BACKGROUND_RELOAD: u64 = 3600; // seconds
 
 pub async fn migrate_to_config_folder(config_dir: &PathBuf, cache_dir: &PathBuf) -> io::Result<()> {
     let mut entries = tokio::fs::read_dir(cache_dir).await?;
@@ -140,84 +134,6 @@ pub fn get_app_searchable_id(workspace_folders: &[PathBuf]) -> String {
         .collect::<Vec<_>>()
         .join(";");
     format!("{}-{}", machine_guid, folders)
-}
-
-pub async fn try_load_caps_quickly_if_not_present(
-    gcx: Arc<GlobalContext>,
-    max_age_seconds: u64,
-) -> Result<Arc<CodeAssistantCaps>, ScratchError> {
-    let cmdline = gcx.cmdline.clone();
-    let (caps_state, config_dir) = { (gcx.caps_state.clone(), gcx.config_dir.clone()) };
-    let caps_reading_lock = caps_state.read().await.reading_lock.clone();
-
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
-    let caps_last_attempted_ts;
-    let latest_provider_mtime = get_latest_provider_mtime(&config_dir).await.unwrap_or(0);
-    let (project_defaults_root, project_defaults_mtime) =
-        crate::caps::project_model_defaults_state(gcx.clone()).await;
-    let latest_provider_mtime = latest_provider_mtime.max(project_defaults_mtime);
-
-    {
-        // gcx is not locked, but a specialized async mutex is, up until caps are saved
-        let _caps_reading_locked = caps_reading_lock.lock().await;
-
-        let max_age = if max_age_seconds > 0 {
-            max_age_seconds
-        } else {
-            CAPS_BACKGROUND_RELOAD
-        };
-        {
-            let mut caps_state = caps_state.write().await;
-            if caps_state.last_attempted_ts + max_age < now
-                || latest_provider_mtime >= caps_state.last_attempted_ts
-                || caps_state.project_root_changed(&project_defaults_root)
-            {
-                caps_state.caps = None;
-                caps_state.last_attempted_ts = 0;
-                gcx.tool_catalog_generations.advance_capabilities();
-                caps_last_attempted_ts = 0;
-            } else {
-                if let Some(caps_arc) = caps_state.caps.clone() {
-                    return Ok(caps_arc.clone());
-                }
-                caps_last_attempted_ts = caps_state.last_attempted_ts;
-            }
-        }
-        if caps_last_attempted_ts + CAPS_RELOAD_BACKOFF > now {
-            let caps_state = caps_state.read().await;
-            return Err(ScratchError::new(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                caps_state.last_error.clone(),
-            ));
-        }
-
-        let caps_result = crate::caps::load_caps(cmdline, gcx.clone()).await;
-
-        {
-            let mut caps_state = caps_state.write().await;
-            caps_state.last_attempted_ts = now;
-            match caps_result {
-                Ok(caps) => {
-                    caps_state.caps = Some(caps.clone());
-                    caps_state.loaded_project_root = Some(project_defaults_root);
-                    caps_state.last_error = "".to_string();
-                    gcx.tool_catalog_generations.advance_capabilities();
-                    Ok(caps)
-                }
-                Err(e) => {
-                    error!("caps fetch failed: {:?}", e);
-                    caps_state.last_error = format!("caps fetch failed: {}", e);
-                    return Err(ScratchError::new(
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        caps_state.last_error.clone(),
-                    ));
-                }
-            }
-        }
-    }
 }
 
 pub async fn look_for_piggyback_fields(

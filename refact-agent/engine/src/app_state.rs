@@ -17,7 +17,7 @@ use refact_runtime_api::{
 pub const TOOL_CATALOG_SNAPSHOTS_ENV: &str = "REFACT_TOOL_CATALOG_SNAPSHOTS";
 use tokio::sync::{Mutex as AMutex, Notify};
 
-pub use refact_runtime_api::{app_state_from_gcx, ContextFactory, GlobalContextCtx};
+pub use refact_runtime_api::{app_state_from_gcx, CapsLoader, ContextFactory, GlobalContextCtx};
 use crate::buddy::actor::BuddyService;
 use crate::buddy::events::BuddyEvent;
 use crate::buddy::user_activity::UserActivityRing;
@@ -472,6 +472,32 @@ impl ContextFactory for EngineContextFactory {
             ctx,
             tool,
         }
+    }
+
+    fn caps_loader(&self) -> Arc<dyn CapsLoader> {
+        Arc::new(EngineCapsLoader)
+    }
+}
+
+/// Engine side of the `CapsLoader` seam: the provider/models.dev machinery behind
+/// `load_caps` and the project-defaults mtime probe stay here.
+struct EngineCapsLoader;
+
+#[async_trait]
+impl CapsLoader for EngineCapsLoader {
+    async fn load_caps(
+        &self,
+        cmdline: CommandLine,
+        gcx: SharedGlobalContext,
+    ) -> Result<Arc<crate::caps::CodeAssistantCaps>, String> {
+        crate::caps::load_caps(cmdline, gcx).await
+    }
+
+    async fn project_model_defaults_state(
+        &self,
+        gcx: SharedGlobalContext,
+    ) -> (Option<PathBuf>, u64) {
+        crate::caps::project_model_defaults_state(gcx).await
     }
 }
 

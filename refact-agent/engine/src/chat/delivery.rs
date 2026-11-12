@@ -22,12 +22,14 @@ use crate::chat::types::{
     ChatSession, DeliveryOutcome, PendingDelivery, PushMode, SessionState, TrajectoryCommitIntent,
 };
 
+pub use refact_chat_api::delivery::deliver_to_chat;
+
 /// Deliver a batch of messages to `chat_id`.
 ///
 /// Restores the target session from its trajectory when needed and rejects
 /// closed or unavailable chats honestly instead of silently dropping messages.
 /// A background-agent runner that owns this chat gets the delivery first.
-pub async fn deliver_to_chat(
+pub async fn deliver_pending(
     app: AppState,
     chat_id: &str,
     delivery: PendingDelivery,

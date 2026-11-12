@@ -263,9 +263,9 @@ impl Tool for ToolAgentSteer {
                 .get(&agent_chat_id)
                 .cloned()
                 .ok_or("Agent session not found")?;
-            crate::chat::context_rebuild::request_rebuild(
+            refact_chat_api::pending_context_rebuild::request_rebuild(
                 &mut *session.lock().await,
-                crate::chat::context_rebuild::PendingContextRebuild {
+                refact_chat_api::pending_context_rebuild::PendingContextRebuild {
                     model: None,
                     trigger: "agent_steer".into(),
                 },

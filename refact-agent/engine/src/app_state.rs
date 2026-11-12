@@ -283,6 +283,9 @@ impl ContextFactory for EngineContextFactory {
             knowledge_builder: Arc::new(crate::knowledge_index::EngineKnowledgeBuilder),
             memory_runtime: gcx.memory_runtime.clone(),
             task_storage_runtime: gcx.task_storage_runtime.clone(),
+            agent_host: Arc::new(crate::chat::task_agent_monitor::EngineChatAgentHost::new(
+                gcx.clone(),
+            )),
             runtime: RuntimeServices {
                 shutdown_flag: gcx.shutdown_flag.clone(),
                 cmdline: Arc::new(gcx.cmdline.clone()),

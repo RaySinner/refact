@@ -10,6 +10,7 @@ use refact_chat_api::subchat_types::{
     ChatMeta, ExecuteToolsOptions, ExplicitSubchatSpec, SubchatConfig, SubchatParameters,
     SubchatResult, TraceParent, WrapUpConfig,
 };
+use refact_chat_api::agent_notifications::{ChatAgentHost, ChatAgentScope};
 use refact_chat_api::types::SessionsMap;
 use refact_chat_api::{
     ChatMessage, ChatSession, TaskMeta, ThreadParams, TrajectoryCommitIntent,
@@ -307,6 +308,7 @@ pub struct ChatCtx {
     pub knowledge_builder: Arc<dyn crate::knowledge_index::KnowledgeBuilder>,
     pub memory_runtime: Arc<dyn crate::memories::MemoryRuntime>,
     pub task_storage_runtime: Arc<dyn crate::task_storage::TaskStorageRuntime>,
+    pub agent_host: Arc<dyn ChatAgentHost>,
     pub runtime: RuntimeServices,
     pub paths: PathServices,
     pub model: ModelServices,
@@ -333,4 +335,10 @@ pub struct ChatCtx {
     pub trajectories: Arc<dyn TrajectoryStore>,
     pub prompts: Arc<dyn PromptAssembler>,
     pub tool_executor: Arc<dyn ChatToolExecutor>,
+}
+
+impl ChatAgentScope for ChatCtx {
+    fn chat_agent_host(&self) -> &Arc<dyn ChatAgentHost> {
+        &self.agent_host
+    }
 }

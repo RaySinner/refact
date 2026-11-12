@@ -2,10 +2,12 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+pub mod agent_notifications;
 pub mod cache_guard;
-pub mod compression_gate;
 pub mod chat_local_types;
 pub mod code_lens;
+pub mod compression_gate;
+pub mod delivery;
 pub mod diagnostics;
 pub mod goal_ledger;
 pub mod goal_role;

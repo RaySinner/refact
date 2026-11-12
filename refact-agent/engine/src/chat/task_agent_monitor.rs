@@ -28,6 +28,8 @@ use crate::chat::retry_policy::{
 };
 use crate::chat::types::{ChatSession, SessionState, TaskMeta};
 use crate::chat::get_or_create_session_with_trajectory;
+use async_trait::async_trait;
+use refact_chat_api::agent_notifications::ChatAgentHost;
 use refact_core::chat_types::{DeliveryOutcome, PendingDelivery, PushMode};
 use crate::worktrees::service::WorktreeService;
 use crate::worktrees::git;
@@ -56,6 +58,10 @@ const STALL_ESCALATION_STATUS_PREFIX: &str = "Stalled agent escalation recorded:
 /// each other and so exhausting one never marks the card failed.
 const MAX_STALL_AGENT_NOTIFICATIONS_PER_CARD: usize = 2;
 const TASK_AGENT_MONITOR_SOURCE: &str = "chat.task_agent_monitor";
+
+pub use refact_chat_api::agent_notifications::{
+    notify_planner_agents_finished, notify_planner_blocking_question,
+};
 
 fn task_agent_monitor_notice(payload: serde_json::Value, content: String) -> ChatMessage {
     event(
@@ -148,7 +154,7 @@ async fn ensure_planner_task_meta(
 /// The question itself is already durably recorded on the card as an `[ASK:...]`
 /// status update; the chosen push mode controls when the notice lands, while
 /// wake=true resumes an idle planner instead of relying on its next poll.
-pub(crate) async fn notify_planner_blocking_question(
+pub(crate) async fn notify_blocking_question(
     ctx: ChatCtx,
     task_id: &str,
     card_id: &str,
@@ -1405,7 +1411,7 @@ async fn mark_agent_as_failed(
             board.clone()
         });
 
-    if let Err(e) = notify_planner_agents_finished(
+    if let Err(e) = notify_agents_finished(
         ctx.clone(),
         task_id,
         &notification_board,
@@ -1425,7 +1431,7 @@ async fn mark_agent_as_failed(
 }
 
 /// Notify planner about newly finished agents without waiting for the full batch to end.
-pub async fn notify_planner_agents_finished(
+pub async fn notify_agents_finished(
     ctx: ChatCtx,
     task_id: &str,
     board: &crate::tasks::types::TaskBoard,
@@ -1643,6 +1649,64 @@ pub async fn notify_planner_agents_finished(
     }
 
     Ok(())
+}
+
+pub struct EngineChatAgentHost {
+    gcx: crate::global_context::SharedGlobalContext,
+}
+
+impl EngineChatAgentHost {
+    pub fn new(gcx: crate::global_context::SharedGlobalContext) -> Self {
+        Self { gcx }
+    }
+
+    fn ctx(&self) -> ChatCtx {
+        use crate::app_state::GlobalContextCtx;
+        self.gcx.chat_ctx(self.gcx.clone())
+    }
+}
+
+#[async_trait]
+impl ChatAgentHost for EngineChatAgentHost {
+    async fn notify_agents_finished(
+        &self,
+        task_id: &str,
+        board: &crate::tasks::types::TaskBoard,
+        all_finished: bool,
+        planner_chat_id: Option<&str>,
+    ) -> Result<(), String> {
+        notify_agents_finished(self.ctx(), task_id, board, all_finished, planner_chat_id).await
+    }
+
+    async fn notify_blocking_question(
+        &self,
+        task_id: &str,
+        card_id: &str,
+        planner_chat_id: &str,
+        question_id: &str,
+        question: &str,
+        push: PushMode,
+    ) -> Result<DeliveryOutcome, String> {
+        notify_blocking_question(
+            self.ctx(),
+            task_id,
+            card_id,
+            planner_chat_id,
+            question_id,
+            question,
+            push,
+        )
+        .await
+    }
+
+    async fn deliver_pending(
+        &self,
+        chat_id: &str,
+        delivery: PendingDelivery,
+    ) -> Result<DeliveryOutcome, String> {
+        let app = crate::app_state::app_state_from_gcx(self.gcx.clone()).await;
+        crate::chat::delivery::deliver_pending(app, chat_id, delivery).await
+    }
 }
 
 fn expected_agent_branch_prefix(task_id: &str, card_id: &str) -> String {

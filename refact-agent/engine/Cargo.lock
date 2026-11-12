@@ -4065,6 +4065,7 @@ dependencies = [
 name = "refact-chat-api"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "chrono",
  "hex",
  "indexmap 1.9.3",

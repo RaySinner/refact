@@ -5,6 +5,7 @@ use async_trait::async_trait;
 use refact_agents_core::AgentHost;
 use refact_agents_core::registry::BackgroundAgentRegistry;
 use refact_chat_api::{DeliveryOutcome, PendingDelivery, SessionsMap};
+use refact_chat_api::agent_notifications::{ChatAgentHost, ChatAgentScope};
 
 use crate::chat_ctx::ChatCtx;
 use crate::tool_ctx::ToolCtx;
@@ -36,6 +37,12 @@ pub struct AppState {
 impl AppState {
     pub fn chat_ctx(&self) -> ChatCtx {
         self.ctx.clone()
+    }
+}
+
+impl ChatAgentScope for AppState {
+    fn chat_agent_host(&self) -> &Arc<dyn ChatAgentHost> {
+        self.ctx.chat_agent_host()
     }
 }
 

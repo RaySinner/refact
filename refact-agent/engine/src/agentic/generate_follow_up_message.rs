@@ -1,15 +1,13 @@
-pub use refact_agentic::generate_follow_up_message::{FollowUpResponse, make_conversation};
+pub use refact_agentic::generate_follow_up_message::{
+    make_conversation, FollowUpResponse, SUBAGENT_ID,
+};
 
 use std::sync::Arc;
 
+use crate::call_validation::ChatMessage;
 use crate::global_context::GlobalContext;
 use crate::subchat::{run_subchat_once, TraceParent};
-use crate::call_validation::{ChatContent, ChatMessage};
-use crate::json_utils;
 use crate::yaml_configs::customization_registry::get_subagent_config;
-use crate::custom_error::MapErrToString;
-
-const SUBAGENT_ID: &str = "follow_up";
 
 pub async fn generate_follow_up_message(
     messages: Vec<ChatMessage>,
@@ -30,17 +28,9 @@ pub async fn generate_follow_up_message(
                 .await
                 .ok_or_else(|| format!("subagent config '{}' not found", SUBAGENT_ID))?;
 
-            let system_prompt = subagent_config
-                .messages
-                .system_prompt
-                .as_ref()
-                .ok_or_else(|| {
-                    format!(
-                        "messages.system_prompt not defined for subagent '{}'",
-                        SUBAGENT_ID
-                    )
-                })?
-                .clone();
+            let system_prompt = refact_agentic::generate_follow_up_message::system_prompt(
+                subagent_config.messages.system_prompt.as_deref(),
+            )?;
 
             let result = run_subchat_once(
                 gcx2,
@@ -50,20 +40,13 @@ pub async fn generate_follow_up_message(
             )
             .await?;
 
-            let response = result
-                .messages
-                .last()
-                .and_then(|last_m| match &last_m.content {
-                    ChatContent::SimpleText(text) => Some(text.clone()),
-                    _ => None,
-                })
-                .ok_or("No follow-up message was generated".to_string())?;
+            let response = refact_agentic::generate_follow_up_message::last_response_text(
+                &result.messages,
+            )?;
 
             tracing::info!("follow-up model says {:?}", response);
 
-            let response: FollowUpResponse = json_utils::extract_json_object(&response)
-                .map_err_with_prefix("Failed to parse json:")?;
-            Ok(response)
+            refact_agentic::generate_follow_up_message::parse_follow_up_response(&response)
         },
     )
     .await

@@ -509,6 +509,149 @@ pub fn validate_decisions(
     Ok(())
 }
 
+/// Input budget left for the reconstruction prompt once the answer and a fixed
+/// safety margin are reserved from the analyzer context.
+pub fn reconstruction_input_limit(n_ctx: usize, max_new_tokens: usize) -> usize {
+    n_ctx.saturating_sub(max_new_tokens).saturating_sub(1024)
+}
+
+pub struct ReconstructionPrompt<'a> {
+    pub template: &'a str,
+    pub target_mode: &'a str,
+    pub target_mode_description: &'a str,
+    pub metadata: &'a ConversationMetadata,
+    pub messages: &'a [ChatMessage],
+    pub budget: TransitionContextBudget,
+    pub hints: &'a str,
+}
+
+/// Control artifacts and the newest user turn are mandatory; only older
+/// narrative gets truncated to `cap`.
+fn is_mandatory_message(latest_user: Option<usize>, index: usize, message: &ChatMessage) -> bool {
+    Some(index) == latest_user
+        || matches!(message.role.as_str(), "plan" | "goal")
+        || message
+            .extra
+            .get("event")
+            .and_then(|e| e.get("subkind"))
+            .and_then(|s| s.as_str())
+            .is_some_and(|s| matches!(s, "plan_delta" | "goal_delta" | "goal_pursuit"))
+}
+
+pub fn render_reconstruction_prompt(prompt: &ReconstructionPrompt<'_>, cap: usize) -> String {
+    let latest_user = prompt.messages.iter().rposition(|m| m.role == "user");
+    let mut annotated = String::new();
+    for (index, (id, message)) in prompt.metadata.annotated_messages.iter().enumerate() {
+        let text = message.content.content_text_only();
+        let text = if is_mandatory_message(latest_user, index, message) {
+            text
+        } else {
+            truncate_utf8(&text, cap)
+        };
+        annotated.push_str(&format!("[{id}] [{}]\n{text}\n", message.role));
+        if let Some(calls) = &message.tool_calls {
+            for call in calls {
+                annotated.push_str(&format!(
+                    "tool: {} {}\n",
+                    call.function.name,
+                    truncate_utf8(&call.function.arguments, cap)
+                ));
+            }
+        }
+    }
+    format!(
+        "{}\nCaller preservation hints (source-grounded only): {}",
+        prompt
+            .template
+            .replace("{target_mode}", prompt.target_mode)
+            .replace("{target_mode_description}", prompt.target_mode_description)
+            .replace("{annotated_message_list}", &annotated)
+            .replace("{file_list}", &format_file_list(prompt.metadata))
+            .replace("{memory_list}", &format_memory_list(prompt.metadata))
+            .replace(
+                "{budget_summary}",
+                &format_budget_summary(prompt.budget, prompt.messages)
+            ),
+        prompt.hints
+    )
+}
+
+/// Shrink the optional tail until the rendered prompt fits the analyzer context.
+pub fn fit_reconstruction_prompt(
+    render: impl Fn(usize) -> String,
+    count_tokens: impl Fn(&str) -> Result<usize, String>,
+    input_limit: usize,
+) -> Result<String, String> {
+    let mut cap = 16000;
+    loop {
+        let prompt = render(cap);
+        let tokens = count_tokens(&prompt)?;
+        if tokens <= input_limit {
+            return Ok(prompt);
+        }
+        if cap == 0 {
+            return Err(
+                "Mandatory reconstruction input and instructions exceed resolved analyzer context"
+                    .into(),
+            );
+        }
+        cap /= 2;
+    }
+}
+
+/// Paths the analysis may reread: only conversation-attested context/edited
+/// files and memory paths.
+pub fn allowed_reconstruction_paths(metadata: &ConversationMetadata) -> HashSet<String> {
+    metadata
+        .context_files
+        .iter()
+        .chain(&metadata.edited_files)
+        .map(|f| f.path.clone())
+        .chain(metadata.memory_paths.iter().cloned())
+        .collect()
+}
+
+/// A canonical reread path must stay inside the workspace or the `.refact` tree.
+pub fn canonical_reread_path_allowed(canonical: &std::path::Path, workspace_dirs: &[PathBuf]) -> bool {
+    let in_workspace = workspace_dirs.iter().any(|root| {
+        root.canonicalize()
+            .is_ok_and(|root| canonical.starts_with(root))
+    });
+    let in_refact = canonical
+        .components()
+        .any(|c| matches!(c, std::path::Component::Normal(name) if name == ".refact"));
+    in_workspace || in_refact
+}
+
+/// Paths of the context files the assembled chat actually reread.
+pub fn reread_paths(messages: &[ChatMessage]) -> Vec<String> {
+    messages
+        .iter()
+        .filter_map(|m| match &m.content {
+            ChatContent::ContextFiles(f) => Some(f.iter().map(|f| f.file_name.clone())),
+            _ => None,
+        })
+        .flatten()
+        .collect()
+}
+
+/// Stamp stable ids and carry the source conversation's privacy records plus the
+/// records of every file that was reread during assembly.
+pub fn finalize_reconstructed_messages(
+    messages: &mut [ChatMessage],
+    source: &[ChatMessage],
+    reread_records: Vec<refact_privacy::FileRecord>,
+) -> Result<(), String> {
+    for message in messages {
+        if message.message_id.is_empty() {
+            message.message_id = uuid::Uuid::new_v4().to_string();
+        }
+        refact_privacy::carry_records_into(message, source).map_err(|e| e.to_string())?;
+        refact_privacy::merge_records(message, reread_records.clone());
+    }
+    Ok(())
+}
+
 /// Strict reconstruction keeps control artifacts whole and reserves their cost first.
 pub async fn assemble_reconstruction(
     messages: &[ChatMessage],
@@ -1978,6 +2121,126 @@ async fn read_file_content_safe(path: &str, workspace_dirs: &[PathBuf]) -> Resul
 mod tests {
     use super::*;
     use refact_core::chat_types::{ChatToolCall, ChatToolFunction, ContextFile};
+
+    #[test]
+    fn reconstruction_input_limit_reserves_answer_and_margin() {
+        assert_eq!(reconstruction_input_limit(8_000, 1_000), 5_976);
+        assert_eq!(reconstruction_input_limit(1_024, 2_000), 0);
+    }
+
+    #[test]
+    fn fit_reconstruction_prompt_shrinks_cap_until_it_fits() {
+        let prompt = fit_reconstruction_prompt(
+            |cap| "x".repeat(cap),
+            |text| Ok(text.len()),
+            250,
+        )
+        .unwrap();
+        assert_eq!(prompt.len(), 250);
+
+        let error = fit_reconstruction_prompt(|_| "mandatory".to_string(), |text| Ok(text.len()), 3)
+            .unwrap_err();
+        assert_eq!(
+            error,
+            "Mandatory reconstruction input and instructions exceed resolved analyzer context"
+        );
+    }
+
+    #[test]
+    fn render_reconstruction_prompt_keeps_mandatory_messages_whole() {
+        let mut goal = ChatMessage::new("goal".into(), " whole goal text ".into());
+        goal.extra
+            .insert("goal".into(), serde_json::json!({"version": 1}));
+        let messages = vec![
+            ChatMessage::new("user".into(), "task".into()),
+            ChatMessage::new("assistant".into(), "older ".repeat(50)),
+            goal,
+        ];
+        let metadata = extract_conversation_metadata(&messages);
+        let budget = calculate_transition_context_budget(&messages);
+        let prompt = ReconstructionPrompt {
+            template: "{target_mode}/{annotated_message_list}",
+            target_mode: "agent",
+            target_mode_description: "",
+            metadata: &metadata,
+            messages: &messages,
+            budget,
+            hints: "",
+        };
+
+        let rendered = render_reconstruction_prompt(&prompt, 4);
+
+        assert!(rendered.starts_with("agent/"));
+        assert!(rendered.contains(" whole goal text "));
+        assert!(!rendered.contains("older older"));
+        assert!(rendered.contains("Caller preservation hints (source-grounded only):"));
+    }
+
+    #[test]
+    fn allowed_reconstruction_paths_are_conversation_attested_only() {
+        let message = ChatMessage {
+            role: "context_file".into(),
+            content: ChatContent::ContextFiles(vec![refact_core::chat_types::ContextFile {
+            file_name: "src/lib.rs".to_string(),
+                file_content: "fn main() {}".to_string(),
+                line1: 1,
+                line2: 1,
+                ..Default::default()
+            }]),
+            ..Default::default()
+        };
+        let metadata = extract_conversation_metadata(&[message]);
+
+        let allowed = allowed_reconstruction_paths(&metadata);
+
+        assert!(allowed.contains("src/lib.rs"));
+        assert!(!allowed.contains("src/other.rs"));
+    }
+
+    #[test]
+    fn canonical_reread_paths_must_stay_in_workspace_or_refact_tree() {
+        let dir = std::env::temp_dir().join("refact-agentic-reread-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let inside = dir.join("file.rs");
+        std::fs::write(&inside, "x").unwrap();
+        let canonical_inside = inside.canonicalize().unwrap();
+        let canonical_root = dir.canonicalize().unwrap();
+
+        assert!(canonical_reread_path_allowed(&canonical_inside, &[canonical_root]));
+        assert!(!canonical_reread_path_allowed(
+            &canonical_inside,
+            &[std::env::temp_dir().join("somewhere-else")]
+        ));
+    }
+
+    #[test]
+    fn reread_paths_and_finalize_stamp_ids_and_records() {
+        let mut messages = vec![ChatMessage {
+            role: "context_file".to_string(),
+            content: ChatContent::ContextFiles(vec![refact_core::chat_types::ContextFile {
+                file_name: "src/lib.rs".to_string(),
+                file_content: "fn main() {}".to_string(),
+                line1: 1,
+                line2: 1,
+                ..Default::default()
+            }]),
+            ..Default::default()
+        }];
+
+        assert_eq!(reread_paths(&messages), vec!["src/lib.rs".to_string()]);
+
+        let record = refact_privacy::FileRecord {
+            path: "src/lib.rs".into(),
+            zone: "normal".into(),
+            attribution: refact_privacy::Attribution::Declared,
+        };
+        finalize_reconstructed_messages(&mut messages, &[], vec![record.clone()]).unwrap();
+
+        assert!(!messages[0].message_id.is_empty());
+        let records = refact_privacy::records_from_messages(&messages).unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].1.path, "src/lib.rs");
+    }
 
     #[test]
     fn reconstruction_rejects_empty_and_invalid_decisions() {

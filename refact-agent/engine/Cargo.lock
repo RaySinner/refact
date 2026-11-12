@@ -3962,11 +3962,13 @@ dependencies = [
  "refact-chat-api",
  "refact-context-api",
  "refact-core",
+ "refact-privacy",
  "regex",
  "serde",
  "serde_json",
  "tokio",
  "tracing",
+ "uuid",
 ]
 
 [[package]]

@@ -15,12 +15,12 @@ use std::sync::Arc;
 
 use refact_context_api::PathsAccess;
 
-use crate::call_validation::{ChatContent, ChatMessage};
-use crate::global_context::GlobalContextCtx;
+use crate::call_validation::ChatMessage;
 use crate::global_context::GlobalContext;
+use crate::global_context::GlobalContextCtx;
 use crate::subchat::{
-    run_subchat, resolve_subchat_config_with_explicit_params, resolve_subchat_params,
-    resolve_subchat_model, ExplicitSubchatSpec, TraceParent,
+    run_subchat, resolve_subchat_config_with_explicit_params, resolve_subchat_model,
+    resolve_subchat_params, ExplicitSubchatSpec, TraceParent,
 };
 use crate::yaml_configs::customization_registry::get_subagent_config;
 
@@ -97,8 +97,6 @@ async fn analyze_reconstruction(
         budget.messages_symbols = total - budget.files_symbols;
     }
     let metadata = extract_conversation_metadata(request.messages);
-    // Full current request/control artifacts are mandatory; older entries have bounded previews.
-    let latest_user = request.messages.iter().rposition(|m| m.role == "user");
     let hints = request
         .hints
         .as_ref()
@@ -106,74 +104,30 @@ async fn analyze_reconstruction(
         .transpose()
         .map_err(|e| e.to_string())?
         .unwrap_or_default();
-    let render = |cap: usize| {
-        let mut annotated = String::new();
-        for (index, (id, message)) in metadata.annotated_messages.iter().enumerate() {
-            let mandatory = Some(index) == latest_user
-                || matches!(message.role.as_str(), "plan" | "goal")
-                || message
-                    .extra
-                    .get("event")
-                    .and_then(|e| e.get("subkind"))
-                    .and_then(|s| s.as_str())
-                    .is_some_and(|s| matches!(s, "plan_delta" | "goal_delta" | "goal_pursuit"));
-            let text = message.content.content_text_only();
-            let text = if mandatory {
-                text
+    let prompt = refact_agentic::mode_transition::ReconstructionPrompt {
+        template,
+        target_mode: request.target_mode,
+        target_mode_description: request.target_mode_description,
+        metadata: &metadata,
+        messages: request.messages,
+        budget,
+        hints: &hints,
+    };
+    let input_limit =
+        refact_agentic::mode_transition::reconstruction_input_limit(config.n_ctx, config.max_new_tokens);
+    let prompt = refact_agentic::mode_transition::fit_reconstruction_prompt(
+        |cap| refact_agentic::mode_transition::render_reconstruction_prompt(&prompt, cap),
+        |text| {
+            // Without a local tokenizer use a conservative byte bound rather than
+            // chars/4, which can undercount dense Unicode or source text.
+            if tokenizer.is_some() {
+                crate::tokens::count_text_tokens(tokenizer.clone(), text)
             } else {
-                truncate_utf8(&text, cap)
-            };
-            annotated.push_str(&format!("[{id}] [{}]\n{text}\n", message.role));
-            if let Some(calls) = &message.tool_calls {
-                for call in calls {
-                    annotated.push_str(&format!(
-                        "tool: {} {}\n",
-                        call.function.name,
-                        truncate_utf8(&call.function.arguments, cap)
-                    ));
-                }
+                Ok(text.len())
             }
-        }
-        format!(
-            "{}\nCaller preservation hints (source-grounded only): {}",
-            template
-                .replace("{target_mode}", request.target_mode)
-                .replace("{target_mode_description}", request.target_mode_description)
-                .replace("{annotated_message_list}", &annotated)
-                .replace("{file_list}", &format_file_list(&metadata))
-                .replace("{memory_list}", &format_memory_list(&metadata))
-                .replace(
-                    "{budget_summary}",
-                    &format_budget_summary(budget, request.messages)
-                ),
-            hints
-        )
-    };
-    let input_limit = config
-        .n_ctx
-        .saturating_sub(config.max_new_tokens)
-        .saturating_sub(1024);
-    let mut cap = 16000;
-    let prompt = loop {
-        let prompt = render(cap);
-        // Without a local tokenizer use a conservative byte bound rather than
-        // chars/4, which can undercount dense Unicode or source text.
-        let tokens = if tokenizer.is_some() {
-            crate::tokens::count_text_tokens(tokenizer.clone(), &prompt)?
-        } else {
-            prompt.len()
-        };
-        if tokens <= input_limit {
-            break prompt;
-        }
-        if cap == 0 {
-            return Err(
-                "Mandatory reconstruction input and instructions exceed resolved analyzer context"
-                    .into(),
-            );
-        }
-        cap /= 2;
-    };
+        },
+        input_limit,
+    )?;
     let mut analysis = ChatMessage::new("user".into(), prompt);
     refact_privacy::carry_records_into(&mut analysis, request.messages)
         .map_err(|e| e.to_string())?;
@@ -205,13 +159,7 @@ pub async fn reconstruct_context(
     let (mut decisions, model, budget) = analyze_reconstruction(gcx.clone(), &request).await?;
     let workspace_dirs = gcx.workspace_folders();
     let metadata = extract_conversation_metadata(request.messages);
-    let allowed: std::collections::HashSet<_> = metadata
-        .context_files
-        .iter()
-        .chain(&metadata.edited_files)
-        .map(|f| f.path.clone())
-        .chain(metadata.memory_paths.iter().cloned())
-        .collect();
+    let allowed = refact_agentic::mode_transition::allowed_reconstruction_paths(&metadata);
     let caps = crate::global_context::try_load_caps_quickly_if_not_present(gcx.clone(), 0)
         .await
         .map_err(|e| e.to_string())?;
@@ -240,14 +188,10 @@ pub async fn reconstruct_context(
             let Ok(canonical) = full.canonicalize() else {
                 continue;
             };
-            let in_workspace = workspace_dirs.iter().any(|root| {
-                root.canonicalize()
-                    .is_ok_and(|root| canonical.starts_with(root))
-            });
-            let in_refact = canonical
-                .components()
-                .any(|c| matches!(c, std::path::Component::Normal(name) if name == ".refact"));
-            if !in_workspace && !in_refact {
+            if !refact_agentic::mode_transition::canonical_reread_path_allowed(
+                &canonical,
+                &workspace_dirs,
+            ) {
                 continue;
             }
             crate::files_in_workspace::check_file_privacy_for_model_context(
@@ -295,22 +239,12 @@ pub async fn reconstruct_context(
         &preloaded,
     )
     .await?;
-    let reread_paths = messages
-        .iter()
-        .filter_map(|m| match &m.content {
-            ChatContent::ContextFiles(f) => Some(f.iter().map(|f| f.file_name.clone())),
-            _ => None,
-        })
-        .flatten()
-        .collect();
-    for message in &mut messages {
-        if message.message_id.is_empty() {
-            message.message_id = uuid::Uuid::new_v4().to_string();
-        }
-        refact_privacy::carry_records_into(message, request.messages)
-            .map_err(|e| e.to_string())?;
-        refact_privacy::merge_records(message, reread_records.clone());
-    }
+    let reread_paths = refact_agentic::mode_transition::reread_paths(&messages);
+    refact_agentic::mode_transition::finalize_reconstructed_messages(
+        &mut messages,
+        request.messages,
+        reread_records,
+    )?;
     check_cancelled(&request)?;
     Ok(ReconstructionOutcome {
         messages,
@@ -357,12 +291,11 @@ pub async fn assemble_new_chat<T: PathsAccess + ?Sized>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use crate::call_validation::{ChatContent, ChatMessage, ContextFile};
+    use crate::call_validation::ChatContent;
 
     #[test]
     fn reconstruction_cancellation_is_checked_before_work() {
-        let flag = Arc::new(AtomicBool::new(true));
+        let flag = Arc::new(std::sync::atomic::AtomicBool::new(true));
         let request = ReconstructionRequest {
             messages: &[],
             target_mode: "agent",
@@ -375,7 +308,7 @@ mod tests {
             preserve_goal_messages: true,
         };
         assert!(check_cancelled(&request).is_err());
-        flag.store(false, Ordering::Release);
+        flag.store(false, std::sync::atomic::Ordering::Release);
         assert!(check_cancelled(&request).is_ok());
     }
 
@@ -499,7 +432,7 @@ mod tests {
         let original_messages = vec![
             ChatMessage {
                 role: "context_file".to_string(),
-                content: ChatContent::ContextFiles(vec![ContextFile {
+                content: ChatContent::ContextFiles(vec![refact_core::chat_types::ContextFile {
                     file_name: "src/main.rs".to_string(),
                     file_content: "old content\n".repeat(300),
                     line1: 1,

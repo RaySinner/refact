@@ -7,10 +7,12 @@ edition = "2021"
 refact-core = { path = "../refact-core" }
 refact-chat-api = { path = "../refact-chat-api" }
 refact-context-api = { path = "../refact-context-api" }
+refact-privacy = { path = "../refact-privacy" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 lazy_static = { workspace = true }
 regex = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+uuid = { workspace = true }
 dunce = "1.0.5"

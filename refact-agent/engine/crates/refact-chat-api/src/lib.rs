@@ -4,6 +4,7 @@ use uuid::Uuid;
 
 pub mod agent_notifications;
 pub mod cache_guard;
+pub mod cache_diagnostics;
 pub mod chat_local_types;
 pub mod code_lens;
 pub mod compression_gate;
@@ -20,8 +21,10 @@ pub mod plan_role;
 pub mod tools_facade;
 pub mod subchat_types;
 pub mod session;
+pub mod session_goal_role;
 pub mod session_plan_role;
 pub mod setparams;
+pub mod stream_delta;
 pub mod tool_catalog;
 pub mod tool_enrichment;
 pub mod trajectory_event;

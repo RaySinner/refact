@@ -4206,8 +4206,10 @@ dependencies = [
  "async-trait",
  "axum",
  "base64 0.22.1",
+ "chrono",
  "fd-lock",
  "futures",
+ "hex",
  "hyper 0.14.32",
  "image",
  "indexmap 1.9.3",
@@ -4218,6 +4220,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+ "sha2",
  "tempfile",
  "tokenizers",
  "tokio",
@@ -4762,6 +4765,7 @@ dependencies = [
  "tracing",
  "url",
  "uuid",
+ "walkdir",
 ]
 
 [[package]]

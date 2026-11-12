@@ -9,7 +9,7 @@ use crate::global_context::GlobalContext;
 pub async fn memory_plane_roots(gcx: Arc<GlobalContext>) -> MemoryPlaneRoots {
     MemoryPlaneRoots::new(
         get_project_dirs(gcx.clone()).await,
-        Some(crate::memories::get_global_knowledge_dir(gcx.clone()).await),
+        Some(crate::memories::get_global_knowledge_dir(&gcx).await),
         Some(crate::chat::trajectories::global_trajectories_dir_path(
             &gcx.config_dir,
         )),

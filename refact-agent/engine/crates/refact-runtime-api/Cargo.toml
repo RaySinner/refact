@@ -55,6 +55,7 @@ uuid.workspace = true
 git2 = "0.20.2"
 regex.workspace = true
 dunce = "1.0.5"
+walkdir = "2.3"
 
 [dev-dependencies]
 filetime = "0.2.25"

@@ -3931,7 +3931,7 @@ mod tests {
         assert_eq!(body, "Archive body");
         let kg = crate::knowledge_graph::build_knowledge_graph(gcx.gcx.clone()).await;
         assert!(kg.active_docs().all(|doc| doc.path != path));
-        let found = crate::memories::load_memories_by_tags(gcx.gcx.clone(), &["old"], 10)
+        let found = crate::memories::load_memories_by_tags(&gcx.gcx, &["old"], 10)
             .await
             .unwrap();
         assert!(found.is_empty());

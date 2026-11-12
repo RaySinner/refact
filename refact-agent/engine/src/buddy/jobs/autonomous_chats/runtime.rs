@@ -646,7 +646,7 @@ pub(super) async fn execute_built_autonomous_job(
                 existing.display()
             );
             if let Err(err) =
-                crate::memories::touch_memory_observation(gcx.gcx.clone(), &existing).await
+                crate::memories::touch_memory_observation(&gcx.gcx, &existing).await
             {
                 tracing::debug!("buddy: failed to touch known signal memory: {}", err);
             }

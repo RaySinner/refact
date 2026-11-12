@@ -16,6 +16,7 @@ pub mod knowledge_frontmatter;
 pub mod knowledge_index;
 pub mod llm_types;
 pub mod memory_plane;
+pub mod memories_format;
 pub mod model_caps;
 pub mod models_dev;
 pub mod net_utils;

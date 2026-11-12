@@ -226,7 +226,7 @@ pub async fn auto_link_all_memories(gcx: Arc<GlobalContext>) -> Result<RelinkSta
             continue;
         }
 
-        rewrite_memory_document(gcx.clone(), &path, &fm, &body).await?;
+        rewrite_memory_document(&gcx, &path, &fm, &body).await?;
         stats.docs_updated += 1;
         stats.links_added += added;
     }
@@ -397,7 +397,7 @@ pub async fn handle_v1_knowledge_update_memory(
         }
     }
 
-    rewrite_memory_document(gcx.clone(), &file_path, &frontmatter, &content_to_write)
+    rewrite_memory_document(&gcx, &file_path, &frontmatter, &content_to_write)
         .await
         .map_err(|e| ScratchError::new(StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
@@ -887,7 +887,7 @@ mod tests {
         assert_eq!(updated_body, body);
         let kg = build_knowledge_graph(gcx.clone()).await;
         assert!(kg.active_docs().all(|doc| doc.path != path));
-        let found = crate::memories::load_memories_by_tags(gcx, &["http-test"], 10)
+        let found = crate::memories::load_memories_by_tags(&gcx, &["http-test"], 10)
             .await
             .unwrap();
         assert!(found.is_empty());
@@ -913,7 +913,7 @@ mod tests {
         assert_eq!(updated_body, body);
         let kg = build_knowledge_graph(gcx.clone()).await;
         assert!(kg.active_docs().all(|doc| doc.path != path));
-        let found = crate::memories::load_memories_by_tags(gcx, &["http-test"], 10)
+        let found = crate::memories::load_memories_by_tags(&gcx, &["http-test"], 10)
             .await
             .unwrap();
         assert!(found.is_empty());
@@ -941,7 +941,7 @@ mod tests {
         assert!(kg.active_docs().all(|doc| doc.path != path));
         let similar = kg.find_similar_docs(&["http-test".to_string()], &[], &[]);
         assert!(similar.iter().all(|(id, _)| id != "archive-delete"));
-        let found = crate::memories::load_memories_by_tags(gcx, &["http-test"], 10)
+        let found = crate::memories::load_memories_by_tags(&gcx, &["http-test"], 10)
             .await
             .unwrap();
         assert!(found.is_empty());
@@ -987,7 +987,7 @@ pub async fn handle_v1_knowledge_delete_memory(
 
     if post.archive {
         crate::memories::update_memory_document_frontmatter(
-            gcx.clone(),
+            &gcx,
             &file_path,
             |frontmatter| {
                 if frontmatter.is_archived() || frontmatter.is_deprecated() {
@@ -1007,7 +1007,7 @@ pub async fn handle_v1_knowledge_delete_memory(
         })?;
         tracing::info!("Archived memory: {}", file_path.display());
     } else {
-        crate::memories::delete_document_from_disk(gcx.clone(), &file_path)
+        crate::memories::delete_document_from_disk(&gcx, &file_path)
             .await
             .map_err(|e| ScratchError::new(StatusCode::INTERNAL_SERVER_ERROR, e))?;
         tracing::info!("Deleted memory: {}", file_path.display());

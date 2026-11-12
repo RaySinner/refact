@@ -21,7 +21,7 @@ pub async fn knowledge_cleanup_background_task(gcx: Arc<GlobalContext>) {
     let gcx_for_delete = gcx.clone();
     let delete_file: KgFileDeleter = Arc::new(move |path: PathBuf| {
         let gcx = gcx_for_delete.clone();
-        Box::pin(async move { crate::memories::delete_document_from_disk(gcx, &path).await })
+        Box::pin(async move { crate::memories::delete_document_from_disk(&gcx, &path).await })
     });
     refact_knowledge_graph::kg_cleanup::knowledge_cleanup_background_task(
         shutdown_flag,
@@ -40,7 +40,7 @@ pub async fn cleanup_inactive_memories_on_startup(gcx: Arc<GlobalContext>) {
     let gcx_for_delete = gcx.clone();
     let delete_file: KgFileDeleter = Arc::new(move |path: PathBuf| {
         let gcx = gcx_for_delete.clone();
-        Box::pin(async move { crate::memories::delete_document_from_disk(gcx, &path).await })
+        Box::pin(async move { crate::memories::delete_document_from_disk(&gcx, &path).await })
     });
     match refact_knowledge_graph::kg_cleanup::remove_inactive_memories(&build_graph, &delete_file)
         .await

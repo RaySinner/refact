@@ -28,7 +28,7 @@ async fn override_allowed_roots(
     project_roots: &[PathBuf],
 ) -> Vec<PathBuf> {
     let mut roots: Vec<PathBuf> = project_roots.to_vec();
-    roots.push(crate::memories::get_global_knowledge_dir(gcx.clone()).await);
+    roots.push(crate::memories::get_global_knowledge_dir(&gcx).await);
     roots.push(gcx.config_dir.clone());
     for file in find_instruction_files(project_roots).await {
         if to_relative_path(&file.file_path, project_roots).is_none() {

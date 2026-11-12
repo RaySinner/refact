@@ -386,6 +386,7 @@ pub mod scheduler;
 pub mod customization_registry;
 pub mod customization_registry_gcx;
 pub mod memories;
+pub mod memories_runtime;
 pub mod session_handles;
 pub mod git_cleanup;
 pub mod ext_config_dirs;

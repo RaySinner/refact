@@ -7,6 +7,7 @@ pub mod llm_http_retry;
 pub mod models_dev_provider;
 pub mod oauth_refresh;
 pub mod quota;
+pub mod quota_mapping;
 pub mod runtime_credential;
 mod registry;
 pub mod traits;

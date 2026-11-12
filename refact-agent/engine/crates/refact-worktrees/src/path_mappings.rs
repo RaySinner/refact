@@ -171,6 +171,13 @@ pub fn dedupe_paths(paths: impl IntoIterator<Item = PathBuf>) -> Vec<PathBuf> {
     result
 }
 
+pub fn registered_worktree_roots(cache_dir: &Path) -> Vec<PathBuf> {
+    registered_worktree_path_mappings(cache_dir)
+        .iter()
+        .map(|mapping| mapping.root.clone())
+        .collect()
+}
+
 pub fn project_dirs_for_unscoped_paths(cache_dir: &Path, project_dirs: &[PathBuf]) -> Vec<PathBuf> {
     let mappings = registered_worktree_path_mappings(cache_dir);
     dedupe_paths(

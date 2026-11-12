@@ -1,26 +1,43 @@
-use std::sync::Arc;
-use std::time::Instant;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
 use tracing::info;
 
+use crate::files_in_workspace::detect_vcs_for_a_file_path;
+use crate::fuzzy_search::fuzzy_search;
 use crate::global_context::GlobalContext;
 use crate::global_context::GlobalContextCtx;
-use crate::files_in_workspace::{detect_vcs_for_a_file_path, CacheCorrection};
-use crate::fuzzy_search::fuzzy_search;
-use crate::worktrees::scope::ExecutionScope;
 
-pub use refact_runtime_api::files_correction::{
-    check_if_its_inside_a_workspace_or_config, check_if_its_inside_a_workspace_or_config_for_ctx,
-    correct_to_nearest_dir_path, correct_to_nearest_filename, get_active_project_path,
-    get_active_project_path_for_services, get_project_dirs, get_unscoped_project_dirs,
-    get_unscoped_project_dirs_for_ctx, paths_from_anywhere, shortify_paths,
+pub use refact_files::documents_state::{
+    mark_files_cache_dirty, FILES_CACHE_DEBOUNCE_SECONDS,
 };
 
 pub use refact_files::path_utils::{
-    preprocess_path_for_normalization, canonical_path, canonicalize_normalized_path,
-    any_glob_matches_path, serialize_path, deserialize_path, CommandSimplifiedDirExt,
-    shortify_paths_from_indexed,
+    any_glob_matches_path, canonical_path, canonicalize_normalized_path, deserialize_path,
+    preprocess_path_for_normalization, serialize_path, shortify_paths_from_indexed,
+    CommandSimplifiedDirExt,
 };
+
+pub use refact_runtime_api::files_correction::{
+    check_if_its_inside_a_workspace_or_config,
+    check_if_its_inside_a_workspace_or_config_for_ctx,
+    check_if_its_inside_a_workspace_worktree_or_config, correct_to_nearest_dir_path,
+    correct_to_nearest_filename, files_cache_rebuild_as_needed, get_active_project_path,
+    get_active_project_path_for_services, get_active_workspace_folder, get_project_dirs,
+    get_raw_project_dirs, get_unscoped_project_dirs, get_unscoped_project_dirs_for_ctx,
+    paths_from_anywhere, resolve_codegraph_queue_path, shortify_paths,
+};
+
+pub use refact_worktrees::path_mappings::{
+    dedupe_paths, map_registered_worktree_path, normalize_path_for_unscoped_paths,
+    normalize_path_for_unscoped_root_selection, project_dirs_for_unscoped_paths,
+    registered_alias_paths, registered_worktree_path_mappings, registered_worktree_roots,
+    RegisteredWorktreePathMapping, WorktreePathMappings,
+};
+
+// The functions below back `EngineFilesRuntime` (see `files_in_workspace.rs`). They stay in the
+// engine and are reached only through the `FilesRuntime` trait; routing them back through
+// `refact_runtime_api::files_correction` would recurse into `gcx.files_runtime`.
 
 pub(crate) async fn paths_from_anywhere_impl(global_context: Arc<GlobalContext>) -> Vec<PathBuf> {
     let (file_paths_from_memory, paths_from_workspace, paths_from_jsonl) = {
@@ -52,72 +69,6 @@ pub(crate) async fn paths_from_anywhere_impl(global_context: Arc<GlobalContext>)
         paths_from_anywhere
             .filter_map(|path| normalize_path_for_unscoped_paths(&path, &worktree_mappings)),
     )
-}
-
-pub use refact_worktrees::path_mappings::{
-    dedupe_paths, map_registered_worktree_path, normalize_path_for_unscoped_paths,
-    normalize_path_for_unscoped_root_selection, project_dirs_for_unscoped_paths,
-    registered_alias_paths, registered_worktree_path_mappings, RegisteredWorktreePathMapping,
-    WorktreePathMappings,
-};
-
-pub use refact_runtime_api::files_correction::resolve_codegraph_queue_path;
-
-
-
-pub const FILES_CACHE_DEBOUNCE_SECONDS: f64 = 5.0;
-
-pub async fn mark_files_cache_dirty(cache_dirty: &Arc<tokio::sync::Mutex<f64>>) {
-    let deadline = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs_f64()
-        + FILES_CACHE_DEBOUNCE_SECONDS;
-    let mut dirty = cache_dirty.lock().await;
-    if *dirty <= 0.0 || deadline < *dirty {
-        *dirty = deadline;
-    }
-}
-
-pub async fn files_cache_rebuild_as_needed(
-    global_context: Arc<GlobalContext>,
-) -> Arc<CacheCorrection> {
-    let cache_dirty_arc = global_context.documents_state.cache_dirty.clone();
-    let mut cache_correction_arc = global_context
-        .documents_state
-        .cache_correction
-        .lock()
-        .unwrap()
-        .clone();
-
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs_f64();
-    let mut cache_dirty_ref = cache_dirty_arc.lock().await;
-    if *cache_dirty_ref > 0.0 && now > *cache_dirty_ref {
-        info!("rebuilding files cache...");
-        // NOTE: we build cache on each add/delete file inside the workspace.
-        // There should be a way to build cache once and then update it.
-        let start_time = Instant::now();
-        let paths_from_anywhere = paths_from_anywhere(global_context.clone()).await;
-        let workspace_folders = get_unscoped_project_dirs(global_context.clone()).await;
-        let cache_correction = CacheCorrection::build(&paths_from_anywhere, &workspace_folders);
-
-        info!(
-            "rebuild completed in {:.3}s, over {}",
-            start_time.elapsed().as_secs_f64(),
-            paths_from_anywhere.len()
-        );
-        cache_correction_arc = Arc::new(cache_correction);
-        {
-            let cx = global_context.clone();
-            *cx.documents_state.cache_correction.lock().unwrap() = cache_correction_arc.clone();
-        }
-        *cache_dirty_ref = 0.0;
-    }
-
-    cache_correction_arc
 }
 
 async fn complete_path_with_project_dir(
@@ -234,12 +185,6 @@ pub(crate) async fn correct_to_nearest_dir_path_impl(
     _correct_to_nearest(gcx, correction_candidate, true, fuzzy, top_n).await
 }
 
-pub async fn get_raw_project_dirs(gcx: Arc<GlobalContext>) -> Vec<PathBuf> {
-    let workspace_folders = gcx.documents_state.workspace_folders.clone();
-    let workspace_folders_locked = workspace_folders.lock().unwrap();
-    workspace_folders_locked.iter().cloned().collect::<Vec<_>>()
-}
-
 pub(crate) async fn get_project_dirs_impl(gcx: Arc<GlobalContext>) -> Vec<PathBuf> {
     project_dirs_for_unscoped_paths(
         gcx.cache_dir.as_path(),
@@ -249,19 +194,6 @@ pub(crate) async fn get_project_dirs_impl(gcx: Arc<GlobalContext>) -> Vec<PathBu
 
 pub(crate) async fn get_unscoped_project_dirs_impl(gcx: Arc<GlobalContext>) -> Vec<PathBuf> {
     get_project_dirs(gcx).await
-}
-
-#[allow(dead_code)]
-pub async fn get_project_dirs_with_execution_scope(
-    gcx: Arc<GlobalContext>,
-    execution_scope: Option<&ExecutionScope>,
-) -> Vec<PathBuf> {
-    if let Some(scope) = execution_scope {
-        if scope.is_enforced() {
-            return scope.effective_project_dirs();
-        }
-    }
-    get_unscoped_project_dirs(gcx).await
 }
 
 pub(crate) async fn get_active_project_path_impl(gcx: Arc<GlobalContext>) -> Option<PathBuf> {
@@ -345,37 +277,6 @@ async fn active_project_path(
     None
 }
 
-pub async fn get_active_workspace_folder(gcx: Arc<GlobalContext>) -> Option<PathBuf> {
-    let workspace_folders = get_unscoped_project_dirs(gcx.clone()).await;
-
-    let worktree_mappings = registered_worktree_path_mappings(gcx.cache_dir.as_path());
-    let active_file = gcx
-        .documents_state
-        .active_file_path
-        .lock()
-        .await
-        .clone()
-        .and_then(|path| normalize_path_for_unscoped_root_selection(&path, &worktree_mappings));
-    if let Some(active_file) = active_file {
-        for f in &workspace_folders {
-            if active_file.starts_with(f) {
-                tracing::info!("found that {:?} is the workspace folder", f);
-                return Some(f.clone());
-            }
-        }
-    }
-
-    if let Some(first_workspace_folder) = workspace_folders.first() {
-        tracing::info!(
-            "found that {:?} is the workspace folder",
-            first_workspace_folder
-        );
-        Some(first_workspace_folder.clone())
-    } else {
-        None
-    }
-}
-
 pub(crate) async fn shortify_paths_impl(gcx: Arc<GlobalContext>, paths: &Vec<String>) -> Vec<String> {
     let cache_correction_arc = files_cache_rebuild_as_needed(gcx.clone()).await;
     shortify_paths_from_indexed(&cache_correction_arc, paths)
@@ -386,35 +287,6 @@ pub(crate) async fn check_if_its_inside_a_workspace_or_config_impl(
     path: &Path,
 ) -> Result<(), String> {
     check_if_its_inside_a_workspace_or_config_for_ctx(&gcx.chat_ctx(gcx.clone()), path).await
-}
-
-pub fn registered_worktree_roots(cache_dir: &Path) -> Vec<PathBuf> {
-    registered_worktree_path_mappings(cache_dir)
-        .iter()
-        .map(|mapping| mapping.root.clone())
-        .collect()
-}
-
-pub async fn check_if_its_inside_a_workspace_worktree_or_config(
-    gcx: Arc<GlobalContext>,
-    path: &Path,
-) -> Result<(), String> {
-    let outside_error = match check_if_its_inside_a_workspace_or_config(gcx.clone(), path).await {
-        Ok(()) => return Ok(()),
-        Err(error) => error,
-    };
-    let path = canonicalize_normalized_path(path.to_path_buf());
-    let worktrees_base = refact_worktrees::service::worktrees_base_dir(&gcx.cache_dir)
-        .unwrap_or_else(|_| gcx.cache_dir.join("worktrees"));
-    let worktrees_root = canonicalize_normalized_path(worktrees_base);
-    if registered_worktree_roots(gcx.cache_dir.as_path())
-        .into_iter()
-        .map(canonicalize_normalized_path)
-        .any(|root| root.starts_with(&worktrees_root) && path.starts_with(&root))
-    {
-        return Ok(());
-    }
-    Err(outside_error)
 }
 
 #[cfg(test)]

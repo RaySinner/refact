@@ -11,6 +11,20 @@ pub use refact_core::ast_types::Document;
 
 use crate::correction_cache::CacheCorrection;
 
+pub const FILES_CACHE_DEBOUNCE_SECONDS: f64 = 5.0;
+
+pub async fn mark_files_cache_dirty(cache_dirty: &Arc<AMutex<f64>>) {
+    let deadline = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs_f64()
+        + FILES_CACHE_DEBOUNCE_SECONDS;
+    let mut dirty = cache_dirty.lock().await;
+    if *dirty <= 0.0 || deadline < *dirty {
+        *dirty = deadline;
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct PendingBranchHeadChange {
     pub old_head: Option<String>,

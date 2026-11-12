@@ -3,7 +3,10 @@ use std::sync::Arc;
 
 use refact_codegraph::QueuedPath;
 use crate::global_context::GlobalContext;
-use refact_worktrees::path_mappings::{map_registered_worktree_path, RegisteredWorktreePathMapping};
+use refact_worktrees::path_mappings::{
+    map_registered_worktree_path, normalize_path_for_unscoped_root_selection,
+    registered_worktree_path_mappings, RegisteredWorktreePathMapping,
+};
 
 use refact_files::path_utils::canonicalize_normalized_path;
 use refact_worktrees::path_mappings::project_dirs_for_unscoped_paths;
@@ -133,4 +136,102 @@ pub async fn check_if_its_inside_a_workspace_or_config(
         .clone()
         .check_if_its_inside_a_workspace_or_config(gcx, path)
         .await
+}
+
+pub async fn get_raw_project_dirs(gcx: Arc<GlobalContext>) -> Vec<PathBuf> {
+    let workspace_folders = gcx.documents_state.workspace_folders.clone();
+    let workspace_folders_locked = workspace_folders.lock().unwrap();
+    workspace_folders_locked.iter().cloned().collect::<Vec<_>>()
+}
+
+pub async fn files_cache_rebuild_as_needed(
+    gcx: Arc<GlobalContext>,
+) -> Arc<refact_files::correction_cache::CacheCorrection> {
+    let cache_dirty_arc = gcx.documents_state.cache_dirty.clone();
+    let mut cache_correction_arc = gcx
+        .documents_state
+        .cache_correction
+        .lock()
+        .unwrap()
+        .clone();
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs_f64();
+    let mut cache_dirty_ref = cache_dirty_arc.lock().await;
+    if *cache_dirty_ref > 0.0 && now > *cache_dirty_ref {
+        tracing::info!("rebuilding files cache...");
+        let start_time = std::time::Instant::now();
+        let paths = paths_from_anywhere(gcx.clone()).await;
+        let workspace_folders = get_unscoped_project_dirs(gcx.clone()).await;
+        let cache_correction =
+            refact_files::correction_cache::CacheCorrection::build(&paths, &workspace_folders);
+
+        tracing::info!(
+            "rebuild completed in {:.3}s, over {}",
+            start_time.elapsed().as_secs_f64(),
+            paths.len()
+        );
+        cache_correction_arc = Arc::new(cache_correction);
+        {
+            *gcx.documents_state.cache_correction.lock().unwrap() = cache_correction_arc.clone();
+        }
+        *cache_dirty_ref = 0.0;
+    }
+
+    cache_correction_arc
+}
+
+pub async fn get_active_workspace_folder(gcx: Arc<GlobalContext>) -> Option<PathBuf> {
+    let workspace_folders = get_unscoped_project_dirs(gcx.clone()).await;
+
+    let worktree_mappings = registered_worktree_path_mappings(gcx.cache_dir.as_path());
+    let active_file = gcx
+        .documents_state
+        .active_file_path
+        .lock()
+        .await
+        .clone()
+        .and_then(|path| normalize_path_for_unscoped_root_selection(&path, &worktree_mappings));
+    if let Some(active_file) = active_file {
+        for f in &workspace_folders {
+            if active_file.starts_with(f) {
+                tracing::info!("found that {:?} is the workspace folder", f);
+                return Some(f.clone());
+            }
+        }
+    }
+
+    if let Some(first_workspace_folder) = workspace_folders.first() {
+        tracing::info!(
+            "found that {:?} is the workspace folder",
+            first_workspace_folder
+        );
+        Some(first_workspace_folder.clone())
+    } else {
+        None
+    }
+}
+
+pub async fn check_if_its_inside_a_workspace_worktree_or_config(
+    gcx: Arc<GlobalContext>,
+    path: &Path,
+) -> Result<(), String> {
+    let outside_error = match check_if_its_inside_a_workspace_or_config(gcx.clone(), path).await {
+        Ok(()) => return Ok(()),
+        Err(error) => error,
+    };
+    let path = canonicalize_normalized_path(path.to_path_buf());
+    let worktrees_base = refact_worktrees::service::worktrees_base_dir(&gcx.cache_dir)
+        .unwrap_or_else(|_| gcx.cache_dir.join("worktrees"));
+    let worktrees_root = canonicalize_normalized_path(worktrees_base);
+    if refact_worktrees::path_mappings::registered_worktree_roots(gcx.cache_dir.as_path())
+        .into_iter()
+        .map(canonicalize_normalized_path)
+        .any(|root| root.starts_with(&worktrees_root) && path.starts_with(&root))
+    {
+        return Ok(());
+    }
+    Err(outside_error)
 }

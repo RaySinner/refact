@@ -3,10 +3,12 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use refact_chat_api::ContextFile;
+use refact_core::chat_types::PostprocessSettings;
 use refact_runtime_api::at_tree::TreeNode;
 use refact_runtime_api::tool_ctx::ToolCtx;
 use refact_runtime_api::{AtCommandExecutor, AtCommandsContext};
 use tokio::sync::Mutex as AMutex;
+use tokenizers::Tokenizer;
 
 pub struct EngineAtCommandExecutor;
 
@@ -65,6 +67,26 @@ impl AtCommandExecutor for EngineAtCommandExecutor {
             max_files,
             is_root_query,
             build_truncated,
+        )
+        .await
+    }
+
+    async fn postprocess_context_files(
+        &self,
+        tool: &ToolCtx,
+        context_files: &mut Vec<ContextFile>,
+        tokenizer: Option<Arc<Tokenizer>>,
+        tokens_limit: usize,
+        single_file_mode: bool,
+        settings: &PostprocessSettings,
+    ) -> (Vec<ContextFile>, Vec<String>) {
+        crate::postprocessing::pp_context_files::postprocess_context_files_for_tool_ctx(
+            tool.clone(),
+            context_files,
+            tokenizer,
+            tokens_limit,
+            single_file_mode,
+            settings,
         )
         .await
     }

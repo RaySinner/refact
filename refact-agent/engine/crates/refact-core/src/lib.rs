@@ -1,6 +1,7 @@
 pub mod active_context;
 pub mod antigravity_client;
 pub mod ast_types;
+pub mod at_parse;
 pub mod at_commands_preview_cache;
 pub mod background_tasks;
 pub mod buddy_meta;

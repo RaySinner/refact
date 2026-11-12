@@ -24,7 +24,11 @@ pub use refact_runtime_api::at_command_executor::{
     file_repair_candidates, return_one_candidate_or_a_good_error,
 };
 
-pub async fn resolve_file_path_directly(
+use refact_core::at_parse::{
+    colon_lines_range_from_arg, range_print, ColonLinesRange, RangeKind,
+};
+
+async fn resolve_file_path_directly(
     tool: &ToolCtx,
     path_with_colon: &str,
 ) -> Option<String> {
@@ -61,7 +65,7 @@ pub async fn resolve_file_path_directly(
     None
 }
 
-pub async fn resolve_file_path_directly_with_scope(
+async fn resolve_file_path_directly_with_scope(
     tool: &ToolCtx,
     execution_scope: Option<&ExecutionScope>,
     path_with_colon: &str,
@@ -97,78 +101,6 @@ impl AtFile {
             params: vec![Box::new(AtParamFilePath::new())],
         }
     }
-}
-
-#[derive(Debug, PartialEq)]
-pub enum RangeKind {
-    GradToCursorTwoSided,
-    GradToCursorPrefix,
-    GradToCursorSuffix,
-    Range,
-}
-
-#[derive(Debug, PartialEq)]
-pub struct ColonLinesRange {
-    pub kind: RangeKind,
-    pub line1: usize,
-    pub line2: usize,
-}
-
-pub fn range_print(range: &ColonLinesRange) -> String {
-    match range.kind {
-        RangeKind::GradToCursorTwoSided => format!("{}", range.line1),
-        RangeKind::GradToCursorPrefix => format!("-{}", range.line2),
-        RangeKind::GradToCursorSuffix => format!("{}-", range.line1),
-        RangeKind::Range => format!("{}-{}", range.line1, range.line2),
-    }
-}
-
-pub fn colon_lines_range_from_arg(value: &mut String) -> Option<ColonLinesRange> {
-    let re_hyphen = Regex::new(r":(\d+)?-(\d+)?$").unwrap();
-    if let Some(captures) = re_hyphen.captures(value.clone().as_str()) {
-        *value = re_hyphen.replace(value, "").to_string();
-        return match (captures.get(1), captures.get(2)) {
-            (Some(line1), Some(line2)) => {
-                let line1 = line1.as_str().parse::<usize>().unwrap_or(0);
-                let line2 = line2.as_str().parse::<usize>().unwrap_or(0);
-                Some(ColonLinesRange {
-                    kind: RangeKind::Range,
-                    line1,
-                    line2,
-                })
-            }
-            (Some(line1), None) => {
-                let line1 = line1.as_str().parse::<usize>().unwrap_or(0);
-                Some(ColonLinesRange {
-                    kind: RangeKind::GradToCursorSuffix,
-                    line1,
-                    line2: 0,
-                })
-            }
-            (None, Some(line2)) => {
-                let line2 = line2.as_str().parse::<usize>().unwrap_or(0);
-                Some(ColonLinesRange {
-                    kind: RangeKind::GradToCursorPrefix,
-                    line1: 0,
-                    line2,
-                })
-            }
-            _ => None,
-        };
-    }
-    let re_one_number = Regex::new(r":(\d+)$").unwrap();
-    if let Some(captures) = re_one_number.captures(value.clone().as_str()) {
-        *value = re_one_number.replace(value, "").to_string();
-        if let Some(line1) = captures.get(1) {
-            let line = line1.as_str().parse::<usize>().unwrap_or(0);
-            return Some(ColonLinesRange {
-                kind: RangeKind::GradToCursorTwoSided,
-                line1: line,
-                line2: 0,
-            });
-        }
-    }
-    None
 }
 
 fn gradient_type_from_range_kind(range: &Option<ColonLinesRange>) -> i32 {
@@ -417,7 +349,7 @@ impl AtParam for AtParamFilePath {
     }
 }
 
-pub async fn context_file_from_file_path(
+async fn context_file_from_file_path(
     tool: &ToolCtx,
     file_path_hopefully_corrected: String,
 ) -> Result<ContextFile, String> {
@@ -697,63 +629,6 @@ mod tests {
             serde_json::to_string_pretty(&registry).unwrap(),
         )
         .unwrap();
-    }
-
-    #[test]
-    fn test_file_range() {
-        {
-            let mut value = String::from(":10-20");
-            let result = colon_lines_range_from_arg(&mut value);
-            assert_eq!(
-                result,
-                Some(ColonLinesRange {
-                    kind: RangeKind::Range,
-                    line1: 10,
-                    line2: 20
-                })
-            );
-        }
-        {
-            let mut value = String::from(":5-");
-            let result = colon_lines_range_from_arg(&mut value);
-            assert_eq!(
-                result,
-                Some(ColonLinesRange {
-                    kind: RangeKind::GradToCursorSuffix,
-                    line1: 5,
-                    line2: 0
-                })
-            );
-        }
-        {
-            let mut value = String::from(":-15");
-            let result = colon_lines_range_from_arg(&mut value);
-            assert_eq!(
-                result,
-                Some(ColonLinesRange {
-                    kind: RangeKind::GradToCursorPrefix,
-                    line1: 0,
-                    line2: 15
-                })
-            );
-        }
-        {
-            let mut value = String::from(":25");
-            let result = colon_lines_range_from_arg(&mut value);
-            assert_eq!(
-                result,
-                Some(ColonLinesRange {
-                    kind: RangeKind::GradToCursorTwoSided,
-                    line1: 25,
-                    line2: 0
-                })
-            );
-        }
-        {
-            let mut value = String::from("invalid");
-            let result = colon_lines_range_from_arg(&mut value);
-            assert_eq!(result, None);
-        }
     }
 
     #[tokio::test]

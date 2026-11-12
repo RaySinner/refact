@@ -21,7 +21,7 @@ pub use refact_runtime_api::at_tree::{BuildBudget, TreeNode, MAX_TREE_PATHS};
 
 pub const MAX_FILES_HARD_CAP: usize = 1000;
 
-pub fn sanitize_max_files(requested: usize) -> usize {
+fn sanitize_max_files(requested: usize) -> usize {
     requested.clamp(1, MAX_FILES_HARD_CAP)
 }
 
@@ -213,16 +213,6 @@ fn print_files_tree_with_budget(
         good_enough = bigger;
     }
     good_enough
-}
-
-pub async fn tree_for_tools(
-    ccx: Arc<AMutex<AtCommandsContext>>,
-    tree: &TreeNode,
-    use_ast: bool,
-    max_files: usize,
-    is_root_query: bool,
-) -> Result<String, String> {
-    tree_for_tools_ex(ccx, tree, use_ast, max_files, is_root_query, false).await
 }
 
 pub(super) async fn tree_for_tools_ex_impl(

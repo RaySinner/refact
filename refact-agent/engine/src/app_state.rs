@@ -372,6 +372,10 @@ impl ContextFactory for EngineContextFactory {
         }
     }
 
+    fn at_commands(&self) -> HashMap<String, Arc<dyn refact_runtime_api::AtCommand + Send>> {
+        crate::at_commands::at_commands::engine_at_commands_dict()
+    }
+
     fn tool_ctx(&self, gcx: SharedGlobalContext) -> ToolCtx {
         ToolCtx {
             runtime: RuntimeServices {

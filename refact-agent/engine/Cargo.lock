@@ -4761,6 +4761,7 @@ dependencies = [
  "sha2",
  "structopt",
  "tempfile",
+ "tokenizers",
  "tokio",
  "tracing",
  "url",

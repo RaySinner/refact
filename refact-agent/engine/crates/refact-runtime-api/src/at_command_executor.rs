@@ -8,6 +8,8 @@ use tokio::sync::Mutex as AMutex;
 use crate::at_commands_ctx::AtCommandsContext;
 use crate::at_tree::TreeNode;
 use crate::tool_ctx::ToolCtx;
+use refact_core::chat_types::PostprocessSettings;
+use tokenizers::Tokenizer;
 
 #[async_trait]
 pub trait AtCommandExecutor: Send + Sync {
@@ -44,6 +46,16 @@ pub trait AtCommandExecutor: Send + Sync {
         is_root_query: bool,
         build_truncated: bool,
     ) -> Result<String, String>;
+
+    async fn postprocess_context_files(
+        &self,
+        tool: &ToolCtx,
+        context_files: &mut Vec<ContextFile>,
+        tokenizer: Option<Arc<Tokenizer>>,
+        tokens_limit: usize,
+        single_file_mode: bool,
+        settings: &PostprocessSettings,
+    ) -> (Vec<ContextFile>, Vec<String>);
 }
 
 pub async fn file_repair_candidates(

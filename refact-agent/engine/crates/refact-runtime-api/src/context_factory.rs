@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
@@ -5,6 +6,7 @@ use async_trait::async_trait;
 use refact_caps_core::code_assistant_caps::CodeAssistantCaps;
 
 use crate::app_state::AppState;
+use crate::at_commands_ctx::AtCommand;
 use crate::chat_ctx::ChatCtx;
 use crate::command_line::CommandLine;
 use crate::global_context::SharedGlobalContext;
@@ -34,6 +36,7 @@ pub trait ContextFactory: Send + Sync {
     fn tool_ctx(&self, gcx: SharedGlobalContext) -> ToolCtx;
     fn app_state(&self, gcx: SharedGlobalContext) -> AppState;
     fn caps_loader(&self) -> Arc<dyn CapsLoader>;
+    fn at_commands(&self) -> HashMap<String, Arc<dyn AtCommand + Send>>;
 }
 
 /// Interior-mutable slot on `GlobalContext`. `GlobalContext` is built inside a struct

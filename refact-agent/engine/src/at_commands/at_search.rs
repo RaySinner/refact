@@ -13,7 +13,7 @@ use crate::vecdb;
 
 pub use refact_runtime_api::at_command_executor::execute_at_search;
 
-pub fn text_on_clip(query: &String, from_tool_call: bool) -> String {
+fn text_on_clip(query: &String, from_tool_call: bool) -> String {
     if !from_tool_call {
         return query.clone();
     }
@@ -64,7 +64,7 @@ fn results2message(results: &Vec<vecdb::vdb_structs::VecdbRecord>) -> Vec<Contex
     vector_of_context_file
 }
 
-pub fn hits_to_context_files(hits: Vec<refact_codegraph::CodeHit>) -> Vec<ContextFile> {
+fn hits_to_context_files(hits: Vec<refact_codegraph::CodeHit>) -> Vec<ContextFile> {
     let max_score = hits
         .first()
         .map(|h| h.score)

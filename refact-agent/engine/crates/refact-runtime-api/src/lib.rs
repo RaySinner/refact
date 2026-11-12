@@ -46,6 +46,7 @@ pub mod tool_trait;
 pub mod task_storage;
 pub mod buddy_actor_runtime;
 pub mod buddy_runtime;
+pub mod subchat_runtime;
 pub mod trajectory_runtime;
  pub mod context_tools;
  pub mod verifier;

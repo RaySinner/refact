@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 refact-core = { path = "../refact-core" }
+refact-privacy = { path = "../refact-privacy" }
 
 async-trait = "0.1.73"
 chrono = { version = "0.4.31", features = ["serde"] }

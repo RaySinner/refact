@@ -18,6 +18,30 @@ use crate::vdb_sqlite::VecDBSqlite;
 use crate::vdb_structs::VecdbConstants;
 use crate::vdb_thread::{vecdb_start_background_tasks, vectorizer_enqueue_files, FileVectorizerService};
 
+pub async fn get_status(
+    vec_db: Arc<AMutex<Option<Arc<dyn VecdbSearch>>>>,
+) -> Result<Option<VecDbStatus>, String> {
+    let db_locked = vec_db.lock().await;
+    match db_locked.as_ref() {
+        None => Ok(None),
+        Some(db) => Ok(Some(db.get_status().await?)),
+    }
+}
+
+pub fn vecdb_requires_reload(
+    current: Option<&dyn VecdbSearch>,
+    constants: &VecdbConstants,
+) -> bool {
+    let Some(db) = current else {
+        return true;
+    };
+    let (current_embedding_model, current_splitter_window_size) = db.current_constants();
+    !(current_embedding_model == constants.embedding_model
+        && current_splitter_window_size == constants.splitter_window_size
+        && db.has_embedding_credential_resolver()
+            == constants.embedding_credential_resolver.is_some())
+}
+
 fn build_embedding_http_client_builder() -> reqwest::ClientBuilder {
     reqwest::Client::builder().redirect(reqwest::redirect::Policy::none())
 }

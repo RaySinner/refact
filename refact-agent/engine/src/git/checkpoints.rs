@@ -1,96 +1,37 @@
+use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::SystemTime;
+
 use chrono::{DateTime, Utc};
-use git2::{IndexAddOption, Oid, Repository};
+use git2::{Oid, Repository};
 use tokio::sync::Mutex as AMutex;
 use tokio::time::Instant;
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 
-use refact_core::chunk_utils::official_text_hashing_function;
+use refact_core::custom_error::MapErrToString;
+
 use crate::background_tasks::BackgroundTasksHolder;
-use crate::custom_error::MapErrToString;
 use crate::files_blocklist::reload_indexing_everywhere_if_needed;
 use crate::files_correction::{get_active_workspace_folder, get_project_dirs};
-use crate::global_context::GlobalContext;
-use crate::git::{FileChange, FileChangeStatus, from_unix_glob_pattern_to_gitignore};
 use crate::git::operations::{
-    checkout_head_and_branch_to_commit, commit, get_commit_datetime, get_diff_statuses,
-    get_diff_statuses_index_to_commit, get_or_create_branch, stage_changes, open_or_init_repo,
+    checkout_head_and_branch_to_commit, get_commit_datetime, get_diff_statuses_index_to_commit,
+    get_or_create_branch,
 };
 use crate::git::cleanup::RECENT_COMMITS_DURATION;
+use crate::global_context::GlobalContext;
 
 pub use refact_core::chat_types::Checkpoint;
+use refact_git::checkpoints::{
+    normalize_shadow_path, repo_has_commits, resolve_checkpoint_workspace_folder,
+    reverse_file_change_status,
+};
 
 async fn open_shadow_repo_and_nested_repos(
     gcx: Arc<GlobalContext>,
     workspace_folder: &Path,
     allow_init_main_repo: bool,
 ) -> Result<(Repository, Vec<Repository>, String), String> {
-    async fn open_repos(
-        gcx: Arc<GlobalContext>,
-        paths: &[PathBuf],
-        allow_init: bool,
-        nested: bool,
-        cache_dir: &Path,
-    ) -> Result<Vec<Repository>, String> {
-        let indexing_everywhere = reload_indexing_everywhere_if_needed(gcx).await;
-        let mut result = Vec::new();
-        for path in paths {
-            let path = normalize_shadow_path(path);
-            let indexing_for_path = indexing_everywhere.indexing_for_path(&path);
-            let path_hash = shadow_repo_hash(&path);
-            let git_dir_path = if nested {
-                cache_dir.join("shadow_git").join("nested").join(&path_hash)
-            } else {
-                cache_dir.join("shadow_git").join(&path_hash)
-            };
-            let repo = if allow_init {
-                open_or_init_repo(&git_dir_path).map_err_to_string()
-            } else {
-                Repository::open(&git_dir_path).map_err_to_string()
-            }?;
-            let filetime_now = filetime::FileTime::now();
-            filetime::set_file_times(&git_dir_path, filetime_now, filetime_now)
-                .map_err_to_string()?;
-            repo.set_workdir(&path, false).map_err_to_string()?;
-            for git_rule in [".git", ".git/**"] {
-                if let Err(e) = repo.add_ignore_rule(git_rule) {
-                    tracing::warn!(
-                        "Failed to add ignore rule for {}: {}",
-                        path.to_string_lossy(),
-                        e
-                    );
-                }
-            }
-            for blocklisted_rule in indexing_for_path.blocklist {
-                if let Err(e) =
-                    repo.add_ignore_rule(&from_unix_glob_pattern_to_gitignore(&blocklisted_rule))
-                {
-                    tracing::warn!(
-                        "Failed to add ignore rule for {}: {}",
-                        path.to_string_lossy(),
-                        e
-                    );
-                }
-            }
-            for additional_indexing_rule in indexing_for_path.additional_indexing_dirs {
-                if let Err(e) = repo.add_ignore_rule(&format!(
-                    "!{}",
-                    from_unix_glob_pattern_to_gitignore(&additional_indexing_rule)
-                )) {
-                    tracing::warn!(
-                        "Failed to add ignore rule for {}: {}",
-                        path.to_string_lossy(),
-                        e
-                    );
-                }
-            }
-            result.push(repo);
-        }
-        Ok(result)
-    }
-
+    let indexing_everywhere = reload_indexing_everywhere_if_needed(gcx.clone()).await;
     let (cache_dir, vcs_roots) = {
         (
             gcx.cache_dir.clone(),
@@ -99,139 +40,26 @@ async fn open_shadow_repo_and_nested_repos(
     };
     let nested_vcs_roots: Vec<PathBuf> = {
         let vcs_roots_locked = vcs_roots.lock().unwrap();
-        let workspace_key = normalize_shadow_path(workspace_folder);
-        vcs_roots_locked
-            .iter()
-            .map(|vcs| normalize_shadow_path(vcs))
-            .filter(|vcs| vcs.starts_with(&workspace_key) && *vcs != workspace_key)
-            .collect()
+        refact_git::checkpoints::nested_vcs_roots_inside(&vcs_roots_locked, workspace_folder)
     };
-    let workspace_folder_hash = workspace_folder_hash(workspace_folder);
-
-    let repo = open_repos(
-        gcx.clone(),
-        &[workspace_folder.to_path_buf()],
-        allow_init_main_repo,
-        false,
-        &cache_dir,
-    )
-    .await?
-    .into_iter()
-    .next()
-    .unwrap();
-    let nested_repos = open_repos(gcx.clone(), &nested_vcs_roots, true, true, &cache_dir).await?;
-
-    Ok((repo, nested_repos, workspace_folder_hash))
-}
-
-fn get_file_changes_from_nested_repos<'a>(
-    parent_repo: &'a Repository,
-    nested_repos: &'a [Repository],
-    include_abs_paths: bool,
-) -> Result<(Vec<(&'a Repository, Vec<FileChange>)>, Vec<FileChange>), String> {
-    let repo_workdir = parent_repo
-        .workdir()
-        .ok_or("Failed to get workdir.".to_string())?;
-    let mut file_changes_per_repo = Vec::new();
-    let mut file_changes_flattened = Vec::new();
-
-    for nested_repo in nested_repos {
-        let (_, nested_repo_changes) =
-            get_diff_statuses(git2::StatusShow::Workdir, nested_repo, include_abs_paths)?;
-        let nested_repo_workdir = nested_repo
-            .workdir()
-            .ok_or("Failed to get nested repo workdir".to_string())?;
-        let nested_repo_rel_path = nested_repo_workdir
-            .strip_prefix(repo_workdir)
-            .map_err_to_string()?;
-
-        for change in &nested_repo_changes {
-            file_changes_flattened.push(FileChange {
-                relative_path: nested_repo_rel_path.join(&change.relative_path),
-                absolute_path: change.absolute_path.clone(),
-                status: change.status.clone(),
-            });
-        }
-        file_changes_per_repo.push((nested_repo, nested_repo_changes));
-    }
-
-    Ok((file_changes_per_repo, file_changes_flattened))
-}
-
-fn resolve_checkpoint_workspace_folder(workspace_folder: &Path) -> Result<PathBuf, String> {
-    let resolved = std::fs::canonicalize(workspace_folder).map_err(|e| {
-        format!(
-            "Checkpoint workspace root '{}' does not exist or cannot be resolved: {}",
-            workspace_folder.display(),
-            e
-        )
-    })?;
-    if !resolved.is_dir() {
-        return Err(format!(
-            "Checkpoint workspace root '{}' is not a directory",
-            resolved.display()
+    let mut indexing_blocklists: Vec<(PathBuf, Vec<String>, Vec<String>)> = Vec::new();
+    for path in std::iter::once(workspace_folder.to_path_buf()).chain(nested_vcs_roots.clone()) {
+        let path = normalize_shadow_path(&path);
+        let settings = indexing_everywhere.indexing_for_path(&path);
+        indexing_blocklists.push((
+            path,
+            settings.blocklist,
+            settings.additional_indexing_dirs,
         ));
     }
-    Ok(dunce::simplified(&resolved).to_path_buf())
-}
 
-fn workspace_folder_hash(workspace_folder: &Path) -> String {
-    let normalized = normalize_shadow_path(workspace_folder);
-    official_text_hashing_function(&normalized.to_string_lossy().to_string())
-}
-
-fn shadow_repo_hash(workspace_folder: &Path) -> String {
-    let hash_path = std::fs::canonicalize(workspace_folder)
-        .map(|path| dunce::simplified(&path).to_path_buf())
-        .unwrap_or_else(|_| normalize_shadow_path(workspace_folder));
-    official_text_hashing_function(&hash_path.to_string_lossy().to_string())
-}
-
-fn normalize_shadow_path(path: &Path) -> PathBuf {
-    match std::fs::canonicalize(path) {
-        Ok(canonical) => dunce::simplified(&canonical).to_path_buf(),
-        Err(_) => dunce::simplified(path).to_path_buf(),
-    }
-}
-
-fn repo_has_commits(repo: &Repository) -> bool {
-    repo.head()
-        .map(|head| head.target().is_some())
-        .unwrap_or(false)
-}
-
-fn create_initial_shadow_commit(
-    repo: &Repository,
-    nested_repos: &[Repository],
-    abort_flag: &Arc<AtomicBool>,
-) -> Result<(Oid, usize), String> {
-    let (_, mut file_changes) = get_diff_statuses(git2::StatusShow::Workdir, repo, false)?;
-    let (nested_file_changes, all_nested_changes) =
-        get_file_changes_from_nested_repos(repo, nested_repos, false)?;
-    file_changes.extend(all_nested_changes);
-
-    let mut skipped = stage_changes(repo, &file_changes, abort_flag)?;
-
-    let mut index = repo.index().map_err_to_string()?;
-    let tree_id = index.write_tree().map_err_to_string()?;
-    let tree = repo.find_tree(tree_id).map_err_to_string()?;
-    let signature = git2::Signature::now("Refact Agent", "agent@refact.ai").map_err_to_string()?;
-    let commit = repo
-        .commit(
-            Some("HEAD"),
-            &signature,
-            &signature,
-            "Initial commit",
-            &tree,
-            &[],
-        )
-        .map_err_to_string()?;
-
-    for (nested_repo, changes) in nested_file_changes {
-        skipped += stage_changes(nested_repo, &changes, abort_flag)?;
-    }
-
-    Ok((commit, skipped))
+    refact_git::checkpoints::open_shadow_repo_and_nested_repos(
+        &cache_dir,
+        workspace_folder,
+        &nested_vcs_roots,
+        &indexing_blocklists,
+        allow_init_main_repo,
+    )
 }
 
 async fn initialize_shadow_repo_for_root_if_needed(
@@ -252,7 +80,8 @@ async fn initialize_shadow_repo_for_root_if_needed(
     }
 
     let t0 = Instant::now();
-    let (_, skipped) = create_initial_shadow_commit(&repo, &nested_repos, &abort_flag)?;
+    let (_, skipped) =
+        refact_git::checkpoints::create_initial_shadow_commit(&repo, &nested_repos, &abort_flag)?;
     if skipped > 0 {
         tracing::warn!(
             "initial commit for {workspace_folder_str}: {skipped} large file(s) not snapshotted"
@@ -294,24 +123,13 @@ pub async fn create_workspace_checkpoint_for_root(
     let checkpoint = {
         let branch = get_or_create_branch(&repo, &format!("refact-{chat_id}"))?;
 
-        let (_, mut file_changes) = get_diff_statuses(git2::StatusShow::Workdir, &repo, false)?;
-
-        let (nested_file_changes, flattened_nested_file_changes) =
-            get_file_changes_from_nested_repos(&repo, &nested_repos, false)?;
-        file_changes.extend(flattened_nested_file_changes);
-
-        let mut skipped = stage_changes(&repo, &file_changes, &abort_flag)?;
-        let commit_oid = commit(
+        let (commit_oid, skipped) = refact_git::checkpoints::stage_and_commit_workdir_changes(
             &repo,
+            &nested_repos,
             &branch,
             &format!("Auto commit for chat {chat_id}"),
-            "Refact Agent",
-            "agent@refact.ai",
+            &abort_flag,
         )?;
-
-        for (nested_repo, changes) in nested_file_changes {
-            skipped += stage_changes(nested_repo, &changes, &abort_flag)?;
-        }
         if skipped > 0 {
             tracing::warn!(
                 "checkpoint for chat {chat_id}: {skipped} large file(s) not snapshotted"
@@ -362,7 +180,7 @@ pub async fn preview_changes_for_workspace_checkpoint_for_root(
     workspace_folder: &Path,
     checkpoint_to_restore: &Checkpoint,
     chat_id: &str,
-) -> Result<(Vec<FileChange>, DateTime<Utc>, Checkpoint), String> {
+) -> Result<(Vec<refact_git::FileChange>, DateTime<Utc>, Checkpoint), String> {
     let (checkpoint_for_undo, repo) = create_workspace_checkpoint_for_root(
         gcx.clone(),
         workspace_folder,
@@ -404,11 +222,7 @@ pub async fn preview_changes_for_workspace_checkpoint_for_root(
     };
 
     for change in &mut files_changed {
-        change.status = match change.status {
-            FileChangeStatus::ADDED => FileChangeStatus::DELETED,
-            FileChangeStatus::DELETED => FileChangeStatus::ADDED,
-            FileChangeStatus::MODIFIED => FileChangeStatus::MODIFIED,
-        };
+        change.status = reverse_file_change_status(&change.status);
     }
 
     Ok((files_changed, reverted_to, checkpoint_for_undo))
@@ -418,7 +232,7 @@ pub async fn preview_changes_for_workspace_checkpoint(
     gcx: Arc<GlobalContext>,
     checkpoint_to_restore: &Checkpoint,
     chat_id: &str,
-) -> Result<(Vec<FileChange>, DateTime<Utc>, Checkpoint), String> {
+) -> Result<(Vec<refact_git::FileChange>, DateTime<Utc>, Checkpoint), String> {
     let workspace_folder = get_active_workspace_folder(gcx.clone())
         .await
         .ok_or_else(|| "No active workspace folder".to_string())?;
@@ -466,7 +280,7 @@ pub async fn restore_workspace_checkpoint_for_root(
         let reset_index_result = nested_repo.index().and_then(|mut index| {
             index.add_all(
                 ["*"],
-                IndexAddOption::DEFAULT,
+                git2::IndexAddOption::DEFAULT,
                 Some(&mut |path, _| {
                     let abs_path = nested_workdir.join(path);
                     if abs_path.is_dir() && abs_path.join(".git").exists() {
@@ -522,11 +336,7 @@ pub async fn init_shadow_repos_if_needed(gcx: Arc<GlobalContext>) -> () {
                 }
             };
 
-        let has_commits = repo
-            .head()
-            .map(|head| head.target().is_some())
-            .unwrap_or(false);
-        if has_commits {
+        if repo_has_commits(&repo) {
             tracing::info!(
                 "Shadow git repo for {} is already initialized.",
                 workspace_folder_str
@@ -536,37 +346,11 @@ pub async fn init_shadow_repos_if_needed(gcx: Arc<GlobalContext>) -> () {
 
         let t0 = Instant::now();
 
-        let initial_commit_result: Result<(Oid, usize), String> = (|| {
-            let (_, mut file_changes) = get_diff_statuses(git2::StatusShow::Workdir, &repo, false)?;
-            let (nested_file_changes, all_nested_changes) =
-                get_file_changes_from_nested_repos(&repo, &nested_repos, false)?;
-            file_changes.extend(all_nested_changes);
-
-            let mut skipped = stage_changes(&repo, &file_changes, &abort_flag)?;
-
-            let mut index = repo.index().map_err_to_string()?;
-            let tree_id = index.write_tree().map_err_to_string()?;
-            let tree = repo.find_tree(tree_id).map_err_to_string()?;
-            let signature =
-                git2::Signature::now("Refact Agent", "agent@refact.ai").map_err_to_string()?;
-            let commit = repo
-                .commit(
-                    Some("HEAD"),
-                    &signature,
-                    &signature,
-                    "Initial commit",
-                    &tree,
-                    &[],
-                )
-                .map_err_to_string()?;
-
-            for (nested_repo, changes) in nested_file_changes {
-                skipped += stage_changes(&nested_repo, &changes, &abort_flag)?;
-            }
-            Ok((commit, skipped))
-        })();
-
-        match initial_commit_result {
+        match refact_git::checkpoints::create_initial_shadow_commit(
+            &repo,
+            &nested_repos,
+            &abort_flag,
+        ) {
             Ok((_, skipped)) => {
                 if skipped > 0 {
                     tracing::warn!("initial commit for {workspace_folder_str}: {skipped} large file(s) not snapshotted");
@@ -597,10 +381,10 @@ pub async fn abort_init_shadow_repos(gcx: Arc<GlobalContext>) {
     // NOTE: git2 operations are synchronous and can't be cancelled by tokio abort;
     // we set the abort flag and wait with a timeout to avoid hanging shutdown.
     let holder = {
-        gcx.git_operations_abort_flag.store(true, Ordering::SeqCst);
+        gcx.git_operations_abort_flag
+            .store(true, std::sync::atomic::Ordering::SeqCst);
         BackgroundTasksHolder::default()
     };
-    // holder.abort() already has an internal timeout, but we call it here after releasing the lock
     let mut holder = holder;
     holder.abort().await;
 }

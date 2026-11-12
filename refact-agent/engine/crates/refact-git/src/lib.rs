@@ -1,3 +1,5 @@
+pub mod checkpoints;
+pub mod commit_info;
 pub mod operations;
 
 use serde::{Deserialize, Serialize};

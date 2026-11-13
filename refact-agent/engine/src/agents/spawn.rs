@@ -6,19 +6,17 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
-use serde_json::Value;
 use refact_core::chat_types::{PendingDelivery, PushMode};
-use tokio::sync::{Mutex as AMutex, mpsc::UnboundedSender, oneshot};
+use tokio::sync::oneshot;
 use uuid::Uuid;
 
 use crate::agents::types::{
-    AgentCompletion, BackgroundAgent, BgAgentKind, CreateAgentRequest, NO_TEXT_RESULT_SUMMARY,
+    AgentCompletion, BackgroundAgent, CreateAgentRequest, NO_TEXT_RESULT_SUMMARY,
 };
 use crate::app_state::AppState;
 use crate::at_commands::at_commands::MAX_SUBCHAT_DEPTH;
 use crate::call_validation::{ChatContent, ChatMessage};
 use crate::chat::internal_roles::{event, EventSubkind};
-use crate::chat::types::{GoalBudget, GoalCriterion, TaskMeta};
 use crate::global_context::GlobalContext;
 use crate::subchat::{
     SubchatConfig, SubchatProgress, SubchatResult, resolve_subchat_config_with_parent,
@@ -68,47 +66,6 @@ pub fn install_test_runner(runner: TestRunner) -> TestRunnerGuard {
 }
 
 #[derive(Clone)]
-pub struct SpawnRequest {
-    pub kind: BgAgentKind,
-    pub parent_chat_id: String,
-    pub parent_root_chat_id: Option<String>,
-    pub parent_tool_call_id: Option<String>,
-    pub config_name: String,
-    pub title: String,
-    pub prompt: String,
-    pub tools: Option<Vec<String>>,
-    pub target_files: Vec<String>,
-    pub max_steps: usize,
-    pub model: String,
-    pub model_type: Option<String>,
-    pub goal: Option<SpawnGoal>,
-    pub plan: Option<String>,
-    pub worktree_mode: SpawnWorktreeMode,
-    pub parent_subchat_tx: Option<Arc<AMutex<UnboundedSender<Value>>>>,
-    pub parent_worktree: Option<WorktreeMeta>,
-    pub parent_task_meta: Option<TaskMeta>,
-    pub subchat_depth: usize,
-    pub notify_parent: NotifyParent,
-    pub completion_push: PushMode,
-}
-
-#[derive(Clone)]
-pub struct SpawnGoal {
-    pub content: String,
-    pub criteria: Vec<GoalCriterion>,
-    pub budget: Option<GoalBudget>,
-}
-
-#[derive(Clone, Default)]
-pub enum SpawnWorktreeMode {
-    #[default]
-    Inherit,
-    Isolated {
-        auto_merge: bool,
-    },
-}
-
-#[derive(Clone)]
 struct SpawnedWorktree {
     meta: WorktreeMeta,
     base_branch: Option<String>,
@@ -117,13 +74,10 @@ struct SpawnedWorktree {
     parent_worktree: Option<WorktreeMeta>,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum NotifyParent {
-    Auto,
-    Silent,
-}
-
-pub use refact_agents_core::spawn::{emit_background_agent_update, SpawnHandle};
+pub use refact_agents_core::spawn::{
+    emit_background_agent_update, NotifyParent, SpawnGoal, SpawnHandle, SpawnRequest,
+    SpawnWorktreeMode,
+};
 
 pub async fn spawn_background_agent(
     app: AppState,

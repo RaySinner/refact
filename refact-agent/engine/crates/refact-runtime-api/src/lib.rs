@@ -38,6 +38,7 @@ pub mod runtime_settings;
 pub mod stats;
 pub mod terminal_security;
 pub mod tool_catalog;
+pub mod tool_agent;
 pub mod ctx_traits;
 pub mod services;
 pub mod tool_ctx;

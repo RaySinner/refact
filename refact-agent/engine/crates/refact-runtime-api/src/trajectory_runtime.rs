@@ -1,4 +1,6 @@
 use refact_chat_api::{ChatMessage, TaskMeta, ThreadParams, TrajectoryCommitIntent};
+use refact_core::chat_types::ChatContent;
+use uuid::Uuid;
 use refact_chat_history::trajectory_model::LoadedTrajectory;
 use refact_chat_history::trajectory_snapshot::TrajectorySnapshot;
 use refact_perf::perf_diagnostics::{self, PerfComponent, PerfOutcome};
@@ -133,4 +135,103 @@ pub async fn save_trajectory_snapshot_for_ctx(
         None,
     );
     result
+}
+
+pub async fn save_initial_task_chat_trajectory(
+    ctx: &ChatCtx,
+    task_id: &str,
+    chat_id: &str,
+    mode: &str,
+) -> Result<(), String> {
+    let greeting = "## 🎯 Task Planner
+
+I'm your **Task Planner**. I handle the complete task lifecycle - from investigation to execution.
+
+**Planning Phase:**
+- Analyze the codebase using search and exploration tools
+- Create task cards with clear acceptance criteria
+- Set priorities and dependencies between cards
+
+**Execution Phase:**
+- Spawn agents to work on ready cards (each in isolated git worktree)
+- Monitor agent progress and receive completion notifications
+- Merge successful work back to main branch
+- Handle failures and coordinate retries
+
+**How to use me:**
+1. Describe what you want to accomplish
+2. I'll investigate and create a structured plan (task cards)
+3. When ready, I'll spawn agents to implement each card
+4. I'll notify you as work completes and handle merging
+5. We iterate until the task is done
+
+**Ready when you are!** Tell me what you'd like to build or fix.";
+
+    let greeting_msg = ChatMessage {
+        message_id: Uuid::new_v4().to_string(),
+        role: "assistant".to_string(),
+        content: ChatContent::SimpleText(greeting.to_string()),
+        finish_reason: Some("stop".to_string()),
+        ..Default::default()
+    };
+
+    let task_meta = TaskMeta {
+        task_id: task_id.to_string(),
+        role: "planner".to_string(),
+        agent_id: None,
+        card_id: None,
+        planner_chat_id: Some(chat_id.to_string()),
+    };
+
+    let snapshot = TrajectorySnapshot {
+        goal: None,
+        goal_ledger: Vec::new(),
+        pending_deliveries: Vec::new(),
+        goal_verification_blocked_until_ms: None,
+        chat_id: chat_id.to_string(),
+        title: String::new(),
+        model: String::new(),
+        mode: mode.to_string(),
+        tool_use: "agent".to_string(),
+        messages: if mode == "task_planner" {
+            vec![greeting_msg]
+        } else {
+            Vec::new()
+        },
+        created_at: chrono::Utc::now().to_rfc3339(),
+        boost_reasoning: false,
+        checkpoints_enabled: true,
+        context_tokens_cap: None,
+        auto_compression_cap: None,
+        auto_compression_cap_pending: true,
+        include_project_info: true,
+        is_title_generated: false,
+        auto_approve_editing_tools: true,
+        auto_approve_dangerous_commands: true,
+        autonomous_no_confirm: false,
+        auto_enrichment_enabled: Some(false),
+        task_meta: Some(task_meta),
+        worktree: None,
+        version: 1,
+        parent_id: None,
+        link_type: None,
+        root_chat_id: None,
+        reasoning_effort: None,
+        thinking_budget: None,
+        temperature: None,
+        frequency_penalty: None,
+        max_tokens: None,
+        parallel_tool_calls: None,
+        previous_response_id: None,
+        active_skill: None,
+        buddy_meta: None,
+        auto_compact_enabled: None,
+        frozen_request_prefix: None,
+        claude_code_identity: None,
+        reactive_compact_attempts: None,
+        wake_up_at: None,
+        waiting_for_card_ids: Vec::new(),
+    };
+
+    save_trajectory_snapshot_for_ctx(ctx, snapshot).await
 }

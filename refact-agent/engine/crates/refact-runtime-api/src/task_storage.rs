@@ -542,6 +542,13 @@ pub async fn enrich_task_meta_with_session_state(sessions: &SessionsMap, meta: &
     };
 }
 
+pub async fn enrich_task_with_session_state_for_services(
+    chat: &crate::services::ChatServices,
+    task: &mut TaskMeta,
+) {
+    enrich_task_meta_with_session_state(&chat.sessions, task).await;
+}
+
 pub async fn emit_task_updated_via(
     sessions: &SessionsMap,
     task_events_tx: &Option<tokio::sync::broadcast::Sender<TaskEventEnvelope>>,

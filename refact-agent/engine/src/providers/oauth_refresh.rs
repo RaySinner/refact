@@ -1,5 +1,4 @@
 use std::collections::HashSet;
-use std::path::Path;
 use std::sync::Arc;
 
 use crate::global_context::GlobalContext;
@@ -10,9 +9,9 @@ pub use refact_providers::oauth_refresh::{
     mark_invalid_refresh_token,
 };
 
-const REFRESH_CHECK_INTERVAL_SECS: u64 = 60;
-const REFRESH_BEFORE_EXPIRY_MS: i64 = 5 * 60 * 1000;
+use refact_runtime_api::providers_oauth_runtime::needs_refresh;
 
+const REFRESH_CHECK_INTERVAL_SECS: u64 = 60;
 lazy_static::lazy_static! {
     static ref OAUTH_FAILED_INSTANCES: std::sync::Mutex<HashSet<String>> =
         std::sync::Mutex::new(HashSet::new());
@@ -95,15 +94,6 @@ pub(crate) async fn refresh_expiring_oauth_tokens(gcx: &Arc<GlobalContext>) {
 pub(crate) async fn refresh_expiring_claude_code_tokens(gcx: &Arc<GlobalContext>) {
     let http_client = gcx.http_client.clone();
     try_refresh_claude_code_instances(gcx, &http_client).await;
-}
-
-fn proactive_refresh_can_reuse_newer_expiry(
-    rejected_expires_at: Option<i64>,
-    rejected_status: Option<reqwest::StatusCode>,
-    current_expires_at: i64,
-) -> bool {
-    rejected_status.is_none()
-        && rejected_expires_at.is_some_and(|expires_at| current_expires_at > expires_at)
 }
 
 async fn try_refresh_claude_code_instances(
@@ -255,152 +245,31 @@ pub async fn force_refresh_claude_code_for_retry(
     rejected_expires_at: Option<i64>,
     rejected_status: Option<reqwest::StatusCode>,
 ) -> Result<Option<crate::providers::claude_code::ClaudeCodeProvider>, String> {
-    let refresh_guard =
-        crate::providers::claude_code::ClaudeCodeProvider::lock_refresh_guard().await?;
-    let config_dir = gcx.config_dir.clone();
-    let oauth_file_guard =
-        config_store::lock_provider_oauth_file(&config_dir, provider_name).await?;
-    let (mut provider, config_dir) = {
-        let registry = gcx.providers.read().await;
-        let provider = registry
-            .get(provider_name)
-            .and_then(|provider| {
-                provider
-                    .as_any()
-                    .downcast_ref::<crate::providers::claude_code::ClaudeCodeProvider>()
-            })
-            .cloned();
-        (provider, gcx.config_dir.clone())
-    };
-    let Some(mut provider) = provider.take() else {
-        return Ok(None);
-    };
-    sync_claude_code_tokens_from_disk(gcx, &config_dir, provider_name, &mut provider).await?;
-
-    if provider
-        .access_token_changed_since_rejection(rejected_access_token)
-        .is_some()
-    {
-        return Ok(Some(provider));
-    }
-    if proactive_refresh_can_reuse_newer_expiry(
+    refact_runtime_api::providers_oauth_runtime::force_refresh_claude_code_for_retry(
+        &gcx.providers,
+        http_client,
+        &gcx.config_dir,
+        &gcx.caps_state,
+        &gcx.tool_catalog_generations,
+        provider_name,
+        rejected_access_token,
         rejected_expires_at,
         rejected_status,
-        provider.oauth_tokens.expires_at,
-    ) {
-        return Ok(Some(provider));
-    }
-
-    if let Some(status) = rejected_status {
-        if !crate::providers::claude_code::ClaudeCodeProvider::should_force_refresh_for_status(
-            status,
-            &provider.oauth_tokens.refresh_token,
-            false,
-        ) {
-            return Ok(None);
-        }
-    } else {
-        if !needs_refresh(provider.oauth_tokens.expires_at) {
-            return Ok(Some(provider));
-        }
-        if provider.oauth_tokens.refresh_token.is_empty() {
-            return Ok(None);
-        }
-    }
-
-    let previous_tokens = provider.oauth_tokens.clone();
-    let refreshed_tokens = match crate::providers::claude_code_oauth::refresh_access_token(
-        http_client,
-        &previous_tokens.refresh_token,
     )
     .await
-    {
-        Ok(tokens) => tokens,
-        Err(error) if is_permanent_refresh_error(&error) => {
-            let cleared = save_claude_code_refreshed_tokens(
-                gcx,
-                &config_dir,
-                provider_name,
-                &previous_tokens,
-                &crate::providers::claude_code_oauth::OAuthTokens::default(),
-            )
-            .await?;
-            if !cleared {
-                return Ok(current_claude_code_provider(gcx, provider_name).await);
-            }
-            mark_invalid_refresh_token(provider_name, &previous_tokens.refresh_token);
-            drop(oauth_file_guard);
-            drop(refresh_guard);
-            invalidate_caps(gcx).await;
-            return Err(format!(
-                "Claude Code OAuth refresh token is invalid. Please log in again in Claude Code provider settings: {}",
-                error
-            ));
-        }
-        Err(error) => return Err(format!("Claude Code OAuth refresh failed: {}", error)),
-    };
-
-    if !save_claude_code_refreshed_tokens(
-        gcx,
-        &config_dir,
-        provider_name,
-        &previous_tokens,
-        &refreshed_tokens,
-    )
-    .await?
-    {
-        return Ok(current_claude_code_provider(gcx, provider_name).await);
-    }
-
-    provider.oauth_tokens = refreshed_tokens;
-    drop(oauth_file_guard);
-    drop(refresh_guard);
-    invalidate_caps(gcx).await;
-    Ok(Some(provider))
 }
 
-async fn sync_claude_code_tokens_from_disk(
-    gcx: &Arc<GlobalContext>,
-    config_dir: &Path,
-    provider_name: &str,
-    provider: &mut crate::providers::claude_code::ClaudeCodeProvider,
-) -> Result<(), String> {
-    let path = config_store::provider_config_path(config_dir, provider_name);
-    let content = match tokio::fs::read_to_string(&path).await {
-        Ok(content) => content,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(error) => {
-            return Err(format!(
-                "Failed to read Claude Code provider config: {error}"
-            ))
-        }
-    };
-    let yaml: serde_yaml::Value = serde_yaml::from_str(&content)
-        .map_err(|error| format!("Claude Code provider config is invalid YAML: {error}"))?;
-    let Some(tokens_value) = yaml.get("oauth_tokens").cloned() else {
-        return Ok(());
-    };
-    let disk_tokens: crate::providers::claude_code_oauth::OAuthTokens =
-        serde_yaml::from_value(tokens_value)
-            .map_err(|error| format!("Failed to parse Claude Code OAuth tokens: {error}"))?;
-    if disk_tokens == provider.oauth_tokens {
-        return Ok(());
-    }
-
-    provider.oauth_tokens = disk_tokens.clone();
-    let mut registry = gcx.providers.write().await;
-    if let Some(current) = registry.get_mut(provider_name).and_then(|current| {
-        current
-            .as_any_mut()
-            .downcast_mut::<crate::providers::claude_code::ClaudeCodeProvider>()
-    }) {
-        current.apply_oauth_refresh_tokens(
-            &disk_tokens.access_token,
-            &disk_tokens.refresh_token,
-            disk_tokens.expires_at,
-        );
-    }
-    Ok(())
+#[cfg(test)]
+fn proactive_refresh_can_reuse_newer_expiry(
+    rejected_expires_at: Option<i64>,
+    rejected_status: Option<reqwest::StatusCode>,
+    current_expires_at: i64,
+) -> bool {
+    refact_runtime_api::providers_oauth_runtime::proactive_refresh_can_reuse_newer_expiry(
+        rejected_expires_at,
+        rejected_status,
+        current_expires_at,
+    )
 }
 
 pub(crate) async fn refresh_claude_code_instance_if_needed(
@@ -436,29 +305,7 @@ pub(crate) async fn refresh_claude_code_instance_if_needed(
     .map(|_| ())
 }
 
-async fn invalidate_caps(gcx: &Arc<GlobalContext>) {
-    let mut caps = gcx.caps_state.write().await;
-    caps.caps = None;
-    caps.last_attempted_ts = 0;
-    gcx.tool_catalog_generations.advance_capabilities();
-}
-
-async fn current_claude_code_provider(
-    gcx: &Arc<GlobalContext>,
-    provider_name: &str,
-) -> Option<crate::providers::claude_code::ClaudeCodeProvider> {
-    gcx.providers
-        .read()
-        .await
-        .get(provider_name)
-        .and_then(|provider| {
-            provider
-                .as_any()
-                .downcast_ref::<crate::providers::claude_code::ClaudeCodeProvider>()
-        })
-        .cloned()
-}
-
+#[cfg(test)]
 async fn save_claude_code_refreshed_tokens(
     gcx: &Arc<GlobalContext>,
     config_dir: &std::path::Path,
@@ -466,72 +313,14 @@ async fn save_claude_code_refreshed_tokens(
     expected_tokens: &crate::providers::claude_code_oauth::OAuthTokens,
     refreshed_tokens: &crate::providers::claude_code_oauth::OAuthTokens,
 ) -> Result<bool, String> {
-    let registry_matches = {
-        let registry = gcx.providers.read().await;
-        registry
-            .get(provider_name)
-            .and_then(|provider| {
-                provider
-                    .as_any()
-                    .downcast_ref::<crate::providers::claude_code::ClaudeCodeProvider>()
-            })
-            .is_some_and(|provider| &provider.oauth_tokens == expected_tokens)
-    };
-    if !registry_matches {
-        return Ok(false);
-    }
-
-    let updated = config_store::update_provider_config_if(config_dir, provider_name, |existing| {
-        let Some(value) = existing else {
-            return Ok(None);
-        };
-        let mut yaml_map = value.as_mapping().cloned().ok_or_else(|| {
-            "Config file root is not a YAML mapping. Cannot safely patch.".to_string()
-        })?;
-        let current_tokens: crate::providers::claude_code_oauth::OAuthTokens = yaml_map
-            .get(&serde_yaml::Value::String("oauth_tokens".to_string()))
-            .cloned()
-            .map(serde_yaml::from_value)
-            .transpose()
-            .map_err(|error| format!("Failed to parse existing OAuth tokens: {}", error))?
-            .unwrap_or_default();
-        if &current_tokens != expected_tokens {
-            return Ok(None);
-        }
-
-        yaml_map.insert(
-            serde_yaml::Value::String("oauth_tokens".to_string()),
-            serde_yaml::to_value(refreshed_tokens)
-                .map_err(|error| format!("Failed to serialize OAuth tokens: {}", error))?,
-        );
-        Ok(Some(serde_yaml::Value::Mapping(yaml_map)))
-    })
-    .await?;
-    if updated.is_none() {
-        return Ok(false);
-    }
-
-    let changed = {
-        let mut registry = gcx.providers.write().await;
-        registry
-            .get_mut(provider_name)
-            .and_then(|provider| {
-                provider
-                    .as_any_mut()
-                    .downcast_mut::<crate::providers::claude_code::ClaudeCodeProvider>()
-            })
-            .filter(|provider| &provider.oauth_tokens == expected_tokens)
-            .map(|provider| {
-                provider.apply_oauth_refresh_tokens(
-                    &refreshed_tokens.access_token,
-                    &refreshed_tokens.refresh_token,
-                    refreshed_tokens.expires_at,
-                );
-            })
-            .is_some()
-    };
-
-    Ok(changed)
+    refact_runtime_api::providers_oauth_runtime::save_claude_code_refreshed_tokens(
+        &gcx.providers,
+        config_dir,
+        provider_name,
+        expected_tokens,
+        refreshed_tokens,
+    )
+    .await
 }
 
 async fn try_refresh_openai_codex_instances(
@@ -1380,13 +1169,6 @@ async fn save_xai_refreshed_tokens(
     Ok(changed)
 }
 
-fn needs_refresh(expires_at: i64) -> bool {
-    if expires_at == 0 {
-        return true;
-    }
-    let now_ms = chrono::Utc::now().timestamp_millis();
-    now_ms >= expires_at - REFRESH_BEFORE_EXPIRY_MS
-}
 
 pub(crate) async fn save_refreshed_tokens(
     gcx: &Arc<GlobalContext>,

@@ -6,6 +6,7 @@ pub use refact_tasks::events::{TaskEvent, TaskEventEnvelope};
 pub use refact_tasks::events_emit::{emit_task_event_for_services, emit_task_event_via};
 pub use refact_runtime_api::task_storage::{
     emit_task_updated_via, enrich_task_meta_with_session_state,
+    enrich_task_with_session_state_for_services,
 };
 use refact_tasks::types::TaskMeta;
 
@@ -15,13 +16,6 @@ pub async fn emit_task_event(gcx: Arc<GlobalContext>, event: TaskEvent) {
 
 pub async fn enrich_task_with_session_state(gcx: Arc<GlobalContext>, task: &mut TaskMeta) {
     enrich_task_meta_with_session_state(&gcx.chat_sessions, task).await;
-}
-
-pub async fn enrich_task_with_session_state_for_services(
-    chat: &crate::app_state::ChatServices,
-    task: &mut TaskMeta,
-) {
-    enrich_task_meta_with_session_state(&chat.sessions, task).await;
 }
 
 pub async fn emit_task_updated(gcx: Arc<GlobalContext>, task_id: String, meta: TaskMeta) {

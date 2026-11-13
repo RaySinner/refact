@@ -2,26 +2,15 @@ use std::path::Path;
 use std::sync::Arc;
 
 use refact_core::memory_plane::MemoryPlaneRoots;
+use refact_runtime_api::global_context::GlobalContext;
 
+#[cfg(test)]
 use crate::files_correction::get_project_dirs;
-use crate::global_context::GlobalContext;
+
+pub use refact_runtime_api::memories_runtime::memory_plane_roots_for_ctx;
 
 pub async fn memory_plane_roots(gcx: Arc<GlobalContext>) -> MemoryPlaneRoots {
-    MemoryPlaneRoots::new(
-        get_project_dirs(gcx.clone()).await,
-        Some(crate::memories::get_global_knowledge_dir(&gcx).await),
-        Some(crate::chat::trajectories::global_trajectories_dir_path(
-            &gcx.config_dir,
-        )),
-    )
-}
-
-pub async fn memory_plane_roots_for_ctx(ctx: &crate::chat::ctx::ChatCtx) -> MemoryPlaneRoots {
-    MemoryPlaneRoots::new(
-        crate::files_correction::get_unscoped_project_dirs_for_ctx(ctx).await,
-        Some(crate::memories::get_global_knowledge_dir_for_ctx(ctx)),
-        Some(crate::chat::trajectories::get_global_trajectories_dir(ctx).await),
-    )
+    refact_runtime_api::memories_runtime::memory_plane_roots(gcx).await
 }
 
 pub fn partition_paths(paths: &[String], roots: &MemoryPlaneRoots) -> (Vec<String>, Vec<String>) {

@@ -31,6 +31,15 @@ pub fn path_contains_component(path: &Path, component: &str) -> bool {
     path.components().any(|c| c.as_os_str() == component)
 }
 
+
+pub async fn memory_plane_roots(gcx: SharedGlobalContext) -> MemoryPlaneRoots {
+    let trajectories_dir = gcx.config_dir.join("trajectories");
+    MemoryPlaneRoots::new(
+        get_project_dirs(gcx.clone()).await,
+        Some(get_global_knowledge_dir(&gcx).await),
+        Some(trajectories_dir),
+    )
+}
 pub async fn memory_plane_roots_for_ctx(ctx: &ChatCtx) -> MemoryPlaneRoots {
     MemoryPlaneRoots::new(
         get_unscoped_project_dirs_for_ctx(ctx).await,

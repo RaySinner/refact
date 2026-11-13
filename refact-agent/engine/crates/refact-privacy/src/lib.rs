@@ -1,5 +1,5 @@
 pub mod destination;
-pub mod destination_clear;
+pub mod destinations;
 pub mod derived;
 pub mod gate;
 pub mod message_records;
@@ -15,6 +15,7 @@ pub mod runtime_state;
 pub mod testing;
 
 pub use destination::{Destination, DestinationId, DestinationKind};
+pub use destinations::{clear_for_mcp, clear_for_model, DestinationExt};
 pub use derived::{new_derived_privacy_zones, DerivedPrivacyZones, DerivedZone};
 pub use gate::{clear, records_from_messages, Cleared, PrivacyAuditError, PrivacyAudited, Refusal};
 pub use legacy::{check_file_privacy, check_file_privacy_for_read_preparation};

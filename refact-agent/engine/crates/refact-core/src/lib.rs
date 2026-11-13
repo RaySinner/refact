@@ -8,6 +8,7 @@ pub mod buddy_meta;
 pub mod call_validation;
 pub mod chat_config;
 pub mod chat_types;
+pub mod constants;
 pub mod chunk_utils;
 pub mod custom_error;
 pub mod file_lock;

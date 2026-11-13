@@ -21,7 +21,7 @@ use refact_runtime_api::Tool;
 use refact_tool_api::{ToolDesc, ToolSource, ToolSourceType};
 use crate::call_validation::{ChatMessage, ChatContent, ContextEnum};
 use crate::integrations::integr_abstract::{IntegrationCommon, IntegrationConfirmation};
-use refact_privacy::destination_clear::clear_for_mcp;
+use refact_privacy::destinations::clear_for_mcp;
 use super::session_mcp::{
     McpRunningService, MCPConnectionStatus, add_log_entry, mcp_session_wait_startup,
     redact_sensitive_json,

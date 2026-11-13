@@ -94,3 +94,27 @@ impl ToolCatalogCache {
         self.build_locks.lock().await.len()
     }
 }
+
+pub const TOOL_CATALOG_SNAPSHOTS_ENV: &str = "REFACT_TOOL_CATALOG_SNAPSHOTS";
+
+pub fn tool_catalog_snapshot_rollout_enabled() -> bool {
+    std::env::var(TOOL_CATALOG_SNAPSHOTS_ENV)
+        .ok()
+        .as_deref()
+        .or_else(|| {
+            crate::runtime_settings::current()
+                .tool_catalog_snapshots_enabled
+                .then_some("1")
+        })
+        .is_some_and(|value| tool_catalog_snapshot_rollout_enabled_for(Some(value)))
+}
+
+pub fn tool_catalog_snapshot_rollout_enabled_for(value: Option<&str>) -> bool {
+    value.is_some_and(|value| {
+        let value = value.trim();
+        value == "1"
+            || value.eq_ignore_ascii_case("true")
+            || value.eq_ignore_ascii_case("yes")
+            || value.eq_ignore_ascii_case("on")
+    })
+}

@@ -48,6 +48,8 @@ pub mod at_commands_runtime;
 pub mod at_tree;
 pub mod tool_trait;
 pub mod task_storage;
+pub mod task_comments;
+pub mod providers_oauth_runtime;
 pub mod buddy_actor_runtime;
 pub mod buddy_runtime;
 pub mod subchat_runtime;
@@ -73,7 +75,9 @@ pub use global_context::{app_state_from_gcx, GlobalContextCtx};
 pub use command_line::CommandLine;
 pub use terminal_security::{TerminalSecurityConfig, TerminalSecurityMode};
 pub use tool_catalog::{
-    ToolCatalogCache, ToolCatalogGenerations, ToolCatalogKey, TOOL_CATALOG_SNAPSHOT_CACHE_LIMIT,
+    tool_catalog_snapshot_rollout_enabled, tool_catalog_snapshot_rollout_enabled_for,
+    ToolCatalogCache, ToolCatalogGenerations, ToolCatalogKey, TOOL_CATALOG_SNAPSHOTS_ENV,
+    TOOL_CATALOG_SNAPSHOT_CACHE_LIMIT,
 };
 pub use ctx_traits::{
     BuddyServicesHandle, CapsProvider, FilesProvider, ModeConfigProvider, SubchatLauncherHandle,

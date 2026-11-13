@@ -14,7 +14,7 @@ use refact_runtime_api::{
     ToolRegistryIndex, TrajectoryStoreHandle, TurnToolPool,
 };
 
-pub const TOOL_CATALOG_SNAPSHOTS_ENV: &str = "REFACT_TOOL_CATALOG_SNAPSHOTS";
+pub const TOOL_CATALOG_SNAPSHOTS_ENV: &str = refact_runtime_api::TOOL_CATALOG_SNAPSHOTS_ENV;
 use tokio::sync::{Mutex as AMutex, Notify};
 
 pub use refact_runtime_api::{app_state_from_gcx, CapsLoader, ContextFactory, GlobalContextCtx};
@@ -1765,27 +1765,9 @@ impl AppToolRegistry {
     }
 }
 
-pub(crate) fn tool_catalog_snapshot_rollout_enabled() -> bool {
-    std::env::var(TOOL_CATALOG_SNAPSHOTS_ENV)
-        .ok()
-        .as_deref()
-        .or_else(|| {
-            crate::runtime_settings::current()
-                .tool_catalog_snapshots_enabled
-                .then_some("1")
-        })
-        .is_some_and(|value| tool_catalog_snapshot_rollout_enabled_for(Some(value)))
-}
-
-pub(crate) fn tool_catalog_snapshot_rollout_enabled_for(value: Option<&str>) -> bool {
-    value.is_some_and(|value| {
-        let value = value.trim();
-        value == "1"
-            || value.eq_ignore_ascii_case("true")
-            || value.eq_ignore_ascii_case("yes")
-            || value.eq_ignore_ascii_case("on")
-    })
-}
+pub(crate) use refact_runtime_api::tool_catalog_snapshot_rollout_enabled;
+#[cfg(test)]
+pub(crate) use refact_runtime_api::tool_catalog_snapshot_rollout_enabled_for;
 
 #[async_trait]
 impl ToolRegistry for AppToolRegistry {

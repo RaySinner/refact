@@ -13,7 +13,8 @@ use tracing::warn;
 
 use crate::chat::perf_diagnostics::{self, PerfComponent, PerfOutcome};
 use crate::files_in_workspace::get_file_text_from_memory_or_disk;
-use crate::global_context::{GlobalContext, GlobalContextCtx};
+use crate::global_context::GlobalContext;
+use refact_runtime_api::GlobalContextCtx;
 use crate::memories::index::{load_root_chat_id_from_trajectory, resolve_root_chat_id};
 use crate::memories::storage::{get_all_knowledge_dirs, path_contains_component};
 

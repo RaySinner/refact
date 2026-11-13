@@ -10,7 +10,8 @@ use uuid::Uuid;
 
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::chat::ctx::ChatCtx;
-use crate::global_context::{GlobalContext, GlobalContextCtx, SharedGlobalContext};
+use crate::global_context::{GlobalContext, SharedGlobalContext};
+use refact_runtime_api::GlobalContextCtx;
 use crate::http::routers::v1::knowledge_ops::auto_link_memory;
 use crate::knowledge_graph::build_knowledge_graph;
 use crate::knowledge_graph::kg_subchat::{check_deprecation, enrich_knowledge_metadata};

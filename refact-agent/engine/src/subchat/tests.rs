@@ -122,7 +122,7 @@ mod subchat_tests {
         PARENT_COMPACTION_DIAGNOSTIC_TRUNCATED, PARTIAL_OUTPUT_STREAM_ERROR,
     };
     use crate::subchat::{final_step_wrap_up_message, needs_forced_final_answer};
-    use crate::global_context::GlobalContextCtx;
+    use refact_runtime_api::GlobalContextCtx;
     use crate::chat::diagnostics::{
         SAFE_PROVIDER_ERROR_DIAGNOSTIC_MAX_CHARS, SAFE_PROVIDER_ERROR_DIAGNOSTIC_TRUNCATED,
     };

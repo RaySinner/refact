@@ -3,7 +3,8 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::files_in_workspace::get_file_text_from_memory_or_disk;
-use crate::global_context::{GlobalContext, GlobalContextCtx};
+use crate::global_context::GlobalContext;
+use refact_runtime_api::GlobalContextCtx;
 
 const ROOT_CHAT_MEMO_CAPACITY: usize = 8_192;
 static ROOT_CHAT_MEMO: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();

@@ -7,7 +7,7 @@ use serial_test::serial;
 use tempfile::TempDir;
 use tokio::sync::{Mutex, Notify};
 
-use crate::global_context::GlobalContextCtx;
+use refact_runtime_api::GlobalContextCtx;
 use crate::agents::spawn::{
     NotifyParent, SpawnGoal, SpawnHandle, SpawnRequest, SpawnWorktreeMode, TestRunnerGuard,
 };

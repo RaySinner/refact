@@ -6,7 +6,7 @@ use tracing::info;
 use crate::files_in_workspace::detect_vcs_for_a_file_path;
 use crate::fuzzy_search::fuzzy_search;
 use crate::global_context::GlobalContext;
-use crate::global_context::GlobalContextCtx;
+use refact_runtime_api::GlobalContextCtx;
 
 pub use refact_files::documents_state::{
     mark_files_cache_dirty, FILES_CACHE_DEBOUNCE_SECONDS,

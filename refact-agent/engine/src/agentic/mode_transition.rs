@@ -17,7 +17,7 @@ use refact_context_api::PathsAccess;
 
 use crate::call_validation::ChatMessage;
 use crate::global_context::GlobalContext;
-use crate::global_context::GlobalContextCtx;
+use refact_runtime_api::GlobalContextCtx;
 use crate::subchat::{
     run_subchat, resolve_subchat_config_with_explicit_params, resolve_subchat_model,
     resolve_subchat_params, ExplicitSubchatSpec, TraceParent,

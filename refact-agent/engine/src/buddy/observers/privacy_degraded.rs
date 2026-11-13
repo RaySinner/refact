@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use refact_chat_history::trajectory_snapshot::TrajectorySnapshot;
 use uuid::Uuid;
 
-use crate::global_context::GlobalContextCtx;
+use refact_runtime_api::GlobalContextCtx;
 use crate::buddy::types::BuddyThreadMeta;
 use crate::call_validation::ChatMessage;
 use crate::global_context::GlobalContext;

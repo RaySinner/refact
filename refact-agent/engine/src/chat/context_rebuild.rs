@@ -7,7 +7,7 @@ use std::time::Duration;
 use serde::Serialize;
 use tokio::sync::Mutex;
 use crate::call_validation::ChatMessage;
-use crate::global_context::GlobalContextCtx;
+use refact_runtime_api::GlobalContextCtx;
 use crate::global_context::GlobalContext;
 use crate::chat::types::{
     ChatSession, ThreadParams, SessionState, CompressionPhase, CompressionReason,

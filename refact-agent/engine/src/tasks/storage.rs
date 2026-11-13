@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::global_context::GlobalContext;
-use crate::global_context::GlobalContextCtx;
+use refact_runtime_api::GlobalContextCtx;
 use super::types::{TaskBoard, TaskMeta};
 use super::events::{emit_task_event_via, TaskEvent};
 

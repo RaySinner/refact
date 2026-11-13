@@ -1,5 +1,5 @@
 use super::*;
-use crate::global_context::GlobalContextCtx;
+use refact_runtime_api::GlobalContextCtx;
 
 // =============================================================================
 // G-B: Per-rule cooldown persistence + provider-tuning DefaultsKind correctness

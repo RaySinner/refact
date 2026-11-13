@@ -1,5 +1,6 @@
 ﻿//! Tool implementations moved out of the engine (see task doc `refact-tools-split`).
 
+pub mod buddy;
 pub mod file_edit;
 pub mod native_enrichment;
 pub mod planner_delivery;
@@ -22,6 +23,7 @@ pub mod tool_agent_registry;
 pub mod tool_agent_steer;
 pub mod tool_ask_questions;
 pub mod tool_ast_definition;
+pub mod tool_buddy_create_issue;
 pub mod tool_card_comment;
 pub mod tool_cat;
 pub mod tool_compress_chat;

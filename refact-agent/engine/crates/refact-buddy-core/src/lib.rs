@@ -2,6 +2,7 @@ pub mod action_policy;
 pub mod actor;
 pub mod autonomous_workflows;
 pub mod briefing;
+pub mod buddy_opportunities;
 pub mod chat_interjection;
 pub mod chat_reactions;
 pub mod conversation_ledger;

@@ -28,6 +28,37 @@ pub struct DiagnosticContext {
     pub occurrences: Option<u32>,
 }
 
+pub fn stable_bucket_part(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for ch in value.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' || ch == '.' {
+            out.push(ch.to_ascii_lowercase());
+        } else {
+            out.push('_');
+        }
+    }
+    let trimmed = out.trim_matches('_');
+    if trimmed.is_empty() {
+        "unknown".to_string()
+    } else {
+        trimmed.chars().take(80).collect()
+    }
+}
+
+pub fn diagnostic_source_bucket(diag: &DiagnosticContext) -> String {
+    let mut bucket = diag
+        .tool_name
+        .as_deref()
+        .or(diag.source_file.as_deref())
+        .map(stable_bucket_part)
+        .unwrap_or_else(|| "unknown_source".to_string());
+    if let Some(model_id) = diag.model_id.as_deref() {
+        bucket.push(':');
+        bucket.push_str(&stable_bucket_part(model_id));
+    }
+    bucket
+}
+
 fn classify_diagnostic_severity_with_default(
     error: &str,
     default_severity: DiagnosticSeverity,

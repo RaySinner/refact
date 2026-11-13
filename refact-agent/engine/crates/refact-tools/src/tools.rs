@@ -3,6 +3,9 @@
 pub mod file_edit;
 pub mod native_enrichment;
 pub mod planner_delivery;
+pub mod review_agents;
+pub mod review_evidence;
+pub mod review_scope;
 #[cfg(feature = "test-util")]
 pub mod settings_guard;
 pub mod subagent_phases;

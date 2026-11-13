@@ -8,7 +8,7 @@ use super::*;
 /// same "this should have finished by now" line the engine already draws for a
 /// wedged compaction, so the queue cannot invent a second, competing deadline.
 pub(crate) const QUEUE_WAIT_NOTICE_AFTER: std::time::Duration =
-    crate::chat::context_rebuild::COMPRESSION_ATTEMPT_STALE_AFTER;
+    refact_chat_api::compression_gate::COMPRESSION_ATTEMPT_STALE_AFTER;
 
 /// Whether a long queue wait is caused by compression, which must read
 /// differently from ordinary queueing: "queued" would be a lie while the chat is
@@ -189,7 +189,7 @@ pub(crate) async fn process_command_queue_inner(
 
             let state = session.runtime.state;
             let compression_active =
-                crate::chat::context_rebuild::compression_attempt_active(&session);
+                refact_chat_api::compression_gate::compression_attempt_active(&session);
             let is_busy = state == SessionState::Generating
                 || state == SessionState::ExecutingTools
                 || (state == SessionState::Starting && session.command_queue.is_empty())

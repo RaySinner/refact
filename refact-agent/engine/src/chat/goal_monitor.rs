@@ -270,7 +270,7 @@ pub fn try_apply_goal_nudge(
         apply_goal_terminal_status(session, status, trigger, now_ms);
         return GoalNudgeOutcome::BudgetExhausted(status);
     }
-    if crate::chat::context_rebuild::compression_attempt_active(session) {
+    if refact_chat_api::compression_gate::compression_attempt_active(session) {
         return GoalNudgeOutcome::Skipped(GoalNudgeSkip::Busy);
     }
     if !goal.goal_nudge_ready_at_with_backoff(now_ms) {

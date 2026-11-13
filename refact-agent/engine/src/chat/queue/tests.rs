@@ -48,7 +48,7 @@ fn queue_wait_notice_is_silent_on_the_first_blocked_iteration() {
 fn queue_wait_threshold_is_the_compression_staleness_constant() {
     assert_eq!(
         QUEUE_WAIT_NOTICE_AFTER,
-        crate::chat::context_rebuild::COMPRESSION_ATTEMPT_STALE_AFTER
+        refact_chat_api::compression_gate::COMPRESSION_ATTEMPT_STALE_AFTER
     );
 }
 
@@ -185,7 +185,7 @@ async fn compression_blocked_queue_stays_quiet_before_the_threshold() {
         Some(chrono::Utc::now().timestamp_millis().max(0) as u64);
     session.compression_abort_flag = Some(Arc::new(AtomicBool::new(false)));
     assert!(
-        crate::chat::context_rebuild::compression_attempt_active(&session),
+        refact_chat_api::compression_gate::compression_attempt_active(&session),
         "the fixture must actually block, otherwise this test proves nothing"
     );
     assert_eq!(

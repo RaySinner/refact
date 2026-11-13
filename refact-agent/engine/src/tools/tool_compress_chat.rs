@@ -2260,9 +2260,9 @@ impl Tool for ToolCompressChatApply {
                     .get(&chat_id)
                     .cloned()
                     .ok_or("Chat session not found")?;
-                crate::chat::context_rebuild::request_rebuild(
+                refact_chat_api::pending_context_rebuild::request_rebuild(
                     &mut *session.lock().await,
-                    crate::chat::context_rebuild::PendingContextRebuild {
+                    refact_chat_api::pending_context_rebuild::PendingContextRebuild {
                         model: None,
                         trigger: "compress_chat_apply".into(),
                     },
@@ -2414,7 +2414,7 @@ impl Tool for ToolCompressChatApply {
                 .ok_or("Chat session not found")?;
             let mut session = session.lock().await;
             if session.closed
-                || crate::chat::context_rebuild::compression_attempt_active(&session)
+                || refact_chat_api::compression_gate::compression_attempt_active(&session)
                 || session.pending_mode_handoff.is_some()
                 || session.pending_context_rebuild.is_some()
                 || serde_json::to_value(&session.messages).ok()

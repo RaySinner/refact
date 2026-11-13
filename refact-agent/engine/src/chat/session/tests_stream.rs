@@ -194,7 +194,7 @@ use std::time::Instant;
         session.pending_mode_handoff = None;
 
         session.pending_context_rebuild = Some(
-            crate::chat::context_rebuild::PendingContextRebuild {
+            refact_chat_api::pending_context_rebuild::PendingContextRebuild {
                 model: None,
                 trigger: "u4-test".to_string(),
             },

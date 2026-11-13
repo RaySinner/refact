@@ -493,7 +493,7 @@ impl Tool for ToolHandoffToMode {
             .ok_or("Chat session not found")?;
         let mut session = session.lock().await;
         if session.closed
-            || crate::chat::context_rebuild::compression_attempt_active(&session)
+            || refact_chat_api::compression_gate::compression_attempt_active(&session)
             || session.pending_mode_handoff.is_some()
             || session.pending_context_rebuild.is_some()
         {
@@ -574,7 +574,7 @@ async fn finalize_handoff_inner(
         let session = session_arc.lock().await;
         if session.runtime.state != SessionState::Idle
             || session.closed
-            || crate::chat::context_rebuild::compression_attempt_active(&session)
+            || refact_chat_api::compression_gate::compression_attempt_active(&session)
         {
             return Err("Handoff requires an idle source session".into());
         }
@@ -726,7 +726,7 @@ async fn finalize_handoff_inner(
         || abort.load(std::sync::atomic::Ordering::SeqCst)
         || serde_json::to_value(&source.thread).ok() != serde_json::to_value(&source_thread).ok()
         || transition_fingerprint(&source) != source_fingerprint
-        || crate::chat::context_rebuild::compression_attempt_active(&source)
+        || refact_chat_api::compression_gate::compression_attempt_active(&source)
     {
         return Err("Source changed during handoff reconstruction".into());
     }
@@ -915,7 +915,7 @@ pub async fn finalize_pending_handoff(
         let mut session = session_arc.lock().await;
         if session.pending_mode_handoff.is_some()
             || session.pending_context_rebuild.is_some()
-            || crate::chat::context_rebuild::compression_attempt_active(&session)
+            || refact_chat_api::compression_gate::compression_attempt_active(&session)
         {
             return Err("Another context operation is pending".into());
         }

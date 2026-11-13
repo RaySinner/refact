@@ -8,6 +8,7 @@ pub mod cache_diagnostics;
 pub mod chat_local_types;
 pub mod code_lens;
 pub mod compression_gate;
+pub mod context_rebuild;
 pub mod delivery;
 pub mod diagnostics;
 pub mod goal_ledger;

@@ -232,7 +232,7 @@ pub(in crate::chat::generation) async fn maybe_compact_after_high_pressure_lengt
             .last()
             .is_some_and(is_length_stop_compression_candidate)
         {
-            crate::chat::context_rebuild::emit_compression_skipped_status(
+            refact_chat_api::context_rebuild::emit_compression_skipped_status(
                 &mut session,
                 CompressionReason::EffectiveContextUnknown,
             );

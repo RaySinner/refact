@@ -13,6 +13,7 @@ pub mod issue_context;
 pub mod issue_sanitizers;
 pub mod memory_dedup;
 pub mod memory_lifecycle_model;
+pub mod observers;
 pub mod opportunities;
 pub mod planner_backstop;
 pub mod policy;

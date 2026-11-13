@@ -1,11 +1,9 @@
 use std::sync::Arc;
 
 use crate::call_validation::{ChatContent, ChatMessage, ChatMeta};
-use crate::global_context::GlobalContext;
+use crate::global_context::{GlobalContext, GlobalContextCtx};
 use crate::integrations::setting_up_integrations::integrations_all;
-use crate::scratchpads::chat_utils_prompts::system_prompt_add_extra_instructions;
 use crate::scratchpads::scratchpad_utils::HasRagResults;
-use crate::tools::tools_list::get_tools_for_mode;
 
 pub async fn mix_setup_messages(
     gcx: Arc<GlobalContext>,
@@ -51,19 +49,17 @@ pub async fn mix_setup_messages(
         );
     }
 
-    sp_text = system_prompt_add_extra_instructions(
-        crate::app_state::app_state_from_gcx(gcx.clone()).await,
-        sp_text,
-        get_tools_for_mode(gcx.clone(), "setup", None)
-            .await
-            .into_iter()
-            .map(|t| t.tool_description().name)
-            .collect(),
-        chat_meta,
-        &None,
-        "setup",
-    )
-    .await;
+    let ctx = gcx.chat_ctx(gcx.clone());
+    sp_text = ctx
+        .prompts
+        .system_prompt_add_extra_instructions(
+            sp_text,
+            ctx.tool_registry.get_tool_names_for_mode("setup", None).await,
+            chat_meta,
+            &None,
+            "setup",
+        )
+        .await;
 
     let system_message = ChatMessage {
         role: "system".to_string(),

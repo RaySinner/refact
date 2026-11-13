@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use std::sync::Arc;
 use tokio::sync::Mutex as AMutex;
 use tracing::info;
-use crate::nicer_logs::last_n_chars;
+use refact_core::nicer_logs::last_n_chars;
 
 use crate::at_commands::execute_at::AtCommandMember;
 use crate::call_validation::{ContextEnum, ContextFile};

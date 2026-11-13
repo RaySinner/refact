@@ -1,4 +1,4 @@
-﻿use super::*;
+use super::*;
 
 use crate::file_filter::is_valid_file;
 use crate::files_correction::registered_alias_paths;
@@ -342,7 +342,7 @@ pub(crate) async fn read_file_from_disk_without_privacy_check(path: &PathBuf) ->
         .map_err(|e| {
             format!(
                 "failed to read file {}: {}",
-                crate::nicer_logs::last_n_chars(&path.display().to_string(), 30),
+                refact_core::nicer_logs::last_n_chars(&path.display().to_string(), 30),
                 e
             )
         })
@@ -358,7 +358,7 @@ pub(crate) async fn read_file_from_disk_without_privacy_check_limited(
     let file = tokio::fs::File::open(path).await.map_err(|error| {
         format!(
             "failed to read file {}: {}",
-            crate::nicer_logs::last_n_chars(&path.display().to_string(), 30),
+            refact_core::nicer_logs::last_n_chars(&path.display().to_string(), 30),
             error
         )
     })?;
@@ -372,7 +372,7 @@ pub(crate) async fn read_file_from_disk_without_privacy_check_limited(
         .map_err(|error| {
             format!(
                 "failed to read file {}: {}",
-                crate::nicer_logs::last_n_chars(&path.display().to_string(), 30),
+                refact_core::nicer_logs::last_n_chars(&path.display().to_string(), 30),
                 error
             )
         })?;
@@ -382,7 +382,7 @@ pub(crate) async fn read_file_from_disk_without_privacy_check_limited(
     let text = String::from_utf8(bytes).map_err(|error| {
         format!(
             "failed to read file {} as UTF-8: {}",
-            crate::nicer_logs::last_n_chars(&path.display().to_string(), 30),
+            refact_core::nicer_logs::last_n_chars(&path.display().to_string(), 30),
             error
         )
     })?;

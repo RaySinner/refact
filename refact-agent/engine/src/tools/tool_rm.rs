@@ -341,7 +341,7 @@ impl Tool for ToolRm {
                     message = format!(
                         "{} ({})",
                         message,
-                        crate::nicer_logs::human_readable_bytes(file_size)
+                        refact_core::nicer_logs::human_readable_bytes(file_size)
                     );
                 }
                 messages.push(ContextEnum::ChatMessage(ChatMessage {

@@ -2583,8 +2583,9 @@ mod tests {
         assert!(sweep
             .contains("ensure_injection_into_tab(&tab, mask_passwords, action_buffer.clone())"));
 
-        let router = include_str!("../../../src/http/routers/v1/v1_browser.rs");
-        assert!(router.contains("ensure_injection_into_all_tabs(&rt)"));
+        let frame_task =
+            include_str!("../../refact-runtime-api/src/browser_frame.rs");
+        assert!(frame_task.contains("ensure_injection_into_all_tabs(&rt)"));
     }
 
     // Inline overlay template strings in the router are what drifted into four divergent copies.

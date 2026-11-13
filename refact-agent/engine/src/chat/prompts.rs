@@ -363,6 +363,9 @@ pub(crate) async fn models_info_snapshot(app: &AppState) -> String {
     )
 }
 
+/// Engine wrapper. The body assembles engine handles (`AppState`, mode config, skills
+/// context, project-info config), so it cannot live in a crate; crates reach the same
+/// behaviour through `refact_runtime_api::chat_ctx::PromptAssembler`.
 pub async fn system_prompt_add_extra_instructions(
     app: AppState,
     system_prompt: String,

@@ -58,9 +58,9 @@ pub async fn handle_v1_ast_file_dump(
             result.push_str(
                 format!(
                     "{}:{:04} {:<43} {:>7.3} {}\n",
-                    crate::nicer_logs::last_n_chars(&lineref.file_ref.cpath, 30),
+                    refact_core::nicer_logs::last_n_chars(&lineref.file_ref.cpath, 30),
                     lineref.line_n,
-                    crate::nicer_logs::first_n_chars(&lineref.line_content, 40),
+                    refact_core::nicer_logs::first_n_chars(&lineref.line_content, 40),
                     lineref.useful,
                     lineref.color,
                 )

@@ -1958,6 +1958,9 @@ pub async fn get_available_tools(gcx: Arc<GlobalContext>) -> Vec<Box<dyn Tool + 
         .collect()
 }
 
+/// Engine wrapper. The body builds engine `Tool` trait objects from the engine tool
+/// groups (and resolves mode/model caps), so it cannot live in a crate; crates reach the
+/// same names through `refact_runtime_api::ToolRegistry::get_tool_names_for_mode`.
 pub async fn get_tools_for_mode(
     gcx: Arc<GlobalContext>,
     mode_id: &str,

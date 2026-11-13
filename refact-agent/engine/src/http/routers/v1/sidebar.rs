@@ -15,7 +15,7 @@ use uuid::Uuid;
 use crate::app_state::AppState;
 use refact_runtime_api::GlobalContextCtx;
 use crate::global_context::GlobalContext;
-use crate::buddy::events::BuddyEvent;
+use refact_buddy_core::events::DiagnosticBuddyEvent as BuddyEvent;
 use crate::chat::trajectories::trajectory_event_is_displayable_chat;
 use crate::chat::{list_trajectories_page_for, TrajectoryEvent, TrajectoryMeta};
 use crate::custom_error::ScratchError;

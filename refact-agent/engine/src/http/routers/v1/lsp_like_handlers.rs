@@ -125,7 +125,7 @@ pub async fn handle_v1_set_active_document(
     let path = crate::files_correction::canonical_path(file_path.to_string_lossy().into_owned());
     tracing::info!(
         "ACTIVE_DOC {:?}",
-        crate::nicer_logs::last_n_chars(&path.to_string_lossy().to_string(), 30)
+        refact_core::nicer_logs::last_n_chars(&path.to_string_lossy().to_string(), 30)
     );
     *global_context.documents_state.active_file_path.lock().await = Some(path);
     Ok(Response::builder()

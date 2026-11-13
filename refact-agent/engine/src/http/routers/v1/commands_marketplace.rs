@@ -7,7 +7,7 @@ use serde_json::json;
 
 use crate::app_state::AppState;
 use crate::custom_error::ScratchError;
-use crate::ext::extensions_marketplace::{
+use refact_runtime_api::ext_marketplace::{
     InstallMarketplaceItemRequest, MarketplaceKind, install_marketplace_item,
     list_marketplace_items,
 };
@@ -70,7 +70,7 @@ pub async fn handle_v1_commands_marketplace_install(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ext::extensions_marketplace::configure_source;
+    use refact_runtime_api::ext_marketplace::configure_source;
     use crate::global_context::tests::make_test_gcx;
 
     #[tokio::test]

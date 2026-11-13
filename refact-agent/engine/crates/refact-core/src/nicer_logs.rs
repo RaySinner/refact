@@ -14,6 +14,29 @@ pub fn human_readable_bytes(bytes: u64) -> String {
     }
 }
 
+pub fn first_n_chars(msg: &String, n: usize) -> String {
+    let mut last_n_chars: String = msg.chars().take(n).collect();
+    if last_n_chars.len() == n {
+        last_n_chars.push_str("...");
+    }
+    return last_n_chars.replace("\n", "\\n");
+}
+
+pub fn last_n_chars(msg: &String, n: usize) -> String {
+    let mut last_n_chars: String = msg
+        .chars()
+        .rev()
+        .take(n)
+        .collect::<String>()
+        .chars()
+        .rev()
+        .collect();
+    if last_n_chars.len() == n {
+        last_n_chars.insert_str(0, "...");
+    }
+    return last_n_chars.replace("\n", "\\n");
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -30,5 +53,19 @@ mod tests {
         assert_eq!(human_readable_bytes(1536), "1.5KB");
         assert_eq!(human_readable_bytes(1024 * 1024), "1.0MB");
         assert_eq!(human_readable_bytes(1024 * 1024 * 1024), "1.0GB");
+    }
+
+    #[test]
+    fn first_n_chars_keeps_prefix_and_escapes_newlines() {
+        assert_eq!(first_n_chars(&"abcdef".to_string(), 3), "abc...");
+        assert_eq!(first_n_chars(&"ab".to_string(), 3), "ab");
+        assert_eq!(first_n_chars(&"a\nb".to_string(), 10), "a\\nb");
+    }
+
+    #[test]
+    fn last_n_chars_keeps_suffix_and_escapes_newlines() {
+        assert_eq!(last_n_chars(&"abcdef".to_string(), 3), "...def");
+        assert_eq!(last_n_chars(&"ab".to_string(), 3), "ab");
+        assert_eq!(last_n_chars(&"a\nb".to_string(), 10), "a\\nb");
     }
 }

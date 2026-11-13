@@ -288,6 +288,15 @@ pub trait PromptAssembler: Send + Sync {
         mode_id: &str,
         model_id: &str,
     ) -> (Vec<ChatMessage>, SkillsTrackingInfo);
+
+    async fn system_prompt_add_extra_instructions(
+        &self,
+        system_prompt: String,
+        tool_names: HashSet<String>,
+        chat_meta: &ChatMeta,
+        task_meta: &Option<TaskMeta>,
+        mode_id: &str,
+    ) -> String;
 }
 
 #[async_trait]

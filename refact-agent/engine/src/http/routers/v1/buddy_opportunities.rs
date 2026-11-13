@@ -21,7 +21,7 @@ use refact_buddy_core::verdicts::VerdictOutcome;
 use crate::app_state::AppState;
 use crate::custom_error::ScratchError;
 use crate::ext::config_dirs::get_ext_dirs;
-use crate::ext::extensions_marketplace::{
+use refact_runtime_api::ext_marketplace::{
     install_marketplace_item, list_marketplace_items, InstallMarketplaceItemRequest,
     MarketplaceKind,
 };

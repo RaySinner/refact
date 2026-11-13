@@ -6,7 +6,7 @@ use hyper::StatusCode;
 use serde::{Deserialize, Serialize};
 
 use crate::buddy::diagnostics::{unavailable_model_id, DiagnosticContext};
-use crate::buddy::events::BuddyEvent;
+use refact_buddy_core::events::DiagnosticBuddyEvent as BuddyEvent;
 use crate::buddy::pulse_inject::build_buddy_pulse_payload;
 use crate::buddy::settings::{
     AutonomyLevel, BuddySettings, HumorLevel, ObserverToggles, MAX_PALETTE_INDEX,

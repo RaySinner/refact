@@ -159,6 +159,18 @@ pub struct ToolExecutionResult {
 #[async_trait]
 pub trait ToolRegistry: Send + Sync {
     async fn get_tools_for_mode(&self, mode: &str, model_id: Option<&str>) -> Vec<ToolDesc>;
+
+    async fn get_tool_names_for_mode(
+        &self,
+        mode: &str,
+        model_id: Option<&str>,
+    ) -> std::collections::HashSet<String> {
+        self.get_tools_for_mode(mode, model_id)
+            .await
+            .into_iter()
+            .map(|tool| tool.name)
+            .collect()
+    }
     async fn get_tools_index_for_mode(
         &self,
         mode: &str,
@@ -398,5 +410,9 @@ pub mod session_handles;
 pub mod git_cleanup;
 pub mod ext_config_dirs;
 pub mod ext_hooks_runner;
+pub mod ext_marketplace;
 pub mod ext_plugins;
+pub mod ext_runtime;
 pub mod integration_variables;
+pub mod slash_cache;
+pub mod browser_frame;

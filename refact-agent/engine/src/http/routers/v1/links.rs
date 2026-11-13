@@ -270,7 +270,7 @@ pub async fn handle_v1_links(
                 link_action: LinkAction::Goto,
                 link_text: format!(
                     "Syntax error in {}",
-                    crate::nicer_logs::last_n_chars(&e.path, 20)
+                    refact_core::nicer_logs::last_n_chars(&e.path, 20)
                 ),
                 link_goto: Some(format!("SETTINGS:{}", e.path)),
                 link_summary_path: None,

@@ -112,10 +112,12 @@ pub async fn handle_v1_ext_competitor_import_post(
     let scope = req.scope.as_deref().unwrap_or("project");
     let mut summary = match scope {
         "global" => {
-            crate::ext::competitor_import::run_global_import_for_source(app.clone(), source).await
+            refact_runtime_api::ext_runtime::run_global_import_for_source(app.clone(), source)
+                .await
         }
         "project" => {
-            crate::ext::competitor_import::run_project_import_for_source(app.clone(), source).await
+            refact_runtime_api::ext_runtime::run_project_import_for_source(app.clone(), source)
+                .await
         }
         other => {
             return json_error(

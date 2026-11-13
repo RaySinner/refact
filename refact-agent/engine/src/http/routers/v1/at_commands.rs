@@ -4,7 +4,7 @@ use hyper::{Body, Response, StatusCode};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 use serde_json::{json, Value};
@@ -84,33 +84,18 @@ pub struct SlashCommandsListResponse {
 
 const SLASH_CACHE_TTL: Duration = Duration::from_secs(5);
 
-struct SlashCacheEntry {
-    commands: Vec<SlashCommand>,
-    skills: Vec<SkillIndex>,
-    loaded_at: Instant,
-    generation: u64,
-}
-
-static SLASH_CACHE: OnceLock<tokio::sync::RwLock<Option<SlashCacheEntry>>> = OnceLock::new();
-
-pub async fn invalidate_slash_cache() {
-    if let Some(lock) = SLASH_CACHE.get() {
-        *lock.write().await = None;
-    }
-}
+pub use refact_runtime_api::slash_cache::invalidate_slash_cache;
 
 async fn load_slash_commands_and_skills(app: AppState) -> (Vec<SlashCommand>, Vec<SkillIndex>) {
     let current_gen = app
         .integrations
         .ext_cache_generation
         .load(Ordering::Relaxed);
-    let lock = SLASH_CACHE.get_or_init(|| tokio::sync::RwLock::new(None));
+    if let Some((commands, skills, loaded_at, generation)) =
+        refact_runtime_api::slash_cache::cached_slash_commands().await
     {
-        let read = lock.read().await;
-        if let Some(entry) = &*read {
-            if entry.loaded_at.elapsed() < SLASH_CACHE_TTL && entry.generation == current_gen {
-                return (entry.commands.clone(), entry.skills.clone());
-            }
+        if loaded_at.elapsed() < SLASH_CACHE_TTL && generation == current_gen {
+            return (commands, skills);
         }
     }
     let ext_dirs = get_ext_dirs(app.clone()).await;
@@ -118,13 +103,13 @@ async fn load_slash_commands_and_skills(app: AppState) -> (Vec<SlashCommand>, Ve
     let mcp_commands = mcp_prompts_as_slash_commands(app.gcx.clone()).await;
     commands.extend(mcp_commands);
     let skills = load_skill_indices(&ext_dirs).await;
-    let mut write = lock.write().await;
-    *write = Some(SlashCacheEntry {
-        commands: commands.clone(),
-        skills: skills.clone(),
-        loaded_at: Instant::now(),
-        generation: current_gen,
-    });
+    refact_runtime_api::slash_cache::store_slash_cache(
+        commands.clone(),
+        skills.clone(),
+        Instant::now(),
+        current_gen,
+    )
+    .await;
     (commands, skills)
 }
 

@@ -1281,6 +1281,25 @@ impl PromptAssembler for EnginePromptAssembler {
         )
         .await
     }
+
+    async fn system_prompt_add_extra_instructions(
+        &self,
+        system_prompt: String,
+        tool_names: HashSet<String>,
+        chat_meta: &crate::call_validation::ChatMeta,
+        task_meta: &Option<crate::chat::types::TaskMeta>,
+        mode_id: &str,
+    ) -> String {
+        crate::chat::prompts::system_prompt_add_extra_instructions(
+            app_state_from_gcx(self.gcx.clone()).await,
+            system_prompt,
+            tool_names,
+            chat_meta,
+            task_meta,
+            mode_id,
+        )
+        .await
+    }
 }
 
 pub struct EngineChatToolExecutor {
@@ -1782,6 +1801,18 @@ impl ToolRegistry for AppToolRegistry {
             .tools
             .clone();
         tools
+    }
+
+    async fn get_tool_names_for_mode(
+        &self,
+        mode: &str,
+        model_id: Option<&str>,
+    ) -> HashSet<String> {
+        self.tools_for_mode(self.gcx.clone(), mode, model_id)
+            .await
+            .into_iter()
+            .map(|tool| tool.tool_description().name)
+            .collect()
     }
 
     async fn get_tools_index_for_mode(

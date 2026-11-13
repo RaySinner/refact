@@ -1,4 +1,4 @@
-﻿use super::*;
+use super::*;
 
 use crate::file_filter::is_valid_file;
 use crate::files_blocklist::IndexingEverywhere;
@@ -397,7 +397,7 @@ pub(crate) async fn enqueue_resolved_docs(
         normalized_paths.len()
     );
     for d in normalized_paths.iter().take(5) {
-        info!("    {}", crate::nicer_logs::last_n_chars(&d, 30));
+        info!("    {}", refact_core::nicer_logs::last_n_chars(&d, 30));
     }
     if normalized_paths.len() > 5 {
         info!("    ...");
@@ -610,7 +610,7 @@ pub async fn on_did_open(
     doc.update_text(text);
     info!(
         "on_did_open {}",
-        crate::nicer_logs::last_n_chars(&cpath.display().to_string(), 30)
+        refact_core::nicer_logs::last_n_chars(&cpath.display().to_string(), 30)
     );
     let (_doc_arc, dirty_arc, mark_dirty) =
         mem_overwrite_or_create_document(gcx.clone(), doc).await;
@@ -631,7 +631,7 @@ pub async fn on_did_close(gcx: Arc<GlobalContext>, cpath: &PathBuf) {
 pub async fn on_did_close_for_ctx(ctx: &ChatCtx, cpath: &PathBuf) {
     info!(
         "on_did_close {}",
-        crate::nicer_logs::last_n_chars(&cpath.display().to_string(), 30)
+        refact_core::nicer_logs::last_n_chars(&cpath.display().to_string(), 30)
     );
     if !remove_memory_document_for_path_for_ctx(ctx, cpath).await {
         tracing::error!(
@@ -692,7 +692,7 @@ pub async fn on_did_change(gcx: Arc<GlobalContext>, path: &PathBuf, text: &Strin
 
     info!(
         "on_did_change {}, total time {:.3}s",
-        crate::nicer_logs::last_n_chars(&path.to_string_lossy().to_string(), 30),
+        refact_core::nicer_logs::last_n_chars(&path.to_string_lossy().to_string(), 30),
         t0.elapsed().as_secs_f32()
     );
 }
@@ -704,7 +704,7 @@ pub async fn on_did_delete(gcx: Arc<GlobalContext>, path: &PathBuf) {
     gcx.file_index.remove(path);
     info!(
         "on_did_delete {}",
-        crate::nicer_logs::last_n_chars(&path.to_string_lossy().to_string(), 30)
+        refact_core::nicer_logs::last_n_chars(&path.to_string_lossy().to_string(), 30)
     );
 
     let (vec_db_module, codegraph, dirty_arc) = {

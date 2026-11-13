@@ -6,7 +6,7 @@ use serde_json::json;
 
 use crate::app_state::AppState;
 use crate::custom_error::ScratchError;
-use crate::ext::extensions_marketplace::{
+use refact_runtime_api::ext_marketplace::{
     ConfigureMarketplaceSourceRequest, ExtensionsMarketplaceSource, MarketplaceKind,
     MarketplaceParserMode, MarketplaceSourceKind, SaveMarketplaceSourceRequest, configure_source,
     delete_user_source, load_all_sources, normalize_github_source, refresh_source_cache,
@@ -126,7 +126,7 @@ pub async fn handle_v1_ext_marketplace_sources_refresh(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ext::extensions_marketplace::load_all_sources;
+    use refact_runtime_api::ext_marketplace::load_all_sources;
     use crate::global_context::tests::make_test_gcx;
 
     #[tokio::test]

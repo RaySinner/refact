@@ -190,7 +190,7 @@ pub fn read_integrations_d(
             continue;
         }
 
-        // let short_pp = if project_path.is_empty() { format!("global") } else { crate::nicer_logs::last_n_chars(&project_path, 15) };
+        // let short_pp = if project_path.is_empty() { format!("global") } else { refact_core::nicer_logs::last_n_chars(&project_path, 15) };
         let mut rec: IntegrationRecord = Default::default();
         rec.project_path = project_path.clone();
         rec.integr_name = integr_name.clone();
@@ -231,7 +231,7 @@ pub fn read_integrations_d(
 
     // 3. Read single file integrations_yaml_path, sections in yaml become integrations
     if let Some(integrations_yaml_value) = integrations_yaml_value {
-        let short_yaml = crate::nicer_logs::last_n_chars(integrations_yaml_path, 15);
+        let short_yaml = refact_core::nicer_logs::last_n_chars(integrations_yaml_path, 15);
         match integrations_yaml_value.as_mapping() {
             Some(mapping) => {
                 for (key, value) in mapping {
@@ -301,7 +301,7 @@ pub fn read_integrations_d(
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
         } else {
-            // let short_pp = if rec.project_path.is_empty() { format!("global") } else { crate::nicer_logs::last_n_chars(&rec.project_path, 15) };
+            // let short_pp = if rec.project_path.is_empty() { format!("global") } else { refact_core::nicer_logs::last_n_chars(&rec.project_path, 15) };
             // tracing::info!("{} no 'available' mapping in `{}` will default to true", short_pp, rec.integr_name);
             rec.on_your_laptop = true;
             rec.when_isolated = true;

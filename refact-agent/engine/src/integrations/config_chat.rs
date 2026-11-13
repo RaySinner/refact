@@ -3,11 +3,10 @@ use std::sync::Arc;
 use std::fs;
 
 use crate::files_correction::{get_active_project_path, canonical_path};
-use crate::global_context::GlobalContext;
+use crate::global_context::{GlobalContext, GlobalContextCtx};
 use crate::call_validation::{ChatContent, ChatMessage, ContextFile, ChatMeta};
 use crate::scratchpads::scratchpad_utils::HasRagResults;
 use crate::integrations::yaml_schema::ISchema;
-use crate::tools::tools_list::get_tools_for_mode;
 
 pub async fn mix_config_messages(
     gcx: Arc<GlobalContext>,
@@ -201,19 +200,21 @@ pub async fn mix_config_messages(
     let system_message = ChatMessage {
         role: "system".to_string(),
         content: ChatContent::SimpleText(
-            crate::scratchpads::chat_utils_prompts::system_prompt_add_extra_instructions(
-                crate::app_state::app_state_from_gcx(gcx.clone()).await,
-                sp_text,
-                get_tools_for_mode(gcx.clone(), "configurator", None)
+            {
+                let ctx = gcx.chat_ctx(gcx.clone());
+                ctx.prompts
+                    .system_prompt_add_extra_instructions(
+                        sp_text,
+                        ctx
+                            .tool_registry
+                            .get_tool_names_for_mode("configurator", None)
+                            .await,
+                        chat_meta,
+                        &None,
+                        "configurator",
+                    )
                     .await
-                    .into_iter()
-                    .map(|t| t.tool_description().name)
-                    .collect(),
-                chat_meta,
-                &None,
-                "configurator",
-            )
-            .await,
+            },
         ),
         ..Default::default()
     };

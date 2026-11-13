@@ -386,7 +386,7 @@ impl LspBackend {
         let path = canonical_path_from_file_uri_required(&params.uri, "uri")?;
         info!(
             "ACTIVE_DOC {:?}",
-            crate::nicer_logs::last_n_chars(&path.to_string_lossy().to_string(), 30)
+            refact_core::nicer_logs::last_n_chars(&path.to_string_lossy().to_string(), 30)
         );
         *self.gcx.documents_state.active_file_path.lock().await = Some(path);
         Ok(SuccessRes { success: true })

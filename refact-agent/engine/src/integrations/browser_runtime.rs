@@ -580,7 +580,7 @@ pub async fn ensure_frame_emitter(
     };
     if should_spawn {
         tokio::spawn(
-            crate::http::routers::v1::v1_browser::browser_frame_emission_task(
+            refact_runtime_api::browser_frame::browser_frame_emission_task(
                 app.gcx.clone(),
                 chat_id.to_string(),
                 runtime_id.to_string(),

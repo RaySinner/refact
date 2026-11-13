@@ -265,6 +265,7 @@ refact-stats = { path = "crates/refact-stats" }
 refact-scratchpads = { path = "crates/refact-scratchpads" }
 refact-providers = { path = "crates/refact-providers" }
 refact-tool-api = { path = "crates/refact-tool-api" }
+refact-tools = { path = "crates/refact-tools" }
 refact-chat-history = { path = "crates/refact-chat-history" }
 refact-integrations = { path = "crates/refact-integrations" }
 refact-browser = { path = "crates/refact-browser" }
@@ -405,6 +406,7 @@ refact-http = { path = "crates/refact-http", features = ["test-util"] }
 refact-privacy = { path = "crates/refact-privacy", features = ["test-util"] }
 refact-runtime-api = { path = "crates/refact-runtime-api", features = ["test-util"] }
 refact-chat-history = { path = "crates/refact-chat-history", features = ["test-util"] }
+refact-tools = { path = "crates/refact-tools", features = ["test-util"] }
 # Same pinned rev as the main dependency; integration tests drive the MCP
 # client stack directly (tests/mcp_stdio_e2e.rs).
 rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", rev = "63583b164f54ec6ed2f17c98450487c747d34aeb", features = ["client", "transport-child-process", "transport-streamable-http-client-reqwest", "auth"] }

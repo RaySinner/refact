@@ -7,72 +7,6 @@ pub use refact_buddy_core::workflows::*;
 use crate::app_state::AppState;
 use super::types::BuddyActivity;
 
-pub fn workflow_failure_summary(category: &WorkflowFailureCategory, error: &str) -> String {
-    let detail = super::jobs::autonomous_chats::redact_and_cap_text(error, 240);
-    match category {
-        WorkflowFailureCategory::ModelUnavailable => format!(
-            "Model unavailable — check Buddy/default model settings. {}",
-            detail
-        ),
-        WorkflowFailureCategory::ContextTooLarge => {
-            "Context too large — Buddy needs a smaller prompt or compaction before retrying."
-                .to_string()
-        }
-        WorkflowFailureCategory::ToolUnavailable => format!(
-            "Tool unavailable — the workflow referenced a tool that is not registered. {}",
-            detail
-        ),
-        WorkflowFailureCategory::ToolFailed => format!("Tool failed during workflow. {}", detail),
-        WorkflowFailureCategory::InvalidRequest => format!("Invalid provider request. {}", detail),
-        WorkflowFailureCategory::ProviderTransient => {
-            format!("Provider temporarily unavailable. {}", detail)
-        }
-        WorkflowFailureCategory::ProviderRateLimit => {
-            format!("Provider rate limit reached. {}", detail)
-        }
-        WorkflowFailureCategory::AuthenticationFailed => {
-            format!("Authentication failed. {}", detail)
-        }
-        WorkflowFailureCategory::BillingQuota => {
-            format!("Billing or quota limit reached. {}", detail)
-        }
-        WorkflowFailureCategory::ContentPolicy => {
-            format!("Content policy blocked the request. {}", detail)
-        }
-        WorkflowFailureCategory::Cancelled => "Workflow cancelled before completion.".to_string(),
-        WorkflowFailureCategory::Unknown => format!("Workflow failed. {}", detail),
-    }
-}
-
-pub fn workflow_failure_report(
-    workflow_id: &str,
-    error: &str,
-    chat_id: Option<String>,
-) -> WorkflowFailureReport {
-    let category = WorkflowFailureCategory::classify(error);
-    WorkflowFailureReport {
-        workflow_id: workflow_id.to_string(),
-        summary: workflow_failure_summary(&category, error),
-        detail: super::jobs::autonomous_chats::redact_and_cap_text(error, 1_000),
-        category,
-        chat_id,
-    }
-}
-
-/// Maps internal workflow IDs to canonical Buddy signal_type names.
-/// The GUI uses these names in its signal catalog.
-pub fn canonical_signal_type(workflow_id: &str) -> &str {
-    match workflow_id {
-        "commit_message" | "commit_msg" => "commit_msg",
-        "compress_trajectory" | "compression" => "compression",
-        "memo_extraction" | "memory_extract" => "memory_extract",
-        "kg_enrich" | "kg_deprecate" | "knowledge_update" => "knowledge_update",
-        "title_generating" | "title_generation" => "title_generating",
-        "follow_up" => "generating",
-        other => other,
-    }
-}
-
 pub async fn buddy_wrap_workflow<T, F, Fut>(
     gcx: AppState,
     workflow_id: &str,
@@ -287,42 +221,6 @@ mod tests {
                 return;
             }
             tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
-        }
-    }
-
-    #[test]
-    fn workflow_failure_report_classifies_model_tool_and_cancellation_errors() {
-        let report = workflow_failure_report(
-            "commit_msg",
-            "OpenAI 404: model refact/gpt-4.1-nano not found",
-            Some("chat-1".to_string()),
-        );
-        assert_eq!(report.category, WorkflowFailureCategory::ModelUnavailable);
-        assert!(report.summary.contains("Model unavailable"));
-        assert_eq!(report.chat_id.as_deref(), Some("chat-1"));
-
-        let report = workflow_failure_report(
-            "commit_msg",
-            "Error: tool 'buddy_log_activity' not found",
-            None,
-        );
-        assert_eq!(report.category, WorkflowFailureCategory::ToolUnavailable);
-        assert!(report.summary.contains("Tool unavailable"));
-
-        for error in [
-            "cancelled by user",
-            "canceled by user",
-            "request aborted by client",
-            "operation aborted",
-            "AbortError: stopped",
-            "context canceled",
-        ] {
-            let report = workflow_failure_report("commit_msg", error, None);
-            assert_eq!(
-                report.category,
-                WorkflowFailureCategory::Cancelled,
-                "{error}"
-            );
         }
     }
 

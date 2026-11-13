@@ -49,28 +49,7 @@ pub(crate) fn clear_for_model<T: PrivacyAudited>(
     refact_privacy::clear(value, &destination, &compiled)
 }
 
-pub(crate) fn clear_for_mcp<T: PrivacyAudited>(
-    privacy_policy_load: &Arc<StdRwLock<refact_privacy::PolicyLoad>>,
-    value: T,
-    server_name: &str,
-) -> Result<Cleared<T>, refact_privacy::Refusal> {
-    let destination = Destination {
-        id: DestinationId(server_name.to_string()),
-        kind: DestinationKind::Mcp,
-        display_name: server_name.to_string(),
-    };
-    let policy = privacy_policy_load
-        .read()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .policy
-        .clone();
-    let compiled = policy.compile().map_err(|error| refact_privacy::Refusal {
-        destination: destination.clone(),
-        offending: Vec::new(),
-        message: format!("privacy policy failed to compile: {error}"),
-    })?;
-    refact_privacy::clear(value, &destination, &compiled)
-}
+pub(crate) use refact_privacy::destination_clear::clear_for_mcp;
 
 #[cfg(test)]
 mod tests {

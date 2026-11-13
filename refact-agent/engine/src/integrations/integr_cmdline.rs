@@ -18,7 +18,8 @@ use shell_escape::escape;
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::call_validation::{ChatContent, ChatMessage, ContextEnum};
 use crate::custom_error::YamlError;
-use crate::exec::command_policy::{build_exec_request, CommandKind, CommandPolicyInput, ExecSource};
+use refact_exec::command_policy::{CommandKind, CommandPolicyInput, ExecSource};
+use refact_runtime_api::command_policy::build_exec_request_for_gcx as build_exec_request;
 use crate::exec::{
     generate_short_description, sanitize_short_description, ExecMode, ExecOutputStream,
     ExecOwnerMeta, ExecProcessSnapshot, ExecRawOutput, ExecReadResult, ExecStatus,
@@ -32,7 +33,8 @@ use crate::integrations::utils::{
     serialize_opt_num_to_str,
 };
 use crate::postprocessing::pp_command_output::{output_mini_postprocessing, OutputFilter};
-use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
+use refact_runtime_api::Tool;
+use refact_tool_api::{ToolDesc, ToolSource, ToolSourceType};
 use refact_buddy_core::user_action::UserAction;
 
 const CMDLINE_TRANSCRIPT_MAX_BYTES: usize = 2 * 1024 * 1024;
@@ -123,7 +125,7 @@ impl IntegrationTrait for ToolCmdline {
     async fn integr_tools(
         &self,
         integr_name: &str,
-    ) -> Vec<Box<dyn crate::tools::tools_description::Tool + Send>> {
+    ) -> Vec<Box<dyn refact_runtime_api::Tool + Send>> {
         vec![Box::new(ToolCmdline {
             common: self.common.clone(),
             name: integr_name.to_string(),
@@ -494,7 +496,7 @@ impl Tool for ToolCmdline {
             )
         };
         crate::privacy::load_privacy_if_needed(gcx.clone()).await;
-        let destination = crate::privacy::records::provider_destination(&current_model);
+        let destination = refact_privacy::provider_destination(&current_model);
         let user_activity = gcx.user_activity.clone();
         if let Ok(mut ring) = user_activity.try_lock() {
             ring.push(UserAction::CommandRun {
@@ -510,7 +512,7 @@ impl Tool for ToolCmdline {
                 &mut error_log,
             )
             .await;
-        let project_dirs = crate::files_correction::get_project_dirs(gcx.clone()).await;
+        let project_dirs = refact_runtime_api::files_correction::get_project_dirs(gcx.clone()).await;
         let enrichment_roots = project_dirs.clone();
 
         let owner = ExecOwnerMeta {
@@ -560,7 +562,7 @@ impl Tool for ToolCmdline {
             diagnostic_truncated,
         )
         .await;
-        let enrichment = crate::privacy::records::filter_path_enrichment_for_model_context(
+        let enrichment = refact_runtime_api::gcx_helpers::filter_path_enrichment_for_model_context(
             gcx,
             &destination,
             &derived_privacy_zones,
@@ -570,7 +572,7 @@ impl Tool for ToolCmdline {
         let mut extra = exec_extra(&snapshot, duration);
         refact_chat_api::attach_tool_enrichment_to_extra(
             &mut extra,
-            crate::privacy::records::tool_enrichment_from_path_references(enrichment),
+            refact_runtime_api::gcx_helpers::tool_enrichment_from_path_references(enrichment),
         );
 
         let result = vec![ContextEnum::ChatMessage(ChatMessage {
@@ -699,7 +701,8 @@ smartlinks:
 mod tests {
     use super::*;
     use crate::app_state::AppState;
-    use crate::tools::tools_description::{MatchConfirmDenyResult, Tool};
+    use refact_tool_api::MatchConfirmDenyResult;
+    use refact_runtime_api::Tool;
 
     fn args(entries: Vec<(&str, Value)>) -> HashMap<String, Value> {
         entries

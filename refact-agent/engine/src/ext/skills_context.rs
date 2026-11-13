@@ -28,7 +28,7 @@ pub struct SkillsConfig {
 }
 
 pub async fn load_skills_config(app: AppState) -> SkillsConfig {
-    let project_dirs = crate::files_correction::get_project_dirs(app.gcx.clone()).await;
+    let project_dirs = refact_runtime_api::files_correction::get_project_dirs(app.gcx.clone()).await;
     let Some(project_dir) = project_dirs.first() else {
         return SkillsConfig::default();
     };

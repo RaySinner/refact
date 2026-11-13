@@ -322,7 +322,7 @@ impl ClientHandler for McpClientHandler {
                 Some(gcx) => gcx,
                 None => return Ok(ListRootsResult::default()),
             };
-            let folders = crate::files_correction::get_project_dirs(gcx).await;
+            let folders = refact_runtime_api::files_correction::get_project_dirs(gcx).await;
             let roots = folders
                 .into_iter()
                 .filter_map(|f| {
@@ -821,7 +821,7 @@ impl ClientHandler for McpClientHandler {
                 };
                 tracing::info!("{} for {}", msg, debug_name);
                 add_log_entry(logs, msg).await;
-                crate::http::routers::v1::at_commands::invalidate_slash_cache().await;
+                refact_runtime_api::slash_cache::invalidate_slash_cache().await;
             });
             *handle = Some(task.abort_handle());
         }

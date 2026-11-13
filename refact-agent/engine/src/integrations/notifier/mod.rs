@@ -33,7 +33,7 @@ async fn notifier_by_integration_id_result(
         return Err("integration_id is required".to_string());
     }
 
-    let active_project_path = crate::files_correction::get_active_project_path(gcx.clone()).await;
+    let active_project_path = refact_runtime_api::files_correction::get_active_project_path(gcx.clone()).await;
     let (config_dirs, global_config_dir) =
         crate::integrations::setting_up_integrations::get_config_dirs(
             gcx.clone(),

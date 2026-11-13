@@ -56,7 +56,7 @@ impl IntegrationTrait for IntegrationNotifierTelegram {
     async fn integr_tools(
         &self,
         _integr_name: &str,
-    ) -> Vec<Box<dyn crate::tools::tools_description::Tool + Send>> {
+    ) -> Vec<Box<dyn refact_runtime_api::Tool + Send>> {
         vec![]
     }
 

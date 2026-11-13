@@ -4,7 +4,7 @@ mod tests {
     use serde_json::json;
 
     use crate::integrations::integr_abstract::IntegrationCommon;
-    use crate::tools::tools_description::Tool;
+    use refact_runtime_api::Tool;
 
     use super::super::tool_mcp::ToolMCP;
 

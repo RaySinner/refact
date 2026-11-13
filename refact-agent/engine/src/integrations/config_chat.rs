@@ -2,7 +2,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::fs;
 
-use crate::files_correction::{get_active_project_path, canonical_path};
+use refact_runtime_api::files_correction::get_active_project_path;
+use refact_files::path_utils::canonical_path;
 use crate::global_context::{GlobalContext, GlobalContextCtx};
 use crate::call_validation::{ChatContent, ChatMessage, ContextFile, ChatMeta};
 use crate::scratchpads::scratchpad_utils::HasRagResults;

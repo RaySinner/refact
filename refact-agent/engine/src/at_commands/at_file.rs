@@ -11,10 +11,9 @@ use crate::at_commands::at_commands::{
 use refact_runtime_api::GlobalContextCtx;
 use crate::at_commands::execute_at::{AtCommandMember, correct_at_arg};
 use crate::call_validation::{ChatMessage, ContextFile, ContextEnum};
-use crate::files_correction::{
-    canonicalize_normalized_path, project_dirs_for_unscoped_paths,
-};
-use crate::tools::scope_utils::{
+use refact_files::path_utils::canonicalize_normalized_path;
+use refact_worktrees::path_mappings::project_dirs_for_unscoped_paths;
+use refact_runtime_api::scope_utils::{
     format_scope_notices, resolve_existing_path_with_execution_scope_for_model_context,
 };
 use crate::tools::ctx::ToolCtx;

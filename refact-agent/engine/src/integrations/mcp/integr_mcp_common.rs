@@ -204,7 +204,7 @@ fn build_mcp_tool_boxes(
     mcp_common: &CommonMCPSettings,
     mcp_client: Arc<AMutex<Option<McpRunningService>>>,
     request_timeout: u64,
-) -> Vec<Box<dyn crate::tools::tools_description::Tool + Send>> {
+) -> Vec<Box<dyn refact_runtime_api::Tool + Send>> {
     let server_prefix = tool_name_server_prefix(config_path);
     let kept: Vec<&rmcp::model::Tool> = tools
         .iter()
@@ -241,7 +241,7 @@ fn build_mcp_tool_boxes(
                 mcp_tool: tool.clone(),
                 request_timeout,
                 auto_approve,
-            }) as Box<dyn crate::tools::tools_description::Tool + Send>
+            }) as Box<dyn refact_runtime_api::Tool + Send>
         })
         .collect()
 }
@@ -292,7 +292,7 @@ pub async fn mcp_integr_tools(
     config_path: &str,
     common: &IntegrationCommon,
     mcp_common: &CommonMCPSettings,
-) -> Vec<Box<dyn crate::tools::tools_description::Tool + Send>> {
+) -> Vec<Box<dyn refact_runtime_api::Tool + Send>> {
     let request_timeout = mcp_common.request_timeout;
     let session_key = format!("{}", config_path);
 
@@ -323,7 +323,7 @@ pub async fn mcp_integr_tools(
         }
     };
 
-    let result: Vec<Box<dyn crate::tools::tools_description::Tool + Send>> = {
+    let result: Vec<Box<dyn refact_runtime_api::Tool + Send>> = {
         let mut session_locked = session.lock().await;
         let session_downcasted: &mut SessionMCP =
             match session_locked.as_any_mut().downcast_mut::<SessionMCP>() {
@@ -778,7 +778,7 @@ macro_rules! impl_mcp_integration_trait {
             async fn integr_tools(
                 &self,
                 _integr_name: &str,
-            ) -> Vec<Box<dyn crate::tools::tools_description::Tool + Send>> {
+            ) -> Vec<Box<dyn refact_runtime_api::Tool + Send>> {
                 crate::integrations::mcp::integr_mcp_common::mcp_integr_tools(
                     self.gcx_option.clone(),
                     &self.config_path,

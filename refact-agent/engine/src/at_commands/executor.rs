@@ -80,7 +80,7 @@ impl AtCommandExecutor for EngineAtCommandExecutor {
         single_file_mode: bool,
         settings: &PostprocessSettings,
     ) -> (Vec<ContextFile>, Vec<String>) {
-        crate::postprocessing::pp_context_files::postprocess_context_files_for_tool_ctx(
+        refact_runtime_api::pp_tool_context::postprocess_context_files_for_tool_ctx(
             tool.clone(),
             context_files,
             tokenizer,

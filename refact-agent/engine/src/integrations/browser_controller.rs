@@ -257,7 +257,7 @@ async fn validate_upload_paths(
 
 async fn validate_upload_path(gcx: Arc<GlobalContext>, path: &str) -> Result<(), String> {
     let path = PathBuf::from(path);
-    crate::files_correction::check_if_its_inside_a_workspace_or_config(gcx.clone(), &path)
+    refact_runtime_api::files_correction::check_if_its_inside_a_workspace_or_config(gcx.clone(), &path)
         .await
         .map_err(|error| format!("Upload path is not allowed: {error}"))?;
     let canonical = path

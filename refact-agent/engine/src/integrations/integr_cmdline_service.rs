@@ -21,7 +21,8 @@ use crate::integrations::integr_abstract::{
 };
 use crate::integrations::integr_cmdline::{format_output, replace_args, CmdlineToolConfig};
 use crate::postprocessing::pp_command_output::{output_mini_postprocessing, OutputFilter};
-use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
+use refact_runtime_api::Tool;
+use refact_tool_api::{ToolDesc, ToolSource, ToolSourceType};
 
 const SERVICE_TRANSCRIPT_MAX_BYTES: usize = 2 * 1024 * 1024;
 
@@ -95,7 +96,7 @@ impl Tool for ToolService {
                 ccx_lock.chat_id.clone(),
             )
         };
-        let workspace = crate::files_correction::get_active_project_path(gcx.clone())
+        let workspace = refact_runtime_api::files_correction::get_active_project_path(gcx.clone())
             .await
             .map(|path| normalize_workspace_path(&path));
         let output = match action.as_str() {
@@ -328,13 +329,13 @@ async fn resolve_workdir(
     workdir: &str,
 ) -> Result<Option<PathBuf>, String> {
     if workdir.trim().is_empty() {
-        return Ok(crate::files_correction::get_active_project_path(gcx).await);
+        return Ok(refact_runtime_api::files_correction::get_active_project_path(gcx).await);
     }
     let path = PathBuf::from(workdir);
     let resolved = if path.is_absolute() {
         path
     } else {
-        let project_dirs = crate::files_correction::get_project_dirs(gcx).await;
+        let project_dirs = refact_runtime_api::files_correction::get_project_dirs(gcx).await;
         let first_dir = project_dirs
             .first()
             .ok_or_else(|| "No project directory found".to_string())?;

@@ -38,7 +38,7 @@ impl AtCommand for AtLoadKnowledge {
         let app = ccx.lock().await.app.clone();
 
         let memories =
-            crate::memories::memories_search_for_app(&app, &search_key, 5, 0, None).await?;
+            refact_runtime_api::memories_runtime::memories_search_for_app(&app, &search_key, 5, 0, None).await?;
         let mut seen_memids = HashSet::new();
         let unique_memories: Vec<_> = memories
             .into_iter()

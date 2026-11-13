@@ -266,7 +266,7 @@ impl IntegrationTrait for IntegrationMCPUnified {
     async fn integr_tools(
         &self,
         integr_name: &str,
-    ) -> Vec<Box<dyn crate::tools::tools_description::Tool + Send>> {
+    ) -> Vec<Box<dyn refact_runtime_api::Tool + Send>> {
         match &self.inner {
             UnifiedMCPInner::Stdio(integration) => integration.integr_tools(integr_name).await,
             UnifiedMCPInner::Http(integration) => integration.integr_tools(integr_name).await,

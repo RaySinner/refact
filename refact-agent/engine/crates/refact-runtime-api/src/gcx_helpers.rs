@@ -61,6 +61,23 @@ pub fn declared_file_records(
     refact_privacy::declared_file_records_with_scope(&privacy_record_scope(gcx), paths)
 }
 
+pub async fn filter_path_enrichment_for_model_context(
+    gcx: SharedGlobalContext,
+    destination: &refact_privacy::Destination,
+    derived_zones: &refact_privacy::DerivedPrivacyZones,
+    collected: refact_exec::path_enrichment::CollectedPathEnrichment,
+) -> refact_exec::path_enrichment::PathEnrichment {
+    crate::privacy::load_privacy_if_needed(gcx.clone()).await;
+    let scope = privacy_record_scope(&gcx);
+    refact_privacy::filter_path_enrichment_for_model_context_with_scope(
+        &scope,
+        destination,
+        derived_zones,
+        collected,
+    )
+    .await
+}
+
 /// Unwraps `GlobalContext` into the explicit arguments of
 /// `refact_files::indexing_settings::reload_indexing_everywhere_*` and forwards the
 /// `GlobalContext` pointer as the crate cache key.

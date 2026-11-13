@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use tokio::fs as async_fs;
 use crate::custom_error::YamlError;
 use crate::global_context::GlobalContext;
-use crate::files_correction::{any_glob_matches_path, canonicalize_normalized_path};
+use refact_files::path_utils::{any_glob_matches_path, canonicalize_normalized_path};
 use crate::integrations::running_integrations::load_integrations;
 // use crate::tools::tools_description::Tool;
 // use crate::yaml_configs::create_configs::{integrations_enabled_cfg, read_yaml_into_value};
@@ -477,7 +477,7 @@ pub async fn integration_config_get(
     gcx: Arc<GlobalContext>,
     integr_config_path: String,
 ) -> Result<IntegrationGetResult, String> {
-    let sanitized_path = crate::files_correction::canonical_path(&integr_config_path);
+    let sanitized_path = refact_files::path_utils::canonical_path(&integr_config_path);
     let exists = sanitized_path.exists();
 
     let (integr_name, project_path) = split_path_into_project_and_integration(&sanitized_path)?;
@@ -659,7 +659,7 @@ pub async fn integration_config_save(
     integr_config_path: &String,
     integr_values: &serde_json::Value,
 ) -> Result<(), String> {
-    let config_path = crate::files_correction::canonical_path(integr_config_path);
+    let config_path = refact_files::path_utils::canonical_path(integr_config_path);
     let (integr_name, _project_path) =
         crate::integrations::setting_up_integrations::split_path_into_project_and_integration(
             &config_path,

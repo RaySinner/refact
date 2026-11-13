@@ -26,6 +26,8 @@ pub mod files_in_workspace;
 pub mod gcx_helpers;
 pub mod global_context;
 pub mod integr_abstract;
+pub mod pp_tool_context;
+pub mod scope_utils;
 pub mod knowledge_graph;
 pub mod knowledge_index;
 pub mod knowledge_runtime;

@@ -11,7 +11,7 @@ use crate::at_commands::at_commands::{AtCommand, AtCommandsContext, AtParam};
 use crate::at_commands::at_file::return_one_candidate_or_a_good_error;
 use crate::at_commands::execute_at::AtCommandMember;
 use crate::call_validation::{ChatMessage, ContextEnum};
-use crate::tools::scope_utils::{
+use refact_runtime_api::scope_utils::{
     format_scope_notices, is_worktree_root_alias, list_execution_scope_root_limited,
     list_scoped_files_under_dir_limited, resolve_existing_path_with_execution_scope,
 };

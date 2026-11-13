@@ -17,10 +17,11 @@ use tokio::time::Duration;
 use crate::caps::resolve_chat_model;
 use crate::at_commands::at_commands::AtCommandsContext;
 use crate::scratchpads::multimodality::MultimodalElement;
-use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
+use refact_runtime_api::Tool;
+use refact_tool_api::{ToolDesc, ToolSource, ToolSourceType};
 use crate::call_validation::{ChatMessage, ChatContent, ContextEnum};
 use crate::integrations::integr_abstract::{IntegrationCommon, IntegrationConfirmation};
-use crate::privacy::destinations::clear_for_mcp;
+use refact_privacy::destination_clear::clear_for_mcp;
 use super::session_mcp::{
     McpRunningService, MCPConnectionStatus, add_log_entry, mcp_session_wait_startup,
     redact_sensitive_json,
@@ -67,7 +68,7 @@ fn call_param_records(
     if let Some(arguments) = serialized.get("arguments") {
         collect_serialized_argument_paths(arguments, &mut paths);
     }
-    crate::privacy::records::declared_file_records(gcx, paths)
+    refact_runtime_api::gcx_helpers::declared_file_records(gcx, paths)
 }
 
 fn dispatch_cleared_mcp_call<T>(
@@ -624,7 +625,7 @@ fn attach_mcp_observation_status(
     observed_reads_before: &std::collections::HashSet<std::path::PathBuf>,
     message: &mut ChatMessage,
 ) {
-    let privacy_scope = crate::privacy::records::privacy_record_scope(gcx);
+    let privacy_scope = refact_runtime_api::gcx_helpers::privacy_record_scope(gcx);
     crate::privacy::record_observation_status(&gcx.privacy_observation_runtime, &status);
     match status {
         refact_exec::ObservationStatus::Observed(access)
@@ -634,7 +635,7 @@ fn attach_mcp_observation_status(
                 .reads
                 .into_iter()
                 .filter(|path| !observed_reads_before.contains(path));
-            match crate::privacy::records::observed_file_records(&privacy_scope, paths) {
+            match refact_privacy::observed_file_records(&privacy_scope, paths) {
                 Ok(records) => refact_privacy::merge_records(message, records),
                 Err(reason) => attach_observation_unavailable(message, reason),
             }

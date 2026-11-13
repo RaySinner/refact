@@ -37,6 +37,8 @@ refact-integrations = { path = "../refact-integrations" }
 refact-browser = { path = "../refact-browser" }
 refact-yaml-configs = { path = "../refact-yaml-configs" }
 refact-worktrees = { path = "../refact-worktrees" }
+refact-at-web = { path = "../refact-at-web" }
+itertools = "0.14.0"
 refact-scope-utils = { path = "../refact-scope-utils" }
 base64 = "0.22.1"
 headless_chrome = "1.0.16"

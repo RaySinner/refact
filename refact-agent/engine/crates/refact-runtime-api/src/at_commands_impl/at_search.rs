@@ -1,0 +1,159 @@
+use crate::at_commands_ctx::{AtCommand, AtCommandMember, AtCommandsContext, AtParam};
+use crate::context_tools::vec_context_file_to_context_tools;
+use async_trait::async_trait;
+use std::sync::Arc;
+use tokio::sync::Mutex as AMutex;
+use tracing::info;
+use refact_core::nicer_logs::last_n_chars;
+
+use refact_core::chat_types::{ContextEnum, ContextFile};
+
+pub use crate::at_command_executor::execute_at_search;
+
+fn text_on_clip(query: &String, from_tool_call: bool) -> String {
+    if !from_tool_call {
+        return query.clone();
+    }
+    return format!("performed vecdb search, results below");
+}
+
+pub struct AtSearch {
+    pub params: Vec<Box<dyn AtParam>>,
+}
+
+impl AtSearch {
+    pub fn new() -> Self {
+        AtSearch { params: vec![] }
+    }
+}
+
+fn results2message(results: &Vec<refact_core::vecdb_types::VecdbRecord>) -> Vec<ContextFile> {
+    let mut vector_of_context_file: Vec<ContextFile> = vec![];
+    for r in results {
+        let file_name = r.file_path.to_str().unwrap().to_string();
+        let mut usefulness = r.usefulness;
+        // diversifying results
+        let same_file_again = vector_of_context_file
+            .iter()
+            .map(|x| &x.file_name)
+            .filter(|x| **x == file_name)
+            .count();
+        let same_file_discount = 1. / (same_file_again as f32 * 0.1 + 1.);
+        usefulness *= same_file_discount;
+        info!(
+            "results {} usefulness {:.2} after same-file discount {:.2}",
+            last_n_chars(&file_name, 30),
+            usefulness,
+            same_file_discount,
+        );
+        vector_of_context_file.push(ContextFile {
+            file_name,
+            file_content: "".to_string(),
+            line1: r.start_line as usize + 1,
+            line2: r.end_line as usize + 1,
+            symbols: vec![],
+            gradient_type: 4,
+            usefulness,
+            skip_pp: false,
+            file_rev: None,
+        });
+    }
+    vector_of_context_file
+}
+
+fn hits_to_context_files(hits: Vec<refact_codegraph::CodeHit>) -> Vec<ContextFile> {
+    let max_score = hits
+        .first()
+        .map(|h| h.score)
+        .unwrap_or(1.0)
+        .max(f32::EPSILON);
+    hits.into_iter()
+        .map(|h| ContextFile {
+            file_name: h.path,
+            file_content: "".to_string(),
+            line1: h.line1.max(1),
+            line2: h.line2.max(1),
+            symbols: h.symbol.map(|s| vec![s]).unwrap_or_default(),
+            gradient_type: 4,
+            usefulness: (h.score / max_score * 100.0).clamp(0.0, 100.0),
+            skip_pp: false,
+            file_rev: None,
+        })
+        .collect()
+}
+
+pub(super) async fn execute_at_search_impl(
+    ccx: Arc<AMutex<AtCommandsContext>>,
+    query: &String,
+    vecdb_scope_filter_mb: Option<String>,
+) -> Result<Vec<ContextFile>, String> {
+    let (vec_db, top_n, codegraph) = {
+        let cgcx = ccx.lock().await;
+        (
+            cgcx.app.workspace.vec_db.clone(),
+            cgcx.top_n,
+            cgcx.tool.codeintel.codegraph.clone(),
+        )
+    };
+
+    let codegraph_opt = codegraph.lock().await.clone();
+    if let Some(service) = codegraph_opt {
+        let hits = service.search_hybrid(query, top_n * 2).await?;
+        return Ok(hits_to_context_files(hits));
+    }
+
+    let r = match *vec_db.lock().await {
+        Some(ref db) => {
+            let top_n_twice_as_big = top_n * 2;  // top_n will be cut at postprocessing stage, and we really care about top_n files, not pieces
+            // TODO: this code sucks, release lock, don't hold anything during the search
+            let search_result = db.vecdb_search(query.clone(), top_n_twice_as_big, vecdb_scope_filter_mb).await?;
+            let results = search_result.results.clone();
+            return Ok(results2message(&results));
+        }
+        None => Err("VecDB is not active. Possible reasons: VecDB is turned off in settings, or perhaps a vectorization model is not available.".to_string())
+    };
+    r
+}
+
+#[async_trait]
+impl AtCommand for AtSearch {
+    fn params(&self) -> &Vec<Box<dyn AtParam>> {
+        &self.params
+    }
+
+    async fn at_execute(
+        &self,
+        ccx: Arc<AMutex<AtCommandsContext>>,
+        _cmd: &mut AtCommandMember,
+        args: &mut Vec<AtCommandMember>,
+    ) -> Result<(Vec<ContextEnum>, String), String> {
+        let args1 = args.iter().map(|x| x.clone()).collect::<Vec<_>>();
+        info!(
+            "execute @search {:?}",
+            args1.iter().map(|x| x.text.clone()).collect::<Vec<_>>()
+        );
+
+        let query = args
+            .iter()
+            .map(|x| x.text.clone())
+            .collect::<Vec<_>>()
+            .join(" ");
+        if query.trim().is_empty() {
+            if ccx.lock().await.is_preview {
+                return Ok((vec![], "".to_string()));
+            }
+            return Err("Cannot execute search: query is empty.".to_string());
+        }
+
+        let vector_of_context_file = execute_at_search(ccx.clone(), &query, None).await?;
+        let text = text_on_clip(&query, false);
+        Ok((
+            vec_context_file_to_context_tools(vector_of_context_file),
+            text,
+        ))
+    }
+
+    fn depends_on(&self) -> Vec<String> {
+        vec!["vecdb".to_string()]
+    }
+}

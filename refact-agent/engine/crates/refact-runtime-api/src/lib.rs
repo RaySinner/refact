@@ -44,8 +44,11 @@ pub mod tool_ctx;
 pub mod app_state;
 pub mod at_commands_ctx;
 pub mod at_command_executor;
+pub mod at_commands_impl;
 pub mod at_commands_runtime;
 pub mod at_tree;
+pub mod ext_skills_context;
+pub mod ext_slash_expand;
 pub mod tool_trait;
 pub mod task_storage;
 pub mod task_comments;
@@ -98,6 +101,8 @@ pub use at_commands_runtime::{
     at_commands_new_with_abort_and_execution_scope, correct_at_arg, execute_at_commands_in_query,
     run_at_commands_locally, MIN_RAG_CONTEXT_LIMIT,
 };
+pub use ext_skills_context::{build_skills_context_messages_tracked, build_skills_prompt_text};
+pub use ext_slash_expand::{expand_slash_command_non_mcp, ExpandedCommand, SkillActivationInfo};
 pub use tool_trait::{Tool, ToolGroup};
 pub use refact_chat_api::{DeliveryOutcome as RuntimeDeliveryOutcome, SessionState, TaskMeta};
 pub use refact_chat_api::{PendingDelivery as RuntimePendingDelivery, PushMode as RuntimePushMode};

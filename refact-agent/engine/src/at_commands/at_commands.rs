@@ -1,47 +1,10 @@
-use std::collections::HashMap;
-use std::sync::Arc;
-
-use crate::at_commands::at_ast_definition::AtAstDefinition;
-use crate::at_commands::at_file::AtFile;
-use crate::at_commands::at_tree::AtTree;
-use crate::at_commands::at_web::AtWeb;
-
 pub use refact_core::at_parse::filter_only_context_file_from_context_tool;
+pub use refact_runtime_api::at_commands_impl::at_command_dict::engine_at_commands_dict;
 pub use refact_runtime_api::{
     at_commands_dict, at_commands_new_from_app, at_commands_new_with_abort,
     at_commands_new_with_abort_and_execution_scope, vec_context_file_to_context_tools, AtCommand,
     AtCommandsContext, AtParam, MAX_SUBCHAT_DEPTH,
 };
-
-pub(crate) fn engine_at_commands_dict() -> HashMap<String, Arc<dyn AtCommand + Send>> {
-    HashMap::from([
-        (
-            "@file".to_string(),
-            Arc::new(AtFile::new()) as Arc<dyn AtCommand + Send>,
-        ),
-        (
-            "@definition".to_string(),
-            Arc::new(AtAstDefinition::new()) as Arc<dyn AtCommand + Send>,
-        ),
-        (
-            "@tree".to_string(),
-            Arc::new(AtTree::new()) as Arc<dyn AtCommand + Send>,
-        ),
-        (
-            "@web".to_string(),
-            Arc::new(AtWeb::new()) as Arc<dyn AtCommand + Send>,
-        ),
-        (
-            "@search".to_string(),
-            Arc::new(crate::at_commands::at_search::AtSearch::new()) as Arc<dyn AtCommand + Send>,
-        ),
-        (
-            "@knowledge-load".to_string(),
-            Arc::new(crate::at_commands::at_knowledge::AtLoadKnowledge::new())
-                as Arc<dyn AtCommand + Send>,
-        ),
-    ])
-}
 
 #[cfg(test)]
 mod tests {

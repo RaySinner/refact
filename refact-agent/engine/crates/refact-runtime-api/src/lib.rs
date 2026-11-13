@@ -52,6 +52,7 @@ pub mod ext_skills_context;
 pub mod ext_slash_expand;
 pub mod tool_trait;
 pub mod task_storage;
+pub mod task_agent_monitor;
 pub mod task_comments;
 pub mod providers_oauth_runtime;
 pub mod buddy_actor_runtime;

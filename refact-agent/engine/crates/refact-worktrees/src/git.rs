@@ -1379,3 +1379,44 @@ mod tests {
         assert_eq!(diff.patch_shown_bytes, diff.patch_total_bytes);
     }
 }
+
+/// Run a `git` child with the engine-safe hardening; callers decide how to
+/// interpret the exit status.
+pub fn run_git_output(cwd: &Path, args: &[&str]) -> std::io::Result<std::process::Output> {
+    let mut command = Command::new("git");
+    harden_git_command(command.args(args).current_dir(cwd)).output()
+}
+
+/// Stdout of a successful `git` child, or `None` when it fails.
+pub fn run_git_stdout(cwd: &Path, args: &[&str]) -> Option<String> {
+    run_git_output(cwd, args)
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+/// Names of the files changed between `base_ref` and `head_ref` in
+/// `worktree_path`. Failures degrade to an empty list, matching the merge path.
+pub fn git_diff_name_only(worktree_path: &Path, base_ref: &str, head_ref: &str) -> Vec<String> {
+    let range = format!("{}..{}", base_ref, head_ref);
+    let output = run_git_output(worktree_path, &["diff", "--name-only", &range]);
+    match output {
+        Ok(output) if output.status.success() => String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .collect(),
+        Ok(output) => {
+            tracing::warn!(
+                "git diff --name-only failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            vec![]
+        }
+        Err(err) => {
+            tracing::warn!("git diff --name-only failed: {}", err);
+            vec![]
+        }
+    }
+}

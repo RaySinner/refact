@@ -19,7 +19,7 @@ const GOAL_MONITOR_SOURCE: &str = "chat.goal_monitor";
 /// After this many consecutive no-progress nudges an active goal whose no-progress
 /// budget is unlimited stops being nudged (goes quiescent) and resumes on the next
 /// user message instead of looping forever.
-pub(crate) const QUIESCENCE_NUDGES: u32 = 3;
+pub(crate) use refact_chat_api::goal_verifier::QUIESCENCE_NUDGES;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GoalNudgeTrigger {

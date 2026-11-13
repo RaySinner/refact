@@ -14,11 +14,12 @@ use crate::at_commands::at_commands::AtCommandsContext;
 pub use refact_chat_api::goal_verifier::{
     abort_goal_verification, apply_goal_budget_exhausted_terminal, apply_goal_verdict,
     apply_goal_verdict_guarded, apply_goal_verdict_guarded_with_delivery,
-    begin_goal_verification_if_needed, goal_verification_message, handle_verifier_failure,
-    handle_verifier_failure_with_delivery, parse_criteria_verdicts, parse_goal_verdict,
-    should_verify_goal_on_done, GoalCompletionGateOutcome, GoalVerificationApplyOutcome,
+    begin_goal_verification_if_needed, goal_text_for_verifier, goal_verification_message,
+    handle_verifier_failure, handle_verifier_failure_with_delivery, parse_criteria_verdicts,
+    parse_goal_verdict, should_verify_goal_on_done, verifier_cancel_requested,
+    verifier_sampling_parameters, GoalCompletionGateOutcome, GoalVerificationApplyOutcome,
     GoalVerificationBegin, GoalVerdict, GoalVerifierReply, GOAL_VERIFIER_BLOCKED_BACKOFF_MS,
-    GOAL_VERIFIER_SOURCE, INCONCLUSIVE_GAP,
+    GOAL_VERIFIER_MAX_TOKENS, GOAL_VERIFIER_SOURCE, INCONCLUSIVE_GAP,
 };
 
 use crate::call_validation::{ChatMessage, ChatMeta, ChatUsage, SamplingParameters};
@@ -39,8 +40,6 @@ use crate::llm::params::CacheControl;
 use crate::scratchpad_abstract::HasTokenizerAndEot;
 
 use refact_tool_api::ToolDesc;
-
-const GOAL_VERIFIER_MAX_TOKENS: usize = 1024;
 
 mod monitor;
 #[allow(unused_imports)]

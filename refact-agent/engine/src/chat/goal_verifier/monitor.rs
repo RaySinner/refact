@@ -101,33 +101,6 @@ pub(super) struct GoalVerifierPrepareInputs {
     pub(super) options: ChatPrepareOptions,
 }
 
-pub(super) fn goal_text_for_verifier(session: &ChatSession) -> Result<String, String> {
-    crate::chat::goal_role::try_synthesize_current_goal(session)?
-        .or_else(|| session.goal.as_ref().map(|goal| goal.content.clone()))
-        .ok_or_else(|| "no active goal to verify".to_string())
-}
-
-pub(super) fn verifier_sampling_parameters(thread: &ThreadParams) -> SamplingParameters {
-    SamplingParameters {
-        max_new_tokens: GOAL_VERIFIER_MAX_TOKENS,
-        temperature: Some(0.0),
-        boost_reasoning: false,
-        reasoning_effort: thread
-            .reasoning_effort
-            .as_ref()
-            .and_then(|s| match s.as_str() {
-                "low" => Some(crate::call_validation::ReasoningEffort::Low),
-                "medium" => Some(crate::call_validation::ReasoningEffort::Medium),
-                "high" => Some(crate::call_validation::ReasoningEffort::High),
-                "xhigh" => Some(crate::call_validation::ReasoningEffort::XHigh),
-                "max" => Some(crate::call_validation::ReasoningEffort::Max),
-                _ => None,
-            }),
-        thinking_budget: thread.thinking_budget,
-        ..Default::default()
-    }
-}
-
 pub(super) fn goal_verifier_prepare_inputs_from_parts(
     mut thread: ThreadParams,
     mut messages: Vec<ChatMessage>,
@@ -179,11 +152,6 @@ pub(super) fn goal_verifier_prepare_inputs(
         session.chat_id.clone(),
         tools,
     ))
-}
-
-pub(super) async fn verifier_cancel_requested(session_arc: &Arc<AMutex<ChatSession>>) -> bool {
-    let session = session_arc.lock().await;
-    session.user_interrupt_flag.load(Ordering::SeqCst)
 }
 
 pub async fn run_goal_verifier(

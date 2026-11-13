@@ -1,11 +1,17 @@
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use serde_json::json;
 use tokio::sync::Mutex as AMutex;
 use uuid::Uuid;
 
-use refact_core::chat_types::{ChatContent, ChatMessage, DeliveryOutcome, PendingDelivery, PushMode};
+use refact_core::chat_types::{
+    ChatContent, ChatMessage, DeliveryOutcome, PendingDelivery, PushMode, ReasoningEffort,
+    SamplingParameters,
+};
 use refact_core::string_utils::safe_truncate;
+
+use crate::ThreadParams;
 
 use crate::internal_roles::{self, EventSubkind};
 use crate::types::epoch_ms_now;
@@ -17,6 +23,7 @@ use crate::types::GoalSnapshotBudgetExt;
 pub const GOAL_VERIFIER_SOURCE: &str = "chat.goal_verifier";
 pub const INCONCLUSIVE_GAP: &str = "verification inconclusive; continue";
 pub const GOAL_VERIFIER_BLOCKED_BACKOFF_MS: u64 = 300_000;
+pub const GOAL_VERIFIER_MAX_TOKENS: usize = 1024;
 
 /// Consecutive no-progress verifier verdicts that mark the goal quiescent. The
 /// engine re-exports this so `goal_monitor` and the verifier cannot drift apart.
@@ -202,6 +209,38 @@ pub fn parse_criteria_verdicts(answer: &str) -> Vec<CriterionVerdict> {
             })
         })
         .collect()
+}
+
+pub fn goal_text_for_verifier(session: &ChatSession) -> Result<String, String> {
+    crate::session_goal_role::try_synthesize_current_goal(session)?
+        .or_else(|| session.goal.as_ref().map(|goal| goal.content.clone()))
+        .ok_or_else(|| "no active goal to verify".to_string())
+}
+
+pub fn verifier_sampling_parameters(thread: &ThreadParams) -> SamplingParameters {
+    SamplingParameters {
+        max_new_tokens: GOAL_VERIFIER_MAX_TOKENS,
+        temperature: Some(0.0),
+        boost_reasoning: false,
+        reasoning_effort: thread
+            .reasoning_effort
+            .as_ref()
+            .and_then(|s| match s.as_str() {
+                "low" => Some(ReasoningEffort::Low),
+                "medium" => Some(ReasoningEffort::Medium),
+                "high" => Some(ReasoningEffort::High),
+                "xhigh" => Some(ReasoningEffort::XHigh),
+                "max" => Some(ReasoningEffort::Max),
+                _ => None,
+            }),
+        thinking_budget: thread.thinking_budget,
+        ..Default::default()
+    }
+}
+
+pub async fn verifier_cancel_requested(session_arc: &Arc<AMutex<ChatSession>>) -> bool {
+    let session = session_arc.lock().await;
+    session.user_interrupt_flag.load(Ordering::SeqCst)
 }
 
 /// Applies a verifier verdict only when the parent chat history is still the

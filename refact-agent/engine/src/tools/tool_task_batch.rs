@@ -182,7 +182,7 @@ fn auto_revert_arg(args: &HashMap<String, Value>) -> Result<bool, String> {
 
 fn auto_revert_timeout_secs_arg(args: &HashMap<String, Value>) -> Result<u64, String> {
     let Some(value) = args.get("auto_revert_timeout_secs") else {
-        return Ok(crate::chat::post_merge_check::DEFAULT_POST_MERGE_CHECK_TIMEOUT_SECS);
+        return Ok(refact_chat_api::tools_facade::DEFAULT_POST_MERGE_CHECK_TIMEOUT_SECS);
     };
     let secs = match value {
         Value::Number(number) => number
@@ -925,7 +925,7 @@ impl Tool for ToolMergeReadyInOrder {
                     "stop_on_conflict": { "type": "boolean", "default": true },
                     "max_merges": { "type": "integer", "default": MAX_MERGE_BATCH },
                     "auto_revert": { "type": "boolean", "default": false, "description": "Opt in to post-merge verification and automatic git revert on deterministic regression" },
-                    "auto_revert_timeout_secs": { "type": "integer", "default": crate::chat::post_merge_check::DEFAULT_POST_MERGE_CHECK_TIMEOUT_SECS, "description": "Timeout for post-merge verification and revert commands" }
+                    "auto_revert_timeout_secs": { "type": "integer", "default": refact_chat_api::tools_facade::DEFAULT_POST_MERGE_CHECK_TIMEOUT_SECS, "description": "Timeout for post-merge verification and revert commands" }
                 }
             }),
             output_schema: None,
@@ -1618,7 +1618,7 @@ The agent's work has been successfully merged back to the target branch.
         );
         assert_eq!(
             properties["auto_revert_timeout_secs"]["default"],
-            json!(crate::chat::post_merge_check::DEFAULT_POST_MERGE_CHECK_TIMEOUT_SECS)
+            json!(refact_chat_api::tools_facade::DEFAULT_POST_MERGE_CHECK_TIMEOUT_SECS)
         );
         assert!(!properties.contains_key("force"));
     }
@@ -1645,7 +1645,7 @@ The agent's work has been successfully merged back to the target branch.
         assert!(!auto_revert_arg(&empty).unwrap());
         assert_eq!(
             auto_revert_timeout_secs_arg(&empty).unwrap(),
-            crate::chat::post_merge_check::DEFAULT_POST_MERGE_CHECK_TIMEOUT_SECS
+            refact_chat_api::tools_facade::DEFAULT_POST_MERGE_CHECK_TIMEOUT_SECS
         );
 
         let invalid_bool = HashMap::from([("auto_revert".to_string(), json!("sometimes"))]);

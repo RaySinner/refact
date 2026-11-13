@@ -7,10 +7,11 @@ use tokio::sync::Mutex as AMutex;
 
 use refact_runtime_api::AtCommandsContext;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
-use crate::chat::goal_verifier::{
-    apply_goal_verdict_guarded_with_delivery, begin_goal_verification_if_needed, run_goal_verifier,
+use refact_chat_api::goal_verifier::{
+    apply_goal_verdict_guarded_with_delivery, begin_goal_verification_if_needed,
     GoalVerificationApplyOutcome, GoalVerificationBegin, GoalVerdict,
 };
+use crate::chat::goal_verifier::run_goal_verifier;
 use refact_chat_api::types::{ChatSession, PushMode};
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
 

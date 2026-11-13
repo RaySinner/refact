@@ -1,39 +1,10 @@
 use super::*;
 
-#[derive(Deserialize)]
-pub struct ModelsQueryParams {
-    #[serde(rename = "provider-name")]
-    pub(crate) provider_name: String,
-}
-
-
-#[derive(Serialize)]
-pub(crate) struct SimplifiedModel {
-    pub(crate) name: String,
-    pub(crate) enabled: bool,
-    pub(crate) removable: bool,
-    pub(crate) user_configured: bool,
-}
-
-
-#[derive(Serialize)]
-pub(crate) struct ModelsResponse {
-    pub(crate) chat_models: Vec<SimplifiedModel>,
-    pub(crate) completion_models: Vec<SimplifiedModel>,
-    pub(crate) embedding_model: Option<SimplifiedModel>,
-}
-
-
-impl From<&ProviderModel> for SimplifiedModel {
-    fn from(model: &ProviderModel) -> Self {
-        SimplifiedModel {
-            name: model.id.clone(),
-            enabled: model.enabled,
-            removable: model.removable,
-            user_configured: model.user_configured,
-        }
-    }
-}
+pub use refact_providers::http::models::{
+    AddCustomModelRequest, AvailableModelsResponse, GoogleGeminiHealthResponse,
+    ModelProviderRequest, ModelToggleRequest, ModelsQueryParams, ModelsResponse,
+    OpenRouterHealthResponse, RemoveCustomModelRequest, SimplifiedModel,
+};
 
 
 pub async fn handle_v1_models(
@@ -80,33 +51,6 @@ pub async fn handle_v1_models(
 // ============================================================================
 // Available Models Management Endpoints
 // ============================================================================
-
-
-#[derive(Serialize)]
-pub struct AvailableModelsResponse {
-    pub(crate) models: Vec<AvailableModel>,
-    pub(crate) source: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) error: Option<String>,
-}
-
-
-#[derive(Serialize)]
-pub struct OpenRouterHealthResponse {
-    pub(crate) ok: bool,
-    pub(crate) message: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) data: Option<crate::providers::openrouter::OpenRouterHealthInfo>,
-}
-
-
-#[derive(Serialize)]
-pub struct GoogleGeminiHealthResponse {
-    pub(crate) ok: bool,
-    pub(crate) message: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) data: Option<crate::providers::google_gemini::GoogleGeminiHealthInfo>,
-}
 
 
 /// GET /v1/providers/{name}/available-models
@@ -185,21 +129,6 @@ pub async fn handle_v1_provider_available_models(
     };
 
     json_response(StatusCode::OK, &response)
-}
-
-
-#[derive(Deserialize)]
-pub struct ModelToggleRequest {
-    pub model_id: String,
-    pub enabled: bool,
-}
-
-
-#[derive(Deserialize)]
-pub struct ModelProviderRequest {
-    pub model_id: String,
-    #[serde(default)]
-    pub selected_provider: Option<String>,
 }
 
 
@@ -566,14 +495,6 @@ pub(crate) async fn update_model_selected_provider_state(
 }
 
 
-#[derive(Deserialize)]
-pub struct AddCustomModelRequest {
-    pub(crate) id: String,
-    #[serde(flatten)]
-    pub(crate) config: CustomModelConfig,
-}
-
-
 /// POST /v1/providers/{name}/custom-models
 /// Add a custom model to a provider
 pub async fn handle_v1_provider_add_custom_model(
@@ -641,12 +562,6 @@ pub async fn handle_v1_provider_add_custom_model(
         StatusCode::OK,
         &json!({"success": true, "model_id": request.id}),
     )
-}
-
-
-#[derive(Deserialize)]
-pub struct RemoveCustomModelRequest {
-    pub model_id: String,
 }
 
 

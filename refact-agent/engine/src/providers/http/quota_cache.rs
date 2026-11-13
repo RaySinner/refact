@@ -172,24 +172,6 @@ pub(crate) async fn provider_quota_cached(
 }
 
 
-pub(crate) fn stale_quota_fallback(
-    fetched: &ProviderQuotaSnapshot,
-    prior: Option<ProviderQuotaSnapshot>,
-) -> Option<ProviderQuotaSnapshot> {
-    let error = fetched.error.as_ref()?;
-    let mut prior = prior?;
-    if !prior.available || prior.source == ProviderQuotaSource::Unavailable {
-        return None;
-    }
-    prior.error = Some(error.clone());
-    prior.stale = true;
-    Some(prior)
-}
-
-
-pub(crate) async fn invalidate_provider_quota(
-    quota_cache: &Arc<AMutex<ProviderQuotaCache>>,
-    provider_name: &str,
-) {
-    quota_cache.lock().await.invalidate(provider_name);
-}
+pub(crate) use refact_providers::http::quota_cache::{
+    invalidate_provider_quota, stale_quota_fallback,
+};

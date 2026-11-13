@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 refact-core = { path = "../refact-core" }
+refact-files = { path = "../refact-files" }
 
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -17,3 +18,8 @@ walkdir = "2.3"
 chrono = { version = "0.4.31", features = ["serde"] }
 sha2 = "0.10.8"
 hex = "0.4.3"
+dunce = "1.0.5"
+
+[dev-dependencies]
+tempfile = { workspace = true }
+futures = "0.3"

@@ -49,6 +49,20 @@ pub trait MemoryRuntime: Send + Sync {
         frontmatter: &KnowledgeFrontmatter,
         body: &str,
     ) -> Result<(), String>;
+    async fn enrichment_current_root_id(
+        &self,
+        gcx: Arc<GlobalContext>,
+        current_chat_id: Option<&str>,
+    ) -> Option<String>;
+    async fn memories_search_for_enrichment(
+        &self,
+        gcx: Arc<GlobalContext>,
+        query: &str,
+        top_n_memories: usize,
+        top_n_trajectories: usize,
+        exclude_trajectory_id: Option<&str>,
+        diagnostic_chat_id: Option<&str>,
+    ) -> Result<Vec<MemoRecord>, String>;
 }
 
 pub async fn memories_search(

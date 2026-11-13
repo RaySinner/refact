@@ -28,6 +28,7 @@ pub mod global_context;
 pub mod integr_abstract;
 pub mod knowledge_graph;
 pub mod knowledge_index;
+pub mod knowledge_runtime;
 pub mod mode_validation;
 pub mod project_information;
 pub mod privacy;

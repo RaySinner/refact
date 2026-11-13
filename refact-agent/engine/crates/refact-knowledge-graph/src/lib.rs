@@ -1,3 +1,4 @@
+pub mod enrichment;
 pub mod enrichment_cache;
 pub mod kg_builder;
 pub mod kg_cleanup;

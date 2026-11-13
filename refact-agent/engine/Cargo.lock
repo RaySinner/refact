@@ -4432,13 +4432,17 @@ name = "refact-knowledge-graph"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "dunce",
+ "futures",
  "hex",
  "petgraph",
  "refact-core",
+ "refact-files",
  "regex",
  "serde",
  "serde_json",
  "sha2",
+ "tempfile",
  "tokio",
  "tracing",
  "walkdir",

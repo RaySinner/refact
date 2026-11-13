@@ -391,4 +391,32 @@ impl refact_runtime_api::memories::MemoryRuntime for EngineMemoryRuntime {
     ) -> Result<(), String> {
         rewrite_memory_document_for_ctx(ctx, doc_path, frontmatter, body).await
     }
+
+    async fn enrichment_current_root_id(
+        &self,
+        gcx: Arc<GlobalContext>,
+        current_chat_id: Option<&str>,
+    ) -> Option<String> {
+        enrichment_current_root_id(gcx, current_chat_id).await
+    }
+
+    async fn memories_search_for_enrichment(
+        &self,
+        gcx: Arc<GlobalContext>,
+        query: &str,
+        top_n_memories: usize,
+        top_n_trajectories: usize,
+        exclude_trajectory_id: Option<&str>,
+        diagnostic_chat_id: Option<&str>,
+    ) -> Result<Vec<MemoRecord>, String> {
+        memories_search_for_enrichment(
+            gcx,
+            query,
+            top_n_memories,
+            top_n_trajectories,
+            exclude_trajectory_id,
+            diagnostic_chat_id,
+        )
+        .await
+    }
 }

@@ -278,6 +278,8 @@ pub fn fingerprint_hex(fingerprint: &[u8; 32]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
+    use std::time::Duration;
 
     fn cache_key(seed: u8) -> EnrichmentCacheKey {
         EnrichmentCacheKey {
@@ -307,5 +309,132 @@ mod tests {
         let mut oldest = cache_key(1);
         oldest.privacy_generation = 0;
         assert!(!state.entries.contains_key(&oldest));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn enrichment_cache_coalesces_identical_concurrent_fetches() {
+        let cache = Arc::new(EnrichmentCache::default());
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let tasks = (0..100)
+            .map(|_| {
+                let cache = cache.clone();
+                let calls = calls.clone();
+                tokio::spawn(async move {
+                    cache
+                        .get_or_fetch(cache_key(1), move || async move {
+                            calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                            tokio::time::sleep(Duration::from_millis(10)).await;
+                            Ok(CachedEnrichmentResult::empty())
+                        })
+                        .await
+                        .unwrap()
+                })
+            })
+            .collect::<Vec<_>>();
+        let results = futures::future::join_all(tasks).await;
+
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert!(results
+            .into_iter()
+            .filter_map(Result::ok)
+            .any(|(_, disposition)| disposition == EnrichmentCacheDisposition::Coalesced));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn enrichment_cache_separates_scope_privacy_and_model_identities() {
+        let cache = EnrichmentCache::default();
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        let base = cache_key(1);
+        let mut distinct_scope = base;
+        distinct_scope.workspace_scope_fingerprint = [2; 32];
+        let mut distinct_privacy = base;
+        distinct_privacy.privacy_generation = 2;
+        let mut distinct_model = base;
+        distinct_model.embedding_config_fingerprint = [4; 32];
+        for key in [base, distinct_scope, distinct_privacy, distinct_model] {
+            cache
+                .get_or_fetch(key, || async {
+                    calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    Ok(CachedEnrichmentResult::empty())
+                })
+                .await
+                .unwrap();
+        }
+
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 4);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn enrichment_cache_keeps_empty_results_and_cleans_failures() {
+        let cache = EnrichmentCache::default();
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        let key = cache_key(7);
+        cache
+            .get_or_fetch(key, || async {
+                calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Ok(CachedEnrichmentResult::empty())
+            })
+            .await
+            .unwrap();
+        let (_, disposition) = cache
+            .get_or_fetch(key, || async {
+                calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Ok(CachedEnrichmentResult::empty())
+            })
+            .await
+            .unwrap();
+        assert_eq!(disposition, EnrichmentCacheDisposition::Hit);
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+        let failure_key = cache_key(8);
+        assert!(cache
+            .get_or_fetch(failure_key, || async { Err("fixture failure".to_string()) })
+            .await
+            .is_err());
+        let (_, disposition) = cache
+            .get_or_fetch(failure_key, || async {
+                Ok(CachedEnrichmentResult::empty())
+            })
+            .await
+            .unwrap();
+        assert_eq!(disposition, EnrichmentCacheDisposition::Miss);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn enrichment_cache_reuses_completed_result_without_refetch() {
+        let cache = EnrichmentCache::default();
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        let key = cache_key(9);
+        let result = CachedEnrichmentResult {
+            memories: vec![CachedMemo {
+                memo: MemoRecord::default(),
+                source: MemoSourceFingerprint {
+                    path: PathBuf::from("fixture.md"),
+                    size: 0,
+                    modified_ns: 0,
+                    content_fingerprint: [9; 32],
+                },
+            }],
+            result_fingerprint: [9; 32],
+            bytes: 1,
+            cacheable: true,
+        };
+        cache
+            .get_or_fetch(key, || async {
+                calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Ok(result)
+            })
+            .await
+            .unwrap();
+        let (_, disposition) = cache
+            .get_or_fetch(key, || async {
+                calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Ok(CachedEnrichmentResult::empty())
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(disposition, EnrichmentCacheDisposition::Hit);
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
 }

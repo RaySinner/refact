@@ -18,6 +18,7 @@ pub mod notification_event;
 pub mod openai_codex_ws;
 pub mod pending_context_rebuild;
 pub mod plan_role;
+pub mod room_roster;
 pub mod tools_facade;
 pub mod subchat_types;
 pub mod session;

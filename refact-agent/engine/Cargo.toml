@@ -222,7 +222,7 @@ bench = false
 
 [features]
 default = []
-bench = []
+bench = ["refact-chat-history/test-util"]
 perf-tests = []
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -403,6 +403,7 @@ refact-buddy-core = { path = "crates/refact-buddy-core", features = ["test-util"
 refact-http = { path = "crates/refact-http", features = ["test-util"] }
 refact-privacy = { path = "crates/refact-privacy", features = ["test-util"] }
 refact-runtime-api = { path = "crates/refact-runtime-api", features = ["test-util"] }
+refact-chat-history = { path = "crates/refact-chat-history", features = ["test-util"] }
 # Same pinned rev as the main dependency; integration tests drive the MCP
 # client stack directly (tests/mcp_stdio_e2e.rs).
 rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", rev = "63583b164f54ec6ed2f17c98450487c747d34aeb", features = ["client", "transport-child-process", "transport-streamable-http-client-reqwest", "auth"] }

@@ -3,6 +3,10 @@ name = "refact-chat-history"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = []
+test-util = []
+
 [dependencies]
 refact-core = { path = "../refact-core" }
 refact-chat-api = { path = "../refact-chat-api" }
@@ -14,10 +18,12 @@ serde.workspace = true
 serde_json.workspace = true
 uuid.workspace = true
 md5.workspace = true
+dunce = "1.0.5"
+futures = "0.3"
 sha2 = "0.10.8"
 hex = "0.4.3"
 tracing.workspace = true
-tokio = { workspace = true, features = ["time", "macros", "sync", "rt"] }
+tokio = { workspace = true, features = ["fs", "time", "macros", "sync", "rt"] }
 
 [dev-dependencies]
 base64 = "0.22.1"

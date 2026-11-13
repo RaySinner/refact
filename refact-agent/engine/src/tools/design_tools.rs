@@ -23,6 +23,7 @@ use tokio::sync::Mutex as AMutex;
 use refact_runtime_api::AtCommandsContext;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use refact_code_intel_api::ToolJson;
+use refact_scratchpads::multimodality::MultimodalElement;
 use crate::integrations::browser_controller;
 use crate::integrations::browser_runtime::{find_runtime_for_chat, BrowserRuntime, ChatRuntimeLookup};
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
@@ -827,11 +828,8 @@ fn tool_image_message(
     artifact: &ImageArtifact,
 ) -> Result<(bool, Vec<ContextEnum>), String> {
     let content = vec![
-        crate::scratchpads::multimodality::MultimodalElement::new("text".to_string(), text)?,
-        crate::scratchpads::multimodality::MultimodalElement::new(
-            artifact.mime.clone(),
-            artifact.data.clone(),
-        )?,
+        MultimodalElement::new("text".to_string(), text)?,
+        MultimodalElement::new(artifact.mime.clone(), artifact.data.clone())?,
     ];
     Ok((
         false,

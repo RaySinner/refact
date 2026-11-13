@@ -17,6 +17,8 @@ refact-caps-core = { path = "../refact-caps-core" }
 refact-agents-core = { path = "../refact-agents-core" }
 refact-privacy = { path = "../refact-privacy" }
 refact-files = { path = "../refact-files" }
+refact-file-edit-core = { path = "../refact-file-edit-core" }
+refact-scope-utils = { path = "../refact-scope-utils" }
 refact-worktrees = { path = "../refact-worktrees" }
 refact-postprocessing = { path = "../refact-postprocessing" }
 refact-exec = { path = "../refact-exec" }
@@ -36,6 +38,8 @@ async-trait = "0.1.73"
 axum = { version = "0.6.20", features = ["default", "http2"] }
 bytes = "1.11.0"
 chrono = { version = "0.4.31", features = ["serde"] }
+diff = "0.1.13"
+dunce = "1.0.5"
 futures = "0.3"
 git2 = "0.20.2"
 glob = "0.3.1"

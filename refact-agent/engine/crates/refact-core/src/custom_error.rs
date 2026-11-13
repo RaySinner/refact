@@ -1,6 +1,6 @@
 use std::error::Error;
 use serde::Serialize;
-use hyper::StatusCode;
+pub use hyper::StatusCode;
 use serde_json::json;
 use std::fmt;
 use axum::Json;

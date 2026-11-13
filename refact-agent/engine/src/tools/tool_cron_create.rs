@@ -23,7 +23,7 @@ use refact_scheduler_core::{
 use refact_core::chat_types::PushMode;
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
 
-pub const MAX_CRON_JOBS: usize = 50;
+pub const MAX_CRON_JOBS: usize = refact_scheduler_core::MAX_CRON_JOBS;
 const ONE_YEAR_MS: u64 = 365 * 24 * 60 * 60 * 1000;
 
 pub struct ToolCronCreate {

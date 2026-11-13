@@ -12,6 +12,7 @@ pub use refact_core::scheduler_config::{
 };
 
 pub const DEFAULT_RECURRING_AUTO_EXPIRE_AFTER_MS: u64 = 30 * 24 * 60 * 60 * 1000;
+pub const MAX_CRON_JOBS: usize = 50;
 pub const DURABLE_DISABLED_NOTE: &str = "durable schedules disabled by config";
 pub const SCHEDULER_DISABLED_ERROR: &str = "scheduler is disabled";
 

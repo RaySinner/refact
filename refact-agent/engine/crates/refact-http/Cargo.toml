@@ -8,28 +8,41 @@ default = []
 test-util = []
 
 [dependencies]
+async-stream = "0.3.5"
 async-trait = "0.1.73"
 astral-tokio-tar = "0.5.2"
 axum = { version = "0.6.20", features = ["default", "http2"] }
 chrono = { version = "0.4.31", features = ["serde"] }
+chrono-tz = "0.10"
 dunce = "1.0.5"
+git2 = "0.20.2"
 home = "0.5"
 hyper = { version = "0.14", features = ["server", "stream"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = "0.9.31"
-tokio = { workspace = true, features = ["fs", "io-util", "macros", "rt", "sync"] }
+shell-words = "1.1.0"
+tokio = { workspace = true, features = ["fs", "io-util", "macros", "rt", "sync", "time"] }
 tracing = { workspace = true }
+url = "2.4.1"
 uuid = { workspace = true }
+which = "7.0.2"
 
 refact-browser = { path = "../refact-browser" }
 refact-buddy-core = { path = "../refact-buddy-core" }
+refact-chat-history = { path = "../refact-chat-history" }
+refact-codegraph = { path = "../refact-codegraph" }
 refact-core = { path = "../refact-core" }
+refact-exec = { path = "../refact-exec" }
 refact-ext = { path = "../refact-ext" }
 refact-files = { path = "../refact-files" }
+refact-git = { path = "../refact-git" }
 refact-integrations = { path = "../refact-integrations" }
+refact-perf = { path = "../refact-perf" }
 refact-runtime-api = { path = "../refact-runtime-api" }
+refact-scheduler-core = { path = "../refact-scheduler-core" }
 refact-stats = { path = "../refact-stats" }
+refact-vecdb = { path = "../refact-vecdb" }
 refact-yaml-configs = { path = "../refact-yaml-configs" }
 
 [dev-dependencies]

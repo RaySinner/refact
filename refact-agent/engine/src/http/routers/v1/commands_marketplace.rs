@@ -1,71 +1,11 @@
-use axum::extract::Query;
-use axum::response::Json;
+pub use refact_http::routers::v1::commands_marketplace::*;
+
+#[cfg(test)]
 use axum::extract::State;
+#[cfg(test)]
 use hyper::StatusCode;
-use serde::Deserialize;
+#[cfg(test)]
 use serde_json::json;
-
-use crate::app_state::AppState;
-use crate::custom_error::ScratchError;
-use refact_runtime_api::ext_marketplace::{
-    InstallMarketplaceItemRequest, MarketplaceKind, install_marketplace_item,
-    list_marketplace_items,
-};
-
-#[derive(Debug, Deserialize)]
-pub struct CommandsMarketplaceQuery {
-    pub source: Option<String>,
-    pub q: Option<String>,
-}
-
-pub async fn handle_v1_commands_marketplace_get(
-    State(app): State<AppState>,
-    Query(params): Query<CommandsMarketplaceQuery>,
-) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let (items, sources) = list_marketplace_items(app.clone(), MarketplaceKind::Command)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
-    let q = params.q.unwrap_or_default().to_lowercase();
-    let source = params.source.as_deref();
-    let filtered: Vec<_> = items
-        .into_iter()
-        .filter(|item| {
-            let source_ok = source.map(|s| item.source_id == s).unwrap_or(true);
-            let q_ok = q.is_empty()
-                || item.name.to_lowercase().contains(&q)
-                || item.description.to_lowercase().contains(&q)
-                || item.tags.iter().any(|tag| tag.to_lowercase().contains(&q));
-            source_ok && q_ok
-        })
-        .collect();
-    Ok(Json(json!({
-        "items": filtered,
-        "sources": sources,
-    })))
-}
-
-pub async fn handle_v1_commands_marketplace_install(
-    State(app): State<AppState>,
-    body_bytes: hyper::body::Bytes,
-) -> Result<Json<serde_json::Value>, ScratchError> {
-    let req = serde_json::from_slice::<InstallMarketplaceItemRequest>(&body_bytes)
-        .map_err(|e| ScratchError::new(StatusCode::UNPROCESSABLE_ENTITY, format!("JSON: {}", e)))?;
-    let installed = install_marketplace_item(app, MarketplaceKind::Command, req)
-        .await
-        .map_err(|e| {
-            let status = if e.contains("not found") {
-                StatusCode::NOT_FOUND
-            } else if e.contains("invalid scope") || e.contains("no project root") {
-                StatusCode::BAD_REQUEST
-            } else if e.contains("already exists") || e.contains("destination already exists") {
-                StatusCode::CONFLICT
-            } else {
-                StatusCode::INTERNAL_SERVER_ERROR
-            };
-            ScratchError::new(status, e)
-        })?;
-    Ok(Json(json!(installed)))
-}
 
 #[cfg(test)]
 mod tests {

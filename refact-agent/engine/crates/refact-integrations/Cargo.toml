@@ -18,6 +18,12 @@ home = "0.5"
 libc = "0.2"
 strip-ansi-escapes = "0.2.1"
 which = "7.0.2"
+reqwest = { version = "0.13", default-features = false, features = ["json", "form", "stream", "rustls", "charset", "http2"] }
+serde_yaml = "0.9.31"
+url = "2.4.1"
+oauth2 = { version = "5.0", default-features = false }
+rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", rev = "63583b164f54ec6ed2f17c98450487c747d34aeb", features = ["client", "transport-child-process", "transport-streamable-http-client-reqwest", "auth"] }
 
 [dev-dependencies]
 tempfile.workspace = true
+axum = { version = "0.6.20", features = ["default", "http2"] }

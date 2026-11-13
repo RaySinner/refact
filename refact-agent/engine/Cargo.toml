@@ -19,6 +19,7 @@ members = [
     "crates/refact-scratchpads",
     "crates/refact-providers",
     "crates/refact-tool-api",
+    "crates/refact-tools",
     "crates/refact-chat-history",
     "crates/refact-integrations",
     "crates/refact-browser",

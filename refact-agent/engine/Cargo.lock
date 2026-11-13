@@ -4954,6 +4954,59 @@ dependencies = [
 ]
 
 [[package]]
+name = "refact-tools"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum",
+ "bytes",
+ "chrono",
+ "futures",
+ "git2",
+ "glob",
+ "headless_chrome",
+ "indexmap 1.9.3",
+ "once_cell",
+ "refact-agents-core",
+ "refact-buddy-core",
+ "refact-caps-core",
+ "refact-chat-api",
+ "refact-chat-history",
+ "refact-codegraph",
+ "refact-codehealth",
+ "refact-core",
+ "refact-exec",
+ "refact-files",
+ "refact-git-intel",
+ "refact-integrations",
+ "refact-knowledge-graph",
+ "refact-perf",
+ "refact-postprocessing",
+ "refact-privacy",
+ "refact-runtime-api",
+ "refact-scheduler-core",
+ "refact-scratchpads",
+ "refact-tasks",
+ "refact-tool-api",
+ "refact-worktrees",
+ "refact-yaml-configs",
+ "regex",
+ "reqwest",
+ "ropey",
+ "serde",
+ "serde_json",
+ "similar",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "url",
+ "uuid",
+ "walkdir",
+]
+
+[[package]]
 name = "refact-tui"
 version = "8.9.1"
 dependencies = [

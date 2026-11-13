@@ -1088,10 +1088,12 @@ mod tests {
         assert_eq!(subscribe_events(&session).await.len(), 25);
         assert!(pending.is_none());
         assert!(events.is_empty());
-        let saved =
-            crate::chat::trajectories::load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), "retry-subscribe")
-                .await
-                .expect("retried batches persisted");
+        let saved = refact_runtime_api::trajectory_runtime::load_trajectory_for_chat(
+            &gcx.chat_ctx(gcx.clone()),
+            "retry-subscribe",
+        )
+        .await
+        .expect("retried batches persisted");
         assert_eq!(
             saved
                 .messages

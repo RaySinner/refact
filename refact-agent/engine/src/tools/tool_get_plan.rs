@@ -133,8 +133,9 @@ mod tests {
     use super::*;
     use crate::app_state::AppState;
     use refact_chat_api::internal_roles;
-    use crate::chat::trajectories::{
-        load_trajectory_for_chat, save_trajectory_snapshot, TrajectorySnapshot,
+    use refact_chat_history::trajectory_snapshot::TrajectorySnapshot;
+    use refact_runtime_api::trajectory_runtime::{
+        load_trajectory_for_chat, save_trajectory_snapshot,
     };
     use crate::tools::tool_set_plan::ToolSetPlan;
     use crate::tools::tool_update_plan::ToolUpdatePlan;

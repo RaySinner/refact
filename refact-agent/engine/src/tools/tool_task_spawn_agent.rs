@@ -13,7 +13,7 @@ use refact_core::chat_types::{ChatMessage, ChatContent, ContextEnum, ContextFile
 use refact_runtime_api::AtCommandsContext;
 use refact_runtime_api::{CapsProvider, ChatCtx};
 use refact_chat_api::internal_roles::{event, EventSubkind};
-use crate::chat::trajectories::resolve_task_planner_controller_chat_id;
+use refact_runtime_api::trajectory_runtime::resolve_task_planner_controller_chat_id;
 use refact_tasks::rooms;
 use refact_runtime_api::task_storage as storage;
 use refact_tasks::types::{BoardCard, StatusUpdate};
@@ -873,7 +873,10 @@ async fn root_chat_is_planner_for_task(
             return true;
         }
     }
-    crate::chat::trajectories::load_trajectory_for_chat(&gcx.chat_ctx(gcx.clone()), root_chat_id)
+    refact_runtime_api::trajectory_runtime::load_trajectory_for_chat(
+        &gcx.chat_ctx(gcx.clone()),
+        root_chat_id,
+    )
         .await
         .is_some_and(|loaded| {
             loaded

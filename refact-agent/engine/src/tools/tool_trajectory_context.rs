@@ -107,11 +107,14 @@ impl Tool for ToolTrajectoryContext {
         };
 
         let gcx = ccx.lock().await.app.gcx.clone();
-        crate::chat::trajectories::validate_trajectory_id(&trajectory_id).map_err(|e| e.message)?;
-        let traj_path =
-            crate::chat::trajectories::find_trajectory_path(&gcx.chat_ctx(gcx.clone()), &trajectory_id)
-                .await
-                .ok_or(format!(
+        refact_chat_history::trajectory_paths::validate_trajectory_id(&trajectory_id)
+            .map_err(|e| e.message)?;
+        let traj_path = refact_runtime_api::trajectory_runtime::find_trajectory_path(
+            &gcx.chat_ctx(gcx.clone()),
+            &trajectory_id,
+        )
+        .await
+        .ok_or(format!(
             "⚠️ Trajectory '{}' not found. 💡 Check trajectory lists or use knowledge() to search",
             trajectory_id
         ))?;

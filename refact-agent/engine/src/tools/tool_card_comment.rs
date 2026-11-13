@@ -9,7 +9,8 @@ use tokio::sync::Mutex as AMutex;
 use refact_runtime_api::AtCommandsContext;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use refact_runtime_api::ChatCtx;
-use crate::tasks::{comments, comments::CreateCardComment};
+use refact_runtime_api::task_comments::create_card_comment_for_ctx;
+use refact_tasks::comments::CreateCardComment;
 use refact_runtime_api::task_storage as storage;
 use refact_tasks::types::CardComment;
 use crate::tools::task_tool_helpers::{human_age, optional_string, required_string};
@@ -261,7 +262,7 @@ impl Tool for ToolCardCommentAdd {
         let card_id = required_card_id(args, &scope, "card_comment_add")?;
         let body = required_string(args, "body")?;
         let reply_to = optional_string(args, "reply_to");
-        let (_, comment) = comments::create_card_comment_for_ctx(
+        let (_, comment) = create_card_comment_for_ctx(
             &scope.ctx,
             &scope.task_id,
             CreateCardComment {

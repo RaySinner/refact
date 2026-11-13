@@ -14,7 +14,7 @@ use refact_agents_core::tool_agent::ToolAgentSpec;
 use crate::app_state::AppState;
 use refact_runtime_api::AtCommandsContext;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
-use crate::chat::trajectories::save_trajectory_as_with_intent_checked;
+use refact_runtime_api::trajectory_runtime::save_trajectory_as_with_intent_checked;
 use refact_chat_api::types::{ChatSession, PushMode, SessionState, ThreadParams, TrajectoryCommitIntent};
 use crate::global_context::GlobalContext;
 use refact_postprocessing::pp_command_output::OutputFilter;
@@ -2245,10 +2245,12 @@ mod tests {
             .unwrap();
 
         let child_chat_id = review_child_chat_id(&app).await;
-        let loaded =
-            crate::chat::trajectories::load_trajectory_for_chat(&app.chat_ctx(), &child_chat_id)
-                .await
-                .expect("the review chat trajectory is readable");
+        let loaded = refact_runtime_api::trajectory_runtime::load_trajectory_for_chat(
+            &app.chat_ctx(),
+            &child_chat_id,
+        )
+        .await
+        .expect("the review chat trajectory is readable");
 
         assert_eq!(loaded.messages.len(), 2, "{:?}", loaded.messages);
         assert_eq!(loaded.messages[0].role, "user");
@@ -2278,10 +2280,12 @@ mod tests {
             .unwrap();
 
         let child_chat_id = review_child_chat_id(&app).await;
-        let loaded =
-            crate::chat::trajectories::load_trajectory_for_chat(&app.chat_ctx(), &child_chat_id)
-                .await
-                .expect("the review chat trajectory is readable");
+        let loaded = refact_runtime_api::trajectory_runtime::load_trajectory_for_chat(
+            &app.chat_ctx(),
+            &child_chat_id,
+        )
+        .await
+        .expect("the review chat trajectory is readable");
 
         assert_eq!(loaded.thread.id, child_chat_id);
         assert_eq!(loaded.thread.link_type.as_deref(), Some("tool"));
@@ -2878,10 +2882,12 @@ mod tests {
         .expect("review result");
 
         let child_chat_id = review_child_chat_id(&app).await;
-        let loaded =
-            crate::chat::trajectories::load_trajectory_for_chat(&app.chat_ctx(), &child_chat_id)
-                .await
-                .expect("the review chat trajectory is readable");
+        let loaded = refact_runtime_api::trajectory_runtime::load_trajectory_for_chat(
+            &app.chat_ctx(),
+            &child_chat_id,
+        )
+        .await
+        .expect("the review chat trajectory is readable");
 
         let steering: Vec<&ChatMessage> = loaded
             .messages
@@ -2965,7 +2971,7 @@ mod tests {
         assert!(record.result_summary.unwrap().contains(
             "> Note: 1 user message(s) arrived after the last stage and were not applied."
         ));
-        let loaded = crate::chat::trajectories::load_trajectory_for_chat(
+        let loaded = refact_runtime_api::trajectory_runtime::load_trajectory_for_chat(
             &app.chat_ctx(),
             record.child_chat_id.as_deref().unwrap(),
         )
@@ -3017,7 +3023,7 @@ mod tests {
                 ),
                 late
             );
-            let loaded = crate::chat::trajectories::load_trajectory_for_chat(
+            let loaded = refact_runtime_api::trajectory_runtime::load_trajectory_for_chat(
                 &app.chat_ctx(),
                 record.child_chat_id.as_deref().unwrap(),
             )
@@ -3140,10 +3146,12 @@ mod tests {
             .pending_deliveries(handle.agent_id())
             .await
             .is_empty());
-        let loaded =
-            crate::chat::trajectories::load_trajectory_for_chat(&app.chat_ctx(), &thread.id)
-                .await
-                .unwrap();
+        let loaded = refact_runtime_api::trajectory_runtime::load_trajectory_for_chat(
+            &app.chat_ctx(),
+            &thread.id,
+        )
+        .await
+        .unwrap();
         assert_eq!(loaded.messages[1].role, "user");
         assert_eq!(
             loaded.messages[1].content.content_text_only(),

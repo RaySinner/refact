@@ -1769,8 +1769,120 @@ pub(crate) use refact_runtime_api::tool_catalog_snapshot_rollout_enabled;
 #[cfg(test)]
 pub(crate) use refact_runtime_api::tool_catalog_snapshot_rollout_enabled_for;
 
+fn first_tool_text(out: Vec<crate::call_validation::ContextEnum>) -> String {
+    out.into_iter()
+        .find_map(|item| match item {
+            crate::call_validation::ContextEnum::ChatMessage(msg) => {
+                Some(msg.content.content_text_only())
+            }
+            _ => None,
+        })
+        .unwrap_or_default()
+}
+
 #[async_trait]
 impl ToolRegistry for AppToolRegistry {
+    async fn github_issue_create_tool(&self) -> Option<String> {
+        let groups = crate::tools::tools_list::get_integration_tools(self.gcx.clone()).await;
+        groups
+            .into_iter()
+            .flat_map(|group| group.tools)
+            .find_map(|tool| {
+                let desc = tool.tool_description();
+                let name = desc.name;
+                let cfg = desc.source.config_path;
+                let is_github = name.contains("github") || cfg.contains("github");
+                if is_github && name.ends_with("_create_issue") {
+                    Some(name)
+                } else {
+                    None
+                }
+            })
+    }
+
+    async fn run_mcp_call_bypass(
+        &self,
+        tool_name: String,
+        args: serde_json::Value,
+    ) -> Result<String, String> {
+        use refact_runtime_api::Tool as _;
+        let mut ccx_inner = crate::at_commands::at_commands::at_commands_new_from_app(
+            refact_runtime_api::app_state_from_gcx(self.gcx.clone()).await,
+            4000,
+            20,
+            false,
+            vec![],
+            String::new(),
+            None,
+            String::new(),
+            None,
+            None,
+        )
+        .await;
+        ccx_inner.tool_access_bypass = true;
+        let ccx = Arc::new(AMutex::new(ccx_inner));
+        let mut tool = crate::tools::tool_mcp_call::ToolMcpCall {};
+        let mut call_args = HashMap::new();
+        call_args.insert("tool_name".to_string(), serde_json::json!(tool_name));
+        call_args.insert("args".to_string(), args);
+        let (_, out) = tool
+            .tool_execute(ccx, &"buddy_mcp_issue".to_string(), &call_args)
+            .await?;
+        Ok(first_tool_text(out))
+    }
+
+    async fn run_buddy_tool(
+        &self,
+        tool_name: &str,
+        args: serde_json::Value,
+        error: Option<String>,
+    ) -> Result<String, String> {
+        let seed = error.map(|err| vec![crate::call_validation::ChatMessage::new("user".to_string(), err)]);
+        let ccx = Arc::new(AMutex::new(
+            crate::at_commands::at_commands::at_commands_new_from_app(
+                refact_runtime_api::app_state_from_gcx(self.gcx.clone()).await,
+                4000,
+                20,
+                false,
+                seed.unwrap_or_default(),
+                String::new(),
+                None,
+                String::new(),
+                None,
+                None,
+            )
+            .await,
+        ));
+        let mut call_args = HashMap::new();
+        if let serde_json::Value::Object(map) = args {
+            for (key, value) in map {
+                call_args.insert(key, value);
+            }
+        }
+        let (mut tool, tool_call_id): (
+            Box<dyn crate::tools::tools_description::Tool + Send>,
+            &str,
+        ) = match tool_name {
+            "buddy_get_logs" => (
+                Box::new(crate::tools::tool_buddy_get_logs::ToolBuddyGetLogs {
+                    config_path: String::new(),
+                }),
+                "buddy_logs",
+            ),
+            "buddy_get_context" => (
+                Box::new(crate::tools::tool_buddy_get_context::ToolBuddyGetContext {
+                    config_path: String::new(),
+                }),
+                "buddy_ctx",
+            ),
+            other => return Err(format!("unknown buddy tool: {other}")),
+        };
+        let (_, out) = tool
+            .tool_execute(ccx, &tool_call_id.to_string(), &call_args)
+            .await?;
+        Ok(first_tool_text(out))
+    }
+
     async fn get_tools_for_mode(
         &self,
         mode: &str,

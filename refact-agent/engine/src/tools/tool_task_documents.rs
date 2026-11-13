@@ -1506,10 +1506,8 @@ mod tests {
         assert!(err.contains("invalid kind"));
     }
 
-    use crate::tasks::{
-        storage,
-        types::{TaskMeta, TaskStatus},
-    };
+    use refact_runtime_api::task_storage as storage;
+    use refact_tasks::types::{TaskMeta, TaskStatus};
 
     async fn setup_task_gcx(task_id: &str) -> (TempDir, Arc<GlobalContext>) {
         let temp = tempfile::tempdir().unwrap();

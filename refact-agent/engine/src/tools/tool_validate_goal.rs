@@ -390,8 +390,9 @@ mod tests {
         let app = refact_runtime_api::app_state_from_gcx(gcx.clone()).await;
         let mut session = ChatSession::new("subchat-validate-goal".to_string());
         session.install_goal("agent", "ship feature", true, GoalBudget::default());
-        let snapshot = crate::chat::trajectories::trajectory_snapshot_from_session(&session);
-        crate::chat::trajectories::save_trajectory_snapshot(gcx.clone(), snapshot)
+        let snapshot =
+            refact_chat_history::trajectory_snapshot::trajectory_snapshot_from_session(&session);
+        refact_runtime_api::trajectory_runtime::save_trajectory_snapshot(gcx.clone(), snapshot)
             .await
             .unwrap();
         app.chat

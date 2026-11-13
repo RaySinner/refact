@@ -11,6 +11,44 @@ pub async fn load_trajectory_for_chat(ctx: &ChatCtx, chat_id: &str) -> Option<Lo
     ctx.trajectories.load_trajectory_for_chat(chat_id).await
 }
 
+pub async fn find_trajectory_path(ctx: &ChatCtx, chat_id: &str) -> Option<std::path::PathBuf> {
+    ctx.trajectories.find_trajectory_path(chat_id).await
+}
+
+pub async fn save_trajectory_snapshot(
+    gcx: crate::global_context::SharedGlobalContext,
+    snapshot: TrajectorySnapshot,
+) -> Result<(), String> {
+    crate::gcx_helpers::save_trajectory_snapshot_for_gcx(&gcx, snapshot).await
+}
+
+pub async fn set_trajectory_label(
+    app: crate::app_state::AppState,
+    chat_id: &str,
+    label: &str,
+) -> Result<(), String> {
+    refact_chat_history::trajectory_paths::validate_trajectory_id(chat_id)
+        .map_err(|error| error.message)?;
+    let label = refact_chat_history::trajectory_metrics::validate_trajectory_label(label)?;
+    let session_arc = app
+        .chat
+        .sessions
+        .read()
+        .await
+        .get(chat_id)
+        .cloned()
+        .ok_or_else(|| format!("Live trajectory '{chat_id}' not found"))?;
+    {
+        let mut session = session_arc.lock().await;
+        session.set_title_from_trajectory_label(label);
+    }
+    app.chat_ctx()
+        .trajectories
+        .try_save_trajectory_with_intent(session_arc, TrajectoryCommitIntent::Required)
+        .await
+        .map(|_| ())
+}
+
 fn task_meta_is_planner_for_task(task_meta: Option<&TaskMeta>, task_id: &str) -> bool {
     task_meta.is_some_and(|meta| meta.role == "planner" && meta.task_id == task_id)
 }
@@ -85,6 +123,17 @@ pub async fn resolve_task_planner_controller_chat_id(
         .clone()
         .filter(|id| !id.is_empty())
         .unwrap_or_else(|| current_chat_id.to_string())
+}
+
+pub async fn save_trajectory_as_with_intent(
+    ctx: &ChatCtx,
+    thread: &ThreadParams,
+    messages: &[ChatMessage],
+    intent: TrajectoryCommitIntent,
+) {
+    if let Err(e) = save_trajectory_as_with_intent_checked(ctx, thread, messages, intent).await {
+        tracing::warn!("Failed to save trajectory: {}", e);
+    }
 }
 
 pub async fn save_trajectory_as_with_intent_checked(

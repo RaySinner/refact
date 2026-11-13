@@ -12,6 +12,7 @@ pub mod events;
 pub mod facts;
 pub mod issue_context;
 pub mod issue_sanitizers;
+pub mod issue_result;
 pub mod memory_dedup;
 pub mod memory_lifecycle_model;
 pub mod observers;

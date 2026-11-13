@@ -107,8 +107,10 @@ pub use refact_chat_history::trajectory_snapshot::{
     trajectory_snapshot_from_session, TrajectorySnapshot,
 };
 pub use refact_runtime_api::trajectory_runtime::{
-    load_trajectory_for_chat, save_trajectory_as_with_intent_checked,
+    find_trajectory_path, load_trajectory_for_chat, save_trajectory_as_with_intent,
+    save_trajectory_as_with_intent_checked, save_trajectory_snapshot, set_trajectory_label,
 };
+#[cfg(test)]
 pub(crate) use refact_runtime_api::trajectory_runtime::{
     chat_id_is_planner_for_task, resolve_task_planner_controller_chat_id,
     verified_planner_linked_root_chat_id,
@@ -146,11 +148,11 @@ pub(crate) use model::{
 
 // Re-exports from paths
 pub use paths::{
-    chat_folder_name, find_trajectory_or_buddy_path, find_trajectory_path,
-    find_trajectory_path_for_active_chat, get_all_trajectories_dirs, get_buddy_conversations_dir,
-    get_global_trajectories_dir, get_trajectories_dir, global_trajectories_dir_path,
-    internal_trace_link_type, is_internal_trace_link_type, TrajectoryVectorizationQueue,
-    INTERNAL_TRACE_LINK_PREFIX, UNATTRIBUTED_TRACES_DIR,
+    chat_folder_name, find_trajectory_or_buddy_path, find_trajectory_path_for_active_chat,
+    get_all_trajectories_dirs, get_buddy_conversations_dir, get_global_trajectories_dir,
+    get_trajectories_dir, global_trajectories_dir_path, internal_trace_link_type,
+    is_internal_trace_link_type, TrajectoryVectorizationQueue, INTERNAL_TRACE_LINK_PREFIX,
+    UNATTRIBUTED_TRACES_DIR,
 };
 pub(crate) use paths::{
     enqueue_trajectory_vectorization, find_normal_trajectory_path, find_trajectory_file,
@@ -168,7 +170,6 @@ use paths::{
 // Re-exports from load
 pub use load::{
     load_generic_trajectory_for_chat, save_initial_task_chat_trajectory, save_trajectory_as,
-    save_trajectory_as_with_intent, set_trajectory_label,
 };
 pub use refact_chat_history::trajectory_metrics::validate_trajectory_label;
 pub(crate) use load::{
@@ -182,8 +183,7 @@ pub(crate) use load::{
 pub use store::{
     flush_all_trajectories, flush_trajectory_for_session, maybe_save_trajectory,
     maybe_save_trajectory_background, maybe_save_trajectory_background_with_intent,
-    maybe_save_trajectory_with_intent, save_trajectory_snapshot, try_save_trajectory,
-    try_save_trajectory_with_intent,
+    maybe_save_trajectory_with_intent, try_save_trajectory, try_save_trajectory_with_intent,
 };
 pub(crate) use store::persist_trajectory_snapshot_with_intent;
 #[cfg(test)]

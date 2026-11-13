@@ -58,7 +58,11 @@ pub mod buddy_actor_runtime;
 pub mod buddy_runtime;
 pub mod subchat_runtime;
 pub mod trajectory_runtime;
- pub mod context_tools;
+pub mod mode_transition_runtime;
+pub mod chat_tokens;
+pub mod buddy_issue_runtime;
+pub mod integration_config_dirs;
+pub mod context_tools;
  pub mod verifier;
  pub mod wait_interrupt;
 
@@ -315,6 +319,36 @@ pub trait ToolRegistry: Send + Sync {
             .await
     }
     async fn load_task_memories(&self, task_id: &str) -> Result<Vec<(PathBuf, String)>, String>;
+
+    /// Name of the GitHub MCP tool that files issues, when such an integration tool is
+    /// registered. Used by the buddy issue pipeline, which lives in this crate.
+    async fn github_issue_create_tool(&self) -> Option<String> {
+        None
+    }
+
+    /// Runs the `mcp_call` proxy for an MCP tool and returns the tool's first text
+    /// message. Used by the buddy issue pipeline.
+    async fn run_mcp_call_bypass(
+        &self,
+        tool_name: String,
+        args: serde_json::Value,
+    ) -> Result<String, String> {
+        let _ = (tool_name, args);
+        Err("mcp_call is not available".to_string())
+    }
+
+    /// Runs a builtin buddy inspection tool (`buddy_get_logs` / `buddy_get_context`) and
+    /// returns the tool's first text message. Used by the buddy issue pipeline.
+    async fn run_buddy_tool(
+        &self,
+        tool_name: &str,
+        args: serde_json::Value,
+        error: Option<String>,
+    ) -> Result<String, String> {
+        let _ = (tool_name, args, error);
+        Err("buddy tool execution is not available".to_string())
+    }
+
 }
 
 #[derive(Clone)]

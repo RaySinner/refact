@@ -39,13 +39,6 @@ use super::writer::{
 pub(super) const TRAJECTORY_FLUSH_TIMEOUT: Duration = Duration::from_secs(5);
 pub(super) const TRAJECTORY_COMMIT_STALL_TIMEOUT: Duration = Duration::from_secs(60);
 
-pub async fn save_trajectory_snapshot(
-    gcx: Arc<GlobalContext>,
-    snapshot: TrajectorySnapshot,
-) -> Result<(), String> {
-    refact_runtime_api::gcx_helpers::save_trajectory_snapshot_for_gcx(&gcx, snapshot).await
-}
-
 pub(super) struct DetachedTrajectoryWriterState {
     pub(super) pending: Option<(u64, TrajectorySnapshot)>,
     pub(super) requested_version: u64,

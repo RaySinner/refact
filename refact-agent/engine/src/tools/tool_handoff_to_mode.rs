@@ -6,13 +6,12 @@ use serde_json::{json, Value};
 use tokio::sync::Mutex as AMutex;
 use uuid::Uuid;
 
-use crate::agentic::mode_transition::{
-
-    ParsedDecisions, insert_goal_messages_before_plan, transfer_goal_ownership,
+use refact_agentic::mode_transition::{
+    insert_goal_messages_before_plan, transfer_goal_ownership, ParsedDecisions,
 };
 use refact_runtime_api::GlobalContextCtx;
 use refact_runtime_api::AtCommandsContext;
-use crate::chat::trajectories::{
+use refact_runtime_api::trajectory_runtime::{
     chat_id_is_planner_for_task, resolve_task_planner_controller_chat_id,
     verified_planner_linked_root_chat_id,
 };
@@ -291,7 +290,7 @@ pub(crate) fn transition_goal(
     source_id: &str,
     target_id: &str,
     mode: &str,
-) -> Result<crate::agentic::mode_transition::GoalTransferResult, String> {
+) -> Result<refact_agentic::mode_transition::GoalTransferResult, String> {
     let input =
         refact_core::active_context::legacy_rebuild_input(raw).map_err(|e| e.to_string())?;
     let mut transfer = transfer_goal_ownership(
@@ -323,11 +322,16 @@ pub(crate) async fn persist_transition(
     gcx: Arc<crate::global_context::GlobalContext>,
     source: &mut refact_chat_api::ChatSession,
     snapshot: &TrajectorySnapshot,
-    transfer: &crate::agentic::mode_transition::GoalTransferResult,
+    transfer: &refact_agentic::mode_transition::GoalTransferResult,
 ) -> Result<(), String> {
-    use crate::chat::trajectories::{save_trajectory_snapshot, trajectory_snapshot_from_session};
+    use refact_chat_history::trajectory_snapshot::trajectory_snapshot_from_session;
+    use refact_runtime_api::trajectory_runtime::save_trajectory_snapshot;
     if !transfer.transferred() {
-        return save_trajectory_snapshot(gcx, snapshot.clone()).await;
+        return refact_runtime_api::trajectory_runtime::save_trajectory_snapshot(
+            gcx,
+            snapshot.clone(),
+        )
+        .await;
     }
     let mut staged = snapshot.clone();
     staged.goal = None;
@@ -701,9 +705,9 @@ async fn finalize_handoff_inner(
                 "# Initial Plan\n\nNo plan content provided at handoff. Edit this document or use doc_create.".to_string()
             });
 
-    let outcome = Box::pin(crate::agentic::mode_transition::reconstruct_context(
+    let outcome = Box::pin(refact_runtime_api::mode_transition_runtime::reconstruct_context(
         gcx.clone(),
-        crate::agentic::mode_transition::ReconstructionRequest {
+        refact_agentic::mode_transition::ReconstructionRequest {
             messages: &raw_messages,
             target_mode: &canonical_mode,
             target_mode_description: &mode_description,
@@ -893,10 +897,11 @@ async fn finalize_handoff_inner(
 
     let mut source = session_arc.lock().await;
     let (updated, message) = handoff_completion_messages(&source.messages, tool_call_id, &result)?;
-    let mut completion = crate::chat::trajectories::trajectory_snapshot_from_session(&source);
+    let mut completion =
+        refact_chat_history::trajectory_snapshot::trajectory_snapshot_from_session(&source);
     completion.messages = updated.clone();
     completion.version += 1;
-    crate::chat::trajectories::save_trajectory_snapshot(gcx, completion)
+    refact_runtime_api::trajectory_runtime::save_trajectory_snapshot(gcx, completion)
         .await
         .map_err(|e| {
             format!("Destination {new_chat_id} saved, but acknowledgement persistence failed: {e}")

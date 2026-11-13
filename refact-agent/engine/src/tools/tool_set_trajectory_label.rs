@@ -8,7 +8,8 @@ use tokio::sync::Mutex as AMutex;
 use refact_runtime_api::AtCommandsContext;
 use refact_runtime_api::GlobalContextCtx;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
-use crate::chat::trajectories::{set_trajectory_label, TRAJECTORY_LABEL_MAX_CHARS};
+use refact_chat_history::trajectory_metrics::TRAJECTORY_LABEL_MAX_CHARS;
+use refact_runtime_api::trajectory_runtime::set_trajectory_label;
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
 
 pub struct ToolSetTrajectoryLabel {
@@ -59,7 +60,8 @@ impl Tool for ToolSetTrajectoryLabel {
             let ccx = ccx.lock().await;
             (ccx.app.clone(), ccx.chat_id.clone())
         };
-        let normalized_label = crate::chat::trajectories::validate_trajectory_label(label)?;
+        let normalized_label =
+            refact_chat_history::trajectory_metrics::validate_trajectory_label(label)?;
         set_trajectory_label(app, &invoking_chat_id, &normalized_label).await?;
         let result = json!({
             "trajectory_id": invoking_chat_id,
@@ -86,8 +88,8 @@ impl Tool for ToolSetTrajectoryLabel {
 mod tests {
     use super::*;
     use crate::app_state::AppState;
-    use crate::chat::trajectories::load_trajectory_for_chat;
     use refact_chat_api::ChatSession;
+    use refact_runtime_api::trajectory_runtime::load_trajectory_for_chat;
 
     async fn context(
         gcx: Arc<crate::global_context::GlobalContext>,
@@ -144,13 +146,18 @@ mod tests {
 
     #[test]
     fn validates_required_non_empty_and_bounded_label() {
-        assert!(crate::chat::trajectories::validate_trajectory_label("  ").is_err());
-        assert!(crate::chat::trajectories::validate_trajectory_label(
-            &"x".repeat(TRAJECTORY_LABEL_MAX_CHARS + 1)
-        )
-        .is_err());
+        assert!(refact_chat_history::trajectory_metrics::validate_trajectory_label("  ").is_err());
+        assert!(
+            refact_chat_history::trajectory_metrics::validate_trajectory_label(
+                &"x".repeat(TRAJECTORY_LABEL_MAX_CHARS + 1)
+            )
+            .is_err()
+        );
         assert_eq!(
-            crate::chat::trajectories::validate_trajectory_label("  valid\n label  ").unwrap(),
+            refact_chat_history::trajectory_metrics::validate_trajectory_label(
+                "  valid\n label  "
+            )
+            .unwrap(),
             "valid label"
         );
     }

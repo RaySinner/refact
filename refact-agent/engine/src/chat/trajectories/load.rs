@@ -2,7 +2,6 @@ use std::path::{Path, PathBuf};
 use tokio::fs;
 use tracing::{debug, warn};
 
-use crate::app_state::AppState;
 use crate::call_validation::ChatMessage;
 use crate::chat::ctx::ChatCtx;
 use crate::chat::types::{ThreadParams, TrajectoryCommitIntent, TrajectorySourceIdentity};
@@ -25,7 +24,6 @@ use super::{
     safe_new_trajectory_file_in_dir,
 };
 use super::reload::{parsed_rfc3339_utc, raw_frozen_prefix_has_tools, repair_transition_frozen_prefix};
-use super::store::try_save_trajectory_with_intent;
 use super::watcher::trajectory_source_identity_from_path;
 
 pub(super) fn is_known_trajectory_top_level_key(key: &str) -> bool {
@@ -947,26 +945,6 @@ pub(crate) async fn load_trajectory_candidate(
     })
 }
 
-pub async fn set_trajectory_label(app: AppState, chat_id: &str, label: &str) -> Result<(), String> {
-    validate_trajectory_id(chat_id).map_err(|error| error.message)?;
-    let label = refact_chat_history::trajectory_metrics::validate_trajectory_label(label)?;
-    let session_arc = app
-        .chat
-        .sessions
-        .read()
-        .await
-        .get(chat_id)
-        .cloned()
-        .ok_or_else(|| format!("Live trajectory '{chat_id}' not found"))?;
-    {
-        let mut session = session_arc.lock().await;
-        session.set_title_from_trajectory_label(label);
-    }
-    try_save_trajectory_with_intent(app, session_arc, TrajectoryCommitIntent::Required)
-        .await
-        .map(|_| ())
-}
-
 pub async fn load_generic_trajectory_for_chat(
     ctx: &ChatCtx,
     chat_id: &str,
@@ -1070,21 +1048,11 @@ pub async fn save_trajectory_as(
     thread: &ThreadParams,
     messages: &[ChatMessage],
 ) {
-    save_trajectory_as_with_intent(ctx, thread, messages, TrajectoryCommitIntent::Required).await;
-}
-
-pub async fn save_trajectory_as_with_intent(
-    ctx: &ChatCtx,
-    thread: &ThreadParams,
-    messages: &[ChatMessage],
-    intent: TrajectoryCommitIntent,
-) {
-    if let Err(e) =
-        refact_runtime_api::trajectory_runtime::save_trajectory_as_with_intent_checked(
-            ctx, thread, messages, intent,
-        )
-        .await
-    {
-        warn!("Failed to save trajectory: {}", e);
-    }
+    refact_runtime_api::trajectory_runtime::save_trajectory_as_with_intent(
+        ctx,
+        thread,
+        messages,
+        TrajectoryCommitIntent::Required,
+    )
+    .await;
 }

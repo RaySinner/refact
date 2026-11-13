@@ -983,12 +983,6 @@ pub(crate) async fn find_normal_trajectory_path(
         .map(|candidate| candidate.path)
 }
 
-pub async fn find_trajectory_path(ctx: &ChatCtx, chat_id: &str) -> Option<PathBuf> {
-    find_trajectory_file(ctx, chat_id)
-        .await
-        .map(|candidate| candidate.path)
-}
-
 pub(crate) async fn find_trajectory_parent_id(
     ctx: &ChatCtx,
     chat_id: &str,

@@ -171,7 +171,7 @@ impl Tool for ToolBuddyCreateIssue {
 
         let app = ccx.lock().await.app.clone();
 
-        let context = crate::buddy::issues::resolve_or_synthesize_context(
+        let context = refact_runtime_api::buddy_issue_runtime::resolve_or_synthesize_context(
             app.clone(),
             diagnostic_index,
             diagnostic_id,
@@ -183,7 +183,7 @@ impl Tool for ToolBuddyCreateIssue {
             &body,
         )
         .await?;
-        let result = crate::buddy::issues::create_confirmed_issue_with_provider(
+        let result = refact_runtime_api::buddy_issue_runtime::create_confirmed_issue_with_provider(
             app.clone(),
             &context,
             &title,

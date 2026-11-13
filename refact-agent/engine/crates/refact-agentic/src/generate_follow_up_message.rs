@@ -6,7 +6,7 @@ use refact_core::json_utils;
 
 pub const SUBAGENT_ID: &str = "follow_up";
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct FollowUpResponse {
     pub follow_ups: Vec<String>,
     pub topic_changed: bool,

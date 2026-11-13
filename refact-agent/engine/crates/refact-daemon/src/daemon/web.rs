@@ -1178,9 +1178,14 @@ mod tests {
 
     #[tokio::test]
     async fn daemon_asset_route_rejects_invalid_path() {
-        let response = handle_daemon_gui_asset(AxumPath("../secret".to_string()), HeaderMap::new())
-            .await
-            .into_response();
+        let state = test_state().await.state;
+        let response = handle_daemon_gui_asset(
+            AxumPath("../secret".to_string()),
+            State((state, 8488)),
+            HeaderMap::new(),
+        )
+        .await
+        .into_response();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 

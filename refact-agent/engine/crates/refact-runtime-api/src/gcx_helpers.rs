@@ -115,7 +115,7 @@ pub async fn reload_indexing_everywhere_for_gcx(
     }
 }
 
-pub async fn save_trajectory_snapshot_for_gcx(
+pub async fn save_trajectory_snapshot(
     gcx: &SharedGlobalContext,
     snapshot: TrajectorySnapshot,
 ) -> Result<(), String> {

@@ -481,6 +481,12 @@ impl ContextFactory for EngineContextFactory {
     fn caps_loader(&self) -> Arc<dyn CapsLoader> {
         Arc::new(EngineCapsLoader)
     }
+
+    fn integration_provider(
+        &self,
+    ) -> Arc<dyn refact_runtime_api::integrations_runtime::IntegrationProvider> {
+        Arc::new(crate::integrations::running_integrations::EngineIntegrationProvider)
+    }
 }
 
 /// Engine side of the `CapsLoader` seam: the provider/models.dev machinery behind

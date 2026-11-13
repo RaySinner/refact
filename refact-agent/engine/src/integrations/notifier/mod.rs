@@ -53,7 +53,7 @@ async fn notifier_by_integration_id_result(
             &mut error_log,
         )
         .await;
-    let records = crate::integrations::setting_up_integrations::read_integrations_d(
+    let records = refact_runtime_api::integrations_runtime::read_integrations_d(
         &config_dirs,
         &global_config_dir,
         &integrations_yaml_path,
@@ -62,6 +62,7 @@ async fn notifier_by_integration_id_result(
         &mut error_log,
         &["**/*".to_string()],
         false,
+        &crate::integrations::running_integrations::EngineIntegrationProvider,
     );
     for error in error_log {
         tracing::warn!("{error}");

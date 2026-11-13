@@ -1,32 +1,19 @@
-use std::fs;
-use std::path::PathBuf;
-use std::sync::Arc;
 use std::collections::HashMap;
-use regex::Regex;
+use std::fs;
+use std::sync::Arc;
 use serde::Serialize;
 use serde_json::{json, Value};
 use tokio::fs as async_fs;
 use crate::custom_error::YamlError;
 use crate::global_context::GlobalContext;
-use refact_files::path_utils::any_glob_matches_path;
 use crate::integrations::running_integrations::load_integrations;
+use crate::integrations::running_integrations::EngineIntegrationProvider;
 // use crate::tools::tools_description::Tool;
 // use crate::yaml_configs::create_configs::{integrations_enabled_cfg, read_yaml_into_value};
 
-#[derive(Serialize, Default, Debug, Clone)]
-pub struct IntegrationRecord {
-    pub project_path: String,
-    pub integr_name: String,
-    pub integr_config_path: String,
-    pub integr_config_exists: bool,
-    pub icon_path: String,
-    pub on_your_laptop: bool,
-    pub when_isolated: bool,
-    pub ask_user: Vec<String>,
-    pub deny: Vec<String>,
-    #[serde(skip_serializing)]
-    pub config_unparsed: serde_json::Value,
-}
+pub use refact_runtime_api::integrations_runtime::{
+    get_config_dirs, join_config_path, split_path_into_project_and_integration, IntegrationRecord,
+};
 
 #[derive(Serialize, Default)]
 pub struct IntegrationResult {
@@ -34,354 +21,13 @@ pub struct IntegrationResult {
     pub error_log: Vec<YamlError>,
 }
 
-fn get_array_of_str_or_empty(val: &serde_json::Value, path: &str) -> Vec<String> {
-    val.pointer(path)
-        .and_then(|val| {
-            val.as_array().map(|array| {
-                array
-                    .iter()
-                    .filter_map(|v| v.as_str().map(ToString::to_string))
-                    .collect::<Vec<String>>()
-            })
-        })
-        .unwrap_or_default()
-}
 
-fn parse_and_validate_yaml(path: &str, content: &String) -> Result<serde_json::Value, YamlError> {
-    let value_yaml = serde_yaml::from_str::<serde_yaml::Value>(&content)
-        .map_err(|e| YamlError::from((path, &e)))?;
-    let json_value = serde_json::to_value(value_yaml.clone()).unwrap();
-    Ok(json_value)
-}
-
-pub fn read_integrations_d(
-    config_dirs: &Vec<PathBuf>,
-    global_config_dir: &PathBuf,
-    integrations_yaml_path: &String,
-    vars_for_replacements: &HashMap<String, String>,
-    lst: &[&str],
-    error_log: &mut Vec<YamlError>,
-    include_paths_matching: &[String],
-    include_non_existent_records: bool, // NOTE: true for UI only
-) -> Vec<IntegrationRecord> {
-    let mut result = Vec::new();
-
-    let mut files_to_read = Vec::new();
-    let mut project_config_dirs = config_dirs
-        .iter()
-        .map(|dir| dir.to_string_lossy().to_string())
-        .collect::<Vec<String>>();
-    project_config_dirs.push("".to_string()); // global
-
-    // 1. Read and parse integrations.yaml (Optional, used for testing)
-    // This reads the file to be used by (2) and (3), it does not create the records yet.
-    // --integrations-yaml flag disables global config dir, except for integrations
-    // in `globally_allowed_integrations` list in this yaml file
-    let mut integrations_yaml_value = None;
-    let mut globally_allowed_integration_list = if integrations_yaml_path.is_empty() {
-        None // Means all global integrations are allowed
-    } else {
-        Some(Vec::new())
-    };
-    if !integrations_yaml_path.is_empty() {
-        integrations_yaml_value = match fs::read_to_string(integrations_yaml_path) {
-            Ok(content) => match serde_yaml::from_str::<serde_yaml::Value>(&content) {
-                Ok(value_yaml) => {
-                    globally_allowed_integration_list = Some(
-                        value_yaml
-                            .get("globally_allowed_integrations")
-                            .and_then(|v| v.as_sequence())
-                            .map(|seq| {
-                                seq.iter()
-                                    .filter_map(|v| v.as_str())
-                                    .map(String::from)
-                                    .collect::<Vec<String>>()
-                            })
-                            .unwrap_or_default(),
-                    );
-                    Some(value_yaml)
-                }
-                Err(e) => {
-                    tracing::warn!("failed to parse {}: {}", integrations_yaml_path, e);
-                    error_log.push(YamlError::from((integrations_yaml_path.as_str(), &e)));
-                    None
-                }
-            },
-            Err(e) => {
-                tracing::warn!("failed to read {}: {}", integrations_yaml_path, e);
-                error_log.push(YamlError {
-                    path: integrations_yaml_path.clone(),
-                    error_line: 0,
-                    error_msg: e.to_string(),
-                });
-                None
-            }
-        }
-    }
-
-    // 2. Read each of config_dirs
-    for project_config_dir in project_config_dirs {
-        // Read config_folder/integr_name.yaml and make a record, even if the file doesn't exist
-        let config_dir = if project_config_dir == "" {
-            global_config_dir.clone()
-        } else {
-            PathBuf::from(project_config_dir.clone())
-        };
-        for integr_name in lst.iter() {
-            let path_str = join_config_path(&config_dir, integr_name);
-            let path = PathBuf::from(path_str.clone());
-            if !include_non_existent_records && !path.exists() {
-                continue;
-            }
-            let (_integr_name, project_path) = match split_path_into_project_and_integration(&path)
-            {
-                Ok(x) => x,
-                Err(e) => {
-                    tracing::error!("error deriving project path: {}", e);
-                    continue;
-                }
-            };
-            files_to_read.push((path_str, integr_name.to_string(), project_path));
-        }
-        // Find special files that start with cmdline_* and service_*
-        if let Ok(entries) = fs::read_dir(config_dir.join("integrations.d")) {
-            let mut entries: Vec<_> = entries.filter_map(Result::ok).collect();
-            entries.sort_by_key(|entry| entry.file_name());
-            for entry in entries {
-                let file_name = entry.file_name();
-                let file_name_str = file_name.to_string_lossy();
-                if !file_name_str.ends_with(".yaml") {
-                    continue;
-                }
-                let file_name_str_no_yaml = file_name_str.trim_end_matches(".yaml").to_string();
-                let (_integr_name, project_path) =
-                    match split_path_into_project_and_integration(&entry.path()) {
-                        Ok(x) => x,
-                        Err(e) => {
-                            tracing::error!("error deriving project path: {}", e);
-                            continue;
-                        }
-                    };
-                if file_name_str.starts_with("cmdline_")
-                    || file_name_str.starts_with("service_")
-                    || file_name_str.starts_with("mcp_")
-                {
-                    files_to_read.push((
-                        entry.path().to_string_lossy().to_string(),
-                        file_name_str_no_yaml,
-                        project_path,
-                    ));
-                }
-            }
-        }
-    }
-
-    for (path_str, integr_name, project_path) in files_to_read {
-        // If --integrations-yaml is set, ignore the global config folder
-        // except for the list of integrations specified as `globally_allowed_integrations`.
-        if let Some(allowed_integr_list) = &globally_allowed_integration_list {
-            if project_path.is_empty() && !allowed_integr_list.contains(&integr_name) {
-                continue;
-            }
-        }
-
-        let path = PathBuf::from(&path_str);
-        if !any_glob_matches_path(include_paths_matching, &path) {
-            continue;
-        }
-
-        // let short_pp = if project_path.is_empty() { format!("global") } else { refact_core::nicer_logs::last_n_chars(&project_path, 15) };
-        let mut rec: IntegrationRecord = Default::default();
-        rec.project_path = project_path.clone();
-        rec.integr_name = integr_name.clone();
-        rec.icon_path = format!("/integration-icon/{integr_name}.png");
-        rec.integr_config_path = path_str.clone();
-        rec.integr_config_exists = path.exists();
-        if rec.integr_config_exists {
-            match fs::read_to_string(&path) {
-                Ok(file_content) => match parse_and_validate_yaml(&path_str, &file_content) {
-                    Ok(json_value) => {
-                        // tracing::info!("{} has {}", short_pp, integr_name);
-                        rec.config_unparsed = json_value;
-                    }
-                    Err(e) => {
-                        let location = if e.error_line > 0 {
-                            format!(" at line {}", e.error_line)
-                        } else {
-                            String::new()
-                        };
-                        tracing::warn!("failed to parse {}{}: {}", path_str, location, e.error_msg);
-                        error_log.push(e);
-                    }
-                },
-                Err(e) => {
-                    error_log.push(YamlError {
-                        path: path_str.to_string(),
-                        error_line: 0,
-                        error_msg: e.to_string(),
-                    });
-                    tracing::warn!("failed to read {}: {}", path_str, e.to_string());
-                }
-            }
-        } else {
-            // tracing::info!("{} no config file for {}", short_pp, integr_name);
-        }
-        result.push(rec);
-    }
-
-    // 3. Read single file integrations_yaml_path, sections in yaml become integrations
-    if let Some(integrations_yaml_value) = integrations_yaml_value {
-        let short_yaml = refact_core::nicer_logs::last_n_chars(integrations_yaml_path, 15);
-        match integrations_yaml_value.as_mapping() {
-            Some(mapping) => {
-                for (key, value) in mapping {
-                    if let Some(key_str) = key.as_str() {
-                        if key_str.starts_with("cmdline_") || key_str.starts_with("service_") {
-                            let mut rec: IntegrationRecord = Default::default();
-                            rec.integr_config_path = integrations_yaml_path.clone();
-                            rec.integr_name = key_str.to_string();
-                            rec.icon_path = format!("/integration-icon/{key_str}.png");
-                            rec.integr_config_exists = true;
-                            rec.config_unparsed = serde_json::to_value(value.clone()).unwrap();
-                            result.push(rec);
-                            tracing::info!("{} detected prefix `{}`", short_yaml, key_str);
-                        } else if lst.contains(&key_str) {
-                            let mut rec: IntegrationRecord = Default::default();
-                            rec.integr_config_path = integrations_yaml_path.clone();
-                            rec.integr_name = key_str.to_string();
-                            rec.icon_path = format!("/integration-icon/{key_str}.png");
-                            rec.integr_config_exists = true;
-                            rec.config_unparsed = serde_json::to_value(value.clone()).unwrap();
-                            result.push(rec);
-                            tracing::info!("{} has `{}`", short_yaml, key_str);
-                        } else {
-                            tracing::warn!("{} unrecognized section `{}`", short_yaml, key_str);
-                        }
-                    }
-                }
-            }
-            None => {
-                tracing::warn!("{} is not a mapping", short_yaml);
-            }
-        }
-    }
-
-    // 4. Replace vars in config_unparsed
-    for rec in &mut result {
-        if let serde_json::Value::Object(map) = &mut rec.config_unparsed {
-            for (_key, value) in map.iter_mut() {
-                if let Some(str_value) = value.as_str() {
-                    let replaced_value = vars_for_replacements
-                        .iter()
-                        .fold(str_value.to_string(), |acc, (var, replacement)| {
-                            acc.replace(&format!("${}", var), replacement)
-                        });
-                    *value = serde_json::Value::String(replaced_value);
-                }
-            }
-        }
-    }
-
-    // 5. Fill on_your_laptop/when_isolated in each record
-    for rec in &mut result {
-        if !rec.integr_config_exists {
-            continue;
-        }
-        if let Some(available) = rec
-            .config_unparsed
-            .get("available")
-            .and_then(|v| v.as_object())
-        {
-            rec.on_your_laptop = available
-                .get("on_your_laptop")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-            rec.when_isolated = available
-                .get("when_isolated")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-        } else {
-            // let short_pp = if rec.project_path.is_empty() { format!("global") } else { refact_core::nicer_logs::last_n_chars(&rec.project_path, 15) };
-            // tracing::info!("{} no 'available' mapping in `{}` will default to true", short_pp, rec.integr_name);
-            rec.on_your_laptop = true;
-            rec.when_isolated = true;
-        }
-    }
-
-    // 6. Fill confirmation in each record
-    for rec in &mut result {
-        if let Some(confirmation) = rec.config_unparsed.get("confirmation") {
-            rec.ask_user = get_array_of_str_or_empty(&confirmation, "/ask_user");
-            rec.deny = get_array_of_str_or_empty(&confirmation, "/deny");
-        } else {
-            let schema = match crate::integrations::integration_from_name(rec.integr_name.as_str())
-            {
-                Ok(i) => serde_json::to_value(
-                    serde_yaml::from_str::<serde_yaml::Value>(i.integr_schema())
-                        .expect("schema is invalid"),
-                )
-                .expect("schema is invalid"),
-                Err(err) => {
-                    tracing::warn!("failed to retrieve schema from {}: {err}", rec.integr_name);
-                    continue;
-                }
-            };
-            rec.ask_user = get_array_of_str_or_empty(&schema, "/confirmation/ask_user_default");
-            rec.deny = get_array_of_str_or_empty(&schema, "/confirmation/deny_default");
-        }
-    }
-
-    result
-}
 
 pub async fn get_vars_for_replacements(
     gcx: Arc<GlobalContext>,
     error_log: &mut Vec<YamlError>,
 ) -> HashMap<String, String> {
     refact_runtime_api::integration_variables::get_vars_for_replacements(gcx, error_log).await
-}
-
-pub fn join_config_path(config_dir: &PathBuf, integr_name: &str) -> String {
-    config_dir
-        .join("integrations.d")
-        .join(format!("{}.yaml", integr_name))
-        .to_string_lossy()
-        .into_owned()
-}
-
-pub async fn get_config_dirs(
-    gcx: Arc<GlobalContext>,
-    current_project_path: &Option<PathBuf>,
-) -> (Vec<PathBuf>, PathBuf) {
-    refact_runtime_api::integration_config_dirs::get_config_dirs(gcx, current_project_path).await
-}
-
-pub fn split_path_into_project_and_integration(
-    cfg_path: &PathBuf,
-) -> Result<(String, String), String> {
-    let path_str = cfg_path.to_string_lossy();
-    let re_per_project =
-        Regex::new(r"^(.*)[\\/]\.refact[\\/](integrations\.d)[\\/](.+)\.yaml$").unwrap();
-    let re_global =
-        Regex::new(r"^(.*)[\\/]\.config[\\/](refact[\\/](integrations\.d)[\\/](.+)\.yaml$)")
-            .unwrap();
-
-    if let Some(caps) = re_per_project.captures(&path_str) {
-        let project_path = caps
-            .get(1)
-            .map_or(String::new(), |m| m.as_str().to_string());
-        let integr_name = caps
-            .get(3)
-            .map_or(String::new(), |m| m.as_str().to_string());
-        Ok((integr_name, project_path))
-    } else if let Some(caps) = re_global.captures(&path_str) {
-        let integr_name = caps
-            .get(4)
-            .map_or(String::new(), |m| m.as_str().to_string());
-        Ok((integr_name, String::new()))
-    } else {
-        Err(format!("invalid path: {}", cfg_path.display()))
-    }
 }
 
 pub async fn integrations_all(
@@ -398,7 +44,7 @@ pub async fn integrations_all(
     let lst: Vec<&str> = crate::integrations::integrations_list(allow_experimental);
     let mut error_log: Vec<YamlError> = Vec::new();
     let vars_for_replacements = get_vars_for_replacements(gcx.clone(), &mut error_log).await;
-    let integrations = read_integrations_d(
+    let integrations = refact_runtime_api::integrations_runtime::read_integrations_d(
         &config_dirs,
         &global_config_dir,
         &integrations_yaml_path,
@@ -407,6 +53,7 @@ pub async fn integrations_all(
         &mut error_log,
         &["**/*".to_string()],
         include_non_existent_records,
+        &EngineIntegrationProvider,
     );
     IntegrationResult {
         integrations,

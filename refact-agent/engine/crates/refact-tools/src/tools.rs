@@ -6,6 +6,15 @@ pub mod planner_delivery;
 #[cfg(feature = "test-util")]
 pub mod settings_guard;
 pub mod task_tool_helpers;
+pub mod tool_agent_chat_summary;
+pub mod tool_agent_diff;
+pub mod tool_agent_interact;
+pub mod tool_agent_lifecycle;
+pub mod tool_agent_planner_qna;
+pub mod tool_agent_pulse;
+pub mod tool_agent_registry;
+pub mod tool_agent_steer;
+pub mod tool_ask_questions;
 pub mod tool_ast_definition;
 pub mod tool_card_comment;
 pub mod tool_cat;

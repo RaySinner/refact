@@ -217,9 +217,12 @@ struct ExtensionsMarketplaceSourcesIndex {
 }
 
 fn builtin_sources() -> Vec<ExtensionsMarketplaceSource> {
-    serde_json::from_str::<ExtensionsMarketplaceSourcesIndex>(include_str!(
-        "../yaml_configs/extensions_marketplace_sources.json"
-    ))
+    // The bundled JSON lives in the engine tree (`src/yaml_configs/`); resolve it through
+    // CARGO_MANIFEST_DIR so the path stays correct regardless of where this crate sits.
+    serde_json::from_str::<ExtensionsMarketplaceSourcesIndex>(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../src/yaml_configs/extensions_marketplace_sources.json"
+    )))
     .expect("bundled extensions_marketplace_sources.json must be valid JSON")
     .sources
 }

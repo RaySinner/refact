@@ -413,6 +413,7 @@ pub trait NotificationEventSender: Send + Sync {
 }
 
 pub mod scheduler;
+pub mod room_roster;
 pub mod customization_registry;
 pub mod customization_registry_gcx;
 pub mod memories;

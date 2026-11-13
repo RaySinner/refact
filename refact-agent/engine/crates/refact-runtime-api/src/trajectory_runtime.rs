@@ -19,7 +19,7 @@ pub async fn save_trajectory_snapshot(
     gcx: crate::global_context::SharedGlobalContext,
     snapshot: TrajectorySnapshot,
 ) -> Result<(), String> {
-    crate::gcx_helpers::save_trajectory_snapshot_for_gcx(&gcx, snapshot).await
+    crate::gcx_helpers::save_trajectory_snapshot(&gcx, snapshot).await
 }
 
 pub async fn set_trajectory_label(

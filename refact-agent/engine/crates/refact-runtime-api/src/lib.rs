@@ -50,7 +50,6 @@ pub mod at_commands_runtime;
 pub mod at_tree;
 pub mod ext_skills_context;
 pub mod ext_slash_expand;
-pub mod tool_agent;
 pub mod tool_trait;
 pub mod task_storage;
 pub mod task_comments;

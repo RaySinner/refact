@@ -9,6 +9,7 @@ pub mod review_scope;
 pub mod review_types;
 pub mod scope_utils;
 pub mod shell_gate;
+pub(crate) mod shell_gate_common;
 pub mod shell_gate_llm;
 pub mod tools_description;
 pub mod tools_list;

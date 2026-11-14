@@ -9,7 +9,7 @@ use refact_runtime_api::GlobalContextCtx;
 use crate::global_context::{try_load_caps_quickly_if_not_present, GlobalContext};
 use refact_core::json_utils::extract_json_object;
 use refact_chat_api::{SubchatConfig, ToolsPolicy, TraceParent};
-use crate::tools::shell_gate::ShellLlmValidation;
+use crate::tools::shell_gate_common::ShellLlmValidation;
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct LlmVerdict {

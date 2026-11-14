@@ -33,6 +33,13 @@ refact-perf = { path = "../refact-perf" }
 refact-git-intel = { path = "../refact-git-intel" }
 refact-codehealth = { path = "../refact-codehealth" }
 refact-codegraph = { path = "../refact-codegraph" }
+refact-codewiki = { path = "../refact-codewiki" }
+shell-words = "1.1.0"
+dirs = "5.0"
+refact-code-intel-api = { path = "../refact-code-intel-api" }
+refact-at-web = { path = "../refact-at-web" }
+refact-agentic = { path = "../refact-agentic" }
+petgraph = "0.6"
 
 anyhow = "1.0.100"
 async-trait = "0.1.73"

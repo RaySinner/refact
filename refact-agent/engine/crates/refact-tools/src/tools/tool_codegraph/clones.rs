@@ -1,26 +1,26 @@
 #[allow(unused_imports)]
 use super::*;
 
-pub(crate) struct CloneAnalysis {
-    pub(crate) generation: u64,
-    pub(crate) clones: Vec<refact_codehealth::duplication::CrossFileClonePair>,
-    pub(crate) duplication_pct: f64,
-    pub(crate) files: usize,
-    pub(crate) text_by_path: HashMap<String, (String, String)>,
-    pub(crate) tokens_by_path: HashMap<String, usize>,
-    pub(crate) duplicated_tokens_by_path: HashMap<String, usize>,
+pub struct CloneAnalysis {
+    pub generation: u64,
+    pub clones: Vec<refact_codehealth::duplication::CrossFileClonePair>,
+    pub duplication_pct: f64,
+    pub files: usize,
+    pub text_by_path: HashMap<String, (String, String)>,
+    pub tokens_by_path: HashMap<String, usize>,
+    pub duplicated_tokens_by_path: HashMap<String, usize>,
 }
 #[derive(Default)]
-struct CrossFileCloneCache {
-    analyses: HashMap<usize, (Weak<refact_codegraph::CodeGraphService>, Arc<CloneAnalysis>)>,
+pub struct CrossFileCloneCache {
+    pub analyses: HashMap<usize, (Weak<refact_codegraph::CodeGraphService>, Arc<CloneAnalysis>)>,
 }
 fn clone_analysis_cache() -> &'static AMutex<CrossFileCloneCache> {
     static CACHE: OnceLock<AMutex<CrossFileCloneCache>> = OnceLock::new();
     CACHE.get_or_init(|| AMutex::new(CrossFileCloneCache::default()))
 }
 
-pub(crate) async fn cached_cross_file_clones(
-    gcx: Arc<crate::global_context::GlobalContext>,
+pub async fn cached_cross_file_clones(
+    gcx: Arc<refact_runtime_api::global_context::GlobalContext>,
 ) -> Result<Arc<CloneAnalysis>, String> {
     let service = gcx
         .codegraph

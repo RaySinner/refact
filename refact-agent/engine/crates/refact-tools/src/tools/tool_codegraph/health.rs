@@ -2,92 +2,92 @@
 use super::*;
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub(crate) struct HealthFunctionSummary {
-    pub(crate) name: String,
-    pub(crate) line1: usize,
-    pub(crate) complexity: u32,
-    pub(crate) nesting: u32,
-    pub(crate) loc: u32,
-    pub(crate) maintainability: f64,
-    pub(crate) maintainability_index: f64,
+pub struct HealthFunctionSummary {
+    pub name: String,
+    pub line1: usize,
+    pub complexity: u32,
+    pub nesting: u32,
+    pub loc: u32,
+    pub maintainability: f64,
+    pub maintainability_index: f64,
 }
 #[derive(Debug, Clone)]
-pub(crate) struct HealthFileAnalysis {
-    pub(crate) path: String,
-    pub(crate) lang: String,
-    pub(crate) grade: char,
-    pub(crate) maintainability_index: f64,
-    pub(crate) max_complexity: u32,
-    pub(crate) avg_maintainability: f64,
-    pub(crate) function_count: usize,
-    pub(crate) duplication_pct: f64,
-    pub(crate) dry_violation: bool,
-    pub(crate) defect_score: f64,
-    pub(crate) maintainability_score: f64,
-    pub(crate) performance_score: f64,
-    pub(crate) biomarker_count: usize,
-    pub(crate) refactoring_count: usize,
-    pub(crate) functions: Vec<HealthFunctionSummary>,
-    pub(crate) findings: Vec<HealthFinding>,
-    pub(crate) health_impact: Vec<HealthImpactContributor>,
-    pub(crate) refactorings: Vec<refact_codehealth::refactoring::RefactoringSuggestion>,
-    pub(crate) cache_hit: bool,
+pub struct HealthFileAnalysis {
+    pub path: String,
+    pub lang: String,
+    pub grade: char,
+    pub maintainability_index: f64,
+    pub max_complexity: u32,
+    pub avg_maintainability: f64,
+    pub function_count: usize,
+    pub duplication_pct: f64,
+    pub dry_violation: bool,
+    pub defect_score: f64,
+    pub maintainability_score: f64,
+    pub performance_score: f64,
+    pub biomarker_count: usize,
+    pub refactoring_count: usize,
+    pub functions: Vec<HealthFunctionSummary>,
+    pub findings: Vec<HealthFinding>,
+    pub health_impact: Vec<HealthImpactContributor>,
+    pub refactorings: Vec<refact_codehealth::refactoring::RefactoringSuggestion>,
+    pub cache_hit: bool,
 }
 #[derive(Clone, Copy)]
-pub(crate) struct HealthAnalysisContext<'a> {
-    pub(crate) repo_root: Option<&'a Path>,
-    pub(crate) intel: Option<&'a refact_git_intel::GitIntel>,
-    pub(crate) graph: Option<&'a HealthGraphSnapshot>,
-    pub(crate) coverage: Option<&'a refact_codehealth::coverage::CoverageReport>,
-    pub(crate) trend_findings: &'a [refact_codehealth::biomarkers::Finding],
-    pub(crate) git_function_fact_paths: &'a HashSet<String>,
+pub struct HealthAnalysisContext<'a> {
+    pub repo_root: Option<&'a Path>,
+    pub intel: Option<&'a refact_git_intel::GitIntel>,
+    pub graph: Option<&'a HealthGraphSnapshot>,
+    pub coverage: Option<&'a refact_codehealth::coverage::CoverageReport>,
+    pub trend_findings: &'a [refact_codehealth::biomarkers::Finding],
+    pub git_function_fact_paths: &'a HashSet<String>,
 }
 #[derive(Debug, Clone)]
-struct HealthFileCore {
-    pub(super) path: String,
-    lang: String,
-    pub(super) functions: Vec<HealthFunctionSummary>,
-    max_complexity: u32,
-    avg_maintainability: f64,
-    pub(super) duplication_pct: f64,
-    dry_violation: bool,
-    pub(super) findings: Vec<HealthFinding>,
-    refactorings: Vec<refact_codehealth::refactoring::RefactoringSuggestion>,
+pub struct HealthFileCore {
+    pub path: String,
+    pub lang: String,
+    pub functions: Vec<HealthFunctionSummary>,
+    pub max_complexity: u32,
+    pub avg_maintainability: f64,
+    pub duplication_pct: f64,
+    pub dry_violation: bool,
+    pub findings: Vec<HealthFinding>,
+    pub refactorings: Vec<refact_codehealth::refactoring::RefactoringSuggestion>,
 }
 #[derive(Default)]
-struct HealthAnalysisCache {
-    pub(super) files: HashMap<HealthCacheKey, HealthCacheEntry>,
-    pub(super) lru: VecDeque<HealthCacheKey>,
+pub struct HealthAnalysisCache {
+    pub files: HashMap<HealthCacheKey, HealthCacheEntry>,
+    pub lru: VecDeque<HealthCacheKey>,
 }
 #[derive(Clone, Hash, PartialEq, Eq)]
-struct HealthCacheKey {
-    pub(super) path: String,
-    graph_service_identity: Option<usize>,
-    pub(super) graph_generation: Option<u64>,
-    graph_scope_signature: String,
+pub struct HealthCacheKey {
+    pub path: String,
+    pub graph_service_identity: Option<usize>,
+    pub graph_generation: Option<u64>,
+    pub graph_scope_signature: String,
 }
 #[derive(Clone)]
-struct HealthCacheEntry {
-    graph_service: Option<Weak<refact_codegraph::CodeGraphService>>,
-    graph_service_identity: Option<usize>,
-    pub(super) graph_generation: Option<u64>,
-    graph_scope_signature: String,
-    content_hash: String,
-    git_generation: Option<String>,
-    coverage_signature: Option<String>,
-    trend_signature: String,
-    core: HealthFileCore,
+pub struct HealthCacheEntry {
+    pub graph_service: Option<Weak<refact_codegraph::CodeGraphService>>,
+    pub graph_service_identity: Option<usize>,
+    pub graph_generation: Option<u64>,
+    pub graph_scope_signature: String,
+    pub content_hash: String,
+    pub git_generation: Option<String>,
+    pub coverage_signature: Option<String>,
+    pub trend_signature: String,
+    pub core: HealthFileCore,
 }
-pub(super) fn health_analysis_cache() -> &'static StdMutex<HealthAnalysisCache> {
+pub fn health_analysis_cache() -> &'static StdMutex<HealthAnalysisCache> {
     static CACHE: OnceLock<StdMutex<HealthAnalysisCache>> = OnceLock::new();
     CACHE.get_or_init(|| StdMutex::new(HealthAnalysisCache::default()))
 }
 
-pub(crate) fn git_churn_by_file(intel: &refact_git_intel::GitIntel) -> HashMap<String, u32> {
+pub fn git_churn_by_file(intel: &refact_git_intel::GitIntel) -> HashMap<String, u32> {
     intel.file_churn.clone()
 }
 
-pub(crate) fn top_git_function_fact_paths(
+pub fn top_git_function_fact_paths(
     intel: Option<&refact_git_intel::GitIntel>,
 ) -> HashSet<String> {
     intel
@@ -101,7 +101,7 @@ pub(crate) fn top_git_function_fact_paths(
         .unwrap_or_default()
 }
 
-pub(crate) async fn load_health_snapshots(
+pub async fn load_health_snapshots(
     service: &refact_codegraph::CodeGraphService,
 ) -> Vec<refact_codehealth::trends::HealthSnapshot> {
     service
@@ -113,7 +113,7 @@ pub(crate) async fn load_health_snapshots(
         .unwrap_or_default()
 }
 
-pub(crate) async fn persist_health_snapshots(
+pub async fn persist_health_snapshots(
     service: &refact_codegraph::CodeGraphService,
     snapshots: &[refact_codehealth::trends::HealthSnapshot],
 ) -> Result<(), String> {
@@ -122,7 +122,7 @@ pub(crate) async fn persist_health_snapshots(
     service.meta_set(HEALTH_SNAPSHOT_META_KEY, &value).await
 }
 
-pub(crate) fn build_health_snapshot(
+pub fn build_health_snapshot(
     files: &[HealthFileAnalysis],
 ) -> refact_codehealth::trends::HealthSnapshot {
     let per_file = files
@@ -141,14 +141,14 @@ pub(crate) fn build_health_snapshot(
     }
 }
 
-pub(crate) fn push_health_snapshot(
+pub fn push_health_snapshot(
     history: &mut Vec<refact_codehealth::trends::HealthSnapshot>,
     snapshot: refact_codehealth::trends::HealthSnapshot,
 ) {
     refact_codehealth::trends::push_snapshot(history, snapshot, HEALTH_SNAPSHOT_LIMIT);
 }
 
-pub(crate) fn analyze_health_file_shared(
+pub fn analyze_health_file_shared(
     path: String,
     text: String,
     ctx: &HealthAnalysisContext<'_>,
@@ -472,7 +472,7 @@ fn health_analysis_from_core(core: HealthFileCore, cache_hit: bool) -> HealthFil
     }
 }
 
-pub(super) fn health_dry_findings(
+pub fn health_dry_findings(
     path: &str,
     lang: &str,
     text: &str,
@@ -583,7 +583,7 @@ fn health_coverage_findings(
     )
 }
 
-pub(super) fn coverage_file_for_path(
+pub fn coverage_file_for_path(
     coverage: &refact_codehealth::coverage::CoverageReport,
     indexed_path: &str,
     coverage_path: Option<&Path>,
@@ -722,7 +722,7 @@ fn health_trend_path(detail: &str) -> Option<&str> {
     detail.split_once(':').map(|(path, _)| path.trim())
 }
 
-pub(crate) fn health_paths_refer_to_same_file(a: &str, b: &str, repo_root: Option<&Path>) -> bool {
+pub fn health_paths_refer_to_same_file(a: &str, b: &str, repo_root: Option<&Path>) -> bool {
     match repo_root {
         Some(repo_root) => {
             refact_git_intel::paths::paths_refer_to_same_file(a, b, &repo_root.to_string_lossy())
@@ -734,7 +734,7 @@ pub(crate) fn health_paths_refer_to_same_file(a: &str, b: &str, repo_root: Optio
     }
 }
 
-pub(crate) fn health_stored_path_for_request(
+pub fn health_stored_path_for_request(
     paths: impl IntoIterator<Item = String>,
     requested: &str,
     repo_root: Option<&Path>,
@@ -769,8 +769,8 @@ fn health_severity_rank(severity: refact_codehealth::biomarkers::Severity) -> u8
     }
 }
 
-#[cfg(test)]
-pub(super) fn reset_health_cache_for_tests() {
+#[cfg(any(test, feature = "test-util"))]
+pub fn reset_health_cache_for_tests() {
     *health_analysis_cache().lock().unwrap() = HealthAnalysisCache::default();
 }
 
@@ -778,15 +778,15 @@ pub struct ToolCodeHealth {
     pub config_path: String,
 }
 #[derive(Serialize)]
-struct HealthToolResponse {
+pub struct HealthToolResponse {
     #[serde(flatten)]
-    response: HealthResponse,
-    file_category: String,
+    pub response: HealthResponse,
+    pub file_category: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    file_role: Option<String>,
-    call_graph: Vec<CallGraphEdge>,
-    coverage: Option<CoverageSummary>,
-    warm_cache: bool,
+    pub file_role: Option<String>,
+    pub call_graph: Vec<CallGraphEdge>,
+    pub coverage: Option<CoverageSummary>,
+    pub warm_cache: bool,
 }
 #[async_trait]
 impl Tool for ToolCodeHealth {

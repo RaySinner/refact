@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 
-pub(crate) fn execution_flow_truncation_notice(
+pub fn execution_flow_truncation_notice(
     flows: &[refact_codegraph::communities::ExecFlow],
 ) -> Option<String> {
     let truncated = flows.iter().filter(|flow| flow.truncated).count();
@@ -25,18 +25,18 @@ pub struct ToolCodegraphOverview {
     pub config_path: String,
 }
 #[derive(Serialize)]
-struct OverviewToolResponse {
+pub struct OverviewToolResponse {
     #[serde(flatten)]
-    pub(super) overview: OverviewResponse,
-    partial: bool,
-    warning: Option<String>,
-    communities: Vec<OverviewCommunity>,
-    execution_flows: Vec<OverviewExecutionFlow>,
+    pub overview: OverviewResponse,
+    pub partial: bool,
+    pub warning: Option<String>,
+    pub communities: Vec<OverviewCommunity>,
+    pub execution_flows: Vec<OverviewExecutionFlow>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    execution_flow_truncation: Option<String>,
-    pub(super) dead_code: Vec<OverviewDeadSymbol>,
-    entry_points: Vec<String>,
-    api_contract_files: Vec<String>,
+    pub execution_flow_truncation: Option<String>,
+    pub dead_code: Vec<OverviewDeadSymbol>,
+    pub entry_points: Vec<String>,
+    pub api_contract_files: Vec<String>,
 }
 #[async_trait]
 impl Tool for ToolCodegraphOverview {

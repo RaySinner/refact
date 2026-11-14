@@ -4,52 +4,52 @@ use super::*;
 pub struct ToolCodeWhy {
     pub config_path: String,
 }
-#[cfg(test)]
-pub(super) static CODE_WHY_FILE_READ_ATTEMPTS: std::sync::atomic::AtomicUsize =
+#[cfg(any(test, feature = "test-util"))]
+pub static CODE_WHY_FILE_READ_ATTEMPTS: std::sync::atomic::AtomicUsize =
     std::sync::atomic::AtomicUsize::new(0);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct CodeWhySource {
-    pub(super) kind: String,
-    pub(super) text: String,
-    pub(super) reference: String,
-    pub(super) priority: u8,
-    pub(super) order: usize,
+pub struct CodeWhySource {
+    pub kind: String,
+    pub text: String,
+    pub reference: String,
+    pub priority: u8,
+    pub order: usize,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct CodeWhyFileCandidate {
-    pub(super) relative: PathBuf,
-    pub(super) kind: &'static str,
-    pub(super) reference: String,
-    pub(super) priority: u8,
-    pub(super) order: usize,
+pub struct CodeWhyFileCandidate {
+    pub relative: PathBuf,
+    pub kind: &'static str,
+    pub reference: String,
+    pub priority: u8,
+    pub order: usize,
 }
 #[derive(Debug, Clone)]
-struct CodeWhySourceMeta {
-    pub(super) priority: u8,
-    pub(super) order: usize,
-    pub(super) reference: String,
-    file: Option<CodeWhyFileCandidate>,
+pub struct CodeWhySourceMeta {
+    pub priority: u8,
+    pub order: usize,
+    pub reference: String,
+    pub file: Option<CodeWhyFileCandidate>,
 }
 #[derive(Debug, Clone)]
-struct CodeWhyCandidate {
-    decision: refact_codewiki::Decision,
-    source_rank: u8,
-    pub(super) source_ref: String,
+pub struct CodeWhyCandidate {
+    pub decision: refact_codewiki::Decision,
+    pub source_rank: u8,
+    pub source_ref: String,
 }
 #[derive(Debug, Clone)]
-struct CodeWhyDecision {
-    decision: refact_codewiki::Decision,
-    source_rank: u8,
-    pub(super) source_ref: String,
+pub struct CodeWhyDecision {
+    pub decision: refact_codewiki::Decision,
+    pub source_rank: u8,
+    pub source_ref: String,
 }
 #[derive(Debug, Clone)]
-struct ScoredCodeWhyDecision {
-    item: CodeWhyDecision,
-    pub(super) confidence: f64,
-    verification: refact_codewiki::Verification,
+pub struct ScoredCodeWhyDecision {
+    pub item: CodeWhyDecision,
+    pub confidence: f64,
+    pub verification: refact_codewiki::Verification,
 }
-pub(super) fn code_why_priority(kind: &str) -> u8 {
+pub fn code_why_priority(kind: &str) -> u8 {
     match kind {
         "adr" => 0,
         "changelog" => 1,
@@ -64,7 +64,7 @@ fn short_oid(oid: Option<&String>, fallback: usize) -> String {
         .unwrap_or_else(|| format!("commit:{fallback}"))
 }
 
-pub(super) fn path_ref(path: &Path) -> String {
+pub fn path_ref(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
 }
 
@@ -86,7 +86,7 @@ fn commit_prose_text(message: &str) -> String {
         .join(" ")
 }
 
-pub(super) fn git_code_why_sources(intel: &refact_git_intel::GitIntel) -> Vec<CodeWhySource> {
+pub fn git_code_why_sources(intel: &refact_git_intel::GitIntel) -> Vec<CodeWhySource> {
     let mut sources = Vec::new();
     let mut order = 0usize;
     let significant: HashSet<usize> = intel
@@ -141,7 +141,7 @@ fn glob_relative_files(repo_path: &Path, pattern: &str) -> BTreeSet<PathBuf> {
     out
 }
 
-pub(super) fn code_why_file_kinds(repo_path: &Path) -> Vec<(PathBuf, &'static str)> {
+pub fn code_why_file_kinds(repo_path: &Path) -> Vec<(PathBuf, &'static str)> {
     let mut by_path: BTreeMap<PathBuf, &'static str> = BTreeMap::new();
     for pattern in [
         "docs/**/adr/**/*.md",
@@ -161,7 +161,7 @@ pub(super) fn code_why_file_kinds(repo_path: &Path) -> Vec<(PathBuf, &'static st
     by_path.into_iter().collect()
 }
 
-pub(super) fn code_why_file_candidates(repo_path: &Path) -> Vec<CodeWhyFileCandidate> {
+pub fn code_why_file_candidates(repo_path: &Path) -> Vec<CodeWhyFileCandidate> {
     code_why_file_kinds(repo_path)
         .into_iter()
         .enumerate()
@@ -184,7 +184,7 @@ fn sort_code_why_source_meta(items: &mut [CodeWhySourceMeta]) {
     });
 }
 
-pub(super) fn select_code_why_file_candidates(
+pub fn select_code_why_file_candidates(
     candidates: Vec<CodeWhyFileCandidate>,
     git_sources: &[CodeWhySource],
     limit: usize,
@@ -213,14 +213,14 @@ pub(super) fn select_code_why_file_candidates(
 }
 
 async fn file_code_why_sources(
-    gcx: Arc<crate::global_context::GlobalContext>,
+    gcx: Arc<refact_runtime_api::global_context::GlobalContext>,
     repo_path: &Path,
     candidates: Vec<CodeWhyFileCandidate>,
 ) -> Vec<CodeWhySource> {
     let mut sources = Vec::new();
     for candidate in candidates {
         let absolute = repo_path.join(&candidate.relative);
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-util"))]
         CODE_WHY_FILE_READ_ATTEMPTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let Ok(text) =
             refact_runtime_api::files_in_workspace::get_file_text_from_memory_or_disk(gcx.clone(), &absolute)
@@ -242,8 +242,8 @@ async fn file_code_why_sources(
     sources
 }
 
-#[cfg(test)]
-pub(super) fn code_why_selected_candidate_count_before_reads(
+#[cfg(any(test, feature = "test-util"))]
+pub fn code_why_selected_candidate_count_before_reads(
     repo_path: &Path,
     git_sources: &[CodeWhySource],
     limit: usize,
@@ -260,14 +260,14 @@ fn sort_code_why_sources(sources: &mut [CodeWhySource]) {
     });
 }
 
-pub(super) fn cap_code_why_sources(mut sources: Vec<CodeWhySource>) -> Vec<CodeWhySource> {
+pub fn cap_code_why_sources(mut sources: Vec<CodeWhySource>) -> Vec<CodeWhySource> {
     sort_code_why_sources(&mut sources);
     sources.truncate(CODE_WHY_SOURCE_LIMIT);
     sources
 }
 
-pub(super) async fn assemble_code_why_sources(
-    gcx: Arc<crate::global_context::GlobalContext>,
+pub async fn assemble_code_why_sources(
+    gcx: Arc<refact_runtime_api::global_context::GlobalContext>,
     repo_path: &Path,
     intel: &refact_git_intel::GitIntel,
 ) -> Vec<CodeWhySource> {
@@ -492,14 +492,14 @@ fn relation_label(relation: refact_codewiki::Relation) -> &'static str {
 }
 
 #[derive(Serialize)]
-struct CodeWhyResponse {
-    pub(super) query: String,
-    source_count: usize,
-    pub(super) commits_analyzed: u32,
-    pub(super) decisions: Vec<CodeWhyDecisionEntry>,
-    related: Vec<CodeWhyRelation>,
+pub struct CodeWhyResponse {
+    pub query: String,
+    pub source_count: usize,
+    pub commits_analyzed: u32,
+    pub decisions: Vec<CodeWhyDecisionEntry>,
+    pub related: Vec<CodeWhyRelation>,
 }
-pub(super) fn code_why_response(
+pub fn code_why_response(
     query: &str,
     sources: &[CodeWhySource],
     commits_analyzed: u32,
@@ -567,14 +567,14 @@ pub(super) fn code_why_response(
     })
 }
 
-pub(super) fn code_why_tokens(text: &str) -> BTreeSet<String> {
+pub fn code_why_tokens(text: &str) -> BTreeSet<String> {
     text.split(|character: char| !(character.is_alphanumeric() || character == '_'))
         .filter(|token| !token.is_empty())
         .map(|token| token.to_lowercase())
         .collect()
 }
 
-pub(super) fn code_why_statement_matches(statement: &str, query_tokens: &BTreeSet<String>) -> bool {
+pub fn code_why_statement_matches(statement: &str, query_tokens: &BTreeSet<String>) -> bool {
     !query_tokens.is_empty() && query_tokens.is_subset(&code_why_tokens(statement))
 }
 

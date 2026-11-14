@@ -1,17 +1,17 @@
 #[allow(unused_imports)]
 use super::*;
 
-pub(crate) struct GitRiskFileAssembly {
-    pub(crate) meta: refact_codehealth::git_biomarkers::GitMeta,
-    pub(crate) findings: Vec<refact_codehealth::biomarkers::Finding>,
-    pub(crate) temporal_score: f64,
-    pub(crate) churn_risk: f64,
+pub struct GitRiskFileAssembly {
+    pub meta: refact_codehealth::git_biomarkers::GitMeta,
+    pub findings: Vec<refact_codehealth::biomarkers::Finding>,
+    pub temporal_score: f64,
+    pub churn_risk: f64,
 }
-pub(crate) struct GitRiskAssembly {
-    pub(crate) files: Vec<GitRiskFileAssembly>,
-    pub(crate) recent_commit_risks: Vec<RecentCommitRiskSummary>,
+pub struct GitRiskAssembly {
+    pub files: Vec<GitRiskFileAssembly>,
+    pub recent_commit_risks: Vec<RecentCommitRiskSummary>,
 }
-pub(crate) fn build_git_meta(
+pub fn build_git_meta(
     intel: &refact_git_intel::GitIntel,
     repo_root: &Path,
     path_repo_relative: &str,
@@ -84,7 +84,7 @@ pub(crate) fn build_git_meta(
     }
 }
 
-pub(crate) async fn build_git_risk_assembly(
+pub async fn build_git_risk_assembly(
     intel: &refact_git_intel::GitIntel,
     git_root: &Path,
     analytics_scope_root: Option<&Path>,
@@ -232,7 +232,7 @@ fn nloc_for_file(repo_root: &Path, path_repo_relative: &str) -> u32 {
         .unwrap_or(0)
 }
 
-pub(super) fn function_ranges_from_disk(
+pub fn function_ranges_from_disk(
     repo_root: &Path,
     path_repo_relative: &str,
 ) -> Vec<(String, usize, usize)> {
@@ -323,13 +323,13 @@ fn function_mod_p80(
     counts.get(index).copied()
 }
 
-pub(super) struct HealthImportIndex {
-    pub(super) indexed_root: String,
-    pub(super) distinct_paths: Vec<String>,
-    pub(super) import_dsts_by_src_path: HashMap<String, BTreeSet<String>>,
+pub struct HealthImportIndex {
+    pub indexed_root: String,
+    pub distinct_paths: Vec<String>,
+    pub import_dsts_by_src_path: HashMap<String, BTreeSet<String>>,
 }
 impl HealthImportIndex {
-    pub(super) fn build(cached: &refact_codegraph::CachedGraphAnalytics, repo_root: &Path) -> Self {
+    pub fn build(cached: &refact_codegraph::CachedGraphAnalytics, repo_root: &Path) -> Self {
         let repo_root = repo_root.to_string_lossy();
         let mut path_by_id = HashMap::new();
         let mut distinct_paths = BTreeSet::new();
@@ -365,7 +365,7 @@ impl HealthImportIndex {
         }
     }
 
-    pub(super) fn import_edges(&self, path_repo_relative: &str) -> HashSet<String> {
+    pub fn import_edges(&self, path_repo_relative: &str) -> HashSet<String> {
         let mut out = HashSet::new();
         for path in &self.distinct_paths {
             if refact_git_intel::paths::paths_refer_to_same_file(
@@ -388,7 +388,7 @@ fn path_matches_git_filter(path: &str, filter: &str) -> bool {
         || normalized.rsplit('/').next() == Some(filter)
 }
 
-pub(super) fn recent_commit_risk_summaries(
+pub fn recent_commit_risk_summaries(
     intel: &refact_git_intel::GitIntel,
 ) -> Vec<RecentCommitRiskSummary> {
     intel
@@ -430,7 +430,7 @@ fn commit_risk_factor_names(inputs: &refact_git_intel::change_risk::RiskInputs) 
         .collect()
 }
 
-pub(crate) fn git_risk_response(
+pub fn git_risk_response(
     intel: &refact_git_intel::GitIntel,
     assembly: &GitRiskAssembly,
 ) -> GitRiskResponse {

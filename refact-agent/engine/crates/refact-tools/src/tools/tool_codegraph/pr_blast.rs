@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 
-pub(crate) fn pr_blast_index_state(
+pub fn pr_blast_index_state(
     readiness: &refact_codegraph::IndexReadiness,
 ) -> PrBlastIndexState {
     PrBlastIndexState {
@@ -11,7 +11,7 @@ pub(crate) fn pr_blast_index_state(
     }
 }
 
-pub(crate) fn pr_blast_partial_warning(state: &PrBlastIndexState) -> Option<String> {
+pub fn pr_blast_partial_warning(state: &PrBlastIndexState) -> Option<String> {
     (!state.cross_file_ready).then(|| {
         format!(
             "⚠ index still building ({} files queued, {} cross-file edges) — impact may be under-reported",
@@ -20,7 +20,7 @@ pub(crate) fn pr_blast_partial_warning(state: &PrBlastIndexState) -> Option<Stri
     })
 }
 
-pub(crate) fn pr_blast_suggested_reviewers(
+pub fn pr_blast_suggested_reviewers(
     report: &refact_codegraph::pr_blast::BlastReport,
     repo_root: Option<&Path>,
     intel: Option<&refact_git_intel::GitIntel>,
@@ -69,7 +69,7 @@ pub(crate) fn pr_blast_suggested_reviewers(
     reviewers
 }
 
-pub(crate) fn pr_blast_is_bot_author(author: &str) -> bool {
+pub fn pr_blast_is_bot_author(author: &str) -> bool {
     let author = author.to_ascii_lowercase();
     PR_BLAST_BOT_AUTHOR_PATTERNS
         .iter()
@@ -80,10 +80,10 @@ pub struct ToolPrBlast {
     pub config_path: String,
 }
 #[derive(Serialize)]
-struct PrBlastToolResponse {
+pub struct PrBlastToolResponse {
     #[serde(flatten)]
-    response: PrBlastResponse,
-    max_depth: usize,
+    pub response: PrBlastResponse,
+    pub max_depth: usize,
 }
 #[async_trait]
 impl Tool for ToolPrBlast {

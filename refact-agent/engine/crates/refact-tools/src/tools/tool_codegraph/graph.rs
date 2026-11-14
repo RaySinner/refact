@@ -2,29 +2,29 @@
 use super::*;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-struct FunctionKey {
-    pub(super) name: String,
-    pub(super) line1: usize,
-    line2: usize,
+pub struct FunctionKey {
+    pub name: String,
+    pub line1: usize,
+    pub line2: usize,
 }
 #[derive(Default)]
-struct HealthGraphContext {
-    pub(super) fan_in: HashMap<FunctionKey, usize>,
-    pub(super) hot_path: HashSet<FunctionKey>,
+pub struct HealthGraphContext {
+    pub fan_in: HashMap<FunctionKey, usize>,
+    pub hot_path: HashSet<FunctionKey>,
 }
-pub(crate) struct HealthGraphSnapshot {
-    pub(super) cached: Arc<refact_codegraph::CachedGraphAnalytics>,
-    pub(super) service: Arc<refact_codegraph::CodeGraphService>,
-    pub(super) service_identity: usize,
-    pub(super) graph_generation: u64,
-    pub(super) scope_signature: String,
-    pub(super) node_indices_by_basename: HashMap<String, Vec<usize>>,
-    pub(super) call_sources_by_dst: HashMap<i64, Vec<i64>>,
-    pub(super) hot_node_ids: BTreeSet<i64>,
-    pub(super) import_index: Option<HealthImportIndex>,
+pub struct HealthGraphSnapshot {
+    pub cached: Arc<refact_codegraph::CachedGraphAnalytics>,
+    pub service: Arc<refact_codegraph::CodeGraphService>,
+    pub service_identity: usize,
+    pub graph_generation: u64,
+    pub scope_signature: String,
+    pub node_indices_by_basename: HashMap<String, Vec<usize>>,
+    pub call_sources_by_dst: HashMap<i64, Vec<i64>>,
+    pub hot_node_ids: BTreeSet<i64>,
+    pub import_index: Option<HealthImportIndex>,
 }
 impl HealthGraphSnapshot {
-    pub(crate) fn build(
+    pub fn build(
         cached: Arc<refact_codegraph::CachedGraphAnalytics>,
         service: Arc<refact_codegraph::CodeGraphService>,
         indexed_root: Option<&Path>,
@@ -68,7 +68,7 @@ impl HealthGraphSnapshot {
         }
     }
 
-    pub(super) fn file_nodes(&self, file_path: &str) -> Vec<&refact_codegraph::analytics::GraphNode> {
+    pub fn file_nodes(&self, file_path: &str) -> Vec<&refact_codegraph::analytics::GraphNode> {
         self.node_indices_by_basename
             .get(&graph_path_basename(file_path))
             .map(|indices| {
@@ -81,7 +81,7 @@ impl HealthGraphSnapshot {
             .unwrap_or_default()
     }
 }
-pub(super) fn graph_path_basename(path: &str) -> String {
+pub fn graph_path_basename(path: &str) -> String {
     let normalized = path.replace('\\', "/");
     normalized
         .rsplit('/')
@@ -90,14 +90,14 @@ pub(super) fn graph_path_basename(path: &str) -> String {
         .to_string()
 }
 
-pub(crate) async fn health_graph_snapshot(
+pub async fn health_graph_snapshot(
     service: Option<&Arc<refact_codegraph::CodeGraphService>>,
     indexed_root: Option<&Path>,
 ) -> Option<HealthGraphSnapshot> {
     health_graph_snapshot_with_scope(service, indexed_root, None).await
 }
 
-pub(super) async fn health_graph_snapshot_with_scope(
+pub async fn health_graph_snapshot_with_scope(
     service: Option<&Arc<refact_codegraph::CodeGraphService>>,
     indexed_root: Option<&Path>,
     analytics_scope_root: Option<&Path>,
@@ -145,7 +145,7 @@ fn health_graph_scope_signature(
     }
 }
 
-pub(super) fn health_call_graph(
+pub fn health_call_graph(
     snapshot: &HealthGraphSnapshot,
     file_path: &str,
     indexed_root: Option<&Path>,
@@ -194,7 +194,7 @@ pub(super) fn health_call_graph(
         .collect()
 }
 
-pub(crate) fn enrich_health_findings(
+pub fn enrich_health_findings(
     snapshot: Option<&HealthGraphSnapshot>,
     file_path: &str,
     functions: &[refact_codehealth::FunctionHealth],
@@ -235,7 +235,7 @@ fn enrich_health_finding(
     HealthFinding { finding, hot_path }
 }
 
-pub(super) fn health_graph_context(
+pub fn health_graph_context(
     snapshot: &HealthGraphSnapshot,
     file_path: &str,
     functions: &[refact_codehealth::FunctionHealth],
@@ -325,7 +325,7 @@ fn containing_function(
         .max_by_key(|function| function.line1)
 }
 
-pub(super) fn function_key(function: &refact_codehealth::FunctionHealth) -> FunctionKey {
+pub fn function_key(function: &refact_codehealth::FunctionHealth) -> FunctionKey {
     FunctionKey {
         name: function.name.clone(),
         line1: function.line1,
@@ -333,7 +333,7 @@ pub(super) fn function_key(function: &refact_codehealth::FunctionHealth) -> Func
     }
 }
 
-pub(super) fn function_line2(function: &refact_codehealth::FunctionHealth) -> usize {
+pub fn function_line2(function: &refact_codehealth::FunctionHealth) -> usize {
     function
         .line1
         .saturating_add(function.loc as usize)
@@ -341,7 +341,7 @@ pub(super) fn function_line2(function: &refact_codehealth::FunctionHealth) -> us
         .max(function.line1)
 }
 
-pub(super) fn downgrade_health_severity(
+pub fn downgrade_health_severity(
     severity: refact_codehealth::biomarkers::Severity,
 ) -> refact_codehealth::biomarkers::Severity {
     match severity {

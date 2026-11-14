@@ -33,13 +33,13 @@ pub struct DeadCodeReport {
     pub warning: Option<String>,
 }
 #[derive(Debug, Clone, Default, PartialEq)]
-pub(crate) struct DeadCodeGitFacts {
-    pub(crate) last_touched_days: Option<u64>,
-    pub(crate) file_churn: u32,
-    pub(crate) recent_churn_days: Option<u64>,
+pub struct DeadCodeGitFacts {
+    pub last_touched_days: Option<u64>,
+    pub file_churn: u32,
+    pub recent_churn_days: Option<u64>,
 }
-pub(crate) async fn dead_code_report(
-    gcx: Arc<crate::global_context::GlobalContext>,
+pub async fn dead_code_report(
+    gcx: Arc<refact_runtime_api::global_context::GlobalContext>,
     limit: usize,
     path_filter: Option<&str>,
     min_confidence: f64,
@@ -58,7 +58,7 @@ pub(crate) async fn dead_code_report(
 }
 
 async fn dead_code_report_with_roots(
-    gcx: Arc<crate::global_context::GlobalContext>,
+    gcx: Arc<refact_runtime_api::global_context::GlobalContext>,
     limit: usize,
     path_filter: Option<&str>,
     min_confidence: f64,
@@ -145,7 +145,7 @@ async fn dead_code_report_with_roots(
     })
 }
 
-pub(crate) fn dead_code_index_state(
+pub fn dead_code_index_state(
     readiness: &refact_codegraph::IndexReadiness,
 ) -> DeadCodeIndexState {
     DeadCodeIndexState {
@@ -157,7 +157,7 @@ pub(crate) fn dead_code_index_state(
     }
 }
 
-pub(crate) fn dead_code_partial_warning(state: &DeadCodeIndexState) -> Option<String> {
+pub fn dead_code_partial_warning(state: &DeadCodeIndexState) -> Option<String> {
     (!state.cross_file_ready).then(|| {
         format!(
             "⚠ index still building ({} files queued, {} dirty paths, {} pending refs) — dead-code may be over-reported",
@@ -166,7 +166,7 @@ pub(crate) fn dead_code_partial_warning(state: &DeadCodeIndexState) -> Option<St
     })
 }
 
-pub(crate) fn enrich_dead_symbols_with_facts(
+pub fn enrich_dead_symbols_with_facts(
     dead: Vec<refact_codegraph::dead_code::DeadSymbol>,
     facts_by_node: &HashMap<i64, DeadCodeGitFacts>,
 ) -> Vec<DeadCodeEntry> {
@@ -321,11 +321,11 @@ pub struct ToolDeadCode {
     pub config_path: String,
 }
 #[derive(Serialize)]
-struct DeadCodeToolResponse {
+pub struct DeadCodeToolResponse {
     #[serde(flatten)]
-    report: DeadCodeReport,
-    shown: usize,
-    total_candidates: usize,
+    pub report: DeadCodeReport,
+    pub shown: usize,
+    pub total_candidates: usize,
 }
 #[async_trait]
 impl Tool for ToolDeadCode {

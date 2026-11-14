@@ -2,53 +2,53 @@
 use super::*;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct CodeMapNode {
-    pub(super) id: i64,
-    pub(super) kind: String,
-    pub(super) name: String,
-    pub(super) path: String,
-    pub(super) visibility: Option<String>,
+pub struct CodeMapNode {
+    pub id: i64,
+    pub kind: String,
+    pub name: String,
+    pub path: String,
+    pub visibility: Option<String>,
 }
 #[derive(Debug, Clone, PartialEq)]
-struct CodeMapFile {
-    pub(super) parsed: refact_codewiki::ParsedFile,
-    pub(super) text: String,
-    pub(super) is_hotspot: bool,
-    kg_bonus: f64,
+pub struct CodeMapFile {
+    pub parsed: refact_codewiki::ParsedFile,
+    pub text: String,
+    pub is_hotspot: bool,
+    pub kg_bonus: f64,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct CodeMapLink {
-    pub(super) target_path: String,
-    pub(super) labels: Vec<String>,
-    count: usize,
+pub struct CodeMapLink {
+    pub target_path: String,
+    pub labels: Vec<String>,
+    pub count: usize,
 }
 #[derive(Debug, Clone, PartialEq)]
-struct CodeMapRenderedPage {
-    page: refact_codewiki::AllocatedPage,
-    pub(super) content: String,
+pub struct CodeMapRenderedPage {
+    pub page: refact_codewiki::AllocatedPage,
+    pub content: String,
 }
 #[derive(Serialize)]
-pub(super) struct CodeMapResponse {
-    pub(super) files_count: usize,
-    pub(super) page_count: usize,
-    pub(super) link_count: usize,
-    pub(super) query: Option<String>,
-    pub(super) index_state: Option<PrBlastIndexState>,
-    pub(super) partial: bool,
-    pub(super) warning: Option<String>,
-    pub(super) top_files: Vec<CodeMapFileScore>,
-    pub(super) backlink_hubs: Vec<CodeMapBacklinkHub>,
-    pub(super) pages: Vec<CodeMapPage>,
-    pub(super) markdown: Option<String>,
+pub struct CodeMapResponse {
+    pub files_count: usize,
+    pub page_count: usize,
+    pub link_count: usize,
+    pub query: Option<String>,
+    pub index_state: Option<PrBlastIndexState>,
+    pub partial: bool,
+    pub warning: Option<String>,
+    pub top_files: Vec<CodeMapFileScore>,
+    pub backlink_hubs: Vec<CodeMapBacklinkHub>,
+    pub pages: Vec<CodeMapPage>,
+    pub markdown: Option<String>,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum CodeMapFormat {
+pub enum CodeMapFormat {
     Markdown,
     ClaudeMd,
 }
 
 impl CodeMapFormat {
-    pub(super) fn parse(value: Option<&Value>) -> Result<Self, String> {
+    pub fn parse(value: Option<&Value>) -> Result<Self, String> {
         match value {
             None | Some(Value::Null) => Ok(Self::Markdown),
             Some(Value::String(value)) if value == "markdown" => Ok(Self::Markdown),
@@ -63,10 +63,10 @@ impl CodeMapFormat {
     }
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct CodeMapArgs {
-    pub(super) query: Option<String>,
-    pub(super) format: CodeMapFormat,
-    pub(super) budget_tokens: usize,
+pub struct CodeMapArgs {
+    pub query: Option<String>,
+    pub format: CodeMapFormat,
+    pub budget_tokens: usize,
 }
 fn code_map_args(args: &HashMap<String, Value>) -> Result<CodeMapArgs, String> {
     Ok(CodeMapArgs {
@@ -91,7 +91,7 @@ fn code_map_node_visibility(data: Option<&str>) -> Option<String> {
     (!visibility.is_empty()).then(|| visibility.to_string())
 }
 
-pub(super) fn code_map_nodes_from_records(
+pub fn code_map_nodes_from_records(
     records: Vec<(i64, String, String, String, Option<String>)>,
 ) -> Vec<CodeMapNode> {
     let mut nodes = records
@@ -114,7 +114,7 @@ pub(super) fn code_map_nodes_from_records(
     nodes
 }
 
-pub(super) fn code_map_symbols_by_path(
+pub fn code_map_symbols_by_path(
     nodes: &[CodeMapNode],
 ) -> HashMap<String, Vec<refact_codewiki::SymbolInfo>> {
     let mut symbols = HashMap::<String, Vec<refact_codewiki::SymbolInfo>>::new();
@@ -290,7 +290,7 @@ fn scc_path_groups(
     out
 }
 
-pub(super) fn build_code_map_files(
+pub fn build_code_map_files(
     files_text: &[(String, String)],
     nodes: &[CodeMapNode],
     centrality: &refact_codegraph::analytics::FileCentrality,
@@ -324,7 +324,7 @@ pub(super) fn build_code_map_files(
     out
 }
 
-pub(super) fn code_map_selection_input(
+pub fn code_map_selection_input(
     files: Vec<CodeMapFile>,
     nodes: &[CodeMapNode],
     edges: &[refact_codegraph::analytics::GraphEdge],
@@ -675,7 +675,7 @@ fn render_code_map_claude_md(
     out
 }
 
-pub(super) fn assemble_code_map_response(
+pub fn assemble_code_map_response(
     files_text: Vec<(String, String)>,
     node_records: Vec<(i64, String, String, String, Option<String>)>,
     edges: Vec<refact_codegraph::analytics::GraphEdge>,

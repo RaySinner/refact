@@ -12,6 +12,8 @@ refact-caps-core = { path = "../refact-caps-core" }
 refact-core = { path = "../refact-core" }
 refact-ext = { path = "../refact-ext" }
 refact-tasks = { path = "../refact-tasks" }
+refact-worktrees = { path = "../refact-worktrees" }
+git2 = "0.20.2"
 humantime = "2.1"
 chrono = { version = "0.4.31", features = ["serde"] }
 hex = "0.4.3"
@@ -28,4 +30,5 @@ tracing.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
-tempfile = "3.8.1"
+tempfile = { workspace = true }
+filetime = "0.2.25"

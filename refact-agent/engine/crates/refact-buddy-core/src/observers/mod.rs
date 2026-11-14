@@ -1,8 +1,11 @@
 pub mod chat_pattern;
 pub mod diagnostic_cluster;
+pub mod git_pressure;
+pub mod memory_garden;
 pub mod provider_health;
 pub mod task_health;
 pub mod trajectory_clutter;
+pub mod worktree_hygiene;
 
 use chrono::{DateTime, Utc};
 

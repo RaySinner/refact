@@ -1,13 +1,12 @@
-use chrono::{DateTime, Utc};
-use serde_json::json;
-
 use crate::buddy::settings::BuddySettings;
-use crate::buddy::types::{BuddyFact, BuddyFactKind};
+use crate::buddy::types::BuddyFact;
 use crate::app_state::AppState;
 
 use super::{BuddyObserver, ObserverContext};
 
 pub struct WorktreeHygieneObserver;
+
+pub use refact_buddy_core::observers::worktree_hygiene::*;
 
 #[async_trait::async_trait]
 impl BuddyObserver for WorktreeHygieneObserver {
@@ -38,27 +37,4 @@ impl BuddyObserver for WorktreeHygieneObserver {
         };
         detect_worktree_hygiene_facts(inventory, ctx.now)
     }
-}
-
-pub fn detect_worktree_hygiene_facts(
-    inventory: crate::worktrees::types::WorktreeInventory,
-    now: DateTime<Utc>,
-) -> Vec<BuddyFact> {
-    if inventory.summary.total == 0 {
-        return Vec::new();
-    }
-    let candidate_ids = inventory.cleanup_candidates.clone();
-    vec![BuddyFact {
-        kind: BuddyFactKind::WorktreeHygiene,
-        key: format!("worktree_hygiene:{}", inventory.project_hash),
-        source: "worktree_hygiene",
-        payload: json!({
-            "project_hash": inventory.project_hash,
-            "summary": inventory.summary,
-            "cleanup_candidates": candidate_ids,
-            "worktrees": inventory.worktrees,
-        }),
-        seen_at: now,
-        confidence: 0.95,
-    }]
 }

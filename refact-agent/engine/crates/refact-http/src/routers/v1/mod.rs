@@ -17,6 +17,7 @@ pub mod git_read;
 pub mod graceful_shutdown;
 pub mod gui_help_handlers;
 pub mod knowledge_graph;
+pub mod mcp_config_sharing;
 pub mod mcp_interactions;
 pub mod mcp_marketplace_sources;
 pub mod performance;

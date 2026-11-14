@@ -53,6 +53,9 @@ pub mod ext_slash_expand;
 pub mod tool_trait;
 pub mod task_storage;
 pub mod task_agent_monitor;
+pub mod session_runtime;
+pub mod trajectory_prefix;
+pub mod commit_message_runtime;
 pub mod task_comments;
 pub mod providers_oauth_runtime;
 pub mod buddy_actor_runtime;
@@ -157,7 +160,26 @@ pub trait BuddyEventSink: Send + Sync {
         workflow_summary: &str,
         status: &str,
     ) -> Option<(String, Option<String>)>;
+
+    /// Seam over the engine buddy workflow wrapper. The engine implementation
+    /// forwards to `buddy::workflows::buddy_wrap_workflow` (which builds the
+    /// activity summary from the prefix and the workflow output); the default
+    /// runs the work without buddy bookkeeping.
+    async fn run_workflow(
+        &self,
+        _workflow_id: &str,
+        _icon: &str,
+        _xp: u64,
+        _summary_prefix: &str,
+        _summary_max_chars: usize,
+        work: Box<dyn FnOnce() -> WorkflowFuture + Send + 'static>,
+    ) -> Result<String, String> {
+        work().await
+    }
 }
+
+pub type WorkflowFuture =
+    std::pin::Pin<Box<dyn std::future::Future<Output = Result<String, String>> + Send>>;
 
 #[derive(Clone)]
 pub struct ToolConfirmationCheck {

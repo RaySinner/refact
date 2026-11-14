@@ -868,8 +868,8 @@ async fn merge_registered_task_worktree(
                 .as_ref()
                 .map(|diff| diff.patch.clone())
                 .unwrap_or_default();
-            match crate::agentic::generate_commit_message::generate_commit_message_by_diff(
-                gcx.clone(),
+            match refact_runtime_api::commit_message_runtime::generate_commit_message_by_diff(
+                gcx.chat_ctx(gcx.clone()),
                 &diff_text,
                 &Some(card.title.clone()),
                 None,
@@ -1363,8 +1363,8 @@ Then call `merge_agent` again."#,
         .await
         .unwrap_or_default();
         let commit_msg =
-            match crate::agentic::generate_commit_message::generate_commit_message_by_diff(
-                gcx.clone(),
+            match refact_runtime_api::commit_message_runtime::generate_commit_message_by_diff(
+                gcx.chat_ctx(gcx.clone()),
                 &diff,
                 &Some(card.title.clone()),
                 None,

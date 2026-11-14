@@ -6,6 +6,7 @@ use serde_json::Value;
 use tokio::sync::Mutex as AMutex;
 
 use refact_runtime_api::AtCommandsContext;
+use refact_runtime_api::GlobalContextCtx;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use crate::global_context::GlobalContext;
 use crate::tools::tools_description::{
@@ -364,8 +365,8 @@ impl Tool for ToolWorktreeMerge {
                     .await?;
                 match service.diff_worktree(&worktree_id).await {
                     Ok(diff) if !diff.files.is_empty() => {
-                        match crate::agentic::generate_commit_message::generate_commit_message_by_diff(
-                            gcx.clone(),
+                        match refact_runtime_api::commit_message_runtime::generate_commit_message_by_diff(
+                            gcx.chat_ctx(gcx.clone()),
                             &diff.patch,
                             &target_branch,
                             Some(&parent_chat_id),

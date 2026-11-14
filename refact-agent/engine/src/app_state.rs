@@ -11,7 +11,7 @@ use refact_chat_api::ChatMessage;
 use refact_runtime_api::{
     ActivitySink, BuddyEventSink, BuddyServicesHandle, SubchatLauncherHandle,
     ToolConfirmationCheck, ToolExecutionResult, ToolPolicyInfo, ToolCatalogSnapshot, ToolRegistry,
-    ToolRegistryIndex, TrajectoryStoreHandle, TurnToolPool,
+    ToolRegistryIndex, TrajectoryStoreHandle, TurnToolPool, WorkflowFuture,
 };
 
 pub const TOOL_CATALOG_SNAPSHOTS_ENV: &str = refact_runtime_api::TOOL_CATALOG_SNAPSHOTS_ENV;
@@ -538,6 +538,23 @@ impl SubchatLauncher for EngineSubchatLauncher {
         trace_parent: crate::subchat::TraceParent,
     ) -> Result<SubchatResult, String> {
         crate::subchat::run_subchat_once(self.gcx.clone(), subagent_id, messages, trace_parent).await
+    }
+
+    async fn run_subchat_once_with_abort(
+        &self,
+        subagent_id: &str,
+        messages: Vec<ChatMessage>,
+        abort_flag: Option<Arc<AtomicBool>>,
+        trace_parent: crate::subchat::TraceParent,
+    ) -> Result<SubchatResult, String> {
+        crate::subchat::run_subchat_once_with_abort(
+            self.gcx.clone(),
+            subagent_id,
+            messages,
+            abort_flag,
+            trace_parent,
+        )
+        .await
     }
 
     async fn resolve_subchat_params(
@@ -2486,6 +2503,37 @@ impl BuddyEventSink for AppBuddyEventSink {
         if let Some(svc) = lock.as_mut() {
             svc.maybe_add_suggestion(suggestion);
         }
+    }
+
+    async fn run_workflow(
+        &self,
+        workflow_id: &str,
+        icon: &str,
+        xp: u64,
+        summary_prefix: &str,
+        summary_max_chars: usize,
+        work: Box<dyn FnOnce() -> WorkflowFuture + Send + 'static>,
+    ) -> Result<String, String> {
+        let app = app_state_from_gcx(self.gcx.clone()).await;
+        let summary_prefix = summary_prefix.to_string();
+        crate::buddy::workflows::buddy_wrap_workflow(
+            app,
+            workflow_id,
+            icon,
+            xp,
+            move |msg: &String| {
+                let short: String = msg
+                    .lines()
+                    .next()
+                    .unwrap_or("")
+                    .chars()
+                    .take(summary_max_chars)
+                    .collect();
+                format!("{}: {}", summary_prefix, short)
+            },
+            move || async move { work().await },
+        )
+        .await
     }
 
     async fn render_runtime_event_fast(

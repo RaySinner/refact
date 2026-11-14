@@ -71,6 +71,18 @@ pub trait SubchatLauncher: Send + Sync {
         trace_parent: TraceParent,
     ) -> Result<SubchatResult, String>;
 
+    /// Abort-aware variant. The default drops the abort flag and forwards to
+    /// `run_subchat_once`; the engine implementation honours it.
+    async fn run_subchat_once_with_abort(
+        &self,
+        subagent_id: &str,
+        messages: Vec<ChatMessage>,
+        _abort_flag: Option<Arc<std::sync::atomic::AtomicBool>>,
+        trace_parent: TraceParent,
+    ) -> Result<SubchatResult, String> {
+        self.run_subchat_once(subagent_id, messages, trace_parent).await
+    }
+
     async fn resolve_subchat_params(
         &self,
         tool_name: &str,

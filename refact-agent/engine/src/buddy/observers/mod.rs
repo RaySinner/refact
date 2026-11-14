@@ -1,4 +1,5 @@
 use std::sync::Arc;
+
 pub mod chat_pattern;
 pub mod customization_drift;
 pub mod diagnostic_cluster;
@@ -15,18 +16,7 @@ use crate::buddy::settings::BuddySettings;
 use crate::buddy::types::BuddyFact;
 use crate::app_state::AppState;
 
-pub use refact_buddy_core::observers::{Ephemeral, ObserverContext};
-
-#[async_trait::async_trait]
-pub trait BuddyObserver: Send + Sync {
-    fn id(&self) -> &'static str;
-    fn cadence_seconds(&self) -> u64;
-    fn emission_refresh_ttl_seconds(&self) -> u64 {
-        0
-    }
-    fn requires_setting(&self, settings: &BuddySettings) -> bool;
-    async fn observe(&self, gcx: AppState, ctx: &ObserverContext) -> Vec<BuddyFact>;
-}
+pub use refact_runtime_api::buddy_observers::{BuddyObserver, Ephemeral, ObserverContext};
 
 pub fn build_observer_registry() -> Vec<Arc<dyn BuddyObserver>> {
     vec![

@@ -1,8 +1,10 @@
+pub mod background_agents;
 pub mod browser_settings;
 pub mod buddy_drafts;
 pub mod buddy_frontend_error;
 pub mod buddy_pulse;
 pub mod chat_modes;
+pub mod code_intel;
 pub mod code_lens;
 pub mod commands_marketplace;
 pub mod customization;
@@ -10,6 +12,7 @@ pub mod customization_editor;
 pub mod exec;
 pub mod ext_management;
 pub mod ext_marketplace_sources;
+pub mod file_edit_tools;
 pub mod git_read;
 pub mod graceful_shutdown;
 pub mod gui_help_handlers;

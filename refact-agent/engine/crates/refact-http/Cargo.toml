@@ -28,20 +28,26 @@ url = "2.4.1"
 uuid = { workspace = true }
 which = "7.0.2"
 
+refact-agents-core = { path = "../refact-agents-core" }
 refact-browser = { path = "../refact-browser" }
 refact-buddy-core = { path = "../refact-buddy-core" }
+refact-chat-api = { path = "../refact-chat-api" }
 refact-chat-history = { path = "../refact-chat-history" }
+refact-code-intel-api = { path = "../refact-code-intel-api" }
 refact-codegraph = { path = "../refact-codegraph" }
+refact-codehealth = { path = "../refact-codehealth" }
 refact-core = { path = "../refact-core" }
 refact-exec = { path = "../refact-exec" }
 refact-ext = { path = "../refact-ext" }
 refact-files = { path = "../refact-files" }
 refact-git = { path = "../refact-git" }
+refact-git-intel = { path = "../refact-git-intel" }
 refact-integrations = { path = "../refact-integrations" }
 refact-perf = { path = "../refact-perf" }
 refact-runtime-api = { path = "../refact-runtime-api" }
 refact-scheduler-core = { path = "../refact-scheduler-core" }
 refact-stats = { path = "../refact-stats" }
+refact-tools = { path = "../refact-tools" }
 refact-vecdb = { path = "../refact-vecdb" }
 refact-yaml-configs = { path = "../refact-yaml-configs" }
 

@@ -4405,6 +4405,7 @@ dependencies = [
  "git2",
  "home",
  "hyper 0.14.32",
+ "libc",
  "refact-agents-core",
  "refact-browser",
  "refact-buddy-core",
@@ -4437,6 +4438,7 @@ dependencies = [
  "tracing",
  "url",
  "uuid",
+ "walkdir",
  "which 7.0.3",
 ]
 

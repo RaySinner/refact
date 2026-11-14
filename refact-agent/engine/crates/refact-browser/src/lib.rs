@@ -2022,7 +2022,7 @@ mod tests {
 
     #[test]
     fn production_pointer_path_uses_actionability_cdp_mouse() {
-        let source = include_str!("../../../src/integrations/browser_controller.rs");
+        let source = include_str!("../../refact-http/src/integrations/browser_controller.rs");
         let routing = source
             .split_once("fn step_locator_action_with_timeout(")
             .unwrap()
@@ -2712,7 +2712,7 @@ mod tests {
             "interception teardown must not be gated on the unroute removal count"
         );
 
-        let controller = include_str!("../../../src/integrations/browser_controller.rs");
+        let controller = include_str!("../../refact-http/src/integrations/browser_controller.rs");
         assert!(
             controller.contains("rt.route_interception_stale()"),
             "the step loop must reconcile interception after times-expiry"
@@ -2738,7 +2738,7 @@ mod tests {
 
     #[test]
     fn differentiator_15_device_presets_keep_dimensions_dpr_and_mobile_flags() {
-        let source = include_str!("../../../src/integrations/browser_controller.rs");
+        let source = include_str!("../../refact-http/src/integrations/browser_controller.rs");
         let context = include_str!("context_state.rs");
 
         for alias in ["mobile", "tablet", "desktop"] {

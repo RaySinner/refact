@@ -26,7 +26,9 @@ tokio = { workspace = true, features = ["fs", "io-util", "macros", "rt", "sync",
 tracing = { workspace = true }
 url = "2.4.1"
 uuid = { workspace = true }
+walkdir = "2.3"
 which = "7.0.2"
+libc.workspace = true
 
 refact-agents-core = { path = "../refact-agents-core" }
 refact-browser = { path = "../refact-browser" }

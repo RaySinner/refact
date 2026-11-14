@@ -350,6 +350,7 @@ pub struct ChatCtx {
     pub project_registry_cache: Arc<StdRwLock<RegistryCacheManager>>,
     pub trajectory_vectorization_queue: Arc<AMutex<refact_chat_api::TrajectoryVectorizationQueue>>,
     pub subchat: Arc<dyn SubchatLauncher>,
+    pub spawn: Arc<dyn crate::spawn::BackgroundAgentSpawner>,
     pub project_tree: Arc<dyn ProjectTreeProvider>,
     pub hooks: Arc<dyn HookRunner>,
     pub mode_config: Arc<dyn ModeConfigProvider>,

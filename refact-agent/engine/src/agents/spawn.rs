@@ -1,6 +1,4 @@
 use std::path::{Path, PathBuf};
-#[cfg(test)]
-use std::pin::Pin;
 use std::process::Command;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -29,41 +27,7 @@ use crate::worktrees::types::{
 const MAX_DIFF_SUMMARY_PATHSPECS: usize = 100;
 
 #[cfg(test)]
-type TestRunner = Arc<
-    dyn Fn(
-            Arc<GlobalContext>,
-            Vec<ChatMessage>,
-            SubchatConfig,
-        )
-            -> Pin<Box<dyn std::future::Future<Output = Result<SubchatResult, String>> + Send>>
-        + Send
-        + Sync,
->;
-
-#[cfg(test)]
-static TEST_RUNNER: std::sync::OnceLock<std::sync::Mutex<Option<TestRunner>>> =
-    std::sync::OnceLock::new();
-
-#[cfg(test)]
-pub struct TestRunnerGuard;
-
-#[cfg(test)]
-impl Drop for TestRunnerGuard {
-    fn drop(&mut self) {
-        if let Some(runner) = TEST_RUNNER.get() {
-            *runner.lock().unwrap() = None;
-        }
-    }
-}
-
-#[cfg(test)]
-pub fn install_test_runner(runner: TestRunner) -> TestRunnerGuard {
-    *TEST_RUNNER
-        .get_or_init(|| std::sync::Mutex::new(None))
-        .lock()
-        .unwrap() = Some(runner);
-    TestRunnerGuard
-}
+pub use refact_runtime_api::spawn::{current_test_runner, install_test_runner, TestRunnerGuard};
 
 #[derive(Clone)]
 struct SpawnedWorktree {
@@ -518,11 +482,7 @@ async fn run_background_subchat(
 ) -> Result<SubchatResult, String> {
     #[cfg(test)]
     {
-        let runner = TEST_RUNNER
-            .get_or_init(|| std::sync::Mutex::new(None))
-            .lock()
-            .unwrap()
-            .clone();
+        let runner = current_test_runner();
         if let Some(runner) = runner {
             if config.stateful {
                 if let Some(chat_id) = config.chat_id.as_deref() {

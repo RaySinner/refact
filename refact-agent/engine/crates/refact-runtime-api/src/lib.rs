@@ -15,6 +15,7 @@ use refact_tool_api::{build_registry_from_names, ToolDesc};
 
 pub mod command_line;
 pub mod command_policy;
+pub mod spawn;
 pub mod codegraph_highlev;
 pub mod codegraph_status;
 pub mod config_files_bootstrap;
@@ -106,6 +107,9 @@ pub use services::{
 };
 
 pub use app_state::AppState;
+pub use spawn::{spawn_background_agent, BackgroundAgentSpawner};
+#[cfg(any(test, feature = "test-util"))]
+pub use spawn::{current_test_runner, install_test_runner, TestRunner, TestRunnerGuard};
 pub use at_command_executor::AtCommandExecutor;
 pub use at_commands_ctx::{
     AtCommand, AtCommandMember, AtCommandsContext, AtParam, MAX_SUBCHAT_DEPTH,

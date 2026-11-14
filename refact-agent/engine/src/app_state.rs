@@ -365,6 +365,7 @@ impl ContextFactory for EngineContextFactory {
             project_registry_cache: gcx.project_registry_cache.clone(),
             trajectory_vectorization_queue: gcx.trajectory_vectorization_queue.clone(),
             subchat: Arc::new(EngineSubchatLauncher::new(gcx.clone())),
+            spawn: Arc::new(EngineBackgroundAgentSpawner),
             project_tree: Arc::new(EngineProjectTreeProvider::new(gcx.clone())),
             hooks: Arc::new(EngineHookRunner::new(gcx.clone())),
             mode_config: Arc::new(EngineModeConfigProvider::new(gcx.clone())),
@@ -719,6 +720,21 @@ impl SubchatLauncher for EngineSubchatLauncher {
 impl SubchatLauncherHandle for EngineSubchatLauncher {
     fn as_any(&self) -> &dyn std::any::Any {
         self
+    }
+}
+
+/// Engine side of the `BackgroundAgentSpawner` seam: the orchestration keeps using the
+/// engine `subchat` machinery, and lower crates reach it through `ChatCtx::spawn`.
+pub struct EngineBackgroundAgentSpawner;
+
+#[async_trait]
+impl refact_runtime_api::spawn::BackgroundAgentSpawner for EngineBackgroundAgentSpawner {
+    async fn spawn_background_agent(
+        &self,
+        app: AppState,
+        request: refact_agents_core::spawn::SpawnRequest,
+    ) -> Result<refact_agents_core::spawn::SpawnHandle, String> {
+        crate::agents::spawn::spawn_background_agent(app, request).await
     }
 }
 

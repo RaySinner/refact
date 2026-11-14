@@ -6,10 +6,8 @@ use refact_core::chat_types::PushMode;
 use serde_json::{Map, Value, json};
 use tokio::sync::Mutex as AMutex;
 
-use crate::agents::spawn::{
-
-    NotifyParent, SpawnGoal, SpawnRequest, SpawnWorktreeMode, spawn_background_agent,
-};
+use refact_agents_core::spawn::{NotifyParent, SpawnGoal, SpawnRequest, SpawnWorktreeMode};
+use refact_runtime_api::spawn::spawn_background_agent;
 use refact_runtime_api::GlobalContextCtx;
 use refact_agents_core::types::BgAgentKind;
 use refact_runtime_api::{AtCommandsContext, MAX_SUBCHAT_DEPTH};
@@ -994,7 +992,7 @@ mod tests {
             .unwrap();
         let captured = Arc::new(std::sync::Mutex::new(None));
         let captured_runner = captured.clone();
-        let _runner = crate::agents::spawn::install_test_runner(Arc::new(
+        let _runner = refact_runtime_api::spawn::install_test_runner(Arc::new(
             move |_gcx, mut messages, config| {
                 *captured_runner.lock().unwrap() = Some((
                     config.tools,
@@ -1073,7 +1071,7 @@ mod tests {
         let captured = Arc::new(std::sync::Mutex::new(None));
         let captured_runner = captured.clone();
         let _runner =
-            crate::agents::spawn::install_test_runner(Arc::new(move |_gcx, messages, config| {
+            refact_runtime_api::spawn::install_test_runner(Arc::new(move |_gcx, messages, config| {
                 *captured_runner.lock().unwrap() = Some(config.tools);
                 Box::pin(async move {
                     Ok(SubchatResult {

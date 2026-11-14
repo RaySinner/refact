@@ -36,6 +36,7 @@ use refact_postprocessing::pp_command_output::{
     output_mini_postprocessing, parse_output_filter_args, OutputFilter,
 };
 use refact_privacy::check_file_privacy;
+use refact_privacy::model_context::ShellReadDecision;
 use refact_runtime_api::privacy::load_privacy_if_needed_for_policy;
 use refact_core::privacy_types::FilePrivacyLevel;
 use crate::tools::file_edit::auxiliary::{active_execution_scope, scoped_path_warnings};
@@ -476,8 +477,8 @@ async fn apply_shell_privacy(
     )
     .await?
     {
-        crate::privacy::records::ShellReadDecision::Pass => Ok(()),
-        crate::privacy::records::ShellReadDecision::Ask => Ok(()),
+        ShellReadDecision::Pass => Ok(()),
+        ShellReadDecision::Ask => Ok(()),
     }
 }
 

@@ -37,6 +37,7 @@ use refact_postprocessing::pp_command_output::{
 };
 use refact_runtime_api::ChatCtx;
 use refact_privacy::check_file_privacy;
+use refact_privacy::model_context::ShellReadDecision;
 use refact_runtime_api::privacy::load_privacy_if_needed_for_policy;
 use refact_core::privacy_types::FilePrivacyLevel;
 use crate::tools::ctx::ToolCtx;
@@ -1230,8 +1231,8 @@ async fn apply_process_privacy(
     )
     .await?
     {
-        crate::privacy::records::ShellReadDecision::Pass => Ok(()),
-        crate::privacy::records::ShellReadDecision::Ask => Ok(()),
+        ShellReadDecision::Pass => Ok(()),
+        ShellReadDecision::Ask => Ok(()),
     }
 }
 

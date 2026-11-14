@@ -136,33 +136,6 @@ pub fn get_app_searchable_id(workspace_folders: &[PathBuf]) -> String {
     format!("{}-{}", machine_guid, folders)
 }
 
-pub async fn look_for_piggyback_fields(
-    gcx: Arc<GlobalContext>,
-    anything_from_server: &serde_json::Value,
-) {
-    let caps_state = gcx.caps_state.clone();
-    let mut caps_state = caps_state.write().await;
-    if let Some(dict) = anything_from_server.as_object() {
-        let new_caps_version = dict
-            .get("caps_version")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        if new_caps_version > 0 {
-            if let Some(caps) = caps_state.caps.clone() {
-                if caps.caps_version < new_caps_version {
-                    info!(
-                        "detected biggyback caps version {} is newer than the current version {}",
-                        new_caps_version, caps.caps_version
-                    );
-                    caps_state.caps = None;
-                    caps_state.last_attempted_ts = 0;
-                    gcx.tool_catalog_generations.advance_capabilities();
-                }
-            }
-        }
-    }
-}
-
 pub async fn block_until_signal(
     ask_shutdown_receiver: std::sync::mpsc::Receiver<String>,
     shutdown_flag: Arc<AtomicBool>,

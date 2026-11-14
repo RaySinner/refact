@@ -40,6 +40,11 @@ refact-browser = { path = "../refact-browser" }
 refact-yaml-configs = { path = "../refact-yaml-configs" }
 refact-worktrees = { path = "../refact-worktrees" }
 refact-at-web = { path = "../refact-at-web" }
+refact-llm = { path = "../refact-llm" }
+hyper = { version = "0.14", features = ["server", "stream"] }
+async-stream = "0.3.5"
+eventsource-stream = "0.2"
+notify = { version = "8.0.0", features = ["serde"] }
 itertools = "0.14.0"
 refact-scope-utils = { path = "../refact-scope-utils" }
 base64 = "0.22.1"

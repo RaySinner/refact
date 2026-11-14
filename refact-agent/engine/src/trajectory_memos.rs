@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Duration, Utc};
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 use tokio::fs;
 use tracing::{info, warn};
 use walkdir::WalkDir;
@@ -21,10 +20,15 @@ use crate::global_context::GlobalContext;
 use crate::memories::extract_file_paths;
 use crate::subchat::{run_subchat_once, TraceParent};
 use crate::yaml_configs::customization_registry::get_subagent_config;
+use refact_chat_history::trajectory_memos::{
+    candidate_hash, deterministic_candidate_id, is_buddy_system_trajectory, mark_trajectory_skipped,
+    memo_confidence, memo_kind, normalize_memo_type, normalized_memo_title,
+    parse_extraction_response, trajectory_message_range, trajectory_project_root,
+    trajectory_title_is_generated, write_trajectory_json, ExtractionResult,
+    ABANDONED_THRESHOLD_HOURS, TRAJECTORIES_FOLDER,
+};
 
-const ABANDONED_THRESHOLD_HOURS: i64 = 2;
 const CHECK_INTERVAL_SECS: u64 = 300;
-const TRAJECTORIES_FOLDER: &str = ".refact/trajectories";
 const SUBAGENT_ID: &str = "memo_extraction";
 const MAX_TRAJECTORY_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_MEMO_CONTENT_CHARS: usize = 4_000;
@@ -254,55 +258,6 @@ async fn persist_extraction_result(
     write_trajectory_json(path, trajectory).await
 }
 
-async fn write_trajectory_json(path: &Path, trajectory: &Value) -> Result<(), String> {
-    let tmp_path = path.with_extension("json.tmp");
-    let json = serde_json::to_string_pretty(trajectory).map_err(|e| e.to_string())?;
-    fs::write(&tmp_path, &json)
-        .await
-        .map_err(|e| e.to_string())?;
-    fs::rename(&tmp_path, path).await.map_err(|e| e.to_string())
-}
-
-async fn mark_trajectory_skipped(
-    path: &Path,
-    trajectory: &mut Value,
-    reason: &str,
-) -> Result<(), String> {
-    let traj_obj = trajectory.as_object_mut().ok_or("Invalid trajectory")?;
-    traj_obj.insert("memo_extracted".to_string(), Value::Bool(true));
-    traj_obj.insert(
-        "memo_extraction_skip_reason".to_string(),
-        Value::String(reason.to_string()),
-    );
-    write_trajectory_json(path, trajectory).await
-}
-
-fn is_buddy_system_trajectory(trajectory: &Value) -> bool {
-    trajectory
-        .get("buddy_meta")
-        .and_then(|meta| {
-            let is_buddy = meta
-                .get("is_buddy_chat")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-            let kind = meta
-                .get("buddy_chat_kind")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default();
-            (is_buddy && kind == "system").then_some(())
-        })
-        .is_some()
-}
-
-fn trajectory_title_is_generated(trajectory: &Value) -> bool {
-    trajectory
-        .get("extra")
-        .and_then(|e| e.get("isTitleGenerated"))
-        .or_else(|| trajectory.get("isTitleGenerated"))
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false)
-}
-
 fn build_chat_messages(messages: &[Value]) -> Vec<ChatMessage> {
     let msgs: Vec<ChatMessage> = messages
         .iter()
@@ -340,21 +295,6 @@ fn build_chat_messages(messages: &[Value]) -> Vec<ChatMessage> {
             vec![]
         }
     }
-}
-
-struct ExtractedMemo {
-    memo_type: String,
-    content: String,
-}
-
-struct TrajectoryMeta {
-    overview: String,
-    title: String,
-}
-
-struct ExtractionResult {
-    meta: Option<TrajectoryMeta>,
-    memos: Vec<ExtractedMemo>,
 }
 
 async fn extract_memos_and_meta(
@@ -410,45 +350,7 @@ async fn extract_memos_and_meta(
         })
         .unwrap_or_default();
 
-    let mut meta: Option<TrajectoryMeta> = None;
-    let mut memos: Vec<ExtractedMemo> = Vec::new();
-
-    for line in response_text.lines() {
-        let line = line.trim();
-        if !line.starts_with('{') {
-            continue;
-        }
-
-        let parsed: Value = match serde_json::from_str(line) {
-            Ok(v) => v,
-            Err(_) => continue,
-        };
-
-        if let (Some(overview), Some(title)) = (
-            parsed.get("overview").and_then(|v| v.as_str()),
-            parsed.get("title").and_then(|v| v.as_str()),
-        ) {
-            meta = Some(TrajectoryMeta {
-                overview: overview.to_string(),
-                title: title.to_string(),
-            });
-            continue;
-        }
-
-        if let (Some(memo_type), Some(content)) = (
-            parsed.get("type").and_then(|v| v.as_str()),
-            parsed.get("content").and_then(|v| v.as_str()),
-        ) {
-            if memos.len() < 10 {
-                memos.push(ExtractedMemo {
-                    memo_type: memo_type.to_string(),
-                    content: content.to_string(),
-                });
-            }
-        }
-    }
-
-    Ok(ExtractionResult { meta, memos })
+    Ok(parse_extraction_response(&response_text))
 }
 
 fn memory_candidates_from_extraction(
@@ -551,24 +453,6 @@ async fn load_existing_memo_docs(path: &Path) -> Vec<MemoryDocSnapshot> {
     load_memory_doc_snapshots_from_knowledge_dirs(&[project_root.join(KNOWLEDGE_FOLDER_NAME)]).await
 }
 
-fn normalized_memo_title(title: &str) -> String {
-    let collapsed = title
-        .trim()
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
-    let stripped = if let Some(rest) = collapsed.strip_prefix('[') {
-        if let Some(end) = rest.find(']') {
-            rest[end + 1..].trim_start()
-        } else {
-            collapsed.as_str()
-        }
-    } else {
-        collapsed.as_str()
-    };
-    stripped.to_lowercase()
-}
-
 fn dedupe_memo_candidates(
     candidates: Vec<MemoryCandidate>,
     existing_docs: &[MemoryDocSnapshot],
@@ -611,19 +495,12 @@ async fn enqueue_trajectory_memory_ops(
     Ok(())
 }
 
-fn trajectory_project_root(path: &Path) -> Option<PathBuf> {
-    let mut parent = path.parent();
-    while let Some(dir) = parent {
-        if dir.file_name().and_then(|name| name.to_str()) == Some("trajectories") {
-            let refact_dir = dir.parent()?;
-            if refact_dir.file_name().and_then(|name| name.to_str()) == Some(".refact") {
-                return refact_dir.parent().map(Path::to_path_buf);
-            }
-            return None;
-        }
-        parent = dir.parent();
+fn candidate_status(source: MemorySource, confidence: f32) -> MemoryCandidateStatus {
+    if !source.is_autonomous() && confidence >= 0.85 {
+        MemoryCandidateStatus::Promoted
+    } else {
+        MemoryCandidateStatus::Proposed
     }
-    None
 }
 
 fn sanitize_candidate_text(text: &str, max_chars: usize) -> String {
@@ -640,72 +517,10 @@ fn sanitize_candidate_text(text: &str, max_chars: usize) -> String {
         .to_string()
 }
 
-fn normalize_memo_type(memo_type: &str) -> String {
-    match memo_type.trim().to_lowercase().replace('-', "_").as_str() {
-        "pattern" | "tool_pattern" | "tool_patterns" => "pattern".to_string(),
-        "preference" | "preferences" => "preference".to_string(),
-        "decision" | "decisions" => "decision".to_string(),
-        "bug" | "bugs" | "bug_fix" | "bug_fixed" => "bug".to_string(),
-        "lesson" | "lessons" | "learning" => "lesson".to_string(),
-        other if !other.is_empty() => other.to_string(),
-        _ => "lesson".to_string(),
-    }
-}
-
-fn memo_kind(memo_type: &str) -> &'static str {
-    match memo_type {
-        "preference" => "preference",
-        "decision" => "decision",
-        "pattern" => "pattern",
-        "bug" => "bug_fix",
-        _ => "lesson",
-    }
-}
-
-fn memo_confidence(memo_type: &str) -> f32 {
-    match memo_type {
-        "preference" => 0.78,
-        "decision" => 0.74,
-        "pattern" => 0.72,
-        "bug" => 0.70,
-        _ => 0.68,
-    }
-}
-
-fn candidate_status(source: MemorySource, confidence: f32) -> MemoryCandidateStatus {
-    if !source.is_autonomous() && confidence >= 0.85 {
-        MemoryCandidateStatus::Promoted
-    } else {
-        MemoryCandidateStatus::Proposed
-    }
-}
-
-fn trajectory_message_range(idx: usize, total: usize) -> String {
-    let total = total.max(1);
-    format!("memo:{}-{}", idx, total - 1)
-}
-
-fn deterministic_candidate_id(trajectory_id: &str, idx: usize, content_hash: &str) -> String {
-    format!(
-        "memcand_traj_{}",
-        candidate_hash(&[trajectory_id, &idx.to_string(), content_hash])
-    )
-}
-
-fn candidate_hash(parts: &[&str]) -> String {
-    let mut hasher = Sha256::new();
-    for part in parts {
-        hasher.update(part.len().to_string().as_bytes());
-        hasher.update(b"\0");
-        hasher.update(part.as_bytes());
-        hasher.update(b"\0");
-    }
-    hex::encode(hasher.finalize())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use refact_chat_history::trajectory_memos::{ExtractedMemo, TrajectoryMeta};
 
     fn extraction_with_memo(memo_type: &str, content: &str) -> ExtractionResult {
         ExtractionResult {
@@ -1046,3 +861,4 @@ mod tests {
         assert!(!candidate.content.contains("secret"));
     }
 }
+

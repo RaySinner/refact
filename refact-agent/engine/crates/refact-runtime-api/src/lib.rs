@@ -32,6 +32,7 @@ pub mod pp_tool_context;
 pub mod scope_utils;
 pub mod knowledge_graph;
 pub mod knowledge_index;
+pub mod restream;
 pub mod knowledge_runtime;
 pub mod mode_validation;
 pub mod project_information;

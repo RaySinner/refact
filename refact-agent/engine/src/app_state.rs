@@ -282,6 +282,10 @@ impl ContextFactory for EngineContextFactory {
         ChatCtx {
             knowledge_builder: Arc::new(crate::knowledge_index::EngineKnowledgeBuilder),
             memory_runtime: gcx.memory_runtime.clone(),
+            memory_lifecycle: Arc::new(
+                crate::buddy::memory_lifecycle::EngineMemoryLifecycleRuntime,
+            ),
+            goal_verifier: Arc::new(crate::chat::goal_verifier::EngineGoalVerifierRunner),
             task_storage_runtime: gcx.task_storage_runtime.clone(),
             agent_host: Arc::new(crate::chat::task_agent_monitor::EngineChatAgentHost::new(
                 gcx.clone(),

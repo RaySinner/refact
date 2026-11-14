@@ -328,6 +328,8 @@ pub trait ChatToolExecutor: Send + Sync {
 pub struct ChatCtx {
     pub knowledge_builder: Arc<dyn crate::knowledge_index::KnowledgeBuilder>,
     pub memory_runtime: Arc<dyn crate::memories::MemoryRuntime>,
+    pub memory_lifecycle: Arc<dyn crate::memory_lifecycle_runtime::MemoryLifecycleRuntime>,
+    pub goal_verifier: Arc<dyn crate::goal_verifier_runtime::GoalVerifierRunner>,
     pub task_storage_runtime: Arc<dyn crate::task_storage::TaskStorageRuntime>,
     pub agent_host: Arc<dyn ChatAgentHost>,
     pub runtime: RuntimeServices,

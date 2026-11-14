@@ -303,3 +303,19 @@ pub(super) fn goal_verifier_reply_from_choice(choice: ChoiceFinal) -> GoalVerifi
         tokens,
     }
 }
+
+/// Engine side of the `GoalVerifierRunner` seam. The body is the local
+/// `run_goal_verifier`; the seam exists so the `validate_goal` tool can name a
+/// crate path instead of an engine-internal function.
+pub struct EngineGoalVerifierRunner;
+
+#[async_trait::async_trait]
+impl refact_runtime_api::goal_verifier_runtime::GoalVerifierRunner for EngineGoalVerifierRunner {
+    async fn run_goal_verifier(
+        &self,
+        app: &AppState,
+        session_arc: Arc<AMutex<ChatSession>>,
+    ) -> Result<GoalVerifierReply, String> {
+        run_goal_verifier(app.clone(), session_arc).await
+    }
+}

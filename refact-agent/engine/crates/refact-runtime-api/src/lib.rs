@@ -52,6 +52,8 @@ pub mod ext_skills_context;
 pub mod ext_slash_expand;
 pub mod tool_trait;
 pub mod task_storage;
+pub mod memory_lifecycle_runtime;
+pub mod goal_verifier_runtime;
 pub mod task_agent_monitor;
 pub mod session_runtime;
 pub mod trajectory_prefix;

@@ -3,6 +3,8 @@
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Component, Path, PathBuf};
+
+use async_trait::async_trait;
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -22,6 +24,42 @@ use crate::memories::{
 };
 
 pub use refact_buddy_core::memory_lifecycle_model::*;
+
+/// Engine side of the `MemoryLifecycleRuntime` seam: it owns the knowledge-dir
+/// scan and the frontmatter rewrite helpers that the crate paths cannot reach.
+pub struct EngineMemoryLifecycleRuntime;
+
+#[async_trait]
+impl refact_runtime_api::memory_lifecycle_runtime::MemoryLifecycleRuntime
+    for EngineMemoryLifecycleRuntime
+{
+    async fn propose_supersede_for_near_duplicate_for_ctx(
+        &self,
+        ctx: &ChatCtx,
+        new_path: &Path,
+    ) -> Option<MemoryLifecycleOp> {
+        propose_supersede_for_near_duplicate_for_ctx(ctx, new_path).await
+    }
+
+    async fn find_memory_by_source_for_ctx(
+        &self,
+        ctx: &ChatCtx,
+        source: MemorySource,
+        source_id: Option<&str>,
+        source_content_hash: Option<&str>,
+    ) -> Option<PathBuf> {
+        find_memory_by_source_for_ctx(ctx, source, source_id, source_content_hash).await
+    }
+
+    async fn archive_memory_file_checked_for_ctx(
+        &self,
+        ctx: &ChatCtx,
+        path: &Path,
+        superseded_by: Option<&str>,
+    ) -> Result<bool, String> {
+        archive_memory_file_checked_for_ctx(ctx, path, superseded_by).await
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]

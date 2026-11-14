@@ -10,7 +10,7 @@ use crate::custom_error::YamlError;
 use crate::global_context::{try_load_caps_quickly_if_not_present, GlobalContext};
 use refact_integrations::mcp::mcp_naming::server_name_from_config_path;
 use refact_runtime_api::integr_abstract::IntegrationTrait;
-use crate::integrations::load_integrations;
+use refact_runtime_api::integrations_runtime::load_integrations;
 use refact_runtime_api::customization_registry::{
     get_project_registry,
 };
@@ -604,19 +604,19 @@ async fn get_builtin_tools(gcx: Arc<GlobalContext>) -> Vec<ToolGroup> {
         Box::new(crate::tools::buddy::surface::ToolBuddyRuntimeEvent {
             config_path: config_path.clone(),
         }),
-        Box::new(crate::tools::buddy::memory::ToolBuddyMemorySearch {
+        Box::new(refact_tools::tools::buddy::memory::ToolBuddyMemorySearch {
             config_path: config_path.clone(),
         }),
-        Box::new(crate::tools::buddy::memory::ToolBuddyMemoryCreate {
+        Box::new(refact_tools::tools::buddy::memory::ToolBuddyMemoryCreate {
             config_path: config_path.clone(),
         }),
-        Box::new(crate::tools::buddy::memory::ToolBuddyMemoryArchive {
+        Box::new(refact_tools::tools::buddy::memory::ToolBuddyMemoryArchive {
             config_path: config_path.clone(),
         }),
-        Box::new(crate::tools::buddy::memory::ToolBuddyMemoryRetag {
+        Box::new(refact_tools::tools::buddy::memory::ToolBuddyMemoryRetag {
             config_path: config_path.clone(),
         }),
-        Box::new(crate::tools::buddy::memory::ToolBuddyMemoryMerge {
+        Box::new(refact_tools::tools::buddy::memory::ToolBuddyMemoryMerge {
             config_path: config_path.clone(),
         }),
         Box::new(crate::tools::buddy::user_prefs::ToolBuddyUserPrefList {

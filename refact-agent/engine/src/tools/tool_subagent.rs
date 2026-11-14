@@ -520,7 +520,7 @@ async fn peer_snapshot(
 ) -> String {
     let requested = target_files
         .iter()
-        .map(|path| crate::agents::registry::normalize_path_for_overlap(path))
+        .map(|path| refact_agents_core::registry::normalize_path_for_overlap(path))
         .collect::<HashSet<_>>();
     let peers = app
         .agents
@@ -549,7 +549,7 @@ async fn peer_snapshot(
             .target_files
             .iter()
             .filter(|path| {
-                requested.contains(&crate::agents::registry::normalize_path_for_overlap(path))
+                requested.contains(&refact_agents_core::registry::normalize_path_for_overlap(path))
             })
             .collect::<Vec<_>>();
         if !overlaps.is_empty() {

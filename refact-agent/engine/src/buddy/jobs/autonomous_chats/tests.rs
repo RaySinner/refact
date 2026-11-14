@@ -6,7 +6,10 @@ mod workflow_migration {
 }
 
 use super::*;
+use std::collections::BTreeMap;
+
 use crate::buddy::autonomous_workflows::AUTONOMOUS_BUDDY_WORKFLOWS;
+use crate::buddy::diagnostics::{DiagnosticContext, DiagnosticSeverity};
 use crate::buddy::scheduler::BuddyJobContext;
 use crate::buddy::settings::{save_settings, BuddySettings};
 use crate::buddy::types::{BuddyFact, BuddyJobState, BuddyOnboarding, BuddyPetState, BuddyPulse};
@@ -89,7 +92,8 @@ fn format_diagnostic_summary_includes_category_and_recoverable_for_stream_corrup
 fn diagnostic_evidence_preserves_occurrence_telemetry_for_stream_corrupted() {
     let mut ctx = context_with_last_result(None);
     ctx.recent_diagnostics = (0..5).map(|_| stream_corrupted_diagnostic()).collect();
-    let evidence = diagnostic_evidence(&ctx).expect("expected diagnostic evidence");
+    let evidence =
+        diagnostic_evidence(&ctx.recent_diagnostics).expect("expected diagnostic evidence");
     assert_eq!(evidence.repeated_error_type.as_deref(), Some("parse"));
     assert_eq!(evidence.repeated_count, 5);
     assert!(evidence

@@ -76,7 +76,7 @@ impl BuddyJob for ErrorDetectiveJob {
     }
 
     async fn should_run(&self, _gcx: AppState, ctx: &BuddyJobContext) -> bool {
-        let Some(evidence) = diagnostic_evidence(ctx) else {
+        let Some(evidence) = diagnostic_evidence(&ctx.recent_diagnostics) else {
             return false;
         };
         let spec = build_autonomous_job_spec(
@@ -96,7 +96,7 @@ impl BuddyJob for ErrorDetectiveJob {
     }
 
     async fn execute(&self, gcx: AppState, ctx: BuddyJobContext) -> BuddyJobResult {
-        let Some(evidence) = diagnostic_evidence(&ctx) else {
+        let Some(evidence) = diagnostic_evidence(&ctx.recent_diagnostics) else {
             return BuddyJobResult::default();
         };
         let spec = build_autonomous_job_spec(

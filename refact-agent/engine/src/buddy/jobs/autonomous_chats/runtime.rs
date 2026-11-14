@@ -1,10 +1,5 @@
 use super::*;
 
-pub(super) const MEMORY_KEY_SAVE_INSTRUCTION: &str = concat!(
-    "When saving findings with buddy_memory_create, ",
-    "set source_id exactly to this key."
-);
-
 pub(super) const AUTONOMOUS_SUCCESS_XP: u64 = 4;
 pub(super) fn build_spec(
     workflow_id: &str,

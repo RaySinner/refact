@@ -9,6 +9,7 @@ pub mod review_evidence;
 pub mod review_scope;
 #[cfg(feature = "test-util")]
 pub mod settings_guard;
+pub mod shell_gate_common;
 pub mod subagent_phases;
 pub mod task_tool_helpers;
 pub mod tool_activate_skill;

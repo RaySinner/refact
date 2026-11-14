@@ -1,5 +1,106 @@
-#[allow(unused_imports)]
-use super::*;
+use std::path::Path;
+use std::process::Stdio;
+use std::sync::Arc;
+use std::time::Duration;
+
+use async_trait::async_trait;
+use chrono::Utc;
+use tokio::process::Command;
+
+use refact_chat_api::verifier::ExpectedCardState;
+use refact_chat_api::verify_cmd::{parse_verification_argv, verification_commands};
+use refact_tasks::types::{StatusUpdate, VerificationOutcome};
+
+use crate::chat_ctx::ChatCtx;
+use crate::global_context::{GlobalContext, GlobalContextCtx};
+use crate::task_storage;
+
+pub use refact_chat_api::post_merge_check::*;
+pub use refact_chat_api::tools_facade::DEFAULT_POST_MERGE_CHECK_TIMEOUT_SECS;
+
+const STALE_POST_MERGE_WRITE: &str = "stale post-merge write";
+
+pub(crate) async fn store_regression_result(
+    ctx: &ChatCtx,
+    task_id: &str,
+    card_id: &str,
+    expected_card_state: Option<&ExpectedCardState>,
+    command: &str,
+    output_tail: &str,
+    merge_commit: &str,
+    revert_commit: &str,
+    first_error: &str,
+    revert_skipped_reason: Option<&str>,
+    diagnostic: Option<&str>,
+) -> Result<Option<String>, String> {
+    let card_id_owned = card_id.to_string();
+    let task_id_owned = task_id.to_string();
+    let expected_card_state = expected_card_state.cloned();
+    let command_owned = command.to_string();
+    let output_owned = output_tail.to_string();
+    let merge_commit_owned = merge_commit.to_string();
+    let revert_commit_owned = revert_commit.to_string();
+    let first_error_owned = first_error.to_string();
+    let revert_skipped_reason_owned = revert_skipped_reason.map(str::to_string);
+    let diagnostic_owned = diagnostic.map(str::to_string);
+    let result = task_storage::update_board_atomic_for_ctx(ctx, task_id, move |board| {
+        let Some(source_card_ref) = board.get_card(&card_id_owned) else {
+            if expected_card_state.is_some() {
+                return Err(format!(
+                    "{} for task {} card {}: card no longer exists",
+                    STALE_POST_MERGE_WRITE, task_id_owned, card_id_owned
+                ));
+            }
+            return Err(format!("Card {} not found", card_id_owned));
+        };
+        if let Some(expected) = expected_card_state.as_ref() {
+            if !expected.matches_board_card(board.rev, source_card_ref) {
+                return Err(format!(
+                    "{} for task {} card {}: current card state no longer matches post-merge request",
+                    STALE_POST_MERGE_WRITE, task_id_owned, card_id_owned
+                ));
+            }
+        }
+        let source_card = source_card_ref.clone();
+        ensure_regressed_column(board);
+        let fix_card_id = next_fix_card_id(board, &card_id_owned);
+        let now = Utc::now().to_rfc3339();
+        let original = board
+            .get_card_mut(&card_id_owned)
+            .ok_or_else(|| format!("Card {} not found", card_id_owned))?;
+        original.column = "regressed".to_string();
+        original.status_updates.push(StatusUpdate {
+            timestamp: now.clone(),
+            message: match revert_skipped_reason_owned.as_deref() {
+                Some(reason) => format!("Auto-revert skipped: {}", reason),
+                None => format!("Auto-reverted: {}", first_error_owned),
+            },
+        });
+        board.cards.push(build_fix_card(
+            &source_card,
+            &fix_card_id,
+            &command_owned,
+            &output_owned,
+            &merge_commit_owned,
+            &revert_commit_owned,
+            revert_skipped_reason_owned.as_deref(),
+            diagnostic_owned.as_deref(),
+            &now,
+        ));
+        Ok(fix_card_id)
+    })
+    .await;
+    let fix_card_id = match result {
+        Ok((_, fix_card_id)) => fix_card_id,
+        Err(error) if error.starts_with(STALE_POST_MERGE_WRITE) => {
+            tracing::info!("{}", error);
+            return Ok(None);
+        }
+        Err(error) => return Err(error),
+    };
+    let _ = task_storage::update_task_stats_for_ctx(ctx, task_id).await;
+    Ok(Some(fix_card_id))
+}
 
 #[async_trait]
 pub trait PostMergeCommandRunner: Send {
@@ -11,7 +112,7 @@ pub trait PostMergeCommandRunner: Send {
     ) -> PostMergeCommandOutput;
 }
 
-pub(super) struct SystemPostMergeCommandRunner {
+pub(crate) struct SystemPostMergeCommandRunner {
     ctx: ChatCtx,
 }
 
@@ -34,17 +135,20 @@ impl PostMergeCommandRunner for SystemPostMergeCommandRunner {
                         outcome: VerificationOutcome::Rejected,
                     };
                 }
-                let result = crate::chat::verifier::run_verification_argv_impl(
-                    &self.ctx,
-                    workspace_root,
-                    &label,
-                    cwd,
-                    env,
-                    argv,
-                    timeout,
-                    Duration::from_secs(10),
-                )
-                .await;
+                let result = self
+                    .ctx
+                    .card_verifier
+                    .run_verification_argv(
+                        &self.ctx,
+                        workspace_root,
+                        &label,
+                        cwd,
+                        env,
+                        argv,
+                        timeout,
+                        Duration::from_secs(10),
+                    )
+                    .await;
                 PostMergeCommandOutput {
                     exit_code: result.exit_code,
                     success: result.passed,
@@ -62,7 +166,7 @@ impl PostMergeCommandRunner for SystemPostMergeCommandRunner {
     }
 }
 
-pub(super) async fn run_command(
+pub async fn run_command(
     mut command: Command,
     command_label: &str,
     timeout: Duration,
@@ -86,6 +190,8 @@ pub(super) async fn run_command(
             };
         }
     };
+    #[cfg(unix)]
+    let child_id = child.id();
     match tokio::time::timeout(timeout, child.wait_with_output()).await {
         Ok(Ok(output)) => {
             let text = format!(
@@ -155,7 +261,7 @@ pub async fn post_merge_check_with_runner<R: PostMergeCommandRunner>(
         return Ok(skipped_result("auto_revert disabled"));
     }
 
-    let board = storage::load_board_for_ctx(ctx, &request.task_id).await?;
+    let board = task_storage::load_board_for_ctx(ctx, &request.task_id).await?;
     let Some(card) = board.get_card(&request.card_id) else {
         if request.expected_card_state.is_some() {
             return Ok(skipped_result("stale card state"));
@@ -176,7 +282,7 @@ pub async fn post_merge_check_with_runner<R: PostMergeCommandRunner>(
             "no verification command found".to_string(),
         ));
     }
-    let command_policy = VerifyCommandPolicy::load_for_ctx(ctx).await;
+    let command_policy = ctx.card_verifier.verification_command_policy(ctx).await;
     let mut parsed = Vec::new();
     for command in commands {
         match parse_verification_argv(&command) {

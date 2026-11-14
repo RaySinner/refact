@@ -1,6 +1,10 @@
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
 use async_trait::async_trait;
 use refact_chat_api::verifier::{ExpectedCardState, VerifyCardRequest};
-use refact_tasks::types::VerifierReport;
+use refact_chat_api::verify_cmd::VerifyCommandPolicy;
+use refact_tasks::types::{VerificationResult, VerifierReport};
 
 use crate::chat_ctx::ChatCtx;
 
@@ -26,6 +30,26 @@ pub trait CardVerifier: Send + Sync {
         card_id: String,
         expected_state: ExpectedCardState,
     );
+
+    /// Seam over the engine verification executor. The engine implementation forwards
+    /// to `chat::verifier::run_verification_argv_impl`; the post-merge check lives in
+    /// this crate and can only reach it through here.
+    #[allow(clippy::too_many_arguments)]
+    async fn run_verification_argv(
+        &self,
+        ctx: &ChatCtx,
+        worktree: &Path,
+        command: &str,
+        cwd: Option<PathBuf>,
+        env: Vec<(String, String)>,
+        argv: Vec<String>,
+        timeout: Duration,
+        drain_timeout: Duration,
+    ) -> VerificationResult;
+
+    /// Deny rules of the active shell policy, loaded by the engine (the policy file is
+    /// engine-owned state). Used to screen post-merge verification commands.
+    async fn verification_command_policy(&self, ctx: &ChatCtx) -> VerifyCommandPolicy;
 }
 
 pub async fn load_expected_card_state_for_ctx(

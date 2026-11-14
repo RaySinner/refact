@@ -48,8 +48,8 @@ The following production sites bypass `refact-exec`. The inventory was verified 
 | `src/buddy/jobs/buddy_daily_digest.rs:42` | trusted-internal-lifecycle | Reads Git history for a scheduled digest with fixed Git command construction. |
 | `src/buddy/jobs/buddy_friday_retro.rs:42` | trusted-internal-lifecycle | Reads Git history for a scheduled retrospective with fixed Git command construction. |
 | `src/buddy/jobs/buddy_pr_issue_matchmaker.rs:90` | trusted-internal-lifecycle | Reads Git history for matching with fixed Git command construction. |
-| `src/chat/post_merge_check.rs:91` | still-to-migrate | Executes parsed verification argv selected by the post-merge workflow. |
-| `src/chat/post_merge_check.rs:101` | trusted-internal-lifecycle | Executes fixed Git rollback and inspection operations after a merge. |
+| `crates/refact-runtime-api/src/post_merge_check.rs:142` | still-to-migrate | Executes parsed verification argv selected by the post-merge workflow (through the `CardVerifier` seam). |
+| `crates/refact-runtime-api/src/post_merge_check.rs:162` | trusted-internal-lifecycle | Executes fixed Git rollback and inspection operations after a merge. |
 | `src/chat/system_context.rs:436,446` | trusted-internal-lifecycle | Queries the local OS version with platform-fixed commands. |
 | `src/chat/task_agent_monitor.rs:1493-1570` | trusted-internal-lifecycle | Captures failed-agent and changed-file Git evidence using fixed operations and task-owned refs. |
 | `src/chat/verifier_diff.rs:39` | trusted-internal-lifecycle | Collects verifier Git evidence using fixed operations and task-owned refs. |

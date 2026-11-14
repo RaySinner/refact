@@ -51,6 +51,7 @@ pub mod at_tree;
 pub mod ext_skills_context;
 pub mod ext_slash_expand;
 pub mod tool_trait;
+pub mod post_merge_check;
 pub mod task_storage;
 pub mod memory_lifecycle_runtime;
 pub mod goal_verifier_runtime;

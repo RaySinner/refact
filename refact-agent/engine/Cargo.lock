@@ -4087,6 +4087,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "shell-words",
  "similar",
  "tokio",
  "tokio-tungstenite",

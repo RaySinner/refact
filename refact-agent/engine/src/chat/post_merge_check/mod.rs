@@ -1,43 +1,23 @@
-use std::path::Path;
+//! Engine-side shim for the post-merge check workflow. The workflow bodies live in
+//! `refact_runtime_api::post_merge_check`; the verification executor and the shell
+//! policy reach them through the `CardVerifier` seam.
 
-use std::process::Stdio;
+pub use refact_runtime_api::post_merge_check::*;
 
-use std::sync::Arc;
-
-use std::time::Duration;
-
-use async_trait::async_trait;
-
-use chrono::Utc;
-
-use tokio::process::Command;
-
-use crate::chat::verify_cmd::{parse_verification_argv, verification_commands, VerifyCommandPolicy};
-
-use refact_runtime_api::GlobalContextCtx;
-
-use crate::chat::ctx::ChatCtx;
-
-use crate::chat::verifier::ExpectedCardState;
-
-use crate::global_context::GlobalContext;
-
-use crate::tasks::storage;
-
-use crate::tasks::types::{StatusUpdate, VerificationOutcome};
-
-pub use refact_chat_api::tools_facade::DEFAULT_POST_MERGE_CHECK_TIMEOUT_SECS;
-
-
-
-
-
-mod policy;
+#[cfg(test)]
 #[allow(unused_imports)]
-pub use policy::*;
-mod runner;
-#[allow(unused_imports)]
-pub use runner::*;
+pub(crate) use {
+    crate::global_context::GlobalContext,
+    crate::tasks::storage,
+    async_trait::async_trait,
+    chrono::Utc,
+    refact_runtime_api::GlobalContextCtx,
+    refact_tasks::types::VerificationOutcome,
+    std::path::{Path, PathBuf},
+    std::sync::Arc,
+    std::time::Duration,
+    tokio::process::Command,
+};
 
 #[cfg(test)]
 mod tests;

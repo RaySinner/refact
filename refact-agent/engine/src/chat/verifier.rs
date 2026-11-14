@@ -12,7 +12,10 @@ use crate::chat::internal_roles::{event, EventSubkind};
 use refact_runtime_api::GlobalContextCtx;
 use crate::chat::ctx::ChatCtx;
 use crate::chat::verifier_diff::{git_changed_files_summary, resolve_verifier_diff_base};
-use crate::chat::verify_cmd::{parse_verification_argv, verification_commands, VerifyCommandPolicy};
+use crate::chat::verify_cmd::{
+    load_for_ctx as load_verify_command_policy, parse_verification_argv,
+    verification_commands, VerifyCommandPolicy,
+};
 use crate::exec::command_policy::{
     build_exec_request_for_ctx, CommandKind, CommandPolicyInput, ExecSource,
 };
@@ -72,6 +75,34 @@ impl CardVerifier for EngineCardVerifier {
     ) {
         schedule_card_verifier_after_finish_for_ctx_impl(ctx, task_id, card_id, expected_state)
             .await;
+    }
+
+    async fn run_verification_argv(
+        &self,
+        ctx: &ChatCtx,
+        worktree: &Path,
+        command: &str,
+        cwd: Option<PathBuf>,
+        env: Vec<(String, String)>,
+        argv: Vec<String>,
+        timeout: Duration,
+        drain_timeout: Duration,
+    ) -> VerificationResult {
+        run_verification_argv_impl(
+            ctx,
+            worktree,
+            command,
+            cwd,
+            env,
+            argv,
+            timeout,
+            drain_timeout,
+        )
+        .await
+    }
+
+    async fn verification_command_policy(&self, ctx: &ChatCtx) -> VerifyCommandPolicy {
+        load_verify_command_policy(ctx).await
     }
 }
 
@@ -343,7 +374,7 @@ async fn verify_card_for_ctx_impl(
         );
     }
 
-    let command_policy = VerifyCommandPolicy::load_for_ctx(ctx).await;
+    let command_policy = load_verify_command_policy(ctx).await;
     for command in commands {
         let result =
             run_verification_command_with_policy(ctx, &worktree, &command, &command_policy).await;
@@ -495,7 +526,7 @@ async fn run_verification_command(
     worktree: &Path,
     command: &str,
 ) -> VerificationResult {
-    let policy = VerifyCommandPolicy::load_for_ctx(ctx).await;
+    let policy = load_verify_command_policy(ctx).await;
     run_verification_command_with_policy(ctx, worktree, command, &policy).await
 }
 
@@ -1265,7 +1296,7 @@ mod tests {
         let result = run_verification_command_with_runner(
             temp.path(),
             "cd refact-agent/engine && cargo check",
-            &VerifyCommandPolicy::permissive(),
+            &crate::chat::verify_cmd::permissive(),
             &mut runner,
         )
         .await;
@@ -1290,7 +1321,7 @@ mod tests {
         let result = run_verification_command_with_runner(
             temp.path(),
             "cd ui && FLEXUS_PYTHON=/abs/py pnpm typecheck",
-            &VerifyCommandPolicy::permissive(),
+            &crate::chat::verify_cmd::permissive(),
             &mut runner,
         )
         .await;
@@ -1318,7 +1349,7 @@ mod tests {
             let result = run_verification_command_with_runner(
                 temp.path(),
                 command,
-                &VerifyCommandPolicy::permissive(),
+                &crate::chat::verify_cmd::permissive(),
                 &mut runner,
             )
             .await;
@@ -1331,7 +1362,7 @@ mod tests {
     async fn verifier_denies_commands_matching_shell_policy_deny_rules() {
         let temp = tempfile::tempdir().unwrap();
         let mut runner = MockVerificationRunner::default();
-        let policy = VerifyCommandPolicy::from_shell_policy(
+        let policy = crate::chat::verify_cmd::from_shell_policy(
             &crate::tools::shell_gate::ShellGatePolicy::default(),
         );
 
@@ -1422,7 +1453,7 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let mut runner = MockVerificationRunner::default();
         let policy =
-            VerifyCommandPolicy::from_shell_policy(&crate::tools::shell_gate::ShellGatePolicy {
+            crate::chat::verify_cmd::from_shell_policy(&crate::tools::shell_gate::ShellGatePolicy {
                 mode: crate::tools::shell_gate::ApprovalMode::Yolo,
                 ..crate::tools::shell_gate::ShellGatePolicy::default()
             });

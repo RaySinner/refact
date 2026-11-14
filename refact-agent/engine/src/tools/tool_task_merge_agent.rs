@@ -67,7 +67,7 @@ fn cleanup_summary(response: &MergeWorktreeResponse) -> String {
 
 fn append_post_merge_check_message(
     message: &mut String,
-    result: &crate::chat::post_merge_check::PostMergeCheckResult,
+    result: &refact_runtime_api::post_merge_check::PostMergeCheckResult,
 ) {
     use refact_tasks::types::VerificationOutcome;
 
@@ -97,7 +97,7 @@ fn append_post_merge_check_message(
             "\n\n**Post-merge check:** `{}` {}\n\n{}",
             command,
             label,
-            crate::chat::post_merge_check::first_error_line(&result.output_tail)
+            refact_runtime_api::post_merge_check::first_error_line(&result.output_tail)
         ));
         return;
     }
@@ -120,7 +120,7 @@ fn append_post_merge_check_message(
     }
     message.push_str(&format!(
         "\n\n{}",
-        crate::chat::post_merge_check::first_error_line(&result.output_tail)
+        refact_runtime_api::post_merge_check::first_error_line(&result.output_tail)
     ));
 }
 
@@ -145,7 +145,7 @@ fn response_warnings(response: &MergeWorktreeResponse) -> Vec<String> {
 fn merge_response_message(
     card_id: &str,
     response: &MergeWorktreeResponse,
-    post_merge_check: Option<&crate::chat::post_merge_check::PostMergeCheckResult>,
+    post_merge_check: Option<&refact_runtime_api::post_merge_check::PostMergeCheckResult>,
 ) -> String {
     if let Some(conflict) = response.conflict.as_ref() {
         let mut message = format!(
@@ -223,7 +223,7 @@ fn parse_schema_bool_arg(
 fn parse_auto_revert_timeout(args: &HashMap<String, Value>) -> Result<Duration, String> {
     let Some(value) = args.get("auto_revert_timeout_secs") else {
         return Ok(Duration::from_secs(
-            crate::chat::post_merge_check::DEFAULT_POST_MERGE_CHECK_TIMEOUT_SECS,
+            refact_runtime_api::post_merge_check::DEFAULT_POST_MERGE_CHECK_TIMEOUT_SECS,
         ));
     };
     let secs = match value {
@@ -583,7 +583,7 @@ fn force_merge_card_matches_current(
 }
 
 fn force_merge_post_check_passed_or_absent(
-    result: &Result<Option<crate::chat::post_merge_check::PostMergeCheckResult>, String>,
+    result: &Result<Option<refact_runtime_api::post_merge_check::PostMergeCheckResult>, String>,
 ) -> bool {
     use refact_tasks::types::VerificationOutcome;
 
@@ -595,7 +595,7 @@ fn force_merge_post_check_passed_or_absent(
 }
 
 fn retained_post_merge_verification_failure(
-    result: &Result<Option<crate::chat::post_merge_check::PostMergeCheckResult>, String>,
+    result: &Result<Option<refact_runtime_api::post_merge_check::PostMergeCheckResult>, String>,
 ) -> Option<String> {
     use refact_tasks::types::VerificationOutcome;
 
@@ -902,9 +902,9 @@ async fn merge_registered_task_worktree(
     let post_merge_check_result = match (response.merge_commit.as_ref(), post_merge_expected_state)
     {
         (Some(merge_commit), Some(expected_card_state)) if response.merged && auto_revert => {
-            crate::chat::post_merge_check::post_merge_check(
+            refact_runtime_api::post_merge_check::post_merge_check(
                 gcx.clone(),
-                crate::chat::post_merge_check::PostMergeCheckRequest {
+                refact_runtime_api::post_merge_check::PostMergeCheckRequest {
                     task_id: task_id.to_string(),
                     card_id: card_id.to_string(),
                     workspace_root: workspace_root.to_path_buf(),
@@ -1553,9 +1553,9 @@ Use `cat <file>` to see conflict markers in each file."#,
                 Some(merge_commit) => {
                     let expected_card_state = post_merge_expected_state
                         .expect("post-merge state is captured whenever auto-revert is enabled");
-                    crate::chat::post_merge_check::post_merge_check(
+                    refact_runtime_api::post_merge_check::post_merge_check(
                         gcx.clone(),
-                        crate::chat::post_merge_check::PostMergeCheckRequest {
+                        refact_runtime_api::post_merge_check::PostMergeCheckRequest {
                             task_id: task_id.clone(),
                             card_id: card_id.to_string(),
                             workspace_root: workspace_root.to_path_buf(),
@@ -1915,7 +1915,7 @@ mod worktree_merge_tool_tests {
 
     #[test]
     fn post_merge_message_only_labels_command_failures_as_regressions() {
-        use crate::chat::post_merge_check::PostMergeCheckResult;
+        use refact_runtime_api::post_merge_check::PostMergeCheckResult;
         use refact_tasks::types::VerificationOutcome;
 
         for (outcome, expected) in [
@@ -1957,7 +1957,7 @@ mod worktree_merge_tool_tests {
 
     #[test]
     fn post_merge_message_does_not_invent_fix_card() {
-        use crate::chat::post_merge_check::PostMergeCheckResult;
+        use refact_runtime_api::post_merge_check::PostMergeCheckResult;
         use refact_tasks::types::VerificationOutcome;
 
         let result = PostMergeCheckResult {
@@ -2441,7 +2441,7 @@ mod worktree_merge_tool_tests {
         assert_eq!(
             parse_auto_revert_timeout(&empty).unwrap(),
             Duration::from_secs(
-                crate::chat::post_merge_check::DEFAULT_POST_MERGE_CHECK_TIMEOUT_SECS
+                refact_runtime_api::post_merge_check::DEFAULT_POST_MERGE_CHECK_TIMEOUT_SECS
             )
         );
         let args = HashMap::from([
@@ -3547,7 +3547,7 @@ mod worktree_merge_tool_tests {
 
     #[test]
     fn force_merge_finalization_requires_typed_pass_or_absent_check() {
-        use crate::chat::post_merge_check::PostMergeCheckResult;
+        use refact_runtime_api::post_merge_check::PostMergeCheckResult;
         use refact_tasks::types::VerificationOutcome;
 
         let result = |checked, outcome| PostMergeCheckResult {
@@ -3592,7 +3592,7 @@ mod worktree_merge_tool_tests {
 
     #[test]
     fn legacy_typed_failure_without_revert_clears_ownership_but_does_not_finalize() {
-        use crate::chat::post_merge_check::PostMergeCheckResult;
+        use refact_runtime_api::post_merge_check::PostMergeCheckResult;
         use refact_tasks::types::VerificationOutcome;
 
         let result = Ok(Some(PostMergeCheckResult {

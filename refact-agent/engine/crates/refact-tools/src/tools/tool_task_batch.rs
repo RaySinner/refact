@@ -1,0 +1,1271 @@
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+
+use async_trait::async_trait;
+use serde::Serialize;
+use serde_json::{json, Value};
+use tokio::sync::Mutex as AMutex;
+use tokio::task::JoinSet;
+
+use refact_runtime_api::AtCommandsContext;
+use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
+use refact_runtime_api::AppState;
+use refact_runtime_api::task_storage as storage;
+use refact_tasks::types::{BoardCard, TaskBoard};
+use crate::tools::tool_task_board::ToolTaskBoardCreateCard;
+use crate::tools::tool_task_mark_card::{ToolTaskMarkCardDone, ToolTaskMarkCardFailed};
+use crate::tools::tool_task_merge_agent::ToolTaskMergeAgent;
+use crate::tools::tool_task_spawn_agent::ToolTaskSpawnAgent;
+use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
+
+const MAX_SPAWN_BATCH: usize = 10;
+const MAX_MERGE_BATCH: usize = 10;
+const MAX_CREATE_BATCH: usize = 30;
+
+fn make_source() -> ToolSource {
+    ToolSource {
+        source_type: ToolSourceType::Builtin,
+        config_path: String::new(),
+    }
+}
+
+pub async fn planner_context(
+    ccx: &Arc<AMutex<AtCommandsContext>>,
+    args: &HashMap<String, Value>,
+    tool_name: &str,
+) -> Result<(AppState, String), String> {
+    let ccx_lock = ccx.lock().await;
+    let is_planner = ccx_lock
+        .task_meta
+        .as_ref()
+        .map(|m| m.role == "planner")
+        .unwrap_or(false);
+    if !is_planner {
+        return Err(format!(
+            "{} can only be called by the task planner.",
+            tool_name
+        ));
+    }
+    let explicit_task_id = match args.get("task_id") {
+        None => None,
+        Some(Value::String(task_id)) if !task_id.trim().is_empty() => Some(task_id.clone()),
+        Some(Value::String(_)) => return Err("'task_id' must be a non-empty string".to_string()),
+        Some(_) => return Err("'task_id' must be a string".to_string()),
+    };
+    let bound_task_id = ccx_lock
+        .task_meta
+        .as_ref()
+        .map(|m| m.task_id.as_str())
+        .filter(|s| !s.is_empty());
+    if let (Some(explicit), Some(bound)) = (explicit_task_id.as_deref(), bound_task_id) {
+        if explicit != bound {
+            return Err(format!(
+                "task_id '{}' does not match planner's bound task '{}'",
+                explicit, bound
+            ));
+        }
+    }
+    let task_id = explicit_task_id
+        .or_else(|| bound_task_id.map(str::to_string))
+        .or_else(|| storage::infer_task_id_from_chat_id(&ccx_lock.chat_id))
+        .ok_or_else(|| "Missing 'task_id' (and chat is not bound to a task)".to_string())?;
+    Ok((ccx_lock.app.clone(), task_id))
+}
+
+fn batch_tool_message<T: Serialize>(
+    tool_call_id: &str,
+    value: &T,
+) -> Result<(bool, Vec<ContextEnum>), String> {
+    let text = serde_json::to_string_pretty(value).map_err(|e| e.to_string())?;
+    Ok((
+        false,
+        vec![ContextEnum::ChatMessage(ChatMessage {
+            role: "tool".to_string(),
+            content: ChatContent::SimpleText(text),
+            tool_calls: None,
+            tool_call_id: tool_call_id.to_string(),
+            ..Default::default()
+        })],
+    ))
+}
+
+fn array_arg<'a>(args: &'a HashMap<String, Value>, key: &str) -> Result<&'a Vec<Value>, String> {
+    args.get(key)
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| format!("Missing '{}' array", key))
+}
+
+fn item_name(value: &Value, index: usize) -> String {
+    value
+        .get("card_id")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("<item {}>", index + 1))
+}
+
+fn required_string(value: &Value, key: &str) -> Result<String, String> {
+    value
+        .get(key)
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| format!("Missing '{}'", key))
+}
+
+fn optional_string(value: &Value, key: &str, default: &str) -> Result<String, String> {
+    match value.get(key) {
+        Some(Value::String(s)) => Ok(s.clone()),
+        Some(Value::Null) | None => Ok(default.to_string()),
+        Some(_) => Err(format!("'{}' must be a string", key)),
+    }
+}
+
+fn optional_usize(value: &Value, key: &str) -> Result<Option<usize>, String> {
+    match value.get(key) {
+        Some(Value::Number(n)) => n
+            .as_u64()
+            .map(|n| Some(n as usize))
+            .ok_or_else(|| format!("'{}' must be a non-negative integer", key)),
+        Some(Value::String(s)) => s
+            .parse::<usize>()
+            .map(Some)
+            .map_err(|_| format!("'{}' must be a non-negative integer", key)),
+        Some(Value::Null) | None => Ok(None),
+        Some(_) => Err(format!("'{}' must be a non-negative integer", key)),
+    }
+}
+
+fn optional_string_vec(value: Option<&Value>, key: &str) -> Result<Vec<String>, String> {
+    match value {
+        Some(Value::Array(arr)) => arr
+            .iter()
+            .map(|v| {
+                v.as_str()
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .ok_or_else(|| format!("'{}' entries must be non-empty strings", key))
+            })
+            .collect(),
+        Some(Value::String(s)) => Ok(s
+            .split([',', '\n'])
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .collect()),
+        Some(Value::Null) | None => Ok(Vec::new()),
+        Some(_) => Err(format!("'{}' must be an array of strings or a string", key)),
+    }
+}
+
+fn usize_arg(args: &HashMap<String, Value>, key: &str, default: usize) -> Result<usize, String> {
+    match args.get(key) {
+        Some(Value::Number(n)) => n
+            .as_u64()
+            .map(|n| n as usize)
+            .ok_or_else(|| format!("'{}' must be a non-negative integer", key)),
+        Some(Value::String(s)) => s
+            .parse::<usize>()
+            .map_err(|_| format!("'{}' must be a non-negative integer", key)),
+        Some(Value::Null) | None => Ok(default),
+        Some(_) => Err(format!("'{}' must be a non-negative integer", key)),
+    }
+}
+
+pub fn auto_revert_arg(args: &HashMap<String, Value>) -> Result<bool, String> {
+    match args.get("auto_revert") {
+        None => Ok(false),
+        Some(value) => refact_tool_api::coerce_bool(value)
+            .ok_or_else(|| "'auto_revert' must be a boolean".to_string()),
+    }
+}
+
+pub fn auto_revert_timeout_secs_arg(args: &HashMap<String, Value>) -> Result<u64, String> {
+    let Some(value) = args.get("auto_revert_timeout_secs") else {
+        return Ok(refact_chat_api::tools_facade::DEFAULT_POST_MERGE_CHECK_TIMEOUT_SECS);
+    };
+    let secs = match value {
+        Value::Number(number) => number
+            .as_u64()
+            .ok_or_else(|| "auto_revert_timeout_secs must be a positive integer".to_string())?,
+        _ => return Err("auto_revert_timeout_secs must be a positive integer".to_string()),
+    };
+    if secs == 0 {
+        return Err("auto_revert_timeout_secs must be greater than zero".to_string());
+    }
+    Ok(secs)
+}
+
+#[derive(Clone, Debug)]
+pub struct SpawnBatchItem {
+    pub card_id: String,
+    pub suggested_steps: Option<usize>,
+    pub files_to_open: Vec<String>,
+    pub base_branch: Option<String>,
+    pub base_commit: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct BoardCreateBatchItem {
+    pub card_id: String,
+    pub title: String,
+    pub priority: String,
+    pub instructions: String,
+    pub depends_on: Vec<String>,
+    pub target_files: Vec<String>,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+struct SpawnBatchResult {
+    card_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    agent_chat_id: Option<String>,
+    success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+pub struct MergeBatchResult {
+    pub card_id: String,
+    pub merged: bool,
+    pub conflict: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+struct SimpleBatchResult {
+    card_id: String,
+    success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
+pub fn parse_spawn_item(value: &Value) -> Result<SpawnBatchItem, String> {
+    if !value.is_object() {
+        return Err("spawn item must be an object".to_string());
+    }
+    Ok(SpawnBatchItem {
+        card_id: required_string(value, "card_id")?,
+        suggested_steps: optional_usize(value, "suggested_steps")?,
+        files_to_open: optional_string_vec(value.get("files_to_open"), "files_to_open")?,
+        base_branch: optional_nonempty_string(value, "base_branch")?,
+        base_commit: optional_nonempty_string(value, "base_commit")?,
+    })
+}
+
+fn optional_nonempty_string(value: &Value, key: &str) -> Result<Option<String>, String> {
+    match value.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(value)) if !value.trim().is_empty() => {
+            Ok(Some(value.trim().to_string()))
+        }
+        Some(Value::String(_)) => Err(format!("'{}' must be a non-empty string", key)),
+        Some(_) => Err(format!("'{}' must be a string", key)),
+    }
+}
+
+fn parse_board_create_item(value: &Value) -> Result<BoardCreateBatchItem, String> {
+    if !value.is_object() {
+        return Err("card item must be an object".to_string());
+    }
+    Ok(BoardCreateBatchItem {
+        card_id: required_string(value, "card_id")?,
+        title: required_string(value, "title")?,
+        priority: optional_string(value, "priority", "P1")?,
+        instructions: optional_string(value, "instructions", "")?,
+        depends_on: optional_string_vec(value.get("depends_on"), "depends_on")?,
+        target_files: optional_string_vec(value.get("target_files"), "target_files")?,
+    })
+}
+
+pub fn validate_spawn_agent_cards(
+    board: &TaskBoard,
+    items: &[Result<SpawnBatchItem, String>],
+) -> Vec<Option<String>> {
+    let ready: HashSet<String> = board.get_ready_cards().ready.into_iter().collect();
+    let mut errors: Vec<Option<String>> = items
+        .iter()
+        .map(|item| item.as_ref().err().cloned())
+        .collect();
+    let mut seen: HashMap<String, usize> = HashMap::new();
+
+    for (idx, item) in items.iter().enumerate() {
+        let Ok(item) = item else {
+            continue;
+        };
+        if let Some(prev) = seen.insert(item.card_id.clone(), idx) {
+            let message = format!("Duplicate card_id {} in batch", item.card_id);
+            if errors[prev].is_none() {
+                errors[prev] = Some(message.clone());
+            }
+            errors[idx] = Some(message);
+            continue;
+        }
+        let Some(card) = board.get_card(&item.card_id) else {
+            errors[idx] = Some(format!("Card {} not found", item.card_id));
+            continue;
+        };
+        if card.column != "planned" {
+            // A room is topped up after its first member moved the card to 'doing'; a lone card
+            // still has to sit in 'planned' so a batch cannot race a card the planner has not
+            // released yet.
+            let topping_up_room = !card.team_members.is_empty();
+            if let Some(error) = refact_tasks::rooms::reject_spawn_into_card(card) {
+                errors[idx] = Some(error);
+                continue;
+            }
+            if !topping_up_room {
+                errors[idx] = Some(format!(
+                    "Card {} is in column '{}', expected ready planned card",
+                    item.card_id, card.column
+                ));
+                continue;
+            }
+        }
+        if let Err(error) = card.validate_team() {
+            errors[idx] = Some(error);
+            continue;
+        }
+        if !ready.contains(&item.card_id) {
+            errors[idx] = Some(format!(
+                "Card {} dependencies are not satisfied",
+                item.card_id
+            ));
+        }
+    }
+
+    errors
+}
+
+fn parse_mark_item(value: &Value, text_key: &str) -> Result<(String, String), String> {
+    if !value.is_object() {
+        return Err("item must be an object".to_string());
+    }
+    Ok((
+        required_string(value, "card_id")?,
+        required_string(value, text_key)?,
+    ))
+}
+
+pub fn dependency_ordered_done_agent_cards(board: &TaskBoard, max_merges: usize) -> Vec<String> {
+    let candidates: HashSet<String> = board
+        .cards
+        .iter()
+        .filter(|card| card.column == "done" && card.agent_branch.is_some())
+        .map(|card| card.id.clone())
+        .collect();
+    let card_by_id: HashMap<String, &BoardCard> = board
+        .cards
+        .iter()
+        .map(|card| (card.id.clone(), card))
+        .collect();
+    let mut ordered = Vec::new();
+    let mut visiting = HashSet::new();
+    let mut visited = HashSet::new();
+
+    fn visit(
+        id: &str,
+        candidates: &HashSet<String>,
+        card_by_id: &HashMap<String, &BoardCard>,
+        visiting: &mut HashSet<String>,
+        visited: &mut HashSet<String>,
+        ordered: &mut Vec<String>,
+    ) {
+        if visited.contains(id) || !candidates.contains(id) || visiting.contains(id) {
+            return;
+        }
+        visiting.insert(id.to_string());
+        if let Some(card) = card_by_id.get(id) {
+            for dep in &card.depends_on {
+                visit(dep, candidates, card_by_id, visiting, visited, ordered);
+            }
+        }
+        visiting.remove(id);
+        visited.insert(id.to_string());
+        ordered.push(id.to_string());
+    }
+
+    for card in &board.cards {
+        if candidates.contains(&card.id) {
+            visit(
+                &card.id,
+                &candidates,
+                &card_by_id,
+                &mut visiting,
+                &mut visited,
+                &mut ordered,
+            );
+        }
+    }
+    ordered.truncate(max_merges);
+    ordered
+}
+
+pub fn contexts_text(contexts: &[ContextEnum]) -> String {
+    contexts
+        .iter()
+        .map(|ctx| match ctx {
+            ContextEnum::ChatMessage(message) => message.content.content_text_only(),
+            ContextEnum::ContextFile(file) => file.file_content.clone(),
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+pub fn merge_result_from_tool(
+    card_id: String,
+    result: Result<(bool, Vec<ContextEnum>), String>,
+) -> MergeBatchResult {
+    match result {
+        Ok((_, contexts)) => {
+            let text = contexts_text(&contexts);
+            let conflict = text.contains("Merge Conflicts Detected")
+                || text.contains("Merge Already In Progress");
+            let auto_reverted = text.contains("**Auto-reverted:** true");
+            let merged = text.contains("Agent Work Merged") && !auto_reverted;
+            MergeBatchResult {
+                card_id,
+                merged,
+                conflict,
+                error: auto_reverted.then(|| {
+                    "Merge was automatically reverted after post-merge verification failed"
+                        .to_string()
+                }),
+            }
+        }
+        Err(error) => MergeBatchResult {
+            card_id,
+            merged: false,
+            conflict: false,
+            error: Some(error),
+        },
+    }
+}
+
+pub fn should_continue_merges(result: &MergeBatchResult, stop_on_conflict: bool) -> bool {
+    result.merged && !(stop_on_conflict && result.conflict)
+}
+
+fn find_cycle_ids(items: &[BoardCreateBatchItem], active_ids: &HashSet<String>) -> HashSet<String> {
+    let graph: HashMap<String, Vec<String>> = items
+        .iter()
+        .filter(|item| active_ids.contains(&item.card_id))
+        .map(|item| {
+            (
+                item.card_id.clone(),
+                item.depends_on
+                    .iter()
+                    .filter(|dep| active_ids.contains(*dep))
+                    .cloned()
+                    .collect(),
+            )
+        })
+        .collect();
+    let mut state: HashMap<String, u8> = HashMap::new();
+    let mut stack: Vec<String> = Vec::new();
+    let mut cycles = HashSet::new();
+
+    fn dfs(
+        id: &str,
+        graph: &HashMap<String, Vec<String>>,
+        state: &mut HashMap<String, u8>,
+        stack: &mut Vec<String>,
+        cycles: &mut HashSet<String>,
+    ) {
+        state.insert(id.to_string(), 1);
+        stack.push(id.to_string());
+        if let Some(deps) = graph.get(id) {
+            for dep in deps {
+                match state.get(dep).copied().unwrap_or(0) {
+                    0 => dfs(dep, graph, state, stack, cycles),
+                    1 => {
+                        if let Some(pos) = stack.iter().position(|v| v == dep) {
+                            for node in &stack[pos..] {
+                                cycles.insert(node.clone());
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        stack.pop();
+        state.insert(id.to_string(), 2);
+    }
+
+    for id in graph.keys() {
+        if state.get(id).copied().unwrap_or(0) == 0 {
+            dfs(id, &graph, &mut state, &mut stack, &mut cycles);
+        }
+    }
+
+    cycles
+}
+
+fn propagate_invalid_dependencies(
+    items: &[Result<BoardCreateBatchItem, String>],
+    errors: &mut [Option<String>],
+) {
+    loop {
+        let invalid_ids: HashSet<String> = items
+            .iter()
+            .enumerate()
+            .filter(|(idx, item)| errors[*idx].is_some() && item.is_ok())
+            .filter_map(|(_, item)| item.as_ref().ok().map(|item| item.card_id.clone()))
+            .collect();
+        let mut changed = false;
+        for (idx, item) in items.iter().enumerate() {
+            if errors[idx].is_some() {
+                continue;
+            }
+            let Ok(item) = item else {
+                continue;
+            };
+            if let Some(dep) = item
+                .depends_on
+                .iter()
+                .find(|dep| invalid_ids.contains(*dep))
+            {
+                errors[idx] = Some(format!("Dependency {} is invalid in this batch", dep));
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+}
+
+pub fn validate_board_create_batch(
+    board: &TaskBoard,
+    items: &[Result<BoardCreateBatchItem, String>],
+) -> Vec<Option<String>> {
+    let mut errors: Vec<Option<String>> = items
+        .iter()
+        .map(|item| item.as_ref().err().cloned())
+        .collect();
+    let existing_ids: HashSet<String> = board.cards.iter().map(|card| card.id.clone()).collect();
+    let mut batch_ids = HashSet::new();
+    let mut seen: HashMap<String, usize> = HashMap::new();
+
+    for (idx, item) in items.iter().enumerate() {
+        let Ok(item) = item else {
+            continue;
+        };
+        batch_ids.insert(item.card_id.clone());
+        if existing_ids.contains(&item.card_id) {
+            errors[idx] = Some(format!("Card {} already exists", item.card_id));
+        }
+        if let Some(prev) = seen.insert(item.card_id.clone(), idx) {
+            let message = format!("Duplicate card_id {} in batch", item.card_id);
+            if errors[prev].is_none() {
+                errors[prev] = Some(message.clone());
+            }
+            errors[idx] = Some(message);
+        }
+    }
+
+    for (idx, item) in items.iter().enumerate() {
+        if errors[idx].is_some() {
+            continue;
+        }
+        let Ok(item) = item else {
+            continue;
+        };
+        for dep in &item.depends_on {
+            if !existing_ids.contains(dep) && !batch_ids.contains(dep) {
+                errors[idx] = Some(format!(
+                    "Dependency {} does not exist and is not in this batch",
+                    dep
+                ));
+                break;
+            }
+        }
+    }
+
+    propagate_invalid_dependencies(items, &mut errors);
+
+    let mut combined_items: Vec<BoardCreateBatchItem> = board
+        .cards
+        .iter()
+        .map(|card| BoardCreateBatchItem {
+            card_id: card.id.clone(),
+            title: card.title.clone(),
+            priority: card.priority.clone(),
+            instructions: card.instructions.clone(),
+            depends_on: card.depends_on.clone(),
+            target_files: card.target_files.clone(),
+        })
+        .collect();
+    combined_items.extend(
+        items
+            .iter()
+            .enumerate()
+            .filter(|(idx, item)| errors[*idx].is_none() && item.is_ok())
+            .filter_map(|(_, item)| item.as_ref().ok().cloned()),
+    );
+    let combined_ids: HashSet<String> = combined_items
+        .iter()
+        .map(|item| item.card_id.clone())
+        .collect();
+    let cycle_ids = find_cycle_ids(&combined_items, &combined_ids);
+    if !cycle_ids.is_empty() {
+        for (idx, item) in items.iter().enumerate() {
+            if errors[idx].is_none() {
+                if let Ok(item) = item {
+                    if cycle_ids.contains(&item.card_id) {
+                        errors[idx] = Some("Dependency cycle detected".to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    propagate_invalid_dependencies(items, &mut errors);
+    errors
+}
+
+fn board_create_order(
+    items: &[Result<BoardCreateBatchItem, String>],
+    errors: &[Option<String>],
+) -> Vec<usize> {
+    let mut remaining: HashSet<String> = items
+        .iter()
+        .enumerate()
+        .filter(|(idx, item)| errors[*idx].is_none() && item.is_ok())
+        .filter_map(|(_, item)| item.as_ref().ok().map(|item| item.card_id.clone()))
+        .collect();
+    let mut order = Vec::new();
+
+    while !remaining.is_empty() {
+        let next = items.iter().enumerate().find_map(|(idx, item)| {
+            if errors[idx].is_some() {
+                return None;
+            }
+            let item = item.as_ref().ok()?;
+            if !remaining.contains(&item.card_id) {
+                return None;
+            }
+            if item.depends_on.iter().all(|dep| !remaining.contains(dep)) {
+                Some((idx, item.card_id.clone()))
+            } else {
+                None
+            }
+        });
+        let Some((idx, id)) = next else {
+            break;
+        };
+        remaining.remove(&id);
+        order.push(idx);
+    }
+
+    order
+}
+
+fn board_create_args(task_id: &str, item: &BoardCreateBatchItem) -> HashMap<String, Value> {
+    let mut args = HashMap::new();
+    args.insert("task_id".to_string(), json!(task_id));
+    args.insert("card_id".to_string(), json!(item.card_id));
+    args.insert("title".to_string(), json!(item.title));
+    args.insert("priority".to_string(), json!(item.priority));
+    args.insert("instructions".to_string(), json!(item.instructions));
+    args.insert("depends_on".to_string(), json!(item.depends_on));
+    args.insert("target_files".to_string(), json!(item.target_files));
+    args
+}
+
+pub fn spawn_args(task_id: &str, item: &SpawnBatchItem) -> HashMap<String, Value> {
+    let mut args = HashMap::new();
+    args.insert("task_id".to_string(), json!(task_id));
+    args.insert("card_id".to_string(), json!(item.card_id));
+    if let Some(suggested_steps) = item.suggested_steps {
+        args.insert("suggested_steps".to_string(), json!(suggested_steps));
+    }
+    if !item.files_to_open.is_empty() {
+        args.insert("files_to_open".to_string(), json!(item.files_to_open));
+    }
+    if let Some(base_branch) = item.base_branch.as_ref() {
+        args.insert("base_branch".to_string(), json!(base_branch));
+    }
+    if let Some(base_commit) = item.base_commit.as_ref() {
+        args.insert("base_commit".to_string(), json!(base_commit));
+    }
+    args
+}
+
+fn mark_args(task_id: &str, card_id: &str, key: &str, text: &str) -> HashMap<String, Value> {
+    let mut args = HashMap::new();
+    args.insert("task_id".to_string(), json!(task_id));
+    args.insert("card_id".to_string(), json!(card_id));
+    args.insert(key.to_string(), json!(text));
+    args
+}
+
+pub fn merge_args(
+    task_id: &str,
+    card_id: &str,
+    strategy: &str,
+    auto_revert: bool,
+    auto_revert_timeout_secs: u64,
+) -> HashMap<String, Value> {
+    HashMap::from([
+        ("task_id".to_string(), json!(task_id)),
+        ("card_id".to_string(), json!(card_id)),
+        ("strategy".to_string(), json!(strategy)),
+        ("auto_revert".to_string(), json!(auto_revert)),
+        (
+            "auto_revert_timeout_secs".to_string(),
+            json!(auto_revert_timeout_secs),
+        ),
+    ])
+}
+
+pub struct ToolSpawnAgentsBatch;
+pub struct ToolMergeReadyInOrder;
+pub struct ToolMarkDoneBatch;
+pub struct ToolMarkFailedBatch;
+pub struct ToolBoardCreateBatch;
+
+impl ToolSpawnAgentsBatch {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl ToolMergeReadyInOrder {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl ToolMarkDoneBatch {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl ToolMarkFailedBatch {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl ToolBoardCreateBatch {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+#[async_trait]
+impl Tool for ToolSpawnAgentsBatch {
+    fn tool_description(&self) -> ToolDesc {
+        ToolDesc {
+            name: "spawn_agents_batch".to_string(),
+            display_name: "Spawn Agents Batch".to_string(),
+            source: make_source(),
+            experimental: false,
+            allow_parallel: false,
+            description: "Spawn task agents for up to 10 ready planned cards in parallel."
+                .to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "task_id": { "type": "string", "description": "Task UUID (optional in planner context)" },
+                    "cards": {
+                        "type": "array",
+                        "maxItems": MAX_SPAWN_BATCH,
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "card_id": { "type": "string" },
+                                "suggested_steps": { "type": "integer" },
+                                "files_to_open": { "type": "array", "items": { "type": "string" } },
+                                "base_branch": { "type": "string" },
+                                "base_commit": { "type": "string" }
+                            },
+                            "required": ["card_id"]
+                        }
+                    }
+                },
+                "required": ["cards"]
+            }),
+            output_schema: None,
+            annotations: None,
+        }
+    }
+
+    async fn tool_execute(
+        &mut self,
+        ccx: Arc<AMutex<AtCommandsContext>>,
+        tool_call_id: &String,
+        args: &HashMap<String, Value>,
+    ) -> Result<(bool, Vec<ContextEnum>), String> {
+        let (app, task_id) = planner_context(&ccx, args, "spawn_agents_batch").await?;
+        let raw_items = array_arg(args, "cards")?;
+        if raw_items.len() > MAX_SPAWN_BATCH {
+            return Err(format!(
+                "spawn_agents_batch accepts at most {} cards",
+                MAX_SPAWN_BATCH
+            ));
+        }
+
+        let parsed: Vec<Result<SpawnBatchItem, String>> =
+            raw_items.iter().map(parse_spawn_item).collect();
+        let board = storage::load_board_for_ctx(&app.chat_ctx(), &task_id).await?;
+        let validation_errors = validate_spawn_agent_cards(&board, &parsed);
+        let mut results: Vec<Option<SpawnBatchResult>> = raw_items
+            .iter()
+            .enumerate()
+            .map(|(idx, value)| {
+                validation_errors[idx]
+                    .as_ref()
+                    .map(|error| SpawnBatchResult {
+                        card_id: parsed[idx]
+                            .as_ref()
+                            .map(|item| item.card_id.clone())
+                            .unwrap_or_else(|_| item_name(value, idx)),
+                        agent_chat_id: None,
+                        success: false,
+                        error: Some(error.clone()),
+                    })
+            })
+            .collect();
+        let mut joins = JoinSet::new();
+
+        for (idx, item) in parsed.iter().enumerate() {
+            if validation_errors[idx].is_some() {
+                continue;
+            }
+            let item = item.as_ref().map_err(|e| e.clone())?.clone();
+            let ccx_clone = ccx.clone();
+            let ctx_clone = app.chat_ctx();
+            let task_id_clone = task_id.clone();
+            let call_id = format!("{}:{}", tool_call_id, item.card_id);
+            joins.spawn(async move {
+                let mut tool = ToolTaskSpawnAgent::new();
+                let card_id = item.card_id.clone();
+                let single_args = spawn_args(&task_id_clone, &item);
+                let result = tool.tool_execute(ccx_clone, &call_id, &single_args).await;
+                match result {
+                    Ok(_) => {
+                        let agent_chat_id = storage::load_board_for_ctx(&ctx_clone, &task_id_clone)
+                            .await
+                            .ok()
+                            .and_then(|board| {
+                                board
+                                    .get_card(&card_id)
+                                    .and_then(|card| card.agent_chat_id.clone())
+                            });
+                        (
+                            idx,
+                            SpawnBatchResult {
+                                card_id,
+                                agent_chat_id,
+                                success: true,
+                                error: None,
+                            },
+                        )
+                    }
+                    Err(error) => (
+                        idx,
+                        SpawnBatchResult {
+                            card_id,
+                            agent_chat_id: None,
+                            success: false,
+                            error: Some(error),
+                        },
+                    ),
+                }
+            });
+        }
+
+        while let Some(joined) = joins.join_next().await {
+            match joined {
+                Ok((idx, result)) => results[idx] = Some(result),
+                Err(error) => {
+                    let idx = results.iter().position(Option::is_none).unwrap_or(0);
+                    results[idx] = Some(SpawnBatchResult {
+                        card_id: item_name(&raw_items[idx], idx),
+                        agent_chat_id: None,
+                        success: false,
+                        error: Some(format!("spawn task failed: {}", error)),
+                    });
+                }
+            }
+        }
+
+        let results: Vec<SpawnBatchResult> = results.into_iter().flatten().collect();
+        batch_tool_message(tool_call_id, &results)
+    }
+
+    fn tool_depends_on(&self) -> Vec<String> {
+        vec![]
+    }
+}
+
+#[async_trait]
+impl Tool for ToolMergeReadyInOrder {
+    fn tool_description(&self) -> ToolDesc {
+        ToolDesc {
+            name: "merge_ready_in_order".to_string(),
+            display_name: "Merge Ready In Order".to_string(),
+            source: make_source(),
+            experimental: false,
+            allow_parallel: false,
+            description:
+                "Merge done task-agent cards with agent branches one at a time in dependency order."
+                    .to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "task_id": { "type": "string", "description": "Task UUID (optional in planner context)" },
+                    "strategy": { "type": "string", "enum": ["merge", "squash"], "default": "squash" },
+                    "stop_on_conflict": { "type": "boolean", "default": true },
+                    "max_merges": { "type": "integer", "default": MAX_MERGE_BATCH },
+                    "auto_revert": { "type": "boolean", "default": false, "description": "Opt in to post-merge verification and automatic git revert on deterministic regression" },
+                    "auto_revert_timeout_secs": { "type": "integer", "default": refact_chat_api::tools_facade::DEFAULT_POST_MERGE_CHECK_TIMEOUT_SECS, "description": "Timeout for post-merge verification and revert commands" }
+                }
+            }),
+            output_schema: None,
+            annotations: None,
+        }
+    }
+
+    async fn tool_execute(
+        &mut self,
+        ccx: Arc<AMutex<AtCommandsContext>>,
+        tool_call_id: &String,
+        args: &HashMap<String, Value>,
+    ) -> Result<(bool, Vec<ContextEnum>), String> {
+        let (app, task_id) = planner_context(&ccx, args, "merge_ready_in_order").await?;
+        let strategy = args
+            .get("strategy")
+            .and_then(|v| v.as_str())
+            .unwrap_or("squash");
+        if strategy != "merge" && strategy != "squash" {
+            return Err(format!(
+                "Invalid strategy '{}', must be 'merge' or 'squash'",
+                strategy
+            ));
+        }
+        let stop_on_conflict = args
+            .get("stop_on_conflict")
+            .and_then(refact_tool_api::coerce_bool)
+            .unwrap_or(true);
+        let max_merges = usize_arg(args, "max_merges", MAX_MERGE_BATCH)?.min(MAX_MERGE_BATCH);
+        let auto_revert = auto_revert_arg(args)?;
+        let auto_revert_timeout_secs = auto_revert_timeout_secs_arg(args)?;
+        let board = storage::load_board_for_ctx(&app.chat_ctx(), &task_id).await?;
+        let candidates = dependency_ordered_done_agent_cards(&board, max_merges);
+        let mut results = Vec::new();
+
+        for card_id in candidates {
+            let single_args = merge_args(
+                &task_id,
+                &card_id,
+                strategy,
+                auto_revert,
+                auto_revert_timeout_secs,
+            );
+            let call_id = format!("{}:{}", tool_call_id, card_id);
+            let mut tool = ToolTaskMergeAgent::new();
+            let result = merge_result_from_tool(
+                card_id.clone(),
+                tool.tool_execute(ccx.clone(), &call_id, &single_args).await,
+            );
+            let keep_going = should_continue_merges(&result, stop_on_conflict);
+            results.push(result);
+            if !keep_going {
+                break;
+            }
+        }
+
+        batch_tool_message(tool_call_id, &results)
+    }
+
+    fn tool_depends_on(&self) -> Vec<String> {
+        vec![]
+    }
+}
+
+#[async_trait]
+impl Tool for ToolMarkDoneBatch {
+    fn tool_description(&self) -> ToolDesc {
+        ToolDesc {
+            name: "mark_done_batch".to_string(),
+            display_name: "Mark Done Batch".to_string(),
+            source: make_source(),
+            experimental: false,
+            allow_parallel: false,
+            description: "Mark multiple task cards done with per-card reports.".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "task_id": { "type": "string", "description": "Task UUID (optional in planner context)" },
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "card_id": { "type": "string" },
+                                "report": { "type": "string" }
+                            },
+                            "required": ["card_id", "report"]
+                        }
+                    }
+                },
+                "required": ["items"]
+            }),
+            output_schema: None,
+            annotations: None,
+        }
+    }
+
+    async fn tool_execute(
+        &mut self,
+        ccx: Arc<AMutex<AtCommandsContext>>,
+        tool_call_id: &String,
+        args: &HashMap<String, Value>,
+    ) -> Result<(bool, Vec<ContextEnum>), String> {
+        let (_, task_id) = planner_context(&ccx, args, "mark_done_batch").await?;
+        let raw_items = array_arg(args, "items")?;
+        let mut results = Vec::new();
+
+        for (idx, value) in raw_items.iter().enumerate() {
+            match parse_mark_item(value, "report") {
+                Ok((card_id, report)) => {
+                    let single_args = mark_args(&task_id, &card_id, "report", &report);
+                    let call_id = format!("{}:{}", tool_call_id, card_id);
+                    let mut tool = ToolTaskMarkCardDone::new();
+                    match tool.tool_execute(ccx.clone(), &call_id, &single_args).await {
+                        Ok(_) => results.push(SimpleBatchResult {
+                            card_id,
+                            success: true,
+                            error: None,
+                        }),
+                        Err(error) => results.push(SimpleBatchResult {
+                            card_id,
+                            success: false,
+                            error: Some(error),
+                        }),
+                    }
+                }
+                Err(error) => results.push(SimpleBatchResult {
+                    card_id: item_name(value, idx),
+                    success: false,
+                    error: Some(error),
+                }),
+            }
+        }
+
+        batch_tool_message(tool_call_id, &results)
+    }
+
+    fn tool_depends_on(&self) -> Vec<String> {
+        vec![]
+    }
+}
+
+#[async_trait]
+impl Tool for ToolMarkFailedBatch {
+    fn tool_description(&self) -> ToolDesc {
+        ToolDesc {
+            name: "mark_failed_batch".to_string(),
+            display_name: "Mark Failed Batch".to_string(),
+            source: make_source(),
+            experimental: false,
+            allow_parallel: false,
+            description: "Mark multiple task cards failed with per-card reasons.".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "task_id": { "type": "string", "description": "Task UUID (optional in planner context)" },
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "card_id": { "type": "string" },
+                                "reason": { "type": "string" }
+                            },
+                            "required": ["card_id", "reason"]
+                        }
+                    }
+                },
+                "required": ["items"]
+            }),
+            output_schema: None,
+            annotations: None,
+        }
+    }
+
+    async fn tool_execute(
+        &mut self,
+        ccx: Arc<AMutex<AtCommandsContext>>,
+        tool_call_id: &String,
+        args: &HashMap<String, Value>,
+    ) -> Result<(bool, Vec<ContextEnum>), String> {
+        let (_, task_id) = planner_context(&ccx, args, "mark_failed_batch").await?;
+        let raw_items = array_arg(args, "items")?;
+        let mut results = Vec::new();
+
+        for (idx, value) in raw_items.iter().enumerate() {
+            match parse_mark_item(value, "reason") {
+                Ok((card_id, reason)) => {
+                    let single_args = mark_args(&task_id, &card_id, "reason", &reason);
+                    let call_id = format!("{}:{}", tool_call_id, card_id);
+                    let mut tool = ToolTaskMarkCardFailed::new();
+                    match tool.tool_execute(ccx.clone(), &call_id, &single_args).await {
+                        Ok(_) => results.push(SimpleBatchResult {
+                            card_id,
+                            success: true,
+                            error: None,
+                        }),
+                        Err(error) => results.push(SimpleBatchResult {
+                            card_id,
+                            success: false,
+                            error: Some(error),
+                        }),
+                    }
+                }
+                Err(error) => results.push(SimpleBatchResult {
+                    card_id: item_name(value, idx),
+                    success: false,
+                    error: Some(error),
+                }),
+            }
+        }
+
+        batch_tool_message(tool_call_id, &results)
+    }
+
+    fn tool_depends_on(&self) -> Vec<String> {
+        vec![]
+    }
+}
+
+#[async_trait]
+impl Tool for ToolBoardCreateBatch {
+    fn tool_description(&self) -> ToolDesc {
+        ToolDesc {
+            name: "board_create_batch".to_string(),
+            display_name: "Board Create Batch".to_string(),
+            source: make_source(),
+            experimental: false,
+            allow_parallel: false,
+            description:
+                "Create up to 30 task cards after validating dependency references and cycles."
+                    .to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "task_id": { "type": "string", "description": "Task UUID (optional in planner context)" },
+                    "cards": {
+                        "type": "array",
+                        "maxItems": MAX_CREATE_BATCH,
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "card_id": { "type": "string" },
+                                "title": { "type": "string" },
+                                "priority": { "type": "string" },
+                                "instructions": { "type": "string" },
+                                "depends_on": { "type": "array", "items": { "type": "string" } },
+                                "target_files": { "type": "array", "items": { "type": "string" } }
+                            },
+                            "required": ["card_id", "title"]
+                        }
+                    }
+                },
+                "required": ["cards"]
+            }),
+            output_schema: None,
+            annotations: None,
+        }
+    }
+
+    async fn tool_execute(
+        &mut self,
+        ccx: Arc<AMutex<AtCommandsContext>>,
+        tool_call_id: &String,
+        args: &HashMap<String, Value>,
+    ) -> Result<(bool, Vec<ContextEnum>), String> {
+        let (app, task_id) = planner_context(&ccx, args, "board_create_batch").await?;
+        let raw_items = array_arg(args, "cards")?;
+        if raw_items.len() > MAX_CREATE_BATCH {
+            return Err(format!(
+                "board_create_batch accepts at most {} cards",
+                MAX_CREATE_BATCH
+            ));
+        }
+
+        let parsed: Vec<Result<BoardCreateBatchItem, String>> =
+            raw_items.iter().map(parse_board_create_item).collect();
+        let board = storage::load_board_for_ctx(&app.chat_ctx(), &task_id).await?;
+        let validation_errors = validate_board_create_batch(&board, &parsed);
+        let mut results: Vec<Option<SimpleBatchResult>> = raw_items
+            .iter()
+            .enumerate()
+            .map(|(idx, value)| {
+                validation_errors[idx]
+                    .as_ref()
+                    .map(|error| SimpleBatchResult {
+                        card_id: parsed[idx]
+                            .as_ref()
+                            .map(|item| item.card_id.clone())
+                            .unwrap_or_else(|_| item_name(value, idx)),
+                        success: false,
+                        error: Some(error.clone()),
+                    })
+            })
+            .collect();
+        let mut available_ids: HashSet<String> =
+            board.cards.iter().map(|card| card.id.clone()).collect();
+
+        for idx in board_create_order(&parsed, &validation_errors) {
+            let item = parsed[idx].as_ref().map_err(|e| e.clone())?;
+            if let Some(dep) = item
+                .depends_on
+                .iter()
+                .find(|dep| !available_ids.contains(*dep))
+            {
+                results[idx] = Some(SimpleBatchResult {
+                    card_id: item.card_id.clone(),
+                    success: false,
+                    error: Some(format!("Dependency {} was not created", dep)),
+                });
+                continue;
+            }
+            let single_args = board_create_args(&task_id, item);
+            let call_id = format!("{}:{}", tool_call_id, item.card_id);
+            let mut tool = ToolTaskBoardCreateCard::new();
+            match tool.tool_execute(ccx.clone(), &call_id, &single_args).await {
+                Ok(_) => {
+                    available_ids.insert(item.card_id.clone());
+                    results[idx] = Some(SimpleBatchResult {
+                        card_id: item.card_id.clone(),
+                        success: true,
+                        error: None,
+                    });
+                }
+                Err(error) => {
+                    results[idx] = Some(SimpleBatchResult {
+                        card_id: item.card_id.clone(),
+                        success: false,
+                        error: Some(error),
+                    });
+                }
+            }
+        }
+
+        let results: Vec<SimpleBatchResult> = results.into_iter().flatten().collect();
+        batch_tool_message(tool_call_id, &results)
+    }
+
+    fn tool_depends_on(&self) -> Vec<String> {
+        vec![]
+    }
+}
+

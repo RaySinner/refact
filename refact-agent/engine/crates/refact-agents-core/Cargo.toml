@@ -10,7 +10,8 @@ async-trait = "0.1.73"
 chrono = { version = "0.4.31", features = ["serde"] }
 serde.workspace = true
 serde_json.workspace = true
-tokio = { workspace = true, features = ["sync", "time"] }
+tokio = { workspace = true, features = ["macros", "sync", "time"] }
+tracing.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]

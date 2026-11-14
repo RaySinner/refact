@@ -1,5 +1,6 @@
 pub mod delivery;
 pub mod host;
+pub mod monitor;
 pub mod push;
 pub mod registry;
 pub mod spawn;

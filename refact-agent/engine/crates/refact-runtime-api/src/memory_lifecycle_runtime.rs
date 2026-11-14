@@ -34,6 +34,12 @@ pub trait MemoryLifecycleRuntime: Send + Sync {
         path: &Path,
         superseded_by: Option<&str>,
     ) -> Result<bool, String>;
+
+    async fn apply_memory_lifecycle_op_status_for_ctx(
+        &self,
+        ctx: &ChatCtx,
+        op: &MemoryLifecycleOp,
+    ) -> MemoryLifecycleOp;
 }
 
 pub async fn propose_supersede_for_near_duplicate_for_ctx(
@@ -63,5 +69,14 @@ pub async fn archive_memory_file_checked_for_ctx(
 ) -> Result<bool, String> {
     ctx.memory_lifecycle
         .archive_memory_file_checked_for_ctx(ctx, path, superseded_by)
+        .await
+}
+
+pub async fn apply_memory_lifecycle_op_status_for_ctx(
+    ctx: &ChatCtx,
+    op: &MemoryLifecycleOp,
+) -> MemoryLifecycleOp {
+    ctx.memory_lifecycle
+        .apply_memory_lifecycle_op_status_for_ctx(ctx, op)
         .await
 }

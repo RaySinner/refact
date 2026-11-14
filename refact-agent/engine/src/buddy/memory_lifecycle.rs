@@ -59,6 +59,14 @@ impl refact_runtime_api::memory_lifecycle_runtime::MemoryLifecycleRuntime
     ) -> Result<bool, String> {
         archive_memory_file_checked_for_ctx(ctx, path, superseded_by).await
     }
+
+    async fn apply_memory_lifecycle_op_status_for_ctx(
+        &self,
+        ctx: &ChatCtx,
+        op: &MemoryLifecycleOp,
+    ) -> MemoryLifecycleOp {
+        apply_memory_lifecycle_op_status_for_ctx(ctx, op).await
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1985,7 +1993,10 @@ pub async fn apply_memory_lifecycle_op_status(
     op: &MemoryLifecycleOp,
 ) -> MemoryLifecycleOp {
     let ctx = app.chat_ctx();
-    apply_memory_lifecycle_op_status_for_ctx(&ctx, op).await
+    refact_runtime_api::memory_lifecycle_runtime::apply_memory_lifecycle_op_status_for_ctx(
+        &ctx, op,
+    )
+    .await
 }
 
 async fn apply_memory_lifecycle_op_status_for_ctx(

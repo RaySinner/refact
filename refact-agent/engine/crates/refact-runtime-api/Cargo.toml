@@ -27,6 +27,7 @@ refact-scratchpads = { path = "../refact-scratchpads" }
 refact-context-api = { path = "../refact-context-api", features = ["http-client"] }
 refact-privacy = { path = "../refact-privacy" }
 refact-daemon = { path = "../refact-daemon" }
+refact-self-update = { path = "../refact-self-update" }
 refact-ext = { path = "../refact-ext" }
 refact-knowledge-graph = { path = "../refact-knowledge-graph" }
 refact-agents-core = { path = "../refact-agents-core" }

@@ -4800,6 +4800,7 @@ dependencies = [
  "refact-scheduler-core",
  "refact-scope-utils",
  "refact-scratchpads",
+ "refact-self-update",
  "refact-stats",
  "refact-tasks",
  "refact-tool-api",

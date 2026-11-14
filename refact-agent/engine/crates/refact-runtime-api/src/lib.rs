@@ -501,3 +501,6 @@ pub mod integration_variables;
 pub mod integrations_runtime;
 pub mod slash_cache;
 pub mod browser_frame;
+pub mod cli_dispatch;
+pub mod daemon_link;
+pub mod lsp_workspace_roots;

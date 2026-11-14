@@ -4421,6 +4421,7 @@ dependencies = [
  "refact-git-intel",
  "refact-integrations",
  "refact-perf",
+ "refact-providers",
  "refact-runtime-api",
  "refact-scheduler-core",
  "refact-stats",

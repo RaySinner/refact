@@ -1,9 +1,33 @@
 use tracing::{error, info, warn};
 use axum::middleware::Next;
-use axum::http::{Method, Request, StatusCode, Uri};
+use axum::http::{Method, Request, Uri};
 use axum::response::Response;
+use hyper::{Body, StatusCode};
+use serde::Serialize;
 
 use refact_core::custom_error::ScratchError;
+
+pub fn json_response(
+    status: StatusCode,
+    body: &impl Serialize,
+) -> Result<Response<Body>, ScratchError> {
+    let json = serde_json::to_string(body).map_err(|e| {
+        ScratchError::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("JSON serialization failed: {}", e),
+        )
+    })?;
+    Response::builder()
+        .status(status)
+        .header("Content-Type", "application/json")
+        .body(Body::from(json))
+        .map_err(|e| {
+            ScratchError::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Response build failed: {}", e),
+            )
+        })
+}
 
 const SPAM_HANDLERS: &[&str] = &["rag-status", "ping"];
 

@@ -22,6 +22,7 @@ pub mod mcp_marketplace_sources;
 pub mod performance;
 pub mod plugins;
 pub mod project_configs;
+pub mod provider_defaults;
 pub mod scheduler;
 pub mod setup_status;
 pub mod settings_config;

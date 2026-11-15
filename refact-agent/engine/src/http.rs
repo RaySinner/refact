@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::io::Write;
-use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
@@ -16,6 +15,7 @@ use tracing::{error, info};
 
 use crate::global_context::GlobalContext;
 use crate::http::routers::make_refact_http_server;
+use refact_core::net_utils::resolve_http_bind_addr;
 
 pub mod routers;
 mod utils;
@@ -23,25 +23,6 @@ mod utils;
 async fn handler_404(path: Uri) -> impl IntoResponse {
     info!("404 {}", path);
     (StatusCode::NOT_FOUND, format!("no handler for {}", path))
-}
-
-pub(crate) fn resolve_http_bind_addr(
-    http_host: Option<&str>,
-    inside_container: bool,
-    port: u16,
-) -> Result<SocketAddr, String> {
-    let host = http_host
-        .map(str::trim)
-        .filter(|host| !host.is_empty())
-        .unwrap_or(if inside_container {
-            "0.0.0.0"
-        } else {
-            "127.0.0.1"
-        });
-    let ip = host
-        .parse::<IpAddr>()
-        .map_err(|error| format!("invalid --http-host '{host}': {error}"))?;
-    Ok(SocketAddr::new(ip, port))
 }
 
 pub(crate) use crate::daemon::mdns::{
@@ -208,29 +189,6 @@ pub async fn start_server(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn http_bind_defaults_to_loopback() {
-        let addr = resolve_http_bind_addr(None, false, 8001).unwrap();
-        assert_eq!(addr.to_string(), "127.0.0.1:8001");
-    }
-
-    #[test]
-    fn http_bind_preserves_inside_container_default() {
-        let addr = resolve_http_bind_addr(None, true, 8001).unwrap();
-        assert_eq!(addr.to_string(), "0.0.0.0:8001");
-    }
-
-    #[test]
-    fn http_bind_uses_explicit_host() {
-        let addr = resolve_http_bind_addr(Some("127.0.0.1"), true, 8001).unwrap();
-        assert_eq!(addr.to_string(), "127.0.0.1:8001");
-    }
-
-    #[test]
-    fn http_bind_rejects_invalid_host() {
-        assert!(resolve_http_bind_addr(Some("localhost"), false, 8001).is_err());
-    }
 
     #[tokio::test]
     async fn mdns_advertises_without_daemon_endpoint() {

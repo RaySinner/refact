@@ -19,6 +19,7 @@ use refact_core::tokenizer_state::TokenizerState;
 use refact_files::path_utils::canonical_path;
 
 use crate::chat_ctx::ChatCtx;
+use crate::global_context::SharedGlobalContext;
 
 async fn try_open_tokenizer(res: Response, to: impl AsRef<Path>) -> Result<(), String> {
     let mut file = tokio::fs::OpenOptions::new()
@@ -75,7 +76,7 @@ fn check_json_file(path: &Path) -> bool {
     Tokenizer::from_file(path).is_ok()
 }
 
-fn tokenizer_load_is_disabled(tokenizer: &str) -> bool {
+pub fn tokenizer_load_is_disabled(tokenizer: &str) -> bool {
     tokenizer.starts_with("fake") || is_predefined_cloud_tokenizer(tokenizer)
 }
 
@@ -150,6 +151,20 @@ pub async fn cached_tokenizer_for_ctx(
         ctx.runtime.http_client.clone(),
         ctx.paths.cache_dir.clone(),
         ctx.model.caps.clone(),
+        model_rec,
+    )
+    .await
+}
+
+pub async fn cached_tokenizer(
+    global_context: SharedGlobalContext,
+    model_rec: &BaseModelRecord,
+) -> Result<Option<Arc<Tokenizer>>, String> {
+    cached_tokenizer_for_parts(
+        global_context.tokenizer_state.clone(),
+        global_context.http_client.clone(),
+        global_context.cache_dir.clone(),
+        global_context.caps_state.clone(),
         model_rec,
     )
     .await

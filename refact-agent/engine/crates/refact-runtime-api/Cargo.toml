@@ -63,13 +63,19 @@ sha2 = "0.10.8"
 tracing = "0.1"
 url = "2.4.1"
 structopt = "0.3"
-tokio = { workspace = true, features = ["time", "sync", "fs", "process"] }
+tokio = { workspace = true, features = ["time", "sync", "fs", "process", "signal", "rt"] }
 uuid.workspace = true
 git2 = "0.20.2"
 regex.workspace = true
 dunce = "1.0.5"
 walkdir = "2.3"
 tokenizers.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.55.0"
+
+[target.'cfg(not(windows))'.dependencies]
+pnet_datalink = "0.35.0"
 
 [dev-dependencies]
 filetime = "0.2.25"

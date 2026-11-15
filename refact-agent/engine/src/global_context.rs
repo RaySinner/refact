@@ -1,14 +1,11 @@
 use std::collections::HashMap;
-use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize};
 use std::sync::Mutex as StdMutex;
 use std::sync::RwLock as StdRwLock;
 use std::time::Duration;
-use tokio::signal;
 use tokio::sync::{Mutex as AMutex, RwLock as ARwLock};
-use tracing::info;
 
 use crate::agents::registry::BackgroundAgentRegistry;
 use crate::app_state::{CapsState, TokenizerState, ToolCatalogCache};
@@ -19,8 +16,6 @@ use crate::exec::ExecRegistry;
 use crate::files_in_workspace::DocumentsState;
 use crate::privacy::{PrivacyObservationRuntimeState, PrivacySettings};
 use crate::background_tasks::BackgroundTasksHolder;
-use crate::ext::hooks_runner::HooksConfig;
-use crate::scheduler::SchedulerConfig;
 use crate::yaml_configs::customization_registry::RegistryCacheManager;
 use crate::knowledge_index::KnowledgeIndex;
 pub use refact_core::at_commands_preview_cache::AtCommandsPreviewCache;
@@ -32,161 +27,10 @@ pub use refact_runtime_api::caps_loader::try_load_caps_quickly_if_not_present;
 pub use refact_runtime_api::global_context::*;
 pub use refact_runtime_api::context_factory::{ContextFactory, ContextFactorySlot};
 pub use refact_runtime_api::{app_state_from_gcx, GlobalContextCtx};
-
-async fn load_engine_global_config(
-    config_dir: &PathBuf,
-    cmdline: &CommandLine,
-) -> (SchedulerConfig, HooksConfig, TerminalSecurityConfig) {
-    let path = if cmdline.privacy_yaml.is_empty() {
-        config_dir.join("privacy.yaml")
-    } else {
-        crate::files_correction::canonical_path(cmdline.privacy_yaml.clone())
-    };
-    let config = match tokio::fs::read_to_string(&path).await {
-        Ok(content) => {
-            serde_yaml::from_str::<EngineGlobalConfig>(&content).unwrap_or_else(|error| {
-                tracing::warn!(
-                    "failed to parse engine global config from {}: {error}",
-                    path.display()
-                );
-                EngineGlobalConfig::default()
-            })
-        }
-        Err(error) => {
-            tracing::warn!(
-                "failed to read engine global config from {}: {error}",
-                path.display()
-            );
-            EngineGlobalConfig::default()
-        }
-    };
-    let scheduler = config
-        .scheduler
-        .with_startup_overrides(cmdline.no_scheduler);
-    (scheduler, config.hooks, config.terminal_security)
-}
-
-pub async fn migrate_to_config_folder(config_dir: &PathBuf, cache_dir: &PathBuf) -> io::Result<()> {
-    let mut entries = tokio::fs::read_dir(cache_dir).await?;
-    while let Some(entry) = entries.next_entry().await? {
-        let path = entry.path();
-        let file_name = path.file_name().unwrap().to_string_lossy().into_owned();
-        let file_type = entry.file_type().await?;
-        let is_yaml_cfg =
-            file_type.is_file() && path.extension().and_then(|e| e.to_str()) == Some("yaml");
-        if is_yaml_cfg {
-            let new_path = config_dir.join(&file_name);
-            if new_path.exists() {
-                tracing::info!(
-                    "cannot migrate {:?} to {:?}: destination exists",
-                    path,
-                    new_path
-                );
-                continue;
-            }
-            tokio::fs::rename(&path, &new_path).await?;
-            tracing::info!("migrated {:?} to {:?}", path, new_path);
-        }
-    }
-
-    Ok(())
-}
-
-#[cfg(not(target_os = "windows"))]
-pub fn get_app_searchable_id(workspace_folders: &[PathBuf]) -> String {
-    let mac = pnet_datalink::interfaces()
-        .into_iter()
-        .find(|iface: &pnet_datalink::NetworkInterface| !iface.is_loopback() && iface.mac.is_some())
-        .and_then(|iface| iface.mac)
-        .map(|mac| mac.to_string().replace(":", ""))
-        .unwrap_or_else(|| "no-mac".to_string());
-
-    let folders = workspace_folders
-        .iter()
-        .map(|p| {
-            p.file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string()
-        })
-        .collect::<Vec<_>>()
-        .join(";");
-
-    format!("{}-{}", mac, folders)
-}
-
-#[cfg(target_os = "windows")]
-pub fn get_app_searchable_id(workspace_folders: &[PathBuf]) -> String {
-    use winreg::enums::*;
-    use winreg::RegKey;
-    let machine_guid = RegKey::predef(HKEY_LOCAL_MACHINE)
-        .open_subkey("SOFTWARE\\Microsoft\\Cryptography")
-        .and_then(|key| key.get_value::<String, _>("MachineGuid"))
-        .unwrap_or_else(|_| "no-machine-guid".to_string());
-    let folders = workspace_folders
-        .iter()
-        .map(|p| {
-            p.file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string()
-        })
-        .collect::<Vec<_>>()
-        .join(";");
-    format!("{}-{}", machine_guid, folders)
-}
-
-pub async fn block_until_signal(
-    ask_shutdown_receiver: std::sync::mpsc::Receiver<String>,
-    shutdown_flag: Arc<AtomicBool>,
-) {
-    let ctrl_c = async {
-        signal::ctrl_c()
-            .await
-            .expect("failed to install Ctrl+C handler");
-    };
-
-    #[cfg(unix)]
-    let sigterm = async {
-        signal::unix::signal(signal::unix::SignalKind::terminate())
-            .expect("failed to install signal handler")
-            .recv()
-            .await;
-    };
-    #[cfg(not(unix))]
-    let sigterm = std::future::pending::<()>();
-
-    #[cfg(unix)]
-    let sigusr1 = async {
-        signal::unix::signal(signal::unix::SignalKind::user_defined1())
-            .expect("failed to install signal handler")
-            .recv()
-            .await;
-    };
-    #[cfg(not(unix))]
-    let sigusr1 = std::future::pending::<()>();
-
-    let shutdown_flag_clone = shutdown_flag.clone();
-    tokio::select! {
-        _ = ctrl_c => {
-            info!("SIGINT signal received");
-            shutdown_flag_clone.store(true, Ordering::SeqCst);
-        },
-        _ = sigterm => {
-            info!("SIGTERM signal received");
-            shutdown_flag_clone.store(true, Ordering::SeqCst);
-        },
-        _ = sigusr1 => {
-            info!("SIGUSR1 signal received");
-        },
-        _ = tokio::task::spawn_blocking(move || {
-            let _ = ask_shutdown_receiver.recv();
-            shutdown_flag.store(true, Ordering::SeqCst);
-        }) => {
-            info!("graceful shutdown requested");
-        }
-    }
-}
+pub use refact_runtime_api::engine_bootstrap::{
+    block_until_signal, get_app_searchable_id, migrate_to_config_folder,
+};
+use refact_runtime_api::engine_bootstrap::load_engine_global_config;
 
 pub async fn create_global_context(
     cache_dir: PathBuf,

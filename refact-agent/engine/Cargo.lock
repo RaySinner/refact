@@ -4561,7 +4561,6 @@ dependencies = [
  "parking_lot",
  "percent-encoding",
  "petgraph",
- "pnet_datalink",
  "portable-pty",
  "process-wrap 8.2.1",
  "proptest",
@@ -4666,7 +4665,6 @@ dependencies = [
  "uuid",
  "walkdir",
  "which 7.0.3",
- "winreg 0.55.0",
  "zerocopy",
  "zip",
 ]
@@ -4780,6 +4778,7 @@ dependencies = [
  "indexmap 1.9.3",
  "itertools 0.14.0",
  "notify",
+ "pnet_datalink",
  "refact-agentic",
  "refact-agents-core",
  "refact-at-web",
@@ -4829,6 +4828,7 @@ dependencies = [
  "url",
  "uuid",
  "walkdir",
+ "winreg 0.55.0",
 ]
 
 [[package]]

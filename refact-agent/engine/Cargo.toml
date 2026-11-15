@@ -230,12 +230,6 @@ perf-tests = []
 [build-dependencies]
 shadow-rs = "1.1.0"
 
-[target.'cfg(windows)'.dependencies]
-winreg = "0.55.0"
-
-[target.'cfg(not(windows))'.dependencies]
-pnet_datalink = "0.35.0"
-
 [dependencies]
 refact-code-intel-api = { path = "crates/refact-code-intel-api" }
 

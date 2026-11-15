@@ -26,6 +26,7 @@ pub mod files_correction;
 pub mod files_in_workspace;
 pub mod gcx_helpers;
 pub mod global_context;
+pub mod engine_bootstrap;
 pub mod integr_abstract;
 pub mod integrations_mcp_resources;
 pub mod pp_tool_context;

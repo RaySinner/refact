@@ -89,6 +89,7 @@ pub mod commit_message_runtime;
 pub mod task_comments;
 pub mod providers_oauth_runtime;
 pub mod providers_http_runtime;
+pub mod providers_pricing_runtime;
 pub mod integrations_sessions;
 pub mod buddy_actor_runtime;
 pub mod buddy_observers;

@@ -10,7 +10,10 @@ pub mod store;
 pub mod types;
 
 pub use cron_expr::{CronSchedule, human_schedule, next_run_ms as cron_next_run_ms, parse_cron};
-pub use runner::{runner_change_notify, session_cron_store, CronRunner, spawn, spawn_if_enabled};
+pub use refact_runtime_api::scheduler_runner::{
+    runner_change_notify, session_cron_store, CronRunner, spawn, spawn_if_enabled,
+};
+pub use refact_runtime_api::scheduler_runtime::EngineSchedulerRuntime;
 pub use retry::{classify, RetryCategory, RetryConfig};
 pub use schedule::{
     missed_run_grace_ms, next_run_ms, recurring_missed_grace_state, MissedRunGraceConfig,
@@ -116,16 +119,5 @@ mod tests {
                 note: Some(DURABLE_DISABLED_NOTE.to_string()),
             }
         );
-    }
-}
-
-pub struct EngineSchedulerRuntime;
-
-#[async_trait::async_trait]
-impl refact_runtime_api::scheduler::SchedulerRuntime for EngineSchedulerRuntime {
-    async fn active_durable_cron_store_for_services(&self, paths: &crate::app_state::PathServices, workspace: &crate::app_state::WorkspaceServices) -> Result<Option<std::sync::Arc<dyn CronStore>>, String> {
-        refact_runtime_api::scheduler::cron_store_for_project(
-            crate::files_correction::get_active_project_path_for_services(paths, workspace).await,
-        )
     }
 }

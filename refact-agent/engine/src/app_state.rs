@@ -318,6 +318,7 @@ impl CapsLoader for EngineCapsLoader {
         cmdline: CommandLine,
         gcx: SharedGlobalContext,
     ) -> Result<Arc<crate::caps::CodeAssistantCaps>, String> {
+        crate::providers::oauth_refresh::refresh_expiring_claude_code_tokens(&gcx).await;
         crate::caps::load_caps(cmdline, gcx).await
     }
 

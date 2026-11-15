@@ -493,6 +493,15 @@ pub trait NotificationEventSender: Send + Sync {
 }
 
 pub mod scheduler;
+pub mod scheduler_runner;
+pub mod scheduler_delivery;
+pub mod scheduler_exec_action;
+pub mod scheduler_runtime;
+pub mod task_events;
+pub mod task_storage_runtime;
+pub mod caps_load_runtime;
+pub mod caps_models_dev;
+pub mod caps_model_caps;
 pub mod room_roster;
 pub mod customization_registry;
 pub mod customization_registry_gcx;

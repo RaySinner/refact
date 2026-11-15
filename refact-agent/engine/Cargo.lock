@@ -4793,6 +4793,7 @@ dependencies = [
  "indexmap 1.9.3",
  "itertools 0.14.0",
  "libc",
+ "md5",
  "notify",
  "pnet_datalink",
  "refact-agentic",

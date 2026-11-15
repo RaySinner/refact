@@ -14,6 +14,7 @@ use refact_tasks::events::TaskEventEnvelope;
 use refact_tool_api::{build_registry_from_names, ToolDesc};
 
 pub mod command_line;
+pub mod trajectories;
 pub mod command_policy;
 pub mod files_blocklist;
 pub mod parent_stdin;

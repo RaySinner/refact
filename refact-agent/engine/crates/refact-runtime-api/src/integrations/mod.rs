@@ -1,3 +1,5 @@
+pub mod browser_controller;
+pub mod browser_runtime;
 pub mod cmdline;
 pub mod cmdline_service;
 pub mod config_chat;

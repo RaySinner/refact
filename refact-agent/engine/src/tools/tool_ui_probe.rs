@@ -1,1 +1,1 @@
-pub use super::design_tools::ToolUiProbe;
+pub use refact_tools::tools::design_tools::ToolUiProbe;

@@ -1,1 +1,1 @@
-pub use super::design_tools::ToolVisualDiff;
+pub use refact_tools::tools::design_tools::ToolVisualDiff;

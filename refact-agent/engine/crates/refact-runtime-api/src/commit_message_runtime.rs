@@ -3,14 +3,62 @@
 //! `refact_agentic::generate_commit_message`; everything here only needs the
 //! `ChatCtx` seams (subchat launcher, mode config, buddy workflow sink).
 
+use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
+use hashbrown::HashMap;
+use tracing::warn;
+
 use refact_agentic::generate_commit_message::{build_messages, extract_commit_message, SUBAGENT_ID};
 use refact_chat_api::TraceParent;
+use refact_files::path_utils::CommandSimplifiedDirExt;
+use refact_files::vcs_detect::detect_vcs_for_a_file_path;
 
 use crate::chat_ctx::ChatCtx;
 use crate::WorkflowFuture;
+
+pub async fn generate_commit_message_for_projects(
+    ctx: ChatCtx,
+) -> Result<HashMap<PathBuf, String>, String> {
+    let project_folders = ctx.workspace.workspace_folders.lock().unwrap().clone();
+    let mut commit_messages = HashMap::new();
+
+    for folder in project_folders {
+        let Some((_, vcs_type)) = detect_vcs_for_a_file_path(&folder).await else {
+            warn!("There's no recognizable version control detected for the folder {folder:?}");
+            continue;
+        };
+        let Some(command) = refact_agentic::generate_commit_message::diff_command_for_vcs(vcs_type)
+        else {
+            warn!("Unrecognizable version control detected for the folder {folder:?}: {vcs_type}");
+            continue;
+        };
+
+        let output = tokio::process::Command::new(command)
+            .arg("diff")
+            .current_dir_simplified(&folder)
+            .stdin(std::process::Stdio::null())
+            .output()
+            .await
+            .map_err(|e| format!("Failed to execute command for folder {folder:?}: {e}"))?;
+
+        if !output.status.success() {
+            warn!(
+                "Command failed for folder {folder:?}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            continue;
+        }
+
+        let diff_output = String::from_utf8_lossy(&output.stdout).to_string();
+        let commit_message =
+            generate_commit_message_by_diff(ctx.clone(), &diff_output, &None, None).await?;
+        commit_messages.insert(folder, commit_message);
+    }
+
+    Ok(commit_messages)
+}
 
 pub async fn generate_commit_message_by_diff(
     ctx: ChatCtx,

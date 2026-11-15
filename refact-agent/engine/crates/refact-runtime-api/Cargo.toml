@@ -75,6 +75,7 @@ regex.workspace = true
 dunce = "1.0.5"
 walkdir = "2.3"
 ropey = "1.6"
+hashbrown = "0.15.2"
 tokenizers.workspace = true
 
 [target.'cfg(windows)'.dependencies]

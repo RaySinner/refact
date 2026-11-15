@@ -4780,6 +4780,7 @@ dependencies = [
  "filetime",
  "futures",
  "git2",
+ "hashbrown 0.15.5",
  "headless_chrome",
  "hex",
  "home",

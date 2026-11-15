@@ -3,6 +3,10 @@ pub use refact_runtime_api::files_in_jsonl::*;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
+    use std::sync::Arc;
+
+    use crate::global_context::GlobalContext;
 
     fn tracked_jsonl_files(gcx: &Arc<GlobalContext>) -> Vec<PathBuf> {
         gcx.documents_state.jsonl_files.lock().unwrap().clone()

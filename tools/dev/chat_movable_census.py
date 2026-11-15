@@ -22,6 +22,11 @@ This script:
   symbol through the engine `pub use` chain, accepting a `refact_*` origin only
   when the chain really lands on a crate (including glob re-exports such as
   `pub use refact_core::x::*`);
+* turns every `use` statement into *symbol* edges, so `use crate::m::{A, B}`
+  binds `A` and `B` instead of the module `crate::m`. Reading the brace group
+  as a whole-module reference used to hide an engine-resident re-export behind a
+  facade that also globs a crate (a facade's `pub use refact_x::*` plus one
+  engine `pub use child::*` made every import through it look crate-only);
 * computes the movability closure, so a module is movable only when every
   production edge lands on a crate or on another movable module;
 * prints, per blocked file, the first engine-resident dependency.
@@ -47,7 +52,8 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 ENGINE = os.path.join(ROOT, "refact-agent", "engine")
-SRC = os.path.join(ENGINE, "src")
+SRC = os.environ.get("CENSUS_SRC_OVERRIDE") or os.path.join(ENGINE, "src")
+OUT_DIR = os.environ.get("CENSUS_OUT_DIR") or os.path.join(ENGINE, "target")
 
 TARGET = sys.argv[1] if len(sys.argv) > 1 else "chat"
 
@@ -466,11 +472,34 @@ for mod in files:
     for _is_pub, full in raw_uses.get(mod, []):
         if CRATE_RE.match(full):
             crates.add(full.split("::")[0])
+    # An import is a *symbol* edge, not a whole-module one. `use crate::m::{A, B}`
+    # is already expanded to one absolute path per name, so binding `A` and `B`
+    # finds the engine symbol a facade re-exports even when the facade also globs
+    # a crate ("`pub use refact_x::*` + `pub use engine_child::*`"): the old code
+    # read only the brace prefix `crate::m`, took the glob branch, and credited the
+    # whole module to `wild`, which silently marked engine-resident descendants as
+    # covered by the crate.
+    engines_uses = [
+        path
+        for _is_pub, path in raw_uses.get(mod, [])
+        if path.split("::")[0] in ("crate", "self", "super") and path.split("::")[-1] != "*"
+    ]
+    use_paths = {path for path in engines_uses if not path.endswith("::self")}
+    # `use crate::m::{self, X}` really does bind the module `m` itself.
+    for path in engines_uses:
+        if path.endswith("::self"):
+            add_edge(path[: -len("::self")])
+    for path in use_paths:
+        add_edge(path)
     # Every `crate::`/`super::`/`self::` path in the body, inline or inside a
     # `use`, is a real edge: a call written as `crate::chat::summarization::f(x)`
     # binds the file to that module just as firmly as an import does.
     for ref in set(REF_RE.findall(body)):
-        add_edge(re.sub(r"\s+", "", ref))
+        ref = re.sub(r"\s+", "", ref)
+        # A brace head (`use crate::m::{A, B}`) is the module prefix of the
+        # imports handled above; the imports carry the real edges.
+        if not any(path.startswith(ref + "::") for path in use_paths):
+            add_edge(ref)
     info[mod] = {
         "lines": len([l for l in body.splitlines() if l.strip()]),
         "crates": crates,
@@ -742,7 +771,7 @@ lines.append("### ALREADY-SHIM (pure crate facade)")
 for mod in body("already-shim (pure crate facade)"):
     lines.append(f"  {info[mod]['lines']:6}  {mod}")
 
-dest = os.path.join(ENGINE, "target", f"{TARGET.split('::')[-1]}_movable_census.txt")
+dest = os.path.join(OUT_DIR, f"{TARGET.split('::')[-1]}_movable_census.txt")
 with open(dest, "w", encoding="utf-8") as fh:
     fh.write("\n".join(lines) + "\n")
 print("\n".join(lines[:9]))

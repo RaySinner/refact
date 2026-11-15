@@ -20,6 +20,7 @@ pub mod gui_help_handlers;
 pub mod knowledge_graph;
 pub mod mcp_config_sharing;
 pub mod mcp_interactions;
+pub mod mcp_marketplace;
 pub mod mcp_marketplace_sources;
 pub mod performance;
 pub mod plugins;

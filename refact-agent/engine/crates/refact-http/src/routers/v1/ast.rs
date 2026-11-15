@@ -1,0 +1,154 @@
+use std::collections::HashSet;
+
+use axum::extract::State;
+use axum::response::Result;
+use hyper::{Body, Response, StatusCode};
+use serde::{Deserialize, Serialize};
+use serde_json::json;
+use url::Url;
+
+use refact_core::ast_types::Document;
+use refact_core::call_validation::PostprocessSettings;
+use refact_core::custom_error::ScratchError;
+use refact_postprocessing::pp_context_files::pp_color_lines;
+use refact_runtime_api::codegraph_status::get_codegraph_status;
+use refact_runtime_api::files_correction::correct_to_nearest_filename;
+use refact_runtime_api::files_in_workspace::get_file_text_from_memory_or_disk;
+use refact_runtime_api::pp_utils::{context_msgs_from_paths, pp_ast_markup_files};
+use refact_runtime_api::AppState;
+
+#[derive(Serialize, Deserialize, Clone)]
+struct AstFileUrlPost {
+    file_url: Url,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+struct FileNameOnlyPost {
+    file_name: String,
+}
+
+pub async fn handle_v1_ast_file_dump(
+    State(app): State<AppState>,
+    body_bytes: hyper::body::Bytes,
+) -> Result<Response<Body>, ScratchError> {
+    let global_context = app.gcx.clone();
+    let post = serde_json::from_slice::<FileNameOnlyPost>(&body_bytes)
+        .map_err(|e| ScratchError::new(StatusCode::BAD_REQUEST, format!("JSON problem: {}", e)))?;
+
+    let candidates = correct_to_nearest_filename(global_context.clone(), &post.file_name, false, 1)
+        .await;
+    if candidates.len() != 1 {
+        return Ok(Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Body::from(serde_json::to_string_pretty(&json!({"detail": format!("file not found or ambiguous, candidates {:?}", candidates)})).unwrap()))
+            .unwrap());
+    }
+    let mut files_set: HashSet<String> = HashSet::new();
+    files_set.insert(candidates[0].clone());
+    let mut context_file_vec = context_msgs_from_paths(global_context.clone(), files_set).await;
+
+    let files_markup = pp_ast_markup_files(global_context.clone(), &mut context_file_vec).await;
+    let mut settings = PostprocessSettings::new();
+    settings.close_small_gaps = false;
+    let lines_in_files = pp_color_lines(&vec![], files_markup, &settings).await;
+    let mut result = "".to_string();
+    for linevec in lines_in_files.values() {
+        for lineref in linevec {
+            result.push_str(
+                format!(
+                    "{}:{:04} {:<43} {:>7.3} {}\n",
+                    refact_core::nicer_logs::last_n_chars(&lineref.file_ref.cpath, 30),
+                    lineref.line_n,
+                    refact_core::nicer_logs::first_n_chars(&lineref.line_content, 40),
+                    lineref.useful,
+                    lineref.color,
+                )
+                .as_str(),
+            );
+        }
+    }
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .body(Body::from(result))
+        .unwrap())
+}
+
+pub async fn handle_v1_ast_file_symbols(
+    State(app): State<AppState>,
+    body_bytes: hyper::body::Bytes,
+) -> Result<Response<Body>, ScratchError> {
+    let global_context = app.gcx.clone();
+    let post = serde_json::from_slice::<AstFileUrlPost>(&body_bytes)
+        .map_err(|e| ScratchError::new(StatusCode::BAD_REQUEST, format!("JSON problem: {}", e)))?;
+
+    let corrected = correct_to_nearest_filename(
+        global_context.clone(),
+        &post
+            .file_url
+            .to_file_path()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string(),
+        false,
+        1,
+    )
+    .await;
+
+    if corrected.len() == 0 {
+        return Ok(Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Body::from(
+                serde_json::to_string_pretty(&json!({"detail": "File not found"})).unwrap(),
+            ))
+            .unwrap());
+    }
+
+    let cpath = corrected[0].clone();
+    let mut doc = Document::new(&cpath.into());
+    let file_text = get_file_text_from_memory_or_disk(global_context.clone(), &doc.doc_path)
+        .await
+        .map_err(|e| ScratchError::new(StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    doc.update_text(&file_text);
+
+    let codegraph_opt = global_context.codegraph.lock().await.clone();
+    let search_res = match codegraph_opt {
+        Some(service) => service
+            .doc_defs(&doc.doc_path.to_string_lossy().to_string())
+            .await
+            .map_err(|e| ScratchError::new(StatusCode::INTERNAL_SERVER_ERROR, e))?,
+        None => {
+            return Err(ScratchError::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "codegraph is not available".to_string(),
+            ));
+        }
+    };
+    let json_string = serde_json::to_string_pretty(&search_res).map_err(|e| {
+        ScratchError::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("JSON serialization problem: {}", e),
+        )
+    })?;
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .body(Body::from(json_string))
+        .unwrap())
+}
+
+pub async fn handle_v1_ast_status(
+    State(app): State<AppState>,
+    _: hyper::body::Bytes,
+) -> Result<Response<Body>, ScratchError> {
+    let global_context = app.gcx.clone();
+    let status = get_codegraph_status(global_context).await;
+    let json_string = serde_json::to_string_pretty(&status).map_err(|e| {
+        ScratchError::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("JSON serialization problem: {}", e),
+        )
+    })?;
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .body(Body::from(json_string))
+        .unwrap())
+}

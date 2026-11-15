@@ -1,5 +1,7 @@
+pub mod ast;
 pub mod background_agents;
 pub mod browser_settings;
+pub mod caps;
 pub mod buddy_drafts;
 pub mod buddy_frontend_error;
 pub mod buddy_pulse;
@@ -35,6 +37,7 @@ pub mod stats;
 pub mod status;
 pub mod subagents_marketplace;
 pub mod sync_files;
+pub mod tasks;
 pub mod v1_browser;
 pub mod vecdb;
 pub mod workspace;

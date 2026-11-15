@@ -24,6 +24,15 @@ pub trait KnowledgeBuilder: Send + Sync {
     async fn build_knowledge_index_for_ctx(&self, ctx: &ChatCtx) -> KnowledgeIndex;
 }
 
+pub struct EngineKnowledgeBuilder;
+
+#[async_trait]
+impl KnowledgeBuilder for EngineKnowledgeBuilder {
+    async fn build_knowledge_index_for_ctx(&self, ctx: &ChatCtx) -> KnowledgeIndex {
+        build_knowledge_index_for_ctx_impl(ctx).await
+    }
+}
+
 pub async fn build_knowledge_index_for_ctx(ctx: &ChatCtx) -> KnowledgeIndex {
     ctx.knowledge_builder
         .build_knowledge_index_for_ctx(ctx)

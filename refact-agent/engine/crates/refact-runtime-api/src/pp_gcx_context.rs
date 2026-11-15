@@ -1,12 +1,14 @@
 use std::path::PathBuf;
 use std::sync::Arc;
+
 use async_trait::async_trait;
 use refact_core::ast_types::AstDefinition;
 use refact_postprocessing::pp_context_provider::PPContextTrait;
 
-use crate::global_context::GlobalContext;
-use crate::files_correction::{canonical_path, correct_to_nearest_filename, shortify_paths};
+use crate::files_correction::{correct_to_nearest_filename, shortify_paths};
+use refact_files::path_utils::canonical_path;
 use crate::files_in_workspace::get_file_text_from_memory_or_disk;
+use crate::global_context::GlobalContext;
 
 pub struct GcxPPContext(pub Arc<GlobalContext>);
 

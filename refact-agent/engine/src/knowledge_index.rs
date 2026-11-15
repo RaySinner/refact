@@ -2,22 +2,9 @@ pub use refact_runtime_api::knowledge_index::{
     build_knowledge_index, build_knowledge_index_for_ctx, build_knowledge_index_for_ctx_impl,
     extract_task_id_from_path, format_related_memories_section, knowledge_dir_candidates,
     knowledge_index_watcher_background_task, knowledge_watch_roots, refresh_knowledge_index_path,
-    KnowledgeBuilder, KnowledgeCard, KnowledgeIndex, KnowledgeSearchFilters, KnowledgeSearchHit,
+    EngineKnowledgeBuilder, KnowledgeBuilder, KnowledgeCard, KnowledgeIndex,
+    KnowledgeSearchFilters, KnowledgeSearchHit,
 };
-
-use async_trait::async_trait;
-
-pub struct EngineKnowledgeBuilder;
-
-#[async_trait]
-impl KnowledgeBuilder for EngineKnowledgeBuilder {
-    async fn build_knowledge_index_for_ctx(
-        &self,
-        ctx: &crate::chat::ctx::ChatCtx,
-    ) -> KnowledgeIndex {
-        build_knowledge_index_for_ctx_impl(ctx).await
-    }
-}
 
 #[cfg(test)]
 mod tests {

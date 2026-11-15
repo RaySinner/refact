@@ -10,6 +10,7 @@ test-util = []
 [dependencies]
 refact-postprocessing = { path = "../refact-postprocessing" }
 refact-git-intel = { path = "../refact-git-intel" }
+refact-git = { path = "../refact-git" }
 refact-vecdb = { path = "../refact-vecdb" }
 refact-scheduler-core = { path = "../refact-scheduler-core" }
 refact-chat-api = { path = "../refact-chat-api" }
@@ -65,12 +66,13 @@ sha2 = "0.10.8"
 tracing = "0.1"
 url = "2.4.1"
 structopt = "0.3"
-tokio = { workspace = true, features = ["time", "sync", "fs", "process", "signal", "rt"] }
+tokio = { workspace = true, features = ["time", "sync", "fs", "process", "signal", "rt", "io-util"] }
 uuid.workspace = true
 git2 = "0.20.2"
 regex.workspace = true
 dunce = "1.0.5"
 walkdir = "2.3"
+ropey = "1.6"
 tokenizers.workspace = true
 
 [target.'cfg(windows)'.dependencies]

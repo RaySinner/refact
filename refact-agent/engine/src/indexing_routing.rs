@@ -1,86 +1,19 @@
-use std::path::Path;
-use std::sync::Arc;
-
-use refact_core::memory_plane::MemoryPlaneRoots;
-use refact_runtime_api::global_context::GlobalContext;
-
-#[cfg(test)]
-use crate::files_correction::get_project_dirs;
-
-pub use refact_runtime_api::memories_runtime::memory_plane_roots_for_ctx;
-
-pub async fn memory_plane_roots(gcx: Arc<GlobalContext>) -> MemoryPlaneRoots {
-    refact_runtime_api::memories_runtime::memory_plane_roots(gcx).await
-}
-
-pub fn partition_paths(paths: &[String], roots: &MemoryPlaneRoots) -> (Vec<String>, Vec<String>) {
-    let mut memory_paths = Vec::new();
-    let mut code_paths = Vec::new();
-    for path in paths {
-        if roots.classify_file(Path::new(path)).is_some() {
-            memory_paths.push(path.clone());
-        } else {
-            code_paths.push(path.clone());
-        }
-    }
-    (memory_paths, code_paths)
-}
-
-pub async fn route_index_enqueue(
-    gcx: Arc<GlobalContext>,
-    paths: &[String],
-    process_immediately: bool,
-    vecdb_only: bool,
-) {
-    let paths: Vec<String> = paths
-        .iter()
-        .filter(|path| !crate::file_filter::is_transient_tmp_path(Path::new(path.as_str())))
-        .cloned()
-        .collect();
-    if paths.is_empty() {
-        return;
-    }
-
-    let roots = memory_plane_roots(gcx.clone()).await;
-    let (memory_paths, code_paths) = partition_paths(&paths, &roots);
-
-    let vec_db = gcx.vec_db.clone();
-
-    if !memory_paths.is_empty() {
-        if let Some(ref mut db) = *vec_db.lock().await {
-            db.vectorizer_enqueue_files(&memory_paths, process_immediately, roots.clone())
-                .await;
-        }
-    }
-
-    if vecdb_only {
-        return;
-    }
-
-    if !code_paths.is_empty() {
-        let codegraph = gcx.codegraph.lock().await.clone();
-        match codegraph {
-            Some(service) => service.enqueue_files(&code_paths),
-            None => {
-                tracing::warn!(
-                    "codegraph unavailable; skipping {} code file(s) (memory-plane vec_db never receives code)",
-                    code_paths.len()
-                );
-            }
-        }
-    }
-}
+pub use refact_runtime_api::indexing_routing::{
+    memory_plane_roots, memory_plane_roots_for_ctx, partition_paths, route_index_enqueue,
+};
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::files_correction::get_project_dirs;
     use crate::vecdb::vdb_structs::{
         EmbeddingModelConfig, SearchResult, VecDbStatus, VecdbRecord, VecdbSearch,
     };
     use async_trait::async_trait;
+    use std::path::Path;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::Mutex;
+    use std::sync::{Arc, Mutex};
 
     struct RecordingVecdb {
         enqueue_calls: Arc<AtomicUsize>,

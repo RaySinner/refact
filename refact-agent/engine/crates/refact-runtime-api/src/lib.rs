@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+﻿use std::path::PathBuf;
 
 use async_trait::async_trait;
 use refact_buddy_core::snapshot::BuddySnapshot;
@@ -15,6 +15,22 @@ use refact_tool_api::{build_registry_from_names, ToolDesc};
 
 pub mod command_line;
 pub mod command_policy;
+pub mod files_blocklist;
+pub mod parent_stdin;
+pub mod runtime_config;
+pub mod call_validation;
+pub mod compress_trajectory;
+pub mod privacy_records;
+pub mod indexing_routing;
+pub mod files_in_jsonl;
+pub mod git_runtime;
+pub mod files_disk;
+pub mod pp_gcx_context;
+pub mod pp_tool_results;
+pub mod pp_utils;
+pub mod vdb_highlev;
+pub mod vdb_structs;
+pub mod scratchpads_runtime;
 pub mod spawn;
 pub mod codegraph_highlev;
 pub mod codegraph_status;

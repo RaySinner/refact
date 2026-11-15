@@ -1,30 +1,30 @@
 use super::*;
 
-pub(super) const MAX_BEHAVIOR_TRAJECTORY_BYTES: u64 = 1_024 * 1_024;
-pub(super) const MAX_BEHAVIOR_TRAJECTORY_META_BYTES: u64 = 32 * 1024;
-pub(super) const MAX_BEHAVIOR_TRAJECTORY_SCAN_FILES: usize = 5_000;
-pub(super) const MAX_BEHAVIOR_TRAJECTORY_SCAN_ENTRIES: usize = 5_000;
-pub(super) const MAX_BEHAVIOR_TASK_DIR_SCAN_ENTRIES: usize = 1_000;
-pub(super) const BEHAVIOR_COOLDOWN_SECS: u64 = 4 * 60 * 60;
-pub(super) const MAX_TRAJECTORY_SNIPPETS: usize = 12;
-pub(super) const MAX_BEHAVIOR_PREFERENCE_WRITES: usize = 2;
+pub const MAX_BEHAVIOR_TRAJECTORY_BYTES: u64 = 1_024 * 1_024;
+pub const MAX_BEHAVIOR_TRAJECTORY_META_BYTES: u64 = 32 * 1024;
+pub const MAX_BEHAVIOR_TRAJECTORY_SCAN_FILES: usize = 5_000;
+pub const MAX_BEHAVIOR_TRAJECTORY_SCAN_ENTRIES: usize = 5_000;
+pub const MAX_BEHAVIOR_TASK_DIR_SCAN_ENTRIES: usize = 1_000;
+pub const BEHAVIOR_COOLDOWN_SECS: u64 = 4 * 60 * 60;
+pub const MAX_TRAJECTORY_SNIPPETS: usize = 12;
+pub const MAX_BEHAVIOR_PREFERENCE_WRITES: usize = 2;
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct TrajectoryUserSnippet {
-    pub(super) trajectory_id: String,
-    pub(super) title: String,
-    pub(super) mode: String,
-    pub(super) updated_at: String,
-    pub(super) text: String,
+pub struct TrajectoryUserSnippet {
+    pub trajectory_id: String,
+    pub title: String,
+    pub mode: String,
+    pub updated_at: String,
+    pub text: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(super) struct PreferenceCandidate {
-    pub(super) statement: String,
-    pub(super) evidence: String,
-    pub(super) confidence: f32,
+pub struct PreferenceCandidate {
+    pub statement: String,
+    pub evidence: String,
+    pub confidence: f32,
 }
 
-pub(super) fn first_sentence(text: &str) -> String {
+pub fn first_sentence(text: &str) -> String {
     let trimmed = text.trim();
     let mut end = trimmed.len();
     for marker in ['.', '!', '?', '\n'] {
@@ -32,10 +32,10 @@ pub(super) fn first_sentence(text: &str) -> String {
             end = end.min(idx + marker.len_utf8());
         }
     }
-    crate::llm::safe_truncate(trimmed[..end].trim(), 240).to_string()
+    refact_llm::logging::safe_truncate(trimmed[..end].trim(), 240).to_string()
 }
 
-pub(super) fn explicit_preference_confidence(text: &str) -> Option<f32> {
+pub fn explicit_preference_confidence(text: &str) -> Option<f32> {
     let lower = text.to_lowercase();
     let strong = [
         "i prefer",
@@ -61,11 +61,11 @@ pub(super) fn explicit_preference_confidence(text: &str) -> Option<f32> {
     None
 }
 
-pub(super) fn preference_like(text: &str) -> bool {
+pub fn preference_like(text: &str) -> bool {
     explicit_preference_confidence(text).is_some()
 }
 
-pub(super) fn behavior_candidate_status(confidence: f32) -> MemoryCandidateStatus {
+pub fn behavior_candidate_status(confidence: f32) -> MemoryCandidateStatus {
     if confidence >= 0.95 {
         MemoryCandidateStatus::Approved
     } else {
@@ -73,7 +73,7 @@ pub(super) fn behavior_candidate_status(confidence: f32) -> MemoryCandidateStatu
     }
 }
 
-pub(super) fn behavior_preference_candidates(
+pub fn behavior_preference_candidates(
     snippets: &[TrajectoryUserSnippet],
 ) -> Vec<PreferenceCandidate> {
     let mut seen = HashSet::new();
@@ -83,10 +83,10 @@ pub(super) fn behavior_preference_candidates(
             continue;
         };
         let statement = redact_and_cap_text(&first_sentence(&snippet.text), 240);
-        if !crate::memories::preference_statement_is_safe(&statement, confidence) {
+        if !refact_core::memories_format::preference_statement_is_safe(&statement, confidence) {
             continue;
         }
-        let normalized = crate::memories::normalize_preference_text_for_dedupe(&statement);
+        let normalized = refact_core::memories_format::normalize_preference_text_for_dedupe(&statement);
         if !seen.insert(normalized) {
             continue;
         }
@@ -106,7 +106,7 @@ pub(super) fn behavior_preference_candidates(
     candidates
 }
 
-pub(super) async fn enqueue_behavior_preferences(
+pub async fn enqueue_behavior_preferences(
     gcx: AppState,
     candidates: &[PreferenceCandidate],
 ) -> usize {
@@ -149,7 +149,7 @@ pub(super) async fn enqueue_behavior_preferences(
             kind: "preference".to_string(),
             source_id: Some(format!(
                 "behavior_learner:{}",
-                crate::memories::normalize_preference_text_for_dedupe(&candidate.statement)
+                refact_core::memories_format::normalize_preference_text_for_dedupe(&candidate.statement)
             )),
             confidence: candidate.confidence,
             status: behavior_candidate_status(candidate.confidence),
@@ -163,7 +163,7 @@ pub(super) async fn enqueue_behavior_preferences(
             candidate.evidence.clone(),
             Utc::now().to_rfc3339(),
         );
-        match crate::buddy::storage::enqueue_memory_op(&project_root, op).await {
+        match refact_buddy_core::storage::enqueue_memory_op(&project_root, op).await {
             Ok(_) => queued += 1,
             Err(err) => tracing::warn!("buddy behavior learner preference enqueue failed: {}", err),
         }
@@ -171,7 +171,7 @@ pub(super) async fn enqueue_behavior_preferences(
     queued
 }
 
-pub(super) fn extract_text_from_trajectory_content(content: &serde_json::Value) -> Option<String> {
+pub fn extract_text_from_trajectory_content(content: &serde_json::Value) -> Option<String> {
     if let Some(text) = content.as_str() {
         return Some(text.to_string());
     }
@@ -201,7 +201,7 @@ pub(super) fn extract_text_from_trajectory_content(content: &serde_json::Value) 
     None
 }
 
-pub(super) async fn read_bounded_trajectory_json(
+pub async fn read_bounded_trajectory_json(
     path: &Path,
     max_bytes: u64,
 ) -> Option<serde_json::Value> {
@@ -214,28 +214,28 @@ pub(super) async fn read_bounded_trajectory_json(
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct BehaviorTrajectoryMeta {
-    pub(super) id: String,
-    pub(super) title: String,
-    pub(super) mode: String,
-    pub(super) updated_at: String,
-    pub(super) path: PathBuf,
+pub struct BehaviorTrajectoryMeta {
+    pub id: String,
+    pub title: String,
+    pub mode: String,
+    pub updated_at: String,
+    pub path: PathBuf,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
-pub(super) struct BehaviorTrajectoryCandidate {
-    pub(super) modified_key: u64,
-    pub(super) path: PathBuf,
+pub struct BehaviorTrajectoryCandidate {
+    pub modified_key: u64,
+    pub path: PathBuf,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(super) struct BehaviorTrajectoryScanStats {
-    pub(super) visited_entries: usize,
-    pub(super) matching_files_considered: usize,
-    pub(super) raw_entries_examined: usize,
+pub struct BehaviorTrajectoryScanStats {
+    pub visited_entries: usize,
+    pub matching_files_considered: usize,
+    pub raw_entries_examined: usize,
 }
 
-pub(super) fn parse_json_string_at(content: &str, start: usize) -> Option<(String, usize)> {
+pub fn parse_json_string_at(content: &str, start: usize) -> Option<(String, usize)> {
     if content.as_bytes().get(start) != Some(&b'"') {
         return None;
     }
@@ -259,7 +259,7 @@ pub(super) fn parse_json_string_at(content: &str, start: usize) -> Option<(Strin
     None
 }
 
-pub(super) fn skip_json_ws(content: &str, mut idx: usize) -> usize {
+pub fn skip_json_ws(content: &str, mut idx: usize) -> usize {
     let bytes = content.as_bytes();
     while bytes
         .get(idx)
@@ -271,7 +271,7 @@ pub(super) fn skip_json_ws(content: &str, mut idx: usize) -> usize {
     idx
 }
 
-pub(super) fn skip_json_value(content: &str, idx: usize) -> Option<usize> {
+pub fn skip_json_value(content: &str, idx: usize) -> Option<usize> {
     let mut idx = skip_json_ws(content, idx);
     let bytes = content.as_bytes();
     match bytes.get(idx).copied()? {
@@ -306,7 +306,7 @@ pub(super) fn skip_json_value(content: &str, idx: usize) -> Option<usize> {
     }
 }
 
-pub(super) fn top_level_json_strings(content: &str, fields: &[&str]) -> HashMap<String, String> {
+pub fn top_level_json_strings(content: &str, fields: &[&str]) -> HashMap<String, String> {
     let bytes = content.as_bytes();
     let mut idx = skip_json_ws(content, 0);
     let mut values = HashMap::new();
@@ -349,12 +349,12 @@ pub(super) fn top_level_json_strings(content: &str, fields: &[&str]) -> HashMap<
     values
 }
 
-pub(super) fn top_level_json_string(content: &str, fields: &[&str]) -> Option<String> {
+pub fn top_level_json_string(content: &str, fields: &[&str]) -> Option<String> {
     let values = top_level_json_strings(content, fields);
     fields.iter().find_map(|field| values.get(*field).cloned())
 }
 
-pub(super) fn parse_behavior_trajectory_meta(
+pub fn parse_behavior_trajectory_meta(
     content: &str,
     path: PathBuf,
 ) -> Option<BehaviorTrajectoryMeta> {
@@ -392,7 +392,7 @@ pub(super) fn parse_behavior_trajectory_meta(
     })
 }
 
-pub(super) fn behavior_trajectory_is_internal(path: &Path) -> bool {
+pub fn behavior_trajectory_is_internal(path: &Path) -> bool {
     let Ok(mut file) = std::fs::File::open(path) else {
         return false;
     };
@@ -419,8 +419,8 @@ pub(super) fn behavior_trajectory_is_internal(path: &Path) -> bool {
         .is_some_and(|link_type| link_type.starts_with("internal:"))
 }
 
-#[cfg(test)]
-pub(super) fn collect_behavior_trajectory_metas_from_dir(
+#[cfg(any(test, feature = "test-util"))]
+pub fn collect_behavior_trajectory_metas_from_dir(
     dir: &Path,
     metas: &mut Vec<BehaviorTrajectoryMeta>,
     seen: &mut HashSet<String>,
@@ -432,13 +432,13 @@ pub(super) fn collect_behavior_trajectory_metas_from_dir(
     collect_behavior_trajectory_metas_from_candidates(candidates, metas, seen);
 }
 
-pub(super) fn system_time_key(time: SystemTime) -> u64 {
+pub fn system_time_key(time: SystemTime) -> u64 {
     time.duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_secs())
         .unwrap_or(0)
 }
 
-pub(super) fn push_behavior_trajectory_candidate(
+pub fn push_behavior_trajectory_candidate(
     heap: &mut BinaryHeap<Reverse<BehaviorTrajectoryCandidate>>,
     candidate: BehaviorTrajectoryCandidate,
     max_files: usize,
@@ -460,7 +460,7 @@ pub(super) fn push_behavior_trajectory_candidate(
     }
 }
 
-pub(super) fn collect_behavior_trajectory_candidates_from_dir(
+pub fn collect_behavior_trajectory_candidates_from_dir(
     dir: &Path,
     heap: &mut BinaryHeap<Reverse<BehaviorTrajectoryCandidate>>,
     max_files: usize,
@@ -532,7 +532,7 @@ pub(super) fn collect_behavior_trajectory_candidates_from_dir(
     }
 }
 
-pub(super) fn collect_behavior_trajectory_candidates_from_dirs(
+pub fn collect_behavior_trajectory_candidates_from_dirs(
     dirs: &[PathBuf],
     max_files: usize,
 ) -> Vec<BehaviorTrajectoryCandidate> {
@@ -544,7 +544,7 @@ pub(super) fn collect_behavior_trajectory_candidates_from_dirs(
     .0
 }
 
-pub(super) fn collect_behavior_trajectory_candidates_from_dirs_with_stats(
+pub fn collect_behavior_trajectory_candidates_from_dirs_with_stats(
     dirs: &[PathBuf],
     max_files: usize,
     max_visited_entries: usize,
@@ -584,7 +584,7 @@ pub(super) fn collect_behavior_trajectory_candidates_from_dirs_with_stats(
     (candidates, stats)
 }
 
-pub(super) fn parse_behavior_trajectory_meta_from_path(
+pub fn parse_behavior_trajectory_meta_from_path(
     path: &Path,
 ) -> Option<BehaviorTrajectoryMeta> {
     let Ok(file) = std::fs::File::open(path) else {
@@ -602,7 +602,7 @@ pub(super) fn parse_behavior_trajectory_meta_from_path(
     })
 }
 
-pub(super) fn collect_behavior_trajectory_metas_from_candidates(
+pub fn collect_behavior_trajectory_metas_from_candidates(
     candidates: Vec<BehaviorTrajectoryCandidate>,
     metas: &mut Vec<BehaviorTrajectoryMeta>,
     seen: &mut HashSet<String>,
@@ -617,7 +617,7 @@ pub(super) fn collect_behavior_trajectory_metas_from_candidates(
     }
 }
 
-pub(super) fn collect_behavior_task_trajectory_dirs(
+pub fn collect_behavior_task_trajectory_dirs(
     tasks_dirs: &[PathBuf],
     max_visited_entries: usize,
 ) -> Vec<PathBuf> {
@@ -668,11 +668,11 @@ pub(super) fn collect_behavior_task_trajectory_dirs(
     dirs
 }
 
-pub(super) async fn collect_behavior_trajectory_metas(
+pub async fn collect_behavior_trajectory_metas(
     gcx: AppState,
 ) -> Vec<BehaviorTrajectoryMeta> {
-    let mut dirs = crate::chat::trajectories::get_all_trajectories_dirs(&gcx.chat_ctx()).await;
-    let tasks_dirs = crate::tasks::storage::get_all_tasks_dirs(gcx.gcx.clone()).await;
+    let mut dirs = gcx.chat_ctx().trajectories.all_trajectory_dirs().await;
+    let tasks_dirs = crate::task_storage::get_all_tasks_dirs(gcx.gcx.clone()).await;
     tokio::task::spawn_blocking(move || {
         dirs.extend(collect_behavior_task_trajectory_dirs(
             &tasks_dirs,
@@ -699,7 +699,7 @@ pub(super) async fn collect_behavior_trajectory_metas(
     })
 }
 
-pub(super) async fn collect_recent_user_snippets(
+pub async fn collect_recent_user_snippets(
     gcx: AppState,
     max_snippets: usize,
 ) -> Vec<TrajectoryUserSnippet> {
@@ -743,7 +743,7 @@ pub(super) async fn collect_recent_user_snippets(
     snippets
 }
 
-pub(super) fn behavior_evidence_from_snippets(
+pub fn behavior_evidence_from_snippets(
     snippets: &[TrajectoryUserSnippet],
 ) -> Option<AutonomousEvidence> {
     let preference_like_count = snippets
@@ -774,7 +774,7 @@ pub(super) fn behavior_evidence_from_snippets(
     })
 }
 
-pub(super) async fn behavior_learner_evidence(
+pub async fn behavior_learner_evidence(
     gcx: AppState,
 ) -> Option<(AutonomousEvidence, Vec<PreferenceCandidate>)> {
     let snippets = collect_recent_user_snippets(gcx, MAX_TRAJECTORY_SNIPPETS).await;
@@ -783,7 +783,7 @@ pub(super) async fn behavior_learner_evidence(
     Some((evidence, candidates))
 }
 
-pub(super) fn habit_fact_relevant(kind: BuddyFactKind) -> bool {
+pub fn habit_fact_relevant(kind: BuddyFactKind) -> bool {
     matches!(
         kind,
         BuddyFactKind::TaskStuck
@@ -795,7 +795,7 @@ pub(super) fn habit_fact_relevant(kind: BuddyFactKind) -> bool {
     )
 }
 
-pub(super) fn habit_evidence(ctx: &BuddyJobContext) -> Option<AutonomousEvidence> {
+pub fn habit_evidence(ctx: &BuddyJobContext) -> Option<AutonomousEvidence> {
     let mut lines = vec![format!(
         "task_pulse current_total={} recent_stuck_alerts_1h={} recent_abandoned_alerts_24h={} trajectory_total={} untitled={} oldest_age_days={} diagnostics_last_hour={} top_error_types={}",
         ctx.pulse.tasks.total,
@@ -870,7 +870,7 @@ pub(super) fn habit_evidence(ctx: &BuddyJobContext) -> Option<AutonomousEvidence
     })
 }
 
-pub(super) fn bucket_rate(part: usize, total: usize) -> String {
+pub fn bucket_rate(part: usize, total: usize) -> String {
     if total == 0 {
         return "0%".to_string();
     }
@@ -890,7 +890,7 @@ pub(super) fn bucket_rate(part: usize, total: usize) -> String {
     }
 }
 
-pub(super) fn bucket_count(value: usize) -> String {
+pub fn bucket_count(value: usize) -> String {
     match value {
         0 => "0".to_string(),
         1..=4 => "1-4".to_string(),
@@ -904,7 +904,7 @@ pub(super) fn bucket_count(value: usize) -> String {
     }
 }
 
-pub(super) fn bucket_tokens(value: usize) -> String {
+pub fn bucket_tokens(value: usize) -> String {
     match value {
         0 => "0".to_string(),
         1..=9_999 => "1-9k".to_string(),
@@ -917,7 +917,7 @@ pub(super) fn bucket_tokens(value: usize) -> String {
     }
 }
 
-pub(super) fn bucket_cost(value: f64) -> String {
+pub fn bucket_cost(value: f64) -> String {
     if value <= 0.0 {
         "0".to_string()
     } else if value < 0.10 {
@@ -935,7 +935,7 @@ pub(super) fn bucket_cost(value: f64) -> String {
     }
 }
 
-pub(super) fn bucket_duration_ms(value: u64) -> String {
+pub fn bucket_duration_ms(value: u64) -> String {
     match value {
         0..=4_999 => "under_5s".to_string(),
         5_000..=9_999 => "5s-9s".to_string(),

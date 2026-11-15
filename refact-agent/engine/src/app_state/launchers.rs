@@ -55,6 +55,35 @@ impl SubchatLauncher for EngineSubchatLauncher {
         crate::subchat::resolve_subchat_params(&ctx, tool_name).await
     }
 
+    async fn resolve_subchat_config(
+        &self,
+        tool_name: &str,
+        stateful: bool,
+        chat_id: Option<String>,
+        title: Option<String>,
+        tools: Option<Vec<String>>,
+        max_steps: usize,
+        prepend_system_prompt: bool,
+        mode: String,
+    ) -> Result<SubchatConfig, String> {
+        crate::subchat::resolve_subchat_config(
+            self.gcx.clone(),
+            tool_name,
+            stateful,
+            chat_id,
+            title,
+            None,
+            None,
+            None,
+            tools,
+            max_steps,
+            prepend_system_prompt,
+            None,
+            mode,
+        )
+        .await
+    }
+
     async fn resolve_subchat_config_with_parent(
         &self,
         tool_name: &str,

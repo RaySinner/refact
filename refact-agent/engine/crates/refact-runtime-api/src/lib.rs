@@ -212,6 +212,25 @@ pub trait BuddyEventSink: Send + Sync {
         status: &str,
     ) -> Option<(String, Option<String>)>;
 
+    /// Seam over the engine-only `buddy::speech::render_buddy_activity_title`.
+    async fn render_autonomous_report_title(
+        &self,
+        workflow_id: &str,
+        workflow_summary: String,
+        fallback_title: String,
+    ) -> String;
+
+    /// Seam over the engine-only `buddy::speech::render_buddy_runtime_event`.
+    /// `None` means the buddy service is unavailable, so the caller keeps its own
+    /// fallback title and description.
+    async fn render_autonomous_result_summary(
+        &self,
+        workflow_id: &str,
+        workflow_summary: String,
+        fallback_title: String,
+        fallback_description: String,
+    ) -> Option<(String, Option<String>)>;
+
     /// Seam over the engine buddy workflow wrapper. The engine implementation
     /// forwards to `buddy::workflows::buddy_wrap_workflow` (which builds the
     /// activity summary from the prefix and the workflow output); the default

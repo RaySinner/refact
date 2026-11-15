@@ -151,6 +151,54 @@ impl BuddyEventSink for AppBuddyEventSink {
         .await
     }
 
+    async fn render_autonomous_report_title(
+        &self,
+        workflow_id: &str,
+        workflow_summary: String,
+        fallback_title: String,
+    ) -> String {
+        let app = app_state_from_gcx(self.gcx.clone()).await;
+        let Some(snapshot) = self.snapshot().await else {
+            return fallback_title;
+        };
+        crate::buddy::speech::render_buddy_activity_title(
+            app,
+            snapshot.state.personality,
+            snapshot.state.identity.name,
+            snapshot.pulse,
+            Some(workflow_id.to_string()),
+            workflow_summary,
+            crate::buddy::voice_service::VoiceIntent::AutonomousReportSaved,
+            fallback_title,
+        )
+        .await
+    }
+
+    async fn render_autonomous_result_summary(
+        &self,
+        workflow_id: &str,
+        workflow_summary: String,
+        fallback_title: String,
+        fallback_description: String,
+    ) -> Option<(String, Option<String>)> {
+        let app = app_state_from_gcx(self.gcx.clone()).await;
+        let snapshot = self.snapshot().await?;
+        Some(
+            crate::buddy::speech::render_buddy_runtime_event(
+                app,
+                snapshot.state.personality,
+                snapshot.state.identity.name,
+                snapshot.pulse,
+                Some(workflow_id.to_string()),
+                workflow_summary,
+                "completed",
+                fallback_title,
+                Some(fallback_description),
+            )
+            .await,
+        )
+    }
+
     async fn render_runtime_event_fast(
         &self,
         workflow_id: &str,

@@ -253,6 +253,10 @@ impl TrajectoryStore for EngineTrajectoryStore {
         .await
     }
 
+    async fn all_trajectory_dirs(&self) -> Vec<PathBuf> {
+        trajectories::get_all_trajectories_dirs(&self.gcx.chat_ctx(self.gcx.clone())).await
+    }
+
     async fn list_trajectory_dirs(&self) -> Vec<PathBuf> {
         trajectories::list_trajectory_dirs(&self.gcx.chat_ctx(self.gcx.clone())).await
     }

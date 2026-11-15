@@ -7,7 +7,7 @@ pub struct DependencyRadarJob;
 pub struct DocsGardenerJob;
 pub struct ArchitectureDriftWatcherJob;
 
-pub(super) fn error_detective_definition() -> AutonomousJobDefinition {
+pub fn error_detective_definition() -> AutonomousJobDefinition {
     AutonomousJobDefinition {
         meta: autonomous_workflow_meta(ERROR_DETECTIVE_WORKFLOW_ID).unwrap(),
         cooldown_seconds: 15 * 60,
@@ -16,7 +16,7 @@ pub(super) fn error_detective_definition() -> AutonomousJobDefinition {
     }
 }
 
-pub(super) fn security_whisperer_definition() -> AutonomousJobDefinition {
+pub fn security_whisperer_definition() -> AutonomousJobDefinition {
     AutonomousJobDefinition {
         meta: autonomous_workflow_meta(SECURITY_WHISPERER_WORKFLOW_ID).unwrap(),
         cooldown_seconds: 30 * 60,
@@ -25,7 +25,7 @@ pub(super) fn security_whisperer_definition() -> AutonomousJobDefinition {
     }
 }
 
-pub(super) fn setup_coach_definition() -> AutonomousJobDefinition {
+pub fn setup_coach_definition() -> AutonomousJobDefinition {
     AutonomousJobDefinition {
         meta: autonomous_workflow_meta(SETUP_COACH_WORKFLOW_ID).unwrap(),
         cooldown_seconds: 2 * 60 * 60,
@@ -34,7 +34,7 @@ pub(super) fn setup_coach_definition() -> AutonomousJobDefinition {
     }
 }
 
-pub(super) fn dependency_radar_definition() -> AutonomousJobDefinition {
+pub fn dependency_radar_definition() -> AutonomousJobDefinition {
     AutonomousJobDefinition {
         meta: autonomous_workflow_meta(DEPENDENCY_RADAR_WORKFLOW_ID).unwrap(),
         cooldown_seconds: 2 * 60 * 60,
@@ -43,7 +43,7 @@ pub(super) fn dependency_radar_definition() -> AutonomousJobDefinition {
     }
 }
 
-pub(super) fn docs_gardener_definition() -> AutonomousJobDefinition {
+pub fn docs_gardener_definition() -> AutonomousJobDefinition {
     AutonomousJobDefinition {
         meta: autonomous_workflow_meta(DOCS_GARDENER_WORKFLOW_ID).unwrap(),
         cooldown_seconds: 3 * 60 * 60,
@@ -52,7 +52,7 @@ pub(super) fn docs_gardener_definition() -> AutonomousJobDefinition {
     }
 }
 
-pub(super) fn architecture_drift_definition() -> AutonomousJobDefinition {
+pub fn architecture_drift_definition() -> AutonomousJobDefinition {
     AutonomousJobDefinition {
         meta: autonomous_workflow_meta(ARCHITECTURE_DRIFT_WORKFLOW_ID).unwrap(),
         cooldown_seconds: 4 * 60 * 60,
@@ -323,8 +323,8 @@ impl BuddyJob for ArchitectureDriftWatcherJob {
         .await
     }
 }
-#[cfg(test)]
-pub(super) async fn execute_dependency_radar_with_evidence(
+#[cfg(any(test, feature = "test-util"))]
+pub async fn execute_dependency_radar_with_evidence(
     gcx: AppState,
     ctx: &BuddyJobContext,
     evidence: DependencyManifestEvidence,

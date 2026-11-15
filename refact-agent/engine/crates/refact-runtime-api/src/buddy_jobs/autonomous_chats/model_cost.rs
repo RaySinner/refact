@@ -1,7 +1,7 @@
 use super::*;
 
-pub(super) const MODEL_COST_RECENT_EVENT_LIMIT: usize = 500;
-pub(super) fn is_autonomous_buddy_workflow_identifier(identifier: &str) -> bool {
+pub const MODEL_COST_RECENT_EVENT_LIMIT: usize = 500;
+pub fn is_autonomous_buddy_workflow_identifier(identifier: &str) -> bool {
     let normalized = identifier.to_ascii_lowercase();
     is_autonomous_workflow_id(&normalized)
         || normalized
@@ -11,7 +11,7 @@ pub(super) fn is_autonomous_buddy_workflow_identifier(identifier: &str) -> bool 
             .unwrap_or(false)
 }
 
-pub(super) fn is_buddy_autonomous_report_event(event: &LlmCallEvent) -> bool {
+pub fn is_buddy_autonomous_report_event(event: &LlmCallEvent) -> bool {
     let identifiers = [
         event.chat_id.as_str(),
         event.root_chat_id.as_deref().unwrap_or_default(),
@@ -25,7 +25,7 @@ pub(super) fn is_buddy_autonomous_report_event(event: &LlmCallEvent) -> bool {
         .any(|identifier| is_autonomous_buddy_workflow_identifier(identifier))
 }
 
-pub(super) fn model_cost_input_events(events: &[LlmCallEvent]) -> Vec<LlmCallEvent> {
+pub fn model_cost_input_events(events: &[LlmCallEvent]) -> Vec<LlmCallEvent> {
     let mut filtered = events
         .iter()
         .filter(|event| !is_buddy_autonomous_report_event(event))
@@ -43,14 +43,14 @@ pub(super) fn model_cost_input_events(events: &[LlmCallEvent]) -> Vec<LlmCallEve
     filtered
 }
 
-pub(super) fn model_cost_evidence_from_events(
+pub fn model_cost_evidence_from_events(
     events: &[LlmCallEvent],
 ) -> Option<AutonomousEvidence> {
     let events = model_cost_input_events(events);
     if events.len() < 5 {
         return None;
     }
-    let summary = crate::stats::reader::aggregate_summary(&events, None, None);
+    let summary = refact_stats::reader::aggregate_summary(&events, None, None);
     let totals = &summary.totals;
     let high_failure = totals.failed_calls >= 3
         && totals.failed_calls as f64 / totals.total_calls.max(1) as f64 >= 0.25;
@@ -117,10 +117,10 @@ pub(super) fn model_cost_evidence_from_events(
     })
 }
 
-pub(super) async fn model_cost_evidence(gcx: AppState) -> Option<AutonomousEvidence> {
+pub async fn model_cost_evidence(gcx: AppState) -> Option<AutonomousEvidence> {
     let stats_dirs = crate::stats::get_stats_dirs_for_read(gcx.gcx.clone()).await;
     let events = tokio::task::spawn_blocking(move || {
-        crate::stats::reader::read_recent_stats_events_from_dirs(
+        refact_stats::reader::read_recent_stats_events_from_dirs(
             &stats_dirs,
             MODEL_COST_RECENT_EVENT_LIMIT,
         )

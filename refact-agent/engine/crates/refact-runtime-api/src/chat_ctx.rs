@@ -88,6 +88,18 @@ pub trait SubchatLauncher: Send + Sync {
         tool_name: &str,
     ) -> Result<SubchatParameters, String>;
 
+    async fn resolve_subchat_config(
+        &self,
+        tool_name: &str,
+        stateful: bool,
+        chat_id: Option<String>,
+        title: Option<String>,
+        tools: Option<Vec<String>>,
+        max_steps: usize,
+        prepend_system_prompt: bool,
+        mode: String,
+    ) -> Result<SubchatConfig, String>;
+
     async fn resolve_subchat_config_with_parent(
         &self,
         tool_name: &str,
@@ -280,6 +292,11 @@ pub trait TrajectoryStore: Send + Sync {
     async fn index_dir_for_trajectory_file(&self, file_path: &std::path::Path) -> Option<PathBuf>;
 
     async fn list_trajectory_dirs(&self) -> Vec<PathBuf>;
+
+    /// Directories holding trajectory files (workspace + global). Engine half:
+    /// `chat::trajectories::get_all_trajectories_dirs`.
+    async fn all_trajectory_dirs(&self) -> Vec<PathBuf>;
+
 
     async fn get_all_task_roots(&self) -> Vec<PathBuf>;
 

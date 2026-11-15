@@ -6,13 +6,13 @@ pub struct BuddyBehaviorLearnerJob;
 pub struct BuddyUserHabitCoachJob;
 pub struct BuddyModelCostOptimizerJob;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum MemoryRouting {
+pub enum MemoryRouting {
     MemoryGardener,
     KnowledgeConflictResolver,
 }
-pub(super) const MEMORY_COOLDOWN_SECS: u64 = 6 * 60 * 60;
-pub(super) const MAX_FACT_EVIDENCE_ITEMS: usize = 12;
-pub(super) fn fact_kind_name(kind: BuddyFactKind) -> &'static str {
+pub const MEMORY_COOLDOWN_SECS: u64 = 6 * 60 * 60;
+pub const MAX_FACT_EVIDENCE_ITEMS: usize = 12;
+pub fn fact_kind_name(kind: BuddyFactKind) -> &'static str {
     match kind {
         BuddyFactKind::TaskStuck => "task_stuck",
         BuddyFactKind::TaskAbandoned => "task_abandoned",
@@ -38,7 +38,7 @@ pub(super) fn fact_kind_name(kind: BuddyFactKind) -> &'static str {
     }
 }
 
-pub(super) fn push_payload_string(lines: &mut Vec<String>, label: &str, value: &serde_json::Value) {
+pub fn push_payload_string(lines: &mut Vec<String>, label: &str, value: &serde_json::Value) {
     if let Some(text) = value.as_str() {
         let text = redact_and_cap_text(text, 240);
         if !text.is_empty() {
@@ -47,7 +47,7 @@ pub(super) fn push_payload_string(lines: &mut Vec<String>, label: &str, value: &
     }
 }
 
-pub(super) fn payload_string_array(
+pub fn payload_string_array(
     value: &serde_json::Value,
     key: &str,
     max: usize,
@@ -70,7 +70,7 @@ pub(super) fn payload_string_array(
     items
 }
 
-pub(super) fn memory_fact_to_evidence_line(fact: &BuddyFact) -> String {
+pub fn memory_fact_to_evidence_line(fact: &BuddyFact) -> String {
     let mut parts = vec![format!(
         "{} key={} source={} confidence={:.2}",
         fact_kind_name(fact.kind),
@@ -110,7 +110,7 @@ pub(super) fn memory_fact_to_evidence_line(fact: &BuddyFact) -> String {
     parts.join("; ")
 }
 
-pub(super) fn stable_facts<'a>(facts: impl Iterator<Item = &'a BuddyFact>) -> Vec<&'a BuddyFact> {
+pub fn stable_facts<'a>(facts: impl Iterator<Item = &'a BuddyFact>) -> Vec<&'a BuddyFact> {
     let mut facts = facts.collect::<Vec<_>>();
     facts.sort_by(|a, b| {
         fact_kind_name(a.kind)
@@ -122,7 +122,7 @@ pub(super) fn stable_facts<'a>(facts: impl Iterator<Item = &'a BuddyFact>) -> Ve
     facts
 }
 
-pub(super) fn memory_route_for_fact_kind(kind: BuddyFactKind) -> Option<MemoryRouting> {
+pub fn memory_route_for_fact_kind(kind: BuddyFactKind) -> Option<MemoryRouting> {
     match kind {
         BuddyFactKind::MemoryOrphan | BuddyFactKind::MemoryRecurringLesson => {
             Some(MemoryRouting::MemoryGardener)
@@ -132,7 +132,7 @@ pub(super) fn memory_route_for_fact_kind(kind: BuddyFactKind) -> Option<MemoryRo
     }
 }
 
-pub(super) fn memory_gardener_evidence(ctx: &BuddyJobContext) -> Option<AutonomousEvidence> {
+pub fn memory_gardener_evidence(ctx: &BuddyJobContext) -> Option<AutonomousEvidence> {
     let mut lines = Vec::new();
     if ctx.pulse.memory.total > 0 || ctx.pulse.memory.orphan > 0 {
         lines.push(format!(
@@ -164,7 +164,7 @@ pub(super) fn memory_gardener_evidence(ctx: &BuddyJobContext) -> Option<Autonomo
     })
 }
 
-pub(super) fn stale_conflict_fact_actionable(fact: &BuddyFact) -> bool {
+pub fn stale_conflict_fact_actionable(fact: &BuddyFact) -> bool {
     if fact.kind != BuddyFactKind::MemoryStaleConflict {
         return false;
     }
@@ -179,7 +179,7 @@ pub(super) fn stale_conflict_fact_actionable(fact: &BuddyFact) -> bool {
             .unwrap_or(false)
 }
 
-pub(super) fn knowledge_conflict_evidence(ctx: &BuddyJobContext) -> Option<AutonomousEvidence> {
+pub fn knowledge_conflict_evidence(ctx: &BuddyJobContext) -> Option<AutonomousEvidence> {
     let facts = stable_facts(ctx.facts.iter().filter(|fact| {
         matches!(
             memory_route_for_fact_kind(fact.kind),

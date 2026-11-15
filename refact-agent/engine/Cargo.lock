@@ -4781,6 +4781,7 @@ dependencies = [
  "futures",
  "git2",
  "headless_chrome",
+ "hex",
  "home",
  "hostname",
  "hyper 0.14.32",

@@ -75,6 +75,8 @@ pub mod tool_trait;
 pub mod post_merge_check;
 pub mod task_storage;
 pub mod memory_lifecycle_runtime;
+pub mod buddy_memory_lifecycle;
+pub mod buddy_autonomous_spec;
 pub mod buddy_memory_ops;
 pub mod buddy_planner_backstop_runner;
 pub mod buddy_scheduler;

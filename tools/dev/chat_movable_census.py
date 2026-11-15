@@ -27,6 +27,23 @@ This script:
   as a whole-module reference used to hide an engine-resident re-export behind a
   facade that also globs a crate (a facade's `pub use refact_x::*` plus one
   engine `pub use child::*` made every import through it look crate-only);
+* attributes **glob imports by name**. `use super::*` used to contribute no edge
+  at all, so a file that takes an engine-resident helper (`build_spec`,
+  `execute_autonomous_spec`) from its parent's `pub(super) use child::*` looked
+  edge-free and was reported MOVABLE — the exact false positive that made
+  `buddy::jobs::autonomous_chats::{local_jobs, memory_jobs}` look harvestable.
+  Every identifier a file actually uses is now resolved through the globbing
+  module's *visible item set* (its own items, then its explicit imports, then the
+  engine modules it globs, and only last the crates it globs), and the resolved
+  origin becomes the edge. That is the honest rule for wildcards: **a wildcard
+  from crate `C` covers a name only when no engine-resident definition of that
+  name exists on the path the reference travels**;
+* keeps a glob of a module that lives *outside* this tree as a hard engine edge:
+  `use crate::chat::prompts::*` can never be satisfied from the destination
+  crate. A glob of an in-tree module (`use super::*`, `use super::helper::*`)
+  adds no edge of its own — the names the file actually uses are attributed to
+  their real owners, which is stricter than treating the globbed module as one
+  opaque dependency;
 * computes the movability closure, so a module is movable only when every
   production edge lands on a crate or on another movable module;
 * prints, per blocked file, the first engine-resident dependency.
@@ -70,6 +87,28 @@ CRATE_RE = re.compile(r"^refact_[a-z0-9_]+\b")
 REF_RE = re.compile(
     r"\b((?:crate|super|self)\s*::\s*[A-Za-z_][A-Za-z0-9_]*(?:\s*::\s*[A-Za-z0-9_]+)*)"
 )
+# Module-level items only: a `use super::*` supplies what sits in the parent's
+# namespace, not the methods nested inside its `impl` blocks, so indented
+# declarations must not enter the visible set.
+ANY_DEF = re.compile(
+    r"(?m)^(?:pub(?:\([^)]*\))?[ \t]+)?(?:async[ \t]+)?(?:unsafe[ \t]+)?"
+    r"(?:fn|struct|enum|trait|type|const|static|union|mod)[ \t]+([A-Za-z_][A-Za-z0-9_]*)"
+)
+MACRO_DEF = re.compile(r"(?m)^macro_rules![ \t]+([A-Za-z_][A-Za-z0-9_]*)")
+CHILD_MOD = re.compile(
+    r"(?m)^(?:pub(?:\([^)]*\))?[ \t]+)?mod[ \t]+([A-Za-z_][A-Za-z0-9_]*)"
+)
+FULL_DEF = re.compile(
+    r"(?m)^(?:pub(?:\([^)]*\))?[ \t]+)?(?:async[ \t]+)?(?:unsafe[ \t]+)?"
+    r"(?:fn|struct|enum|trait|type|const|static|union|impl|macro_rules!)\b"
+)
+ANY_MOD_DECL = re.compile(r"(?m)^(?:pub(?:\([^)]*\))?[ \t]+)?mod\s+[A-Za-z_]")
+IDENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+# `fn f(a: T)` / `|a: T|` / `Foo { a: b }`: the name is introduced by the file
+# itself, so a glob must not claim it (`quota_cache` is a parameter of
+# `fetch_provider_quota`, not the sibling module of the same name).
+BIND_NAME = re.compile(r"(?:(?<=[,(])|(?<=\|))[ \t\n]*([A-Za-z_][A-Za-z0-9_]*)[ \t\n]*:")
+PATH_KEYWORDS = ("self", "super", "crate")
 
 
 def read(path):
@@ -272,6 +311,60 @@ def code(text):
     return "\n".join(out)
 
 
+def strip_literals(text):
+    """Blank string/char/raw literals, keeping length, so identifier scanning
+    sees code only. A string such as `"prompts"` must not look like a use of a
+    module item."""
+    out, i = [], 0
+    while i < len(text):
+        ch = text[i]
+        nxt = text[i + 1] if i + 1 < len(text) else ""
+        if ch == "r" and nxt in '#"':
+            end = skip_raw_string(text, i)
+            if end != i:
+                out.append(" " * (end - i + 1))
+                i = end + 1
+                continue
+        if ch == "b" and nxt == '"':
+            end = skip_string(text, i + 1)
+            if end != -1:
+                out.append(" " * (end - i + 1))
+                i = end + 1
+                continue
+        if ch == '"':
+            end = skip_string(text, i)
+            if end != -1:
+                out.append(" " * (end - i + 1))
+                i = end + 1
+                continue
+        if ch == "'":
+            literal = CHAR_LITERAL.match(text, i)
+            if literal:
+                out.append(" " * (literal.end() - i))
+                i = literal.end()
+                continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def glob_module(cur_mod, ref):
+    """The module a `use …::*` imports names from, or None.
+
+    `longest_module` leaves the trailing `*` in its tail (`chat::queue::*` →
+    `("chat::queue", ["*"])`), so a plain `if rest` test would reject every glob
+    import. Only stars — no real path segment — may remain.
+    """
+    tmod, rest = longest_module(absolute(cur_mod, ref))
+    if tmod is None or [p for p in rest if p != "*"]:
+        return None
+    return tmod
+
+
+def import_tail(full):
+    """The name a `use` statement binds (`use a::b::C as D` binds `D`)."""
+    return re.split(r"\s+as\s+", full)[-1].strip().split("::")[-1]
+
 def split_top(body):
     parts, depth, cur = [], 0, []
     for ch in body:
@@ -322,14 +415,17 @@ for mod, path in mods.items():
         test_only.add(mod + "::" + m.group(1))
 
 exports, raw_uses, wild = {}, {}, {}
+definitions = {}
 for mod, path in mods.items():
     text = read(path)
     if mod in test_only:
         exports[mod] = {}
         raw_uses[mod] = []
+        definitions[mod] = set()
         continue
     body = code(prod(text))
     exports[mod] = {n: f"engine:{mod}" for n in set(PUB_DEF.findall(body))}
+    definitions[mod] = set(ANY_DEF.findall(body)) | set(MACRO_DEF.findall(body))
     uses = []
     for m in USE_STMT.finditer(body):
         out = []
@@ -427,6 +523,95 @@ for _ in range(80):
 files = {m for m in mods if m == TARGET or m.startswith(TARGET + "::")}
 
 
+# ---------------------------------------------------------------------------
+# Glob imports carry *names*, and they used to carry none.
+#
+# `use super::*` contributes no `use` edge here (the star is filtered out of
+# `engines_uses`, and `REF_RE` cannot match `super::*`), so a file that took an
+# engine-resident helper from its parent's `pub(super) use child::*` looked
+# edge-free and was reported MOVABLE — the false positive that made
+# `buddy::jobs::autonomous_chats::{local_jobs, memory_jobs}` look harvestable.
+# The parent facade globs crate shims (`local_evidence`, `spec`, `redaction`),
+# which is why the `wild` set alone used to excuse *every* name reached through
+# it.
+#
+# Each glob import is now resolved by name through the globbing module's
+# *visible item set*: its own declarations, then its explicit imports, then the
+# in-tree modules it globs, and only last the crates it globs. That is the
+# honest wildcard rule — a crate glob covers a name only when no
+# engine-resident definition of that name exists on the path the reference
+# travels.
+# ---------------------------------------------------------------------------
+LOCAL_BIND = re.compile(
+    r"\b(?:fn|struct|enum|trait|type|const|static|union|let|for|macro_rules!)\s+"
+    r"([A-Za-z_][A-Za-z0-9_]*)"
+)
+
+child_mods = {}
+visible = {}
+for mod in mods:
+    child_mods[mod] = set(CHILD_MOD.findall(read(mods[mod]))) if mod not in test_only else set()
+    names = definitions.get(mod, set())
+    visible[mod] = {
+        n: (f"engine:{mod}::{n}" if n in child_mods[mod] else f"engine:{mod}") for n in names
+    }
+
+engine_globs = {}
+for mod, uses in raw_uses.items():
+    eg = []
+    for _is_pub, full in uses:
+        if not full.endswith("::*"):
+            continue
+        if CRATE_RE.match(full):
+            continue
+        tmod = glob_module(mod, full)
+        if tmod is not None and tmod != mod:
+            eg.append(tmod)
+    engine_globs[mod] = eg
+
+
+def reached_origin(tmod, name):
+    """Origin of `name` as reached through module `tmod`, visible-set first."""
+    origin = visible.get(tmod, {}).get(name) or exports.get(tmod, {}).get(name)
+    if origin:
+        return origin
+    if tmod in wild:
+        return "crate:" + ",".join(sorted(wild[tmod]))
+    return None
+
+
+for _ in range(80):
+    changed = False
+    for mod, uses in raw_uses.items():
+        for _is_pub, full in uses:
+            if full.endswith("::*"):
+                continue
+            name = import_tail(full)
+            if name in ("self", "*") or name in definitions.get(mod, ()):
+                continue
+            if CRATE_RE.match(full):
+                origin = "crate:" + full.split("::")[0]
+            else:
+                tmod, rest = longest_module(absolute(mod, full))
+                if tmod is None or tmod == mod:
+                    continue
+                if not rest:
+                    origin = f"engine:{tmod}"
+                else:
+                    origin = reached_origin(tmod, name) or f"engine:{tmod}::{name}"
+            if visible[mod].get(name) != origin:
+                visible[mod][name] = origin
+                changed = True
+    for mod in mods:
+        for tmod in engine_globs.get(mod, ()):
+            for name, origin in visible.get(tmod, {}).items():
+                if name not in visible[mod]:
+                    visible[mod][name] = origin
+                    changed = True
+    if not changed:
+        break
+
+
 def symbol_origin(tmod, symbol):
     origin = exports.get(tmod, {}).get(symbol)
     if origin:
@@ -453,7 +638,13 @@ for mod in files:
         if tmod is None or tmod == mod:
             return
         star = (not rest) or rest[-1] == "*"
-        if star and tmod not in wild:
+        # A bare module path (`crate::files_in_workspace`) names a module that
+        # lives in this tree or outside it — never a crate, even when that
+        # module's `mod.rs` happens to glob a crate. `files_in_workspace` calls
+        # `files_in_workspace::on_workspaces_init`, and the crate glob inside
+        # `files_in_workspace/mod.rs` used to turn that engine call into a
+        # `refact_files` edge, which is the same false positive one level up.
+        if star:
             if tmod in files:
                 deps.add(tmod)
             else:
@@ -491,6 +682,51 @@ for mod in files:
             add_edge(path[: -len("::self")])
     for path in use_paths:
         add_edge(path)
+    # Names the file takes from a glob import. They are resolved through the
+    # globbing module's visible item set (never through a bare `crates` claim),
+    # so an engine-resident definition wins over a crate glob on the same path:
+    # `local_jobs` gets `build_autonomous_job_spec` from `runtime`, not from the
+    # `refact_buddy_core` glob beside it.
+    # A file's own items and its own bindings always win over a glob import, so
+    # they are never attributed: a local `let spec = …` must not be read as the
+    # sibling module `spec`, and a `pub(crate) fn` must not be read as a crate
+    # name that happens to be spelled the same. `import_tail` yields `*`/`self`
+    # too, which are not bindable names.
+    own_binds = (
+        set(LOCAL_BIND.findall(body))
+        | {import_tail(p) for _is_pub, p in raw_uses.get(mod, [])}
+        | definitions.get(mod, set())
+        | set(BIND_NAME.findall(body))
+    )
+    own_binds = {n for n in own_binds if IDENT_RE.fullmatch(n)}
+    for name in sorted(set(IDENT_RE.findall(strip_literals(body))) - own_binds):
+        if name in PATH_KEYWORDS:
+            continue
+        origin = visible.get(mod, {}).get(name)
+        if not origin:
+            continue
+        kind, value = origin.split(":", 1)
+        if kind == "crate":
+            crates.update(value.split(","))
+            continue
+        # `engine:buddy::actor::f` names the module `buddy::actor`, so the
+        # dependency is that module, never the tree root it lives under.
+        owner, _rest = longest_module(value)
+        owner = owner or value
+        if owner == mod:
+            continue
+        if owner in files and owner != mod:
+            deps.add(owner)
+        else:
+            engine.add(value)
+    # A glob of a module that stays in the engine (`use super::helper::*` where
+    # `helper` is not part of this tree) cannot be satisfied from the
+    # destination crate at all, so it is a hard engine edge. A glob of an
+    # in-tree module is not an extra edge here: the names the file actually uses
+    # were attributed to their real owners just above, which is stricter.
+    for target in engine_globs.get(mod, ()):
+        if target not in files:
+            engine.add(target)
     # Every `crate::`/`super::`/`self::` path in the body, inline or inside a
     # `use`, is a real edge: a call written as `crate::chat::summarization::f(x)`
     # binds the file to that module just as firmly as an import does.
@@ -577,11 +813,6 @@ def is_island(mod):
 # so dependants drop out too, and both are reported as their own classes.
 # ---------------------------------------------------------------------------
 CRATES = os.path.join(ENGINE, "crates")
-FULL_DEF = re.compile(
-    r"(?m)^[ \t]*(?:pub(?:\([^)]*\))?[ \t]+)?(?:async[ \t]+)?(?:unsafe[ \t]+)?"
-    r"(?:fn|struct|enum|trait|type|const|static|union|impl|macro_rules!)\b"
-)
-ANY_MOD_DECL = re.compile(r"(?m)^[ \t]*(?:pub(?:\([^)]*\))?[ \t]+)?mod\s+[A-Za-z_]")
 
 # Destination crate per engine module tree. Unknown trees keep the old
 # (cycle-blind) behaviour, so only reviewed trees change.

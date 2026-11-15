@@ -16,6 +16,13 @@ i.e. the synthetic module is classified differently before and after the fix:
 * `fx::decl::mod` is **declaration-only** (`pub mod facade;`). Before: `pub mod`
   counted as a definition, so it was listed as movable payload. After: reported
   as a shim.
+* `fx::mixed::leaf` writes `use super::*` and calls a helper that only
+  `fx::mixed`'s `pub(crate) use engine_child::*` supplies, while `fx::mixed`
+  also globs a crate (`pub use refact_providers::things::*`). Before: a glob
+  import contributed no edge at all, so `leaf` looked edge-free and was reported
+  MOVABLE even though it calls an engine-resident function. After: the name is
+  attributed to `fx::mixed::engine_child` and `leaf` is blocked. This is the
+  `buddy::jobs::autonomous_chats::{local_jobs, memory_jobs}` shape.
 
 `outside::alpha` is referenced by the probes and deliberately lives outside `fx`,
 so the census sees a genuine engine-resident dependency.
@@ -27,7 +34,7 @@ FILES = {
     "outside/mod.rs": "pub mod alpha;\n",
     "outside/alpha.rs": "pub fn alpha_helper() -> u32 { 1 }\n",
     "fx/mod.rs": (
-        "pub mod bare;\npub mod glob;\npub mod alias;\npub mod decl;\n\n"
+        "pub mod bare;\npub mod glob;\npub mod alias;\npub mod decl;\npub mod mixed;\n\n"
         "pub fn dispatch() -> u32 {\n    bare::child::child_helper()\n}\n"
     ),
     "fx/bare/mod.rs": "pub mod child;\n",
@@ -48,6 +55,18 @@ FILES = {
     ),
     "fx/decl/mod.rs": "pub mod facade;\n",
     "fx/decl/facade.rs": "pub use refact_providers::things::Thing;\n",
+    "fx/mixed/mod.rs": (
+        "pub mod engine_child;\npub mod leaf;\n"
+        "pub use refact_providers::things::*;\n"
+        "pub(crate) use engine_child::*;\n"
+    ),
+    "fx/mixed/engine_child.rs": (
+        "pub(crate) fn engine_only_helper() -> u32 {\n"
+        "    crate::outside::alpha::alpha_helper()\n}\n"
+    ),
+    "fx/mixed/leaf.rs": (
+        "use super::*;\n\npub fn uses_engine() -> u32 {\n    engine_only_helper()\n}\n"
+    ),
 }
 
 

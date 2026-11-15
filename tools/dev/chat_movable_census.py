@@ -26,6 +26,19 @@ This script:
   production edge lands on a crate or on another movable module;
 * prints, per blocked file, the first engine-resident dependency.
 
+`MOVABLE now` additionally excludes, and reports separately, every file that
+cannot move *now* even though its own edges look clean:
+
+* documented islands (`ISLANDS`, `ISLANDS_BY_TREE`) and everything that depends
+  on them — an island needs its own card before its dependants can follow;
+* module tree roots (`mod.rs` files that only declare children) — they are the
+  destination, not a file to move into it;
+* files whose crate edge points at a crate that already depends on the
+  destination crate (`DEST_HINTS`) — moving those is a cargo dependency cycle.
+
+Every file lands in exactly one class and the class line counts are printed
+against the tree total, so a miscount is visible instead of silent.
+
 Output: `refact-agent/engine/target/<module>_movable_census.txt`.
 """
 import os
@@ -58,43 +71,189 @@ def read(path):
         return fh.read()
 
 
+CHAR_LITERAL = re.compile(r"'(?:\\.|[^\\'])'")
+
+
+def skip_string(text, quote):
+    """`quote` indexes the opening `"`; return the index of the closing one."""
+    i = quote + 1
+    while i < len(text):
+        if text[i] == "\\":
+            i += 2
+            continue
+        if text[i] == '"':
+            return i
+        i += 1
+    return -1
+
+
+def skip_raw_string(text, r):
+    """`r` indexes an `r`; return the last index of the raw literal it opens, or
+    `r` itself when this `r` is not a raw string."""
+    j = r + 1
+    hashes = 0
+    while j < len(text) and text[j] == "#":
+        hashes += 1
+        j += 1
+    if j >= len(text) or text[j] != '"':
+        return r
+    close = '"' + "#" * hashes
+    end = text.find(close, j + 1)
+    return len(text) - 1 if end == -1 else end + len(close) - 1
+
+
+def match_brace(text, open_index):
+    """Index of the `}` matching the `{` at `open_index`, or -1.
+
+    Braces inside string/char literals, raw strings and comments must not count:
+    a test module containing a `'{'`/`"{"` literal otherwise unbalances a naive
+    counter and the whole production tail of the file is silently deleted.
+    """
+    depth = 0
+    i = open_index
+    while i < len(text):
+        ch = text[i]
+        nxt = text[i + 1] if i + 1 < len(text) else ""
+        if ch == "/" and nxt == "/":
+            nl = text.find("\n", i)
+            i = len(text) if nl == -1 else nl
+            continue
+        if ch == "/" and nxt == "*":
+            end = text.find("*/", i + 2)
+            i = len(text) if end == -1 else end + 2
+            continue
+        if ch == "r" and nxt in '#"':
+            nxt_i = skip_raw_string(text, i)
+            if nxt_i != i:
+                i = nxt_i + 1
+                continue
+        if ch == "b" and nxt == '"':
+            end = skip_string(text, i + 1)
+            if end == -1:
+                return -1
+            i = end + 1
+            continue
+        if ch == '"':
+            end = skip_string(text, i)
+            if end == -1:
+                return -1
+            i = end + 1
+            continue
+        if ch == "'":
+            literal = CHAR_LITERAL.match(text, i)
+            i = literal.end() if literal else i + 1
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return i
+        i += 1
+    return -1
+
+
+def _scan(text, start, targets):
+    """First index at or after `start` holding a character of `targets` that sits
+    outside literals, comments and `()`/`[]` nesting."""
+    depth = 0
+    i = start
+    while i < len(text):
+        ch = text[i]
+        nxt = text[i + 1] if i + 1 < len(text) else ""
+        if ch == "/" and nxt == "/":
+            nl = text.find("\n", i)
+            i = len(text) if nl == -1 else nl
+            continue
+        if ch == "/" and nxt == "*":
+            end = text.find("*/", i + 2)
+            i = len(text) if end == -1 else end + 2
+            continue
+        if ch == "r" and nxt in '#"':
+            end = skip_raw_string(text, i)
+            if end != i:
+                i = end + 1
+                continue
+        if ch == "b" and nxt == '"':
+            end = skip_string(text, i + 1)
+            if end == -1:
+                return -1
+            i = end + 1
+            continue
+        if ch == '"':
+            end = skip_string(text, i)
+            if end == -1:
+                return -1
+            i = end + 1
+            continue
+        if ch == "'":
+            literal = CHAR_LITERAL.match(text, i)
+            i = literal.end() if literal else i + 1
+            continue
+        if ch in "([":
+            depth += 1
+        elif ch in ")]":
+            depth -= 1
+        elif depth == 0 and ch in targets:
+            return i
+        i += 1
+    return -1
+
+
+def item_end(text, start):
+    """Exclusive end of the item whose attributes end at `start`, or -1.
+
+    A `use` declaration terminates at its `;` (its `{…}` group is not a body);
+    every other item terminates at its `;` unless a `{` body opens first, in
+    which case the matching `}` decides. Getting this wrong is how a
+    `#[cfg(test)] async fn` with no `;` in sight used to swallow the rest of the
+    file — `fn`/`impl`/`struct` bodies are brace-delimited exactly like `mod`.
+    """
+    i = start
+    while True:
+        m = re.match(r"\s*#!?\[", text[i:])
+        if not m:
+            break
+        depth, j, close = 0, i + m.end() - 1, -1
+        while j < len(text):
+            if text[j] == "[":
+                depth += 1
+            elif text[j] == "]":
+                depth -= 1
+                if depth == 0:
+                    close = j
+                    break
+            j += 1
+        if close == -1:
+            return -1
+        i = close + 1
+    if re.match(r"\s*(?:pub(?:\([^)]*\))?\s+)?use\b", text[i : i + 300]):
+        semi = _scan(text, i, ";")
+        return semi + 1 if semi != -1 else -1
+    brace = _scan(text, i, "{")
+    semi = _scan(text, i, ";")
+    if brace != -1 and (semi == -1 or brace < semi):
+        close = match_brace(text, brace)
+        return close + 1 if close != -1 else -1
+    return semi + 1 if semi != -1 else -1
+
+
 def prod(text):
     """Remove `#[cfg(test)]` items without discarding the production code around them.
 
     Cutting at the first `#[cfg(test)]` truncates a file whose test modules are
     declared near the top (`chat/queue/mod.rs` declares `#[cfg(test)] mod tests;`
     above the real imports) and then silently hides every production edge below.
-    Here only the attributed item goes: a braced `mod x { … }` by brace matching,
-    a `mod x;` declaration, or any other single item up to its `;`.
+    Here only the attributed item goes; see `item_end` for how its extent is found.
     """
     while True:
         m = CFG_TEST.search(text)
         if m is None:
             return text
-        rest = text[m.end() :].lstrip()
-        if rest.startswith("mod ") or rest.startswith("pub mod "):
-            semi = text.find(";", m.end())
-            open_brace = text.find("{", m.end())
-            if semi != -1 and (open_brace == -1 or semi < open_brace):
-                text = text[: m.start()] + text[semi + 1 :]
-                continue
-            if open_brace == -1:
-                return text[: m.start()]
-            depth, i = 0, open_brace
-            while i < len(text):
-                if text[i] == "{":
-                    depth += 1
-                elif text[i] == "}":
-                    depth -= 1
-                    if depth == 0:
-                        break
-                i += 1
-            text = text[: m.start()] + text[i + 1 :]
-            continue
-        semi = text.find(";", m.end())
-        if semi == -1:
+        end = item_end(text, m.end())
+        if end == -1:
             return text[: m.start()]
-        text = text[: m.start()] + text[semi + 1 :]
+        text = text[: m.start()] + text[end:]
 
 
 def code(text):
@@ -361,50 +520,229 @@ ISLANDS = (
 
 
 def is_island(mod):
-    return any(mod == island or mod.startswith(island + "::") for island in ISLANDS)
+    tree_islands = tuple(
+        f"{TARGET}::{leaf}" for leaf in ISLANDS_BY_TREE.get(TARGET, ())
+    )
+    return any(
+        mod == island or mod.startswith(island + "::")
+        for island in ISLANDS + tree_islands
+    )
 
 
-blocked = sorted(files - movable, key=lambda m: -info[m]["lines"])
-islands = [m for m in files if is_island(m)]
-candidates = sorted(
-    (m for m in movable - facade if not info[m]["test_only"] and not is_island(m)),
+# ---------------------------------------------------------------------------
+# Honest separation of "movable now" from "movable in principle".
+#
+# Three defects used to inflate the harvest list:
+#
+# * documented islands were only filtered out of the *report*, so their
+#   dependants stayed "movable" and were printed as harvestable now, only to be
+#   unmovable in practice until the island's own card lands;
+# * `ISLANDS` only described the `chat` tree, so a tree that declares its own
+#   island (e.g. the `tools` shell island from the harvest card) had those files
+#   reported as MOVABLE;
+# * a module whose edges all land on `refact_*` crates was reported movable even
+#   when one of those crates already depends on the destination crate — moving
+#   the file there is a cargo dependency cycle, not a harvest.
+#
+# Islands and crate cycles are now removed from the movability closure itself,
+# so dependants drop out too, and both are reported as their own classes.
+# ---------------------------------------------------------------------------
+CRATES = os.path.join(ENGINE, "crates")
+FULL_DEF = re.compile(
+    r"(?m)^[ \t]*(?:pub(?:\([^)]*\))?[ \t]+)?(?:async[ \t]+)?(?:unsafe[ \t]+)?"
+    r"(?:fn|struct|enum|trait|type|const|static|union|impl|macro_rules!)\b"
+)
+ANY_MOD_DECL = re.compile(r"(?m)^[ \t]*(?:pub(?:\([^)]*\))?[ \t]+)?mod\s+[A-Za-z_]")
+
+# Destination crate per engine module tree. Unknown trees keep the old
+# (cycle-blind) behaviour, so only reviewed trees change.
+DEST_HINTS = {"tools": "refact-tools"}
+
+# Islands that belong to a single tree and are named by that tree's own harvest
+# card ("do NOT move" list). They are never harvest candidates, and neither is
+# anything that depends on them.
+ISLANDS_BY_TREE = {
+    "tools": (
+        "tool_process",
+        "tool_shell",
+        "shell_gate",
+        "shell_gate_llm",
+        "tool_process_write_stdin",
+        "tools_list",
+    ),
+}
+
+
+def workspace_crate_deps():
+    out = {}
+    if not os.path.isdir(CRATES):
+        return out
+    for entry in sorted(os.listdir(CRATES)):
+        toml = os.path.join(CRATES, entry, "Cargo.toml")
+        if not os.path.isfile(toml):
+            continue
+        body = read(toml)
+        m = re.search(r'(?m)^\s*name\s*=\s*"([^"]+)"', body)
+        out[m.group(1) if m else entry] = set(
+            re.findall(r"(?m)^\s*(refact-[a-z0-9-]+)\s*=", body)
+        )
+    return out
+
+
+CRATE_DEPS = workspace_crate_deps()
+DEST = DEST_HINTS.get(TARGET)
+
+
+def crate_closure(start):
+    seen, stack = set(), [start]
+    while stack:
+        for dep in CRATE_DEPS.get(stack.pop(), ()):
+            if dep not in seen:
+                seen.add(dep)
+                stack.append(dep)
+    return seen
+
+
+def cycle_blocker(mod):
+    """A crate edge into a crate that already depends on DEST cannot move into
+    DEST: cargo would see a cycle."""
+    if not DEST:
+        return None
+    for crate in sorted(info[mod]["crates"]):
+        for one in crate.split(","):
+            if one and DEST in crate_closure(one.replace("_", "-")):
+                return one
+    return None
+
+
+def is_host(mod):
+    """A module tree root only declares its children; it is the destination, not
+    a file that can be moved into it."""
+    body = code(prod(read(mods[mod])))
+    return not FULL_DEF.search(body) and bool(ANY_MOD_DECL.search(body))
+
+
+def island_blocker(mod, seen=None):
+    """First declared island reachable through this module's engine deps."""
+    seen = set() if seen is None else seen
+    for dep in sorted(info[mod]["deps"]):
+        if dep in seen:
+            continue
+        seen.add(dep)
+        if is_island(dep):
+            return dep
+        found = island_blocker(dep, seen)
+        if found:
+            return found
+    return None
+
+
+def count(mods_list):
+    return f"{len(mods_list)} files / {sum(info[m]['lines'] for m in mods_list)} lines"
+
+
+hosts = sorted(
+    (m for m in files if m not in test_only and is_host(m)),
     key=lambda m: -info[m]["lines"],
 )
-test_mass = sorted(
-    (m for m in movable if info[m]["test_only"] or m in facade), key=lambda m: -info[m]["lines"]
-)
-total = sum(i["lines"] for i in info.values())
-lines = [
-    f"### {TARGET}: {len(files)} files / {total} production lines",
-    f"already-shim (pure crate facade): {len(facade)} files / "
-    f"{sum(info[m]['lines'] for m in facade)} lines",
-    f"MOVABLE now: {len(candidates)} files / {sum(info[m]['lines'] for m in candidates)} lines",
-    f"LEFT (blocked): {len(blocked)} files / {sum(info[m]['lines'] for m in blocked)} lines",
-    f"stays in engine (test-only modules + shims): {len(test_mass)} files / "
-    f"{sum(info[m]['lines'] for m in test_mass)} lines",
-    "",
-    "### MOVABLE (non-shim, non-test)",
+crate_cycles = {
+    m: cycle_blocker(m) for m in files if m not in test_only and cycle_blocker(m)
+}
+
+# Islands, tree roots and crate cycles are not movable *now*; dropping them from
+# the set makes the closure prune every module that depends on them.
+movable -= {m for m in files if is_island(m)} | set(hosts) | set(crate_cycles)
+while True:
+    drop = {m for m in movable if not info[m]["deps"] <= movable}
+    if not drop:
+        break
+    movable -= drop
+
+# Every file lands in exactly one class, so the class line counts add up to the
+# tree total; a file that could be described two ways takes the first class it
+# matches below (an island stays an island even if it is now crate-only).
+MOVABLE_LABEL = "MOVABLE now"
+CLASS_ORDER = [
+    ("test-only modules (stay in engine)", lambda m: info[m]["test_only"]),
+    ("declared islands (never harvested here)", is_island),
+    (
+        "BLOCKED on a destination-crate cycle"
+        + (f" (dest={DEST})" if DEST else " (destination crate unknown, not checked)"),
+        lambda m: m in crate_cycles,
+    ),
+    ("module hosts (destination tree roots, never move)", lambda m: m in set(hosts)),
+    ("already-shim (pure crate facade)", lambda m: m in facade),
+    (MOVABLE_LABEL, lambda m: m in movable),
+    (
+        "BLOCKED on another island (that island needs its own card first)",
+        lambda m: island_blocker(m) is not None,
+    ),
+    ("LEFT (blocked on engine code)", lambda m: True),
 ]
-for mod in candidates:
+classes = {label: [] for label, _ in CLASS_ORDER}
+for mod in files:
+    for label, matches in CLASS_ORDER:
+        if matches(mod):
+            classes[label].append(mod)
+            break
+for label in classes:
+    classes[label].sort(key=lambda m: -info[m]["lines"])
+
+total = sum(i["lines"] for i in info.values())
+lines = [f"### {TARGET}: {len(files)} files / {total} production lines"]
+for label, _ in CLASS_ORDER:
+    lines.append(f"{label}: {count(classes[label])}")
+listed = sum(info[m]["lines"] for mods_list in classes.values() for m in mods_list)
+lines.append(f"[classes cover {listed} of {total} production lines]")
+if listed != total:
+    lines.append("!! COVERAGE BUG: classes do not partition the tree")
+lines.append("")
+
+
+def body(label):
+    return sorted(classes[label], key=lambda m: -info[m]["lines"])
+
+
+lines.append("### MOVABLE now (non-shim, non-test, no island, no crate cycle)")
+for mod in body(MOVABLE_LABEL):
     lines.append(
         f"  {info[mod]['lines']:6}  {mod:56} crates={','.join(sorted(info[mod]['crates']))}"
     )
 lines.append("")
-lines.append("### DOCUMENTED ISLANDS (own card each, never harvested here)")
-for mod in sorted(islands, key=lambda m: -info[m]["lines"]):
+lines.append("### BLOCKED ON ANOTHER ISLAND (that island needs its own card first)")
+for mod in body("BLOCKED on another island (that island needs its own card first)"):
+    lines.append(f"  {info[mod]['lines']:6}  {mod:56} island={island_blocker(mod)}")
+lines.append("")
+lines.append("### BLOCKED ON A DESTINATION-CRATE CYCLE")
+for mod in body(
+    "BLOCKED on a destination-crate cycle"
+    + (f" (dest={DEST})" if DEST else " (destination crate unknown, not checked)")
+):
+    lines.append(
+        f"  {info[mod]['lines']:6}  {mod:56} {crate_cycles[mod]} already depends on {DEST}"
+    )
+lines.append("")
+lines.append("### DECLARED ISLANDS (own card each, never harvested here)")
+for mod in body("declared islands (never harvested here)"):
     engine = sorted(info[mod]["engine"] | info[mod]["deps"])
     lines.append(f"  {info[mod]['lines']:6}  {mod:56} blocker={engine[0] if engine else '-'}")
 lines.append("")
-lines.append("### LEFT / ISLANDS")
-for mod in blocked:
-    if is_island(mod):
-        continue
+lines.append("### MODULE HOSTS (tree roots; their children move, they do not)")
+for mod in body("module hosts (destination tree roots, never move)"):
+    lines.append(f"  {info[mod]['lines']:6}  {mod}")
+lines.append("")
+lines.append("### LEFT (blocked on engine code)")
+for mod in body("LEFT (blocked on engine code)"):
     engine = sorted(info[mod]["engine"] | info[mod]["deps"])
     lines.append(f"  {info[mod]['lines']:6}  {mod:56} blocker={engine[0] if engine else '-'}")
     if len(engine) > 1:
         lines.append(f"          others: {', '.join(engine[1:6])}")
+lines.append("")
+lines.append("### ALREADY-SHIM (pure crate facade)")
+for mod in body("already-shim (pure crate facade)"):
+    lines.append(f"  {info[mod]['lines']:6}  {mod}")
 
 dest = os.path.join(ENGINE, "target", f"{TARGET.split('::')[-1]}_movable_census.txt")
 with open(dest, "w", encoding="utf-8") as fh:
     fh.write("\n".join(lines) + "\n")
-print("\n".join(lines[:5]))
+print("\n".join(lines[:9]))

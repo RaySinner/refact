@@ -23,6 +23,8 @@ refact-core = { path = "../refact-core" }
 refact-exec = { path = "../refact-exec" }
 refact-sandbox = { path = "../refact-sandbox" }
 refact-files = { path = "../refact-files" }
+refact-git = { path = "../refact-git" }
+hostname = "0.4"
 refact-scratchpads = { path = "../refact-scratchpads" }
 refact-context-api = { path = "../refact-context-api", features = ["http-client"] }
 refact-privacy = { path = "../refact-privacy" }

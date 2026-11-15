@@ -6,6 +6,7 @@ pub mod fuzzy_search;
 pub mod indexing_settings;
 pub mod path_classification;
 pub mod path_utils;
+pub mod vcs_detect;
 pub mod watcher_plan;
 
 pub use documents_state::*;

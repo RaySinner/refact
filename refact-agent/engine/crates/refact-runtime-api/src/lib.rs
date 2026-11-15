@@ -64,6 +64,8 @@ pub mod buddy_planner_backstop_runner;
 pub mod goal_verifier_runtime;
 pub mod task_agent_monitor;
 pub mod session_runtime;
+pub mod system_context;
+pub mod trajectory_model_runtime;
 pub mod trajectory_prefix;
 pub mod commit_message_runtime;
 pub mod task_comments;

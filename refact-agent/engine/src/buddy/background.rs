@@ -264,7 +264,7 @@ pub async fn buddy_background_task(app: AppState) {
 
     info!("buddy: service started for {:?}", project_root);
 
-    let scheduler = super::scheduler::BuddyScheduler::new();
+    let scheduler = super::scheduler::BuddyScheduler::new(super::scheduler::default_buddy_jobs());
     let shutdown_flag = ctx.runtime.shutdown_flag.clone();
     let commit_poller_handle = tokio::spawn(commit_activity_poller(
         app.clone(),

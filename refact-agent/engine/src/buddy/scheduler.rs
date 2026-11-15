@@ -1,520 +1,65 @@
-use std::sync::Arc;
-use std::path::Path;
-use tokio::sync::Mutex as AMutex;
+pub use refact_runtime_api::buddy_scheduler::*;
 
-use super::actor::BuddyService;
-use super::diagnostics::DiagnosticContext;
-use super::settings::BuddySettings;
-use super::types::{
-    BuddyActivity, BuddyBubblePolicy, BuddyFact, BuddyJobState, BuddyOnboarding,
-    BuddyPersonalityProfile, BuddyPetState, BuddyPulse, BuddyRuntimeEvent, BuddySpeechItem,
-    BuddySuggestion, BuddyWorkflowSummary, BuddyChatPhraseBank,
-};
-use super::voice_service::{SpeechIntent, SpeechIntentWireToken};
-use crate::buddy::autonomous_workflows::is_autonomous_workflow_id;
-use crate::app_state::AppState;
-
-#[cfg_attr(not(test), allow(dead_code))]
-#[derive(Clone)]
-pub struct BuddyJobContext {
-    pub identity_name: String,
-    pub personality: BuddyPersonalityProfile,
-    pub onboarding: BuddyOnboarding,
-    pub recent_diagnostics: Vec<DiagnosticContext>,
-    pub project_root: std::path::PathBuf,
-    pub job_state: BuddyJobState,
-    pub workflow_summaries: Vec<BuddyWorkflowSummary>,
-    pub total_workflow_runs: u64,
-    pub suggestion_state: Vec<BuddySuggestion>,
-    pub pet: BuddyPetState,
-    pub active_quest: Option<super::types::BuddyQuest>,
-    pub settings: BuddySettings,
-    pub pulse: BuddyPulse,
-    pub facts: Vec<BuddyFact>,
-    pub recent_activities: Vec<BuddyActivity>,
+pub fn default_buddy_jobs() -> Vec<Box<dyn BuddyJob>> {
+    vec![
+        Box::new(super::jobs::greeting::GreetingJob) as Box<dyn BuddyJob>,
+        Box::new(super::jobs::tour::TourJob),
+        Box::new(refact_runtime_api::buddy_jobs::error_triage::ErrorTriageJob),
+        Box::new(refact_runtime_api::buddy_jobs::config_watcher::ConfigWatcherJob),
+        Box::new(super::jobs::stats_watcher::StatsWatcherJob),
+        Box::new(refact_runtime_api::buddy_jobs::health_watcher::HealthWatcherJob),
+        Box::new(super::jobs::autonomous_chats::BuddyMemoryGardenerJob),
+        Box::new(super::jobs::autonomous_chats::BuddyKnowledgeConflictResolverJob),
+        Box::new(super::jobs::autonomous_chats::BuddyBehaviorLearnerJob),
+        Box::new(super::jobs::autonomous_chats::BuddyUserHabitCoachJob),
+        Box::new(super::jobs::autonomous_chats::BuddyModelCostOptimizerJob),
+        Box::new(super::jobs::quest_prompt::QuestPromptJob),
+        Box::new(super::jobs::autonomous_chats::ErrorDetectiveJob),
+        Box::new(super::jobs::refact_compile_sniffer::RefactCompileSnifferJob),
+        Box::new(super::jobs::refact_self_critic::RefactSelfCriticJob),
+        Box::new(super::jobs::buddy_daily_digest::BuddyDailyDigestJob),
+        Box::new(refact_runtime_api::buddy_jobs::buddy_briefing::BuddyBriefingJob),
+        Box::new(refact_runtime_api::buddy_jobs::buddy_handbook_distiller::BuddyHandbookDistillerJob),
+        Box::new(super::jobs::buddy_friday_retro::BuddyFridayRetroJob),
+        Box::new(super::jobs::chat_phrase_bank::ChatPhraseBankJob),
+        Box::new(super::jobs::buddy_idle_suggester::BuddyIdleSuggesterJob),
+        Box::new(super::jobs::buddy_pr_issue_matchmaker::BuddyPrIssueMatchmakerJob),
+        Box::new(super::jobs::autonomous_chats::SecurityWhispererJob),
+        Box::new(super::jobs::autonomous_chats::SetupCoachJob),
+        Box::new(super::jobs::autonomous_chats::DependencyRadarJob),
+        Box::new(super::jobs::autonomous_chats::DocsGardenerJob),
+        Box::new(super::jobs::autonomous_chats::ArchitectureDriftWatcherJob),
+        Box::new(super::jobs::buddy_onboarding::BuddyOnboardingJob),
+        Box::new(super::jobs::buddy_refactor_hunter::BuddyRefactorHunterJob),
+        Box::new(super::jobs::buddy_skill_author::BuddySkillAuthorJob),
+        Box::new(super::jobs::buddy_test_coverage_watcher::BuddyTestCoverageWatcherJob),
+        Box::new(refact_runtime_api::buddy_jobs::proactive_suggestions::ProactiveSuggestionsJob),
+        Box::new(super::jobs::speaker_insight::SpeakerInsightJob),
+        Box::new(super::jobs::speaker_win::SpeakerWinJob),
+        Box::new(super::jobs::speaker_memory_pulse_commentary::SpeakerMemoryPulseCommentaryJob),
+    ]
 }
 
-pub struct BuddyJobResult {
-    pub speech_intent: Option<SpeechIntent>,
-    pub speech: Option<BuddySpeechItem>,
-    pub suggestion: Option<BuddySuggestion>,
-    pub activity: Option<BuddyActivity>,
-    pub runtime_event: Option<BuddyRuntimeEvent>,
-    pub chat_phrase_bank: Option<BuddyChatPhraseBank>,
-    pub workflow_failure: Option<super::workflows::WorkflowFailureReport>,
-    pub opportunities: Vec<(super::types::BuddyOpportunity, u64)>,
-    pub last_result: Option<String>,
-    pub xp: u64,
-    pub mark_greeted: bool,
-}
-
-impl Default for BuddyJobResult {
-    fn default() -> Self {
-        Self {
-            speech_intent: None,
-            speech: None,
-            suggestion: None,
-            activity: None,
-            runtime_event: None,
-            chat_phrase_bank: None,
-            workflow_failure: None,
-            opportunities: Vec::new(),
-            last_result: None,
-            xp: 0,
-            mark_greeted: false,
-        }
-    }
-}
-
-impl BuddyJobResult {
-    fn has_visible_output(&self) -> bool {
-        self.speech.is_some()
-            || self.suggestion.is_some()
-            || self.activity.is_some()
-            || self.runtime_event.is_some()
-            || self.chat_phrase_bank.is_some()
-            || self.workflow_failure.is_some()
-            || !self.opportunities.is_empty()
-            || self.xp > 0
-    }
-}
-
-fn next_last_result(existing: Option<&str>, result: Option<&str>) -> Option<String> {
-    result.or(existing).map(ToString::to_string)
-}
-
-fn should_record_job_result(result: &BuddyJobResult, records_empty_result: bool) -> bool {
-    records_empty_result || result.has_visible_output() || result.last_result.is_some()
-}
-
-pub(crate) fn speech_runtime_event(
-    job_id: &str,
-    intent: SpeechIntent,
-    speech: &BuddySpeechItem,
-    title: String,
-    description: Option<String>,
-) -> BuddyRuntimeEvent {
-    let intent_key = super::speech_policy::intent_key(intent);
-    let dedupe_key = speech
-        .dedupe_key
-        .as_deref()
-        .map(|key| format!("speech_runtime:{job_id}:{key}"))
-        .unwrap_or_else(|| format!("speech_runtime:{job_id}:{intent_key}"));
-    let mut event = super::actor::make_runtime_event(
-        &format!("speech_{intent_key}"),
-        if title.trim().is_empty() {
-            &speech.text
-        } else {
-            &title
-        },
-        job_id,
-        &dedupe_key,
-        "completed",
-        Some(speech_runtime_priority(intent)),
-    );
-    event.description = description.filter(|text| !text.trim().is_empty());
-    event.ttl_ms = Some(speech.ttl_seconds.saturating_mul(1000).max(1000));
-    event.speech_text = Some(speech.text.clone());
-    event.scene = Some(speech_runtime_scene(intent).to_string());
-    event.duration_hint = Some(speech.ttl_seconds.min(u64::from(u32::MAX)) as u32);
-    event.persistent = speech.persistent;
-    event.controls = speech.controls.clone();
-    event.chat_id = speech.chat_id.clone();
-    event.bubble_policy = Some(speech_runtime_bubble_policy(intent));
-    event
-}
-
-fn speech_runtime_bubble_policy(intent: SpeechIntent) -> BuddyBubblePolicy {
-    match intent {
-        SpeechIntent::Humor
-        | SpeechIntent::Insight
-        | SpeechIntent::MemoryPulseCommentary
-        | SpeechIntent::ChatReaction
-        | SpeechIntent::AgentInterjection => BuddyBubblePolicy::Ambient,
-        SpeechIntent::Greeting
-        | SpeechIntent::Tour
-        | SpeechIntent::Milestone
-        | SpeechIntent::Win
-        | SpeechIntent::QuestAccept
-        | SpeechIntent::QuestComplete
-        | SpeechIntent::Suggestion
-        | SpeechIntent::ErrorAlert => BuddyBubblePolicy::Durable,
-    }
-}
-
-fn speech_runtime_priority(intent: SpeechIntent) -> &'static str {
-    match intent {
-        SpeechIntent::ErrorAlert => "high",
-        SpeechIntent::Win
-        | SpeechIntent::Milestone
-        | SpeechIntent::QuestAccept
-        | SpeechIntent::QuestComplete => "normal",
-        SpeechIntent::Insight | SpeechIntent::MemoryPulseCommentary => "normal",
-        SpeechIntent::Greeting | SpeechIntent::Tour | SpeechIntent::Suggestion => "low",
-        SpeechIntent::Humor | SpeechIntent::ChatReaction => "low",
-        SpeechIntent::AgentInterjection => "normal",
-    }
-}
-
-fn speech_runtime_scene(intent: SpeechIntent) -> &'static str {
-    match intent {
-        SpeechIntent::ErrorAlert => "alert",
-        SpeechIntent::Win | SpeechIntent::Milestone | SpeechIntent::QuestComplete => "celebrate",
-        SpeechIntent::Insight | SpeechIntent::MemoryPulseCommentary | SpeechIntent::Suggestion => {
-            "insight"
-        }
-        SpeechIntent::Greeting | SpeechIntent::Tour | SpeechIntent::QuestAccept => "welcome",
-        SpeechIntent::Humor | SpeechIntent::ChatReaction => "playful",
-        SpeechIntent::AgentInterjection => "insight",
-    }
-}
-
-pub(crate) fn result_after_suggestion_policy(
-    result: BuddyJobResult,
-    settings: &BuddySettings,
-    suggestion_state: &[BuddySuggestion],
-) -> BuddyJobResult {
-    if suggestions_allowed(settings, suggestion_state) {
-        return result;
-    }
-    BuddyJobResult {
-        suggestion: None,
-        ..result
-    }
-}
-
-#[async_trait::async_trait]
-pub trait BuddyJob: Send + Sync {
-    fn id(&self) -> &str;
-    fn cooldown_seconds(&self) -> u64;
-    fn priority(&self) -> u32;
-    fn produces_suggestion(&self) -> bool {
-        false
-    }
-    fn runs_when_suggestions_blocked(&self) -> bool {
-        false
-    }
-    fn records_empty_result(&self) -> bool {
-        true
-    }
-    fn is_autonomous(&self) -> bool {
-        is_autonomous_workflow_id(self.id())
-    }
-    async fn should_run(&self, gcx: AppState, ctx: &BuddyJobContext) -> bool;
-    async fn execute(&self, gcx: AppState, ctx: BuddyJobContext) -> BuddyJobResult;
-}
-
-pub(crate) const MAX_UNREAD_SUGGESTIONS: usize = 3;
-pub(crate) const MAX_AUTONOMOUS_JOBS_PER_TICK: usize = 2;
-
-pub(crate) fn suggestions_allowed(
-    settings: &BuddySettings,
-    suggestion_state: &[BuddySuggestion],
-) -> bool {
-    let unread = suggestion_state
-        .iter()
-        .filter(|suggestion| !suggestion.dismissed)
-        .count();
-    settings.proactive_enabled && unread < MAX_UNREAD_SUGGESTIONS
-}
-
-pub struct BuddyScheduler {
-    jobs: Vec<Box<dyn BuddyJob>>,
-}
-
-impl BuddyScheduler {
-    pub fn new() -> Self {
-        let mut s = Self { jobs: vec![] };
-        s.jobs.push(Box::new(super::jobs::greeting::GreetingJob));
-        s.jobs.push(Box::new(super::jobs::tour::TourJob));
-        s.jobs
-            .push(Box::new(super::jobs::error_triage::ErrorTriageJob));
-        s.jobs
-            .push(Box::new(super::jobs::config_watcher::ConfigWatcherJob));
-        s.jobs
-            .push(Box::new(super::jobs::stats_watcher::StatsWatcherJob));
-        s.jobs
-            .push(Box::new(super::jobs::health_watcher::HealthWatcherJob));
-        s.jobs.push(Box::new(
-            super::jobs::autonomous_chats::BuddyMemoryGardenerJob,
-        ));
-        s.jobs.push(Box::new(
-            super::jobs::autonomous_chats::BuddyKnowledgeConflictResolverJob,
-        ));
-        s.jobs.push(Box::new(
-            super::jobs::autonomous_chats::BuddyBehaviorLearnerJob,
-        ));
-        s.jobs.push(Box::new(
-            super::jobs::autonomous_chats::BuddyUserHabitCoachJob,
-        ));
-        s.jobs.push(Box::new(
-            super::jobs::autonomous_chats::BuddyModelCostOptimizerJob,
-        ));
-        s.jobs
-            .push(Box::new(super::jobs::quest_prompt::QuestPromptJob));
-        s.jobs
-            .push(Box::new(super::jobs::autonomous_chats::ErrorDetectiveJob));
-        s.jobs.push(Box::new(
-            super::jobs::refact_compile_sniffer::RefactCompileSnifferJob,
-        ));
-        s.jobs.push(Box::new(
-            super::jobs::refact_self_critic::RefactSelfCriticJob,
-        ));
-        s.jobs.push(Box::new(
-            super::jobs::buddy_daily_digest::BuddyDailyDigestJob,
-        ));
-        s.jobs
-            .push(Box::new(super::jobs::buddy_briefing::BuddyBriefingJob));
-        s.jobs.push(Box::new(
-            super::jobs::buddy_handbook_distiller::BuddyHandbookDistillerJob,
-        ));
-        s.jobs.push(Box::new(
-            super::jobs::buddy_friday_retro::BuddyFridayRetroJob,
-        ));
-        s.jobs
-            .push(Box::new(super::jobs::chat_phrase_bank::ChatPhraseBankJob));
-        s.jobs.push(Box::new(
-            super::jobs::buddy_idle_suggester::BuddyIdleSuggesterJob,
-        ));
-        s.jobs.push(Box::new(
-            super::jobs::buddy_pr_issue_matchmaker::BuddyPrIssueMatchmakerJob,
-        ));
-        s.jobs.push(Box::new(
-            super::jobs::autonomous_chats::SecurityWhispererJob,
-        ));
-        s.jobs
-            .push(Box::new(super::jobs::autonomous_chats::SetupCoachJob));
-        s.jobs
-            .push(Box::new(super::jobs::autonomous_chats::DependencyRadarJob));
-        s.jobs
-            .push(Box::new(super::jobs::autonomous_chats::DocsGardenerJob));
-        s.jobs.push(Box::new(
-            super::jobs::autonomous_chats::ArchitectureDriftWatcherJob,
-        ));
-        s.jobs
-            .push(Box::new(super::jobs::buddy_onboarding::BuddyOnboardingJob));
-        s.jobs.push(Box::new(
-            super::jobs::buddy_refactor_hunter::BuddyRefactorHunterJob,
-        ));
-        s.jobs.push(Box::new(
-            super::jobs::buddy_skill_author::BuddySkillAuthorJob,
-        ));
-        s.jobs.push(Box::new(
-            super::jobs::buddy_test_coverage_watcher::BuddyTestCoverageWatcherJob,
-        ));
-        s.jobs.push(Box::new(
-            super::jobs::proactive_suggestions::ProactiveSuggestionsJob,
-        ));
-        s.jobs
-            .push(Box::new(super::jobs::speaker_insight::SpeakerInsightJob));
-        s.jobs
-            .push(Box::new(super::jobs::speaker_win::SpeakerWinJob));
-        s.jobs.push(Box::new(
-            super::jobs::speaker_memory_pulse_commentary::SpeakerMemoryPulseCommentaryJob,
-        ));
-        s.jobs.sort_by_key(|j| j.priority());
-        s
-    }
-
-    #[cfg(test)]
-    fn job_ids(&self) -> Vec<String> {
-        self.jobs.iter().map(|job| job.id().to_string()).collect()
-    }
-
-    pub async fn tick(
-        &self,
-        gcx: AppState,
-        buddy_arc: Arc<AMutex<Option<BuddyService>>>,
-        project_root: &Path,
-    ) {
-        let ctx_opt = {
-            let buddy = buddy_arc.lock().await;
-            buddy.as_ref().map(|svc| {
-                (
-                    svc.state.clone(),
-                    svc.recent_diagnostics.clone(),
-                    svc.settings.clone(),
-                    svc.pulse.clone(),
-                    svc.fact_store.iter().cloned().collect::<Vec<_>>(),
-                )
-            })
-        };
-        let (state, diags, settings, pulse, facts) = match ctx_opt {
-            Some(x) => x,
-            None => return,
-        };
-        let mut ready_results: Vec<(&str, BuddyJobResult, bool)> = vec![];
-        let mut autonomous_jobs_run = 0usize;
-        for job in &self.jobs {
-            let is_autonomous = job.is_autonomous();
-            if is_autonomous && autonomous_jobs_run >= MAX_AUTONOMOUS_JOBS_PER_TICK {
-                continue;
-            }
-            if job.produces_suggestion()
-                && !job.runs_when_suggestions_blocked()
-                && !suggestions_allowed(&settings, &state.suggestion_state)
-            {
-                continue;
-            }
-            let job_state = state
-                .job_cooldowns
-                .get(job.id())
-                .cloned()
-                .unwrap_or_default();
-            if job_state.dismissed {
-                continue;
-            }
-            let elapsed = job_state
-                .last_run
-                .as_deref()
-                .and_then(|r| chrono::DateTime::parse_from_rfc3339(r).ok())
-                .map(|t| {
-                    chrono::Utc::now()
-                        .signed_duration_since(t)
-                        .num_seconds()
-                        .max(0) as u64
-                })
-                .unwrap_or(u64::MAX);
-            if elapsed < job.cooldown_seconds() {
-                continue;
-            }
-            let total_workflow_runs = state.workflow_summaries.iter().map(|w| w.run_count).sum();
-            let ctx = BuddyJobContext {
-                identity_name: state.identity.name.clone(),
-                personality: state.personality.clone(),
-                onboarding: state.onboarding.clone(),
-                recent_diagnostics: diags.clone(),
-                project_root: project_root.to_path_buf(),
-                job_state: job_state.clone(),
-                workflow_summaries: state.workflow_summaries.clone(),
-                total_workflow_runs,
-                suggestion_state: state.suggestion_state.clone(),
-                pet: state.pet.clone(),
-                active_quest: state.active_quest.clone(),
-                settings: settings.clone(),
-                pulse: pulse.clone(),
-                facts: facts.clone(),
-                recent_activities: state.recent_activities.clone(),
-            };
-            if !job.should_run(gcx.clone(), &ctx).await {
-                continue;
-            }
-            if is_autonomous {
-                autonomous_jobs_run += 1;
-            }
-            let result = job.execute(gcx.clone(), ctx).await;
-            let result = if job.produces_suggestion() {
-                result_after_suggestion_policy(result, &settings, &state.suggestion_state)
-            } else {
-                result
-            };
-            let records_empty_result = job.records_empty_result();
-            ready_results.push((job.id(), result, records_empty_result));
-        }
-
-        let now = chrono::Utc::now();
-        let winner = {
-            let buddy = buddy_arc.lock().await;
-            let Some(svc) = buddy.as_ref() else {
-                return;
-            };
-            let speech_result_indexes = ready_results
-                .iter()
-                .enumerate()
-                .filter_map(|(idx, (_, result, _))| {
-                    result
-                        .speech_intent
-                        .zip(result.speech.as_ref())
-                        .map(|_| idx)
-                })
-                .collect::<Vec<_>>();
-            let candidates = speech_result_indexes
-                .iter()
-                .filter_map(|idx| {
-                    let (_, result, _) = &ready_results[*idx];
-                    result.speech_intent.zip(result.speech.clone())
-                })
-                .collect::<Vec<_>>();
-            let candidate_winner = super::speech_policy::pick_speech_intent(
-                &candidates,
-                &svc.state.speech_rotation,
-                now,
-            );
-            candidate_winner.and_then(|winner_idx| speech_result_indexes.get(winner_idx).copied())
-        };
-
-        for (idx, (job_id, mut result, records_empty_result)) in
-            ready_results.into_iter().enumerate()
-        {
-            if result.speech.is_some() && result.speech_intent.is_some() && Some(idx) != winner {
-                result.speech = None;
-                result.speech_intent = None;
-            }
-            if should_record_job_result(&result, records_empty_result) {
-                let mut workflow_failure_write = None;
-                let mut buddy = buddy_arc.lock().await;
-                if let Some(svc) = buddy.as_mut() {
-                    let mut js = svc
-                        .state
-                        .job_cooldowns
-                        .entry(job_id.to_string())
-                        .or_default()
-                        .clone();
-                    js.last_run = Some(chrono::Utc::now().to_rfc3339());
-                    js.run_count += 1;
-                    js.last_result =
-                        next_last_result(js.last_result.as_deref(), result.last_result.as_deref());
-                    svc.state.job_cooldowns.insert(job_id.to_string(), js);
-                    svc.dirty = true;
-                    if let Some(suggestion) = result.suggestion {
-                        svc.maybe_add_suggestion(suggestion);
-                    }
-                    if let Some(activity) = result.activity {
-                        svc.add_activity(activity);
-                    }
-                    if let Some(mut speech) = result.speech {
-                        if let Some(intent) = result.speech_intent {
-                            speech.speech_intent = Some(intent.wire_token().to_string());
-                        }
-                        let displayed = svc.update_speech(speech);
-                        if displayed
-                            && result.mark_greeted
-                            && super::state::mark_greeted(&mut svc.state)
-                        {
-                            svc.dirty = true;
-                        }
-                        svc.dirty = true;
-                    }
-                    if let Some(event) = result.runtime_event {
-                        svc.enqueue_runtime_event(event);
-                    }
-                    if let Some(phrase_bank) = result.chat_phrase_bank {
-                        svc.state.chat_phrase_bank = Some(phrase_bank);
-                        svc.dirty = true;
-                    }
-                    if let Some(report) = result.workflow_failure {
-                        workflow_failure_write = svc.record_workflow_failure_report(report);
-                    }
-                    for (opportunity, cooldown_secs) in result.opportunities {
-                        svc.surface_opportunity_with_cooldown(opportunity, cooldown_secs);
-                    }
-                    if result.xp > 0 {
-                        svc.grant_xp(result.xp);
-                    }
-                }
-                drop(buddy);
-                if let Some((path, report)) = workflow_failure_write {
-                    BuddyService::append_workflow_failure_transcript(&path, &report).await;
-                }
-            }
-        }
-    }
+#[cfg(test)]
+fn job_ids(scheduler: &BuddyScheduler) -> Vec<String> {
+    scheduler.jobs.iter().map(|job| job.id().to_string()).collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
+    use tokio::sync::Mutex as AMutex;
+
+    use crate::app_state::AppState;
+    use crate::buddy::actor::BuddyService;
     use crate::buddy::autonomous_workflows::AUTONOMOUS_BUDDY_WORKFLOWS;
+    use crate::buddy::settings::BuddySettings;
+    use crate::buddy::types::{
+        BuddyActivity, BuddyBubblePolicy, BuddyJobState, BuddyRuntimeEvent, BuddySpeechItem,
+        BuddySuggestion,
+    };
+    use crate::buddy::voice_service::{SpeechIntent, SpeechIntentWireToken};
 
     struct NoOutputUnrecordedJob {
         last_result: Option<String>,
@@ -756,9 +301,7 @@ mod tests {
     #[tokio::test]
     async fn speech_without_intent_is_not_dropped() {
         let dir = tempfile::tempdir().unwrap();
-        let scheduler = BuddyScheduler {
-            jobs: vec![Box::new(NoIntentSpeechJob)],
-        };
+        let scheduler = BuddyScheduler::new(vec![Box::new(NoIntentSpeechJob)]);
         let buddy_arc = test_service(&dir, crate::buddy::state::default_buddy_state()).await;
         let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
 
@@ -814,24 +357,22 @@ mod tests {
     #[tokio::test]
     async fn competing_speech_intents_pick_one_winner() {
         let dir = tempfile::tempdir().unwrap();
-        let scheduler = BuddyScheduler {
-            jobs: vec![
-                Box::new(SpeechJob {
-                    id: "speech_one".to_string(),
-                    priority: 0,
-                    intent: SpeechIntent::Humor,
-                    activity_title: "one activity".to_string(),
-                    runtime_event: false,
-                }),
-                Box::new(SpeechJob {
-                    id: "speech_two".to_string(),
-                    priority: 1,
-                    intent: SpeechIntent::ErrorAlert,
-                    activity_title: "two activity".to_string(),
-                    runtime_event: false,
-                }),
-            ],
-        };
+        let scheduler = BuddyScheduler::new(vec![
+            Box::new(SpeechJob {
+                id: "speech_one".to_string(),
+                priority: 0,
+                intent: SpeechIntent::Humor,
+                activity_title: "one activity".to_string(),
+                runtime_event: false,
+            }),
+            Box::new(SpeechJob {
+                id: "speech_two".to_string(),
+                priority: 1,
+                intent: SpeechIntent::ErrorAlert,
+                activity_title: "two activity".to_string(),
+                runtime_event: false,
+            }),
+        ]);
         let buddy_arc = test_service(&dir, crate::buddy::state::default_buddy_state()).await;
         let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
 
@@ -847,8 +388,8 @@ mod tests {
     #[tokio::test]
     async fn humor_caps_at_5_per_hour() {
         let dir = tempfile::tempdir().unwrap();
-        let scheduler = BuddyScheduler {
-            jobs: (0..6)
+        let scheduler = BuddyScheduler::new(
+            (0..6)
                 .map(|idx| {
                     Box::new(SpeechJob {
                         id: format!("humor_{idx}"),
@@ -859,7 +400,7 @@ mod tests {
                     }) as Box<dyn BuddyJob>
                 })
                 .collect(),
-        };
+        );
         let buddy_arc = test_service(&dir, crate::buddy::state::default_buddy_state()).await;
         let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
 
@@ -894,24 +435,22 @@ mod tests {
     #[tokio::test]
     async fn scheduler_emits_one_speech_per_tick_but_other_outputs_apply() {
         let dir = tempfile::tempdir().unwrap();
-        let scheduler = BuddyScheduler {
-            jobs: vec![
-                Box::new(SpeechJob {
-                    id: "speech_low".to_string(),
-                    priority: 0,
-                    intent: SpeechIntent::Humor,
-                    activity_title: "low activity".to_string(),
-                    runtime_event: false,
-                }),
-                Box::new(SpeechJob {
-                    id: "speech_high".to_string(),
-                    priority: 1,
-                    intent: SpeechIntent::ErrorAlert,
-                    activity_title: "high activity".to_string(),
-                    runtime_event: false,
-                }),
-            ],
-        };
+        let scheduler = BuddyScheduler::new(vec![
+            Box::new(SpeechJob {
+                id: "speech_low".to_string(),
+                priority: 0,
+                intent: SpeechIntent::Humor,
+                activity_title: "low activity".to_string(),
+                runtime_event: false,
+            }),
+            Box::new(SpeechJob {
+                id: "speech_high".to_string(),
+                priority: 1,
+                intent: SpeechIntent::ErrorAlert,
+                activity_title: "high activity".to_string(),
+                runtime_event: false,
+            }),
+        ]);
         let buddy_arc = test_service(&dir, crate::buddy::state::default_buddy_state()).await;
         let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
 
@@ -938,24 +477,22 @@ mod tests {
     #[tokio::test]
     async fn scheduler_preserves_runtime_events_from_unselected_speech_jobs() {
         let dir = tempfile::tempdir().unwrap();
-        let scheduler = BuddyScheduler {
-            jobs: vec![
-                Box::new(SpeechJob {
-                    id: "speech_low".to_string(),
-                    priority: 0,
-                    intent: SpeechIntent::Humor,
-                    activity_title: "low activity".to_string(),
-                    runtime_event: true,
-                }),
-                Box::new(SpeechJob {
-                    id: "speech_high".to_string(),
-                    priority: 1,
-                    intent: SpeechIntent::ErrorAlert,
-                    activity_title: "high activity".to_string(),
-                    runtime_event: true,
-                }),
-            ],
-        };
+        let scheduler = BuddyScheduler::new(vec![
+            Box::new(SpeechJob {
+                id: "speech_low".to_string(),
+                priority: 0,
+                intent: SpeechIntent::Humor,
+                activity_title: "low activity".to_string(),
+                runtime_event: true,
+            }),
+            Box::new(SpeechJob {
+                id: "speech_high".to_string(),
+                priority: 1,
+                intent: SpeechIntent::ErrorAlert,
+                activity_title: "high activity".to_string(),
+                runtime_event: true,
+            }),
+        ]);
         let buddy_arc = test_service(&dir, crate::buddy::state::default_buddy_state()).await;
         let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
 
@@ -985,24 +522,22 @@ mod tests {
     #[tokio::test]
     async fn speech_rotation_allows_win_when_error_over_budget() {
         let dir = tempfile::tempdir().unwrap();
-        let scheduler = BuddyScheduler {
-            jobs: vec![
-                Box::new(SpeechJob {
-                    id: "speech_error".to_string(),
-                    priority: 0,
-                    intent: SpeechIntent::ErrorAlert,
-                    activity_title: "error activity".to_string(),
-                    runtime_event: false,
-                }),
-                Box::new(SpeechJob {
-                    id: "speech_win".to_string(),
-                    priority: 1,
-                    intent: SpeechIntent::Win,
-                    activity_title: "win activity".to_string(),
-                    runtime_event: false,
-                }),
-            ],
-        };
+        let scheduler = BuddyScheduler::new(vec![
+            Box::new(SpeechJob {
+                id: "speech_error".to_string(),
+                priority: 0,
+                intent: SpeechIntent::ErrorAlert,
+                activity_title: "error activity".to_string(),
+                runtime_event: false,
+            }),
+            Box::new(SpeechJob {
+                id: "speech_win".to_string(),
+                priority: 1,
+                intent: SpeechIntent::Win,
+                activity_title: "win activity".to_string(),
+                runtime_event: false,
+            }),
+        ]);
         let mut state = crate::buddy::state::default_buddy_state();
         let now = chrono::Utc::now();
         state.speech_rotation.by_intent.insert(
@@ -1071,9 +606,9 @@ mod tests {
             tx,
             None,
         );
-        let scheduler = BuddyScheduler {
-            jobs: vec![Box::new(NoOutputUnrecordedJob { last_result: None })],
-        };
+        let scheduler = BuddyScheduler::new(vec![Box::new(NoOutputUnrecordedJob {
+            last_result: None,
+        })]);
         let buddy_arc = Arc::new(AMutex::new(Some(service)));
         let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
 
@@ -1107,11 +642,9 @@ mod tests {
                 dismissed: false,
             },
         );
-        let scheduler = BuddyScheduler {
-            jobs: vec![Box::new(NoOutputUnrecordedJob {
-                last_result: Some("failed:today".to_string()),
-            })],
-        };
+        let scheduler = BuddyScheduler::new(vec![Box::new(NoOutputUnrecordedJob {
+            last_result: Some("failed:today".to_string()),
+        })]);
         let buddy_arc = test_service(&dir, state).await;
         let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
 
@@ -1135,11 +668,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let state = crate::buddy::state::default_buddy_state();
         let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let scheduler = BuddyScheduler {
-            jobs: vec![Box::new(NoOutputRecordedJob {
-                calls: calls.clone(),
-            })],
-        };
+        let scheduler = BuddyScheduler::new(vec![Box::new(NoOutputRecordedJob {
+            calls: calls.clone(),
+        })]);
         let buddy_arc = test_service(&dir, state).await;
         let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
 
@@ -1180,11 +711,9 @@ mod tests {
             tx,
             None,
         );
-        let scheduler = BuddyScheduler {
-            jobs: vec![Box::new(
-                crate::buddy::jobs::chat_phrase_bank::ChatPhraseBankJob,
-            )],
-        };
+        let scheduler = BuddyScheduler::new(vec![Box::new(
+            crate::buddy::jobs::chat_phrase_bank::ChatPhraseBankJob,
+        )]);
         let buddy_arc = Arc::new(AMutex::new(Some(service)));
         let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
 
@@ -1213,15 +742,15 @@ mod tests {
     #[tokio::test]
     async fn tick_caps_autonomous_jobs_at_two() {
         let dir = tempfile::tempdir().unwrap();
-        let scheduler = BuddyScheduler {
-            jobs: (0..4)
+        let scheduler = BuddyScheduler::new(
+            (0..4)
                 .map(|idx| {
                     Box::new(ReadyAutonomousJob {
                         id: format!("autonomous_{idx}"),
                     }) as Box<dyn BuddyJob>
                 })
                 .collect(),
-        };
+        );
         let buddy_arc = test_service(&dir, crate::buddy::state::default_buddy_state()).await;
         let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
 
@@ -1239,11 +768,9 @@ mod tests {
     #[tokio::test]
     async fn autonomous_job_success_grants_bounded_xp() {
         let dir = tempfile::tempdir().unwrap();
-        let scheduler = BuddyScheduler {
-            jobs: vec![Box::new(ReadyAutonomousJob {
-                id: "autonomous_xp".to_string(),
-            })],
-        };
+        let scheduler = BuddyScheduler::new(vec![Box::new(ReadyAutonomousJob {
+            id: "autonomous_xp".to_string(),
+        })]);
         let buddy_arc = test_service(&dir, crate::buddy::state::default_buddy_state()).await;
         let gcx = crate::app_state::app_state_from_gcx(crate::global_context::tests::make_test_gcx().await).await;
 
@@ -1362,8 +889,8 @@ mod tests {
 
     #[test]
     fn scheduler_registers_all_autonomous_registry_jobs() {
-        let scheduler = BuddyScheduler::new();
-        let ids = scheduler.job_ids();
+        let scheduler = BuddyScheduler::new(default_buddy_jobs());
+        let ids = job_ids(&scheduler);
 
         for meta in AUTONOMOUS_BUDDY_WORKFLOWS {
             assert!(ids.iter().any(|id| id == meta.id), "missing {}", meta.id);

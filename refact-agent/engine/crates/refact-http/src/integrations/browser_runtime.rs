@@ -964,7 +964,7 @@ mod tests {
             assert!(helper.contains(step), "relaunch helper lost step: {step}");
         }
 
-        let router = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../src/http/routers/v1/v1_browser.rs"));
+        let router = include_str!("../routers/v1/v1_browser.rs");
         assert!(router.contains("relaunch_runtime_for_chat("));
         assert!(
             !router.contains("Failed to relaunch browser in {} mode"),

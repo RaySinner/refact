@@ -12,12 +12,15 @@ async-stream = "0.3.5"
 async-trait = "0.1.73"
 astral-tokio-tar = "0.5.2"
 axum = { version = "0.6.20", features = ["default", "http2"] }
+base64 = "0.22.1"
 chrono = { version = "0.4.31", features = ["serde"] }
 chrono-tz = "0.10"
 dunce = "1.0.5"
 git2 = "0.20.2"
+headless_chrome = "1.0.16"
 home = "0.5"
 hyper = { version = "0.14", features = ["server", "stream"] }
+regex = "1.9.5"
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = "0.9.31"
@@ -28,17 +31,20 @@ url = "2.4.1"
 uuid = { workspace = true }
 walkdir = "2.3"
 which = "7.0.2"
+zip = { version = "2.2", default-features = false, features = ["deflate"] }
 libc.workspace = true
 
 refact-agents-core = { path = "../refact-agents-core" }
 refact-browser = { path = "../refact-browser" }
 refact-buddy-core = { path = "../refact-buddy-core" }
+refact-caps-core = { path = "../refact-caps-core" }
 refact-chat-api = { path = "../refact-chat-api" }
 refact-chat-history = { path = "../refact-chat-history" }
 refact-code-intel-api = { path = "../refact-code-intel-api" }
 refact-codegraph = { path = "../refact-codegraph" }
 refact-codehealth = { path = "../refact-codehealth" }
 refact-core = { path = "../refact-core" }
+refact-daemon = { path = "../refact-daemon" }
 refact-exec = { path = "../refact-exec" }
 refact-ext = { path = "../refact-ext" }
 refact-files = { path = "../refact-files" }

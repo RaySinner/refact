@@ -2475,7 +2475,7 @@ mod tests {
         assert!(OVERLAYS_SCRIPT.contains("if (e.key === 'Escape')"));
         assert!(OVERLAYS_SCRIPT.contains("picker.timer = setTimeout(releasePicker, limit);"));
 
-        let router = include_str!("../../../src/http/routers/v1/v1_browser.rs");
+        let router = include_str!("../../refact-http/src/routers/v1/v1_browser.rs");
         let bridge = router
             .split_once("fn eval_overlay(")
             .unwrap()
@@ -2591,7 +2591,7 @@ mod tests {
     // Inline overlay template strings in the router are what drifted into four divergent copies.
     #[test]
     fn router_delegates_overlay_work_to_the_shared_module() {
-        let router = include_str!("../../../src/http/routers/v1/v1_browser.rs");
+        let router = include_str!("../../refact-http/src/routers/v1/v1_browser.rs");
         for banned in [
             "let picker_js = r#\"",
             "let annotate_js = r#\"",

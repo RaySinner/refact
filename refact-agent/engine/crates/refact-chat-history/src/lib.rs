@@ -7,6 +7,7 @@ pub mod openai_merge;
 pub mod prompt_snippets;
 pub mod retry_policy;
 pub mod source_hash;
+pub mod summarization;
 pub mod tool_call_recovery;
 pub mod tool_call_recovery_oss;
 pub mod trajectory_event;

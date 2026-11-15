@@ -110,6 +110,7 @@ pub mod subchat_runtime;
 pub mod trajectory_runtime;
 pub mod mode_transition_runtime;
 pub mod chat_tokens;
+pub mod cloud_token_count;
 pub mod buddy_issue_runtime;
 pub mod integration_config_dirs;
 pub mod context_tools;

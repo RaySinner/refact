@@ -7,6 +7,7 @@ pub mod logging;
 pub mod openai_endpoint;
 pub mod params;
 pub mod provider_quirks;
+pub mod stream_core;
 
 pub use adapter::{get_adapter, WireFormat};
 pub use canonical::{CanonicalToolChoice, ClaudeCodeIdentity, LlmRequest, LlmStreamDelta};

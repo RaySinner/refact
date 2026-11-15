@@ -58,6 +58,8 @@ pub mod tool_trait;
 pub mod post_merge_check;
 pub mod task_storage;
 pub mod memory_lifecycle_runtime;
+pub mod buddy_memory_ops;
+pub mod buddy_planner_backstop_runner;
 pub mod goal_verifier_runtime;
 pub mod task_agent_monitor;
 pub mod session_runtime;

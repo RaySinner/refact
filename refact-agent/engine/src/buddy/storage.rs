@@ -1,54 +1,18 @@
-use std::path::Path;
-
 pub use refact_buddy_core::storage::*;
 
-use super::memory_lifecycle::{apply_memory_lifecycle_op_status, MemoryOpsState};
-use super::settings::AutonomyLevel;
-use crate::app_state::AppState;
-
-pub async fn drain_memory_ops(
-    project_root: &Path,
-    gcx: AppState,
-    autonomy: AutonomyLevel,
-    max_applies: usize,
-) -> Result<(MemoryOpsState, usize), String> {
-    drain_memory_ops_with(project_root, autonomy, max_applies, |working| {
-        let gcx = gcx.clone();
-        async move { apply_memory_lifecycle_op_status(gcx, &working).await }
-    })
-    .await
-}
-
-pub async fn apply_memory_batch(
-    project_root: &Path,
-    gcx: AppState,
-    batch_key: &str,
-    max_applies: usize,
-) -> Result<(MemoryOpsState, usize, usize, usize), String> {
-    apply_memory_batch_with(project_root, batch_key, max_applies, |working| {
-        let gcx = gcx.clone();
-        async move { apply_memory_lifecycle_op_status(gcx, &working).await }
-    })
-    .await
-}
-
-#[cfg_attr(not(test), allow(dead_code))]
-pub async fn apply_artifact_decisions(
-    project_root: &Path,
-    gcx: AppState,
-    decisions: &[(String, bool)],
-) -> Result<(MemoryOpsState, usize, usize), String> {
-    apply_artifact_decisions_with(project_root, decisions, |working| {
-        let gcx = gcx.clone();
-        async move { apply_memory_lifecycle_op_status(gcx, &working).await }
-    })
-    .await
-}
+pub use refact_runtime_api::buddy_memory_ops::{
+    apply_artifact_decisions, apply_memory_batch, drain_memory_ops,
+};
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
+
     use chrono::Utc;
+
+    use crate::app_state::AppState;
+    use refact_buddy_core::settings::AutonomyLevel;
     use crate::buddy::memory_lifecycle::{
         MemoryCreatePayload, MemoryLifecycleOp, MemoryLifecyclePayload, MemoryOpStatus,
         MemoryOpType, MemorySource, MEMORY_OP_EXACT_DUPLICATE_REASON,

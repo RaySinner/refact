@@ -304,4 +304,16 @@ impl refact_runtime_api::files_in_workspace::FilesRuntime for EngineFilesRuntime
             path,
         )
     }
+
+    async fn on_workspaces_init(&self, gcx: Arc<GlobalContext>) -> i32 {
+        crate::files_in_workspace::on_workspaces_init(gcx).await
+    }
+
+    async fn on_did_change(&self, gcx: Arc<GlobalContext>, path: &PathBuf, text: &String) {
+        crate::files_in_workspace::on_did_change(gcx, path, text).await
+    }
+
+    async fn on_explicit_branch_change(&self, gcx: Arc<GlobalContext>, repo_path: &PathBuf) {
+        crate::files_in_workspace::on_explicit_branch_change(gcx, repo_path).await
+    }
 }

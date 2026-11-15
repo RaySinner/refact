@@ -100,8 +100,8 @@ async fn notify_workspace_changed(gcx: &Arc<GlobalContext>) {
 
 
 pub(crate) use refact_runtime_api::lsp_workspace_roots::{
-    add_workspace_root_to_set, apply_workspace_root_changes, canonical_path_from_file_uri,
-    canonical_workspace_roots, remove_workspace_root_from_set, workspace_roots_changed,
+    apply_workspace_root_changes, canonical_path_from_file_uri, canonical_workspace_roots,
+    workspace_roots_changed,
 };
 
 fn workspace_lease_root(gcx: &Arc<GlobalContext>, root: &PathBuf) -> PathBuf {

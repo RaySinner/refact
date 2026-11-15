@@ -118,6 +118,9 @@ pub trait FilesRuntime: Send + Sync {
         read_context: &FileReadContext,
         path: &Path,
     ) -> Result<(), String>;
+    async fn on_workspaces_init(&self, gcx: Arc<GlobalContext>) -> i32;
+    async fn on_did_change(&self, gcx: Arc<GlobalContext>, path: &PathBuf, text: &String);
+    async fn on_explicit_branch_change(&self, gcx: Arc<GlobalContext>, repo_path: &PathBuf);
 }
 
 pub fn strictest_zone_for_path(
@@ -279,4 +282,22 @@ pub fn check_file_privacy_for_read_preparation_with_context(
     read_context
         .runtime
         .check_file_privacy_for_read_preparation_with_context(read_context, path)
+}
+
+pub async fn on_workspaces_init(gcx: Arc<GlobalContext>) -> i32 {
+    gcx.files_runtime.clone().on_workspaces_init(gcx).await
+}
+
+pub async fn on_did_change(gcx: Arc<GlobalContext>, path: &PathBuf, text: &String) {
+    gcx.files_runtime
+        .clone()
+        .on_did_change(gcx, path, text)
+        .await
+}
+
+pub async fn on_explicit_branch_change(gcx: Arc<GlobalContext>, repo_path: &PathBuf) {
+    gcx.files_runtime
+        .clone()
+        .on_explicit_branch_change(gcx, repo_path)
+        .await
 }

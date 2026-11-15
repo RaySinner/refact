@@ -55,6 +55,7 @@ refact-git-intel = { path = "../refact-git-intel" }
 refact-integrations = { path = "../refact-integrations" }
 refact-perf = { path = "../refact-perf" }
 refact-postprocessing = { path = "../refact-postprocessing" }
+refact-privacy = { path = "../refact-privacy" }
 refact-providers = { path = "../refact-providers" }
 refact-runtime-api = { path = "../refact-runtime-api" }
 refact-scheduler-core = { path = "../refact-scheduler-core" }

@@ -120,6 +120,21 @@ pub trait FilesRuntime: Send + Sync {
     ) -> Result<(), String>;
 }
 
+pub fn strictest_zone_for_path(
+    policy: &refact_privacy::CompiledPolicy,
+    path: &Path,
+    workspace_roots: &[PathBuf],
+    worktree_mappings: &[refact_worktrees::path_mappings::RegisteredWorktreePathMapping],
+) -> refact_privacy::Zone {
+    let aliases = refact_worktrees::path_mappings::registered_alias_paths(path, worktree_mappings);
+    let roots = workspace_roots.iter().map(PathBuf::as_path).chain(
+        worktree_mappings
+            .iter()
+            .flat_map(|mapping| [mapping.root.as_path(), mapping.source_root.as_path()]),
+    );
+    policy.strictest_zone_for_paths_with_roots(aliases, roots)
+}
+
 pub async fn remove_memory_document_for_path(gcx: Arc<GlobalContext>, path: &PathBuf) -> bool {
     gcx.files_runtime
         .clone()

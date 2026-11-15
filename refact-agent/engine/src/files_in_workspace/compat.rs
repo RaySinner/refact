@@ -106,20 +106,7 @@ pub(crate) async fn get_file_text_from_memory_or_disk_for_model_context_impl(
     .await
 }
 
-pub fn strictest_zone_for_path(
-    policy: &refact_privacy::CompiledPolicy,
-    path: &Path,
-    workspace_roots: &[PathBuf],
-    worktree_mappings: &[crate::files_correction::RegisteredWorktreePathMapping],
-) -> refact_privacy::Zone {
-    let aliases = registered_alias_paths(path, worktree_mappings);
-    let roots = workspace_roots.iter().map(PathBuf::as_path).chain(
-        worktree_mappings
-            .iter()
-            .flat_map(|mapping| [mapping.root.as_path(), mapping.source_root.as_path()]),
-    );
-    policy.strictest_zone_for_paths_with_roots(aliases, roots)
-}
+pub use refact_runtime_api::files_in_workspace::strictest_zone_for_path;
 
 pub(crate) fn check_file_privacy_with_context_impl(
     read_context: &FileReadContext,

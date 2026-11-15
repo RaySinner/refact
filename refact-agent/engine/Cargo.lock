@@ -4428,6 +4428,7 @@ dependencies = [
  "refact-integrations",
  "refact-perf",
  "refact-postprocessing",
+ "refact-privacy",
  "refact-providers",
  "refact-runtime-api",
  "refact-scheduler-core",

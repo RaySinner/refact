@@ -43,6 +43,8 @@ use crate::scratchpad_abstract::HasTokenizerAndEot;
 
 use refact_tool_api::ToolDesc;
 
+use refact_runtime_api::GlobalContextCtx;
+
 pub use refact_runtime_api::goal_verifier_monitor::verify_goal_before_completion;
 
 mod monitor;

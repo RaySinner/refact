@@ -1,38 +1,24 @@
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::global_context::GlobalContext;
+use refact_runtime_api::GlobalContextCtx;
+
+pub use refact_runtime_api::trajectory_memos_runtime::{
+    candidate_status, dedupe_memo_candidates, extract_memos_and_meta_once,
+    load_existing_memo_docs, memory_candidates_from_extraction, memory_ops_from_candidates,
+    persist_extraction_result, sanitize_candidate_text, CHECK_INTERVAL_SECS,
+    MAX_TRAJECTORY_BYTES, SUBAGENT_ID,
+};
+use refact_chat_history::trajectory_memos::{
+    is_buddy_system_trajectory, mark_trajectory_skipped, trajectory_title_is_generated,
+    ExtractionResult, ABANDONED_THRESHOLD_HOURS, TRAJECTORIES_FOLDER,
+};
+use crate::call_validation::{ChatContent, ChatMessage};
 use chrono::{DateTime, Duration, Utc};
 use serde_json::Value;
 use tokio::fs;
-use tracing::{info, warn};
+use tracing::warn;
 use walkdir::WalkDir;
-
-use crate::buddy::memory_lifecycle::{
-    compute_content_hash, compute_idempotency_key, load_memory_doc_snapshots_from_knowledge_dirs,
-    MemoryCandidate, MemoryCandidateStatus, MemoryDocSnapshot, MemoryLifecycleOp, MemoryOpType,
-    MemorySource,
-};
-use crate::call_validation::{ChatContent, ChatMessage};
-use crate::chat::trajectories::extract_text_with_image_placeholders_from_json;
-use crate::file_filter::KNOWLEDGE_FOLDER_NAME;
-use crate::files_correction::get_project_dirs;
-use crate::global_context::GlobalContext;
-use crate::memories::extract_file_paths;
-use crate::subchat::{run_subchat_once, TraceParent};
-use crate::yaml_configs::customization_registry::get_subagent_config;
-use refact_chat_history::trajectory_memos::{
-    candidate_hash, deterministic_candidate_id, is_buddy_system_trajectory, mark_trajectory_skipped,
-    memo_confidence, memo_kind, normalize_memo_type, normalized_memo_title,
-    parse_extraction_response, trajectory_message_range, trajectory_project_root,
-    trajectory_title_is_generated, write_trajectory_json, ExtractionResult,
-    ABANDONED_THRESHOLD_HOURS, TRAJECTORIES_FOLDER,
-};
-
-const CHECK_INTERVAL_SECS: u64 = 300;
-const SUBAGENT_ID: &str = "memo_extraction";
-const MAX_TRAJECTORY_BYTES: u64 = 2 * 1024 * 1024;
-const MAX_MEMO_CONTENT_CHARS: usize = 4_000;
-const MAX_MEMO_EVIDENCE_CHARS: usize = 1_000;
 
 pub async fn trajectory_memos_background_task(gcx: Arc<GlobalContext>) {
     loop {
@@ -56,7 +42,7 @@ pub async fn trajectory_memos_background_task(gcx: Arc<GlobalContext>) {
 }
 
 async fn process_abandoned_trajectories(gcx: Arc<GlobalContext>) -> Result<(), String> {
-    let project_dirs = get_project_dirs(gcx.clone()).await;
+    let project_dirs = crate::files_correction::get_project_dirs(gcx.clone()).await;
     if project_dirs.is_empty() {
         return Ok(());
     }
@@ -81,7 +67,7 @@ async fn process_abandoned_trajectories(gcx: Arc<GlobalContext>) -> Result<(), S
             }
 
             match process_single_trajectory(gcx.clone(), path.to_path_buf(), &threshold).await {
-                Ok(true) => info!("trajectory_memos: extracted memos from {}", path.display()),
+                Ok(true) => tracing::info!("trajectory_memos: extracted memos from {}", path.display()),
                 Ok(false) => {}
                 Err(e) => warn!(
                     "trajectory_memos: failed to process {}: {}",
@@ -97,11 +83,10 @@ async fn process_abandoned_trajectories(gcx: Arc<GlobalContext>) -> Result<(), S
 
 async fn process_single_trajectory(
     gcx: Arc<GlobalContext>,
-    path: PathBuf,
+    path: std::path::PathBuf,
     threshold: &DateTime<Utc>,
 ) -> Result<bool, String> {
-    let metadata = fs::metadata(&path).await.map_err(|e| e.to_string())?;
-    if metadata.len() > MAX_TRAJECTORY_BYTES {
+    if tokio::fs::metadata(&path).await.map(|m| m.len()).unwrap_or(0) > MAX_TRAJECTORY_BYTES {
         return Ok(false);
     }
 
@@ -127,7 +112,7 @@ async fn process_single_trajectory(
     let updated_at = trajectory
         .get("updated_at")
         .and_then(|v| v.as_str())
-        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
         .map(|dt| dt.with_timezone(&Utc));
 
     let is_abandoned = match updated_at {
@@ -212,50 +197,23 @@ async fn process_single_trajectory(
     Ok(true)
 }
 
-async fn persist_extraction_result(
-    path: &Path,
-    trajectory: &mut Value,
-    extraction: &ExtractionResult,
-    trajectory_id: &str,
-    root_chat_id: &str,
+async fn extract_memos_and_meta(
+    gcx: Arc<GlobalContext>,
+    messages: Vec<ChatMessage>,
     current_title: &str,
     is_title_generated: bool,
-    now: DateTime<Utc>,
-) -> Result<(), String> {
-    let memo_title = extraction
-        .meta
-        .as_ref()
-        .filter(|_| is_title_generated)
-        .map(|m| m.title.clone())
-        .unwrap_or_else(|| current_title.to_string());
-    let mut candidates =
-        memory_candidates_from_extraction(extraction, trajectory_id, root_chat_id, &memo_title);
-    let existing_docs = load_existing_memo_docs(path).await;
-    candidates = dedupe_memo_candidates(candidates, &existing_docs, root_chat_id);
-    let ops = memory_ops_from_candidates(&candidates, now);
-    if !ops.is_empty() {
-        enqueue_trajectory_memory_ops(path, &ops).await?;
-    }
-
-    let traj_obj = trajectory.as_object_mut().ok_or("Invalid trajectory")?;
-    if let Some(ref meta) = extraction.meta {
-        traj_obj.insert("overview".to_string(), Value::String(meta.overview.clone()));
-        if is_title_generated && !meta.title.is_empty() {
-            traj_obj.insert("title".to_string(), Value::String(meta.title.clone()));
-            info!(
-                "trajectory_memos: updated title '{}' -> '{}' for {}",
-                current_title, meta.title, trajectory_id
-            );
-        }
-    }
-    if ops.is_empty() {
-        traj_obj.insert(
-            "memo_extraction_skip_reason".to_string(),
-            Value::String("skipped: no reusable memory candidates".to_string()),
-        );
-    }
-    traj_obj.insert("memo_extracted".to_string(), Value::Bool(true));
-    write_trajectory_json(path, trajectory).await
+    parent_chat_id: Option<&str>,
+    parent_root_chat_id: Option<&str>,
+) -> Result<ExtractionResult, String> {
+    extract_memos_and_meta_once(
+        &gcx.chat_ctx(gcx.clone()),
+        messages,
+        current_title,
+        is_title_generated,
+        parent_chat_id,
+        parent_root_chat_id,
+    )
+    .await
 }
 
 fn build_chat_messages(messages: &[Value]) -> Vec<ChatMessage> {
@@ -269,7 +227,7 @@ fn build_chat_messages(messages: &[Value]) -> Vec<ChatMessage> {
 
             let content = msg
                 .get("content")
-                .and_then(extract_text_with_image_placeholders_from_json)?;
+                .and_then(crate::chat::trajectories::extract_text_with_image_placeholders_from_json)?;
 
             if content.trim().is_empty() {
                 return None;
@@ -297,230 +255,11 @@ fn build_chat_messages(messages: &[Value]) -> Vec<ChatMessage> {
     }
 }
 
-async fn extract_memos_and_meta(
-    gcx: Arc<GlobalContext>,
-    mut messages: Vec<ChatMessage>,
-    current_title: &str,
-    is_title_generated: bool,
-    parent_chat_id: Option<&str>,
-    parent_root_chat_id: Option<&str>,
-) -> Result<ExtractionResult, String> {
-    let subagent_config = get_subagent_config(gcx.clone(), SUBAGENT_ID, None)
-        .await
-        .ok_or_else(|| format!("subagent config '{}' not found", SUBAGENT_ID))?;
-
-    let extraction_prompt = subagent_config
-        .messages
-        .user_template
-        .as_ref()
-        .ok_or_else(|| {
-            format!(
-                "messages.user_template not defined for subagent '{}'",
-                SUBAGENT_ID
-            )
-        })?;
-
-    let title_hint = if is_title_generated {
-        format!("\n\nNote: The current title \"{}\" was auto-generated. Please provide a better descriptive title.", current_title)
-    } else {
-        String::new()
-    };
-
-    messages.push(ChatMessage {
-        role: "user".to_string(),
-        content: ChatContent::SimpleText(format!("{}{}", extraction_prompt, title_hint)),
-        ..Default::default()
-    });
-
-    let result = run_subchat_once(
-        gcx,
-        SUBAGENT_ID,
-        messages,
-        TraceParent::from_parts(parent_chat_id, parent_root_chat_id),
-    )
-    .await
-    .map_err(|e| e.to_string())?;
-
-    let response_text = result
-        .messages
-        .last()
-        .and_then(|m| match &m.content {
-            ChatContent::SimpleText(t) => Some(t.clone()),
-            _ => None,
-        })
-        .unwrap_or_default();
-
-    Ok(parse_extraction_response(&response_text))
-}
-
-fn memory_candidates_from_extraction(
-    extraction: &ExtractionResult,
-    trajectory_id: &str,
-    root_chat_id: &str,
-    memo_title: &str,
-) -> Vec<MemoryCandidate> {
-    let mut candidates = Vec::new();
-    for (idx, memo) in extraction.memos.iter().enumerate() {
-        let content = sanitize_candidate_text(
-            &format!(
-                "{}\n\n---\nSource: trajectory `{}`",
-                memo.content, trajectory_id
-            ),
-            MAX_MEMO_CONTENT_CHARS,
-        );
-        if content.is_empty() {
-            continue;
-        }
-        let memo_type = normalize_memo_type(&memo.memo_type);
-        let mut tags = vec![
-            memo_type.clone(),
-            "trajectory".to_string(),
-            "memory".to_string(),
-        ];
-        if memo_type == "preference" {
-            tags.push("preference".to_string());
-        }
-        let related_files = extract_file_paths(&content);
-        let content_hash = compute_content_hash(&content);
-        let source_message_range = trajectory_message_range(idx, extraction.memos.len());
-        let source_id = format!(
-            "{}:{}:{}:{}",
-            trajectory_id,
-            source_message_range,
-            root_chat_id,
-            candidate_hash(&[trajectory_id, &source_message_range, &content_hash])
-        );
-        candidates.push(
-            MemoryCandidate {
-                candidate_id: deterministic_candidate_id(trajectory_id, idx, &content_hash),
-                source: MemorySource::Trajectory,
-                title: format!("[{}] {}", memo_type, memo_title),
-                content,
-                tags,
-                kind: memo_kind(&memo_type).to_string(),
-                related_files,
-                source_id: Some(source_id),
-                source_message_range: Some(source_message_range),
-                confidence: memo_confidence(&memo_type),
-                status: candidate_status(MemorySource::Trajectory, memo_confidence(&memo_type)),
-                content_hash,
-                review_after_days: 0,
-                ..Default::default()
-            }
-            .normalized(),
-        );
-    }
-    let mut seen = std::collections::HashSet::new();
-    candidates
-        .into_iter()
-        .filter(|candidate| {
-            seen.insert(compute_idempotency_key(
-                &candidate.idempotency_input(MemoryOpType::CreateMemory),
-            ))
-        })
-        .collect()
-}
-
-fn memory_ops_from_candidates(
-    candidates: &[MemoryCandidate],
-    now: DateTime<Utc>,
-) -> Vec<MemoryLifecycleOp> {
-    candidates
-        .iter()
-        .map(|candidate| {
-            let evidence = sanitize_candidate_text(
-                &format!(
-                    "trajectory memo candidate source={} type={} confidence={:.2}",
-                    candidate.source_id.as_deref().unwrap_or_default(),
-                    candidate.kind,
-                    candidate.confidence
-                ),
-                MAX_MEMO_EVIDENCE_CHARS,
-            );
-            candidate.clone().into_create_memory_op(
-                candidate.candidate_id.clone(),
-                evidence,
-                now.to_rfc3339(),
-            )
-        })
-        .collect()
-}
-
-async fn load_existing_memo_docs(path: &Path) -> Vec<MemoryDocSnapshot> {
-    let Some(project_root) = trajectory_project_root(path) else {
-        return Vec::new();
-    };
-    load_memory_doc_snapshots_from_knowledge_dirs(&[project_root.join(KNOWLEDGE_FOLDER_NAME)]).await
-}
-
-fn dedupe_memo_candidates(
-    candidates: Vec<MemoryCandidate>,
-    existing_docs: &[MemoryDocSnapshot],
-    root_chat_id: &str,
-) -> Vec<MemoryCandidate> {
-    let mut seen = std::collections::HashSet::new();
-    candidates
-        .into_iter()
-        .filter(|candidate| {
-            let title = normalized_memo_title(&candidate.title);
-            if !seen.insert((title.clone(), candidate.content_hash.clone())) {
-                return false;
-            }
-            !existing_docs.iter().any(|doc| {
-                normalized_memo_title(&doc.title) == title
-                    && (doc.content_hash == candidate.content_hash
-                        || doc
-                            .source_id
-                            .as_deref()
-                            .map(|source_id| source_id.contains(root_chat_id))
-                            .unwrap_or(false))
-            })
-        })
-        .collect()
-}
-
-async fn enqueue_trajectory_memory_ops(
-    path: &Path,
-    ops: &[MemoryLifecycleOp],
-) -> Result<(), String> {
-    let project_root = trajectory_project_root(path).ok_or_else(|| {
-        format!(
-            "trajectory path is not under a project .refact directory: {}",
-            path.display()
-        )
-    })?;
-    for op in ops {
-        crate::buddy::storage::enqueue_memory_op(&project_root, op.clone()).await?;
-    }
-    Ok(())
-}
-
-fn candidate_status(source: MemorySource, confidence: f32) -> MemoryCandidateStatus {
-    if !source.is_autonomous() && confidence >= 0.85 {
-        MemoryCandidateStatus::Promoted
-    } else {
-        MemoryCandidateStatus::Proposed
-    }
-}
-
-fn sanitize_candidate_text(text: &str, max_chars: usize) -> String {
-    let redacted = crate::buddy::actor::redact_sensitive(text);
-    let collapsed = redacted
-        .replace("\r\n", "\n")
-        .replace('\r', "\n")
-        .lines()
-        .map(str::trim_end)
-        .collect::<Vec<_>>()
-        .join("\n");
-    crate::llm::safe_truncate(&collapsed, max_chars)
-        .trim()
-        .to_string()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use refact_chat_history::trajectory_memos::{ExtractedMemo, TrajectoryMeta};
+    use refact_runtime_api::trajectory_memos_runtime as runtime;
 
     fn extraction_with_memo(memo_type: &str, content: &str) -> ExtractionResult {
         ExtractionResult {
@@ -571,21 +310,24 @@ mod tests {
             "decision",
             "Use bounded queue persistence for trajectory memories in src/lib.rs.",
         );
-        let candidates = memory_candidates_from_extraction(
+        let candidates = runtime::memory_candidates_from_extraction(
             &extraction,
             "trajectory-a",
             "root-a",
             "Queue Persistence",
         );
-        let ops = memory_ops_from_candidates(&candidates, stale_threshold());
+        let ops = runtime::memory_ops_from_candidates(&candidates, stale_threshold());
 
         assert_eq!(ops.len(), 1);
         let op = &ops[0];
-        assert_eq!(op.source, MemorySource::Trajectory);
-        assert_eq!(op.op_type, MemoryOpType::CreateMemory);
+        assert_eq!(op.source, refact_runtime_api::buddy_memory_lifecycle::MemorySource::Trajectory);
+        assert_eq!(
+            op.op_type,
+            refact_runtime_api::buddy_memory_lifecycle::MemoryOpType::CreateMemory
+        );
         assert_eq!(
             op.status,
-            crate::buddy::memory_lifecycle::MemoryOpStatus::Pending
+            refact_runtime_api::buddy_memory_lifecycle::MemoryOpStatus::Pending
         );
         assert!(!op.requires_approval);
         assert_eq!(
@@ -643,7 +385,10 @@ mod tests {
         let state = crate::buddy::storage::load_memory_ops(root).await;
         assert_eq!(state.ops.len(), 1);
         assert_eq!(state.pending_count, 1);
-        assert_eq!(state.ops[0].source, MemorySource::Trajectory);
+        assert_eq!(
+            state.ops[0].source,
+            refact_runtime_api::buddy_memory_lifecycle::MemorySource::Trajectory
+        );
         assert!(state.ops[0]
             .payload
             .source_id
@@ -658,12 +403,12 @@ mod tests {
     #[test]
     fn duplicate_trajectory_rerun_produces_same_idempotency_key() {
         let extraction = extraction_with_memo("pattern", "Use tokio::fs for async file writes.");
-        let first = memory_ops_from_candidates(
-            &memory_candidates_from_extraction(&extraction, "trajectory-a", "root-a", "Title"),
+        let first = runtime::memory_ops_from_candidates(
+            &runtime::memory_candidates_from_extraction(&extraction, "trajectory-a", "root-a", "Title"),
             stale_threshold(),
         );
-        let second = memory_ops_from_candidates(
-            &memory_candidates_from_extraction(&extraction, "trajectory-a", "root-a", "Title"),
+        let second = runtime::memory_ops_from_candidates(
+            &runtime::memory_candidates_from_extraction(&extraction, "trajectory-a", "root-a", "Title"),
             stale_threshold(),
         );
 
@@ -676,11 +421,11 @@ mod tests {
     #[test]
     fn normalized_memo_title_strips_type_prefix_and_whitespace() {
         assert_eq!(
-            normalized_memo_title(" [decision]   Queue   Persistence \n Plan "),
+            refact_chat_history::trajectory_memos::normalized_memo_title(" [decision]   Queue   Persistence \n Plan "),
             "queue persistence plan"
         );
         assert_eq!(
-            normalized_memo_title("Queue Persistence"),
+            refact_chat_history::trajectory_memos::normalized_memo_title("Queue Persistence"),
             "queue persistence"
         );
     }
@@ -704,19 +449,20 @@ mod tests {
                 },
             ],
         };
-        let candidates = memory_candidates_from_extraction(
+        let candidates = runtime::memory_candidates_from_extraction(
             &extraction,
             "trajectory-a",
             "root-a",
             "Queue Persistence",
         );
+        use refact_runtime_api::buddy_memory_lifecycle::MemoryDocSnapshot;
         let existing = vec![MemoryDocSnapshot {
             title: "[decision] Queue Persistence".to_string(),
             content_hash: "different".to_string(),
             source_id: Some("trajectory-old:memo:0-0:root-a:hash".to_string()),
             ..Default::default()
         }];
-        let deduped = dedupe_memo_candidates(candidates, &existing, "root-a");
+        let deduped = runtime::dedupe_memo_candidates(candidates, &existing, "root-a");
 
         assert_eq!(deduped.len(), 0);
 
@@ -737,18 +483,18 @@ mod tests {
                 },
             ],
         };
-        let candidates = memory_candidates_from_extraction(
+        let candidates = runtime::memory_candidates_from_extraction(
             &extraction,
             "trajectory-a",
             "root-a",
             "Queue Persistence",
         );
-        let deduped = dedupe_memo_candidates(candidates, &[], "other-root");
+        let deduped = runtime::dedupe_memo_candidates(candidates, &[], "other-root");
 
         assert_eq!(deduped.len(), 2);
         assert!(deduped
             .iter()
-            .all(|candidate| normalized_memo_title(&candidate.title) == "queue persistence"));
+            .all(|candidate| refact_chat_history::trajectory_memos::normalized_memo_title(&candidate.title) == "queue persistence"));
     }
 
     #[tokio::test]
@@ -849,8 +595,9 @@ mod tests {
             "preference",
             "User prefers concise answers and not token=secret in logs.",
         );
-        let candidates = memory_candidates_from_extraction(&extraction, "chat", "chat", "Prefs");
+        let candidates = runtime::memory_candidates_from_extraction(&extraction, "chat", "chat", "Prefs");
 
+        use refact_runtime_api::buddy_memory_lifecycle::MemoryCandidateStatus;
         assert_eq!(candidates.len(), 1);
         let candidate = &candidates[0];
         assert_eq!(candidate.status, MemoryCandidateStatus::Proposed);
@@ -861,4 +608,3 @@ mod tests {
         assert!(!candidate.content.contains("secret"));
     }
 }
-

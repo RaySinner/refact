@@ -110,7 +110,8 @@ pub mod buddy_privacy_degraded;
 pub mod buddy_pulse_inject;
 pub mod buddy_runtime;
 pub mod subchat_runtime;
-pub mod trajectory_runtime;
+pub mod trajectory_runtime;pub mod trajectory_memos_runtime;
+
 pub mod mode_transition_runtime;
 pub mod chat_tokens;
 pub mod chat_cache_guard;

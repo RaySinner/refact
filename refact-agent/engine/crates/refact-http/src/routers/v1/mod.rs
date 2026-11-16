@@ -29,6 +29,7 @@ pub mod performance;
 pub mod plugins;
 pub mod privacy;
 pub mod project_configs;
+pub mod project_information;
 pub mod provider_defaults;
 pub mod scheduler;
 pub mod setup_status;

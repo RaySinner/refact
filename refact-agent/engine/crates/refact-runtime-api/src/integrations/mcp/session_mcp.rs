@@ -19,12 +19,12 @@ use tokio::time::{timeout, sleep, Duration};
 use serde::{Deserialize, Serialize};
 
 use crate::global_context::GlobalContext;
-use crate::integrations::sessions::IntegrationSession;
-use crate::integrations::process_io_utils::read_file_with_cursor;
+use refact_integrations::sessions::IntegrationSession;
+use refact_integrations::process_io_utils::read_file_with_cursor;
 use super::mcp_sampling::mcp_sampling_create_message;
-use super::mcp_metrics::SharedMetrics;
+use refact_integrations::mcp::mcp_metrics::SharedMetrics;
 #[cfg(test)]
-use super::mcp_metrics::new_shared_metrics;
+use refact_integrations::mcp::mcp_metrics::new_shared_metrics;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "status", rename_all = "snake_case")]
@@ -264,9 +264,9 @@ impl ClientHandler for McpClientHandler {
                                 text.chars().take(300).collect::<String>()
                             })
                             .unwrap_or_default();
-                        let (id, rx) = super::mcp_interactions::create_mcp_interaction(
+                        let (id, rx) = refact_integrations::mcp::mcp_interactions::create_mcp_interaction(
                             &config_path,
-                            super::mcp_interactions::MCPInteractionKind::SamplingApproval {
+                            refact_integrations::mcp::mcp_interactions::MCPInteractionKind::SamplingApproval {
                                 message_count: params.messages.len(),
                                 max_tokens: params.max_tokens as u64,
                                 preview,
@@ -278,10 +278,10 @@ impl ClientHandler for McpClientHandler {
                             "Sampling request awaiting user approval".to_string(),
                         )
                         .await;
-                        let response = super::mcp_interactions::wait_for_mcp_interaction_response(
+                        let response = refact_integrations::mcp::mcp_interactions::wait_for_mcp_interaction_response(
                             &id,
                             rx,
-                            super::mcp_interactions::MCP_INTERACTION_TIMEOUT_SECS,
+                            refact_integrations::mcp::mcp_interactions::MCP_INTERACTION_TIMEOUT_SECS,
                         )
                         .await;
                         if response.action != "accept" {
@@ -322,7 +322,7 @@ impl ClientHandler for McpClientHandler {
                 Some(gcx) => gcx,
                 None => return Ok(ListRootsResult::default()),
             };
-            let folders = refact_runtime_api::files_correction::get_project_dirs(gcx).await;
+            let folders = crate::files_correction::get_project_dirs(gcx).await;
             let roots = folders
                 .into_iter()
                 .filter_map(|f| {
@@ -365,7 +365,7 @@ impl ClientHandler for McpClientHandler {
                     message,
                     requested_schema,
                     ..
-                } => super::mcp_interactions::MCPInteractionKind::Elicitation {
+                } => refact_integrations::mcp::mcp_interactions::MCPInteractionKind::Elicitation {
                     message: message.clone(),
                     requested_schema: serde_json::to_value(requested_schema).ok(),
                     url: None,
@@ -376,7 +376,7 @@ impl ClientHandler for McpClientHandler {
                     url,
                     elicitation_id,
                     ..
-                } => super::mcp_interactions::MCPInteractionKind::Elicitation {
+                } => refact_integrations::mcp::mcp_interactions::MCPInteractionKind::Elicitation {
                     message: message.clone(),
                     requested_schema: None,
                     url: Some(url.clone()),
@@ -390,11 +390,11 @@ impl ClientHandler for McpClientHandler {
             .await;
             tracing::info!("MCP elicitation request from {}", debug_name);
             let (id, rx) =
-                super::mcp_interactions::create_mcp_interaction(&config_path, kind).await;
-            let response = super::mcp_interactions::wait_for_mcp_interaction_response(
+                refact_integrations::mcp::mcp_interactions::create_mcp_interaction(&config_path, kind).await;
+            let response = refact_integrations::mcp::mcp_interactions::wait_for_mcp_interaction_response(
                 &id,
                 rx,
-                super::mcp_interactions::MCP_INTERACTION_TIMEOUT_SECS,
+                refact_integrations::mcp::mcp_interactions::MCP_INTERACTION_TIMEOUT_SECS,
             )
             .await;
             add_log_entry(
@@ -821,7 +821,7 @@ impl ClientHandler for McpClientHandler {
                 };
                 tracing::info!("{} for {}", msg, debug_name);
                 add_log_entry(logs, msg).await;
-                refact_runtime_api::slash_cache::invalidate_slash_cache().await;
+                crate::slash_cache::invalidate_slash_cache().await;
             });
             *handle = Some(task.abort_handle());
         }
@@ -903,7 +903,7 @@ impl IntegrationSession for SessionMCP {
                 )
             };
 
-            super::mcp_interactions::cancel_mcp_interactions_for_config(&config_path).await;
+            refact_integrations::mcp::mcp_interactions::cancel_mcp_interactions_for_config(&config_path).await;
 
             if let Some((_, abort_handle)) = startup_task_handles {
                 add_log_entry(logs.clone(), "Aborted startup task".to_string()).await;

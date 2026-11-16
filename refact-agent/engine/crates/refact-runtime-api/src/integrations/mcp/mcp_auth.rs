@@ -5,7 +5,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex as AMutex;
 use tracing::warn;
 
-use crate::integrations::sessions::IntegrationSession;
+use refact_integrations::sessions::IntegrationSession;
 
 
 pub async fn mcp_oauth_refresh_task(

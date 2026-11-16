@@ -260,7 +260,7 @@ pub async fn build_legacy_sse_client(
     config_path: &str,
     logs: Arc<AMutex<Vec<String>>>,
     debug_name: &str,
-    session: Arc<AMutex<Box<dyn crate::integrations::sessions::IntegrationSession>>>,
+    session: Arc<AMutex<Box<dyn refact_integrations::sessions::IntegrationSession>>>,
 ) -> Option<reqwest::Client> {
     if auth.auth_type != AuthType::Oauth2Pkce {
         return super::integr_mcp_common::build_reqwest_client_for_mcp(

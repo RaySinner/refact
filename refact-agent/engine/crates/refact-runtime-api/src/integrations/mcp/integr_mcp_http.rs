@@ -6,7 +6,7 @@ use tokio::sync::Mutex as AMutex;
 use serde::{Deserialize, Serialize};
 
 use crate::global_context::GlobalContext;
-use crate::integrations::integr_abstract::IntegrationCommon;
+use refact_integrations::integr_abstract::IntegrationCommon;
 use super::session_mcp::{McpClientHandler, McpRunningService, add_log_entry};
 use super::integr_mcp_common::{
     CommonMCPSettings, MCPTransportInitializer, impl_mcp_integration_trait,
@@ -56,7 +56,7 @@ impl MCPTransportInitializer for IntegrationMCPHttp {
         debug_name: String,
         init_timeout: u64,
         _request_timeout: u64,
-        session: Arc<AMutex<Box<dyn crate::integrations::sessions::IntegrationSession>>>,
+        session: Arc<AMutex<Box<dyn refact_integrations::sessions::IntegrationSession>>>,
         handler: McpClientHandler,
     ) -> Option<McpRunningService> {
         // Both attempts share one init_timeout budget so a slow primary attempt

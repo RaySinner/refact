@@ -39,6 +39,8 @@ refact-providers = { path = "../refact-providers" }
 refact-pricing-core = { path = "../refact-pricing-core" }
 refact-stats = { path = "../refact-stats" }
 refact-integrations = { path = "../refact-integrations" }
+rmcp.workspace = true
+sse-stream.workspace = true
 refact-browser = { path = "../refact-browser" }
 refact-yaml-configs = { path = "../refact-yaml-configs" }
 refact-worktrees = { path = "../refact-worktrees" }

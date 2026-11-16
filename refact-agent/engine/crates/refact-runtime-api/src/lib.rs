@@ -96,6 +96,7 @@ pub mod generate_code_edit_runtime;
 pub mod generate_follow_up_runtime;
 pub mod kg_subchat_runtime;
 pub mod task_comments;
+pub mod providers_oauth_refresh;
 pub mod providers_oauth_runtime;
 pub mod providers_http_runtime;
 pub mod providers_pricing_runtime;

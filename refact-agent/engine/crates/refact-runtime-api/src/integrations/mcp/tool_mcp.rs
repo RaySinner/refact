@@ -14,13 +14,14 @@ use tokio::sync::Mutex as AMutex;
 use tokio::time::timeout;
 use tokio::time::Duration;
 
-use crate::caps::resolve_chat_model;
-use crate::at_commands::at_commands::AtCommandsContext;
-use crate::scratchpads::multimodality::MultimodalElement;
-use refact_runtime_api::Tool;
+use refact_caps_core::model_resolve::resolve_chat_model;
+use crate::at_commands_ctx::AtCommandsContext;
+use refact_core::chat_types::MultimodalElement;
+use crate::Tool;
 use refact_tool_api::{ToolDesc, ToolSource, ToolSourceType};
-use crate::call_validation::{ChatMessage, ChatContent, ContextEnum};
-use crate::integrations::integr_abstract::{IntegrationCommon, IntegrationConfirmation};
+use refact_core::chat_types::{ChatMessage, ChatContent, ContextEnum};
+use refact_tool_api::IntegrationConfirmation;
+use refact_integrations::integr_abstract::IntegrationCommon;
 use refact_privacy::destinations::clear_for_mcp;
 use super::session_mcp::{
     McpRunningService, MCPConnectionStatus, add_log_entry, mcp_session_wait_startup,
@@ -68,7 +69,7 @@ fn call_param_records(
     if let Some(arguments) = serialized.get("arguments") {
         collect_serialized_argument_paths(arguments, &mut paths);
     }
-    refact_runtime_api::gcx_helpers::declared_file_records(gcx, paths)
+    crate::gcx_helpers::declared_file_records(gcx, paths)
 }
 
 fn dispatch_cleared_mcp_call<T>(
@@ -211,8 +212,8 @@ impl Tool for ToolMCP {
                 session_key
             );
             tracing::error!("{}", msg);
-            crate::buddy::actor::report_error_persisted(
-                crate::app_state::app_state_from_gcx(gcx.clone()).await,
+            crate::buddy_runtime::report_error_persisted(
+                crate::global_context::app_state_from_gcx(gcx.clone()).await,
                 "mcp_no_session",
                 &msg,
                 Some("mcp/tool_mcp.rs"),
@@ -244,8 +245,8 @@ impl Tool for ToolMCP {
                         "MCP server '{}' is reconnecting, please try again shortly",
                         self.mcp_tool.name
                     );
-                    crate::buddy::actor::report_error_persisted(
-                        crate::app_state::app_state_from_gcx(gcx.clone()).await,
+                    crate::buddy_runtime::report_error_persisted(
+                        crate::global_context::app_state_from_gcx(gcx.clone()).await,
                         "mcp_reconnecting",
                         &msg,
                         Some("mcp/tool_mcp.rs"),
@@ -259,8 +260,8 @@ impl Tool for ToolMCP {
                         "MCP server '{}' connection failed: {}",
                         self.mcp_tool.name, message
                     );
-                    crate::buddy::actor::report_error_persisted(
-                        crate::app_state::app_state_from_gcx(gcx.clone()).await,
+                    crate::buddy_runtime::report_error_persisted(
+                        crate::global_context::app_state_from_gcx(gcx.clone()).await,
                         "mcp_connection_failed",
                         &msg,
                         Some("mcp/tool_mcp.rs"),
@@ -321,7 +322,7 @@ impl Tool for ToolMCP {
             }
             p
         };
-        let server_name = super::mcp_interactions::server_name_from_config_path(&self.config_path);
+        let server_name = refact_integrations::mcp::mcp_interactions::server_name_from_config_path(&self.config_path);
         let call_params = dispatch_cleared_mcp_call(
             &gcx,
             &server_name,
@@ -335,8 +336,8 @@ impl Tool for ToolMCP {
                 Some(client) => client.peer().clone(),
                 None => {
                     let msg = format!("MCP client for '{}' is not available", self.mcp_tool.name);
-                    crate::buddy::actor::report_error_persisted(
-                        crate::app_state::app_state_from_gcx(gcx.clone()).await,
+                    crate::buddy_runtime::report_error_persisted(
+                        crate::global_context::app_state_from_gcx(gcx.clone()).await,
                         "mcp_client_unavailable",
                         &msg,
                         Some("mcp/tool_mcp.rs"),
@@ -375,8 +376,8 @@ impl Tool for ToolMCP {
                         m.record_call_failure(&self.mcp_tool.name, call_start);
                     }
                     {
-                        crate::buddy::actor::report_error_persisted(
-                            crate::app_state::app_state_from_gcx(gcx.clone()).await,
+                        crate::buddy_runtime::report_error_persisted(
+                            crate::global_context::app_state_from_gcx(gcx.clone()).await,
                             "mcp_tool_error",
                             &error_msg,
                             Some("mcp/tool_mcp.rs"),
@@ -520,8 +521,8 @@ impl Tool for ToolMCP {
                     m.record_call_failure(&self.mcp_tool.name, call_start);
                 }
                 {
-                    crate::buddy::actor::report_error_persisted(
-                        crate::app_state::app_state_from_gcx(gcx.clone()).await,
+                    crate::buddy_runtime::report_error_persisted(
+                        crate::global_context::app_state_from_gcx(gcx.clone()).await,
                         "mcp_tool_error",
                         &error_msg,
                         Some("mcp/tool_mcp.rs"),
@@ -625,8 +626,8 @@ fn attach_mcp_observation_status(
     observed_reads_before: &std::collections::HashSet<std::path::PathBuf>,
     message: &mut ChatMessage,
 ) {
-    let privacy_scope = refact_runtime_api::gcx_helpers::privacy_record_scope(gcx);
-    crate::privacy::record_observation_status(&gcx.privacy_observation_runtime, &status);
+    let privacy_scope = crate::gcx_helpers::privacy_record_scope(gcx);
+    refact_privacy::runtime_state::record_observation_status(&gcx.privacy_observation_runtime, &status);
     match status {
         refact_exec::ObservationStatus::Observed(access)
         | refact_exec::ObservationStatus::Pending(access)
@@ -682,7 +683,7 @@ mod tests {
         .expect("failed to deserialize McpTool");
         ToolMCP {
             model_name: "mcp_server_test_tool".to_string(),
-            common: crate::integrations::integr_abstract::IntegrationCommon::default(),
+            common: refact_integrations::integr_abstract::IntegrationCommon::default(),
             config_path: "mcp_stdio_server.yaml".to_string(),
             mcp_client: std::sync::Arc::new(tokio::sync::Mutex::new(None)),
             mcp_tool,
@@ -920,7 +921,7 @@ mod tests {
         .expect("failed to deserialize McpTool");
         ToolMCP {
             model_name: "mcp_server_test_tool".to_string(),
-            common: crate::integrations::integr_abstract::IntegrationCommon::default(),
+            common: refact_integrations::integr_abstract::IntegrationCommon::default(),
             config_path: "mcp_stdio_server.yaml".to_string(),
             mcp_client: std::sync::Arc::new(tokio::sync::Mutex::new(None)),
             mcp_tool,

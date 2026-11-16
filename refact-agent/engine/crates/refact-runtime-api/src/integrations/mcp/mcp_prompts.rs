@@ -3,10 +3,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::time::{timeout, Duration};
 
-use crate::ext::config_dirs::CommandSource;
-use crate::ext::slash_commands::SlashCommand;
+use refact_ext::config_dirs::CommandSource;
+use refact_ext::slash_commands::SlashCommand;
 use crate::global_context::GlobalContext;
-use crate::integrations::mcp::session_mcp::SessionMCP;
+use super::session_mcp::SessionMCP;
 
 pub const MCP_PROMPT_PREFIX: &str = "mcp_";
 
@@ -45,7 +45,7 @@ pub fn mcp_prompt_command_name(server_name: &str, prompt_name: &str) -> String {
 
 pub async fn mcp_prompts_as_slash_commands(gcx: Arc<GlobalContext>) -> Vec<SlashCommand> {
     let sessions: Vec<
-        Arc<tokio::sync::Mutex<Box<dyn crate::integrations::sessions::IntegrationSession>>>,
+        Arc<tokio::sync::Mutex<Box<dyn refact_integrations::sessions::IntegrationSession>>>,
     > = {
         let integration_sessions = gcx.integration_sessions.clone();
         let integration_sessions = integration_sessions.lock().await;
@@ -116,7 +116,7 @@ pub async fn parse_mcp_prompt_command(
     }
     let sessions: Vec<(
         String,
-        Arc<tokio::sync::Mutex<Box<dyn crate::integrations::sessions::IntegrationSession>>>,
+        Arc<tokio::sync::Mutex<Box<dyn refact_integrations::sessions::IntegrationSession>>>,
     )> = {
         let integration_sessions = gcx.integration_sessions.clone();
         let integration_sessions = integration_sessions.lock().await;

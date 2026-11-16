@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::global_context::GlobalContext;
-use crate::integrations::integr_abstract::IntegrationCommon;
-use crate::integrations::utils::{serialize_num_to_str, deserialize_str_to_num};
+use refact_integrations::integr_abstract::IntegrationCommon;
+use refact_integrations::utils::{serialize_num_to_str, deserialize_str_to_num};
 use rmcp::transport::auth::AuthClient;
 use super::session_mcp::{
     SessionMCP, McpClientHandler, McpRunningService, MCPConnectionStatus, MCPAuthStatus,
@@ -22,7 +22,7 @@ use super::mcp_auth::{
     MCPAuthSettings, MCPTokenManager, AuthType, create_auth_manager_from_tokens,
     load_tokens_from_config, mcp_oauth_refresh_task, probe_mcp_auth, save_tokens_to_config,
 };
-use super::mcp_metrics::new_shared_metrics;
+use refact_integrations::mcp::mcp_metrics::new_shared_metrics;
 use super::tool_mcp::ToolMCP;
 
 #[derive(Deserialize, Serialize, Clone, PartialEq, Debug)]
@@ -108,7 +108,7 @@ pub trait MCPTransportInitializer: Send + Sync {
         debug_name: String,
         init_timeout: u64,
         request_timeout: u64,
-        session: Arc<AMutex<Box<dyn crate::integrations::sessions::IntegrationSession>>>,
+        session: Arc<AMutex<Box<dyn refact_integrations::sessions::IntegrationSession>>>,
         handler: McpClientHandler,
     ) -> Option<McpRunningService>;
 
@@ -149,7 +149,7 @@ fn build_mcp_tool_boxes(
     mcp_common: &CommonMCPSettings,
     mcp_client: Arc<AMutex<Option<McpRunningService>>>,
     request_timeout: u64,
-) -> Vec<Box<dyn refact_runtime_api::Tool + Send>> {
+) -> Vec<Box<dyn crate::Tool + Send>> {
     let server_prefix = tool_name_server_prefix(config_path);
     let kept: Vec<&rmcp::model::Tool> = tools
         .iter()
@@ -164,12 +164,12 @@ fn build_mcp_tool_boxes(
         .iter()
         .map(|tool| {
             (
-                super::mcp_naming::model_tool_name(&server_prefix, tool.name.as_ref()),
+                refact_integrations::mcp::mcp_naming::model_tool_name(&server_prefix, tool.name.as_ref()),
                 tool.name.to_string(),
             )
         })
         .collect();
-    let resolved_names = super::mcp_naming::disambiguate_model_tool_names(candidates);
+    let resolved_names = refact_integrations::mcp::mcp_naming::disambiguate_model_tool_names(candidates);
 
     kept.into_iter()
         .zip(resolved_names)
@@ -186,7 +186,7 @@ fn build_mcp_tool_boxes(
                 mcp_tool: tool.clone(),
                 request_timeout,
                 auto_approve,
-            }) as Box<dyn refact_runtime_api::Tool + Send>
+            }) as Box<dyn crate::Tool + Send>
         })
         .collect()
 }
@@ -237,7 +237,7 @@ pub async fn mcp_integr_tools(
     config_path: &str,
     common: &IntegrationCommon,
     mcp_common: &CommonMCPSettings,
-) -> Vec<Box<dyn refact_runtime_api::Tool + Send>> {
+) -> Vec<Box<dyn crate::Tool + Send>> {
     let request_timeout = mcp_common.request_timeout;
     let session_key = format!("{}", config_path);
 
@@ -268,7 +268,7 @@ pub async fn mcp_integr_tools(
         }
     };
 
-    let result: Vec<Box<dyn refact_runtime_api::Tool + Send>> = {
+    let result: Vec<Box<dyn crate::Tool + Send>> = {
         let mut session_locked = session.lock().await;
         let session_downcasted: &mut SessionMCP =
             match session_locked.as_any_mut().downcast_mut::<SessionMCP>() {
@@ -411,7 +411,7 @@ pub(crate) async fn build_auth_client_for_mcp(
     transport_name: &str,
     logs: Arc<AMutex<Vec<String>>>,
     debug_name: &str,
-    session: Arc<AMutex<Box<dyn crate::integrations::sessions::IntegrationSession>>>,
+    session: Arc<AMutex<Box<dyn refact_integrations::sessions::IntegrationSession>>>,
 ) -> Option<AuthClient<reqwest::Client>> {
     let tokens = load_tokens_from_config(config_path).await;
     let mut tokens = match tokens {
@@ -556,7 +556,7 @@ pub(crate) async fn serve_streamable_http_transport(
     init_timeout: u64,
     logs: Arc<AMutex<Vec<String>>>,
     debug_name: String,
-    session: Arc<AMutex<Box<dyn crate::integrations::sessions::IntegrationSession>>>,
+    session: Arc<AMutex<Box<dyn refact_integrations::sessions::IntegrationSession>>>,
     handler: McpClientHandler,
 ) -> Option<McpRunningService> {
     use rmcp::transport::common::client_side_sse::ExponentialBackoff;
@@ -622,7 +622,7 @@ pub(crate) async fn serve_legacy_sse_transport(
     init_timeout: u64,
     logs: Arc<AMutex<Vec<String>>>,
     debug_name: String,
-    session: Arc<AMutex<Box<dyn crate::integrations::sessions::IntegrationSession>>>,
+    session: Arc<AMutex<Box<dyn refact_integrations::sessions::IntegrationSession>>>,
     handler: McpClientHandler,
 ) -> Option<McpRunningService> {
     let client = super::mcp_sse_transport::build_legacy_sse_client(
@@ -686,7 +686,7 @@ pub(crate) async fn serve_legacy_sse_transport(
 macro_rules! impl_mcp_integration_trait {
     ($struct_name:ty, $schema_yaml:expr) => {
         #[async_trait::async_trait]
-        impl crate::integrations::integr_abstract::IntegrationTrait for $struct_name {
+        impl crate::integr_abstract::IntegrationTrait for $struct_name {
             async fn integr_settings_apply(
                 &mut self,
                 gcx: std::sync::Arc<crate::global_context::GlobalContext>,
@@ -716,14 +716,14 @@ macro_rules! impl_mcp_integration_trait {
                 serde_json::to_value(&self.cfg).unwrap()
             }
 
-            fn integr_common(&self) -> crate::integrations::integr_abstract::IntegrationCommon {
+            fn integr_common(&self) -> refact_integrations::integr_abstract::IntegrationCommon {
                 self.common.clone()
             }
 
             async fn integr_tools(
                 &self,
                 _integr_name: &str,
-            ) -> Vec<Box<dyn refact_runtime_api::Tool + Send>> {
+            ) -> Vec<Box<dyn crate::Tool + Send>> {
                 crate::integrations::mcp::integr_mcp_common::mcp_integr_tools(
                     self.gcx_option.clone(),
                     &self.config_path,
@@ -796,7 +796,7 @@ pub async fn mcp_session_setup<T: MCPTransportInitializer + Clone + Send + Sync 
         let session = integration_sessions.get(&session_key).cloned();
         if session.is_none() {
             let new_session: Arc<
-                AMutex<Box<dyn crate::integrations::sessions::IntegrationSession>>,
+                AMutex<Box<dyn refact_integrations::sessions::IntegrationSession>>,
             > = Arc::new(AMutex::new(Box::new(SessionMCP {
                 debug_name: session_key.clone(),
                 config_path: config_path.clone(),
@@ -1222,7 +1222,7 @@ pub async fn mcp_session_setup<T: MCPTransportInitializer + Clone + Send + Sync 
 }
 
 async fn mcp_health_monitor<T: MCPTransportInitializer + Clone>(
-    session_arc: Arc<AMutex<Box<dyn crate::integrations::sessions::IntegrationSession>>>,
+    session_arc: Arc<AMutex<Box<dyn refact_integrations::sessions::IntegrationSession>>>,
     transport_initializer: T,
     client_arc: Arc<AMutex<Option<McpRunningService>>>,
     logs: Arc<AMutex<Vec<String>>>,
@@ -1325,7 +1325,7 @@ async fn mcp_health_monitor<T: MCPTransportInitializer + Clone>(
 }
 
 async fn reconnect_with_backoff<T: MCPTransportInitializer>(
-    session_arc: Arc<AMutex<Box<dyn crate::integrations::sessions::IntegrationSession>>>,
+    session_arc: Arc<AMutex<Box<dyn refact_integrations::sessions::IntegrationSession>>>,
     transport_initializer: &T,
     client_arc: Arc<AMutex<Option<McpRunningService>>>,
     logs: Arc<AMutex<Vec<String>>>,
@@ -1509,7 +1509,7 @@ async fn reconnect_with_backoff<T: MCPTransportInitializer>(
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicU32, Ordering};
-    use crate::integrations::sessions::IntegrationSession;
+    use refact_integrations::sessions::IntegrationSession;
 
     fn make_session_arc(status: MCPConnectionStatus) -> Arc<AMutex<Box<dyn IntegrationSession>>> {
         Arc::new(AMutex::new(
@@ -1529,7 +1529,7 @@ mod tests {
                 stderr_cursor: Arc::new(AMutex::new(0)),
                 connection_status: status,
                 last_successful_connection: None,
-                metrics: super::super::mcp_metrics::new_shared_metrics(),
+                metrics: refact_integrations::mcp::mcp_metrics::new_shared_metrics(),
                 #[cfg(target_os = "linux")]
                 observation: None,
                 auth_manager: None,
@@ -1948,8 +1948,8 @@ mod tests {
     #[tokio::test]
     async fn test_build_auth_client_no_tokens_sets_needs_auth() {
         use super::super::session_mcp::SessionMCP;
-        use super::super::mcp_metrics::new_shared_metrics;
-        use crate::integrations::sessions::IntegrationSession;
+        use refact_integrations::mcp::mcp_metrics::new_shared_metrics;
+        use refact_integrations::sessions::IntegrationSession;
 
         let tmp = tempfile::NamedTempFile::new().unwrap();
         let config_path = tmp.path().to_str().unwrap().to_string();

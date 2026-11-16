@@ -11,12 +11,13 @@ use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 
 use crate::global_context::GlobalContext;
-use crate::integrations::integr_abstract::{IntegrationTrait, IntegrationCommon};
+use refact_integrations::integr_abstract::IntegrationCommon;
+use crate::integr_abstract::IntegrationTrait;
 use super::session_mcp::{McpClientHandler, McpRunningService, add_log_entry};
 // `SessionMCP` is only named inside the `#[cfg(target_os = "linux")]` observation block.
 #[cfg(target_os = "linux")]
 use super::session_mcp::SessionMCP;
-use super::mcp_path_resolution;
+use refact_integrations::mcp::mcp_path_resolution;
 use super::integr_mcp_common::{CommonMCPSettings, MCPTransportInitializer, impl_mcp_integration_trait};
 
 #[derive(Deserialize, Serialize, Clone, PartialEq, Default, Debug)]
@@ -45,7 +46,7 @@ impl MCPTransportInitializer for IntegrationMCPStdio {
         debug_name: String,
         init_timeout: u64,
         _request_timeout: u64,
-        session_arc_clone: Arc<AMutex<Box<dyn crate::integrations::sessions::IntegrationSession>>>,
+        session_arc_clone: Arc<AMutex<Box<dyn refact_integrations::sessions::IntegrationSession>>>,
         handler: McpClientHandler,
     ) -> Option<McpRunningService> {
         let log = async |level: tracing::Level, msg: String| {
@@ -256,7 +257,7 @@ impl IntegrationTrait for IntegrationMCPUnified {
         }
     }
 
-    fn integr_common(&self) -> crate::integrations::integr_abstract::IntegrationCommon {
+    fn integr_common(&self) -> refact_integrations::integr_abstract::IntegrationCommon {
         match &self.inner {
             UnifiedMCPInner::Stdio(integration) => integration.integr_common(),
             UnifiedMCPInner::Http(integration) => integration.integr_common(),
@@ -266,7 +267,7 @@ impl IntegrationTrait for IntegrationMCPUnified {
     async fn integr_tools(
         &self,
         integr_name: &str,
-    ) -> Vec<Box<dyn refact_runtime_api::Tool + Send>> {
+    ) -> Vec<Box<dyn crate::Tool + Send>> {
         match &self.inner {
             UnifiedMCPInner::Stdio(integration) => integration.integr_tools(integr_name).await,
             UnifiedMCPInner::Http(integration) => integration.integr_tools(integr_name).await,

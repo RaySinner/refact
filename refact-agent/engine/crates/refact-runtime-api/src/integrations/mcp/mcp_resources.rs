@@ -6,7 +6,7 @@ use rmcp::service::Peer;
 use rmcp::RoleClient;
 
 use crate::global_context::GlobalContext;
-use refact_runtime_api::integrations_mcp_resources::server_name_for_path;
+use crate::integrations_mcp_resources::server_name_for_path;
 
 const MAX_RESOURCES_TO_INDEX: usize = 100;
 const MAX_RESOURCE_SIZE_BYTES: usize = 50 * 1024 * 1024;
@@ -177,7 +177,7 @@ pub async fn remove_indexed_resources(gcx_weak: Weak<GlobalContext>, config_path
     let Some(gcx) = gcx_weak.upgrade() else {
         return;
     };
-    refact_runtime_api::integrations_mcp_resources::remove_indexed_resources(
+    crate::integrations_mcp_resources::remove_indexed_resources(
         gcx.cache_dir.clone(),
         gcx.vec_db.clone(),
         config_path,

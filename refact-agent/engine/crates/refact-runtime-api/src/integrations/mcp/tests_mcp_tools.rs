@@ -3,10 +3,10 @@ mod tests {
     use rmcp::model::Tool as McpTool;
     use serde_json::json;
 
-    use crate::integrations::integr_abstract::IntegrationCommon;
-    use refact_runtime_api::Tool;
+    use refact_integrations::integr_abstract::IntegrationCommon;
+    use crate::Tool;
 
-    use super::super::tool_mcp::ToolMCP;
+    use super::tool_mcp::ToolMCP;
 
     fn make_tool_mcp(config_path: &str, schema: serde_json::Value, tool_name: &str) -> ToolMCP {
         let mcp_tool: McpTool = serde_json::from_value(json!({
@@ -18,7 +18,7 @@ mod tests {
         let server_prefix =
             crate::integrations::mcp::integr_mcp_common::tool_name_server_prefix(config_path);
         ToolMCP {
-            model_name: crate::integrations::mcp::mcp_naming::model_tool_name(
+            model_name: refact_integrations::mcp::mcp_naming::model_tool_name(
                 &server_prefix,
                 tool_name,
             ),

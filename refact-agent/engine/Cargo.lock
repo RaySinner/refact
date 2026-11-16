@@ -5040,6 +5040,7 @@ dependencies = [
  "refact-git-intel",
  "refact-integrations",
  "refact-knowledge-graph",
+ "refact-llm",
  "refact-perf",
  "refact-postprocessing",
  "refact-privacy",

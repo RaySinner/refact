@@ -1,86 +1,19 @@
 #[allow(unused_imports)]
 use super::*;
 
-pub async fn verify_goal_before_completion(
-    app: AppState,
-    session_arc: Arc<AMutex<ChatSession>>,
-    trigger: &str,
-) -> GoalCompletionGateOutcome {
-    let (begin, epoch, fork_trajectory_version) = {
-        let mut session = session_arc.lock().await;
-        let now_ms = epoch_ms_now();
-        if session
-            .goal_verification_blocked_until_ms
-            .is_some_and(|until| now_ms < until)
-            && should_verify_goal_on_done(&session)
-        {
-            return GoalCompletionGateOutcome::VerificationUnavailable;
-        }
-        let begin = begin_goal_verification_if_needed(&mut session);
-        (
-            begin,
-            session.goal_ledger_last_seq(),
-            session.trajectory_version,
-        )
-    };
-    match begin {
-        GoalVerificationBegin::Started => {}
-        GoalVerificationBegin::BudgetExhausted => {
-            let mut session = session_arc.lock().await;
-            let status = apply_goal_budget_exhausted_terminal(&mut session, trigger)
-                .unwrap_or(GoalStatus::BudgetExhausted);
-            return GoalCompletionGateOutcome::BudgetExhausted(status);
-        }
-        GoalVerificationBegin::NoActiveGoal => return GoalCompletionGateOutcome::Passthrough,
-    }
-    {
-        let session = session_arc.lock().await;
-        if session.user_interrupt_flag.load(Ordering::SeqCst) {
-            drop(session);
-            abort_goal_verification(session_arc.clone()).await;
-            return GoalCompletionGateOutcome::Aborted;
-        }
-    }
+/// Engine side of the `GoalVerifierRunner` seam. The body is the local
+/// `run_goal_verifier`; the seam exists so the `validate_goal` tool can name a
+/// crate path instead of an engine-internal function.
+pub struct EngineGoalVerifierRunner;
 
-    let reply = match run_goal_verifier(app, session_arc.clone()).await {
-        Ok(reply) => reply,
-        Err(error) => {
-            let aborted = {
-                let session = session_arc.lock().await;
-                session.user_interrupt_flag.load(Ordering::SeqCst) || error == ABORT_ERROR_MESSAGE
-            };
-            if aborted {
-                abort_goal_verification(session_arc.clone()).await;
-                return GoalCompletionGateOutcome::Aborted;
-            }
-            let mut session = session_arc.lock().await;
-            return handle_verifier_failure(&mut session, trigger, &error);
-        }
-    };
-
-    {
-        let session = session_arc.lock().await;
-        if session.user_interrupt_flag.load(Ordering::SeqCst) {
-            drop(session);
-            abort_goal_verification(session_arc.clone()).await;
-            return GoalCompletionGateOutcome::Aborted;
-        }
-    }
-
-    let mut session = session_arc.lock().await;
-    match apply_goal_verdict_guarded(
-        &mut session,
-        trigger,
-        reply,
-        Some(epoch),
-        fork_trajectory_version,
-    ) {
-        GoalVerificationApplyOutcome::Finalized => GoalCompletionGateOutcome::Finalized,
-        GoalVerificationApplyOutcome::Rearmed => GoalCompletionGateOutcome::Rearmed,
-        GoalVerificationApplyOutcome::Continued => GoalCompletionGateOutcome::Rearmed,
-        GoalVerificationApplyOutcome::Stalled => GoalCompletionGateOutcome::VerificationStalled,
-        GoalVerificationApplyOutcome::Superseded => GoalCompletionGateOutcome::Rearmed,
-        GoalVerificationApplyOutcome::NoGoal => GoalCompletionGateOutcome::Passthrough,
+#[async_trait::async_trait]
+impl refact_runtime_api::goal_verifier_runtime::GoalVerifierRunner for EngineGoalVerifierRunner {
+    async fn run_goal_verifier(
+        &self,
+        app: &AppState,
+        session_arc: Arc<AMutex<ChatSession>>,
+    ) -> Result<GoalVerifierReply, String> {
+        run_goal_verifier(app.clone(), session_arc).await
     }
 }
 
@@ -301,21 +234,5 @@ pub(super) fn goal_verifier_reply_from_choice(choice: ChoiceFinal) -> GoalVerifi
         verdict,
         verifier_reply: choice.content,
         tokens,
-    }
-}
-
-/// Engine side of the `GoalVerifierRunner` seam. The body is the local
-/// `run_goal_verifier`; the seam exists so the `validate_goal` tool can name a
-/// crate path instead of an engine-internal function.
-pub struct EngineGoalVerifierRunner;
-
-#[async_trait::async_trait]
-impl refact_runtime_api::goal_verifier_runtime::GoalVerifierRunner for EngineGoalVerifierRunner {
-    async fn run_goal_verifier(
-        &self,
-        app: &AppState,
-        session_arc: Arc<AMutex<ChatSession>>,
-    ) -> Result<GoalVerifierReply, String> {
-        run_goal_verifier(app.clone(), session_arc).await
     }
 }

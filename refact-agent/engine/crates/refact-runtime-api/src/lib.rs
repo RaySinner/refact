@@ -84,6 +84,7 @@ pub mod buddy_planner_backstop_runner;
 pub mod buddy_scheduler;
 pub mod buddy_jobs;
 pub mod goal_verifier_runtime;
+pub mod goal_verifier_monitor;
 pub mod task_agent_monitor;
 pub mod task_agent_monitor_merge;
 pub mod session_runtime;

@@ -624,6 +624,55 @@ def symbol_origin(tmod, symbol):
     return ("engine", f"{tmod}::{symbol}")
 
 
+# A module with no item of its own is a pure re-export shim: every name it
+# exposes comes from what it globs. `crate::call_validation::ChatMessage` is
+# therefore `refact_core::call_validation::ChatMessage`, not an engine symbol —
+# `exports` cannot say so, because a crate glob never enters the export table.
+PURE_SHIM = {
+    mod
+    for mod in mods
+    if mod not in test_only and not FULL_DEF.search(code(prod(read(mods[mod]))))
+}
+
+
+def resolve_path(path):
+    """Resolve an absolute module path segment by segment.
+
+    `symbol_origin` only looks the *final* name up in the longest engine module
+    prefix. A path such as `providers::claude_code::CLAUDE_CODE_OAUTH_EXPIRES_AT_HEADER`
+    therefore missed the `pub use refact_providers::claude_code;` re-export one
+    segment earlier and was billed as `engine:providers::CONST` — which made every
+    provider-touching file look engine-coupled when the symbol has lived in
+    `refact-providers` for several waves. The honest rule is the compiler's: the
+    first segment that resolves to a crate re-export decides, whatever follows.
+    """
+    seg = [p for p in path.split("::") if p]
+    cur, i = None, 0
+    while i < len(seg):
+        cand = "::".join(seg[: i + 1])
+        if cand in mods:
+            cur, i = cand, i + 1
+            continue
+        if cur is None:
+            return ("engine", path)
+        origin = exports.get(cur, {}).get(seg[i])
+        child = cur + "::" + seg[i]
+        if origin and origin.startswith("engine:") and child in mods:
+            cur, i = child, i + 1
+            continue
+        if origin is None:
+            if cur in PURE_SHIM and cur in wild:
+                return ("crate", ",".join(sorted(wild[cur])))
+            return ("engine", cur)
+        kind, value = origin.split(":", 1)
+        if kind == "crate":
+            return ("crate", value)
+        tmod, _rest = longest_module(value)
+        cur = tmod or value
+        i += 1
+    return ("engine", cur or path)
+
+
 info = {}
 for mod in files:
     if mod in test_only:
@@ -647,10 +696,13 @@ for mod in files:
         if star:
             if tmod in files:
                 deps.add(tmod)
+            elif tmod in PURE_SHIM and tmod in wild:
+                # A bare path into a pure re-export shim is the crate behind it.
+                crates.update(wild[tmod])
             else:
                 engine.add(tmod)
             return
-        kind, value = symbol_origin(tmod, None if star else rest[-1])
+        kind, value = resolve_path(target)
         if kind == "crate":
             crates.add(value)
             return
@@ -753,6 +805,25 @@ facade = {
     and not info[mod]["engine"]
     and not info[mod]["deps"]
 }
+# A shim is transparent: `crate::tasks::storage` is one line of
+# `pub use refact_runtime_api::task_storage_runtime::*;`, so a file that calls it
+# is crate-typed once it names the crate directly — which is what the harvest
+# does. Billing the shim as an engine edge made `chat::task_agent_monitor::*`
+# (2 702 lines) look blocked by engine code it never touches.
+for _mod in files:
+    if _mod in test_only:
+        continue
+    for _name in sorted(info[_mod]["engine"]):
+        _owner, _rest = longest_module(_name)
+        _owner = _owner or _name
+        if _owner in facade and _owner != _mod:
+            info[_mod]["crates"] |= info[_owner]["crates"]
+            info[_mod]["engine"].discard(_name)
+    for _name in sorted(info[_mod]["deps"]):
+        if _name in facade:
+            info[_mod]["crates"] |= info[_name]["crates"]
+            info[_mod]["deps"].discard(_name)
+
 movable = set(facade) | {m for m in files if info[m]["test_only"]}
 while True:
     nxt = {

@@ -1,11 +1,9 @@
-use std::any::Any;
-use std::collections::HashMap;
-use std::sync::Arc;
-
+#[cfg(test)]
 use async_trait::async_trait;
+#[cfg(test)]
 use refact_runtime_api::SessionsHandle;
-use tokio::sync::RwLock as ARwLock;
 
+#[cfg(test)]
 use super::types::*;
 
 #[cfg(test)]
@@ -80,27 +78,6 @@ pub(crate) use refact_chat_api::session::{
 
 pub use refact_chat_api::types::SessionsMap;
 
-pub struct EngineSessionsHandle(pub SessionsMap);
-
-#[async_trait]
-impl SessionsHandle for EngineSessionsHandle {
-    fn as_any(&self) -> &dyn Any {
-        &self.0
-    }
-
-    async fn session_ids(&self) -> Vec<String> {
-        self.0.read().await.keys().cloned().collect()
-    }
-
-    async fn session_state(&self, chat_id: &str) -> Option<SessionState> {
-        let session_arc = self.0.read().await.get(chat_id).cloned()?;
-        let session = session_arc.lock().await;
-        Some(session.runtime.state)
-    }
-}
-
-pub use refact_runtime_api::session_handles::sessions_map_from_handle;
-
-pub fn create_sessions_map() -> SessionsMap {
-    Arc::new(ARwLock::new(HashMap::new()))
-}
+pub use refact_runtime_api::session_handles::{
+    create_sessions_map, sessions_map_from_handle, EngineSessionsHandle,
+};

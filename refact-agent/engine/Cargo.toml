@@ -51,6 +51,9 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
+rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", rev = "63583b164f54ec6ed2f17c98450487c747d34aeb", features = ["client", "transport-child-process", "transport-streamable-http-client-reqwest", "auth"] }
+sse-stream = "0.2"
+shell-words = "1.1.0"
 reqwest = { version = "0.13", default-features = false, features = ["json", "form", "stream", "rustls", "charset", "http2"] }
 serde = { version = "1", features = ["rc", "derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }

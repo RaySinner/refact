@@ -751,7 +751,7 @@ fn should_skip_mcp_session_setup(session: &SessionMCP, new_cfg_value: &Value) ->
         || matches!(session.connection_status, MCPConnectionStatus::NeedsAuth)
 }
 
-pub(crate) fn startup_task_in_flight(session: &SessionMCP) -> bool {
+pub fn startup_task_in_flight(session: &SessionMCP) -> bool {
     session
         .startup_task_handles
         .as_ref()

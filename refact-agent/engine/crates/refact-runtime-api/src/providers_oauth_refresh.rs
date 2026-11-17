@@ -13,14 +13,12 @@ use crate::buddy_runtime::buddy_enqueue_event;
 use crate::global_context::{app_state_from_gcx, GlobalContext};
 use crate::providers_oauth_runtime::needs_refresh;
 
-const REFRESH_CHECK_INTERVAL_SECS: u64 = 60;
 static OAUTH_FAILED_INSTANCES: std::sync::OnceLock<std::sync::Mutex<HashSet<String>>> =
     std::sync::OnceLock::new();
 
 fn oauth_failed_instances() -> &'static std::sync::Mutex<HashSet<String>> {
     OAUTH_FAILED_INSTANCES.get_or_init(|| std::sync::Mutex::new(HashSet::new()))
 }
-
 
 const REFRESH_CHECK_INTERVAL_SECS: u64 = 60;
 
@@ -98,7 +96,7 @@ pub(crate) async fn refresh_expiring_oauth_tokens(gcx: &Arc<GlobalContext>) {
     try_refresh_google_antigravity_instances(gcx, &http_client, &config_dir).await;
 }
 
-pub(crate) async fn refresh_expiring_claude_code_tokens(gcx: &Arc<GlobalContext>) {
+pub async fn refresh_expiring_claude_code_tokens(gcx: &Arc<GlobalContext>) {
     let http_client = gcx.http_client.clone();
     try_refresh_claude_code_instances(gcx, &http_client).await;
 }
@@ -279,7 +277,7 @@ fn proactive_refresh_can_reuse_newer_expiry(
     )
 }
 
-pub(crate) async fn refresh_claude_code_instance_if_needed(
+pub async fn refresh_claude_code_instance_if_needed(
     gcx: &Arc<GlobalContext>,
     provider_name: &str,
 ) -> Result<(), String> {

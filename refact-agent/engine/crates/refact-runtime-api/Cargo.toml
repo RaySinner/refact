@@ -41,6 +41,8 @@ refact-stats = { path = "../refact-stats" }
 refact-integrations = { path = "../refact-integrations" }
 rmcp.workspace = true
 sse-stream.workspace = true
+shell-words.workspace = true
+tempfile.workspace = true
 refact-browser = { path = "../refact-browser" }
 refact-yaml-configs = { path = "../refact-yaml-configs" }
 refact-worktrees = { path = "../refact-worktrees" }

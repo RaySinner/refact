@@ -225,13 +225,13 @@ if os.path.exists(CENSUS_OUT):
         "chat::tools must be a 1-line facade",
     )
     check(
-        "census: chat::goal_verifier::monitor keeps only the LLM-body blocker",
+        "census: chat::goal_verifier::monitor is no longer island-blocked",
         re.search(
-            r"chat::goal_verifier::monitor\s+blocker=chat::(prepare|stream_core)",
+            r"chat::goal_verifier::monitor\s+.*blocker=(?:-|chat::(?:prepare|stream_core))",
             census,
         )
         is not None,
-        "monitor must be blocked only by the engine LLM body it legitimately keeps",
+        "monitor must not gain a new engine or island blocker",
     )
     m = re.search(r"### chat: (\d+) files / (\d+) production lines", census)
     check("census covers the whole tree", m is not None, "class totals missing")

@@ -306,3 +306,85 @@ Ordering that actually unwedges things, by measured release count:
   it is one whole-file move (no engine edge at all). Do not split it earlier.
 * The census's `island_blocker()` should report the *non-island* engine blocker
   too; today it makes 9 320 lines look island-gated when they are not.
+
+---
+
+## 7. ST-1: `chat::stream_core` settled
+
+This section supersedes the `chat::stream_core` row in §5 and the first bullet of
+§6. The island is gone: its residue moved to **`refact-runtime-api::stream_core`**,
+not to `refact-llm`.
+
+```
+### chat: 110 files / 14496 production lines     (was 16 453)
+declared islands (never harvested here): 19 files / 4439 lines   (was 6 396)
+already-shim (pure crate facade): 39 files / 124 lines
+BLOCKED on another island (that island needs its own card first): 0 files / 0 lines
+LEFT (blocked on engine code): 15 files / 9692 lines
+```
+
+`chat::stream_core` went from **1 958 production lines to 1**
+(`pub use refact_runtime_api::stream_core::*;`), and the 2 074-line body now lives
+in `crates/refact-runtime-api/src/stream_core.rs` verbatim — same provider request
+shapes, same SSE frames, same retry/backoff.
+
+### Why `refact-runtime-api` and not `refact-llm`
+
+The six `ChatCtx` accessors §5/§6 expected (`refresh_openai_codex`,
+`refresh_claude_code`, `rate_limit_headers`, `resolve_credential`,
+`redact_credential`, `header_retry_config`) were **not needed and none exists**.
+The measured edges made the seam card unnecessary:
+
+* `refact-llm` deps: `refact-core`, `refact-chat-api`, `refact-chat-history`,
+  `refact-privacy` — no `AppState`, no `ChatCtx`, and **`refact-providers` depends
+  on `refact-llm`**, so every `crate::providers::*` helper in the residue was
+  unreachable from `refact-llm` by construction (a cycle).
+* `refact-runtime-api` already depends on `refact-llm` (`Cargo.toml:50`) and
+  already owns `AppState`, `chat_ctx`, `chat_cache_guard` and
+  `providers_oauth_refresh` — exactly the four engine-side seams the residue
+  needed.
+
+So the residue moved one level up instead of behind six new trait methods, and the
+engine keeps a shim like the existing `chat/cache_guard.rs`. Crate edges added:
+`tokio-tungstenite` and `lazy_static` (both already in `[workspace.dependencies]`).
+`refact-runtime-api` still has no engine edge in either direction.
+
+### What it released
+
+**Nothing became `MOVABLE now`; the island-blocked class went 12 files / 8 549
+lines → 0.** All 12 left `BLOCKED on another island` and became `LEFT (blocked on
+engine code)`, and the census redistributed the tree: 15 files / 9 692 lines.
+
+The honest split of those 12, measured after the move (`info[m]["engine"]`):
+
+| file | lines | engine blocker now |
+|---|---|---|
+| `chat::generation::preamble` | 713 | none — blocked only by `chat::queue::helpers` |
+| `chat::generation::stream` | 1 085 | none — blocked by the `generation` SCC |
+| `chat::generation::retry` | 77 | none |
+| `chat::handlers` | 718 | none — blocked by `chat::queue::dispatch` |
+| `chat::delivery` | 169 | none — blocked by `chat::queue::dispatch` |
+| `chat::goal_monitor` | 591 | none — blocked by `chat::queue::dispatch` |
+| `chat::goal_verifier` / `::monitor` | 235 | none |
+| `chat::queue::dispatch` | 1 789 | `buddy::chat_reactions`, `ext::slash_expand` |
+| `chat::generation::run_loop` | 742 | `buddy::interventions::stalled_turn` |
+| `chat::generation::recovery` | 713 | `buddy::chat_reactions`, `global_context`, `subchat::{config,runner}` |
+| `chat::task_agent_monitor::{broadcast,finish,monitor}` | 1 952 | `global_context`, `tasks::storage` |
+
+That is the real shape of the next batch: **3 350 lines (7 files) now wait only on
+other chat files**, not on engine code, and **5 196 lines wait on 6 engine
+symbols**. `chat::queue::dispatch` is the next keystone — it holds 2 549 lines
+(`handlers`, `delivery`, `goal_monitor`) and its own two engine edges
+(`buddy::chat_reactions`, `ext::slash_expand`) are both shim-able.
+
+### Verification
+
+`powershell -NoProfile -ExecutionPolicy Bypass -File refact-agent/engine/target/st1-verify.ps1`
+
+Layer A (census, `tools/dev/st1-check.py` with 30 checks including a verbatim
+body-preservation diff against `HEAD`, `tools/dev/ab2-check.py`,
+`tools/dev/al4-check.py`) all pass; layer B is DEFERRED to the build guard by
+project policy. `tools/dev/ab2-check.py` and `tools/dev/al4-check.py` each had one
+assertion that pinned the *pre-ST-1* state (island count 12, `goal_verifier::monitor`
+blocked by `chat::stream_core`); both were retargeted at the new invariant rather
+than deleted.

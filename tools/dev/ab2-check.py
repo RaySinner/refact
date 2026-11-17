@@ -16,7 +16,7 @@ module behind a one-line `pub use` shim -- so S is removed from `files` and from
 every other module's `engine`/`deps` edge sets. Nothing else changes.
 
 Checks:
-  1. both of the two largest islands still exist as real engine sources;
+  1. both of the two largest islands still exist as engine sources or settled shims;
   2. the census runs, and its class lines partition the tree;
   3. the declared-island inventory and the island-blocked class are printed;
   4. settlement simulations: two largest, blocker-free islands, all islands;
@@ -120,10 +120,11 @@ for mod in TWO_LARGEST:
     body = read(path) if os.path.exists(path) else ""
     check("engine src/" + rel + " exists", bool(body))
     decls = len(DECL.findall(body))
+    settled = body.lstrip().startswith("pub use refact_")
     check(
-        "engine src/" + rel + " still holds production code",
-        decls >= 5,
-        "%d top-level production declarations" % decls,
+        "engine src/" + rel + " is either production code or a settled shim",
+        decls >= 5 or settled,
+        "%d top-level production declarations, settled=%s" % (decls, settled),
     )
 
 print()
@@ -157,9 +158,9 @@ for mod in blocked:
         % (census.info[mod]["lines"], mod, census.island_blocker(mod))
     )
 check(
-    "12 island-blocked files after the settlements (13 at base)",
-    len(blocked) == 12,
-    str(len(blocked)),
+    "the island-blocked class is empty after ST-1 settled chat::stream_core",
+    len(blocked) == 0,
+    "%d files: %s" % (len(blocked), ", ".join(blocked[:4])),
 )
 check("the 13 at base is stated in the report", "**Zero, and no island settlement" in read(REPORT))
 

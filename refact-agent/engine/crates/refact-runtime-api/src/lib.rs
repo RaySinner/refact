@@ -563,6 +563,7 @@ pub mod customization_registry_gcx;
 pub mod memories;
 pub mod memories_runtime;
 pub mod session_handles;
+pub mod stream_core;
 pub mod git_cleanup;
 pub mod ext_config_dirs;
 pub mod ext_hooks_runner;

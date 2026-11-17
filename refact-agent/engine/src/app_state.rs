@@ -56,6 +56,7 @@ pub use refact_runtime_api::services::{BuddyServices, ChatServices, WorkspaceSer
 pub use refact_runtime_api::buddy_runtime::buddy_services_from_handle;
 
 mod facade;
+mod generation;
 mod launchers;
 mod prompt_and_tools;
 mod providers;
@@ -67,6 +68,8 @@ mod trajectory_store;
 
 #[allow(unused_imports)]
 pub use self::facade::*;
+#[allow(unused_imports)]
+pub use self::generation::*;
 #[allow(unused_imports)]
 pub use self::launchers::*;
 #[allow(unused_imports)]
@@ -187,6 +190,7 @@ impl ContextFactory for EngineContextFactory {
             trajectories: Arc::new(EngineTrajectoryStore::new(gcx.clone())),
             prompts: Arc::new(EnginePromptAssembler::new(gcx.clone())),
             tool_executor: Arc::new(EngineChatToolExecutor::new(gcx.clone())),
+            generation: Arc::new(EngineGenerationStarter),
         }
     }
 

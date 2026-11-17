@@ -34,8 +34,9 @@ use crate::yaml_configs::customization_types::ModeConfig;
 use crate::chat::types::*;
 use crate::chat::browser_context;
 use crate::chat::content::parse_content_with_attachments;
-use crate::chat::generation::{
-    start_generation, prepare_session_preamble_and_knowledge, maybe_save_trajectory_with_intent,
+use crate::chat::generation::maybe_save_trajectory_with_intent;
+use refact_runtime_api::generation_start::{
+    prepare_session_preamble_and_knowledge, start_generation,
 };
 use crate::chat::goal_verifier::{
     should_verify_goal_on_done, verify_goal_before_completion, GoalCompletionGateOutcome,

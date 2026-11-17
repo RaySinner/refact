@@ -10,7 +10,7 @@ pub mod context_rebuild;
 pub mod ctx;
 pub mod delivery;
 pub mod diagnostics;
-mod generation;
+pub(crate) mod generation;
 pub mod goal_monitor;
 pub mod goal_role;
 pub mod goal_verifier;

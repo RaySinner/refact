@@ -12,10 +12,6 @@ pub mod task_health;
 pub mod trajectory_clutter;
 pub mod worktree_hygiene;
 
-use crate::buddy::settings::BuddySettings;
-use crate::buddy::types::BuddyFact;
-use crate::app_state::AppState;
-
 pub use refact_runtime_api::buddy_observers::{BuddyObserver, Ephemeral, ObserverContext};
 
 pub fn build_observer_registry() -> Vec<Arc<dyn BuddyObserver>> {

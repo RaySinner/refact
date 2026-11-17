@@ -4,8 +4,7 @@
 //! `ObserverContext`/`BuddyFact`/`BuddySettings` (already in `refact-buddy-core`),
 //! so the trait and every observer that needs nothing else can live in this
 //! crate. Observers still bound to engine-only modules (`task_health` on
-//! `chat::task_agent_monitor`, `mcp_auth` on `integrations::mcp`) remain in the
-//! engine.
+//! `chat::task_agent_monitor`) remain in the engine.
 
 use refact_buddy_core::settings::BuddySettings;
 use refact_buddy_core::types::BuddyFact;
@@ -16,6 +15,7 @@ pub mod chat_pattern;
 pub mod customization_drift;
 pub mod diagnostic_cluster;
 pub mod git_pressure;
+pub mod mcp_auth;
 pub mod memory_garden;
 pub mod provider_health;
 pub mod trajectory_clutter;

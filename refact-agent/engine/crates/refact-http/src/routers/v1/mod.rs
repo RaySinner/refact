@@ -51,3 +51,7 @@ pub mod chat_based_handlers;
 pub mod worktrees;
 pub mod hooks;
 pub mod knowledge_ops;
+pub mod mcp_oauth;
+pub mod v1_integrations;
+pub mod buddy;
+pub mod buddy_opportunities;

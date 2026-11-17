@@ -21,6 +21,7 @@ headless_chrome = "1.0.16"
 home = "0.5"
 hyper = { version = "0.14", features = ["server", "stream"] }
 regex = "1.9.5"
+rust-embed = { version = "8.5.0", features = ["include-exclude"] }
 serde = { workspace = true }
 percent-encoding = "2.3"
 reqwest = { workspace = true }

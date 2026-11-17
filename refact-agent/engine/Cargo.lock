@@ -4440,6 +4440,7 @@ dependencies = [
  "refact-yaml-configs",
  "regex",
  "reqwest",
+ "rust-embed",
  "serde",
  "serde_json",
  "serde_yaml",

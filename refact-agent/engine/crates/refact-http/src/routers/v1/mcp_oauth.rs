@@ -1,0 +1,543 @@
+use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use axum::extract::Query;
+use axum::http::{Response, StatusCode};
+use axum::extract::State;
+use hyper::Body;
+use serde::{Deserialize, Serialize};
+use tracing::warn;
+
+use refact_runtime_api::app_state::AppState;
+use refact_runtime_api::global_context::GlobalContext;
+use refact_core::custom_error::ScratchError;
+use refact_integrations::mcp::mcp_auth::{
+    MCPOAuthSessionManager, clear_tokens_from_config, ensure_oauth2_pkce_auth_type,
+    load_tokens_from_config, save_tokens_to_config,
+};
+
+pub fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#x27;")
+}
+
+fn json_response(
+    status: StatusCode,
+    body: &impl Serialize,
+) -> Result<Response<Body>, ScratchError> {
+    let json = serde_json::to_string(body).map_err(|e| {
+        ScratchError::new(StatusCode::INTERNAL_SERVER_ERROR, format!("JSON: {}", e))
+    })?;
+    Response::builder()
+        .status(status)
+        .header("Content-Type", "application/json")
+        .body(Body::from(json))
+        .map_err(|e| {
+            ScratchError::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Response build failed: {}", e),
+            )
+        })
+}
+
+pub fn html_response(
+    title: &str,
+    heading: &str,
+    heading_color: &str,
+    message: &str,
+) -> Result<Response<Body>, ScratchError> {
+    let html = format!(
+        r#"<!DOCTYPE html>
+<html><head><title>{title}</title></head>
+<body style="font-family: system-ui; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #1a1a2e; color: #e0e0e0;">
+<div style="text-align: center;">
+<h1 style="color: {heading_color};">{heading}</h1>
+<p>{message}</p>
+</div>
+</body></html>"#,
+        title = html_escape(title),
+        heading = html_escape(heading),
+        heading_color = heading_color,
+        message = html_escape(message),
+    );
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", "text/html")
+        .header(
+            "Content-Security-Policy",
+            "default-src 'none'; style-src 'unsafe-inline'",
+        )
+        .body(Body::from(html))
+        .map_err(|e| {
+            ScratchError::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Response build failed: {}", e),
+            )
+        })
+}
+
+pub fn reject_path_traversal(config_path: &str) -> Result<(), ScratchError> {
+    if config_path.contains("..") {
+        return Err(ScratchError::new(
+            StatusCode::BAD_REQUEST,
+            "Invalid config_path: path traversal not allowed".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+async fn validate_mcp_config_path(
+    gcx: &Arc<GlobalContext>,
+    config_path: &str,
+) -> Result<String, ScratchError> {
+    reject_path_traversal(config_path)?;
+    let integration_sessions = gcx.integration_sessions.clone();
+    let exists = integration_sessions.lock().await.contains_key(config_path);
+    if !exists {
+        return Err(ScratchError::new(
+            StatusCode::NOT_FOUND,
+            format!("No active MCP session for config: {}", config_path),
+        ));
+    }
+    Ok(config_path.to_string())
+}
+
+async fn reload_mcp_integration(gcx: Arc<GlobalContext>, config_path: &str) {
+    let config_filename = std::path::Path::new(config_path)
+        .file_name()
+        .map(|f| f.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let _ = refact_runtime_api::integrations_runtime::load_integrations(
+        gcx,
+        &[format!("**/integrations.d/{}", config_filename)],
+    )
+    .await;
+}
+
+#[derive(Deserialize)]
+pub struct McpOAuthStartRequest {
+    pub config_path: String,
+    #[serde(default)]
+    pub scopes: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct McpOAuthStartResponse {
+    session_id: String,
+    authorize_url: String,
+}
+
+pub async fn handle_v1_mcp_oauth_start(
+    State(app): State<AppState>,
+    body_bytes: hyper::body::Bytes,
+) -> Result<Response<Body>, ScratchError> {
+    let gcx = app.gcx.clone();
+    let req: McpOAuthStartRequest = serde_json::from_slice(&body_bytes).map_err(|e| {
+        ScratchError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!("Invalid JSON: {}", e),
+        )
+    })?;
+
+    validate_mcp_config_path(&gcx, &req.config_path).await?;
+
+    let http_port = gcx.cmdline.http_port;
+    let redirect_uri = format!("http://127.0.0.1:{}/v1/mcp/oauth/callback", http_port);
+
+    let config_content = tokio::fs::read_to_string(&req.config_path)
+        .await
+        .map_err(|e| {
+            ScratchError::new(
+                StatusCode::NOT_FOUND,
+                format!("Read config {}: {}", req.config_path, e),
+            )
+        })?;
+    let config_yaml: serde_yaml::Value = serde_yaml::from_str(&config_content).map_err(|e| {
+        ScratchError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!("Parse config: {}", e),
+        )
+    })?;
+    let mcp_url = config_yaml
+        .get("url")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            ScratchError::new(
+                StatusCode::BAD_REQUEST,
+                "Config has no 'url' field; stdio transport does not support OAuth".to_string(),
+            )
+        })?
+        .to_string();
+
+    let probe_scopes: Vec<String> = {
+        let session_opt = {
+            let sessions = gcx.integration_sessions.lock().await;
+            sessions.get(&req.config_path).cloned()
+        };
+        match session_opt {
+            Some(session_arc) => {
+                let mut session_locked = session_arc.lock().await;
+                session_locked
+                    .as_any_mut()
+                    .downcast_mut::<refact_runtime_api::integrations::mcp::session_mcp::SessionMCP>()
+                    .and_then(|s| s.oauth_probe.as_ref().map(|p| p.suggested_scopes.clone()))
+                    .unwrap_or_default()
+            }
+            None => vec![],
+        }
+    };
+
+    let config_auth_type = config_yaml
+        .get("auth_type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("none")
+        .to_string();
+    if config_auth_type != "oauth2_pkce" {
+        ensure_oauth2_pkce_auth_type(&req.config_path)
+            .await
+            .map_err(|e| ScratchError::new(StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    }
+
+    let effective_scopes: Vec<String> = if !req.scopes.is_empty() {
+        req.scopes.clone()
+    } else {
+        let config_scopes = serde_yaml::from_value::<
+            refact_integrations::mcp::mcp_auth::MCPAuthSettings,
+        >(config_yaml.clone())
+        .map(|a| a.oauth2_scopes)
+        .unwrap_or_default();
+        if !config_scopes.is_empty() {
+            config_scopes
+        } else {
+            probe_scopes
+        }
+    };
+
+    let scopes: Vec<&str> = effective_scopes.iter().map(|s| s.as_str()).collect();
+    let (session_id, authorize_url) = MCPOAuthSessionManager::start_oauth_flow(
+        &mcp_url,
+        &req.config_path,
+        &scopes,
+        &redirect_uri,
+    )
+    .await
+    .map_err(|e| ScratchError::new(StatusCode::BAD_GATEWAY, e))?;
+
+    json_response(
+        StatusCode::OK,
+        &McpOAuthStartResponse {
+            session_id,
+            authorize_url,
+        },
+    )
+}
+
+#[derive(Deserialize)]
+pub struct McpOAuthExchangeRequest {
+    pub session_id: String,
+    pub code: String,
+}
+
+pub async fn handle_v1_mcp_oauth_exchange(
+    State(app): State<AppState>,
+    body_bytes: hyper::body::Bytes,
+) -> Result<Response<Body>, ScratchError> {
+    let gcx = app.gcx.clone();
+    let req: McpOAuthExchangeRequest = serde_json::from_slice(&body_bytes).map_err(|e| {
+        ScratchError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!("Invalid JSON: {}", e),
+        )
+    })?;
+
+    let (tokens, config_path) = MCPOAuthSessionManager::exchange_code(&req.session_id, &req.code)
+        .await
+        .map_err(|e| ScratchError::new(StatusCode::BAD_REQUEST, e))?;
+
+    save_tokens_to_config(&config_path, &tokens)
+        .await
+        .map_err(|e| {
+            ScratchError::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Save tokens: {}", e),
+            )
+        })?;
+
+    reload_mcp_integration(gcx, &config_path).await;
+
+    json_response(StatusCode::OK, &serde_json::json!({"success": true}))
+}
+
+#[derive(Deserialize)]
+pub struct McpOAuthCallbackQuery {
+    #[serde(default)]
+    pub code: Option<String>,
+    #[serde(default)]
+    pub state: Option<String>,
+    #[serde(default)]
+    pub error: Option<String>,
+    #[serde(default)]
+    pub error_description: Option<String>,
+}
+
+pub async fn handle_v1_mcp_oauth_callback(
+    State(app): State<AppState>,
+    Query(query): Query<McpOAuthCallbackQuery>,
+) -> Result<Response<Body>, ScratchError> {
+    let gcx = app.gcx.clone();
+    if let Some(err) = &query.error {
+        let desc = query
+            .error_description
+            .as_deref()
+            .unwrap_or("Unknown error");
+        warn!("MCP OAuth error from server: {} — {}", err, desc);
+        return html_response(
+            "Authentication Failed",
+            "✗ Authentication Failed",
+            "#ef4444",
+            &format!("{}: {}", err, desc),
+        );
+    }
+
+    let code = match &query.code {
+        Some(c) if !c.is_empty() => c.clone(),
+        _ => {
+            return html_response(
+                "Authentication Failed",
+                "✗ Authentication Failed",
+                "#ef4444",
+                "No authorization code received. Please try again.",
+            );
+        }
+    };
+
+    let state = match &query.state {
+        Some(s) if !s.is_empty() => s.clone(),
+        _ => {
+            return html_response(
+                "Authentication Failed",
+                "✗ Authentication Failed",
+                "#ef4444",
+                "Missing state parameter. Please start the OAuth flow again.",
+            );
+        }
+    };
+
+    let session_id = match MCPOAuthSessionManager::find_session_id_by_state(&state).await {
+        Some(id) => id,
+        None => {
+            return html_response(
+                "Authentication Failed",
+                "✗ Authentication Failed",
+                "#ef4444",
+                "OAuth session expired or not found. Please start the OAuth flow again.",
+            );
+        }
+    };
+
+    let (tokens, config_path) =
+        match MCPOAuthSessionManager::exchange_code(&session_id, &code).await {
+            Ok(result) => result,
+            Err(e) => {
+                warn!("MCP OAuth exchange failed: {}", e);
+                return html_response(
+                    "Authentication Failed",
+                    "✗ Authentication Failed",
+                    "#ef4444",
+                    &format!("Token exchange failed: {}", e),
+                );
+            }
+        };
+
+    if let Err(e) = save_tokens_to_config(&config_path, &tokens).await {
+        warn!("MCP OAuth: failed to save tokens: {}", e);
+        return html_response(
+            "Authentication Failed",
+            "✗ Authentication Failed",
+            "#ef4444",
+            "Tokens received but failed to save. Please try again.",
+        );
+    }
+
+    reload_mcp_integration(gcx, &config_path).await;
+
+    html_response(
+        "Authentication Successful",
+        "✓ Authentication Successful",
+        "#4ade80",
+        "You can close this window and return to the application.",
+    )
+}
+
+#[derive(Deserialize)]
+pub struct McpOAuthLogoutRequest {
+    pub config_path: String,
+}
+
+pub async fn handle_v1_mcp_oauth_logout(
+    State(app): State<AppState>,
+    body_bytes: hyper::body::Bytes,
+) -> Result<Response<Body>, ScratchError> {
+    let gcx = app.gcx.clone();
+    let req: McpOAuthLogoutRequest = serde_json::from_slice(&body_bytes).map_err(|e| {
+        ScratchError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!("Invalid JSON: {}", e),
+        )
+    })?;
+
+    validate_mcp_config_path(&gcx, &req.config_path).await?;
+
+    clear_tokens_from_config(&req.config_path)
+        .await
+        .map_err(|e| {
+            ScratchError::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Clear tokens: {}", e),
+            )
+        })?;
+
+    reload_mcp_integration(gcx, &req.config_path).await;
+
+    json_response(StatusCode::OK, &serde_json::json!({"success": true}))
+}
+
+#[derive(Deserialize)]
+pub struct McpOAuthCancelRequest {
+    pub session_id: String,
+}
+
+pub async fn handle_v1_mcp_oauth_cancel(
+    body_bytes: hyper::body::Bytes,
+) -> Result<Response<Body>, ScratchError> {
+    let req: McpOAuthCancelRequest = serde_json::from_slice(&body_bytes).map_err(|e| {
+        ScratchError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!("Invalid JSON: {}", e),
+        )
+    })?;
+    let cancelled = MCPOAuthSessionManager::cancel_oauth_flow(&req.session_id).await;
+    json_response(StatusCode::OK, &serde_json::json!({"cancelled": cancelled}))
+}
+
+#[derive(Deserialize)]
+pub struct McpOAuthStatusQuery {
+    pub config_path: String,
+}
+
+#[derive(Serialize)]
+struct McpOAuthStatusResponse {
+    auth_type: String,
+    authenticated: bool,
+    expires_at: i64,
+    scopes: Vec<String>,
+    needs_login: bool,
+    oauth_available: bool,
+    suggested_scopes: Vec<String>,
+}
+
+pub async fn handle_v1_mcp_oauth_status(
+    State(app): State<AppState>,
+    Query(query): Query<McpOAuthStatusQuery>,
+) -> Result<Response<Body>, ScratchError> {
+    let gcx = app.gcx.clone();
+    validate_mcp_config_path(&gcx, &query.config_path).await?;
+
+    let config_content = tokio::fs::read_to_string(&query.config_path)
+        .await
+        .map_err(|e| {
+            ScratchError::new(
+                StatusCode::NOT_FOUND,
+                format!("Read config {}: {}", query.config_path, e),
+            )
+        })?;
+    let config_yaml: serde_yaml::Value = serde_yaml::from_str(&config_content).map_err(|e| {
+        ScratchError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!("Parse config: {}", e),
+        )
+    })?;
+    let auth_type = config_yaml
+        .get("auth_type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("none")
+        .to_string();
+    let config_url = config_yaml
+        .get("url")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    let tokens = load_tokens_from_config(&query.config_path).await;
+    let (authenticated, expires_at, scopes) = match &tokens {
+        Some(t) => {
+            let now_ms = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as i64;
+            let url_bound_ok = match (t.bound_url.as_deref(), config_url.as_deref()) {
+                (Some(bound), Some(cfg)) => bound == cfg,
+                _ => true,
+            };
+            let authenticated = !t.access_token.is_empty()
+                && (t.expires_at == 0 || t.expires_at > now_ms)
+                && url_bound_ok;
+            (authenticated, t.expires_at, t.scopes.clone())
+        }
+        None => (false, 0, vec![]),
+    };
+
+    let (session_needs_login, probe_oauth_available, probe_scopes) = {
+        let session_opt = {
+            let sessions = gcx.integration_sessions.lock().await;
+            sessions.get(&query.config_path).cloned()
+        };
+        match session_opt {
+            Some(session_arc) => {
+                let mut session_locked = session_arc.lock().await;
+                match session_locked
+                    .as_any_mut()
+                    .downcast_mut::<refact_runtime_api::integrations::mcp::session_mcp::SessionMCP>()
+                {
+                    Some(s) => {
+                        let needs = matches!(
+                            s.auth_status,
+                            refact_runtime_api::integrations::mcp::session_mcp::MCPAuthStatus::NeedsLogin
+                                | refact_runtime_api::integrations::mcp::session_mcp::MCPAuthStatus::NeedsReauth
+                        );
+                        let (avail, pscopes) = match s.oauth_probe.as_ref() {
+                            Some(p) => (p.oauth_available, p.suggested_scopes.clone()),
+                            None => (false, vec![]),
+                        };
+                        (needs, avail, pscopes)
+                    }
+                    None => (false, false, vec![]),
+                }
+            }
+            None => (false, false, vec![]),
+        }
+    };
+
+    let needs_login = session_needs_login || (auth_type == "oauth2_pkce" && !authenticated);
+    let oauth_available = auth_type == "oauth2_pkce" || probe_oauth_available;
+    let suggested_scopes = if !scopes.is_empty() {
+        scopes.clone()
+    } else {
+        probe_scopes
+    };
+
+    json_response(
+        StatusCode::OK,
+        &McpOAuthStatusResponse {
+            auth_type,
+            authenticated,
+            expires_at,
+            scopes,
+            needs_login,
+            oauth_available,
+            suggested_scopes,
+        },
+    )
+}

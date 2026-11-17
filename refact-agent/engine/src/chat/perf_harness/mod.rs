@@ -1,16 +1,15 @@
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use async_trait::async_trait;
 use refact_core::memory_plane::MemoryPlaneRoots;
 use refact_core::vecdb_types::{
     EmbeddingModelConfig, SearchResult, VecDbStatus, VecdbRecord, VecdbSearch, VecdbSearchScope,
 };
-use serde::{Deserialize, Serialize};
-use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
+use serde::Serialize;
 use tokio::runtime::Builder;
 use tokio::sync::Mutex as AMutex;
 
@@ -40,11 +39,9 @@ use crate::tools::tools_description::{
     MatchConfirmDeny, MatchConfirmDenyResult, Tool, ToolDesc, ToolSource, ToolSourceType,
 };
 
-pub const CONCURRENT_CHAT_BENCHMARK_SCHEMA: &str = "refact.concurrent_chat_benchmark.v1";
-pub const FANOUT_BENCHMARK_SCHEMA: &str = "refact.chat_fanout_benchmark.v1";
-pub const AUTO_ENRICHMENT_BENCHMARK_SCHEMA: &str = "refact.auto_enrichment_benchmark.v1";
-const QUICK_HISTORY_BYTES_CAP: usize = 8 * 1024;
-const RAPID_CHECKPOINTS_PER_CHAT: u64 = 4;
+pub use refact_perf::perf_harness::{
+    AUTO_ENRICHMENT_BENCHMARK_SCHEMA, CONCURRENT_CHAT_BENCHMARK_SCHEMA, FANOUT_BENCHMARK_SCHEMA,
+};
 pub const TURN_MEMORY_FLEET_CHAT_COUNTS: [usize; 2] = [10, 100];
 const FANOUT_HISTORY_MESSAGE_COUNT: usize = 256;
 const FANOUT_HISTORY_MESSAGE_BYTES: usize = 4 * 1024;

@@ -798,50 +798,6 @@ pub(crate) fn full_soak_variant_order(sample_index: usize) -> [bool; 2] {
     }
 }
 
-pub(crate) struct FullSoakSample {
-    pub(crate) rollout_switches: FullSoakRolloutSwitches,
-    pub(crate) subsystems: FullSoakSubsystemFlags,
-    pub(crate) counters: FullSoakCounters,
-    pub(crate) queue_wait_us: Vec<u64>,
-    pub(crate) first_delta_us: Vec<u64>,
-    pub(crate) checkpoint_return_us: Vec<u64>,
-    pub(crate) required_flush_us: Vec<u64>,
-    pub(crate) tool_call_end_to_end_us: Vec<u64>,
-    pub(crate) tool_call_stage_samples: Vec<FullSoakToolCallStageSample>,
-    pub(crate) sse_serialize_us: Vec<u64>,
-    pub(crate) sse_emit_us: Vec<u64>,
-    pub(crate) process: FullSoakProcessMetrics,
-}
-
-#[derive(Clone, Debug, Default)]
-pub(crate) struct FullSoakToolCallStageSample {
-    pub(crate) session_extraction_history_clone_us: u64,
-    pub(crate) catalog_pool_acquire_us: u64,
-    pub(crate) alias_resolution_us: u64,
-    pub(crate) confirmation_us: u64,
-    pub(crate) prehooks_us: u64,
-    pub(crate) execution_wait_us: u64,
-    pub(crate) execution_lookup_us: u64,
-    pub(crate) execution_runtime_us: u64,
-    pub(crate) posthooks_us: u64,
-    pub(crate) result_postprocess_privacy_us: u64,
-    pub(crate) session_merge_events_us: u64,
-    pub(crate) checkpoint_scheduling_us: u64,
-}
-
-impl FullSoakToolCallStageSample {
-    pub(crate) fn accounted_us(&self) -> u64 {
-        self.session_extraction_history_clone_us
-            .saturating_add(self.catalog_pool_acquire_us)
-            .saturating_add(self.alias_resolution_us)
-            .saturating_add(self.confirmation_us)
-            .saturating_add(self.prehooks_us)
-            .saturating_add(self.execution_wait_us)
-            .saturating_add(self.session_merge_events_us)
-            .saturating_add(self.checkpoint_scheduling_us)
-    }
-}
-
 async fn run_full_soak_sample(
     workload: &FullSoakWorkload,
     optimized: bool,

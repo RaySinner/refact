@@ -3,6 +3,6 @@ pub use refact_runtime_api::providers_http_runtime::{
     resolve_provider_identity,
 };
 
-pub use refact_http::utils::json_response;
+pub use crate::utils::json_response;
 
 pub use refact_providers::http::common::*;

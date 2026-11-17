@@ -15,7 +15,7 @@ pub async fn handle_v1_models(
     validate_instance_id_for_http(&params.provider_name)?;
     let registry = ctx.model.providers.read().await;
 
-    let provider: Box<dyn crate::providers::traits::ProviderTrait> =
+    let provider: Box<dyn refact_providers::traits::ProviderTrait> =
         if let Some(p) = registry.get(&params.provider_name) {
             p.clone_box()
         } else if let Some(p) = create_provider(&params.provider_name) {
@@ -65,7 +65,7 @@ pub async fn handle_v1_provider_available_models(
         let registry = ctx.model.providers.read().await;
         let http_client = ctx.runtime.http_client.clone();
 
-        let provider: Box<dyn crate::providers::traits::ProviderTrait> =
+        let provider: Box<dyn refact_providers::traits::ProviderTrait> =
             if let Some(p) = registry.get(&params.name) {
                 p.clone_box()
             } else if let Some(p) = create_provider(&params.name) {
@@ -235,7 +235,7 @@ pub async fn handle_v1_openrouter_model_endpoints(
 }
 
 
-pub(crate) async fn openrouter_account_info_response(
+pub async fn openrouter_account_info_response(
     ctx: &ChatCtx,
     provider_name: &str,
 ) -> Result<Response<Body>, ScratchError> {
@@ -278,7 +278,7 @@ pub async fn handle_v1_provider_account_info(
 }
 
 
-pub(crate) async fn openrouter_health_response(
+pub async fn openrouter_health_response(
     ctx: &ChatCtx,
     provider_name: &str,
 ) -> Result<Response<Body>, ScratchError> {
@@ -307,7 +307,7 @@ pub(crate) async fn openrouter_health_response(
 }
 
 
-pub(crate) async fn google_gemini_health_response(
+pub async fn google_gemini_health_response(
     ctx: &ChatCtx,
     provider_name: &str,
 ) -> Result<Response<Body>, ScratchError> {
@@ -378,7 +378,7 @@ pub async fn handle_v1_provider_health(
 }
 
 
-pub(crate) async fn update_model_enabled_state(
+pub async fn update_model_enabled_state(
     ctx: &ChatCtx,
     provider_name: &str,
     model_id: &str,
@@ -443,7 +443,7 @@ pub(crate) async fn update_model_enabled_state(
 }
 
 
-pub(crate) async fn update_model_selected_provider_state(
+pub async fn update_model_selected_provider_state(
     ctx: &ChatCtx,
     provider_name: &str,
     model_id: &str,
@@ -592,7 +592,7 @@ pub async fn handle_v1_provider_remove_custom_model(
 }
 
 
-pub(crate) async fn handle_v1_provider_remove_custom_model_impl(
+pub async fn handle_v1_provider_remove_custom_model_impl(
     ctx: &ChatCtx,
     provider_name: &str,
     body_bytes: hyper::body::Bytes,

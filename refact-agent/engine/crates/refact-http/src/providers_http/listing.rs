@@ -33,56 +33,56 @@ pub async fn handle_v1_providers_list(
 
 #[derive(Deserialize)]
 pub struct ProviderPathParams {
-    pub(crate) name: String,
+    pub name: String,
 }
 
 
 #[derive(Deserialize, Default)]
 pub struct ProviderQuotaQuery {
     #[serde(default)]
-    pub(crate) refresh: bool,
+    pub refresh: bool,
 }
 
 
 #[derive(Serialize)]
-pub(crate) struct ProviderQuotaResponse {
-    pub(crate) quota: ProviderQuotaSnapshot,
+pub struct ProviderQuotaResponse {
+    pub quota: ProviderQuotaSnapshot,
 }
 
 
 #[derive(Serialize)]
-pub(crate) struct ProviderQuotasResponse {
-    pub(crate) quotas: Vec<ProviderQuotaSnapshot>,
-    pub(crate) truncated: bool,
+pub struct ProviderQuotasResponse {
+    pub quotas: Vec<ProviderQuotaSnapshot>,
+    pub truncated: bool,
 }
 
 
 #[derive(Deserialize)]
 pub struct ProviderModelPathParams {
-    pub(crate) name: String,
-    pub(crate) model_id: String,
+    pub name: String,
+    pub model_id: String,
 }
 
 
 #[derive(Serialize)]
 pub struct OpenRouterModelEndpointsResponse {
-    pub provider_variants: Vec<crate::providers::traits::ProviderVariant>,
+    pub provider_variants: Vec<refact_providers::traits::ProviderVariant>,
     pub available_providers: Vec<String>,
 }
 
 
 #[derive(Serialize)]
-pub(crate) struct ProviderDetailResponse {
-    pub(crate) name: String,
-    pub(crate) base_provider: String,
-    pub(crate) display_name: String,
-    pub(crate) enabled: bool,
-    pub(crate) readonly: bool,
-    pub(crate) has_credentials: bool,
-    pub(crate) selected_models_count: usize,
-    pub(crate) status: &'static str,
-    pub(crate) settings: serde_json::Value,
-    pub(crate) runtime: Option<ProviderRuntime>,
+pub struct ProviderDetailResponse {
+    pub name: String,
+    pub base_provider: String,
+    pub display_name: String,
+    pub enabled: bool,
+    pub readonly: bool,
+    pub has_credentials: bool,
+    pub selected_models_count: usize,
+    pub status: &'static str,
+    pub settings: serde_json::Value,
+    pub runtime: Option<ProviderRuntime>,
 }
 
 
@@ -99,7 +99,7 @@ pub async fn handle_v1_provider_get(
             .is_some_and(|provider| provider.base_provider_name() == "claude_code")
     };
     if is_claude_code {
-        if let Err(error) = crate::providers::oauth_refresh::refresh_claude_code_instance_if_needed(
+        if let Err(error) = refact_runtime_api::providers_oauth_refresh::refresh_claude_code_instance_if_needed(
             &app.gcx,
             &params.name,
         )
@@ -161,9 +161,9 @@ pub async fn handle_v1_provider_get(
 
 
 #[derive(Serialize)]
-pub(crate) struct ProviderSchemaResponse {
-    pub(crate) name: String,
-    pub(crate) schema: String,
+pub struct ProviderSchemaResponse {
+    pub name: String,
+    pub schema: String,
 }
 
 
@@ -409,8 +409,8 @@ pub async fn handle_v1_provider_delete(
 
 
 #[derive(Serialize)]
-pub(crate) struct ProviderModelsResponse {
-    pub(crate) models: Vec<crate::providers::traits::ProviderModel>,
+pub struct ProviderModelsResponse {
+    pub models: Vec<refact_providers::traits::ProviderModel>,
 }
 
 
@@ -422,7 +422,7 @@ pub async fn handle_v1_provider_models(
     validate_instance_id_for_http(&params.name)?;
     let registry = ctx.model.providers.read().await;
 
-    let provider: Box<dyn crate::providers::traits::ProviderTrait> =
+    let provider: Box<dyn refact_providers::traits::ProviderTrait> =
         if let Some(p) = registry.get(&params.name) {
             p.clone_box()
         } else if let Some(p) = create_provider(&params.name) {

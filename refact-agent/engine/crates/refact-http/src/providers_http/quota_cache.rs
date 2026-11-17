@@ -1,6 +1,6 @@
 use super::*;
 
-pub(crate) async fn fetch_provider_quota(
+pub async fn fetch_provider_quota(
     ctx: &ChatCtx,
     gcx: &Arc<GlobalContext>,
     quota_cache: &Arc<AMutex<ProviderQuotaCache>>,
@@ -136,7 +136,7 @@ pub(crate) async fn fetch_provider_quota(
 }
 
 
-pub(crate) async fn provider_quota_cached(
+pub async fn provider_quota_cached(
     ctx: &ChatCtx,
     gcx: &Arc<GlobalContext>,
     quota_cache: &Arc<AMutex<ProviderQuotaCache>>,
@@ -172,6 +172,6 @@ pub(crate) async fn provider_quota_cached(
 }
 
 
-pub(crate) use refact_providers::http::quota_cache::{
+pub use refact_providers::http::quota_cache::{
     invalidate_provider_quota, stale_quota_fallback,
 };

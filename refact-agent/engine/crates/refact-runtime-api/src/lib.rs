@@ -169,7 +169,9 @@ pub use at_commands_runtime::{
     run_at_commands_locally, MIN_RAG_CONTEXT_LIMIT,
 };
 pub use ext_skills_context::{build_skills_context_messages_tracked, build_skills_prompt_text};
-pub use ext_slash_expand::{expand_slash_command_non_mcp, ExpandedCommand, SkillActivationInfo};
+pub use ext_slash_expand::{
+    expand_slash_command, expand_slash_command_non_mcp, ExpandedCommand, SkillActivationInfo,
+};
 pub use tool_trait::{Tool, ToolGroup};
 pub use refact_chat_api::{DeliveryOutcome as RuntimeDeliveryOutcome, SessionState, TaskMeta};
 pub use refact_chat_api::{PendingDelivery as RuntimePendingDelivery, PushMode as RuntimePushMode};

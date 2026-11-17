@@ -303,7 +303,7 @@ impl ContextFactory for EngineContextFactory {
     fn integration_provider(
         &self,
     ) -> Arc<dyn refact_runtime_api::integrations_runtime::IntegrationProvider> {
-        Arc::new(crate::integrations::running_integrations::EngineIntegrationProvider)
+        Arc::new(refact_runtime_api::integrations_runtime::BuiltinIntegrationProvider)
     }
 
     fn buddy_speech(&self) -> Arc<dyn refact_runtime_api::buddy_speech_runtime::BuddySpeechRuntime> {

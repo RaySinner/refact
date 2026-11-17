@@ -518,3 +518,82 @@ impl IntegrationSetupSink for IntegrationMapSink {
         Ok(())
     }
 }
+
+
+
+pub fn integration_from_name(n: &str) -> Result<Box<dyn IntegrationTrait + Send + Sync>, String> {
+    match n {
+        cmdline if cmdline.starts_with("cmdline_") => {
+            Ok(Box::new(crate::integrations::cmdline::ToolCmdline {
+                ..Default::default()
+            }) as Box<dyn IntegrationTrait + Send + Sync>)
+        }
+        service if service.starts_with("service_") => {
+            Ok(Box::new(crate::integrations::cmdline_service::ToolService {
+                ..Default::default()
+            }) as Box<dyn IntegrationTrait + Send + Sync>)
+        }
+        mcp_sse if mcp_sse.starts_with("mcp_sse_") => {
+            Ok(Box::new(crate::integrations::mcp::integr_mcp_sse::IntegrationMCPSse {
+                ..Default::default()
+            }) as Box<dyn IntegrationTrait + Send + Sync>)
+        }
+        mcp_http if mcp_http.starts_with("mcp_http_") => Ok(Box::new(
+            crate::integrations::mcp::integr_mcp_http::IntegrationMCPHttp {
+                ..Default::default()
+            },
+        )
+            as Box<dyn IntegrationTrait + Send + Sync>),
+        "mcp_TEMPLATE" => Ok(Box::new(
+            crate::integrations::mcp::integr_mcp_stdio::IntegrationMCPUnified {
+                ..Default::default()
+            },
+        )
+            as Box<dyn IntegrationTrait + Send + Sync>),
+        mcp_stdio if mcp_stdio.starts_with("mcp_stdio_") || mcp_stdio.starts_with("mcp_") => {
+            Ok(Box::new(
+                crate::integrations::mcp::integr_mcp_stdio::IntegrationMCPStdio {
+                    ..Default::default()
+                },
+            ) as Box<dyn IntegrationTrait + Send + Sync>)
+        }
+        crate::integrations::notifier::integr_notifier_telegram::INTEGRATION_ID => {
+            Ok(Box::new(
+                crate::integrations::notifier::integr_notifier_telegram::IntegrationNotifierTelegram::default(),
+            ) as Box<dyn IntegrationTrait + Send + Sync>)
+        }
+        _ => Err(format!("Unknown integration name: {}", n)),
+    }
+}
+
+pub fn integrations_list(_allow_experimental: bool) -> Vec<&'static str> {
+    let integrations = vec![
+        "cmdline_TEMPLATE",
+        "service_TEMPLATE",
+        "mcp_TEMPLATE",
+        crate::integrations::notifier::integr_notifier_telegram::INTEGRATION_ID,
+    ];
+    integrations
+}
+
+pub fn go_to_configuration_message(integration_name: &str) -> String {
+    format!("🧩 for configuration go to SETTINGS:{integration_name}")
+}
+
+pub struct BuiltinIntegrationProvider;
+
+impl IntegrationProvider for BuiltinIntegrationProvider {
+    fn integration_names(&self, allow_experimental: bool) -> Vec<String> {
+        integrations_list(allow_experimental)
+            .into_iter()
+            .map(str::to_string)
+            .collect()
+    }
+
+    fn create_integration(
+        &self,
+        name: &str,
+    ) -> Result<Box<dyn IntegrationTrait + Send + Sync>, String> {
+        integration_from_name(name)
+    }
+}

@@ -1,6 +1,6 @@
 use super::*;
 
-pub(crate) async fn claude_code_usage_response(
+pub async fn claude_code_usage_response(
     ctx: &ChatCtx,
     gcx: &Arc<GlobalContext>,
     provider_name: &str,
@@ -14,12 +14,12 @@ pub(crate) async fn claude_code_usage_response(
 }
 
 
-pub(crate) async fn fetch_claude_code_usage_with_refresh(
+pub async fn fetch_claude_code_usage_with_refresh(
     ctx: &ChatCtx,
     gcx: &Arc<GlobalContext>,
     provider_name: &str,
-) -> Result<crate::providers::claude_code::ClaudeCodeUsage, String> {
-    use crate::providers::claude_code::ClaudeCodeUsageRequestError;
+) -> Result<refact_providers::claude_code::ClaudeCodeUsage, String> {
+    use refact_providers::claude_code::ClaudeCodeUsageRequestError;
 
     let (provider, http_client) = resolve_provider_for_base(ctx, provider_name, "claude_code")
         .await
@@ -35,7 +35,7 @@ pub(crate) async fn fetch_claude_code_usage_with_refresh(
         Err(_) if !request_provider.oauth_tokens.refresh_token.is_empty() => {
             refresh_attempted = true;
             let rejected_access_token = request_provider.oauth_tokens.access_token.clone();
-            request_provider = crate::providers::oauth_refresh::force_refresh_claude_code_for_retry(
+            request_provider = refact_runtime_api::providers_oauth_refresh::force_refresh_claude_code_for_retry(
                 gcx,
                 &http_client,
                 provider_name,
@@ -65,7 +65,7 @@ pub(crate) async fn fetch_claude_code_usage_with_refresh(
                 refresh_attempted,
             ) =>
         {
-            let retry_provider = crate::providers::oauth_refresh::force_refresh_claude_code_for_retry(
+            let retry_provider = refact_runtime_api::providers_oauth_refresh::force_refresh_claude_code_for_retry(
                 gcx,
                 &http_client,
                 provider_name,
@@ -89,7 +89,7 @@ pub(crate) async fn fetch_claude_code_usage_with_refresh(
 }
 
 
-pub(crate) async fn openai_codex_usage_response(
+pub async fn openai_codex_usage_response(
     ctx: &ChatCtx,
     provider_name: &str,
 ) -> Result<Response<Body>, ScratchError> {
@@ -102,7 +102,7 @@ pub(crate) async fn openai_codex_usage_response(
 }
 
 
-pub(crate) async fn opencode_usage_response(
+pub async fn opencode_usage_response(
     ctx: &ChatCtx,
     provider_name: &str,
 ) -> Result<Response<Body>, ScratchError> {
@@ -121,7 +121,7 @@ pub(crate) async fn opencode_usage_response(
 }
 
 
-pub(crate) async fn google_antigravity_usage_response(
+pub async fn google_antigravity_usage_response(
     ctx: &ChatCtx,
     quota_cache: &Arc<AMutex<ProviderQuotaCache>>,
     provider_name: &str,
@@ -134,11 +134,11 @@ pub(crate) async fn google_antigravity_usage_response(
 }
 
 
-pub(crate) async fn fetch_google_antigravity_usage_with_refresh(
+pub async fn fetch_google_antigravity_usage_with_refresh(
     ctx: &ChatCtx,
     quota_cache: &Arc<AMutex<ProviderQuotaCache>>,
     provider_name: &str,
-) -> Result<crate::providers::google_antigravity::GoogleAntigravityQuotaSummary, String> {
+) -> Result<refact_providers::google_antigravity::GoogleAntigravityQuotaSummary, String> {
     let (provider, http_client) =
         resolve_provider_for_base(ctx, provider_name, "google_antigravity")
             .await
@@ -180,7 +180,7 @@ pub(crate) async fn fetch_google_antigravity_usage_with_refresh(
             if !current_provider.oauth_tokens.has_refresh_token() {
                 return Err("Google Antigravity OAuth refresh token is missing".to_string());
             }
-            let mut refreshed = crate::providers::google_antigravity_oauth::refresh_access_token(
+            let mut refreshed = refact_providers::google_antigravity_oauth::refresh_access_token(
                 &http_client,
                 &current_provider.oauth_tokens.refresh_token,
             )
@@ -215,7 +215,7 @@ pub(crate) async fn fetch_google_antigravity_usage_with_refresh(
 }
 
 
-pub(crate) async fn xai_oauth_usage_response(
+pub async fn xai_oauth_usage_response(
     ctx: &ChatCtx,
     provider_name: &str,
 ) -> Result<Response<Body>, ScratchError> {
@@ -307,7 +307,7 @@ pub async fn handle_v1_provider_quotas(
 }
 
 
-pub(crate) async fn openai_codex_redeem_response(
+pub async fn openai_codex_redeem_response(
     ctx: &ChatCtx,
     provider_name: &str,
     redeem_request_id: &str,
@@ -353,9 +353,9 @@ pub async fn handle_v1_provider_usage(
 
 
 #[derive(serde::Deserialize, Default)]
-pub(crate) struct ResetRedeemRequest {
+pub struct ResetRedeemRequest {
     #[serde(default)]
-    pub(crate) redeem_request_id: Option<String>,
+    pub redeem_request_id: Option<String>,
 }
 
 
@@ -395,7 +395,7 @@ pub async fn handle_v1_provider_usage_redeem(
 }
 
 
-pub(crate) async fn current_openai_codex_provider(
+pub async fn current_openai_codex_provider(
     ctx: &ChatCtx,
     provider_name: &str,
 ) -> Result<(OpenAICodexProvider, reqwest::Client, std::path::PathBuf), String> {
@@ -439,7 +439,7 @@ pub(crate) async fn current_openai_codex_provider(
 }
 
 
-pub(crate) async fn force_refresh_openai_codex_usage_for_retry(
+pub async fn force_refresh_openai_codex_usage_for_retry(
     ctx: &ChatCtx,
     http_client: &reqwest::Client,
     provider_name: &str,
@@ -493,10 +493,10 @@ pub(crate) async fn force_refresh_openai_codex_usage_for_retry(
 }
 
 
-pub(crate) async fn fetch_openai_codex_usage_with_refresh(
+pub async fn fetch_openai_codex_usage_with_refresh(
     ctx: &ChatCtx,
     provider_name: &str,
-) -> Result<crate::providers::openai_codex::OpenAICodexUsage, String> {
+) -> Result<refact_providers::openai_codex::OpenAICodexUsage, String> {
     let (mut request_provider, http_client, _) =
         current_openai_codex_provider(ctx, provider_name).await?;
     if !request_provider.oauth_tokens.has_refresh_token() {
@@ -576,11 +576,11 @@ pub(crate) async fn fetch_openai_codex_usage_with_refresh(
 }
 
 
-pub(crate) async fn redeem_openai_codex_reset_credit_with_refresh(
+pub async fn redeem_openai_codex_reset_credit_with_refresh(
     ctx: &ChatCtx,
     provider_name: &str,
     redeem_request_id: &str,
-) -> Result<crate::providers::openai_codex::OpenAICodexResetRedeem, String> {
+) -> Result<refact_providers::openai_codex::OpenAICodexResetRedeem, String> {
     let (mut request_provider, http_client, _) =
         current_openai_codex_provider(ctx, provider_name).await?;
     if !request_provider.oauth_tokens.has_refresh_token() {
@@ -664,11 +664,11 @@ pub(crate) async fn redeem_openai_codex_reset_credit_with_refresh(
 }
 
 
-pub(crate) async fn sync_openai_codex_auth_state(
+pub async fn sync_openai_codex_auth_state(
     ctx: &ChatCtx,
     provider_name: &str,
     source: &OpenAICodexProvider,
-    previous_tokens: &crate::providers::openai_codex_oauth::OAuthTokens,
+    previous_tokens: &refact_providers::openai_codex_oauth::OAuthTokens,
     previous_session_id: &str,
 ) -> Result<bool, ScratchError> {
     if source.auth_state_matches(previous_tokens, previous_session_id) {
@@ -692,7 +692,7 @@ pub(crate) async fn sync_openai_codex_auth_state(
 }
 
 
-pub(crate) fn ensure_openai_codex_session_id(yaml_map: &mut serde_yaml::Mapping) -> String {
+pub fn ensure_openai_codex_session_id(yaml_map: &mut serde_yaml::Mapping) -> String {
     let key = serde_yaml::Value::String("session_id".to_string());
     if let Some(session_id) = yaml_map
         .get(&key)
@@ -707,7 +707,7 @@ pub(crate) fn ensure_openai_codex_session_id(yaml_map: &mut serde_yaml::Mapping)
 }
 
 
-pub(crate) async fn save_provider_oauth_tokens(
+pub async fn save_provider_oauth_tokens(
     ctx: &ChatCtx,
     quota_cache: &Arc<AMutex<ProviderQuotaCache>>,
     config_dir: &std::path::Path,
@@ -792,29 +792,29 @@ pub(crate) async fn save_provider_oauth_tokens(
     let refresh_token =
         match base_provider {
             "claude_code" => serde_yaml::from_value::<
-                crate::providers::claude_code_oauth::OAuthTokens,
+                refact_providers::claude_code_oauth::OAuthTokens,
             >(tokens_value.clone())
             .ok()
             .map(|tokens| tokens.refresh_token),
             "openai_codex" => serde_yaml::from_value::<
-                crate::providers::openai_codex_oauth::OAuthTokens,
+                refact_providers::openai_codex_oauth::OAuthTokens,
             >(tokens_value.clone())
             .ok()
             .map(|tokens| tokens.refresh_token),
-            "xai_oauth" => serde_yaml::from_value::<crate::providers::xai_oauth_flow::OAuthTokens>(
+            "xai_oauth" => serde_yaml::from_value::<refact_providers::xai_oauth_flow::OAuthTokens>(
                 tokens_value.clone(),
             )
             .ok()
             .map(|tokens| tokens.refresh_token),
             "google_antigravity" => serde_yaml::from_value::<
-                crate::providers::google_antigravity_oauth::OAuthTokens,
+                refact_providers::google_antigravity_oauth::OAuthTokens,
             >(tokens_value.clone())
             .ok()
             .map(|tokens| tokens.refresh_token),
             _ => None,
         };
     if let Some(refresh_token) = refresh_token {
-        crate::providers::oauth_refresh::clear_invalid_refresh_token(provider_name, &refresh_token);
+        refact_providers::oauth_refresh::clear_invalid_refresh_token(provider_name, &refresh_token);
     }
 
     invalidate_provider_quota(quota_cache, provider_name).await;

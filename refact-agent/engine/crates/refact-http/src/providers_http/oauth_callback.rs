@@ -1,6 +1,6 @@
 use super::*;
 
-pub(crate) fn html_response(
+pub fn html_response(
     title: &str,
     heading: &str,
     heading_color: &str,
@@ -38,7 +38,7 @@ pub(crate) fn html_response(
 }
 
 
-pub(crate) async fn handle_openai_codex_oauth_callback_impl(
+pub async fn handle_openai_codex_oauth_callback_impl(
     ctx: &ChatCtx,
     quota_cache: &Arc<AMutex<ProviderQuotaCache>>,
     query: OAuthCallbackParams,
@@ -86,7 +86,7 @@ pub(crate) async fn handle_openai_codex_oauth_callback_impl(
     let config_dir = ctx.paths.config_dir.clone();
 
     let (tokens, provider_instance_id) =
-        match crate::providers::openai_codex_oauth::exchange_code_for_session(
+        match refact_providers::openai_codex_oauth::exchange_code_for_session(
             &http_client,
             &session_id,
             &code,

@@ -1,18 +1,18 @@
 use super::*;
 
-pub(crate) use refact_providers::http::oauth::ensure_oauth_identity_for_instance_sync;
+pub use refact_providers::http::oauth::ensure_oauth_identity_for_instance_sync;
 
 
 #[derive(Deserialize, Default)]
-pub(crate) struct GitHubCopilotOAuthStartRequest {
+pub struct GitHubCopilotOAuthStartRequest {
     #[serde(default, alias = "enterpriseUrl")]
-    pub(crate) enterprise_url: Option<String>,
+    pub enterprise_url: Option<String>,
     #[serde(default, alias = "deploymentType")]
-    pub(crate) deployment_type: Option<String>,
+    pub deployment_type: Option<String>,
 }
 
 
-pub(crate) async fn oauth_base_provider_for_instance(
+pub async fn oauth_base_provider_for_instance(
     ctx: &ChatCtx,
     provider_name: &str,
 ) -> Result<String, ScratchError> {
@@ -38,13 +38,13 @@ pub async fn handle_v1_provider_oauth_start(
     let base_provider = oauth_base_provider_for_instance(&ctx, &params.name).await?;
     match base_provider.as_str() {
         "claude_code" => {
-            let mode = crate::providers::claude_code_oauth::OAuthMode::Max;
+            let mode = refact_providers::claude_code_oauth::OAuthMode::Max;
             let (callback_listener, callback_port) =
-                crate::providers::claude_code_oauth::bind_callback_listener()
+                refact_providers::claude_code_oauth::bind_callback_listener()
                     .await
                     .map_err(|e| ScratchError::new(StatusCode::INTERNAL_SERVER_ERROR, e))?;
             let (session_id, authorize_url) =
-                crate::providers::claude_code_oauth::start_oauth_session(
+                refact_providers::claude_code_oauth::start_oauth_session(
                     mode,
                     callback_port,
                     params.name.clone(),
@@ -54,7 +54,7 @@ pub async fn handle_v1_provider_oauth_start(
             let http_client = ctx.runtime.http_client.clone();
             let ctx_for_save = ctx.clone();
             let quota_cache_for_save = quota_cache.clone();
-            let listener_handle = crate::providers::claude_code_oauth::start_callback_listener(
+            let listener_handle = refact_providers::claude_code_oauth::start_callback_listener(
                 callback_listener,
                 http_client,
                 move |tokens, provider_instance_id| {
@@ -98,11 +98,11 @@ pub async fn handle_v1_provider_oauth_start(
         }
         "openai_codex" => {
             let (session_id, authorize_url, listener) =
-                crate::providers::openai_codex_oauth::start_oauth_session(params.name.clone())
+                refact_providers::openai_codex_oauth::start_oauth_session(params.name.clone())
                     .await
                     .map_err(|e| ScratchError::new(StatusCode::SERVICE_UNAVAILABLE, e))?;
 
-            let listener_handle = crate::providers::openai_codex_oauth::start_callback_listener(
+            let listener_handle = refact_providers::openai_codex_oauth::start_callback_listener(
                 listener,
                 ctx.runtime.http_client.clone(),
             );
@@ -140,11 +140,11 @@ pub async fn handle_v1_provider_oauth_start(
         }
         "xai_oauth" => {
             let (session_id, authorize_url, listener) =
-                crate::providers::xai_oauth_flow::start_oauth_session(params.name.clone())
+                refact_providers::xai_oauth_flow::start_oauth_session(params.name.clone())
                     .await
                     .map_err(|e| ScratchError::new(StatusCode::SERVICE_UNAVAILABLE, e))?;
 
-            let listener_handle = crate::providers::xai_oauth_flow::start_callback_listener(
+            let listener_handle = refact_providers::xai_oauth_flow::start_callback_listener(
                 listener,
                 ctx.runtime.http_client.clone(),
             );
@@ -187,14 +187,14 @@ pub async fn handle_v1_provider_oauth_start(
         }
         "google_antigravity" => {
             let (session_id, authorize_url, listener) =
-                crate::providers::google_antigravity_oauth::start_oauth_session(
+                refact_providers::google_antigravity_oauth::start_oauth_session(
                     params.name.clone(),
                 )
                 .await
                 .map_err(|e| ScratchError::new(StatusCode::SERVICE_UNAVAILABLE, e))?;
 
             let listener_handle =
-                crate::providers::google_antigravity_oauth::start_callback_listener(
+                refact_providers::google_antigravity_oauth::start_callback_listener(
                     listener,
                     ctx.runtime.http_client.clone(),
                 );
@@ -265,7 +265,7 @@ pub async fn handle_v1_provider_oauth_start(
                 ));
             }
             let http_client = ctx.runtime.http_client.clone();
-            let start = crate::providers::github_copilot_oauth::start_oauth_session(
+            let start = refact_providers::github_copilot_oauth::start_oauth_session(
                 &http_client,
                 request.enterprise_url.as_deref(),
             )
@@ -311,7 +311,7 @@ pub async fn handle_v1_provider_oauth_exchange(
     match base_provider.as_str() {
         "claude_code" => {
             let (tokens, session_provider_name) =
-                crate::providers::claude_code_oauth::exchange_code(
+                refact_providers::claude_code_oauth::exchange_code(
                     &http_client,
                     &request.session_id,
                     &request.code,
@@ -346,7 +346,7 @@ pub async fn handle_v1_provider_oauth_exchange(
         }
         "openai_codex" => {
             let (tokens, session_provider_name) =
-                crate::providers::openai_codex_oauth::exchange_code_for_session(
+                refact_providers::openai_codex_oauth::exchange_code_for_session(
                     &http_client,
                     &request.session_id,
                     &request.code,
@@ -380,7 +380,7 @@ pub async fn handle_v1_provider_oauth_exchange(
         }
         "xai_oauth" => {
             let (tokens, session_provider_name) =
-                crate::providers::xai_oauth_flow::exchange_code_for_session(
+                refact_providers::xai_oauth_flow::exchange_code_for_session(
                     &http_client,
                     &request.session_id,
                     &request.code,
@@ -414,7 +414,7 @@ pub async fn handle_v1_provider_oauth_exchange(
         }
         "google_antigravity" => {
             let (tokens, session_provider_name) =
-                crate::providers::google_antigravity_oauth::exchange_code_for_session(
+                refact_providers::google_antigravity_oauth::exchange_code_for_session(
                     &http_client,
                     &request.session_id,
                     &request.code,
@@ -447,14 +447,14 @@ pub async fn handle_v1_provider_oauth_exchange(
             .await?;
         }
         "github_copilot" => {
-            let outcome = crate::providers::github_copilot_oauth::poll_oauth_session(
+            let outcome = refact_providers::github_copilot_oauth::poll_oauth_session(
                 &http_client,
                 &request.session_id,
             )
             .await
             .map_err(|e| ScratchError::new(StatusCode::BAD_REQUEST, e))?;
             match outcome {
-                crate::providers::github_copilot_oauth::DevicePollOutcome::Success(tokens) => {
+                refact_providers::github_copilot_oauth::DevicePollOutcome::Success(tokens) => {
                     save_provider_oauth_tokens(
                         &ctx,
                         &quota_cache,
@@ -470,7 +470,7 @@ pub async fn handle_v1_provider_oauth_exchange(
                     )
                     .await?;
                 }
-                crate::providers::github_copilot_oauth::DevicePollOutcome::AuthorizationPending {
+                refact_providers::github_copilot_oauth::DevicePollOutcome::AuthorizationPending {
                     poll_interval,
                 } => {
                     return json_response(
@@ -483,7 +483,7 @@ pub async fn handle_v1_provider_oauth_exchange(
                         }),
                     );
                 }
-                crate::providers::github_copilot_oauth::DevicePollOutcome::SlowDown {
+                refact_providers::github_copilot_oauth::DevicePollOutcome::SlowDown {
                     poll_interval,
                 } => {
                     return json_response(
@@ -496,11 +496,11 @@ pub async fn handle_v1_provider_oauth_exchange(
                         }),
                     );
                 }
-                crate::providers::github_copilot_oauth::DevicePollOutcome::ExpiredToken { message }
-                | crate::providers::github_copilot_oauth::DevicePollOutcome::AccessDenied {
+                refact_providers::github_copilot_oauth::DevicePollOutcome::ExpiredToken { message }
+                | refact_providers::github_copilot_oauth::DevicePollOutcome::AccessDenied {
                     message,
                 }
-                | crate::providers::github_copilot_oauth::DevicePollOutcome::Error { message } => {
+                | refact_providers::github_copilot_oauth::DevicePollOutcome::Error { message } => {
                     return Err(ScratchError::new(StatusCode::BAD_REQUEST, message));
                 }
             }
@@ -536,7 +536,7 @@ pub async fn handle_v1_provider_oauth_logout(
     match base_provider.as_str() {
         "claude_code" => {
             let empty =
-                serde_yaml::to_value(&crate::providers::claude_code_oauth::OAuthTokens::default())
+                serde_yaml::to_value(&refact_providers::claude_code_oauth::OAuthTokens::default())
                     .map_err(|e| {
                         ScratchError::new(
                             StatusCode::INTERNAL_SERVER_ERROR,
@@ -555,7 +555,7 @@ pub async fn handle_v1_provider_oauth_logout(
         }
         "openai_codex" => {
             let empty =
-                serde_yaml::to_value(&crate::providers::openai_codex_oauth::OAuthTokens::default())
+                serde_yaml::to_value(&refact_providers::openai_codex_oauth::OAuthTokens::default())
                     .map_err(|e| {
                         ScratchError::new(
                             StatusCode::INTERNAL_SERVER_ERROR,
@@ -574,7 +574,7 @@ pub async fn handle_v1_provider_oauth_logout(
         }
         "xai_oauth" => {
             let empty =
-                serde_yaml::to_value(&crate::providers::xai_oauth_flow::OAuthTokens::default())
+                serde_yaml::to_value(&refact_providers::xai_oauth_flow::OAuthTokens::default())
                     .map_err(|e| {
                         ScratchError::new(
                             StatusCode::INTERNAL_SERVER_ERROR,
@@ -593,7 +593,7 @@ pub async fn handle_v1_provider_oauth_logout(
         }
         "google_antigravity" => {
             let empty = serde_yaml::to_value(
-                &crate::providers::google_antigravity_oauth::OAuthTokens::default(),
+                &refact_providers::google_antigravity_oauth::OAuthTokens::default(),
             )
             .map_err(|e| {
                 ScratchError::new(
@@ -613,7 +613,7 @@ pub async fn handle_v1_provider_oauth_logout(
         }
         "github_copilot" => {
             let empty = serde_yaml::to_value(
-                &crate::providers::github_copilot_oauth::OAuthTokens::default(),
+                &refact_providers::github_copilot_oauth::OAuthTokens::default(),
             )
             .map_err(|e| {
                 ScratchError::new(

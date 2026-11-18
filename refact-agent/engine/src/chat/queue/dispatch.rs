@@ -316,12 +316,13 @@ pub(crate) async fn process_command_queue_inner(
                 };
                 match result {
                     Ok(_) => {
-                        maybe_save_trajectory_with_intent(
-                            app.clone(),
-                            session_arc.clone(),
-                            TrajectoryCommitIntent::Required,
-                        )
-                        .await
+                        app.ctx
+                            .trajectories
+                            .maybe_save_trajectory_with_intent(
+                                session_arc.clone(),
+                                TrajectoryCommitIntent::Required,
+                            )
+                            .await
                     }
                     Err(error) => {
                         warn!("SetGoal command rejected: {}", error);
@@ -337,12 +338,13 @@ pub(crate) async fn process_command_queue_inner(
                 };
                 match result {
                     Ok(_) => {
-                        maybe_save_trajectory_with_intent(
-                            app.clone(),
-                            session_arc.clone(),
-                            TrajectoryCommitIntent::Required,
-                        )
-                        .await
+                        app.ctx
+                            .trajectories
+                            .maybe_save_trajectory_with_intent(
+                                session_arc.clone(),
+                                TrajectoryCommitIntent::Required,
+                            )
+                            .await
                     }
                     Err(error) => {
                         warn!("SetGoalBudget command rejected: {}", error);
@@ -358,12 +360,13 @@ pub(crate) async fn process_command_queue_inner(
                 };
                 match result {
                     Ok(_) => {
-                        maybe_save_trajectory_with_intent(
-                            app.clone(),
-                            session_arc.clone(),
-                            TrajectoryCommitIntent::Required,
-                        )
-                        .await
+                        app.ctx
+                            .trajectories
+                            .maybe_save_trajectory_with_intent(
+                                session_arc.clone(),
+                                TrajectoryCommitIntent::Required,
+                            )
+                            .await
                     }
                     Err(error) => {
                         warn!("UpdateGoal command rejected: {}", error);
@@ -379,12 +382,13 @@ pub(crate) async fn process_command_queue_inner(
                 };
                 match result {
                     Ok(_) => {
-                        maybe_save_trajectory_with_intent(
-                            app.clone(),
-                            session_arc.clone(),
-                            TrajectoryCommitIntent::Required,
-                        )
-                        .await
+                        app.ctx
+                            .trajectories
+                            .maybe_save_trajectory_with_intent(
+                                session_arc.clone(),
+                                TrajectoryCommitIntent::Required,
+                            )
+                            .await
                     }
                     Err(error) => {
                         warn!("GoalControl command rejected: {}", error);
@@ -907,12 +911,13 @@ pub(crate) async fn process_command_queue_inner(
                 }
                 drop(session);
                 if changed {
-                    maybe_save_trajectory_with_intent(
-                        app.clone(),
-                        session_arc.clone(),
-                        TrajectoryCommitIntent::Required,
-                    )
-                    .await;
+                    app.ctx
+                        .trajectories
+                        .maybe_save_trajectory_with_intent(
+                            session_arc.clone(),
+                            TrajectoryCommitIntent::Required,
+                        )
+                        .await;
                 }
             }
             ChatCommand::Abort {} => {
@@ -922,12 +927,13 @@ pub(crate) async fn process_command_queue_inner(
                 let goal_stopped = session.stop_goal_on_manual_abort();
                 drop(session);
                 if goal_stopped || session_arc.lock().await.trajectory_dirty {
-                    maybe_save_trajectory_with_intent(
-                        app.clone(),
-                        session_arc.clone(),
-                        TrajectoryCommitIntent::Required,
-                    )
-                    .await;
+                    app.ctx
+                        .trajectories
+                        .maybe_save_trajectory_with_intent(
+                            session_arc.clone(),
+                            TrajectoryCommitIntent::Required,
+                        )
+                        .await;
                 }
             }
             ChatCommand::CleanBackgroundProcesses { include_services } => {
@@ -946,12 +952,13 @@ pub(crate) async fn process_command_queue_inner(
                         let mut session = session_arc.lock().await;
                         session.add_background_process_cleanup_notice(killed.len());
                         drop(session);
-                        maybe_save_trajectory_with_intent(
-                            app.clone(),
-                            session_arc.clone(),
-                            TrajectoryCommitIntent::Required,
-                        )
-                        .await;
+                        app.ctx
+                            .trajectories
+                            .maybe_save_trajectory_with_intent(
+                                session_arc.clone(),
+                                TrajectoryCommitIntent::Required,
+                            )
+                            .await;
                     }
                     Err(error) => {
                         warn!("CleanBackgroundProcesses failed: {}", error);
@@ -1098,12 +1105,13 @@ pub(crate) async fn process_command_queue_inner(
                     }
                 }
                 drop(session);
-                maybe_save_trajectory_with_intent(
-                    app.clone(),
-                    session_arc.clone(),
-                    TrajectoryCommitIntent::Required,
-                )
-                .await;
+                app.ctx
+                    .trajectories
+                    .maybe_save_trajectory_with_intent(
+                        session_arc.clone(),
+                        TrajectoryCommitIntent::Required,
+                    )
+                    .await;
             }
             ChatCommand::BranchFromChat {
                 source_chat_id,
@@ -1175,12 +1183,13 @@ pub(crate) async fn process_command_queue_inner(
                         session.thread.worktree = Some(validated);
                     }
                 }
-                maybe_save_trajectory_with_intent(
-                    app.clone(),
-                    session_arc.clone(),
-                    TrajectoryCommitIntent::Required,
-                )
-                .await;
+                app.ctx
+                    .trajectories
+                    .maybe_save_trajectory_with_intent(
+                        session_arc.clone(),
+                        TrajectoryCommitIntent::Required,
+                    )
+                    .await;
             }
             ChatCommand::BrowserContextDecision {
                 pending_message_id,
@@ -1309,23 +1318,25 @@ pub(crate) async fn process_command_queue_inner(
                 match outcome {
                     Ok(DeliveryOutcome::Delivered) => {
                         note_delivered_messages_reset_goal_pursuit(&session_arc).await;
-                        maybe_save_trajectory_with_intent(
-                            app.clone(),
-                            session_arc.clone(),
-                            TrajectoryCommitIntent::Required,
-                        )
-                        .await;
+                        app.ctx
+                            .trajectories
+                            .maybe_save_trajectory_with_intent(
+                                session_arc.clone(),
+                                TrajectoryCommitIntent::Required,
+                            )
+                            .await;
                         if wake && !aborted_before_start_generation(&session_arc).await {
                             start_generation(app.clone(), session_arc.clone()).await;
                         }
                     }
                     Ok(_) => {
-                        maybe_save_trajectory_with_intent(
-                            app.clone(),
-                            session_arc.clone(),
-                            TrajectoryCommitIntent::Required,
-                        )
-                        .await;
+                        app.ctx
+                            .trajectories
+                            .maybe_save_trajectory_with_intent(
+                                session_arc.clone(),
+                                TrajectoryCommitIntent::Required,
+                            )
+                            .await;
                     }
                     Err(error) => {
                         warn!("DeliverMessages rejected: {}", error);
@@ -1627,12 +1638,13 @@ pub(crate) async fn handle_tool_decisions(
                 start_generation(app.clone(), session_arc.clone()).await;
             }
         } else {
-            maybe_save_trajectory_with_intent(
-                app.clone(),
-                session_arc.clone(),
-                TrajectoryCommitIntent::Required,
-            )
-            .await;
+            app.ctx
+                .trajectories
+                .maybe_save_trajectory_with_intent(
+                    session_arc.clone(),
+                    TrajectoryCommitIntent::Required,
+                )
+                .await;
         }
         return;
     }
@@ -1876,12 +1888,13 @@ pub(crate) async fn handle_tool_decisions(
                 }
                 GoalCompletionGateOutcome::Finalized => {}
                 GoalCompletionGateOutcome::Rearmed => {
-                    maybe_save_trajectory_with_intent(
-                        app.clone(),
-                        session_arc.clone(),
-                        TrajectoryCommitIntent::Required,
-                    )
-                    .await;
+                    app.ctx
+                        .trajectories
+                        .maybe_save_trajectory_with_intent(
+                            session_arc.clone(),
+                            TrajectoryCommitIntent::Required,
+                        )
+                        .await;
                     return;
                 }
                 GoalCompletionGateOutcome::BudgetExhausted(_) => {}
@@ -1891,12 +1904,13 @@ pub(crate) async fn handle_tool_decisions(
                     session.set_runtime_state(SessionState::Completed, None);
                 }
                 GoalCompletionGateOutcome::Aborted => {
-                    maybe_save_trajectory_with_intent(
-                        app.clone(),
-                        session_arc.clone(),
-                        TrajectoryCommitIntent::Required,
-                    )
-                    .await;
+                    app.ctx
+                        .trajectories
+                        .maybe_save_trajectory_with_intent(
+                            session_arc.clone(),
+                            TrajectoryCommitIntent::Required,
+                        )
+                        .await;
                     return;
                 }
             }
@@ -1910,12 +1924,13 @@ pub(crate) async fn handle_tool_decisions(
         }
 
         if was_aborted || tool_initiated_stop {
-            maybe_save_trajectory_with_intent(
-                app.clone(),
-                session_arc.clone(),
-                TrajectoryCommitIntent::Required,
-            )
-            .await;
+            app.ctx
+                .trajectories
+                .maybe_save_trajectory_with_intent(
+                    session_arc.clone(),
+                    TrajectoryCommitIntent::Required,
+                )
+                .await;
         } else {
             maybe_save_trajectory_background_with_intent(
                 app.clone(),
@@ -1935,7 +1950,10 @@ pub(crate) async fn handle_tool_decisions(
             session.set_runtime_state(SessionState::Idle, None);
             session.release_turn_only_state();
         }
-        maybe_save_trajectory_with_intent(app, session_arc, TrajectoryCommitIntent::Required).await;
+        app.ctx
+            .trajectories
+            .maybe_save_trajectory_with_intent(session_arc, TrajectoryCommitIntent::Required)
+            .await;
     } else if had_tool_calls {
         if !aborted_before_start_generation(&session_arc).await {
             start_generation(app, session_arc).await;
@@ -1946,6 +1964,9 @@ pub(crate) async fn handle_tool_decisions(
             session.set_runtime_state(SessionState::Idle, None);
             session.release_turn_only_state();
         }
-        maybe_save_trajectory_with_intent(app, session_arc, TrajectoryCommitIntent::Required).await;
+        app.ctx
+            .trajectories
+            .maybe_save_trajectory_with_intent(session_arc, TrajectoryCommitIntent::Required)
+            .await;
     }
 }

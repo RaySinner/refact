@@ -31,6 +31,7 @@ refact-scratchpads = { path = "../refact-scratchpads" }
 refact-scheduler-core = { path = "../refact-scheduler-core" }
 refact-perf = { path = "../refact-perf" }
 refact-llm = { path = "../refact-llm" }
+refact-stats = { path = "../refact-stats" }
 refact-git-intel = { path = "../refact-git-intel" }
 refact-codehealth = { path = "../refact-codehealth" }
 refact-codegraph = { path = "../refact-codegraph" }

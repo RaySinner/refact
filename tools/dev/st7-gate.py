@@ -66,20 +66,24 @@ BN1_FILES = ["chat::queue::dispatch", "chat::goal_monitor", "chat::delivery"]
 # is no longer a card file the gate has to keep an eye on. Keeping its 783 in
 # this map is what made both `--expect open` and `--expect harvested` fail after
 # BN-2 - a gate that cannot express the current state is worse than no gate.
-POST_HARVEST_BASELINE = {
-    "chat::generation::stream": 1085,
-    "chat::task_agent_monitor::broadcast": 941,
-    "chat::generation::run_loop": 742,
-    "chat::generation::preamble": 713,
-    "chat::generation::recovery": 714,
-    "chat::task_agent_monitor::finish": 510,
-    "chat::task_agent_monitor::monitor": 501,
-}
+POST_HARVEST_BASELINE = {}
 
 # Card files a later sub-card already harvested. They must be shims and must not
-# be MOVABLE again; every other baseline file must still be LEFT at its recorded
-# line count, so a collateral harvest cannot pass as a success.
-HARVESTED_SHIMS = ["chat::handlers"]
+# be MOVABLE again; every file still listed in POST_HARVEST_BASELINE must remain
+# LEFT at its recorded line count, so a collateral harvest cannot pass as a
+# success. BN-5 moved the last two clusters (generation + task_agent_monitor) in
+# one commit, so nothing is left at its pre-harvest line count.
+HARVESTED_SHIMS = [
+    "chat::handlers",
+    "chat::generation::preamble",
+    "chat::generation::recovery",
+    "chat::generation::retry",
+    "chat::generation::run_loop",
+    "chat::generation::stream",
+    "chat::task_agent_monitor::broadcast",
+    "chat::task_agent_monitor::finish",
+    "chat::task_agent_monitor::monitor",
+]
 
 # ST-13 makes `chat::queue` a pure crate facade. When that lands, nothing may
 # still name it as an engine blocker - that is the whole point of the card.

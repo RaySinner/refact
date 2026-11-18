@@ -57,6 +57,7 @@ pub use refact_runtime_api::buddy_runtime::buddy_services_from_handle;
 
 mod facade;
 mod generation;
+mod handoff;
 mod launchers;
 mod prompt_and_tools;
 mod providers;
@@ -71,6 +72,8 @@ mod trajectory_store;
 pub use self::facade::*;
 #[allow(unused_imports)]
 pub use self::generation::*;
+#[allow(unused_imports)]
+pub use self::handoff::*;
 #[allow(unused_imports)]
 pub use self::launchers::*;
 #[allow(unused_imports)]
@@ -195,6 +198,7 @@ impl ContextFactory for EngineContextFactory {
             tool_executor: Arc::new(EngineChatToolExecutor::new(gcx.clone())),
             generation: Arc::new(EngineGenerationStarter),
             queue_processor: Arc::new(EngineCommandQueueStarter),
+            pending_handoff: Arc::new(EnginePendingHandoffFinalizer::new(gcx.clone())),
         }
     }
 

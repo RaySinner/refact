@@ -1,3 +1,4 @@
+pub mod chat_compress;
 pub mod compression_exemption;
 pub mod config;
 pub mod content;

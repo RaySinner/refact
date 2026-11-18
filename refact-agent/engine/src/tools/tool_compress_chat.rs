@@ -1,4 +1,10 @@
 pub use refact_tools::tools::tool_compress_chat::*;
+pub use refact_chat_history::chat_compress::{
+    build_maximal_full_sweep_request, compress_chat_apply_head_output, find_preserve_cutoff,
+    insert_current_compression_report, remove_invalid_tool_calls_and_tool_calls_results_before,
+    CompressChatApplyOutput, CompressChatApplyRequest, CompressChatApplyStats,
+    RECOVERY_PLAIN_TEXT_FLOOR, TOOL_OUTPUT_TRUNCATE_LIMIT,
+};
 
 #[cfg(test)]
 #[allow(unused_imports)]

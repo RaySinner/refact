@@ -39,6 +39,8 @@ pub mod config_files_bootstrap;
 pub mod caps_loader;
 pub mod context_factory;
 pub mod chat_ctx;
+pub mod chat_context_rebuild;
+pub mod chat_prepare;
 pub mod files_correction;
 pub mod files_correction_impl;
 pub mod files_in_workspace;

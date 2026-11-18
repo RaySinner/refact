@@ -341,6 +341,18 @@ pub trait ChatToolExecutor: Send + Sync {
     ) -> (Vec<ChatMessage>, bool);
 }
 
+/// Finishes a `pending_mode_handoff` that a tool parked on the session. The body
+/// builds a destination chat through the subchat and task-storage machinery and is
+/// engine-side; the context-rebuild drain only has to call it at the right moment.
+#[async_trait]
+pub trait PendingHandoffFinalizer: Send + Sync {
+    async fn finalize_pending_handoff(
+        &self,
+        session_arc: &Arc<AMutex<ChatSession>>,
+        payload: serde_json::Value,
+    ) -> Result<(), String>;
+}
+
 #[derive(Clone)]
 pub struct ChatCtx {
     pub knowledge_builder: Arc<dyn crate::knowledge_index::KnowledgeBuilder>,
@@ -378,6 +390,7 @@ pub struct ChatCtx {
     pub tool_executor: Arc<dyn ChatToolExecutor>,
     pub generation: Arc<dyn crate::generation_start::GenerationStarter>,
     pub queue_processor: Arc<dyn crate::command_queue_start::CommandQueueStarter>,
+    pub pending_handoff: Arc<dyn PendingHandoffFinalizer>,
 }
 
 impl ChatAgentScope for ChatCtx {

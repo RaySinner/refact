@@ -6,11 +6,17 @@ keeps the answer reproducible instead of trusting a pasted transcript:
 
     python tools/dev/st7-gate.py --expect closed   # ST-7: nothing may move yet
     python tools/dev/st7-gate.py --expect open     # the harvest card may proceed
+    python tools/dev/st7-gate.py --expect harvested  # BN-1: its three files are shims
 
 The gate is CLOSED while any card file is still LEFT (blocked on engine code).
 `chat::queue::dispatch` is the real gate: it is the largest file in the set and
 every other card file either depends on it or on the same engine islands, so its
 class decides whether a harvest is safe.
+
+After the harvest the gate file is neither MOVABLE nor LEFT: it is an already-shipped
+shim. `--expect harvested` asserts exactly that for the three BN-1 files and that
+every other card file kept its pre-harvest class and line count, so a partial move
+or collateral harvest cannot pass as a success.
 
 Exit code is 0 when the observed gate matches `--expect`, 1 otherwise.
 """
@@ -51,6 +57,25 @@ CARD_FILES = [
 ]
 
 GATE_FILE = "chat::queue::dispatch"
+
+# The three mutually referential files BN-1 moved in one commit. After the
+# harvest they are already-shipped shims, not MOVABLE files.
+BN1_FILES = ["chat::queue::dispatch", "chat::goal_monitor", "chat::delivery"]
+
+# Every card file still in the LEFT class, with its production-line count before
+# BN-1 harvested its three files. A harvest must not move any other card file, so
+# this map has to stay exactly as it was.
+BN1_LEFT_BASELINE = {
+    "chat::generation::stream": 1085,
+    "chat::task_agent_monitor::broadcast": 941,
+    "chat::context_rebuild::pipeline": 783,
+    "chat::generation::run_loop": 742,
+    "chat::handlers": 718,
+    "chat::generation::preamble": 713,
+    "chat::generation::recovery": 713,
+    "chat::task_agent_monitor::finish": 510,
+    "chat::task_agent_monitor::monitor": 501,
+}
 
 failures = []
 
@@ -137,7 +162,7 @@ def crate_depends_on_engine(crate_cargo):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--expect", choices=["closed", "open"], default="closed")
+    parser.add_argument("--expect", choices=["closed", "open", "harvested"], default="closed")
     args = parser.parse_args()
 
     print("=== ST-7 step-0 gate: chat harvest readiness ===")
@@ -222,6 +247,9 @@ def main():
             card_lines += lines
             print(f"  MOVABLE  {module:48} {lines:6} lines")
             continue
+        if module in shim:
+            print(f"  SHIM     {module:48} {shim[module][0]:6} lines  (already harvested)")
+            continue
         left_count += 1
         lines, blocker, others = left.get(module, (0, "-", []))
         card_lines += lines
@@ -235,13 +263,20 @@ def main():
 
     gate_left = GATE_FILE in left
     gate_movable = GATE_FILE in movable
-    observed = "closed" if gate_left else ("open" if gate_movable else "unknown")
+    gate_harvested = GATE_FILE in shim
+    observed = (
+        "closed"
+        if gate_left
+        else ("open" if gate_movable else ("harvested" if gate_harvested else "unknown"))
+    )
     if observed == "closed":
         blocker, others = left[GATE_FILE][1], left[GATE_FILE][2]
         reason = ", ".join([blocker, *others])
         print(f"\nST-7 GATE: CLOSED - {GATE_FILE} is LEFT on {reason}")
     elif observed == "open":
         print(f"\nST-7 GATE: OPEN - {GATE_FILE} is MOVABLE now")
+    elif observed == "harvested":
+        print(f"\nST-7 GATE: HARVESTED - {GATE_FILE} is an already-shipped shim")
     else:
         print(f"\nST-7 GATE: UNKNOWN - {GATE_FILE} is in no movability class")
 
@@ -254,6 +289,23 @@ def main():
         f"unexpected blocker {binding[1]}",
     )
     check("C7 gate observed as expected", observed == args.expect, f"expected {args.expect}, saw {observed}")
+    if args.expect == "harvested":
+        check(
+            "C8 the three BN-1 files are already-shipped shims",
+            all(module in shim for module in BN1_FILES),
+            "not a shim: " + ", ".join(m for m in BN1_FILES if m not in shim),
+        )
+        remaining = {m: left[m][0] for m in left if m in CARD_FILES}
+        check(
+            "C9 no other card file changed class",
+            remaining == BN1_LEFT_BASELINE,
+            f"LEFT now {remaining}, expected {BN1_LEFT_BASELINE}",
+        )
+        check(
+            "C10 nothing is movable after the harvest",
+            not movable,
+            "still movable: " + ", ".join(sorted(movable)),
+        )
     print(
         f"\n{left_count} of {len(CARD_FILES)} card files are LEFT"
         f" ({card_lines} production lines); {len(movable)} chat files are movable now"

@@ -1,3 +1,8 @@
+// The dispatch loop now lives in `refact_http::chat_queue_dispatch`; this file
+// keeps the module wiring and the prelude the queue's own tests reach through
+// `use super::*`, so some imports are only consumed under `cfg(test)`.
+#![allow(unused_imports)]
+
 mod dispatch;
 mod helpers;
 mod setparams;

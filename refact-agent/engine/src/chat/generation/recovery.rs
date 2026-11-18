@@ -7,7 +7,7 @@ use refact_runtime_api::ToolCatalogSnapshot;
 
 use crate::app_state::AppState;
 use crate::buddy::chat_reactions::{maybe_enqueue_chat_activity_reaction, ChatActivityCompletion};
-use crate::subchat::{resolve_subchat_config_with_parent, run_subchat};
+use refact_runtime_api::chat_ctx::SubchatLauncher;
 
 use crate::call_validation::{ChatContent, ChatMessage};
 
@@ -786,29 +786,30 @@ pub(in crate::chat::generation) async fn run_fork_subchat(
     thread: &ThreadParams,
     parent_chat_id: &str,
 ) -> Result<String, String> {
-    let gcx = app.gcx.clone();
-    let config = resolve_subchat_config_with_parent(
-        gcx.clone(),
-        agent_name,
-        false,
-        None,
-        Some(format!("Fork: {}", agent_name)),
-        Some(parent_chat_id.to_string()),
-        Some("fork".to_string()),
-        thread.root_chat_id.clone(),
-        None,
-        10,
-        true,
-        None,
-        thread.mode.clone(),
-        thread.task_meta.clone(),
-        thread.worktree.clone(),
-        None,
-        None,
-        None,
-        0,
-    )
-    .await?;
+    let config = app
+        .ctx
+        .subchat
+        .resolve_subchat_config_with_parent(
+            agent_name,
+            false,
+            None,
+            Some(format!("Fork: {}", agent_name)),
+            Some(parent_chat_id.to_string()),
+            Some("fork".to_string()),
+            thread.root_chat_id.clone(),
+            None,
+            10,
+            true,
+            None,
+            thread.mode.clone(),
+            thread.task_meta.clone(),
+            thread.worktree.clone(),
+            None,
+            None,
+            None,
+            0,
+        )
+        .await?;
 
     let messages = vec![ChatMessage {
         role: "user".to_string(),
@@ -816,7 +817,7 @@ pub(in crate::chat::generation) async fn run_fork_subchat(
         ..Default::default()
     }];
 
-    let result = run_subchat(gcx, messages, config).await?;
+    let result = app.ctx.subchat.run_subchat(messages, config).await?;
 
     let last_assistant = result.messages.iter().rev().find(|m| m.role == "assistant");
     Ok(last_assistant

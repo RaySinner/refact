@@ -62,20 +62,28 @@ GATE_FILE = "chat::queue::dispatch"
 # harvest they are already-shipped shims, not MOVABLE files.
 BN1_FILES = ["chat::queue::dispatch", "chat::goal_monitor", "chat::delivery"]
 
-# Every card file still in the LEFT class, with its production-line count before
-# BN-1 harvested its three files. A harvest must not move any other card file, so
-# this map has to stay exactly as it was.
-BN1_LEFT_BASELINE = {
+# `chat::context_rebuild::pipeline` is absent on purpose: BN-2 shimmed it, so it
+# is no longer a card file the gate has to keep an eye on. Keeping its 783 in
+# this map is what made both `--expect open` and `--expect harvested` fail after
+# BN-2 - a gate that cannot express the current state is worse than no gate.
+POST_HARVEST_BASELINE = {
     "chat::generation::stream": 1085,
     "chat::task_agent_monitor::broadcast": 941,
-    "chat::context_rebuild::pipeline": 783,
     "chat::generation::run_loop": 742,
-    "chat::handlers": 718,
     "chat::generation::preamble": 713,
-    "chat::generation::recovery": 713,
+    "chat::generation::recovery": 714,
     "chat::task_agent_monitor::finish": 510,
     "chat::task_agent_monitor::monitor": 501,
 }
+
+# Card files a later sub-card already harvested. They must be shims and must not
+# be MOVABLE again; every other baseline file must still be LEFT at its recorded
+# line count, so a collateral harvest cannot pass as a success.
+HARVESTED_SHIMS = ["chat::handlers"]
+
+# ST-13 makes `chat::queue` a pure crate facade. When that lands, nothing may
+# still name it as an engine blocker - that is the whole point of the card.
+QUEUE_FACADE_FILE = os.path.join(ENGINE, "src", "chat", "queue", "mod.rs")
 
 failures = []
 
@@ -146,6 +154,29 @@ def parse(path):
 def read(path):
     with open(path, encoding="utf-8-sig") as handle:
         return handle.read()
+
+
+def non_test_body(text):
+    """Drop every `#[cfg(test)]` item so the check sees production code only."""
+    out = []
+    lines = text.splitlines(True)
+    i = 0
+    while i < len(lines):
+        if re.match(r"\s*#\[cfg\((?:test|any\(test)", lines[i]):
+            depth, opened = 0, False
+            while i < len(lines):
+                depth += lines[i].count("{") - lines[i].count("}")
+                if "{" in lines[i]:
+                    opened = True
+                if (opened and depth <= 0) or (not opened and ";" in lines[i]):
+                    i += 1
+                    break
+                i += 1
+            out.append("\n")
+            continue
+        out.append(lines[i])
+        i += 1
+    return "".join(out)
 
 
 def crate_depends_on_engine(crate_cargo):
@@ -295,16 +326,31 @@ def main():
             all(module in shim for module in BN1_FILES),
             "not a shim: " + ", ".join(m for m in BN1_FILES if m not in shim),
         )
-        remaining = {m: left[m][0] for m in left if m in CARD_FILES}
+        drifted = []
+        for module, expected in POST_HARVEST_BASELINE.items():
+            ok = module in left and left[module][0] == expected
+            seen = f"LEFT {left[module][0]}" if module in left else "not LEFT"
+            if not ok:
+                drifted.append(f"{module}: {seen}, expected {expected}")
+        check("C9 no card file changed class or line count", not drifted, "; ".join(drifted))
         check(
-            "C9 no other card file changed class",
-            remaining == BN1_LEFT_BASELINE,
-            f"LEFT now {remaining}, expected {BN1_LEFT_BASELINE}",
-        )
-        check(
-            "C10 nothing is movable after the harvest",
+            "C10 nothing is MOVABLE after the harvest",
             not movable,
             "still movable: " + ", ".join(sorted(movable)),
+        )
+        check(
+            "C10b the harvested card files are shims",
+            all(module in shim for module in HARVESTED_SHIMS),
+            "not a shim: " + ", ".join(m for m in HARVESTED_SHIMS if m not in shim),
+        )
+        facade_body = non_test_body(read(QUEUE_FACADE_FILE)) if os.path.isfile(QUEUE_FACADE_FILE) else ""
+        check(
+            "C11 chat::queue is a pure crate facade",
+            bool(facade_body)
+            and "crate::" not in facade_body
+            and re.search(r"(?m)^[ \t]*pub(?:\([^)]*\))?[ \t]+(?:async[ \t]+)?(?:fn|struct|enum|trait|type|const|static)[ \t]", facade_body)
+            is None,
+            "chat/queue/mod.rs still declares engine items or imports crate:: paths",
         )
     print(
         f"\n{left_count} of {len(CARD_FILES)} card files are LEFT"

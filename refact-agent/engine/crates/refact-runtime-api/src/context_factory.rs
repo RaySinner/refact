@@ -38,7 +38,6 @@ pub trait ContextFactory: Send + Sync {
     fn caps_loader(&self) -> Arc<dyn CapsLoader>;
     fn at_commands(&self) -> HashMap<String, Arc<dyn AtCommand + Send>>;
     fn integration_provider(&self) -> Arc<dyn crate::integrations_runtime::IntegrationProvider>;
-    fn buddy_speech(&self) -> Arc<dyn crate::buddy_speech_runtime::BuddySpeechRuntime>;
 }
 
 /// Interior-mutable slot on `GlobalContext`. `GlobalContext` is built inside a struct

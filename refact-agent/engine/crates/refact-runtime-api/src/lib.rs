@@ -117,6 +117,8 @@ pub mod buddy_voice_service;
 pub mod buddy_chat_reactions;
 pub mod buddy_runtime;
 pub mod buddy_speech_runtime;
+pub mod buddy_humor;
+pub mod buddy_workflows;
 pub mod subchat_runtime;
 pub mod trajectory_runtime;pub mod trajectory_memos_runtime;
 
@@ -228,7 +230,7 @@ pub trait BuddyEventSink: Send + Sync {
         status: &str,
     ) -> Option<(String, Option<String>)>;
 
-    /// Seam over the engine-only `buddy::speech::render_buddy_activity_title`.
+    /// Seam over `buddy_speech_runtime::render_buddy_activity_title`.
     async fn render_autonomous_report_title(
         &self,
         workflow_id: &str,
@@ -236,7 +238,7 @@ pub trait BuddyEventSink: Send + Sync {
         fallback_title: String,
     ) -> String;
 
-    /// Seam over the engine-only `buddy::speech::render_buddy_runtime_event`.
+    /// Seam over `buddy_speech_runtime::render_buddy_runtime_event`.
     /// `None` means the buddy service is unavailable, so the caller keeps its own
     /// fallback title and description.
     async fn render_autonomous_result_summary(

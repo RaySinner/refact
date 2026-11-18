@@ -313,57 +313,6 @@ impl ContextFactory for EngineContextFactory {
     ) -> Arc<dyn refact_runtime_api::integrations_runtime::IntegrationProvider> {
         Arc::new(refact_runtime_api::integrations_runtime::BuiltinIntegrationProvider)
     }
-
-    fn buddy_speech(&self) -> Arc<dyn refact_runtime_api::buddy_speech_runtime::BuddySpeechRuntime> {
-        Arc::new(EngineBuddySpeechRuntime)
-    }
-}
-
-pub struct EngineBuddySpeechRuntime;
-
-#[async_trait]
-impl refact_runtime_api::buddy_speech_runtime::BuddySpeechRuntime for EngineBuddySpeechRuntime {
-    async fn render_buddy_speech(
-        &self,
-        app: AppState,
-        persona: refact_buddy_core::types::BuddyPersonalityProfile,
-        identity_name: String,
-        pulse: refact_buddy_core::types::BuddyPulse,
-        workflow_id: Option<String>,
-        workflow_summary: String,
-        intent: refact_buddy_core::voice_service::SpeechIntent,
-        fallback_text: String,
-    ) -> refact_buddy_core::types::BuddySpeechItem {
-        crate::buddy::speech::render_buddy_speech(
-            app,
-            persona,
-            identity_name,
-            pulse,
-            workflow_id,
-            workflow_summary,
-            intent,
-            fallback_text,
-        )
-        .await
-    }
-
-    async fn complete_quest_with_voice(
-        &self,
-        app: AppState,
-        quest: refact_buddy_core::types::BuddyQuest,
-        persona: refact_buddy_core::types::BuddyPersonalityProfile,
-        identity_name: String,
-        pulse: refact_buddy_core::types::BuddyPulse,
-    ) -> refact_runtime_api::buddy_speech_runtime::CompletedQuestVoice {
-        let completed = crate::buddy::speech::complete_quest_with_voice(
-            app, quest, persona, identity_name, pulse,
-        )
-        .await;
-        refact_runtime_api::buddy_speech_runtime::CompletedQuestVoice {
-            mutation: completed.mutation,
-            speech: completed.speech,
-        }
-    }
 }
 
 /// Engine side of the `CapsLoader` seam: the provider/models.dev machinery behind

@@ -121,6 +121,7 @@ pub mod subchat_runtime;
 pub mod trajectory_runtime;pub mod trajectory_memos_runtime;
 
 pub mod mode_transition_runtime;
+pub mod chat_queue_helpers;
 pub mod chat_tokens;
 pub mod chat_cache_guard;
 pub mod cloud_token_count;

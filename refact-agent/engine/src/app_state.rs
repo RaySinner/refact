@@ -60,6 +60,7 @@ mod generation;
 mod launchers;
 mod prompt_and_tools;
 mod providers;
+mod queue;
 mod sinks;
 mod tool_pool;
 mod tool_registry;
@@ -76,6 +77,8 @@ pub use self::launchers::*;
 pub use self::prompt_and_tools::*;
 #[allow(unused_imports)]
 pub use self::providers::*;
+#[allow(unused_imports)]
+pub use self::queue::*;
 #[allow(unused_imports)]
 pub use self::sinks::*;
 #[allow(unused_imports)]
@@ -191,6 +194,7 @@ impl ContextFactory for EngineContextFactory {
             prompts: Arc::new(EnginePromptAssembler::new(gcx.clone())),
             tool_executor: Arc::new(EngineChatToolExecutor::new(gcx.clone())),
             generation: Arc::new(EngineGenerationStarter),
+            queue_processor: Arc::new(EngineCommandQueueStarter),
         }
     }
 

@@ -6,9 +6,10 @@ use serde_json::json;
 use tokio::sync::Mutex as AMutex;
 use tokio::time::sleep;
 
+use refact_runtime_api::command_queue_start::process_command_queue;
+
 use crate::app_state::AppState;
 use crate::chat::internal_roles::{self, EventSubkind};
-use crate::chat::process_command_queue;
 use crate::chat::trajectories::maybe_save_trajectory_background_with_intent;
 use crate::chat::types::*;
 

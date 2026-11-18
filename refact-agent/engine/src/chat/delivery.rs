@@ -15,8 +15,9 @@ use std::sync::atomic::Ordering;
 
 use tokio::sync::Mutex as AMutex;
 
+use refact_runtime_api::command_queue_start::process_command_queue;
+
 use crate::app_state::AppState;
-use crate::chat::queue::process_command_queue;
 use crate::chat::trajectories::{maybe_save_trajectory_with_intent, try_save_trajectory_with_intent};
 use crate::chat::types::{
     ChatSession, DeliveryOutcome, PendingDelivery, PushMode, SessionState, TrajectoryCommitIntent,

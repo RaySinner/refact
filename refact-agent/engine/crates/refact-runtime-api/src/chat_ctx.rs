@@ -377,6 +377,7 @@ pub struct ChatCtx {
     pub prompts: Arc<dyn PromptAssembler>,
     pub tool_executor: Arc<dyn ChatToolExecutor>,
     pub generation: Arc<dyn crate::generation_start::GenerationStarter>,
+    pub queue_processor: Arc<dyn crate::command_queue_start::CommandQueueStarter>,
 }
 
 impl ChatAgentScope for ChatCtx {

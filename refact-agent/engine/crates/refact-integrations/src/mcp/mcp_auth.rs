@@ -2087,8 +2087,14 @@ mod tests {
     #[test]
     fn test_remote_mcp_schemas_keep_manual_auth_in_advanced_configuration() {
         for schema in [
-            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../src/integrations/mcp/mcp_http_schema.yaml")),
-            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../src/integrations/mcp/mcp_sse_schema.yaml")),
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../refact-runtime-api/src/integrations/mcp/mcp_http_schema.yaml"
+            )),
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../refact-runtime-api/src/integrations/mcp/mcp_sse_schema.yaml"
+            )),
         ] {
             let value: serde_yaml::Value = serde_yaml::from_str(schema).unwrap();
             let fields = value.get("fields").and_then(|v| v.as_mapping()).unwrap();

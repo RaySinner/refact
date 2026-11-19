@@ -233,3 +233,267 @@ pub fn build_shared_http_client_builder() -> reqwest::ClientBuilder {
         .http2_keep_alive_timeout(std::time::Duration::from_secs(10))
         .http2_keep_alive_while_idle(true)
 }
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use std::path::{Path, PathBuf};
+    use std::sync::Arc;
+
+    use refact_codegraph::QueuedPath;
+    use refact_knowledge_graph::kg_structs::KnowledgeFrontmatter;
+    use refact_knowledge_graph::memo::MemoRecord;
+    use refact_knowledge_graph::memory_types::{EnrichmentParams, MemoryWriteOutcome};
+    use tokio::sync::Mutex as AMutex;
+
+    use crate::files_in_workspace::{FileReadContext, FilesRuntime};
+    use crate::memories::MemoryRuntime;
+    use crate::scheduler_runtime::EngineSchedulerRuntime;
+    use crate::services::{PathServices, WorkspaceServices};
+    use crate::task_storage_runtime::EngineTaskStorageRuntime;
+    use crate::{AtCommandsContext, ChatCtx};
+
+    use super::{GlobalContext, SharedGlobalContext};
+
+    struct UnusedRuntime;
+
+    #[async_trait::async_trait]
+    impl FilesRuntime for UnusedRuntime {
+        async fn remove_memory_document_for_path(
+            &self,
+            _: Arc<GlobalContext>,
+            _: &PathBuf,
+        ) -> bool {
+            unreachable!()
+        }
+        async fn remove_memory_documents_under_path(
+            &self,
+            _: Arc<GlobalContext>,
+            _: &PathBuf,
+        ) -> usize {
+            unreachable!()
+        }
+        async fn get_file_text_from_memory_or_disk(
+            &self,
+            _: Arc<GlobalContext>,
+            _: &PathBuf,
+        ) -> Result<String, String> {
+            unreachable!()
+        }
+        async fn get_file_text_from_memory_or_disk_for_model_context(
+            &self,
+            _: Arc<GlobalContext>,
+            _: &PathBuf,
+        ) -> Result<String, String> {
+            unreachable!()
+        }
+        async fn prepare_file_read_context(&self, _: Arc<GlobalContext>) -> FileReadContext {
+            unreachable!()
+        }
+        async fn get_file_text_from_memory_or_disk_for_model_context_with_context(
+            &self,
+            _: Arc<GlobalContext>,
+            _: &PathBuf,
+            _: &FileReadContext,
+            _: Option<usize>,
+        ) -> Result<String, String> {
+            unreachable!()
+        }
+        async fn check_file_privacy_for_send(
+            &self,
+            _: Arc<GlobalContext>,
+            _: &PathBuf,
+        ) -> Result<(), String> {
+            unreachable!()
+        }
+        async fn check_file_privacy_for_model_context(
+            &self,
+            _: Arc<GlobalContext>,
+            _: &PathBuf,
+        ) -> Result<(), String> {
+            unreachable!()
+        }
+        async fn filter_privacy_allowed_files(
+            &self,
+            _: Arc<GlobalContext>,
+            _: Vec<PathBuf>,
+        ) -> Vec<PathBuf> {
+            unreachable!()
+        }
+        async fn filter_privacy_allowed_files_for_model_context(
+            &self,
+            _: Arc<GlobalContext>,
+            _: Vec<PathBuf>,
+        ) -> Vec<PathBuf> {
+            unreachable!()
+        }
+        async fn enqueue_some_docs_with_read_paths(
+            &self,
+            _: Arc<GlobalContext>,
+            _: &[QueuedPath],
+            _: bool,
+        ) {
+            unreachable!()
+        }
+        async fn enqueue_all_files_from_workspace_folders(
+            &self,
+            _: Arc<GlobalContext>,
+            _: bool,
+            _: bool,
+        ) -> i32 {
+            unreachable!()
+        }
+        async fn paths_from_anywhere(&self, _: Arc<GlobalContext>) -> Vec<PathBuf> {
+            unreachable!()
+        }
+        async fn correct_to_nearest_filename(
+            &self,
+            _: Arc<GlobalContext>,
+            _: &String,
+            _: bool,
+            _: usize,
+        ) -> Vec<String> {
+            unreachable!()
+        }
+        async fn correct_to_nearest_dir_path(
+            &self,
+            _: Arc<GlobalContext>,
+            _: &String,
+            _: bool,
+            _: usize,
+        ) -> Vec<String> {
+            unreachable!()
+        }
+        async fn get_project_dirs(&self, _: Arc<GlobalContext>) -> Vec<PathBuf> {
+            unreachable!()
+        }
+        async fn get_unscoped_project_dirs(&self, _: Arc<GlobalContext>) -> Vec<PathBuf> {
+            unreachable!()
+        }
+        async fn get_active_project_path(&self, _: Arc<GlobalContext>) -> Option<PathBuf> {
+            None
+        }
+        async fn get_active_project_path_for_services(
+            &self,
+            _: &PathServices,
+            _: &WorkspaceServices,
+        ) -> Option<PathBuf> {
+            None
+        }
+        async fn shortify_paths(&self, _: Arc<GlobalContext>, _: &Vec<String>) -> Vec<String> {
+            unreachable!()
+        }
+        async fn check_if_its_inside_a_workspace_or_config(
+            &self,
+            _: Arc<GlobalContext>,
+            _: &Path,
+        ) -> Result<(), String> {
+            unreachable!()
+        }
+        fn check_file_privacy_with_context(
+            &self,
+            _: &FileReadContext,
+            _: &Path,
+        ) -> Result<(), String> {
+            unreachable!()
+        }
+        fn check_file_privacy_for_read_preparation_with_context(
+            &self,
+            _: &FileReadContext,
+            _: &Path,
+        ) -> Result<(), String> {
+            unreachable!()
+        }
+        async fn on_workspaces_init(&self, _: Arc<GlobalContext>) -> i32 {
+            unreachable!()
+        }
+        async fn on_did_change(&self, _: Arc<GlobalContext>, _: &PathBuf, _: &String) {
+            unreachable!()
+        }
+        async fn on_explicit_branch_change(&self, _: Arc<GlobalContext>, _: &PathBuf) {
+            unreachable!()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MemoryRuntime for UnusedRuntime {
+        async fn memories_search(
+            &self,
+            _: Arc<GlobalContext>,
+            _: &str,
+            _: usize,
+            _: usize,
+            _: Option<&str>,
+        ) -> Result<Vec<MemoRecord>, String> {
+            unreachable!()
+        }
+        async fn memories_add_enriched(
+            &self,
+            _: Arc<AMutex<AtCommandsContext>>,
+            _: &str,
+            _: EnrichmentParams,
+        ) -> Result<PathBuf, String> {
+            unreachable!()
+        }
+        async fn touch_memory_observation_for_ctx(
+            &self,
+            _: &ChatCtx,
+            _: &Path,
+        ) -> Result<(), String> {
+            unreachable!()
+        }
+        async fn memories_upsert_by_signal_key_for_ctx(
+            &self,
+            _: &ChatCtx,
+            _: &str,
+            _: &KnowledgeFrontmatter,
+            _: &str,
+        ) -> Result<MemoryWriteOutcome, String> {
+            unreachable!()
+        }
+        async fn memories_add_dedup_for_ctx(
+            &self,
+            _: &ChatCtx,
+            _: &KnowledgeFrontmatter,
+            _: &str,
+        ) -> Result<MemoryWriteOutcome, String> {
+            unreachable!()
+        }
+        async fn rewrite_memory_document_for_ctx(
+            &self,
+            _: &ChatCtx,
+            _: &Path,
+            _: &KnowledgeFrontmatter,
+            _: &str,
+        ) -> Result<(), String> {
+            unreachable!()
+        }
+        async fn enrichment_current_root_id(
+            &self,
+            _: Arc<GlobalContext>,
+            _: Option<&str>,
+        ) -> Option<String> {
+            None
+        }
+        async fn memories_search_for_enrichment(
+            &self,
+            _: Arc<GlobalContext>,
+            _: &str,
+            _: usize,
+            _: usize,
+            _: Option<&str>,
+            _: Option<&str>,
+        ) -> Result<Vec<MemoRecord>, String> {
+            unreachable!()
+        }
+    }
+
+    pub(crate) async fn make_test_gcx() -> SharedGlobalContext {
+        refact_test_support::make_test_gcx(
+            Arc::new(EngineSchedulerRuntime),
+            Arc::new(UnusedRuntime),
+            Arc::new(EngineTaskStorageRuntime),
+            Arc::new(UnusedRuntime),
+        )
+        .await
+    }
+}

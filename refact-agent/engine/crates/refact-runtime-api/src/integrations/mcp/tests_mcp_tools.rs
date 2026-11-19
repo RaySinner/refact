@@ -6,7 +6,7 @@ mod tests {
     use refact_integrations::integr_abstract::IntegrationCommon;
     use crate::Tool;
 
-    use super::tool_mcp::ToolMCP;
+    use crate::integrations::mcp::tool_mcp::ToolMCP;
 
     fn make_tool_mcp(config_path: &str, schema: serde_json::Value, tool_name: &str) -> ToolMCP {
         let mcp_tool: McpTool = serde_json::from_value(json!({

@@ -1,4 +1,6 @@
 ﻿use super::*;
+use refact_files::file_filter::is_valid_file;
+use refact_files::indexing_settings::IndexingEverywhere;
 
 
 fn registration_modes(

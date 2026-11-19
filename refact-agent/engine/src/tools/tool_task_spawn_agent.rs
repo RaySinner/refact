@@ -35,6 +35,7 @@ mod tests {
     use refact_tasks::types::{BoardCard, TaskBoard, TaskMeta, TaskStatus};
     use std::path::Path;
     use std::process::Command;
+    use serde_json::json;
 
     fn run_git(cwd: &Path, args: &[&str]) -> String {
         let output = Command::new("git")

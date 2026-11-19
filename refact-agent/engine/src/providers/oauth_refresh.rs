@@ -1,6 +1,24 @@
 pub use refact_runtime_api::providers_oauth_refresh::*;
 
 #[cfg(test)]
+async fn save_claude_code_refreshed_tokens(
+    gcx: &std::sync::Arc<crate::global_context::GlobalContext>,
+    config_dir: &std::path::Path,
+    provider_name: &str,
+    expected_tokens: &crate::providers::claude_code_oauth::OAuthTokens,
+    refreshed_tokens: &crate::providers::claude_code_oauth::OAuthTokens,
+) -> Result<bool, String> {
+    refact_runtime_api::providers_oauth_runtime::save_claude_code_refreshed_tokens(
+        &gcx.providers,
+        config_dir,
+        provider_name,
+        expected_tokens,
+        refreshed_tokens,
+    )
+    .await
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 

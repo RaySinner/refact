@@ -1511,6 +1511,7 @@ fn runtime_event_lines_with_fallback(
 #[cfg(test)]
 mod interruptible_wait_tests {
     use super::*;
+    use std::sync::atomic::Ordering;
 
     #[tokio::test]
     async fn live_sleep_execution_yields_to_append_and_when_idle() {

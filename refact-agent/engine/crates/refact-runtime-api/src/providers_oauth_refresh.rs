@@ -1175,7 +1175,7 @@ async fn save_xai_refreshed_tokens(
 }
 
 
-pub(crate) async fn save_refreshed_tokens(
+pub async fn save_refreshed_tokens(
     gcx: &Arc<GlobalContext>,
     config_dir: &std::path::Path,
     provider_name: &str,

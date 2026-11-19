@@ -44,6 +44,7 @@ pub mod stats;
 pub mod status;
 pub mod subagents_marketplace;
 pub mod sync_files;
+pub mod system_prompt;
 pub mod tasks;
 pub mod trajectory_ops;
 pub mod v1_browser;

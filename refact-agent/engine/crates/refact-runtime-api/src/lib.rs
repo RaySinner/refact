@@ -110,6 +110,7 @@ pub mod providers_http_runtime;
 pub mod providers_pricing_runtime;
 pub mod integrations_sessions;
 pub mod agents_delivery;
+pub mod agents_spawn;
 pub mod buddy_actor_runtime;
 pub mod buddy_observers;
 pub mod buddy_chat_interjection;

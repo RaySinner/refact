@@ -93,7 +93,6 @@ winreg = "0.55.0"
 pnet_datalink = "0.35.0"
 
 [dev-dependencies]
-refact-test-support = { path = "../refact-test-support" }
 filetime = "0.2.25"
 serial_test = "3"
 tempfile.workspace = true

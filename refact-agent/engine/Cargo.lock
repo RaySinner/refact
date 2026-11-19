@@ -4864,7 +4864,6 @@ dependencies = [
  "refact-self-update",
  "refact-stats",
  "refact-tasks",
- "refact-test-support",
  "refact-tool-api",
  "refact-vecdb",
  "refact-worktrees",

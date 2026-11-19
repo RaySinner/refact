@@ -193,7 +193,7 @@ pub fn start_generation(
                     None,
                 )
                 .await,
-                refact_runtime_api::chat_context_rebuild::CompactionOutcome::LlmUnavailable
+                refact_chat_api::context_rebuild::CompactionOutcome::LlmUnavailable
             ) {
                 if refact_runtime_api::chat_context_rebuild::apply_deterministic_compaction_for_recovery(
                     gcx.clone(),

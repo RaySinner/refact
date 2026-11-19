@@ -103,9 +103,9 @@ pub(crate) const BRANCH_HEAD_DEBOUNCE_WINDOW: Duration = Duration::from_millis(1
 
 #[derive(Debug, Clone)]
 pub(crate) struct BranchHeadChange {
-    repo_path: PathBuf,
-    old_head: Option<String>,
-    new_head: Option<String>,
+    pub(crate) repo_path: PathBuf,
+    pub(crate) old_head: Option<String>,
+    pub(crate) new_head: Option<String>,
 }
 
 pub(crate) fn resolve_head_text_to_oid(

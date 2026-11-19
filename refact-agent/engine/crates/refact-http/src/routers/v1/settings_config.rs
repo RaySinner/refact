@@ -14,7 +14,7 @@ use refact_files::indexing_settings::IndexingSettings;
 
 #[derive(Debug, Deserialize)]
 pub struct SettingsScopeQuery {
-    scope: Option<String>,
+    pub scope: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]

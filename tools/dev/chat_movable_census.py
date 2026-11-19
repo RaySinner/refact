@@ -98,6 +98,11 @@ MACRO_DEF = re.compile(r"(?m)^macro_rules![ \t]+([A-Za-z_][A-Za-z0-9_]*)")
 CHILD_MOD = re.compile(
     r"(?m)^(?:pub(?:\([^)]*\))?[ \t]+)?mod[ \t]+([A-Za-z_][A-Za-z0-9_]*)"
 )
+# Only the bare `mod child;` form names a separate file. An inline
+# `mod child { … }` has no file of its own, so it is never a file edge.
+FILE_MOD_DECL = re.compile(
+    r"(?m)^(?:pub(?:\([^)]*\))?[ \t]+)?mod[ \t]+([A-Za-z_][A-Za-z0-9_]*)[ \t]*;"
+)
 FULL_DEF = re.compile(
     r"(?m)^(?:pub(?:\([^)]*\))?[ \t]+)?(?:async[ \t]+)?(?:unsafe[ \t]+)?"
     r"(?:fn|struct|enum|trait|type|const|static|union|impl|macro_rules!)\b"
@@ -413,6 +418,24 @@ for root, dirs, files in os.walk(SRC):
 for mod, path in mods.items():
     for m in TEST_MOD.finditer(read(path)):
         test_only.add(mod + "::" + m.group(1))
+# Test-only is transitive. `buddy::tests` matches TEST_MOD, but its ten file
+# children were never marked, so the census billed 10 737 of buddy's 12 784
+# LEFT lines as production mass. Propagation follows `mod child;` declarations
+# and directory containment (the latter because `buddy::tests::workflow_migration`
+# is pulled in with `include!`, so no declaration names it).
+declared_children = {mod: CHILD_MOD.findall(read(path)) for mod, path in mods.items()}
+for _ in range(80):
+    before = set(test_only)
+    for mod in before:
+        for child in declared_children.get(mod, ()):
+            cand = mod + "::" + child
+            if cand in mods:
+                test_only.add(cand)
+    for mod in mods:
+        if mod.rsplit("::", 1)[0] in test_only:
+            test_only.add(mod)
+    if test_only == before:
+        break
 
 exports, raw_uses, wild = {}, {}, {}
 definitions = {}
@@ -676,10 +699,29 @@ def resolve_path(path):
 info = {}
 for mod in files:
     if mod in test_only:
-        info[mod] = {"lines": 0, "crates": set(), "engine": set(), "deps": set(), "test_only": True}
+        info[mod] = {
+            "lines": 0,
+            "crates": set(),
+            "engine": set(),
+            "deps": set(),
+            "children": set(),
+            "test_only": True,
+        }
         continue
     body = code(prod(read(mods[mod])))
     crates, engine, deps = set(), set(), set()
+    # A bare `mod child;` declaration names a sibling file of this very crate, so
+    # the parent cannot be moved while that child file stays behind. `CHILD_MOD`
+    # used to feed only the visible-name set, which is how `buddy::observers` —
+    # eleven declared children — was reported MOVABLE, with its 27 lines billed
+    # as a harvest that no card could ever perform. Children stay out of `deps`
+    # only because the facade-transparency pass below drops *import* edges into
+    # pure shims, and a parent must not forget a file it declares that way.
+    children = {
+        mod + "::" + child
+        for child in FILE_MOD_DECL.findall(body)
+        if (mod + "::" + child) in files
+    }
 
     def add_edge(ref):
         target = absolute(mod, ref)
@@ -793,6 +835,7 @@ for mod in files:
         "crates": crates,
         "engine": engine,
         "deps": deps,
+        "children": children,
         "test_only": False,
     }
 
@@ -825,6 +868,20 @@ for _mod in files:
             info[_mod]["deps"].discard(_name)
 
 movable = set(facade) | {m for m in files if info[m]["test_only"]}
+
+
+def sheds_children(mod):
+    """True when every file this module declares can travel with it.
+
+    A `mod child;` line is ownership: the parent stays where its children stay. A
+    child that is already a pure facade is a published engine shim and is not
+    going anywhere, so it pins its parent. Test-only children never appear here
+    (`prod` strips `#[cfg(test)]` items first).
+    """
+    mobile = movable - facade
+    return info[mod]["children"] <= mobile
+
+
 while True:
     nxt = {
         mod
@@ -832,6 +889,7 @@ while True:
         if mod not in movable
         and not info[mod]["engine"]
         and info[mod]["deps"] <= movable
+        and sheds_children(mod)
     }
     if not nxt:
         break
@@ -984,7 +1042,11 @@ crate_cycles = {
 # the set makes the closure prune every module that depends on them.
 movable -= {m for m in files if is_island(m)} | set(hosts) | set(crate_cycles)
 while True:
-    drop = {m for m in movable if not info[m]["deps"] <= movable}
+    drop = {
+        m
+        for m in movable
+        if not (info[m]["deps"] <= movable and sheds_children(m))
+    }
     if not drop:
         break
     movable -= drop
@@ -1055,7 +1117,7 @@ for mod in body(
 lines.append("")
 lines.append("### DECLARED ISLANDS (own card each, never harvested here)")
 for mod in body("declared islands (never harvested here)"):
-    engine = sorted(info[mod]["engine"] | info[mod]["deps"])
+    engine = sorted(info[mod]["engine"] | info[mod]["deps"] | info[mod]["children"])
     lines.append(f"  {info[mod]['lines']:6}  {mod:56} blocker={engine[0] if engine else '-'}")
 lines.append("")
 lines.append("### MODULE HOSTS (tree roots; their children move, they do not)")
@@ -1064,7 +1126,7 @@ for mod in body("module hosts (destination tree roots, never move)"):
 lines.append("")
 lines.append("### LEFT (blocked on engine code)")
 for mod in body("LEFT (blocked on engine code)"):
-    engine = sorted(info[mod]["engine"] | info[mod]["deps"])
+    engine = sorted(info[mod]["engine"] | info[mod]["deps"] | info[mod]["children"])
     lines.append(f"  {info[mod]['lines']:6}  {mod:56} blocker={engine[0] if engine else '-'}")
     if len(engine) > 1:
         lines.append(f"          others: {', '.join(engine[1:6])}")

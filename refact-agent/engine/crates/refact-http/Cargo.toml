@@ -20,6 +20,8 @@ git2 = "0.20.2"
 headless_chrome = "1.0.16"
 home = "0.5"
 hyper = { version = "0.14", features = ["server", "stream"] }
+indexmap = { workspace = true }
+itertools = { workspace = true }
 regex = "1.9.5"
 rust-embed = { version = "8.5.0", features = ["include-exclude"] }
 serde = { workspace = true }
@@ -28,6 +30,8 @@ reqwest = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = "0.9.31"
 shell-words = "1.1.0"
+strsim = "0.11.1"
+tokenizers = { workspace = true }
 tokio = { workspace = true, features = ["fs", "io-util", "macros", "rt", "sync", "time"] }
 tracing = { workspace = true }
 url = "2.4.1"
@@ -37,6 +41,7 @@ which = "7.0.2"
 zip = { version = "2.2", default-features = false, features = ["deflate"] }
 libc.workspace = true
 
+refact-agentic = { path = "../refact-agentic" }
 refact-agents-core = { path = "../refact-agents-core" }
 refact-browser = { path = "../refact-browser" }
 refact-buddy-core = { path = "../refact-buddy-core" }
@@ -61,6 +66,7 @@ refact-privacy = { path = "../refact-privacy" }
 refact-providers = { path = "../refact-providers" }
 refact-runtime-api = { path = "../refact-runtime-api" }
 refact-scheduler-core = { path = "../refact-scheduler-core" }
+refact-scratchpads = { path = "../refact-scratchpads" }
 refact-stats = { path = "../refact-stats" }
 refact-tasks = { path = "../refact-tasks" }
 refact-tools = { path = "../refact-tools" }

@@ -1,22 +1,28 @@
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-use tokio::sync::{Mutex as AMutex, mpsc};
+use std::sync::Arc;
+
 use serde_json::Value;
+use tokio::sync::{mpsc, Mutex as AMutex};
 use tracing::warn;
 
-use crate::caps::resolve_chat_model;
-use crate::tools::tools_list::get_available_tools;
-use crate::call_validation::ChatMessage;
-use crate::global_context::GlobalContext;
-use refact_runtime_api::GlobalContextCtx;
-use crate::chat::ctx::ChatCtx;
-use crate::chat::types::TaskMeta;
-use crate::worktrees::types::WorktreeMeta;
+use refact_chat_api::{
+    ChatMessage, ExplicitSubchatSpec, SubchatConfig, SubchatResult, TaskMeta, ToolsPolicy,
+    TraceParent, WrapUpConfig,
+};
+use refact_core::worktree_meta::WorktreeMeta;
 
-use super::*;
+use crate::at_commands_ctx::MAX_SUBCHAT_DEPTH;
+use crate::caps_load_runtime::resolve_chat_model;
+use crate::chat_ctx::ChatCtx;
+use crate::global_context::{GlobalContextCtx, SharedGlobalContext};
+use crate::subchat_core::session::resolve_subchat_worktree;
+use crate::subchat_runtime::{
+    llm_endpoint_unusable_reason, normalize_subchat_params_for_model,
+    resolve_subchat_model_for_tool, resolve_subchat_params,
+};
 
 pub async fn resolve_subchat_config(
-    gcx: Arc<GlobalContext>,
+    gcx: SharedGlobalContext,
     tool_name: &str,
     stateful: bool,
     chat_id: Option<String>,
@@ -55,7 +61,7 @@ pub async fn resolve_subchat_config(
 }
 
 pub async fn resolve_subchat_config_with_parent(
-    gcx: Arc<GlobalContext>,
+    gcx: SharedGlobalContext,
     tool_name: &str,
     stateful: bool,
     chat_id: Option<String>,
@@ -75,7 +81,6 @@ pub async fn resolve_subchat_config_with_parent(
     abort_flag: Option<Arc<AtomicBool>>,
     subchat_depth: usize,
 ) -> Result<SubchatConfig, String> {
-    use crate::at_commands::at_commands::MAX_SUBCHAT_DEPTH;
     if max_steps == 0 {
         return Err("max_steps must be > 0".to_string());
     }
@@ -110,11 +115,8 @@ pub async fn resolve_subchat_config_with_parent(
     let worktree = resolve_subchat_worktree(&ctx, parent_id.as_deref(), worktree).await;
 
     if let Some(requested_tools) = tools.as_ref().filter(|list| !list.is_empty()) {
-        let known_names: std::collections::HashSet<String> = get_available_tools(gcx.clone())
-            .await
-            .into_iter()
-            .map(|tool| tool.tool_description().name)
-            .collect();
+        let known_names: std::collections::HashSet<String> =
+            ctx.tool_registry.get_available_tool_names().await;
         let unknown: Vec<&String> = requested_tools
             .iter()
             .filter(|name| !known_names.contains(*name))
@@ -168,7 +170,7 @@ pub async fn resolve_subchat_config_with_parent(
 }
 
 pub async fn resolve_subchat_config_with_explicit_params(
-    gcx: Arc<GlobalContext>,
+    gcx: SharedGlobalContext,
     attribution_id: &str,
     spec: &ExplicitSubchatSpec,
     stateful: bool,
@@ -188,7 +190,6 @@ pub async fn resolve_subchat_config_with_explicit_params(
     abort_flag: Option<Arc<AtomicBool>>,
     subchat_depth: usize,
 ) -> Result<SubchatConfig, String> {
-    use crate::at_commands::at_commands::MAX_SUBCHAT_DEPTH;
     if max_steps == 0 {
         return Err("max_steps must be > 0".to_string());
     }
@@ -236,11 +237,8 @@ pub async fn resolve_subchat_config_with_explicit_params(
     let worktree = resolve_subchat_worktree(&ctx, parent_id.as_deref(), worktree).await;
 
     if let Some(requested_tools) = tools.as_ref().filter(|list| !list.is_empty()) {
-        let known_names: std::collections::HashSet<String> = get_available_tools(gcx.clone())
-            .await
-            .into_iter()
-            .map(|tool| tool.tool_description().name)
-            .collect();
+        let known_names: std::collections::HashSet<String> =
+            ctx.tool_registry.get_available_tool_names().await;
         let unknown: Vec<&String> = requested_tools
             .iter()
             .filter(|name| !known_names.contains(*name))
@@ -293,8 +291,28 @@ pub async fn resolve_subchat_config_with_explicit_params(
     })
 }
 
+pub async fn resolve_subagent_confirmation_defaults(
+    ctx: &ChatCtx,
+    tool_name: &str,
+) -> (bool, bool, bool) {
+    ctx.mode_config
+        .get_subagent_config(tool_name, None)
+        .await
+        .map(|config| {
+            (
+                config.subchat.autonomous_no_confirm.unwrap_or(false),
+                config.subchat.auto_approve_editing_tools.unwrap_or(false),
+                config
+                    .subchat
+                    .auto_approve_dangerous_commands
+                    .unwrap_or(false),
+            )
+        })
+        .unwrap_or_default()
+}
+
 pub async fn run_subchat_once_with_explicit_params(
-    gcx: Arc<GlobalContext>,
+    gcx: SharedGlobalContext,
     attribution_id: &str,
     spec: &ExplicitSubchatSpec,
     messages: Vec<ChatMessage>,
@@ -330,25 +348,6 @@ pub async fn run_subchat_once_with_explicit_params(
     .await?;
     config.trace_parent = trace_parent;
 
-    run_subchat(gcx, messages, config).await
-}
-
-pub(crate) async fn resolve_subagent_confirmation_defaults(
-    ctx: &ChatCtx,
-    tool_name: &str,
-) -> (bool, bool, bool) {
-    ctx.mode_config
-        .get_subagent_config(tool_name, None)
-        .await
-        .map(|config| {
-            (
-                config.subchat.autonomous_no_confirm.unwrap_or(false),
-                config.subchat.auto_approve_editing_tools.unwrap_or(false),
-                config
-                    .subchat
-                    .auto_approve_dangerous_commands
-                    .unwrap_or(false),
-            )
-        })
-        .unwrap_or_default()
+    let ctx = gcx.chat_ctx(gcx.clone());
+    ctx.subchat.run_subchat(messages, config).await
 }

@@ -295,6 +295,11 @@ pub struct ToolExecutionResult {
 pub trait ToolRegistry: Send + Sync {
     async fn get_tools_for_mode(&self, mode: &str, model_id: Option<&str>) -> Vec<ToolDesc>;
 
+    /// Names of every tool the live catalog exposes — the engine's
+    /// `get_available_tools` flattened to names, for callers that only validate
+    /// a requested tool list and never run the tools.
+    async fn get_available_tool_names(&self) -> std::collections::HashSet<String>;
+
     async fn get_tool_names_for_mode(
         &self,
         mode: &str,

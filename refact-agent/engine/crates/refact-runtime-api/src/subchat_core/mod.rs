@@ -1,13 +1,21 @@
 //! Subchat runtime that no longer needs the engine: privacy gating, retry
-//! diagnostics, stateful-session plumbing and trajectory progress persistence.
-//! The engine's `subchat` module re-exports these names, and the pieces that
-//! still need the engine island (tool catalog, `refact_tools::chat_prepare`,
-//! `refact_tools::chat_tools`) stay in `refact-lsp::subchat`.
+//! diagnostics, stateful-session plumbing, trajectory progress persistence and
+//! subchat config resolution. The engine's `subchat` module re-exports these
+//! names, and the pieces that still need the engine island (the subchat run loop,
+//! `refact_tools::chat_prepare`, `refact_tools::chat_tools`) stay in
+//! `refact-lsp::subchat`.
 
+pub mod config;
 pub mod diagnostics;
 pub mod privacy;
 pub mod session;
 pub mod state;
+
+pub use config::{
+    resolve_subagent_confirmation_defaults, resolve_subchat_config,
+    resolve_subchat_config_with_explicit_params, resolve_subchat_config_with_parent,
+    run_subchat_once_with_explicit_params,
+};
 
 pub const MAX_CONTEXT_LIMIT_COMPACT_ATTEMPTS: usize = 1;
 pub const MAX_EMPTY_CHOICE_RETRIES: usize = 2;

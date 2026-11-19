@@ -1,4 +1,3 @@
-mod config;
 mod diagnostics;
 mod privacy;
 mod runner;
@@ -24,20 +23,15 @@ pub use refact_chat_api::{
 };
 
 pub use refact_runtime_api::subchat_runtime::{resolve_subchat_model, resolve_subchat_params};
-pub(crate) use refact_runtime_api::subchat_runtime::{
-    llm_endpoint_unusable_reason, normalize_subchat_params_for_model,
-    resolve_subchat_model_for_tool,
-};
 #[cfg(test)]
 pub(crate) use refact_runtime_api::subchat_runtime::parse_subchat_cache_control;
 
-pub use config::{
-    resolve_subchat_config,
-    resolve_subchat_config_with_parent,
-    resolve_subchat_config_with_explicit_params,
-    run_subchat_once_with_explicit_params,
+pub use refact_runtime_api::subchat_core::{
+    resolve_subchat_config, resolve_subchat_config_with_explicit_params,
+    resolve_subchat_config_with_parent, run_subchat_once_with_explicit_params,
 };
-pub(crate) use config::*;
+#[cfg(test)]
+pub(crate) use refact_runtime_api::subchat_core::resolve_subagent_confirmation_defaults;
 pub use runner::{
     run_subchat,
     run_subchat_once,

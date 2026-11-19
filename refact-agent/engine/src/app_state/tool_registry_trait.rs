@@ -14,6 +14,15 @@ fn first_tool_text(out: Vec<crate::call_validation::ContextEnum>) -> String {
 
 #[async_trait]
 impl ToolRegistry for AppToolRegistry {
+    async fn get_available_tool_names(&self) -> std::collections::HashSet<String> {
+        use refact_runtime_api::Tool as _;
+        crate::tools::tools_list::get_available_tools(self.gcx.clone())
+            .await
+            .into_iter()
+            .map(|tool| tool.tool_description().name)
+            .collect()
+    }
+
     async fn github_issue_create_tool(&self) -> Option<String> {
         let groups = crate::tools::tools_list::get_integration_tools(self.gcx.clone()).await;
         groups

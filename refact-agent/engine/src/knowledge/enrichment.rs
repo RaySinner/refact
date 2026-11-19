@@ -1,10 +1,3 @@
-use std::sync::Arc;
-
-use crate::call_validation::{ChatContent, ChatMessage};
-use crate::global_context::GlobalContext;
-use crate::subchat::{resolve_subchat_config, run_subchat};
-use crate::yaml_configs::customization_registry::get_subagent_config;
-
 pub use refact_knowledge_graph::enrichment::{
     enrichment_identity_from_context, enrichment_query_fingerprint,
     record_enrichment_identity_on_user_message, EnrichmentItem, AUTO_ENRICHMENT_CARD_TOKEN_CAP,
@@ -16,78 +9,8 @@ pub use refact_knowledge_graph::enrichment_cache::{
 };
 pub use refact_runtime_api::knowledge_runtime::{
     cache_result_from_memories, enrich_messages_with_knowledge, enrichment_cache_key,
-    get_allowed_enrichment_dirs, revalidate_cached_memories,
+    get_allowed_enrichment_dirs, model_gather_and_rewrite, revalidate_cached_memories,
 };
-
-const ENRICHMENT_SUBAGENT_ID: &str = "memory_enrichment_rewrite";
-
-pub async fn model_gather_and_rewrite(
-    gcx: Arc<GlobalContext>,
-    query: &str,
-) -> Result<(String, Vec<EnrichmentItem>), String> {
-    let system_prompt = get_subagent_config(gcx.clone(), ENRICHMENT_SUBAGENT_ID, None)
-        .await
-        .and_then(|c| c.messages.system_prompt)
-        .unwrap_or_else(|| {
-            "Search for relevant memories using the knowledge tool, then output JSON: \
-            {\"rewritten_text\": \"...\"}"
-                .to_string()
-        });
-
-    let messages = vec![
-        ChatMessage {
-            role: "system".to_string(),
-            content: ChatContent::SimpleText(system_prompt),
-            ..Default::default()
-        },
-        ChatMessage {
-            role: "user".to_string(),
-            content: ChatContent::SimpleText(query.to_string()),
-            ..Default::default()
-        },
-    ];
-
-    let config = resolve_subchat_config(
-        gcx.clone(),
-        ENRICHMENT_SUBAGENT_ID,
-        false,
-        None,
-        None,
-        None,
-        None,
-        None,
-        Some(vec!["knowledge".to_string()]),
-        4,
-        false,
-        None,
-        "agent".to_string(),
-    )
-    .await
-    .map_err(|e| format!("config: {}", e))?;
-
-    let result = run_subchat(gcx.clone(), messages, config)
-        .await
-        .map_err(|e| format!("subchat: {}", e))?;
-
-    let last_text = result
-        .messages
-        .iter()
-        .rev()
-        .find(|m| m.role == "assistant")
-        .and_then(|m| match &m.content {
-            ChatContent::SimpleText(t) => Some(t.clone()),
-            _ => None,
-        })
-        .unwrap_or_default();
-
-    let rewritten_text = refact_knowledge_graph::enrichment::parse_rewritten_text(&last_text);
-
-    let allowed_dirs = get_allowed_enrichment_dirs(gcx.clone()).await;
-    let items =
-        refact_knowledge_graph::enrichment::extract_items_from_tool_results(&result.messages, &allowed_dirs);
-
-    Ok((rewritten_text, items))
-}
 
 #[cfg(test)]
 mod tests {

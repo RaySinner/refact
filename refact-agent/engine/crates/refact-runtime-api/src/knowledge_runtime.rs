@@ -11,8 +11,9 @@ use refact_files::file_filter::KNOWLEDGE_FOLDER_NAME;
 use refact_files::path_utils::canonicalize_normalized_path;
 use refact_knowledge_graph::enrichment::{
     build_bounded_enrichment_context_files, context_message_stats, estimate_tokens,
-    get_existing_context_file_paths, has_knowledge_enrichment_near, normalize_query,
-    should_enrich, source_fingerprint, EnrichmentDecision, FORCED_KNOWLEDGE_SCORE_THRESHOLD,
+    extract_items_from_tool_results, get_existing_context_file_paths,
+    has_knowledge_enrichment_near, normalize_query, parse_rewritten_text, should_enrich,
+    source_fingerprint, EnrichmentDecision, FORCED_KNOWLEDGE_SCORE_THRESHOLD,
     KNOWLEDGE_ENRICHMENT_MARKER, KNOWLEDGE_SCORE_THRESHOLD,
 };
 use refact_knowledge_graph::enrichment_cache::{
@@ -22,9 +23,15 @@ use refact_knowledge_graph::enrichment_cache::{
 use refact_knowledge_graph::memo::MemoRecord;
 use refact_perf::perf_diagnostics::{self, PerfComponent, PerfOutcome};
 
+pub use refact_knowledge_graph::enrichment::{EnrichmentItem, MAX_QUERY_LENGTH};
+
+use crate::customization_registry_gcx::get_subagent_config;
 use crate::files_correction::get_project_dirs;
 use crate::files_in_workspace::get_file_text_from_memory_or_disk;
-use crate::global_context::{GlobalContext, SharedGlobalContext};
+use crate::global_context::{GlobalContext, GlobalContextCtx, SharedGlobalContext};
+use crate::subchat_core::resolve_subchat_config;
+
+const ENRICHMENT_SUBAGENT_ID: &str = "memory_enrichment_rewrite";
 
 pub async fn enrich_messages_with_knowledge(
     gcx: Arc<GlobalContext>,
@@ -577,6 +584,76 @@ async fn create_knowledge_context(
         }),
     );
     Some(context)
+}
+
+pub async fn model_gather_and_rewrite(
+    gcx: Arc<GlobalContext>,
+    query: &str,
+) -> Result<(String, Vec<EnrichmentItem>), String> {
+    let system_prompt = get_subagent_config(gcx.clone(), ENRICHMENT_SUBAGENT_ID, None)
+        .await
+        .and_then(|c| c.messages.system_prompt)
+        .unwrap_or_else(|| {
+            "Search for relevant memories using the knowledge tool, then output JSON: \
+            {\"rewritten_text\": \"...\"}"
+                .to_string()
+        });
+
+    let messages = vec![
+        ChatMessage {
+            role: "system".to_string(),
+            content: ChatContent::SimpleText(system_prompt),
+            ..Default::default()
+        },
+        ChatMessage {
+            role: "user".to_string(),
+            content: ChatContent::SimpleText(query.to_string()),
+            ..Default::default()
+        },
+    ];
+
+    let config = resolve_subchat_config(
+        gcx.clone(),
+        ENRICHMENT_SUBAGENT_ID,
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(vec!["knowledge".to_string()]),
+        4,
+        false,
+        None,
+        "agent".to_string(),
+    )
+    .await
+    .map_err(|e| format!("config: {}", e))?;
+
+    let ctx = gcx.chat_ctx(gcx.clone());
+    let result = ctx
+        .subchat
+        .run_subchat(messages, config)
+        .await
+        .map_err(|e| format!("subchat: {}", e))?;
+
+    let last_text = result
+        .messages
+        .iter()
+        .rev()
+        .find(|m| m.role == "assistant")
+        .and_then(|m| match &m.content {
+            ChatContent::SimpleText(t) => Some(t.clone()),
+            _ => None,
+        })
+        .unwrap_or_default();
+
+    let rewritten_text = parse_rewritten_text(&last_text);
+
+    let allowed_dirs = get_allowed_enrichment_dirs(gcx.clone()).await;
+    let items = extract_items_from_tool_results(&result.messages, &allowed_dirs);
+
+    Ok((rewritten_text, items))
 }
 
 pub async fn get_allowed_enrichment_dirs(gcx: SharedGlobalContext) -> Vec<PathBuf> {

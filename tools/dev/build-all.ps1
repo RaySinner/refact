@@ -101,10 +101,10 @@ $guiVersion = (Get-Content (Join-Path $guiDir 'package.json') -Raw | ConvertFrom
 $tgzName = "refact-chat-js-$guiVersion.tgz"
 $tgzPath = Join-Path $guiDir $tgzName
 if ($Profile -eq 'fast') {
-    $engineExe = Join-Path $engineDir 'target\fast-release\refact.exe'
+    $engineExe = Join-Path $env:CARGO_TARGET_DIR 'fast-release\refact.exe'
 }
 else {
-    $engineExe = Join-Path $engineDir 'target\release\refact.exe'
+    $engineExe = Join-Path $env:CARGO_TARGET_DIR 'release\refact.exe'
 }
 $assetExe = Join-Path $vscodeDir 'assets\refact.exe'
 

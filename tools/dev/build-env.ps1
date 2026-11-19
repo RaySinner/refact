@@ -23,4 +23,32 @@ foreach ($p in $paths) {
 $env:SCCACHE_CACHE_SIZE = "50G"
 $env:NODE_OPTIONS = "--max-old-space-size=8192"
 
+# ---------------------------------------------------------------------------
+# Build artifacts live on D:, not next to the sources.
+#
+# Two reasons, both measured on this machine:
+#
+#  1. Disk. A single engine target/ is 15-40 GB, and every agent worktree gets
+#     its own. Keeping them off C: stops the system drive filling up.
+#  2. Command line length. rustc's argv contains the target dir once per
+#     dependency (~176 crates, each contributing --out-dir / -L dependency /
+#     --extern paths). Shortening the target path by N characters removes
+#     ~176*N characters from the command line. Moving from
+#     C:\Raid\Repos\Rust\refact-main\refact-agent\engine\target (56 chars) to
+#     D:\refact\engine\target (23) removes ~5 800, which is what makes the
+#     builds stop tripping Windows' 32 767-char limit.
+#
+# Scheme: <REFACT_BUILD_ROOT>\<project>\engine\target
+#   REFACT_BUILD_ROOT defaults to D:\refact, so this repo builds into
+#   D:\refact\engine\target. Other projects on this machine get their own
+#   subtree under the same root (D:\refact, D:\otherproject, ...).
+$buildProject = "refact"
+$buildRoot = if ($env:REFACT_BUILD_ROOT) { $env:REFACT_BUILD_ROOT } else { "D:\$buildProject" }
+$env:REFACT_BUILD_ROOT = $buildRoot
+$env:CARGO_TARGET_DIR = Join-Path $buildRoot 'engine\target'
+if (-not (Test-Path $env:CARGO_TARGET_DIR)) {
+    New-Item -ItemType Directory -Force -Path $env:CARGO_TARGET_DIR | Out-Null
+}
+
 Write-Host "PATH prepared (cargo, Node, MSVC=$msvcTools)"
+Write-Host "CARGO_TARGET_DIR=$env:CARGO_TARGET_DIR (build artifacts on D:)"

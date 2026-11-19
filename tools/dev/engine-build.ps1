@@ -34,7 +34,8 @@
 # SCCACHE_BASEDIRS makes sccache hash paths relative to the listed roots, so
 # the same crate built in different worktrees (or in the main checkout) hits
 # the same cache entry. The list (main checkout root, the default worktree
-# parent, C:\wt, this repo root, plus REFACT_SCCACHE_BASEDIRS semicolon-
+# parent, REFACT_WORKTREE_ROOT (default D:\wt), this repo root, plus
+# REFACT_SCCACHE_BASEDIRS semicolon-
 # separated) is applied PER COMPILE REQUEST: the client sends its own
 # environment, so the server keeps working when the list changes and does not
 # need a restart for it (observed: the server PID stays the same while
@@ -166,7 +167,14 @@ function Set-SccacheBaseDirs {
     if ((Test-Path $defaultWorktrees) -and -not $dirs.Contains($defaultWorktrees)) {
         $dirs.Add($defaultWorktrees)
     }
-    if ((Test-Path 'C:\wt') -and -not $dirs.Contains('C:\wt')) { $dirs.Add('C:\wt') }
+    $worktreeRoot = if ($env:REFACT_WORKTREE_ROOT) { $env:REFACT_WORKTREE_ROOT } else { 'D:\wt' }
+    if ((Test-Path $worktreeRoot) -and -not $dirs.Contains($worktreeRoot)) { $dirs.Add($worktreeRoot) }
+    # Build artifacts live on D: (see build-env.ps1). Listing the build root as a
+    # base dir keeps the target paths relative in the hash, so a warm cache still
+    # hits after the build root moves or a worktree is recreated.
+    if ($env:REFACT_BUILD_ROOT -and (Test-Path $env:REFACT_BUILD_ROOT) -and -not $dirs.Contains($env:REFACT_BUILD_ROOT)) {
+        $dirs.Add($env:REFACT_BUILD_ROOT)
+    }
     if ($env:REFACT_SCCACHE_BASEDIRS) {
         foreach ($extra in $env:REFACT_SCCACHE_BASEDIRS.Split(';')) {
             $extra = $extra.Trim()
@@ -371,10 +379,13 @@ function Test-SpawnFailure {
 
 function Get-PredictedArgvLength {
     # Measured on this crate graph: the refact-lsp rustc argv is ~176 characters
-    # per character of repo-root length plus a fixed ~16k (143 --extern and 34
-    # -L native paths). Windows caps a command line at 32767, and sccache appends
-    # its own --emit dep-info -o argument on top, so keep a margin.
-    return (176 * $repoRoot.Length) + 16030
+    # per character of *target-dir* length plus a fixed ~16k (143 --extern and 34
+    # -L native paths). The target dir appears in every --out-dir / -L dependency /
+    # --extern argument, so it dominates; the source paths are relative to the
+    # engine dir and are short. Windows caps a command line at 32767, and sccache
+    # appends its own --emit dep-info -o argument on top, so keep a margin.
+    $targetDir = if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { Join-Path $engineDir 'target' }
+    return (176 * $targetDir.Length) + 16030
 }
 
 # Run cargo with sccache first; on the command-line-overflow signature retry
@@ -482,8 +493,8 @@ switch ($Mode) {
         $exitCode = Invoke-Cargo @('test', '--lib')
     }
     'clean' {
-        Write-Banner 'mode clean (remove target/fast-release)'
-        $fastDir = Join-Path $engineDir 'target\fast-release'
+        Write-Banner 'mode clean (remove <target-dir>/fast-release)'
+        $fastDir = Join-Path $env:CARGO_TARGET_DIR 'fast-release'
         if (Test-Path $fastDir) {
             Remove-Item -Recurse -Force $fastDir
             Write-Host "removed $fastDir"
@@ -499,12 +510,13 @@ switch ($Mode) {
         $predicted = Get-PredictedArgvLength
         $cachedPath = $predicted -le 31000
         Write-Host ("repo root: {0} ({1} chars)" -f $repoRoot, $repoRoot.Length)
+        Write-Host ("target dir: {0} ({1} chars)" -f $env:CARGO_TARGET_DIR, $env:CARGO_TARGET_DIR.Length)
         Write-Host ("predicted refact-lsp rustc argv: {0} chars (Windows limit 32767, sccache skipped above 31000)" -f $predicted)
         if ($cachedPath) {
-            Write-Host 'cached path: YES - repo root length is within the sccache-safe range, sccache can wrap this build' -ForegroundColor Green
+            Write-Host 'cached path: YES - target dir length is within the sccache-safe range, sccache can wrap this build' -ForegroundColor Green
         }
         else {
-            Write-Host 'cached path: NO - repo root is too long for sccache (os error 206). Keep worktree roots short; agent worktrees can set REFACT_WORKTREE_ROOT=C:\wt' -ForegroundColor Yellow
+            Write-Host 'cached path: NO - target dir is too long for sccache (os error 206). Set a shorter REFACT_BUILD_ROOT (default D:\refact).' -ForegroundColor Yellow
         }
         Write-Host ("sccache server: ISOLATED - port {0} (engine builds only), default port 4226 is the shared per-user server" -f $script:sccachePort)
         Write-Host ("SCCACHE_DIR: {0}" -f $script:sccacheCacheDir)

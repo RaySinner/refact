@@ -31,8 +31,8 @@ use refact_runtime_api::chat_queue_helpers::{
 use refact_runtime_api::ext_hooks_runner::{
     first_block_reason, get_project_dir_string, run_hooks, HookPayload,
 };
-use refact_runtime_api::ext_skills_context::{expand_skill_includes, SKILLS_CONTEXT_MARKER};
-use refact_runtime_api::ext_slash_expand::expand_slash_command;
+use refact_ext_runtime::ext_skills_context::{expand_skill_includes, SKILLS_CONTEXT_MARKER};
+use refact_ext_runtime::ext_slash_expand::expand_slash_command;
 use refact_runtime_api::generation_start::{
     prepare_session_preamble_and_knowledge, start_generation,
 };

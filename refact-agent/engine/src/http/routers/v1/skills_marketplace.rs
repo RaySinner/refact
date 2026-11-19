@@ -6,7 +6,7 @@ use axum::extract::{Query, State};
 #[cfg(test)]
 mod tests {
     use super::*;
-    use refact_runtime_api::ext_marketplace::configure_source;
+    use refact_ext_runtime::ext_marketplace::configure_source;
     use crate::global_context::tests::make_test_gcx;
 
     #[tokio::test]

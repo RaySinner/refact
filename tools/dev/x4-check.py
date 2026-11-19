@@ -117,7 +117,7 @@ RESIDENCY = [
     ),
     (
         "extensions_marketplace module",
-        CRATES / "refact-runtime-api/src/ext_marketplace.rs",
+        CRATES / "refact-ext-runtime/src/ext_marketplace.rs",
         "pub async fn install_marketplace_item",
     ),
     (
@@ -139,7 +139,7 @@ for name, path, needle in RESIDENCY:
 SHIMS = [
     (SRC / "nicer_logs.rs", "first_n_chars", "refact_core::nicer_logs"),
     (SRC / "nicer_logs.rs", "last_n_chars", "refact_core::nicer_logs"),
-    (SRC / "ext/extensions_marketplace.rs", "*", "refact_runtime_api::ext_marketplace"),
+    (SRC / "ext/extensions_marketplace.rs", "*", "refact_ext_runtime::ext_marketplace"),
     (SRC / "buddy/events.rs", "BuddyEvent", "refact_buddy_core::events"),
 ]
 for path, name, origin in SHIMS:
@@ -177,7 +177,7 @@ check(
 # ------------------------------------------------------- R2 no engine refs in crates
 MOVED = [
     CRATES / "refact-runtime-api/src/ext_runtime.rs",
-    CRATES / "refact-runtime-api/src/ext_marketplace.rs",
+    CRATES / "refact-ext-runtime/src/ext_marketplace.rs",
     CRATES / "refact-runtime-api/src/browser_frame.rs",
     CRATES / "refact-runtime-api/src/slash_cache.rs",
     CRATES / "refact-core/src/nicer_logs.rs",
@@ -248,7 +248,7 @@ for test_name in (
     "test_resolve_repo_path_rejects_escape",
 ):
     check(
-        test_name in read(CRATES / "refact-runtime-api/src/ext_marketplace.rs"),
+        test_name in read(CRATES / "refact-ext-runtime/src/ext_marketplace.rs"),
         "R3 moved marketplace tests lost `%s`" % test_name,
     )
 
@@ -281,7 +281,7 @@ TOUCHED = [
     CRATES / "refact-runtime-api/src/lib.rs",
     CRATES / "refact-runtime-api/Cargo.toml",
     CRATES / "refact-runtime-api/src/ext_runtime.rs",
-    CRATES / "refact-runtime-api/src/ext_marketplace.rs",
+    CRATES / "refact-ext-runtime/src/ext_marketplace.rs",
     CRATES / "refact-runtime-api/src/browser_frame.rs",
     CRATES / "refact-runtime-api/src/slash_cache.rs",
     CRATES / "refact-runtime-api/src/chat_ctx.rs",

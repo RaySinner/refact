@@ -8,7 +8,7 @@ use serde_json::json;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use refact_runtime_api::ext_marketplace::load_all_sources;
+    use refact_ext_runtime::ext_marketplace::load_all_sources;
     use crate::global_context::tests::make_test_gcx;
 
     #[tokio::test]

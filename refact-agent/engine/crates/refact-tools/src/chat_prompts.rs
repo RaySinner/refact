@@ -15,7 +15,7 @@ use refact_runtime_api::system_context::{
     self, create_instruction_files_message, create_memories_message, gather_system_context,
     generate_git_info_prompt, gather_git_info, PROJECT_CONTEXT_MARKER,
 };
-use refact_runtime_api::ext_skills_context::{
+use refact_ext_runtime::ext_skills_context::{
     build_skills_context_messages_tracked, build_skills_prompt_text, SkillsTrackingInfo,
     SKILLS_CONTEXT_MARKER,
 };

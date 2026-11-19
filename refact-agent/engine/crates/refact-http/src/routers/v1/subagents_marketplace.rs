@@ -7,7 +7,7 @@ use serde_json::json;
 
 use refact_runtime_api::AppState;
 use refact_core::custom_error::ScratchError;
-use refact_runtime_api::ext_marketplace::{
+use refact_ext_runtime::ext_marketplace::{
     InstallMarketplaceItemRequest, MarketplaceKind, install_marketplace_item,
     list_marketplace_items,
 };

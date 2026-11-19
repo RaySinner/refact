@@ -65,6 +65,7 @@ refact-postprocessing = { path = "../refact-postprocessing" }
 refact-privacy = { path = "../refact-privacy" }
 refact-providers = { path = "../refact-providers" }
 refact-runtime-api = { path = "../refact-runtime-api" }
+refact-ext-runtime = { path = "../refact-ext-runtime" }
 refact-scheduler-core = { path = "../refact-scheduler-core" }
 refact-scratchpads = { path = "../refact-scratchpads" }
 refact-stats = { path = "../refact-stats" }

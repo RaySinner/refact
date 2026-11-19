@@ -4337,6 +4337,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "refact-ext-runtime"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "dunce",
+ "futures",
+ "git2",
+ "refact-core",
+ "refact-ext",
+ "refact-runtime-api",
+ "refact-yaml-configs",
+ "regex",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "refact-file-edit-core"
 version = "0.1.0"
 dependencies = [
@@ -4425,6 +4448,7 @@ dependencies = [
  "refact-daemon",
  "refact-exec",
  "refact-ext",
+ "refact-ext-runtime",
  "refact-files",
  "refact-git",
  "refact-git-intel",
@@ -4604,6 +4628,7 @@ dependencies = [
  "refact-daemon",
  "refact-exec",
  "refact-ext",
+ "refact-ext-runtime",
  "refact-file-edit-core",
  "refact-files",
  "refact-git",
@@ -5051,6 +5076,7 @@ dependencies = [
  "refact-core",
  "refact-exec",
  "refact-ext",
+ "refact-ext-runtime",
  "refact-file-edit-core",
  "refact-files",
  "refact-git-intel",

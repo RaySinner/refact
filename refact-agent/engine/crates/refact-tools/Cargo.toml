@@ -9,6 +9,7 @@ test-util = ["refact-runtime-api/test-util"]
 [dependencies]
 refact-tool-api = { path = "../refact-tool-api" }
 refact-runtime-api = { path = "../refact-runtime-api" }
+refact-ext-runtime = { path = "../refact-ext-runtime" }
 refact-chat-api = { path = "../refact-chat-api" }
 refact-chat-history = { path = "../refact-chat-history" }
 refact-tasks = { path = "../refact-tasks" }

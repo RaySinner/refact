@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-use crate::app_state::AppState;
+use refact_runtime_api::app_state::AppState;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextFile};
-use crate::ext_config_dirs::{get_ext_dirs, ExtDirs};
+use refact_runtime_api::ext_config_dirs::{get_ext_dirs, ExtDirs};
 use refact_ext::skills::{load_skill_full, load_skill_indices, SkillFull};
 use refact_ext::skills_matcher::select_relevant_skills;
 
@@ -28,7 +28,7 @@ pub struct SkillsConfig {
 }
 
 pub async fn load_skills_config(app: AppState) -> SkillsConfig {
-    let project_dirs = crate::files_correction::get_project_dirs(app.gcx.clone()).await;
+    let project_dirs = refact_runtime_api::files_correction::get_project_dirs(app.gcx.clone()).await;
     let Some(project_dir) = project_dirs.first() else {
         return SkillsConfig::default();
     };

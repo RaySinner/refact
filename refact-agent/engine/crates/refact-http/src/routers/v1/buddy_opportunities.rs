@@ -20,7 +20,7 @@ use refact_buddy_core::verdicts::VerdictOutcome;
 use refact_runtime_api::app_state::AppState;
 use refact_core::custom_error::ScratchError;
 use refact_runtime_api::ext_config_dirs::get_ext_dirs;
-use refact_runtime_api::ext_marketplace::{
+use refact_ext_runtime::ext_marketplace::{
     install_marketplace_item, list_marketplace_items, InstallMarketplaceItemRequest,
     MarketplaceKind,
 };

@@ -3,12 +3,12 @@ use std::sync::{Arc, OnceLock};
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
-use crate::app_state::AppState;
-use crate::ext_config_dirs::{get_ext_dirs, ExtDirs};
+use refact_runtime_api::app_state::AppState;
+use refact_runtime_api::ext_config_dirs::{get_ext_dirs, ExtDirs};
 use refact_ext::skills::{load_skill_full, load_skill_indices, SkillIndex};
 use refact_ext::slash_commands::{load_slash_commands, SlashCommand};
 
-use crate::integrations::mcp::mcp_prompts::{execute_mcp_prompt, MCP_PROMPT_PREFIX};
+use refact_runtime_api::integrations::mcp::mcp_prompts::{execute_mcp_prompt, MCP_PROMPT_PREFIX};
 
 
 const SLASH_CACHE_TTL: Duration = Duration::from_secs(5);

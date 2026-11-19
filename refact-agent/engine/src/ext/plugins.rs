@@ -1,1 +1,1 @@
-pub use refact_runtime_api::ext_plugins::*;
+pub use refact_ext_runtime::ext_plugins::*;

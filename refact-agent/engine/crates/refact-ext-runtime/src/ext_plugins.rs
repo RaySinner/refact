@@ -4,7 +4,7 @@ use std::sync::atomic::Ordering;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
-use crate::app_state::AppState;
+use refact_runtime_api::app_state::AppState;
 
 const PLUGIN_SIZE_LIMIT: u64 = 50 * 1024 * 1024;
 
@@ -607,7 +607,7 @@ pub async fn uninstall_plugin(app: AppState, plugin_name: &str) -> Result<(), St
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ext_config_dirs::CommandSource;
+    use refact_runtime_api::ext_config_dirs::CommandSource;
 
     #[test]
     fn test_validate_plugin_name_accepts_valid() {
@@ -801,7 +801,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ext_dirs_includes_installed_plugin_dirs() {
-        use crate::ext_config_dirs::ExtDirs;
+        use refact_runtime_api::ext_config_dirs::ExtDirs;
         let tmp = tempfile::tempdir().unwrap();
         let config_dir = tmp.path().to_path_buf();
         let install_root = config_dir.join("plugins").join("installed");
@@ -836,13 +836,13 @@ mod tests {
         assert!(all.contains(&&install_root.join("plugin-y")));
 
         let global_dirs = vec![config_dir.clone()];
-        let src = crate::ext_config_dirs::source_for_dir(
+        let src = refact_runtime_api::ext_config_dirs::source_for_dir(
             &install_root.join("plugin-x"),
             &global_dirs,
             &installed_dirs,
         );
         assert!(
-            matches!(src, crate::ext_config_dirs::CommandSource::InstalledPlugin(n) if n == "plugin-x")
+            matches!(src, refact_runtime_api::ext_config_dirs::CommandSource::InstalledPlugin(n) if n == "plugin-x")
         );
     }
 

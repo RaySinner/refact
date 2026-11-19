@@ -37,6 +37,7 @@ members = [
     "crates/refact-caps-core",
     "crates/refact-context-api",
     "crates/refact-runtime-api",
+    "crates/refact-ext-runtime",
     "crates/refact-http",
     "crates/refact-exec",
     "crates/refact-sandbox",
@@ -280,6 +281,7 @@ refact-scope-utils = { path = "crates/refact-scope-utils" }
 refact-caps-core = { path = "crates/refact-caps-core" }
 refact-context-api = { path = "crates/refact-context-api", features = ["http-client"] }
 refact-runtime-api = { path = "crates/refact-runtime-api" }
+refact-ext-runtime = { path = "crates/refact-ext-runtime" }
 refact-http = { path = "crates/refact-http" }
 refact-exec = { path = "crates/refact-exec" }
 refact-sandbox = { path = "crates/refact-sandbox" }

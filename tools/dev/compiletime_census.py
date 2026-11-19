@@ -13,7 +13,9 @@ import os
 import re
 from collections import defaultdict
 
-ENGINE = r"C:\Raid\Repos\Rust\refact-main\refact-agent\engine"
+ENGINE = os.environ.get("REFACT_ENGINE") or os.path.abspath(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "refact-agent", "engine")
+)
 CRATES = os.path.join(ENGINE, "crates")
 SRC = os.path.join(ENGINE, "src")
 

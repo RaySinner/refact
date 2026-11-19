@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 
 use refact_runtime_api::app_state::AppState;
 use refact_core::custom_error::ScratchError;
-use refact_runtime_api::ext_plugins::{
+use refact_ext_runtime::ext_plugins::{
     add_marketplace, ensure_default_marketplaces, install_plugin, list_marketplace_plugins,
     load_plugins_db, remove_marketplace, uninstall_plugin, validate_plugin_name,
 };

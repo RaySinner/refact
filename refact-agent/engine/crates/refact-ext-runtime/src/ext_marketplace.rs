@@ -5,13 +5,13 @@ use std::sync::atomic::Ordering;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use crate::app_state::AppState;
+use refact_runtime_api::app_state::AppState;
 use crate::ext_plugins::{load_marketplace_json, marketplace_cache_dir};
 use refact_ext::config_dirs::collect_md_files_recursive;
 use refact_ext::slash_commands::parse_frontmatter_and_body;
 use refact_ext::yaml_util::{yaml_str, yaml_str_list};
-use crate::files_correction::get_project_dirs;
-use crate::slash_cache::invalidate_slash_cache;
+use refact_runtime_api::files_correction::get_project_dirs;
+use refact_runtime_api::slash_cache::invalidate_slash_cache;
 
 const MARKETPLACE_SIZE_LIMIT: u64 = 50 * 1024 * 1024;
 const SOURCES_FILENAME: &str = "extensions_marketplace_sources.json";
@@ -1389,7 +1389,7 @@ pub async fn installed_scopes_by_kind(
     app: AppState,
     kind: MarketplaceKind,
 ) -> Result<HashMap<String, Vec<String>>, String> {
-    use crate::ext_config_dirs::get_ext_dirs;
+    use refact_runtime_api::ext_config_dirs::get_ext_dirs;
     let ext_dirs = get_ext_dirs(app.clone()).await;
     let mut map: HashMap<String, Vec<String>> = HashMap::new();
     match kind {
@@ -1421,7 +1421,7 @@ pub async fn installed_scopes_by_kind(
             let config_dir = app.paths.config_dir.clone();
             let locals = get_project_dirs(app.gcx.clone()).await;
             if let Some(registry) =
-                crate::customization_registry_gcx::get_project_registry(app.gcx.clone())
+                refact_runtime_api::customization_registry_gcx::get_project_registry(app.gcx.clone())
                     .await
             {
                 for (id, _cfg) in registry.subagents {
@@ -1654,7 +1654,7 @@ pub async fn install_marketplace_item(
             tokio::fs::rename(&temp, &target)
                 .await
                 .map_err(|e| format!("rename install file: {}", e))?;
-            crate::customization_registry_gcx::invalidate_all_registry_caches(
+            refact_runtime_api::customization_registry_gcx::invalidate_all_registry_caches(
                 app.gcx.clone(),
             )
             .await;

@@ -6,7 +6,7 @@ use serde_json::json;
 
 use refact_runtime_api::AppState;
 use refact_core::custom_error::ScratchError;
-use refact_runtime_api::ext_marketplace::{
+use refact_ext_runtime::ext_marketplace::{
     ConfigureMarketplaceSourceRequest, ExtensionsMarketplaceSource, MarketplaceKind,
     MarketplaceParserMode, MarketplaceSourceKind, SaveMarketplaceSourceRequest, configure_source,
     delete_user_source, load_all_sources, normalize_github_source, refresh_source_cache,

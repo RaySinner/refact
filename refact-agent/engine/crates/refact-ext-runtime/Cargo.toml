@@ -1,0 +1,26 @@
+[package]
+name = "refact-ext-runtime"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+refact-runtime-api = { path = "../refact-runtime-api" }
+refact-core = { path = "../refact-core" }
+refact-ext = { path = "../refact-ext" }
+refact-yaml-configs = { path = "../refact-yaml-configs" }
+
+chrono = { version = "0.4.31", features = ["serde"] }
+dunce = "1.0.5"
+futures = "0.3"
+git2 = "0.20.2"
+regex = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = "0.9"
+tokio = { workspace = true, features = ["fs", "macros", "rt", "sync"] }
+tracing = { workspace = true }
+url = "2.4.1"
+uuid = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3.8.1"

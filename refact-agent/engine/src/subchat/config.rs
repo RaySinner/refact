@@ -15,10 +15,6 @@ use crate::worktrees::types::WorktreeMeta;
 
 use super::*;
 
-pub(crate) fn subchat_retries_allowed(config: &SubchatConfig) -> bool {
-    config.tool_name != "mode_transition"
-}
-
 pub async fn resolve_subchat_config(
     gcx: Arc<GlobalContext>,
     tool_name: &str,

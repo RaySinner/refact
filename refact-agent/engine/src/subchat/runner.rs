@@ -650,13 +650,6 @@ pub(crate) fn stamp_activity(stamp: &Option<Arc<AtomicU64>>) {
     }
 }
 
-pub(crate) fn is_aborted(abort_flag: &Option<Arc<AtomicBool>>) -> bool {
-    abort_flag
-        .as_ref()
-        .map(|f| f.load(Ordering::SeqCst))
-        .unwrap_or(false)
-}
-
 pub(crate) fn final_step_wrap_up_message(max_steps: usize) -> ChatMessage {
     ChatMessage::new(
         "user".to_string(),

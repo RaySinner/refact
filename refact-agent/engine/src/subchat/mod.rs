@@ -7,15 +7,16 @@ mod state;
 #[cfg(test)]
 mod tests;
 
-pub(crate) const MAX_CONTEXT_LIMIT_COMPACT_ATTEMPTS: usize = 1;
-pub(crate) const MAX_EMPTY_CHOICE_RETRIES: usize = 2;
-pub(crate) const EMPTY_CHOICE_ERROR_PREFIX: &str = "subchat produced no visible content";
-pub(crate) const PARENT_COMPACTION_DIAGNOSTIC_MAX_CHARS: usize = 2_000;
-pub(crate) const PARENT_COMPACTION_DIAGNOSTIC_REDACTION_LOOKAHEAD_CHARS: usize = 512;
-pub(crate) const PARENT_COMPACTION_DIAGNOSTIC_TRUNCATED: &str = "\n...[truncated]";
-pub(crate) const PARTIAL_OUTPUT_STREAM_ERROR: &str =
-    "Stream interrupted after partial output and all retry attempts failed.";
-pub(crate) const GUARDED_REPORT_INSTRUCTION: &str = "Guarded file contents may be used to complete the task, but do not quote or reproduce them verbatim in the final report.";
+pub(crate) use refact_runtime_api::subchat_core::{
+    is_aborted, subchat_retries_allowed, EMPTY_CHOICE_ERROR_PREFIX,
+    MAX_CONTEXT_LIMIT_COMPACT_ATTEMPTS, MAX_EMPTY_CHOICE_RETRIES,
+};
+#[cfg(test)]
+pub(crate) use refact_runtime_api::subchat_core::{
+    GUARDED_REPORT_INSTRUCTION, PARENT_COMPACTION_DIAGNOSTIC_MAX_CHARS,
+    PARENT_COMPACTION_DIAGNOSTIC_REDACTION_LOOKAHEAD_CHARS, PARENT_COMPACTION_DIAGNOSTIC_TRUNCATED,
+    PARTIAL_OUTPUT_STREAM_ERROR,
+};
 
 pub use refact_chat_api::{
     ExplicitSubchatSpec, SubchatConfig, SubchatParameters, SubchatProgress, SubchatResult,
@@ -48,4 +49,3 @@ pub(crate) use privacy::*;
 pub(crate) use runner::*;
 pub(crate) use session::*;
 pub(crate) use state::*;
-

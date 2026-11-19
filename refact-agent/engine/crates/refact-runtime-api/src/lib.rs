@@ -121,6 +121,7 @@ pub mod buddy_runtime;
 pub mod buddy_speech_runtime;
 pub mod buddy_humor;
 pub mod buddy_workflows;
+pub mod subchat_core;
 pub mod subchat_runtime;
 pub mod trajectory_runtime;pub mod trajectory_memos_runtime;
 

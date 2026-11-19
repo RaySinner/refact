@@ -1,11 +1,12 @@
 //! Trajectory-memo orchestration through the `ChatCtx` seams: the subagent
 //! config comes from `mode_config`, the memo-extraction call from `subchat`,
-//! and the persistence helpers from `refact-chat-history`. The buddy workflow
-//! wrapper and the background loop stay in the engine (they need `AppState` /
-//! `GlobalContext`); the work performed inside them lives here.
+//! and the persistence helpers from `refact-chat-history`. The background loop
+//! and the buddy-wrapped per-trajectory pass live here too; the engine keeps
+//! only a re-export.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use chrono::{DateTime, Duration, Utc};
 use serde_json::Value;
@@ -34,7 +35,10 @@ use crate::buddy_memory_lifecycle::{
     MemoryCandidate, MemoryCandidateStatus, MemoryDocSnapshot, MemoryLifecycleOp, MemoryOpType,
     MemorySource,
 };
+use crate::buddy_workflows::buddy_wrap_workflow;
 use crate::chat_ctx::ChatCtx;
+use crate::global_context::GlobalContext;
+use crate::{app_state_from_gcx, GlobalContextCtx};
 
 pub fn extract_text_from_json_message(content_value: &Value) -> Option<String> {
     crate::trajectories::queries::extract_text_with_image_placeholders_from_json(content_value)
@@ -187,6 +191,201 @@ pub async fn process_single_trajectory_once(
     Ok(true)
 }
 
+pub async fn trajectory_memos_background_task(gcx: Arc<GlobalContext>) {
+    loop {
+        let shutdown_flag = gcx.shutdown_flag.clone();
+        tokio::select! {
+            _ = tokio::time::sleep(tokio::time::Duration::from_secs(CHECK_INTERVAL_SECS)) => {}
+            _ = async {
+                while !shutdown_flag.load(std::sync::atomic::Ordering::SeqCst) {
+                    tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+                }
+            } => {
+                tracing::info!("Trajectory memos: shutdown detected, stopping");
+                return;
+            }
+        }
+
+        if let Err(e) = process_abandoned_trajectories(gcx.clone()).await {
+            warn!("trajectory_memos: error processing trajectories: {}", e);
+        }
+    }
+}
+
+async fn process_abandoned_trajectories(gcx: Arc<GlobalContext>) -> Result<(), String> {
+    let project_dirs = crate::files_correction::get_project_dirs(gcx.clone()).await;
+    if project_dirs.is_empty() {
+        return Ok(());
+    }
+
+    let now = Utc::now();
+    let threshold = now - Duration::hours(ABANDONED_THRESHOLD_HOURS);
+
+    for workspace_root in project_dirs {
+        let trajectories_dir = workspace_root.join(TRAJECTORIES_FOLDER);
+        if !trajectories_dir.exists() {
+            continue;
+        }
+
+        for entry in WalkDir::new(&trajectories_dir)
+            .max_depth(2)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
+            let path = entry.path();
+            if !path.is_file() || path.extension().map(|e| e != "json").unwrap_or(true) {
+                continue;
+            }
+
+            match process_single_trajectory(gcx.clone(), path.to_path_buf(), &threshold).await {
+                Ok(true) => tracing::info!("trajectory_memos: extracted memos from {}", path.display()),
+                Ok(false) => {}
+                Err(e) => warn!(
+                    "trajectory_memos: failed to process {}: {}",
+                    path.display(),
+                    e
+                ),
+            }
+        }
+    }
+
+    Ok(())
+}
+
+pub async fn process_single_trajectory(
+    gcx: Arc<GlobalContext>,
+    path: std::path::PathBuf,
+    threshold: &DateTime<Utc>,
+) -> Result<bool, String> {
+    if tokio::fs::metadata(&path).await.map(|m| m.len()).unwrap_or(0) > MAX_TRAJECTORY_BYTES {
+        return Ok(false);
+    }
+
+    let content = fs::read_to_string(&path).await.map_err(|e| e.to_string())?;
+    let mut trajectory: Value = match serde_json::from_str(&content) {
+        Ok(value) => value,
+        Err(_) => return Ok(false),
+    };
+
+    if trajectory
+        .get("memo_extracted")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
+        return Ok(false);
+    }
+
+    if is_buddy_system_trajectory(&trajectory) {
+        mark_trajectory_skipped(&path, &mut trajectory, "skipped: buddy system trajectory").await?;
+        return Ok(false);
+    }
+
+    let updated_at = trajectory
+        .get("updated_at")
+        .and_then(|v| v.as_str())
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+        .map(|dt| dt.with_timezone(&Utc));
+
+    let is_abandoned = match updated_at {
+        Some(dt) => dt < *threshold,
+        None => false,
+    };
+
+    if !is_abandoned {
+        return Ok(false);
+    }
+
+    let messages = trajectory
+        .get("messages")
+        .and_then(|v| v.as_array())
+        .ok_or("No messages")?;
+
+    if messages.len() < 10 {
+        return Ok(false);
+    }
+
+    let trajectory_id = trajectory
+        .get("id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown")
+        .to_string();
+
+    let root_chat_id = trajectory
+        .get("root_chat_id")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| trajectory_id.clone());
+    let current_title = trajectory
+        .get("title")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Untitled")
+        .to_string();
+
+    let is_title_generated = trajectory_title_is_generated(&trajectory);
+
+    let chat_messages = build_chat_messages(messages);
+    if chat_messages.is_empty() {
+        mark_trajectory_skipped(&path, &mut trajectory, "skipped: invalid chat history").await?;
+        return Ok(false);
+    }
+
+    let gcx2 = gcx.clone();
+    let title2 = current_title.clone();
+    let trajectory_id2 = trajectory_id.clone();
+    let root_chat_id2 = root_chat_id.clone();
+    let extraction = buddy_wrap_workflow(
+        app_state_from_gcx(gcx.clone()).await,
+        "memo_extraction",
+        "🧠",
+        8,
+        |r: &ExtractionResult| format!("Memory extracted: {} memos", r.memos.len()),
+        move || async move {
+            extract_memos_and_meta(
+                gcx2,
+                chat_messages,
+                &title2,
+                is_title_generated,
+                Some(trajectory_id2.as_str()),
+                Some(root_chat_id2.as_str()),
+            )
+            .await
+        },
+    )
+    .await?;
+
+    persist_extraction_result(
+        &path,
+        &mut trajectory,
+        &extraction,
+        &trajectory_id,
+        &root_chat_id,
+        &current_title,
+        is_title_generated,
+        Utc::now(),
+    )
+    .await?;
+
+    Ok(true)
+}
+
+async fn extract_memos_and_meta(
+    gcx: Arc<GlobalContext>,
+    messages: Vec<ChatMessage>,
+    current_title: &str,
+    is_title_generated: bool,
+    parent_chat_id: Option<&str>,
+    parent_root_chat_id: Option<&str>,
+) -> Result<ExtractionResult, String> {
+    extract_memos_and_meta_once(
+        &gcx.chat_ctx(gcx.clone()),
+        messages,
+        current_title,
+        is_title_generated,
+        parent_chat_id,
+        parent_root_chat_id,
+    )
+    .await
+}
 pub async fn persist_extraction_result(
     path: &Path,
     trajectory: &mut Value,

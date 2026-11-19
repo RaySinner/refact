@@ -50,5 +50,16 @@ if (-not (Test-Path $env:CARGO_TARGET_DIR)) {
     New-Item -ItemType Directory -Force -Path $env:CARGO_TARGET_DIR | Out-Null
 }
 
+# Agent worktrees also live on D: by default. Must be set in the environment of the
+# process that SPAWNS agents (the engine), not just in this shell - the engine reads
+# REFACT_WORKTREE_ROOT once, at startup. Exporting it here means a dev-launched
+# engine inherits it; an already-running engine needs a restart to pick it up.
+if (-not $env:REFACT_WORKTREE_ROOT) {
+    $env:REFACT_WORKTREE_ROOT = 'D:\wt'
+}
+if (-not (Test-Path $env:REFACT_WORKTREE_ROOT)) {
+    New-Item -ItemType Directory -Force -Path $env:REFACT_WORKTREE_ROOT | Out-Null
+}
+
 Write-Host "PATH prepared (cargo, Node, MSVC=$msvcTools)"
 Write-Host "CARGO_TARGET_DIR=$env:CARGO_TARGET_DIR (build artifacts on D:)"

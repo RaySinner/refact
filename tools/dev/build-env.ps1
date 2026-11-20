@@ -54,10 +54,15 @@ if (-not (Test-Path $env:CARGO_TARGET_DIR)) {
 # process that SPAWNS agents (the engine), not just in this shell - the engine reads
 # REFACT_WORKTREE_ROOT once, at startup. Exporting it here means a dev-launched
 # engine inherits it; an already-running engine needs a restart to pick it up.
-if (-not $env:REFACT_WORKTREE_ROOT) {
+#
+# REFACT_KEEP_DEFAULT_WORKTREE_ROOT=1 opts out: worktrees stay in the engine's
+# default <cache_dir>/worktrees layout. Test runs want that - the engine's worktree
+# unit tests build their expectations from the default base. Set it before sourcing
+# this file; engine-build.ps1 -Mode test clears REFACT_WORKTREE_ROOT for its child.
+if (-not $env:REFACT_WORKTREE_ROOT -and -not $env:REFACT_KEEP_DEFAULT_WORKTREE_ROOT) {
     $env:REFACT_WORKTREE_ROOT = 'D:\wt'
 }
-if (-not (Test-Path $env:REFACT_WORKTREE_ROOT)) {
+if ($env:REFACT_WORKTREE_ROOT -and -not (Test-Path $env:REFACT_WORKTREE_ROOT)) {
     New-Item -ItemType Directory -Force -Path $env:REFACT_WORKTREE_ROOT | Out-Null
 }
 

@@ -490,6 +490,13 @@ switch ($Mode) {
     }
     'test' {
         Write-Banner 'mode test (cargo test --lib) - compiles the whole test target first'
+        # The engine's worktree unit tests derive their expectations from the
+        # default worktree base, so the D:\wt default exported by build-env.ps1
+        # fails 46 of them. Opt out of the relocation and clear any value
+        # inherited from the parent shell for this child process only.
+        $env:REFACT_KEEP_DEFAULT_WORKTREE_ROOT = '1'
+        Remove-Item Env:REFACT_WORKTREE_ROOT -ErrorAction SilentlyContinue
+        Write-Host 'engine-build: test mode runs with the default worktree layout (REFACT_WORKTREE_ROOT cleared) - 46 worktree tests assume it'
         $exitCode = Invoke-Cargo @('test', '--lib')
     }
     'clean' {

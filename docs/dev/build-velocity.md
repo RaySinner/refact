@@ -58,6 +58,13 @@ See the header of `tools/dev/engine-build.ps1` for the full table:
 - `cache-status` — sccache stats, repo-root length, and whether the root is on the sccache-cached path.
 - `cache-reset` — restart the isolated sccache server (port 4227) with the current `SCCACHE_BASEDIRS`.
 
+`test` is the one mode that does not run with the relocated worktree root:
+`tools/dev/build-env.ps1` exports `REFACT_WORKTREE_ROOT=D:\wt` for real launches, but the
+engine's worktree unit tests derive their expectations from the default
+`<cache_dir>/worktrees` base, so `-Mode test` sets `REFACT_KEEP_DEFAULT_WORKTREE_ROOT=1`
+and clears `REFACT_WORKTREE_ROOT` for the test binary. Every other mode (`check`,
+`check-all`, `check-tests`, `fast`, `release`) keeps the `D:\wt` default.
+
 ## sccache server lifetime and isolation
 
 Two independent things kill the sccache server in the middle of an engine build,

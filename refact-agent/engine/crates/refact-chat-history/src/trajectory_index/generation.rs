@@ -26,6 +26,12 @@ pub(super) struct DirectoryGeneration {
     indexed_files: Vec<(String, Option<FileGeneration>)>,
 }
 
+impl DirectoryGeneration {
+    pub(super) fn index_generation(&self) -> Option<&FileGeneration> {
+        self.index.as_ref()
+    }
+}
+
 pub(super) fn path_generation(path: &Path) -> Result<Option<FileGeneration>, String> {
     let metadata = match std::fs::symlink_metadata(path) {
         Ok(metadata) => metadata,

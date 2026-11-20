@@ -492,7 +492,7 @@ impl TrajectoryIndexCoordinator {
                 // it. Mirror the full freshness check and re-validate when the
                 // on-disk checkpoint no longer matches the cached generation.
                 match path_generation(&trajectory_index_path(dir)) {
-                    Ok(current) if current == generation.index => true,
+                    Ok(current) if current.as_ref() == generation.index_generation() => true,
                     _ => false,
                 }
             }

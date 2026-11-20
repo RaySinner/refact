@@ -844,7 +844,10 @@ mod tests {
 
         let result = strip_thinking_blocks_if_disabled(msgs, &params, &model);
 
-        assert_eq!(result[0].reasoning_content.as_deref(), Some("reasoning"));
+        assert_eq!(
+            result[0].reasoning_content.as_deref(),
+            Some("hidden reasoning")
+        );
         let blocks = result[0].thinking_blocks.as_ref().unwrap();
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks[0]["provider"], "google_cloud_code");

@@ -124,11 +124,9 @@ impl TrajectoryStore for EngineTrajectoryStore {
     }
 
     async fn find_trajectory_path(&self, chat_id: &str) -> Option<PathBuf> {
-        crate::trajectory_runtime::find_trajectory_path(
-            &self.gcx.chat_ctx(self.gcx.clone()),
-            chat_id,
-        )
-        .await
+        paths::find_trajectory_file(&self.gcx.chat_ctx(self.gcx.clone()), chat_id)
+            .await
+            .map(|candidate| candidate.path)
     }
 
     async fn find_trajectory_or_buddy_path(&self, chat_id: &str) -> Option<PathBuf> {

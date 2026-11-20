@@ -13,12 +13,13 @@ use refact_chat_api::ThreadParams;
 use refact_core::chat_types::ChatContent;
 
 use crate::app_state::AppState;
-use crate::buddy_voice_service::{voice_service, ChatReactionSpeechIntent, VoiceCtx};
+use crate::buddy_voice_service::{ChatReactionSpeechIntent, VoiceCtx};
+#[cfg(not(feature = "test-util"))]
+use crate::buddy_voice_service::voice_service;
+#[cfg(feature = "test-util")]
+use crate::buddy_voice_service::{voice_service, VoiceService};
 
 pub use refact_buddy_core::chat_reactions::*;
-
-#[cfg(test)]
-use crate::buddy_voice_service::VoiceService;
 
 static CHAT_REACTION_PERMITS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(4);
 
@@ -117,7 +118,7 @@ async fn render_chat_reaction_text(
     analysis_text: &str,
     voice_inputs: &ChatReactionVoiceInputs,
     phrase_bank: Option<BuddyChatPhraseBank>,
-    #[cfg(test)] voice: &VoiceService,
+    #[cfg(feature = "test-util")] voice: &VoiceService,
 ) -> String {
     if let Some(bank) = phrase_bank.as_ref() {
         if chat_phrase_bank_is_fresh(bank, Utc::now()) {
@@ -140,9 +141,9 @@ async fn render_chat_reaction_text(
         workflow_id: Some("chat_reaction"),
         workflow_summary: Some(analysis_text),
     };
-    #[cfg(test)]
+    #[cfg(feature = "test-util")]
     let rendered = voice.render_chat_reaction(app.clone(), ctx, intent).await;
-    #[cfg(not(test))]
+    #[cfg(not(feature = "test-util"))]
     let rendered = voice_service()
         .await
         .render_chat_reaction(app.clone(), ctx, intent)
@@ -210,7 +211,7 @@ pub async fn maybe_enqueue_chat_reaction(app: AppState, accepted: AcceptedUserMe
         (candidate, reservation, voice_inputs, phrase_bank)
     };
 
-    #[cfg(test)]
+    #[cfg(feature = "test-util")]
     let voice = voice_service().await;
     let app2 = app.clone();
     let chat_id = accepted.chat_id.clone();
@@ -243,7 +244,7 @@ pub async fn maybe_enqueue_chat_reaction(app: AppState, accepted: AcceptedUserMe
             &candidate.analysis_text,
             &voice_inputs,
             phrase_bank,
-            #[cfg(test)]
+            #[cfg(feature = "test-util")]
             &voice,
         )
         .await;

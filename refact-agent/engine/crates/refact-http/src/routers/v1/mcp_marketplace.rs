@@ -129,10 +129,10 @@ pub struct MarketplaceIndex {
 }
 
 fn bundled_index() -> MarketplaceIndex {
-    serde_json::from_str(concat!(
+    serde_json::from_str(include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../src/yaml_configs/mcp_marketplace_index.json"
-    ))
+    )))
     .expect("bundled MCP marketplace index must be valid JSON")
 }
 

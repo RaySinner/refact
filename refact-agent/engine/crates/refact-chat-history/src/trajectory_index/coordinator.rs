@@ -484,7 +484,18 @@ impl TrajectoryIndexCoordinator {
             )
         };
         let fresh = match generation {
-            Some(_) if within_ttl => true,
+            Some(generation) if within_ttl => {
+                // The directory generation covers trajectory files, but the
+                // checkpoint itself is not part of it: an externally rewritten
+                // index.json (e.g. corruption) would slip past the TTL fast
+                // path, and the recovery flush below would never run to repair
+                // it. Mirror the full freshness check and re-validate when the
+                // on-disk checkpoint no longer matches the cached generation.
+                match path_generation(&trajectory_index_path(dir)) {
+                    Ok(current) if current == generation.index => true,
+                    _ => false,
+                }
+            }
             Some(generation) => {
                 self.listing_counter_scope.record_generation_check();
                 let fresh = cached_index_is_fresh(dir, indexed_file_names, generation)

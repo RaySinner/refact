@@ -396,69 +396,6 @@ pub fn chat_exposes_finish_tool(
     })
 }
 
-/// Heuristic for whether text produced right before a tool call is the model
-/// "thinking out loud" (internal monologue/planning) instead of a message
-/// addressed to a user.
-///
-/// Explicit monologue markers match in any chat mode. In agentic chats
-/// (task agents and the classic agent modes) the model is expected to act
-/// first, so anything preceding a tool call that does not start with an
-/// explicit user-facing greeting or a markdown header is treated as
-/// monologue and diverted into `reasoning_content`.
-pub fn is_pre_tool_monologue(text: &str, is_agent_chat: bool) -> bool {
-    let text = text.trim();
-    if text.is_empty() {
-        return false;
-    }
-    const MONOLOGUE_MARKERS: &[&str] = &[
-        "wait!",
-        "let's check",
-        "let me check",
-        "i will now",
-        "i'll inspect",
-        "looking at",
-        "thinking process:",
-        "let's search",
-        "first, i'll",
-        "first, let's",
-        "let me examine",
-        "now checking",
-        "next step:",
-    ];
-    let lowered = text.to_lowercase();
-    if MONOLOGUE_MARKERS
-        .iter()
-        .any(|marker| lowered.starts_with(marker) || lowered.contains(marker))
-    {
-        return true;
-    }
-    is_agent_chat && !starts_with_user_greeting(&lowered) && !text.starts_with('#')
-}
-
-/// Whether `lowered_text` starts with a word that reads as a greeting to a
-/// human reader (word boundary included, so "hidden" is not a greeting).
-pub fn starts_with_user_greeting(lowered_text: &str) -> bool {
-    const GREETINGS: &[&str] = &[
-        "hi",
-        "hello",
-        "hey",
-        "thanks",
-        "thank you",
-        "done",
-        "here is",
-        "here's",
-        "all set",
-    ];
-    GREETINGS.iter().any(|greeting| {
-        let Some(rest) = lowered_text.strip_prefix(greeting) else {
-            return false;
-        };
-        rest.chars()
-            .next()
-            .map_or(true, |next| !next.is_alphanumeric())
-    })
-}
-
 /// Pure decision for the silent-tail nudge: the instruction to insert, or `None`
 /// when this turn must keep going through its normal `break`.
 ///

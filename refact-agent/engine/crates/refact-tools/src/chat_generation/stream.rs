@@ -12,8 +12,7 @@ use refact_runtime_api::app_state::AppState;
 use refact_runtime_api::AtCommandsContext;
 use refact_chat_api::ChatMeta;
 use refact_core::call_validation::{
-    is_agentic_mode_id, ChatContent, ChatMessage, ChatUsage, MeteringUsd,
-    SamplingParameters,
+    ChatContent, ChatMessage, ChatUsage, MeteringUsd, SamplingParameters,
 };
 use refact_stats::event::{LlmCallEvent, canonicalize_mode_for_stats, split_model_provider};
 use refact_chat_history::tool_call_recovery;
@@ -725,69 +724,15 @@ pub async fn run_streaming_generation(
 
     {
         let mut session = session_arc.lock().await;
-        // Whether this chat diverts pre-tool monologue aggressively (task
-        // agents and the classic agent modes act first, think less in the
-        // visible output).
-        let is_agent_for_monologue =
-            is_task_agent_chat(&session.thread) || is_agentic_mode_id(&mode);
         if let Some(ref mut draft) = session.draft_message {
-            // Divert pre-tool monologue ("thinking out loud" in `content`
-            // right before a tool call) into `reasoning_content`: the UI then
-            // shows it under "Thought for..." and strip_reasoning_from_prompt
-            // drops it from future prompts so the model is not confused by
-            // its own past thoughts.
-            let pre_tool_monologue = (!result.tool_calls_raw.is_empty()
-                && !result.content.trim().is_empty()
-                && is_pre_tool_monologue(&result.content, is_agent_for_monologue))
-            .then(|| result.content.clone());
-            draft.content = match &pre_tool_monologue {
-                Some(_) => ChatContent::SimpleText(String::new()),
-                None => ChatContent::SimpleText(result.content),
-            };
-
             if !result.tool_calls_raw.is_empty() {
                 info!(
                     "Parsing {} accumulated tool calls",
                     result.tool_calls_raw.len()
                 );
-                let parsed: Vec<_> = result
-                    .tool_calls_raw
-                    .iter()
-                    .filter_map(|tc| normalize_tool_call(tc))
-                    .collect();
-                info!("Successfully parsed {} tool calls", parsed.len());
-                if !parsed.is_empty() {
-                    draft.tool_calls = Some(parsed);
-                }
             }
-
-            if !result.reasoning.is_empty() {
-                draft.reasoning_content = Some(result.reasoning);
-            }
-            if let Some(monologue) = pre_tool_monologue {
-                info!(
-                    "Diverted {} chars of pre-tool monologue into reasoning_content",
-                    monologue.len()
-                );
-                match draft.reasoning_content.as_mut() {
-                    Some(existing) if !existing.trim().is_empty() => {
-                        existing.push_str(&format!("\n{monologue}"));
-                    }
-                    _ => draft.reasoning_content = Some(monologue),
-                }
-            }
-            if !result.thinking_blocks.is_empty() {
-                draft.thinking_blocks = Some(result.thinking_blocks);
-            }
-            if !result.citations.is_empty() {
-                draft.citations = result.citations;
-            }
-            if !result.server_content_blocks.is_empty() {
-                draft.server_content_blocks = result.server_content_blocks;
-            }
-            if !result.extra.is_empty() {
-                draft.extra = result.extra;
-            }
+            let parsed_tool_calls = apply_result_to_draft(draft, &result);
+            info!("Successfully parsed {} tool calls", parsed_tool_calls);
         }
 
         // Store previous_response_id for stateful multi-turn on Platform API only.
@@ -829,6 +774,37 @@ pub async fn run_streaming_generation(
     }
 
     Ok(GenerationResult::Completed)
+}
+
+fn apply_result_to_draft(draft: &mut ChatMessage, result: &ChoiceFinal) -> usize {
+    draft.content = ChatContent::SimpleText(result.content.clone());
+
+    let parsed_tool_calls: Vec<_> = result
+        .tool_calls_raw
+        .iter()
+        .filter_map(|tool_call| normalize_tool_call(tool_call))
+        .collect();
+    if !parsed_tool_calls.is_empty() {
+        draft.tool_calls = Some(parsed_tool_calls.clone());
+    }
+
+    if !result.reasoning.is_empty() {
+        draft.reasoning_content = Some(result.reasoning.clone());
+    }
+    if !result.thinking_blocks.is_empty() {
+        draft.thinking_blocks = Some(result.thinking_blocks.clone());
+    }
+    if !result.citations.is_empty() {
+        draft.citations = result.citations.clone();
+    }
+    if !result.server_content_blocks.is_empty() {
+        draft.server_content_blocks = result.server_content_blocks.clone();
+    }
+    if !result.extra.is_empty() {
+        draft.extra = result.extra.clone();
+    }
+
+    parsed_tool_calls.len()
 }
 
 pub fn is_result_empty(result: &ChoiceFinal) -> bool {
@@ -1179,4 +1155,129 @@ pub async fn generation_metering_usd(
     let pricing =
         refact_runtime_api::providers_pricing_runtime::lookup_model_pricing_for_ctx(&app.ctx, model_id).await?;
     refact_runtime_api::providers_pricing_runtime::compute_cost(usage, &pricing)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tool_call(id: &str, name: &str) -> serde_json::Value {
+        json!({
+            "type": "function",
+            "id": id,
+            "function": {
+                "name": name,
+                "arguments": "{}"
+            }
+        })
+    }
+
+    #[test]
+    fn content_with_tool_call_remains_content() {
+        let mut draft = ChatMessage::default();
+        let result = ChoiceFinal {
+            content: "Visible answer".to_string(),
+            tool_calls_raw: vec![tool_call("call-1", "cat")],
+            ..Default::default()
+        };
+
+        let parsed_tool_calls = apply_result_to_draft(&mut draft, &result);
+
+        assert_eq!(parsed_tool_calls, 1);
+        assert_eq!(draft.content.content_text_only(), "Visible answer");
+        assert_eq!(draft.tool_calls.as_ref().map(Vec::len), Some(1));
+        assert!(draft.reasoning_content.is_none());
+    }
+
+    #[test]
+    fn reasoning_and_content_with_tool_call_remain_separate() {
+        let mut draft = ChatMessage::default();
+        let result = ChoiceFinal {
+            content: "Visible answer".to_string(),
+            reasoning: "Provider reasoning".to_string(),
+            tool_calls_raw: vec![tool_call("call-1", "cat")],
+            ..Default::default()
+        };
+
+        apply_result_to_draft(&mut draft, &result);
+
+        assert_eq!(draft.content.content_text_only(), "Visible answer");
+        assert_eq!(
+            draft.reasoning_content.as_deref(),
+            Some("Provider reasoning")
+        );
+        assert!(!draft
+            .reasoning_content
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Visible answer"));
+    }
+
+    #[test]
+    fn russian_body_with_tool_call_remains_visible_in_agent_modes() {
+        for mode in ["task_planner", "task_agent", "agent"] {
+            let mut draft = ChatMessage::default();
+            let result = ChoiceFinal {
+                content: "Готовый полный ответ на русском языке.".to_string(),
+                tool_calls_raw: vec![tool_call("call-1", "cat")],
+                ..Default::default()
+            };
+
+            apply_result_to_draft(&mut draft, &result);
+
+            assert_eq!(
+                draft.content.content_text_only(),
+                "Готовый полный ответ на русском языке.",
+                "content changed in mode {mode}"
+            );
+            assert!(draft.reasoning_content.is_none());
+        }
+    }
+
+    #[test]
+    fn multiple_tool_calls_do_not_change_content_channel() {
+        let mut draft = ChatMessage::default();
+        let result = ChoiceFinal {
+            content: "Answer before tool calls".to_string(),
+            reasoning: "Reasoning before tool calls".to_string(),
+            tool_calls_raw: vec![
+                tool_call("call-1", "cat"),
+                tool_call("call-2", "grep"),
+            ],
+            ..Default::default()
+        };
+
+        let parsed_tool_calls = apply_result_to_draft(&mut draft, &result);
+
+        assert_eq!(parsed_tool_calls, 2);
+        assert_eq!(draft.tool_calls.as_ref().map(Vec::len), Some(2));
+        assert_eq!(
+            draft.content.content_text_only(),
+            "Answer before tool calls"
+        );
+        assert_eq!(
+            draft.reasoning_content.as_deref(),
+            Some("Reasoning before tool calls")
+        );
+    }
+
+    #[test]
+    fn no_tool_call_behavior_is_unchanged() {
+        let mut draft = ChatMessage::default();
+        let result = ChoiceFinal {
+            content: "Visible answer".to_string(),
+            reasoning: "Provider reasoning".to_string(),
+            ..Default::default()
+        };
+
+        let parsed_tool_calls = apply_result_to_draft(&mut draft, &result);
+
+        assert_eq!(parsed_tool_calls, 0);
+        assert_eq!(draft.content.content_text_only(), "Visible answer");
+        assert_eq!(
+            draft.reasoning_content.as_deref(),
+            Some("Provider reasoning")
+        );
+        assert!(draft.tool_calls.is_none());
+    }
 }

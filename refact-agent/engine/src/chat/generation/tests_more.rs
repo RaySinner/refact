@@ -629,58 +629,6 @@ fn nudge_stops_after_second_attempt_in_conversation() {
     assert!(decide(&messages, true, true, true, "still just talking.").is_none());
 }
 
-#[test]
-fn pre_tool_monologue_detects_explicit_markers_in_any_mode() {
-    for (agent, text) in [
-        (false, "Wait! let me look at this again"),
-        (false, "Let's check the file before editing it"),
-        (true, "Thinking process: step one done, now step two"),
-        (false, "Now checking the test suite"),
-        (true, "First, I'll read the config file"),
-        (false, "Next step: run the linter"),
-    ] {
-        assert!(
-            is_pre_tool_monologue(text, agent),
-            "expected monologue for agent={agent} text={text:?}"
-        );
-    }
-}
-
-#[test]
-fn pre_tool_monologue_agent_mode_diverts_unmarked_planning_text() {
-    assert!(is_pre_tool_monologue(
-        "I need to read src/lib.rs before I can change the parser.",
-        true
-    ));
-}
-
-#[test]
-fn pre_tool_monologue_keeps_user_greetings_and_headers_visible() {
-    // A message that starts with a user greeting or a markdown header is
-    // meant for a human reader and must stay in `content`.
-    assert!(!is_pre_tool_monologue("Hi! I'll open the file now.", true));
-    assert!(!is_pre_tool_monologue(
-        "## Summary of changes performed",
-        true
-    ));
-    // Explicit markers still win over the greeting heuristic.
-    assert!(is_pre_tool_monologue(
-        "Hi, wait! let me re-check that",
-        true
-    ));
-}
-
-#[test]
-fn pre_tool_monologue_ignores_plain_chat_and_empty_text() {
-    // Without markers, non-agent chats keep the text in `content`.
-    assert!(!is_pre_tool_monologue(
-        "First, let me think about how to answer this.",
-        false
-    ));
-    assert!(!is_pre_tool_monologue("", true));
-    assert!(!is_pre_tool_monologue("   \n  ", true));
-}
-
 fn finish_tool_catalog() -> refact_runtime_api::ToolCatalogSnapshot {
     let desc = refact_tool_api::ToolDesc {
         name: SILENT_TAIL_FINISH_TOOL.to_string(),

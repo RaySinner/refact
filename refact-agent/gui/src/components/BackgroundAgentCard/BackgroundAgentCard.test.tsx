@@ -255,7 +255,9 @@ describe("BackgroundAgentCard", () => {
     );
 
     expect(screen.getByTestId("tool-children")).toBeVisible();
-    expect(screen.queryByTestId("background-agent-expanded-detail")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("background-agent-expanded-detail"),
+    ).not.toBeInTheDocument();
 
     fireEvent.click(
       screen.getByRole("button", { name: "Expand background agent details" }),

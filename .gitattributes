@@ -4,5 +4,15 @@
 *.java          text eol=lf 
 *.js            text eol=lf 
 *.ts            text eol=lf 
+refact-agent/gui/**/*.tsx  text eol=lf
+refact-agent/gui/**/*.css  text eol=lf
+refact-agent/gui/**/*.md   text eol=lf
+refact-agent/gui/**/*.html text eol=lf
+refact-agent/gui/**/*.json text eol=lf
+refact-agent/gui/**/*.mjs  text eol=lf
+refact-agent/gui/**/*.cjs  text eol=lf
+refact-agent/gui/**/*.yaml text eol=lf
+refact-agent/gui/**/*.txt  text eol=lf
+refact-agent/gui/**/*.patch text eol=lf
 *.py            text eol=lf
 tests/emergency_frog_situation/frog.py text eol=*

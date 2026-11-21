@@ -2407,7 +2407,9 @@ describe("TaskWorkspace CardDetail dialog", () => {
     const membersList = within(dialog).getByTestId("card-detail-room-members");
     expect(within(membersList).getByText("coder")).toBeInTheDocument();
     expect(within(membersList).getByText("pending")).toBeInTheDocument();
-    expect(within(membersList).getByText("Implement the task")).toBeInTheDocument();
+    expect(
+      within(membersList).getByText("Implement the task"),
+    ).toBeInTheDocument();
     expect(within(membersList).getAllByText("edit").length).toBeGreaterThan(0);
 
     // Clicking a member's "Open chat" switches to that member's thread.

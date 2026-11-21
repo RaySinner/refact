@@ -158,7 +158,9 @@ describe("RoomAttributionFrame", () => {
       </RoomAttributionFrame>,
     );
     expect(screen.getByText("coder")).toBeInTheDocument();
-    expect(screen.queryByTestId("room-attribution-name")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("room-attribution-name"),
+    ).not.toBeInTheDocument();
 
     rerender(
       <RoomAttributionFrame
@@ -170,7 +172,9 @@ describe("RoomAttributionFrame", () => {
       </RoomAttributionFrame>,
     );
     expect(screen.getByText("user")).toBeInTheDocument();
-    expect(screen.queryByTestId("room-attribution-name")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("room-attribution-name"),
+    ).not.toBeInTheDocument();
 
     rerender(
       <RoomAttributionFrame
@@ -182,7 +186,9 @@ describe("RoomAttributionFrame", () => {
       </RoomAttributionFrame>,
     );
     expect(screen.getByText("assistant")).toBeInTheDocument();
-    expect(screen.queryByTestId("room-attribution-name")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("room-attribution-name"),
+    ).not.toBeInTheDocument();
   });
 
   it("renders the time on every message it wraps", () => {

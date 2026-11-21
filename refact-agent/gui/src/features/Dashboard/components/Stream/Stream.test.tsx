@@ -50,9 +50,7 @@ function preloadedStateWith(chats: ChatHistoryItem[]) {
   };
 }
 
-function makeTask(
-  partial: Partial<TaskMeta> & { id: string },
-): TaskMeta {
+function makeTask(partial: Partial<TaskMeta> & { id: string }): TaskMeta {
   return {
     name: `task ${partial.id}`,
     status: "completed",
@@ -240,7 +238,9 @@ describe("StreamSection", () => {
     const deleteRequests: string[] = [];
     server.use(
       http.delete("*/v1/tasks/:id", ({ request }) => {
-        deleteRequests.push(new URL(request.url).searchParams.get("force") ?? "");
+        deleteRequests.push(
+          new URL(request.url).searchParams.get("force") ?? "",
+        );
         return HttpResponse.json({ deleted: true });
       }),
     );
@@ -252,9 +252,7 @@ describe("StreamSection", () => {
         onOpenTask={vi.fn()}
       />,
       {
-        preloadedState: preloadedStateWithTasks([
-          makeTask({ id: "t-1" }),
-        ]),
+        preloadedState: preloadedStateWithTasks([makeTask({ id: "t-1" })]),
       },
     );
 

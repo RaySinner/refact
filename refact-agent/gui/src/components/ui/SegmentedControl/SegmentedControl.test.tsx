@@ -174,10 +174,7 @@ describe("SegmentedControl", () => {
     );
     const root = readCssRule(css, ".root");
     const sizeSm = readCssRule(css, ".size-sm");
-    const sizeSmLabel = readCssRule(
-      css,
-      ".size-sm .segment,\n.size-sm .label",
-    );
+    const sizeSmLabel = readCssRule(css, ".size-sm .segment,\n.size-sm .label");
 
     expect(root).toContain(
       "height: calc(var(--rf-control-h-sm) + 2 * var(--rf-segment-padding));",

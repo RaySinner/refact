@@ -343,7 +343,9 @@ const SubchatTab: React.FC<{
         <Field label="Model Type">
           <FieldSelect
             value={safeString(subchat.model_type) || "default"}
-            onChange={(value) => patch(["subchat", "model_type"], value || undefined)}
+            onChange={(value) =>
+              patch(["subchat", "model_type"], value || undefined)
+            }
             options={[
               { value: "default", label: "Default" },
               { value: "light", label: "Light" },

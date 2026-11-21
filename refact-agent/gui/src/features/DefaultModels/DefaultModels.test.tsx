@@ -411,7 +411,11 @@ describe("DefaultModels — Reasoning toggle regression", () => {
     const { updateDefaults } = setupMocks({
       defaults: {
         ...baseDefaults,
-        chat: { model: "gpt-4", boost_reasoning: true, reasoning_effort: "high" },
+        chat: {
+          model: "gpt-4",
+          boost_reasoning: true,
+          reasoning_effort: "high",
+        },
       },
     });
     (useGetCapsQuery as ReturnType<typeof vi.fn>).mockReturnValue({
@@ -436,9 +440,7 @@ describe("DefaultModels — Reasoning toggle regression", () => {
 
     fireEvent.click(reasoningSwitch);
 
-    expect(
-      screen.getByRole("switch", { name: "Reasoning" }),
-    ).not.toBeChecked();
+    expect(screen.getByRole("switch", { name: "Reasoning" })).not.toBeChecked();
     expect(screen.queryByText("Effort")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
@@ -479,9 +481,7 @@ describe("DefaultModels — Reasoning toggle regression", () => {
 
     fireEvent.click(reasoningSwitch);
 
-    expect(
-      screen.getByRole("switch", { name: "Reasoning" }),
-    ).toBeChecked();
+    expect(screen.getByRole("switch", { name: "Reasoning" })).toBeChecked();
 
     fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
     await waitFor(() => expect(updateDefaults).toHaveBeenCalledOnce());

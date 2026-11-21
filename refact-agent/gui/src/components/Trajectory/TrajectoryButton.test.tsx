@@ -105,21 +105,17 @@ describe("TrajectoryButton", () => {
     server.use(
       goodCaps,
       goodChatModes,
-      http.post(
-        "*/v1/chats/*/trajectory/transform/preview",
-        () =>
-          HttpResponse.json({
-            stats: transformStats,
-            actions: ["Dropped 3 context files"],
-          }),
+      http.post("*/v1/chats/*/trajectory/transform/preview", () =>
+        HttpResponse.json({
+          stats: transformStats,
+          actions: ["Dropped 3 context files"],
+        }),
       ),
-      http.post(
-        "*/v1/chats/*/trajectory/transform/apply",
-        () =>
-          HttpResponse.json(
-            { error: "Session is busy. Try again later." },
-            { status: 409 },
-          ),
+      http.post("*/v1/chats/*/trajectory/transform/apply", () =>
+        HttpResponse.json(
+          { error: "Session is busy. Try again later." },
+          { status: 409 },
+        ),
       ),
     );
 
@@ -132,9 +128,7 @@ describe("TrajectoryButton", () => {
     await user.click(screen.getByTestId("trajectory-button"));
     const popover = screen.getByRole("dialog");
 
-    await user.click(
-      within(popover).getByRole("button", { name: "Preview" }),
-    );
+    await user.click(within(popover).getByRole("button", { name: "Preview" }));
     const applyButton = within(popover).getByRole("button", { name: "Apply" });
     await screen.findByText((content) => content.includes("reduction"));
     expect(applyButton).toBeEnabled();
@@ -150,8 +144,6 @@ describe("TrajectoryButton", () => {
     await user.click(screen.getByTestId("trajectory-button"));
 
     const popover = screen.getByRole("dialog");
-    expect(
-      within(popover).queryByRole("alert"),
-    ).not.toBeInTheDocument();
+    expect(within(popover).queryByRole("alert")).not.toBeInTheDocument();
   });
 });

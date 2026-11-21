@@ -3,10 +3,7 @@ import { roleAccent, roleLabel } from "../../../utils/roomRoleAccent";
 import type { RoomAttribution } from "./roomAttribution";
 import styles from "./RoomAttributionFrame.module.css";
 import type { Usage } from "../../../services/refact";
-import {
-  MessageActionButtons,
-  MessageUsageDisplay,
-} from "../MessageFooter";
+import { MessageActionButtons, MessageUsageDisplay } from "../MessageFooter";
 import type { Checkpoint } from "../../../features/Checkpoints/types";
 
 export type RoomAttributionFrameProps = {
@@ -41,10 +38,12 @@ export const RoomAttributionFrame: React.FC<RoomAttributionFrameProps> = ({
   const roleText = roleLabel(attribution.author.role);
 
   const isStandardRole =
-    attribution.author.role === "user" || attribution.author.role === "assistant";
+    attribution.author.role === "user" ||
+    attribution.author.role === "assistant";
   const showName =
     !isStandardRole &&
-    attribution.author.displayName.trim().toLowerCase() !== roleText.trim().toLowerCase();
+    attribution.author.displayName.trim().toLowerCase() !==
+      roleText.trim().toLowerCase();
 
   const renderedActions = actions ?? (
     <MessageActionButtons

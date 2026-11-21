@@ -1686,9 +1686,7 @@ export const selectStripReasoningFromPromptById = (
 ): boolean =>
   state.chat.threads[chatId]?.thread.strip_reasoning_from_prompt ?? false;
 
-export const selectStripReasoningFromPrompt = (
-  state: RootState,
-): boolean =>
+export const selectStripReasoningFromPrompt = (state: RootState): boolean =>
   selectStripReasoningFromPromptById(state, state.chat.current_thread_id);
 
 export const selectMemoryEnrichmentUserTouchedById = (

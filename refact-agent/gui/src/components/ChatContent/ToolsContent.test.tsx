@@ -846,9 +846,9 @@ describe("ToolAgentDecoration rendering", () => {
       backgroundAgents: { [stale.agent_id]: stale, [live.agent_id]: live },
     });
 
-    expect(screen.getByTestId("tool-agent-bgagent-stale-live")).toHaveTextContent(
-      "Live report",
-    );
+    expect(
+      screen.getByTestId("tool-agent-bgagent-stale-live"),
+    ).toHaveTextContent("Live report");
     expect(
       screen.queryByTestId("tool-agent-bgagent-stale-done"),
     ).not.toBeInTheDocument();

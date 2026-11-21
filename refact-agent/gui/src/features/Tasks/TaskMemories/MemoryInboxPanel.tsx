@@ -108,9 +108,13 @@ function describeMutationError(label: string, error: unknown): string {
     (record && detailFromUnknown(record.error)) ??
     (error instanceof Error ? error.message : null);
   if (detail) {
-    return statusText ? `${label} failed (HTTP ${statusText}): ${detail}` : `${label} failed: ${detail}`;
+    return statusText
+      ? `${label} failed (HTTP ${statusText}): ${detail}`
+      : `${label} failed: ${detail}`;
   }
-  return statusText ? `${label} failed (HTTP ${statusText}).` : `${label} failed.`;
+  return statusText
+    ? `${label} failed (HTTP ${statusText}).`
+    : `${label} failed.`;
 }
 
 export const MemoryInboxPanel: React.FC<MemoryInboxPanelProps> = ({

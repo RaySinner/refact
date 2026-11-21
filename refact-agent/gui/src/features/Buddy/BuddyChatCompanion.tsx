@@ -1396,7 +1396,10 @@ export const BuddyChatCompanion: React.FC<Props> = ({ chatId }) => {
                 : () => {
                     if (!notification) return;
                     completeBubbleInteraction();
-                    dismissNotification(notification.id, notification.contentKey);
+                    dismissNotification(
+                      notification.id,
+                      notification.contentKey,
+                    );
                   }
             }
             bubblePosition="left"

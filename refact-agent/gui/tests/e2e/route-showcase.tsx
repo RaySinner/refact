@@ -1368,7 +1368,7 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       }),
     );
   }
-if (path === "/v1/at-command-completion") {
+  if (path === "/v1/at-command-completion") {
     return Promise.resolve(
       jsonResponse({
         completions: [],

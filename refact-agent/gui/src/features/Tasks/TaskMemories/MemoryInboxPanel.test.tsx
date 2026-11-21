@@ -782,10 +782,8 @@ describe("MemoryInboxPanel", () => {
           pinned_count: 0,
         }),
       ),
-      http.post(
-        "*/v1/task/:taskId/memories/:filename/pin",
-        () =>
-          HttpResponse.json({ error: "Memory not found: xyz" }, { status: 404 }),
+      http.post("*/v1/task/:taskId/memories/:filename/pin", () =>
+        HttpResponse.json({ error: "Memory not found: xyz" }, { status: 404 }),
       ),
     );
 
@@ -826,13 +824,11 @@ describe("MemoryInboxPanel", () => {
           pinned_count: 0,
         }),
       ),
-      http.post(
-        "*/v1/task/:taskId/memories/:filename/pin",
-        () =>
-          HttpResponse.json(
-            { error: "Memory not found: `xyz` in active task memories" },
-            { status: 500 },
-          ),
+      http.post("*/v1/task/:taskId/memories/:filename/pin", () =>
+        HttpResponse.json(
+          { error: "Memory not found: `xyz` in active task memories" },
+          { status: 500 },
+        ),
       ),
     );
 
@@ -925,10 +921,8 @@ describe("MemoryInboxPanel", () => {
           pinned_count: 0,
         }),
       ),
-      http.post(
-        "*/v1/task/:taskId/memories/:filename/archive",
-        () =>
-          HttpResponse.json({ error: "Memory not found: xyz" }, { status: 404 }),
+      http.post("*/v1/task/:taskId/memories/:filename/archive", () =>
+        HttpResponse.json({ error: "Memory not found: xyz" }, { status: 404 }),
       ),
     );
 
@@ -937,7 +931,9 @@ describe("MemoryInboxPanel", () => {
     });
 
     await user.click(await screen.findByRole("button", { name: "Archive" }));
-    await user.click(await screen.findByRole("button", { name: "Confirm archive" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Confirm archive" }),
+    );
 
     await waitFor(() => {
       expect(screen.getByText("Action failed")).toBeInTheDocument();

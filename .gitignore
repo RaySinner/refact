@@ -312,6 +312,7 @@ dist
 
 # vite cache
 .vite
+refact-agent/gui/vite.config.ts.timestamp-*.mjs
 # Refact binary/symlink
 **/refact/bin/refact-lsp
 

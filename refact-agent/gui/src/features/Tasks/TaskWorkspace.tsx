@@ -429,9 +429,7 @@ function agentChatEntries(cards: BoardCard[]): AgentChatEntry[] {
     const base = cards.filter((card) => card.column === column);
     const out: AgentChatEntry[] = [];
     for (const card of base) {
-      const members = (card.team_members ?? []).filter(
-        (m) => m.agent_chat_id,
-      );
+      const members = (card.team_members ?? []).filter((m) => m.agent_chat_id);
       if (members.length > 0) {
         for (const m of members) {
           const chatId = m.agent_chat_id;
@@ -455,11 +453,7 @@ function agentChatEntries(cards: BoardCard[]): AgentChatEntry[] {
     }
     return out;
   };
-  return [
-    ...forColumn("doing"),
-    ...forColumn("done"),
-    ...forColumn("failed"),
-  ];
+  return [...forColumn("doing"), ...forColumn("done"), ...forColumn("failed")];
 }
 
 interface AgentItemProps {
@@ -1065,12 +1059,14 @@ const CardDetail: React.FC<CardDetailProps> = ({
                         >
                           {roleLabel(member.role)}
                         </Text>
-                        <Badge tone={memberStatusTone(status)}>
-                          {status}
-                        </Badge>
+                        <Badge tone={memberStatusTone(status)}>{status}</Badge>
                       </div>
                       {member.mandate && (
-                        <Text size="1" color="gray" className={styles.roomMemberMandate}>
+                        <Text
+                          size="1"
+                          color="gray"
+                          className={styles.roomMemberMandate}
+                        >
                           {member.mandate}
                         </Text>
                       )}
@@ -1092,14 +1088,20 @@ const CardDetail: React.FC<CardDetailProps> = ({
                         className={styles.roomMemberRowAction}
                         data-testid={`room-member-open-${key}`}
                         onClick={() =>
-                          onOpenAgentChat(card, member.agent_chat_id ?? undefined)
+                          onOpenAgentChat(
+                            card,
+                            member.agent_chat_id ?? undefined,
+                          )
                         }
                       >
                         <Icon icon={Bot} size="sm" tone="accent" />
                         Open chat
                       </Button>
                     ) : (
-                      <Badge tone="muted" className={styles.roomMemberRowAction}>
+                      <Badge
+                        tone="muted"
+                        className={styles.roomMemberRowAction}
+                      >
                         no chat
                       </Badge>
                     )}

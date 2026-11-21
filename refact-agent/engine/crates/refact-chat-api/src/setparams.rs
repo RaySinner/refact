@@ -240,6 +240,16 @@ pub fn apply_setparams_patch(
             changed = true;
         }
     }
+    if let Some(val) = patch
+        .get("strip_reasoning_from_prompt")
+        .and_then(|v| v.as_bool())
+    {
+        let new_val = Some(val);
+        if thread.strip_reasoning_from_prompt != new_val {
+            thread.strip_reasoning_from_prompt = new_val;
+            changed = true;
+        }
+    }
     if let Some(val) = patch.get("auto_enrichment_enabled") {
         if val.is_null() {
             if thread.auto_enrichment_enabled.is_some() {
@@ -388,5 +398,81 @@ pub fn map_legacy_mode_to_id(mode_str: &str) -> &str {
                 "agent"
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strip_reasoning_from_prompt_toggles_in_both_directions() {
+        let mut thread = ThreadParams::default();
+
+        let (changed, _) = apply_setparams_patch(
+            &mut thread,
+            &serde_json::json!({"strip_reasoning_from_prompt": true}),
+        );
+        assert!(changed);
+        assert_eq!(thread.strip_reasoning_from_prompt, Some(true));
+        assert!(thread.strip_reasoning_from_prompt_effective());
+
+        let (changed, _) = apply_setparams_patch(
+            &mut thread,
+            &serde_json::json!({"strip_reasoning_from_prompt": false}),
+        );
+        assert!(changed);
+        assert_eq!(thread.strip_reasoning_from_prompt, Some(false));
+        assert!(!thread.strip_reasoning_from_prompt_effective());
+    }
+
+    #[test]
+    fn strip_reasoning_from_prompt_same_value_is_idempotent() {
+        let mut thread = ThreadParams {
+            strip_reasoning_from_prompt: Some(true),
+            ..Default::default()
+        };
+
+        let (changed, _) = apply_setparams_patch(
+            &mut thread,
+            &serde_json::json!({"strip_reasoning_from_prompt": true}),
+        );
+        assert!(!changed);
+        assert_eq!(thread.strip_reasoning_from_prompt, Some(true));
+    }
+
+    #[test]
+    fn strip_reasoning_from_prompt_invalid_or_missing_is_ignored() {
+        let mut thread = ThreadParams {
+            strip_reasoning_from_prompt: Some(true),
+            ..Default::default()
+        };
+
+        let (changed, _) = apply_setparams_patch(
+            &mut thread,
+            &serde_json::json!({"strip_reasoning_from_prompt": "invalid"}),
+        );
+        assert!(!changed);
+        assert_eq!(thread.strip_reasoning_from_prompt, Some(true));
+
+        let (changed, _) =
+            apply_setparams_patch(&mut thread, &serde_json::json!({}));
+        assert!(!changed);
+        assert_eq!(thread.strip_reasoning_from_prompt, Some(true));
+    }
+
+    #[test]
+    fn strip_reasoning_from_prompt_sanitized_patch_keeps_valid_value() {
+        let mut thread = ThreadParams::default();
+
+        let (changed, sanitized) = apply_setparams_patch(
+            &mut thread,
+            &serde_json::json!({"strip_reasoning_from_prompt": true}),
+        );
+        assert!(changed);
+        assert_eq!(
+            sanitized["strip_reasoning_from_prompt"],
+            serde_json::Value::Bool(true)
+        );
     }
 }

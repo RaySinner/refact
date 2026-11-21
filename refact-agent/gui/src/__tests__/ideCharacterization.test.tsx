@@ -332,7 +332,7 @@ describe("IDE characterization: zero new chrome", () => {
       expect(selectCapabilities(store.getState())).toEqual({
         filesPanel: false,
         gitPanel: false,
-        terminalPanel: false,
+        terminalPanel: host === "vscode",
         openFileInApp: false,
         openFileInIde: true,
         ideDiffPasteBack: true,

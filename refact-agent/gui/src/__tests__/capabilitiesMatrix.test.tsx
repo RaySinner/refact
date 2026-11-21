@@ -39,6 +39,11 @@ const IDE_CAPABILITIES: Capabilities = {
   folderPicker: false,
 };
 
+const VSCODE_CAPABILITIES: Capabilities = {
+  ...IDE_CAPABILITIES,
+  terminalPanel: true,
+};
+
 function makeConfig(
   host: Config["host"],
   overrides?: Partial<Capabilities>,
@@ -88,7 +93,7 @@ describe("resolveCapabilities matrix", () => {
   ])[] = [
     ["web defaults", "web", undefined, WEB_CAPABILITIES],
     ["ide defaults", "ide", undefined, IDE_CAPABILITIES],
-    ["vscode defaults", "vscode", undefined, IDE_CAPABILITIES],
+    ["vscode defaults", "vscode", undefined, VSCODE_CAPABILITIES],
     ["jetbrains defaults", "jetbrains", undefined, IDE_CAPABILITIES],
     [
       "web with panels revoked",
@@ -111,7 +116,7 @@ describe("resolveCapabilities matrix", () => {
       "vscode with files panel granted",
       "vscode",
       { filesPanel: true, openFileInApp: true },
-      { ...IDE_CAPABILITIES, filesPanel: true, openFileInApp: true },
+      { ...VSCODE_CAPABILITIES, filesPanel: true, openFileInApp: true },
     ],
     [
       "jetbrains with paste-back revoked",
@@ -321,7 +326,7 @@ describe("persisted panel tabs respect capability revocation", () => {
     expect(store.getState().workspace.drawer?.open).toBe(true);
   });
 
-  it("drops every panel tab when hydrating with IDE capabilities", () => {
+  it("drops every panel tab when hydrating with VS Code capabilities", () => {
     const store = createStoreWithOpenThread();
 
     store.dispatch(

@@ -30,11 +30,16 @@ const IDE_CAPABILITIES: Capabilities = {
   folderPicker: false,
 };
 
+const VSCODE_CAPABILITIES: Capabilities = {
+  ...IDE_CAPABILITIES,
+  terminalPanel: true,
+};
+
 describe("resolveCapabilities", () => {
   const matrix: readonly (readonly [Config["host"], Capabilities])[] = [
     ["web", WEB_CAPABILITIES],
     ["ide", IDE_CAPABILITIES],
-    ["vscode", IDE_CAPABILITIES],
+    ["vscode", VSCODE_CAPABILITIES],
     ["jetbrains", IDE_CAPABILITIES],
   ];
 
@@ -65,7 +70,18 @@ describe("config capability selectors", () => {
 
     store.dispatch(updateConfig({ host: "vscode" }));
 
-    expect(selectCapabilities(store.getState())).toEqual(IDE_CAPABILITIES);
+    expect(selectCapabilities(store.getState())).toEqual(VSCODE_CAPABILITIES);
+  });
+
+  it("allows disabling the VS Code terminal capability explicitly", () => {
+    expect(
+      resolveCapabilities("vscode", {
+        terminalPanel: false,
+      }),
+    ).toEqual({
+      ...VSCODE_CAPABILITIES,
+      terminalPanel: false,
+    });
   });
 
   it("stores surface and capability overrides", () => {

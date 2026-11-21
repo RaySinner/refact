@@ -28,6 +28,7 @@ export function resolveWorkspaceDockAvailability(
   panelsForced: boolean,
 ): WorkspaceDockAvailability {
   const capabilitiesEnabled = host === "web";
+  const terminalEnabled = host === "web" || host === "vscode";
   const files =
     panelsForced || (capabilitiesEnabled && capabilities.filesPanel);
   const git = panelsForced || (capabilitiesEnabled && capabilities.gitPanel);
@@ -39,6 +40,6 @@ export function resolveWorkspaceDockAvailability(
     git,
     tasks: dock,
     terminal:
-      panelsForced || (capabilitiesEnabled && capabilities.terminalPanel),
+      panelsForced || (terminalEnabled && capabilities.terminalPanel),
   };
 }

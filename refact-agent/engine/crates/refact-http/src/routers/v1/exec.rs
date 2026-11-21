@@ -170,21 +170,40 @@ async fn authorize_process(
     process_id: &ExecProcessId,
     chat_id: Option<&str>,
 ) -> Result<(ExecProcessSnapshot, PathBuf), ScratchError> {
-    let workspace = active_workspace(app).await?;
     let snapshot = app
         .runtime
         .exec_registry
-        .authorize_process_access(process_id, "", Some(&workspace))
+        .get(process_id)
         .await
-        .map_err(process_access_error)?;
-    if snapshot.meta.owner.chat_id.is_some() {
-        app.runtime
-            .exec_registry
-            .authorize_process_access(process_id, chat_id.unwrap_or_default(), None)
+        .ok_or_else(|| process_access_error(format!("process not found: {process_id}")))?;
+    let workspace = if snapshot.meta.owner.chat_id.is_none() {
+        get_active_workspace_folder(app.gcx.clone())
             .await
-            .map_err(process_access_error)?;
+            .map(canonicalize_normalized_path)
+            .map(Some)
+            .unwrap_or(None)
+    } else {
+        None
+    };
+    if !process_access_allowed(&snapshot.meta.owner, chat_id, workspace.as_deref()) {
+        return Err(process_access_error(format!(
+            "process access denied: {process_id}"
+        )));
     }
-    Ok((snapshot, workspace))
+    Ok((snapshot, workspace.unwrap_or_default()))
+}
+
+fn process_access_allowed(
+    owner: &ExecOwnerMeta,
+    requesting_chat_id: Option<&str>,
+    requesting_workspace: Option<&FsPath>,
+) -> bool {
+    match owner.chat_id.as_deref() {
+        Some(owner_chat_id) => requesting_chat_id
+            .filter(|chat_id| !chat_id.is_empty())
+            .is_some_and(|chat_id| chat_id == owner_chat_id),
+        None => owner.permits_access("", requesting_workspace),
+    }
 }
 
 fn process_access_error(message: String) -> ScratchError {
@@ -759,5 +778,50 @@ fn status_label(status: &ExecStatus) -> &'static str {
         ExecStatus::Failed { .. } => "failed",
         ExecStatus::Killed => "killed",
         ExecStatus::TimedOut => "timed_out",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn chat_owner_authorizes_same_chat_regardless_of_workspace() {
+        let owner = ExecOwnerMeta {
+            chat_id: Some("chat-a".to_string()),
+            workspace: Some(PathBuf::from("/workspace-a")),
+            ..ExecOwnerMeta::default()
+        };
+
+        assert!(process_access_allowed(
+            &owner,
+            Some("chat-a"),
+            Some(FsPath::new("/workspace-b")),
+        ));
+        assert!(!process_access_allowed(
+            &owner,
+            Some("chat-b"),
+            Some(FsPath::new("/workspace-a")),
+        ));
+    }
+
+    #[test]
+    fn ownerless_process_requires_exact_workspace() {
+        let owner = ExecOwnerMeta {
+            workspace: Some(PathBuf::from("/workspace-a")),
+            ..ExecOwnerMeta::default()
+        };
+
+        assert!(process_access_allowed(
+            &owner,
+            None,
+            Some(FsPath::new("/workspace-a")),
+        ));
+        assert!(!process_access_allowed(
+            &owner,
+            None,
+            Some(FsPath::new("/workspace-b")),
+        ));
+        assert!(!process_access_allowed(&owner, None, None));
     }
 }

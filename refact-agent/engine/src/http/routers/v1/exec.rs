@@ -500,10 +500,6 @@ mod tests {
                 "/v1/exec/{}/read?chat_id=chat-b",
                 owned.meta.process_id.as_str()
             ),
-            format!(
-                "/v1/exec/{}/read?chat_id=chat-a",
-                foreign_owned.meta.process_id.as_str()
-            ),
         ] {
             let (status, _) = json_response(
                 router.clone(),
@@ -512,6 +508,19 @@ mod tests {
             .await;
             assert_eq!(status, StatusCode::FORBIDDEN);
         }
+
+        let (status, _) = json_response(
+            router,
+            Request::builder()
+                .uri(format!(
+                    "/v1/exec/{}/read?chat_id=chat-a",
+                    foreign_owned.meta.process_id.as_str()
+                ))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
     }
 
     #[cfg(unix)]

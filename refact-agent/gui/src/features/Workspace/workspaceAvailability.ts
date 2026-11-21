@@ -39,7 +39,6 @@ export function resolveWorkspaceDockAvailability(
     files,
     git,
     tasks: dock,
-    terminal:
-      panelsForced || (terminalEnabled && capabilities.terminalPanel),
+    terminal: panelsForced || (terminalEnabled && capabilities.terminalPanel),
   };
 }

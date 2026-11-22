@@ -57,7 +57,7 @@ function timestampedAssistant(
 
 function transcriptTimeLabels(
   messages: ChatMessages,
-  firstSeenMs = 9_999,
+  firstSeenMs: number | null = 9_999,
 ): string[] {
   const items = buildDisplayItems(messages, false);
   return roomAttributionForItems(
@@ -249,6 +249,12 @@ describe("roomAttributionForItems", () => {
     expect(transcriptTimeLabels(messages, 8_888)).toEqual(["t5000"]);
   });
 
+  it("retains first-seen fallback for optimistic tools without timestamps", () => {
+    const messages: ChatMessages = [timestampedAssistant("optimistic-tool")];
+
+    expect(transcriptTimeLabels(messages, 8_000)).toEqual(["t8000"]);
+  });
+
   it("leaves legacy tool and event rows without first-seen mount labels", () => {
     const messages: ChatMessages = [
       timestampedAssistant("legacy-tool"),
@@ -267,7 +273,7 @@ describe("roomAttributionForItems", () => {
       },
     ];
 
-    expect(transcriptTimeLabels(messages)).toEqual(["", ""]);
+    expect(transcriptTimeLabels(messages, null)).toEqual(["", ""]);
   });
 
   it("retains first-seen fallback for optimistic non-tool messages", () => {

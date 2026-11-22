@@ -149,7 +149,7 @@ export function displayItemTimestampFallbackMs(
       startedAtMs = candidate;
     }
   }
-  return startedAtMs;
+  return startedAtMs ?? firstSeenMs;
 }
 
 /**

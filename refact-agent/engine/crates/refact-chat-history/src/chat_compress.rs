@@ -391,11 +391,18 @@ pub fn compress_chat_apply_head_output(
         // is saved by lossily shrinking plain-text turns above a size floor,
         // so a compression report can be produced and generation can proceed.
         // Tiny turns (below the floor) are left untouched, which keeps a
-        // genuinely empty/near-empty chat a no-op. The modifiable head is the
-        // already-expired part of the conversation: after this sweep the user
-        // re-prompts, so every oversized plain-text turn is safe to shrink,
-        // including the last one.
-        for msg in head_messages.iter_mut() {
+        // genuinely empty/near-empty chat a no-op.
+        let last_oversized_assistant = head_messages.iter().rposition(|msg| {
+            msg.role == "assistant"
+                && matches!(
+                    &msg.content,
+                    ChatContent::SimpleText(text) if text.len() > RECOVERY_PLAIN_TEXT_FLOOR
+                )
+        });
+        for (idx, msg) in head_messages.iter_mut().enumerate() {
+            if Some(idx) == last_oversized_assistant || msg.preserve == Some(true) {
+                continue;
+            }
             if msg.role != "user" && msg.role != "assistant" {
                 continue;
             }

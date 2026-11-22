@@ -12,6 +12,288 @@ use crate::tools::tools_description::Tool;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
+    use refact_chat_api::TaskMeta;
+    use refact_runtime_api::AtCommandsContext;
+    use refact_tasks::events::{TaskEvent, TaskEventEnvelope};
+    use tokio::sync::broadcast::error::TryRecvError;
+    use tokio::sync::Mutex as AMutex;
+
+    async fn make_board_context() -> (
+        tempfile::TempDir,
+        Arc<crate::global_context::GlobalContext>,
+        Arc<AMutex<AtCommandsContext>>,
+        String,
+    ) {
+        let temp = tempfile::tempdir().unwrap();
+        let gcx = crate::global_context::tests::make_test_gcx().await;
+        *gcx.documents_state.workspace_folders.lock().unwrap() = vec![temp.path().to_path_buf()];
+        let meta = refact_runtime_api::task_storage::create_task(gcx.clone(), "Atomic board")
+            .await
+            .unwrap();
+        let ccx = Arc::new(AMutex::new(
+            crate::at_commands::at_commands::at_commands_new_from_app(
+                refact_runtime_api::app_state_from_gcx(gcx.clone()).await,
+                4096,
+                20,
+                false,
+                vec![],
+                "planner-chat".to_string(),
+                None,
+                "model".to_string(),
+                Some(TaskMeta {
+                    task_id: meta.id.clone(),
+                    role: "planner".to_string(),
+                    agent_id: None,
+                    card_id: None,
+                    planner_chat_id: None,
+                }),
+                None,
+            )
+            .await,
+        ));
+        (temp, gcx, ccx, meta.id)
+    }
+
+    async fn run_board_tool<T: Tool>(
+        tool: &mut T,
+        ccx: &Arc<AMutex<AtCommandsContext>>,
+        args: HashMap<String, serde_json::Value>,
+    ) -> Result<(), String> {
+        let tool_call_id = "board-test".to_string();
+        tool.tool_execute(ccx.clone(), &tool_call_id, &args)
+            .await
+            .map(|_| ())
+    }
+
+    fn collect_board_events(
+        rx: &mut tokio::sync::broadcast::Receiver<TaskEventEnvelope>,
+    ) -> Vec<(u64, TaskBoard)> {
+        let mut events = Vec::new();
+        loop {
+            match rx.try_recv() {
+                Ok(envelope) => {
+                    if let TaskEvent::BoardChanged { rev, board, .. } = envelope.event {
+                        events.push((rev, board));
+                    }
+                }
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Closed) => break,
+                Err(TryRecvError::Lagged(skipped)) => {
+                    panic!("task event receiver lagged, skipped {skipped} events")
+                }
+            }
+        }
+        events
+    }
+
+    async fn load_board(
+        ccx: &Arc<AMutex<AtCommandsContext>>,
+        task_id: &str,
+    ) -> TaskBoard {
+        let ctx = ccx.lock().await.app.chat_ctx();
+        refact_runtime_api::task_storage::load_board_for_ctx(&ctx, task_id)
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn board_mutations_publish_one_monotonic_revision_each() {
+        let (_temp, gcx, ccx, task_id) = make_board_context().await;
+        let mut rx = gcx.task_events_tx.as_ref().unwrap().subscribe();
+
+        let mut create = ToolTaskBoardCreateCard::new();
+        run_board_tool(
+            &mut create,
+            &ccx,
+            HashMap::from([
+                ("card_id".to_string(), serde_json::json!("T-1")),
+                ("title".to_string(), serde_json::json!("First card")),
+            ]),
+        )
+        .await
+        .unwrap();
+
+        let mut update = ToolTaskBoardUpdateCard::new();
+        run_board_tool(
+            &mut update,
+            &ccx,
+            HashMap::from([
+                ("card_id".to_string(), serde_json::json!("T-1")),
+                ("title".to_string(), serde_json::json!("Renamed card")),
+            ]),
+        )
+        .await
+        .unwrap();
+
+        let mut move_card = ToolTaskBoardMoveCard::new();
+        run_board_tool(
+            &mut move_card,
+            &ccx,
+            HashMap::from([
+                ("card_id".to_string(), serde_json::json!("T-1")),
+                ("column".to_string(), serde_json::json!("doing")),
+            ]),
+        )
+        .await
+        .unwrap();
+
+        let mut delete = ToolTaskBoardDeleteCard::new();
+        run_board_tool(
+            &mut delete,
+            &ccx,
+            HashMap::from([("card_id".to_string(), serde_json::json!("T-1"))]),
+        )
+        .await
+        .unwrap();
+
+        let board = load_board(&ccx, &task_id).await;
+        assert_eq!(board.rev, 4);
+        assert!(board.cards.is_empty());
+
+        let events = collect_board_events(&mut rx);
+        assert_eq!(events.len(), 4);
+        for (index, (rev, event_board)) in events.iter().enumerate() {
+            assert_eq!(*rev, index as u64 + 1);
+            assert_eq!(event_board.rev, *rev);
+        }
+    }
+
+    #[tokio::test]
+    async fn failed_board_mutations_keep_revision_and_emit_nothing() {
+        let (_temp, gcx, ccx, task_id) = make_board_context().await;
+        let mut rx = gcx.task_events_tx.as_ref().unwrap().subscribe();
+
+        let mut create = ToolTaskBoardCreateCard::new();
+        run_board_tool(
+            &mut create,
+            &ccx,
+            HashMap::from([
+                ("card_id".to_string(), serde_json::json!("T-1")),
+                ("title".to_string(), serde_json::json!("First card")),
+            ]),
+        )
+        .await
+        .unwrap();
+        assert_eq!(collect_board_events(&mut rx).len(), 1);
+
+        let duplicate = run_board_tool(
+            &mut create,
+            &ccx,
+            HashMap::from([
+                ("card_id".to_string(), serde_json::json!("T-1")),
+                ("title".to_string(), serde_json::json!("Duplicate card")),
+            ]),
+        )
+        .await
+        .unwrap_err();
+        assert!(duplicate.contains("already exists"), "{duplicate}");
+
+        let mut update = ToolTaskBoardUpdateCard::new();
+        let missing = run_board_tool(
+            &mut update,
+            &ccx,
+            HashMap::from([("card_id".to_string(), serde_json::json!("T-404"))]),
+        )
+        .await
+        .unwrap_err();
+        assert!(missing.contains("not found"), "{missing}");
+
+        let invalid_roster = run_board_tool(
+            &mut update,
+            &ccx,
+            HashMap::from([
+                ("card_id".to_string(), serde_json::json!("T-1")),
+                (
+                    "team_members".to_string(),
+                    serde_json::json!([
+                        {"role": "coder", "agent_chat_id": "agent-same"},
+                        {"role": "reviewer", "agent_chat_id": "agent-same"},
+                    ]),
+                ),
+            ]),
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            invalid_roster.contains("duplicate team member"),
+            "{invalid_roster}"
+        );
+
+        let mut move_card = ToolTaskBoardMoveCard::new();
+        let missing = run_board_tool(
+            &mut move_card,
+            &ccx,
+            HashMap::from([
+                ("card_id".to_string(), serde_json::json!("T-404")),
+                ("column".to_string(), serde_json::json!("doing")),
+            ]),
+        )
+        .await
+        .unwrap_err();
+        assert!(missing.contains("not found"), "{missing}");
+
+        let mut delete = ToolTaskBoardDeleteCard::new();
+        let missing = run_board_tool(
+            &mut delete,
+            &ccx,
+            HashMap::from([("card_id".to_string(), serde_json::json!("T-404"))]),
+        )
+        .await
+        .unwrap_err();
+        assert!(missing.contains("not found"), "{missing}");
+
+        let board = load_board(&ccx, &task_id).await;
+        assert_eq!(board.rev, 1);
+        assert_eq!(board.cards.len(), 1);
+        assert!(collect_board_events(&mut rx).is_empty());
+    }
+
+    #[tokio::test]
+    async fn concurrent_board_mutations_keep_persisted_board_and_revisions_consistent() {
+        const CARD_COUNT: usize = 8;
+
+        let (_temp, gcx, ccx, task_id) = make_board_context().await;
+        let mut rx = gcx.task_events_tx.as_ref().unwrap().subscribe();
+
+        let mut handles = Vec::new();
+        for index in 0..CARD_COUNT {
+            let ccx = ccx.clone();
+            handles.push(tokio::spawn(async move {
+                let mut create = ToolTaskBoardCreateCard::new();
+                run_board_tool(
+                    &mut create,
+                    &ccx,
+                    HashMap::from([
+                        (
+                            "card_id".to_string(),
+                            serde_json::json!(format!("T-{}", index + 1)),
+                        ),
+                        (
+                            "title".to_string(),
+                            serde_json::json!(format!("Card {}", index + 1)),
+                        ),
+                    ]),
+                )
+                .await
+            }));
+        }
+        for handle in handles {
+            let _ = handle.await.unwrap();
+        }
+
+        let board = load_board(&ccx, &task_id).await;
+        assert_eq!(board.rev, CARD_COUNT as u64);
+        assert_eq!(board.cards.len(), CARD_COUNT);
+
+        let events = collect_board_events(&mut rx);
+        assert_eq!(events.len(), CARD_COUNT);
+        for (index, (rev, event_board)) in events.iter().enumerate() {
+            assert_eq!(*rev, index as u64 + 1);
+            assert_eq!(event_board.rev, *rev);
+            assert_eq!(event_board.cards.len(), index + 1);
+        }
+    }
 
     #[test]
     fn update_card_schema_includes_target_files() {

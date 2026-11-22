@@ -14,8 +14,6 @@ use crate::tools::tools_description::{
 use refact_tasks::rooms::parse_team_members;
 use refact_runtime_api::task_storage as storage;
 use refact_tasks::types::{AbVariants, BoardCard, ScopeGuardMode, TaskBoard};
-use refact_tasks::events::TaskEvent;
-use refact_tasks::events_emit::emit_task_event_for_services;
 use refact_runtime_api::SessionState;
 
 fn make_source() -> ToolSource {
@@ -806,13 +804,7 @@ impl Tool for ToolTaskBoardCreateCard {
         let depends_on: Vec<String> = parse_depends_on(args.get("depends_on"));
         let target_files = parse_target_files(args.get("target_files"), instructions);
         let ctx = app.chat_ctx();
-        let mut board = storage::load_board_for_ctx(&ctx, &task_id).await?;
-
-        if board.cards.iter().any(|c| c.id == card_id) {
-            return Err(format!("Card {} already exists", card_id));
-        }
-
-        board.cards.push(BoardCard {
+        let new_card = BoardCard {
             id: card_id.to_string(),
             title: title.to_string(),
             column: "planned".to_string(),
@@ -840,19 +832,16 @@ impl Tool for ToolTaskBoardCreateCard {
             target_files,
             scope_guard_mode: Default::default(),
             team_members: vec![],
-        });
-        board.rev += 1;
-
-        storage::save_board_for_ctx(&ctx, &task_id, &board).await?;
-        emit_task_event_for_services(
-            &app.chat,
-            TaskEvent::BoardChanged {
-                task_id: task_id.to_string(),
-                rev: board.rev,
-                board: board.clone(),
-            },
-        )
-        .await;
+        };
+        let card_id_owned = card_id.to_string();
+        storage::update_board_atomic_for_ctx(&ctx, &task_id, move |board| {
+            if board.cards.iter().any(|card| card.id == card_id_owned) {
+                return Err(format!("Card {} already exists", card_id_owned));
+            }
+            board.cards.push(new_card);
+            Ok(())
+        })
+        .await?;
         storage::update_task_stats_for_ctx(&ctx, &task_id).await?;
 
         let result = format!("Created card {} in Planned column", card_id);
@@ -924,44 +913,59 @@ impl Tool for ToolTaskBoardUpdateCard {
             .and_then(|v| v.as_str())
             .ok_or("Missing 'card_id'")?;
         let ctx = app.chat_ctx();
-        let mut board = storage::load_board_for_ctx(&ctx, &task_id).await?;
+        let title = args
+            .get("title")
+            .and_then(|v| v.as_str())
+            .map(str::to_string);
+        let priority = args
+            .get("priority")
+            .and_then(|v| v.as_str())
+            .map(str::to_string);
+        let instructions = args
+            .get("instructions")
+            .and_then(|v| v.as_str())
+            .map(str::to_string);
+        let depends_on = args
+            .contains_key("depends_on")
+            .then(|| parse_depends_on(args.get("depends_on")));
+        let target_files = args.get("target_files").cloned();
+        let team_members = args
+            .contains_key("team_members")
+            .then(|| parse_team_members(args.get("team_members")))
+            .transpose()?;
+        let card_id_owned = card_id.to_string();
 
-        let card = board
-            .get_card_mut(card_id)
-            .ok_or(format!("Card {} not found", card_id))?;
+        storage::update_board_atomic_for_ctx(&ctx, &task_id, move |board| {
+            let card = board
+                .get_card_mut(&card_id_owned)
+                .ok_or(format!("Card {} not found", card_id_owned))?;
 
-        if let Some(title) = args.get("title").and_then(|v| v.as_str()) {
-            card.title = title.to_string();
-        }
-        if let Some(priority) = args.get("priority").and_then(|v| v.as_str()) {
-            card.priority = priority.to_string();
-        }
-        if let Some(instructions) = args.get("instructions").and_then(|v| v.as_str()) {
-            card.instructions = instructions.to_string();
-        }
-        if args.contains_key("depends_on") {
-            card.depends_on = parse_depends_on(args.get("depends_on"));
-        }
-        if args.contains_key("target_files") {
-            card.target_files = parse_target_files(args.get("target_files"), &card.instructions);
-        }
-        if args.contains_key("team_members") {
-            card.team_members = parse_team_members(args.get("team_members"))?;
-            card.validate_team()
-                .map_err(|error| format!("Card {}: {error}", card.id))?;
-        }
-
-        board.rev += 1;
-        storage::save_board_for_ctx(&ctx, &task_id, &board).await?;
-        emit_task_event_for_services(
-            &app.chat,
-            TaskEvent::BoardChanged {
-                task_id: task_id.to_string(),
-                rev: board.rev,
-                board: board.clone(),
-            },
-        )
-        .await;
+            if let Some(title) = title {
+                card.title = title;
+            }
+            if let Some(priority) = priority {
+                card.priority = priority;
+            }
+            if let Some(instructions) = instructions {
+                card.instructions = instructions;
+            }
+            if let Some(depends_on) = depends_on {
+                card.depends_on = depends_on;
+            }
+            if target_files.is_some() {
+                card.target_files = parse_target_files(target_files.as_ref(), &card.instructions);
+            }
+            if let Some(team_members) = team_members {
+                let mut candidate = card.clone();
+                candidate.team_members = team_members;
+                candidate
+                    .validate_team()
+                    .map_err(|error| format!("Card {}: {error}", candidate.id))?;
+                card.team_members = candidate.team_members;
+            }
+            Ok(())
+        })
+        .await?;
 
         let result = format!("Updated card {}", card_id);
         Ok((
@@ -1092,16 +1096,14 @@ impl Tool for ToolTaskBoardMoveCard {
             ));
         }
         let ctx = app.chat_ctx();
-        let mut board = storage::load_board_for_ctx(&ctx, &task_id).await?;
-        let now = Utc::now().to_rfc3339();
-
-        let card = board
-            .get_card_mut(card_id)
+        let snapshot = storage::load_board_for_ctx(&ctx, &task_id).await?;
+        let snapshot_card = snapshot
+            .get_card(card_id)
             .ok_or(format!("Card {} not found", card_id))?;
-        let old_column = card.column.clone();
-        let agent_chat_id = card.agent_chat_id.clone();
+        let snapshot_column = snapshot_card.column.clone();
+        let agent_chat_id = snapshot_card.agent_chat_id.clone();
 
-        if old_column == "doing"
+        if snapshot_column == "doing"
             && (column == "failed" || column == "planned")
             && agent_chat_id.is_some()
         {
@@ -1117,27 +1119,29 @@ impl Tool for ToolTaskBoardMoveCard {
             }
         }
 
-        if column == "doing" && card.started_at.is_none() {
-            card.started_at = Some(now.clone());
-        }
-        if (column == "done" || column == "failed" || column == "regressed")
-            && card.completed_at.is_none()
-        {
-            card.completed_at = Some(now);
-        }
-        card.column = column.to_string();
-        board.rev += 1;
+        let now = Utc::now().to_rfc3339();
+        let column_owned = column.to_string();
+        let card_id_owned = card_id.to_string();
+        let (_, old_column) = storage::update_board_atomic_for_ctx(&ctx, &task_id, move |board| {
+            let card = board
+                .get_card_mut(&card_id_owned)
+                .ok_or(format!("Card {} not found", card_id_owned))?;
+            let old_column = card.column.clone();
 
-        storage::save_board_for_ctx(&ctx, &task_id, &board).await?;
-        emit_task_event_for_services(
-            &app.chat,
-            TaskEvent::BoardChanged {
-                task_id: task_id.to_string(),
-                rev: board.rev,
-                board: board.clone(),
-            },
-        )
-        .await;
+            if column_owned == "doing" && card.started_at.is_none() {
+                card.started_at = Some(now.clone());
+            }
+            if (column_owned == "done"
+                || column_owned == "failed"
+                || column_owned == "regressed")
+                && card.completed_at.is_none()
+            {
+                card.completed_at = Some(now);
+            }
+            card.column = column_owned.clone();
+            Ok(old_column)
+        })
+        .await?;
         storage::update_task_stats_for_ctx(&ctx, &task_id).await?;
 
         let result = format!("Moved card {} from {} to {}", card_id, old_column, column);
@@ -1220,41 +1224,33 @@ impl Tool for ToolTaskBoardDeleteCard {
             .and_then(|v| v.as_str())
             .ok_or("Missing 'card_id'")?;
         let ctx = app.chat_ctx();
-        let mut board = storage::load_board_for_ctx(&ctx, &task_id).await?;
+        let snapshot = storage::load_board_for_ctx(&ctx, &task_id).await?;
+        let snapshot_card = snapshot
+            .get_card(card_id)
+            .ok_or(format!("Card {} not found", card_id))?;
 
-        let existed = board.cards.iter().any(|c| c.id == card_id);
-        if !existed {
-            return Err(format!("Card {} not found", card_id));
-        }
-
-        if let Some(card) = board.cards.iter().find(|c| c.id == card_id) {
-            if card.column == "doing" || card.agent_chat_id.is_some() {
-                if let Some(ref chat_id) = card.agent_chat_id {
-                    let state = chat_facade.session_state(chat_id).await?;
-                    if is_session_state_active(&state) {
-                        return Err(format!(
-                            "Cannot delete card {} while agent {} is active. \
-                             Cancel the agent with cancel_agent first.",
-                            card_id, chat_id
-                        ));
-                    }
+        if snapshot_card.column == "doing" || snapshot_card.agent_chat_id.is_some() {
+            if let Some(ref chat_id) = snapshot_card.agent_chat_id {
+                let state = chat_facade.session_state(chat_id).await?;
+                if is_session_state_active(&state) {
+                    return Err(format!(
+                        "Cannot delete card {} while agent {} is active. \
+                         Cancel the agent with cancel_agent first.",
+                        card_id, chat_id
+                    ));
                 }
             }
         }
 
-        board.cards.retain(|c| c.id != card_id);
-        board.rev += 1;
-
-        storage::save_board_for_ctx(&ctx, &task_id, &board).await?;
-        emit_task_event_for_services(
-            &app.chat,
-            TaskEvent::BoardChanged {
-                task_id: task_id.to_string(),
-                rev: board.rev,
-                board: board.clone(),
-            },
-        )
-        .await;
+        let card_id_owned = card_id.to_string();
+        storage::update_board_atomic_for_ctx(&ctx, &task_id, move |board| {
+            if !board.cards.iter().any(|card| card.id == card_id_owned) {
+                return Err(format!("Card {} not found", card_id_owned));
+            }
+            board.cards.retain(|card| card.id != card_id_owned);
+            Ok(())
+        })
+        .await?;
         storage::update_task_stats_for_ctx(&ctx, &task_id).await?;
 
         let result = format!("Deleted card {}", card_id);

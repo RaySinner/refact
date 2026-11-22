@@ -33,6 +33,7 @@ import {
   selectCompressionPhaseById,
   selectCompressionReasonById,
   selectCompressionPulseSeqById,
+  selectRuntimeById,
 } from "../../features/Chat/Thread/selectors";
 import {
   createChatWithId,
@@ -81,6 +82,10 @@ import type {
   CompressionPhase,
   CompressionReason,
 } from "../../services/refact/chatSubscription";
+import {
+  createMessageTimestampLifecycle,
+  updateMessageTimestampLifecycle,
+} from "./messageTimestampLifecycle";
 
 const COMPRESSION_MIN_VISIBLE_MS = 500;
 
@@ -151,6 +156,9 @@ export const ChatContent: React.FC<ChatContentProps> = ({
     selectSnapshotReceivedById(s, renderChatId),
   );
   const thread = useAppSelector((s) => selectThreadById(s, renderChatId));
+  const lastAppliedSeq = useAppSelector(
+    (s) => selectRuntimeById(s, renderChatId)?.last_applied_seq,
+  );
   const sseStatus = useAppSelector((s) =>
     selectSseStatusForChat(s, renderChatId),
   );
@@ -348,60 +356,30 @@ export const ChatContent: React.FC<ChatContentProps> = ({
     return displayItems.length > 0 ? displayItems.length - 1 : undefined;
   }, [displayItems]);
 
-  // A message the engine stamped no time for still deserves one — but only while it
-  // is being watched live, which is the only moment the GUI actually saw it arrive.
-  // Items present in the first render of a chat (a snapshot reload) get no invented
-  // clock: a wrong timestamp is worse than none, so unstamped history shows none.
-  // Keys are shared between chats, so the first-seen map and the pre-existing key set
-  // are both scoped to one chat and rebuilt whenever the chat changes.
-  const seenChatIdRef = useRef<string | null>(null);
-  const firstSeenMsRef = useRef(new Map<string, number>());
-  const preexistingKeysRef = useRef(new Set<string>());
-  const primedChatsRef = useRef(new Set<string>());
+  const timestampLifecycleRef = useRef(createMessageTimestampLifecycle());
   const clientTimezone = useMemo(
     () => Intl.DateTimeFormat().resolvedOptions().timeZone,
     [],
   );
 
   const attributedItems = useMemo<AttributedItem<DisplayItem>[]>(() => {
-    if (seenChatIdRef.current !== renderChatId) {
-      seenChatIdRef.current = renderChatId;
-      firstSeenMsRef.current = new Map<string, number>();
-      preexistingKeysRef.current = new Set(
-        displayItems.map((item) => item.key),
-      );
-      if (snapshotReceived) primedChatsRef.current.add(renderChatId);
-    } else if (!primedChatsRef.current.has(renderChatId) && snapshotReceived) {
-      preexistingKeysRef.current = new Set(
-        displayItems.map((item) => item.key),
-      );
-      primedChatsRef.current.add(renderChatId);
-    }
-    const primed = primedChatsRef.current.has(renderChatId);
-
-    const nowMs = Date.now();
-    const liveKeys = new Set<string>();
-    for (const item of displayItems) {
-      if (liveKeys.has(item.key)) continue;
-      liveKeys.add(item.key);
-      if (
-        primed &&
-        !firstSeenMsRef.current.has(item.key) &&
-        !preexistingKeysRef.current.has(item.key)
-      ) {
-        firstSeenMsRef.current.set(item.key, nowMs);
-      }
-    }
-    for (const key of firstSeenMsRef.current.keys()) {
-      if (!liveKeys.has(key)) firstSeenMsRef.current.delete(key);
-    }
+    updateMessageTimestampLifecycle(timestampLifecycleRef.current, {
+      chatId: renderChatId,
+      messages,
+      itemKeys: displayItems.map((item) => item.key),
+      snapshotReceived,
+      eventSeq: lastAppliedSeq,
+      sseStatus,
+      nowMs: Date.now(),
+    });
 
     return roomAttributionForItems(
       displayItems,
       (item) => item.key,
       displayItemExtra,
       (epochMs) => formatExactClockTime(epochMs, clientTimezone),
-      (_extra, item) => firstSeenMsRef.current.get(item.key) ?? null,
+      (_extra, item) =>
+        timestampLifecycleRef.current.firstSeenMs.get(item.key) ?? null,
       (item) => {
         if (item.type === "user") {
           return { chatId: "", role: "user", displayName: "User" };
@@ -420,7 +398,15 @@ export const ChatContent: React.FC<ChatContentProps> = ({
         return null;
       },
     );
-  }, [displayItems, clientTimezone, renderChatId, snapshotReceived]);
+  }, [
+    displayItems,
+    clientTimezone,
+    lastAppliedSeq,
+    messages,
+    renderChatId,
+    snapshotReceived,
+    sseStatus,
+  ]);
 
   const handleProcessCompletedClick = useCallback((processId: string) => {
     revealProcessOutput(processId);

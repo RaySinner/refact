@@ -11,6 +11,10 @@ import {
   buildDisplayItems,
   tryIncrementalDisplayItemsUpdate,
 } from "./ChatContentDisplayItems";
+import {
+  createMessageTimestampLifecycle,
+  updateMessageTimestampLifecycle,
+} from "./messageTimestampLifecycle";
 
 function assistantMessage(
   overrides: Partial<AssistantMessage> = {},
@@ -216,6 +220,94 @@ function expectIncrementalAppendMatchesFull(
 }
 
 describe("ChatContent display items", () => {
+  it("does not assign mount time to restored keys after a reconnect snapshot", () => {
+    const state = createMessageTimestampLifecycle();
+    const initialSnapshot = [{}];
+
+    updateMessageTimestampLifecycle(state, {
+      chatId: "chat-1",
+      messages: initialSnapshot,
+      itemKeys: ["initial-restored"],
+      snapshotReceived: true,
+      eventSeq: "0",
+      sseStatus: "connected",
+      nowMs: 1_000,
+    });
+    expect(state.firstSeenMs.size).toBe(0);
+
+    const withLiveMessage = [...initialSnapshot, {}];
+    updateMessageTimestampLifecycle(state, {
+      chatId: "chat-1",
+      messages: withLiveMessage,
+      itemKeys: ["initial-restored", "live-before-reconnect"],
+      snapshotReceived: true,
+      eventSeq: "0",
+      sseStatus: "connected",
+      nowMs: 2_000,
+    });
+    expect(state.firstSeenMs.get("live-before-reconnect")).toBe(2_000);
+
+    updateMessageTimestampLifecycle(state, {
+      chatId: "chat-1",
+      messages: withLiveMessage,
+      itemKeys: ["initial-restored", "live-before-reconnect"],
+      snapshotReceived: true,
+      eventSeq: "0",
+      sseStatus: "disconnected",
+      nowMs: 3_000,
+    });
+
+    updateMessageTimestampLifecycle(state, {
+      chatId: "chat-1",
+      messages: withLiveMessage,
+      itemKeys: ["initial-restored", "live-before-reconnect"],
+      snapshotReceived: true,
+      eventSeq: "0",
+      sseStatus: "connected",
+      nowMs: 3_500,
+    });
+
+    const reconnectSnapshot = [{}, {}, {}, {}];
+    updateMessageTimestampLifecycle(state, {
+      chatId: "chat-1",
+      messages: reconnectSnapshot,
+      itemKeys: [
+        "initial-restored",
+        "live-before-reconnect",
+        "new-restored",
+        "legacy-missing",
+      ],
+      snapshotReceived: true,
+      eventSeq: "0",
+      sseStatus: "connected",
+      nowMs: 4_000,
+    });
+
+    expect(Object.fromEntries(state.firstSeenMs)).toEqual({
+      "live-before-reconnect": 2_000,
+    });
+
+    updateMessageTimestampLifecycle(state, {
+      chatId: "chat-1",
+      messages: [...reconnectSnapshot, {}],
+      itemKeys: [
+        "initial-restored",
+        "live-before-reconnect",
+        "new-restored",
+        "legacy-missing",
+        "live-after-reconnect",
+      ],
+      snapshotReceived: true,
+      eventSeq: "0",
+      sseStatus: "connected",
+      nowMs: 5_000,
+    });
+
+    expect(state.firstSeenMs.get("live-after-reconnect")).toBe(5_000);
+    expect(state.firstSeenMs.get("new-restored")).toBeUndefined();
+    expect(state.firstSeenMs.get("legacy-missing")).toBeUndefined();
+  });
+
   it("rebuilds a same-index assistant update into a summarization item when it becomes compressed", () => {
     const previousMessages: ChatMessages = [assistantMessage()];
     const nextMessages: ChatMessages = [

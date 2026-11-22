@@ -258,6 +258,31 @@ mod tests {
     }
 
     #[test]
+    fn message_creation_instants_roundtrip_and_legacy_absence_is_preserved() {
+        let mut first = ChatMessage::new("user".to_string(), "first".to_string());
+        first
+            .extra
+            .insert("created_at_ms".to_string(), serde_json::json!(111_111));
+        let mut second = ChatMessage::new("assistant".to_string(), "second".to_string());
+        second
+            .extra
+            .insert("created_at_ms".to_string(), serde_json::json!(222_222));
+        let legacy = ChatMessage::new("event".to_string(), "legacy".to_string());
+        let mut snapshot = snapshot();
+        snapshot.messages = vec![first, second, legacy];
+
+        let value = serde_json::to_value(&snapshot).unwrap();
+        assert_eq!(value["messages"][0]["created_at_ms"], 111_111);
+        assert_eq!(value["messages"][1]["created_at_ms"], 222_222);
+        assert!(value["messages"][2].get("created_at_ms").is_none());
+
+        let decoded: TrajectorySnapshot = serde_json::from_value(value).unwrap();
+        assert_eq!(decoded.messages[0].extra["created_at_ms"], 111_111);
+        assert_eq!(decoded.messages[1].extra["created_at_ms"], 222_222);
+        assert!(!decoded.messages[2].extra.contains_key("created_at_ms"));
+    }
+
+    #[test]
     fn trajectory_snapshot_auto_compression_cap_roundtrip_and_legacy_absence() {
         let mut thread = ThreadParams::default();
         thread.auto_compression_cap = Some(4096);

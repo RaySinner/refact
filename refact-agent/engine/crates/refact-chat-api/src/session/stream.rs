@@ -127,6 +127,13 @@ processed yet. It is picked up once that response finishes.",
 
 impl ChatSession {
     pub fn start_stream(&mut self) -> Option<(String, Arc<AtomicBool>)> {
+        self.start_stream_at(epoch_ms_now())
+    }
+
+    pub(super) fn start_stream_at(
+        &mut self,
+        created_at_ms: u64,
+    ) -> Option<(String, Arc<AtomicBool>)> {
         if let Some(refusal) = self.stream_start_refusal() {
             warn!(
                 "Attempted to start stream while blocked: {}",
@@ -138,11 +145,13 @@ impl ChatSession {
         self.abort_flag.store(false, Ordering::SeqCst);
         self.user_interrupt_flag.store(false, Ordering::SeqCst);
         let message_id = Uuid::new_v4().to_string();
-        self.draft_message = Some(ChatMessage {
+        let mut draft = ChatMessage {
             message_id: message_id.clone(),
             role: "assistant".to_string(),
             ..Default::default()
-        });
+        };
+        stamp_created_at_ms_at(&mut draft, created_at_ms);
+        self.draft_message = Some(draft);
         self.draft_usage = None;
         self.stream_started_at = perf_diagnostics::is_enabled().then(Instant::now);
         self.set_runtime_state(SessionState::Generating, None);

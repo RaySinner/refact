@@ -116,6 +116,9 @@ fn preserve_hidden_role_extra(msg: &ChatMessage) -> serde_json::Map<String, serd
     if let Some(privacy) = msg.extra.get("privacy") {
         extra.insert("privacy".to_string(), privacy.clone());
     }
+    if let Some(created_at_ms) = msg.extra.get("created_at_ms") {
+        extra.insert("created_at_ms".to_string(), created_at_ms.clone());
+    }
     extra
 }
 
@@ -2032,6 +2035,30 @@ mod tests {
 
         assert_eq!(sanitized.extra.len(), 1);
         assert_eq!(sanitized.extra["privacy"], message.extra["privacy"]);
+    }
+
+    #[test]
+    fn branch_and_model_switch_preserve_creation_instants_without_backfill() {
+        let mut user = make_user_msg("question");
+        user.extra
+            .insert("created_at_ms".to_string(), serde_json::json!(123_456));
+        let mut event = make_event_message();
+        event
+            .extra
+            .insert("created_at_ms".to_string(), serde_json::json!(234_567));
+        let legacy = make_assistant_msg("legacy");
+        let messages = vec![user, event, legacy];
+
+        let branched = sanitize_messages_for_new_thread(&messages);
+        assert_eq!(branched[0].extra["created_at_ms"], 123_456);
+        assert_eq!(branched[1].extra["created_at_ms"], 234_567);
+        assert!(!branched[2].extra.contains_key("created_at_ms"));
+
+        let mut switched = messages;
+        sanitize_messages_for_model_switch(&mut switched);
+        assert_eq!(switched[0].extra["created_at_ms"], 123_456);
+        assert_eq!(switched[1].extra["created_at_ms"], 234_567);
+        assert!(!switched[2].extra.contains_key("created_at_ms"));
     }
 
     #[test]

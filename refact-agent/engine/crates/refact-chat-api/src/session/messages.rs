@@ -311,7 +311,7 @@ impl ChatSession {
             .map(|active| active.report_index.map_or(0, |index| index + 1))
     }
 
-    pub fn update_message(&mut self, message_id: &str, message: ChatMessage) -> Option<usize> {
+    pub fn update_message(&mut self, message_id: &str, mut message: ChatMessage) -> Option<usize> {
         let start = self.mutable_message_start()?;
         if message.role == "compression_report"
             || message.extra.contains_key("compression_report")
@@ -326,6 +326,14 @@ impl ChatSession {
         {
             if idx < start {
                 return None;
+            }
+            let created_at_ms =
+                created_at_ms(&message).or_else(|| created_at_ms(&self.messages[idx]));
+            message.extra.remove("created_at_ms");
+            if let Some(created_at_ms) = created_at_ms {
+                message
+                    .extra
+                    .insert("created_at_ms".into(), json!(created_at_ms));
             }
             let affects_goal = message_affects_goal_projection(&self.messages[idx])
                 || message_affects_goal_projection(&message);

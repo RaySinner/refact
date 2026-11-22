@@ -34,6 +34,9 @@ mod runtime;
 mod snapshot;
 mod stream;
 
+#[cfg(test)]
+mod tests;
+
 pub use goal::{
     apply_goal_runtime_projection, goal_budget_has_hard_limits, goal_event_subkind,
     goal_events_from_messages, goal_runtime_projection, goal_snapshot_from_messages,
@@ -43,17 +46,24 @@ pub use goal::{
 pub use snapshot::sse_broadcast_outcome;
 pub use stream::StreamStartRefusal;
 
-pub fn stamp_created_at_ms(message: &mut ChatMessage) {
-    if message
+pub fn created_at_ms(message: &ChatMessage) -> Option<u64> {
+    message
         .extra
         .get("created_at_ms")
-        .and_then(|v| v.as_u64())
-        .is_none_or(|v| v == 0)
-    {
+        .and_then(|value| value.as_u64())
+        .filter(|value| *value > 0)
+}
+
+pub fn stamp_created_at_ms_at(message: &mut ChatMessage, created_at_ms: u64) {
+    if self::created_at_ms(message).is_none() {
         message
             .extra
-            .insert("created_at_ms".into(), json!(epoch_ms_now()));
+            .insert("created_at_ms".into(), json!(created_at_ms));
     }
+}
+
+pub fn stamp_created_at_ms(message: &mut ChatMessage) {
+    stamp_created_at_ms_at(message, epoch_ms_now());
 }
 
 pub fn is_background_agent_terminal(status: &str) -> bool {

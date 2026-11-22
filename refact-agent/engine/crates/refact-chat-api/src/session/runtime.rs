@@ -180,6 +180,13 @@ impl ChatSession {
         self.touch();
     }
 
+    pub fn clear_waiting_for_agent_id(&mut self, agent_id: &str) -> bool {
+        let previous_len = self.waiting_for_agent_ids.len();
+        self.waiting_for_agent_ids
+            .retain(|waiting_id| waiting_id != agent_id);
+        previous_len != self.waiting_for_agent_ids.len()
+    }
+
     pub fn is_pending_wake_up(&self) -> bool {
         self.runtime.state == SessionState::WaitingUserInput
             && self
@@ -354,6 +361,9 @@ impl ChatSession {
                 self.wake_up_at = None;
                 changed = true;
             }
+            // Card waits keep the existing wholesale UI-metadata baseline. Standalone
+            // agent waits are cleared one terminal agent at a time by the background
+            // agent update path, so one completion does not discard sibling waits.
             if !self.waiting_for_card_ids.is_empty() {
                 self.waiting_for_card_ids.clear();
                 changed = true;

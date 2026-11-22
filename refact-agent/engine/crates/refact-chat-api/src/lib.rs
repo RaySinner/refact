@@ -1534,6 +1534,41 @@ mod tests {
     }
 
     #[test]
+    fn terminal_background_agent_clears_only_its_wait_id() {
+        let mut session = ChatSession::new("planner".to_string());
+        session.waiting_for_agent_ids = vec!["bgagent-a".to_string(), "bgagent-b".to_string()];
+
+        let mut completed = background_agent_summary();
+        completed.agent_id = "bgagent-a".to_string();
+        completed.status = "completed".to_string();
+        completed.change_seq = 8;
+        session.upsert_background_agent(completed);
+
+        assert_eq!(session.waiting_for_agent_ids, vec!["bgagent-b".to_string()]);
+
+        let mut failed = background_agent_summary();
+        failed.agent_id = "bgagent-b".to_string();
+        failed.status = "failed".to_string();
+        failed.change_seq = 9;
+        session.upsert_background_agent(failed);
+
+        assert!(session.waiting_for_agent_ids.is_empty());
+    }
+
+    #[test]
+    fn leaving_waiting_user_input_keeps_nonterminal_agent_waits() {
+        let mut session = ChatSession::new("planner".to_string());
+        session.runtime.state = SessionState::WaitingUserInput;
+        session.waiting_for_card_ids = vec!["T-1".to_string()];
+        session.waiting_for_agent_ids = vec!["bgagent-b".to_string()];
+
+        session.set_runtime_state(SessionState::Generating, None);
+
+        assert!(session.waiting_for_card_ids.is_empty());
+        assert_eq!(session.waiting_for_agent_ids, vec!["bgagent-b".to_string()]);
+    }
+
+    #[test]
     fn test_session_state_serde() {
         let state = SessionState::Generating;
         let json = serde_json::to_string(&state).unwrap();

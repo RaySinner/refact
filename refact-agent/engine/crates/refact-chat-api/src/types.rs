@@ -386,6 +386,7 @@ pub struct ChatSession {
     pub enrichment_identities: HashSet<String>,
     pub wake_up_at: Option<chrono::DateTime<chrono::Utc>>,
     pub waiting_for_card_ids: Vec<String>,
+    pub waiting_for_agent_ids: Vec<String>,
     /// Latest known background agent summaries for this parent chat, keyed by `agent_id`.
     /// Kept in sync by `emit_background_agent_update` and snapshot enrichment paths so
     /// every `ChatEvent::Snapshot` carries the current agent set instead of an empty list.

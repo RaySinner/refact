@@ -294,6 +294,7 @@ pub fn apply_external_delete_to_session(session: &mut ChatSession, chat_id: &str
     session.created_at = chrono::Utc::now().to_rfc3339();
     session.wake_up_at = None;
     session.waiting_for_card_ids.clear();
+    session.waiting_for_agent_ids.clear();
     session.goal_ledger.clear();
     session.goal_verification_blocked_until_ms = None;
     session.set_goal_projection(None);
@@ -319,6 +320,7 @@ pub fn apply_loaded_external_update_to_session(
     session.created_at = loaded.created_at;
     session.wake_up_at = loaded.wake_up_at;
     session.waiting_for_card_ids = loaded.waiting_for_card_ids;
+    session.waiting_for_agent_ids.clear();
     session.external_reload_pending = None;
     if transition_identity_repaired {
         session.increment_version();

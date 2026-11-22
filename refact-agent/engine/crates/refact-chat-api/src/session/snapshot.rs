@@ -108,6 +108,9 @@ impl ChatSession {
 
     pub fn upsert_background_agent(&mut self, agent: BackgroundAgentSummary) {
         if should_replace_background_agent(self.background_agents.get(&agent.agent_id), &agent) {
+            if is_background_agent_terminal(&agent.status) {
+                self.clear_waiting_for_agent_id(&agent.agent_id);
+            }
             self.background_agents.insert(agent.agent_id.clone(), agent);
         }
     }

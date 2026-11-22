@@ -816,17 +816,38 @@ impl Tool for ToolAgentWait {
         let agent_id = parse_required_string(args, "agent_id")?;
         let timeout_ms = parse_wait_timeout_ms(args)?;
         let (app, parent_chat_id) = background_agent_context(&ccx).await;
-        let record = app
+        let initial = app
             .agents
-            .wait(
-                &parent_chat_id,
-                &agent_id,
-                Duration::from_millis(timeout_ms),
-            )
+            .get(&parent_chat_id, &agent_id)
             .await
             .map_err(|error| map_registry_error(&agent_id, error))?;
+        if initial.status.is_terminal() {
+            return Ok(tool_message(
+                tool_call_id,
+                format_agent_result(&initial, false).await?,
+            ));
+        }
+        let interrupt = refact_runtime_api::WaitInterrupt::from_context(&ccx).await;
+        let waited = app.agents.wait(
+            &parent_chat_id,
+            &agent_id,
+            Duration::from_millis(timeout_ms),
+        );
+        let record = tokio::select! {
+            biased;
+            result = waited => result,
+            _ = interrupt.wait() => app.agents.get(&parent_chat_id, &agent_id).await,
+        }
+        .map_err(|error| map_registry_error(&agent_id, error))?;
         let content = if record.status.is_terminal() {
             format_agent_result(&record, false).await?
+        } else if interrupt.wait_flag.load(std::sync::atomic::Ordering::SeqCst)
+            && !interrupt.abort_flag.load(std::sync::atomic::Ordering::SeqCst)
+        {
+            format!(
+                "⏰ Interrupted while waiting — agent still running.\n\n{}",
+                format_agent_status_block(&record)
+            )
         } else {
             format!(
                 "⏰ Timed out after {timeout_ms}ms — agent still running.\n\n{}",

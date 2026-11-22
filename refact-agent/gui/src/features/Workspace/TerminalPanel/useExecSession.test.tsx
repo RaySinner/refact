@@ -150,7 +150,9 @@ describe("useExecSession", () => {
 
   test("classifies only HTTP 403 as non-retryable access denial", () => {
     expect(isAccessDeniedError(new ExecHttpError("denied", 403))).toBe(true);
-    expect(isAccessDeniedError(new ExecHttpError("unauthorized", 401))).toBe(false);
+    expect(isAccessDeniedError(new ExecHttpError("unauthorized", 401))).toBe(
+      false,
+    );
     expect(isAccessDeniedError(new ExecHttpError("missing", 404))).toBe(false);
     expect(isAccessDeniedError(new Error("network"))).toBe(false);
   });
@@ -473,7 +475,10 @@ describe("useExecSession", () => {
     server.use(
       http.get("*/v1/exec/proc-1/read", () => {
         readCount += 1;
-        return HttpResponse.json({ detail: "chat access denied" }, { status: 403 });
+        return HttpResponse.json(
+          { detail: "chat access denied" },
+          { status: 403 },
+        );
       }),
       http.post("*/v1/exec/proc-1/resize", () => HttpResponse.json({})),
     );
@@ -501,7 +506,11 @@ describe("useExecSession", () => {
         if (readCount === 1) {
           return HttpResponse.json({ detail: "temporary" }, { status: 500 });
         }
-        return HttpResponse.json({ chunks: [], next_seq: 0, status: "running" });
+        return HttpResponse.json({
+          chunks: [],
+          next_seq: 0,
+          status: "running",
+        });
       }),
       http.post("*/v1/exec/proc-1/resize", () => HttpResponse.json({})),
     );

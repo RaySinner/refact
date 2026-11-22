@@ -313,14 +313,9 @@ pub fn try_apply_goal_nudge(
     }
 
     let context = session.goal.as_ref().map(nudge_context).unwrap_or_default();
-    let push = if reason == GoalNudgeReason::GeneratingNoTokens {
-        PushMode::Preempt
-    } else {
-        PushMode::Append
-    };
     let delivery = PendingDelivery::new(
         vec![goal_nudge_event(trigger, reason, now_ms, &context)],
-        push,
+        PushMode::Append,
         GOAL_MONITOR_SOURCE,
         true,
     );
@@ -362,7 +357,8 @@ fn busy_without_stall(
         GoalNudgeTrigger::InlineTurnEnd => session.runtime.state != SessionState::Idle,
         GoalNudgeTrigger::Monitor => match session.runtime.state {
             SessionState::Generating => {
-                generating_quiet_for(session, now, config.no_token_grace).is_none()
+                generation_has_live_work(session)
+                    || generating_quiet_for(session, now, config.no_token_grace).is_none()
             }
             SessionState::ExecutingTools => true,
             _ => false,
@@ -403,14 +399,26 @@ fn nudge_reason(
 }
 
 fn generating_quiet_for(session: &ChatSession, now: Instant, grace: Duration) -> Option<Duration> {
-    let last_progress = session
-        .last_stream_delta_at
-        .unwrap_or(session.last_activity);
+    let last_progress = [
+        session.last_stream_delta_at,
+        session.last_tool_started_at,
+        session.last_tool_progress_at,
+        Some(session.last_activity),
+    ]
+    .into_iter()
+    .flatten()
+    .max()?;
     if last_progress + grace <= now {
         Some(now.duration_since(last_progress))
     } else {
         None
     }
+}
+
+fn generation_has_live_work(session: &ChatSession) -> bool {
+    session.has_pending_tool_result_window()
+        || session.interruptible_waits > 0
+        || session.runtime.waiting_interruptible
 }
 
 fn goal_nudge_event(
@@ -1286,17 +1294,28 @@ mod tests {
     }
 
     #[test]
-    fn goal_monitor_no_token_stall_delivers_preempt_and_requests_wake() {
+    fn goal_monitor_no_token_stall_delivers_append_without_interrupting_generation() {
         let mut session = active_goal_session();
         let now = Instant::now();
-        session.set_runtime_state(SessionState::Generating, None);
+        assert!(session.start_stream().is_some());
         session.last_activity = now - Duration::from_secs(10);
 
         assert_eq!(
             apply_monitor(&mut session, 10_000, now),
             GoalNudgeOutcome::Nudged(GoalNudgeReason::GeneratingNoTokens)
         );
-        assert!(!session.delivery_wake_sources.is_empty());
+        assert_eq!(session.pending_deliveries.len(), 1);
+        assert_eq!(session.pending_deliveries[0].push, PushMode::Append);
+        assert!(!session.abort_flag.load(Ordering::SeqCst));
+        assert!(!session.user_interrupt_flag.load(Ordering::SeqCst));
+        assert!(session.draft_message.is_some());
+        assert_eq!(session.runtime.state, SessionState::Generating);
+        assert!(session.messages.iter().all(|message| {
+            !matches!(
+                goal_pursuit_kind(message),
+                Some("stopped" | "resumed")
+            )
+        }));
         assert_eq!(
             session.goal.as_ref().unwrap().progress.no_progress_turns,
             1,
@@ -1405,6 +1424,74 @@ mod tests {
     }
 
     #[test]
+    fn goal_monitor_fresh_tool_activity_keeps_generation_busy() {
+        let now = Instant::now();
+        for tool_activity in ["started", "progress"] {
+            let mut session = active_goal_session();
+            session.set_runtime_state(SessionState::Generating, None);
+            session.last_activity = now - Duration::from_secs(10);
+            match tool_activity {
+                "started" => session.last_tool_started_at = Some(now - Duration::from_secs(2)),
+                "progress" => session.last_tool_progress_at = Some(now - Duration::from_secs(2)),
+                _ => unreachable!(),
+            }
+
+            assert_eq!(
+                apply_monitor(&mut session, 10_000, now),
+                GoalNudgeOutcome::Skipped(GoalNudgeSkip::Busy),
+                "fresh tool {tool_activity} must keep generation busy"
+            );
+            assert!(session.pending_deliveries.is_empty());
+        }
+    }
+
+    #[test]
+    fn goal_monitor_open_tool_result_window_keeps_generation_busy() {
+        let mut session = active_goal_session();
+        let now = Instant::now();
+        session.set_runtime_state(SessionState::Generating, None);
+        session.add_message(ChatMessage {
+            role: "assistant".to_string(),
+            tool_calls: Some(vec![refact_core::chat_types::ChatToolCall {
+                id: "call-open".to_string(),
+                index: None,
+                tool_type: "function".to_string(),
+                function: refact_core::chat_types::ChatToolFunction {
+                    name: "wait".to_string(),
+                    arguments: "{}".to_string(),
+                },
+                extra_content: None,
+                started_at_ms: None,
+                completed_at_ms: None,
+            }]),
+            ..Default::default()
+        });
+        session.last_activity = now - Duration::from_secs(10);
+
+        assert!(session.has_pending_tool_result_window());
+        assert_eq!(
+            apply_monitor(&mut session, 10_000, now),
+            GoalNudgeOutcome::Skipped(GoalNudgeSkip::Busy)
+        );
+        assert!(session.pending_deliveries.is_empty());
+    }
+
+    #[test]
+    fn goal_monitor_process_wait_keeps_generation_busy() {
+        let mut session = active_goal_session();
+        let now = Instant::now();
+        session.set_runtime_state(SessionState::Generating, None);
+        session.begin_interruptible_wait();
+        session.last_activity = now - Duration::from_secs(10);
+
+        assert_eq!(
+            apply_monitor(&mut session, 10_000, now),
+            GoalNudgeOutcome::Skipped(GoalNudgeSkip::Busy)
+        );
+        assert!(session.pending_deliveries.is_empty());
+    }
+
+    #[test]
     fn goal_monitor_no_token_loop_reaches_quiescence() {
         let mut session = unlimited_no_progress_session();
         let now = Instant::now();
@@ -1423,6 +1510,8 @@ mod tests {
             );
             session.command_queue.clear();
             session.delivery_wake_sources.clear();
+            session.pending_deliveries.clear();
+            session.draft_message = None;
             now_ms += 600_000;
         }
 
@@ -1437,7 +1526,7 @@ mod tests {
     }
 
     #[test]
-    fn goal_monitor_no_token_stall_interrupts_running_generation() {
+    fn goal_monitor_no_token_nudge_does_not_interrupt_running_generation() {
         let mut session = active_goal_session();
         let now = Instant::now();
         session.start_stream();
@@ -1450,11 +1539,37 @@ mod tests {
             apply_monitor(&mut session, 10_000, now),
             GoalNudgeOutcome::Nudged(GoalNudgeReason::GeneratingNoTokens)
         );
+        assert!(!session.abort_flag.load(Ordering::SeqCst));
+        assert!(!session.user_interrupt_flag.load(Ordering::SeqCst));
+        assert_eq!(session.runtime.state, SessionState::Generating);
+        assert!(session.draft_message.is_some());
+        assert_eq!(session.pending_deliveries.len(), 1);
+        assert_eq!(session.pending_deliveries[0].push, PushMode::Append);
+    }
+
+    #[test]
+    fn goal_monitor_user_preempt_still_cancels_running_generation() {
+        let mut session = active_goal_session();
+        session.start_stream();
+        let user_delivery = PendingDelivery::new(
+            vec![ChatMessage {
+                role: "user".to_string(),
+                content: ChatContent::SimpleText("urgent".to_string()),
+                ..Default::default()
+            }],
+            PushMode::Preempt,
+            "user",
+            true,
+        );
+
+        assert_eq!(
+            session.enqueue_delivery(user_delivery),
+            Ok(DeliveryOutcome::Delivered)
+        );
         assert!(session.abort_flag.load(Ordering::SeqCst));
         assert!(session.user_interrupt_flag.load(Ordering::SeqCst));
         assert_eq!(session.runtime.state, SessionState::Idle);
         assert!(session.draft_message.is_none());
-        assert!(!session.delivery_wake_sources.is_empty());
         assert!(session.messages.iter().any(|message| message
             .extra
             .get("event")

@@ -57,6 +57,11 @@ describe("DiagramBlock sizing", () => {
     );
     expect(foreignObject).toContain("overflow: visible");
   });
+
+  test("keeps initial render failures at a bounded fallback height", () => {
+    const fallback = readCssRule(stylesheet, ".diagram_error_fallback");
+    expect(fallback).toContain("min-height: clamp(120px, 25vh, 240px)");
+  });
 });
 
 const FOREIGN_OBJECT_LABEL_SELECTORS = [

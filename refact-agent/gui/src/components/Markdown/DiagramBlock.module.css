@@ -145,6 +145,10 @@
   font-size: var(--rf-text-2);
 }
 
+.diagram_error_fallback {
+  min-height: clamp(120px, 25vh, 240px);
+}
+
 .error_hint {
   padding: var(--rf-space-2) var(--rf-space-3);
   color: var(--rf-color-danger);

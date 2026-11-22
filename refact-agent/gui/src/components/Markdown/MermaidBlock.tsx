@@ -345,6 +345,7 @@ const _MermaidBlock: React.FC<MermaidBlockProps> = ({ code, onCopyClick }) => {
 
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const renderSeqRef = useRef(0);
+  const lastRenderedCodeRef = useRef<string | null>(null);
   const [lastHeight, setLastHeight] = useState(0);
 
   const uniqueId = useId().replace(/:/g, "_");
@@ -354,6 +355,7 @@ const _MermaidBlock: React.FC<MermaidBlockProps> = ({ code, onCopyClick }) => {
   useEffect(() => {
     let cancelled = false;
     const renderId = `mermaid_${uniqueId}_${++renderSeqRef.current}`;
+    const source = code.trim();
 
     const renderDiagram = async () => {
       try {
@@ -364,21 +366,25 @@ const _MermaidBlock: React.FC<MermaidBlockProps> = ({ code, onCopyClick }) => {
         const { svg } = await enqueueMermaidRender(
           theme,
           renderId,
-          code.trim(),
+          source,
         );
 
         if (!cancelled) {
           const meta = parseSvgMeta(svg);
-          const canvas = canvasRef.current;
-          if (canvas) {
-            canvas.scrollLeft = 0;
-            canvas.scrollTop = 0;
+          const sourceChanged = lastRenderedCodeRef.current !== source;
+          lastRenderedCodeRef.current = source;
+          if (sourceChanged) {
+            const canvas = canvasRef.current;
+            if (canvas) {
+              canvas.scrollLeft = 0;
+              canvas.scrollTop = 0;
+            }
+            setScale(1);
           }
           setRawSvg(svg);
           setSvgMeta(meta);
           setError(null);
-          setScale(1);
-          if (meta) setLastHeight(meta.height);
+          setLastHeight(meta?.height ?? 0);
         }
       } catch (err) {
         // Mermaid can leave a temporary element with the render id in the
@@ -397,8 +403,6 @@ const _MermaidBlock: React.FC<MermaidBlockProps> = ({ code, onCopyClick }) => {
               toolName: "mermaid_render",
             });
           }
-          setRawSvg(null);
-          setSvgMeta(null);
         }
       }
     };
@@ -454,22 +458,11 @@ const _MermaidBlock: React.FC<MermaidBlockProps> = ({ code, onCopyClick }) => {
 
   const zoomPercent = Math.round(scale * 100);
 
-  if (error) {
-    return (
-      <div className={styles.shiki_wrapper}>
-        <PreTag className={styles.shiki_pre}>
-          <code className={classNames(styles.code, styles.code_block)}>
-            {code}
-          </code>
-        </PreTag>
-      </div>
-    );
-  }
-
   const crispSvg =
     rawSvg && svgMeta ? makeCrispSvg(rawSvg, svgMeta.viewBox) : null;
   const displayW = svgMeta ? svgMeta.width * scale : 0;
   const displayH = svgMeta ? svgMeta.height * scale : 0;
+  const sourceOnly = Boolean(error) && !rawSvg;
 
   return (
     <div className={styles.shiki_wrapper}>
@@ -518,20 +511,22 @@ const _MermaidBlock: React.FC<MermaidBlockProps> = ({ code, onCopyClick }) => {
               </Tooltip>
             </>
           )}
-          <Tooltip>
-            <Tooltip.Trigger asChild>
-              <IconButton
-                size="sm"
-                variant="ghost"
-                onClick={handleToggleSource}
-                aria-label={showSource ? "Show diagram" : "Show source"}
-                icon={showSource ? Eye : Code}
-              />
-            </Tooltip.Trigger>
-            <Tooltip.Content>
-              {showSource ? "Show diagram" : "Show source"}
-            </Tooltip.Content>
-          </Tooltip>
+          {!sourceOnly && (
+            <Tooltip>
+              <Tooltip.Trigger asChild>
+                <IconButton
+                  size="sm"
+                  variant="ghost"
+                  onClick={handleToggleSource}
+                  aria-label={showSource ? "Show diagram" : "Show source"}
+                  icon={showSource ? Eye : Code}
+                />
+              </Tooltip.Trigger>
+              <Tooltip.Content>
+                {showSource ? "Show diagram" : "Show source"}
+              </Tooltip.Content>
+            </Tooltip>
+          )}
           {onCopyClick && (
             <Tooltip>
               <Tooltip.Trigger asChild>
@@ -547,8 +542,13 @@ const _MermaidBlock: React.FC<MermaidBlockProps> = ({ code, onCopyClick }) => {
             </Tooltip>
           )}
         </div>
-        {showSource ? (
-          <div className="scrollX">
+        {showSource || sourceOnly ? (
+          <div
+            className={classNames(
+              "scrollX",
+              sourceOnly && diagramStyles.diagram_error_fallback,
+            )}
+          >
             <PreTag className={styles.shiki_pre}>
               <code className={classNames(styles.code, styles.code_block)}>
                 {code}
@@ -584,6 +584,11 @@ const _MermaidBlock: React.FC<MermaidBlockProps> = ({ code, onCopyClick }) => {
             style={lastHeight > 0 ? { minHeight: lastHeight } : undefined}
           >
             Rendering…
+          </div>
+        )}
+        {error && (
+          <div className={diagramStyles.error_hint} role="alert">
+            Mermaid render failed: {error}
           </div>
         )}
       </div>

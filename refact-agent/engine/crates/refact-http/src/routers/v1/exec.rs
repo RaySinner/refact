@@ -382,9 +382,10 @@ pub async fn handle_v1_exec_list(
 
 fn exec_list_filter(chat_id: Option<String>, workspace: Option<PathBuf>) -> ExecProcessFilter {
     let chat_id = chat_id.filter(|chat_id| !chat_id.is_empty());
+    let has_chat_id = chat_id.is_some();
     ExecProcessFilter {
         chat_id,
-        workspace: if chat_id.is_some() { None } else { workspace },
+        workspace: if has_chat_id { None } else { workspace },
         ..ExecProcessFilter::default()
     }
 }

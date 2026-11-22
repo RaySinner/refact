@@ -1,4 +1,5 @@
-import { act, fireEvent, render, screen } from "../../utils/test-utils";
+import { act } from "react-dom/test-utils";
+import { fireEvent, render, screen } from "../../utils/test-utils";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 const mermaidMock = vi.hoisted(() => ({

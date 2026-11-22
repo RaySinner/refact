@@ -156,6 +156,7 @@ impl Tool for ToolCompressChatProbe {
                 let file_name = cf.file_name.clone();
                 context_files.push(json!({
                     "index": idx,
+                    "target_id": compression_context_file_target_id(&cf),
                     "file_name": file_name,
                     "tokens": tokens,
                     "chars": cf.file_content.len(),
@@ -190,6 +191,8 @@ impl Tool for ToolCompressChatProbe {
             }
             tool_outputs.push(json!({
                 "index": idx,
+                "target_id": compression_tool_output_target_id(msg),
+                "unsupported_reason": compression_tool_output_target_id(msg).is_none().then_some("missing_stable_id"),
                 "tool_call_id": msg.tool_call_id,
                 "tool_name": tool_name,
                 "role": msg.role,
@@ -205,6 +208,8 @@ impl Tool for ToolCompressChatProbe {
             }
             context_messages.push(json!({
                 "index": idx,
+                "target_id": compression_context_message_target_id(msg),
+                "unsupported_reason": compression_context_message_target_id(msg).is_none().then_some("missing_stable_id"),
                 "tool_call_id": msg.tool_call_id,
                 "tokens": approx_tokens_for_message(msg),
                 "chars": msg.content.content_text_only().len(),
@@ -339,17 +344,17 @@ impl Tool for ToolCompressChatApply {
                 "drop_context_files": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "List of context file names to drop entirely"
+                    "description": "List of probe target_id values for context files to drop entirely; legacy file names are accepted"
                 },
                 "drop_memories": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Memory/knowledge file paths to drop"
+                    "description": "List of probe target_id values for memories to drop; legacy memory paths are accepted"
                 },
                 "drop_context_messages": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Context-file message tool_call_id values to drop entirely"
+                    "description": "List of probe target_id values for context-file messages to drop entirely; legacy tool_call_id values are accepted"
                 },
                 "drop_all_memories": {
                     "type": "boolean",
@@ -358,12 +363,12 @@ impl Tool for ToolCompressChatApply {
                 "truncate_tool_outputs": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Tool call IDs to truncate"
+                    "description": "List of probe target_id values for tool outputs to truncate; legacy tool_call_id values are accepted"
                 },
                 "drop_tool_outputs": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Tool call IDs to drop (replaced with a short placeholder)"
+                    "description": "List of probe target_id values for tool outputs to drop; legacy tool_call_id values are accepted"
                 },
                 "dedup_context_files": {
                     "type": "boolean",
@@ -543,6 +548,8 @@ impl Tool for ToolCompressChatApply {
             messages: mut head_messages,
             stats,
             before_tokens,
+            tokens_saved,
+            target_results,
             report,
             affected_boundary,
             modifiable_len,
@@ -619,11 +626,13 @@ impl Tool for ToolCompressChatApply {
 
         let result = json!({
             "type": "ctx_apply",
+            "success": tokens_saved > 0,
             "dry_run": dry_run,
             "before_message_count": before_count,
             "after_message_count": after_count,
             "before_tokens": before_tokens,
             "after_tokens": report_after_tokens,
+            "tokens_saved": tokens_saved,
             "target_tokens": target_tokens,
             "target_met": target_met,
             "strength": strength,
@@ -634,6 +643,8 @@ impl Tool for ToolCompressChatApply {
             "tool_outputs_dropped": stats.tool_dropped,
             "project_info_dropped": stats.project_info_dropped,
             "dedup_context_files": stats.dedup_count,
+            "applied": target_results.iter().filter(|result| result.applied).collect::<Vec<_>>(),
+            "skipped": target_results.iter().filter(|result| !result.applied).collect::<Vec<_>>(),
             "compression_report": compression_report_metadata.map(|metadata| json!({
                 "role": "compression_report",
                 "context_files_removed": metadata.get("context_files_removed").cloned().unwrap_or(Value::Null),

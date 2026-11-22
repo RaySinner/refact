@@ -49,6 +49,132 @@ fn preserve_cutoff_for(messages: &[ChatMessage], preserve_last_turns: Option<usi
         .unwrap_or(messages.len())
 }
 
+pub fn compression_context_message_target_id(message: &ChatMessage) -> Option<String> {
+    compression_message_target_id("context_message", message)
+}
+
+pub fn compression_tool_output_target_id(message: &ChatMessage) -> Option<String> {
+    compression_message_target_id("tool_output", message)
+}
+
+fn compression_message_target_id(kind: &str, message: &ChatMessage) -> Option<String> {
+    let tool_call_id = message.tool_call_id.trim();
+    if !tool_call_id.is_empty() {
+        return Some(format!("{kind}:tool_call:{tool_call_id}"));
+    }
+    let message_id = message.message_id.trim();
+    (!message_id.is_empty()).then(|| format!("{kind}:message:{message_id}"))
+}
+
+pub fn compression_context_file_target_id(file: &ContextFile) -> String {
+    let kind = if is_memory_path(&file.file_name) {
+        "memory"
+    } else {
+        "context_file"
+    };
+    format!("{kind}:{}", file.file_name)
+}
+
+fn message_request_id<'a>(
+    requested: &'a HashSet<String>,
+    canonical_id: Option<String>,
+    message: &ChatMessage,
+) -> Option<&'a str> {
+    requested
+        .iter()
+        .find(|requested_id| {
+            canonical_id.as_deref() == Some(requested_id.as_str())
+                || (!message.tool_call_id.is_empty()
+                    && requested_id.as_str() == message.tool_call_id)
+        })
+        .map(String::as_str)
+}
+
+fn context_file_request_id<'a>(
+    requested: &'a HashSet<String>,
+    file: &ContextFile,
+    memory_operation: bool,
+) -> Option<&'a str> {
+    let canonical_id = compression_context_file_target_id(file);
+    let is_memory = is_memory_path(&file.file_name);
+    requested
+        .iter()
+        .find(|requested_id| {
+            requested_id.as_str() == canonical_id
+                || (is_memory == memory_operation && requested_id.as_str() == file.file_name)
+        })
+        .map(String::as_str)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct CompressChatTargetResult {
+    pub operation: String,
+    pub target_id: String,
+    pub applied: bool,
+    pub reason: Option<String>,
+    pub tokens_saved: usize,
+}
+
+struct CompressChatTargetResults {
+    results: Vec<CompressChatTargetResult>,
+}
+
+impl CompressChatTargetResults {
+    fn new(request: &CompressChatApplyRequest) -> Self {
+        let operations = [
+            ("drop_context_files", request.drop_context_files),
+            ("drop_memories", request.drop_memories),
+            ("truncate_tool_outputs", request.truncate_tool_outputs),
+            ("drop_tool_outputs", request.drop_tool_outputs),
+            ("drop_context_messages", request.drop_context_messages),
+        ];
+        let mut results = Vec::new();
+        for (operation, targets) in operations {
+            let mut targets: Vec<&String> = targets.iter().collect();
+            targets.sort();
+            for target_id in targets {
+                let reason = if target_id.trim().is_empty() {
+                    "missing_stable_id"
+                } else {
+                    "missing_or_already_dropped"
+                };
+                results.push(CompressChatTargetResult {
+                    operation: operation.to_string(),
+                    target_id: target_id.clone(),
+                    applied: false,
+                    reason: Some(reason.to_string()),
+                    tokens_saved: 0,
+                });
+            }
+        }
+        Self { results }
+    }
+
+    fn mark_applied(&mut self, operation: &str, target_id: &str, tokens_saved: usize) {
+        if let Some(result) = self
+            .results
+            .iter_mut()
+            .find(|result| result.operation == operation && result.target_id == target_id)
+        {
+            result.applied = true;
+            result.reason = None;
+            result.tokens_saved += tokens_saved;
+        }
+    }
+
+    fn mark_skipped(&mut self, operation: &str, target_id: &str, reason: &str) {
+        if let Some(result) = self
+            .results
+            .iter_mut()
+            .find(|result| {
+                result.operation == operation && result.target_id == target_id && !result.applied
+            })
+        {
+            result.reason = Some(reason.to_string());
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct CompressChatApplyStats {
     pub context_files_dropped: usize,
@@ -106,6 +232,8 @@ pub struct CompressChatApplyOutput {
     pub messages: Vec<ChatMessage>,
     pub stats: CompressChatApplyStats,
     pub before_tokens: usize,
+    pub tokens_saved: usize,
+    pub target_results: Vec<CompressChatTargetResult>,
     pub report: Option<ChatMessage>,
     pub affected_boundary: Option<usize>,
     /// Length of the mutated modifiable prefix inside `messages`; everything at
@@ -245,6 +373,93 @@ pub fn remove_invalid_tool_calls_and_tool_calls_results_before(
     before != serde_json::to_value(&*modifiable_prefix).ok()
 }
 
+fn mark_preserved_message_targets(
+    target_results: &mut CompressChatTargetResults,
+    message: &ChatMessage,
+    request: &CompressChatApplyRequest,
+) {
+    if message.role == "context_file" {
+        if let Some(target_id) = message_request_id(
+            request.drop_context_messages,
+            compression_context_message_target_id(message),
+            message,
+        ) {
+            target_results.mark_skipped("drop_context_messages", target_id, "preserve_tail");
+        }
+        for file in extract_context_files(message) {
+            if let Some(target_id) =
+                context_file_request_id(request.drop_context_files, &file, false)
+            {
+                target_results.mark_skipped("drop_context_files", target_id, "preserve_tail");
+            }
+            if let Some(target_id) = context_file_request_id(request.drop_memories, &file, true) {
+                target_results.mark_skipped("drop_memories", target_id, "preserve_tail");
+            }
+        }
+    }
+    if message.role == "tool" || message.role == "diff" {
+        let canonical_id = compression_tool_output_target_id(message);
+        if let Some(target_id) =
+            message_request_id(request.drop_tool_outputs, canonical_id.clone(), message)
+        {
+            target_results.mark_skipped("drop_tool_outputs", target_id, "preserve_tail");
+        }
+        if let Some(target_id) =
+            message_request_id(request.truncate_tool_outputs, canonical_id, message)
+        {
+            target_results.mark_skipped("truncate_tool_outputs", target_id, "preserve_tail");
+        }
+    }
+}
+
+fn target_matches_other_kind(
+    messages: &[ChatMessage],
+    operation: &str,
+    target_id: &str,
+) -> bool {
+    let mut context_message_match = false;
+    let mut tool_output_match = false;
+    let mut context_file_match = false;
+    let mut memory_match = false;
+    for message in messages {
+        if message.role == "context_file" {
+            context_message_match |= compression_context_message_target_id(message).as_deref()
+                == Some(target_id)
+                || (!message.tool_call_id.is_empty() && message.tool_call_id == target_id);
+            for file in extract_context_files(message) {
+                let file_match = compression_context_file_target_id(&file) == target_id
+                    || file.file_name == target_id;
+                context_file_match |= file_match && !is_memory_path(&file.file_name);
+                memory_match |= file_match && is_memory_path(&file.file_name);
+            }
+        }
+        if message.role == "tool" || message.role == "diff" {
+            tool_output_match |= compression_tool_output_target_id(message).as_deref()
+                == Some(target_id)
+                || (!message.tool_call_id.is_empty() && message.tool_call_id == target_id);
+        }
+    }
+    match operation {
+        "drop_context_messages" => tool_output_match || context_file_match || memory_match,
+        "drop_tool_outputs" | "truncate_tool_outputs" => {
+            context_message_match || context_file_match || memory_match
+        }
+        "drop_context_files" => context_message_match || tool_output_match || memory_match,
+        "drop_memories" => context_message_match || tool_output_match || context_file_match,
+        _ => false,
+    }
+}
+
+fn tool_replacement_tokens_saved(message: &ChatMessage, replacement: &str) -> Option<usize> {
+    let original = message.content.content_text_only();
+    if replacement.len() >= original.len() {
+        return None;
+    }
+    let before_tokens = approx_tokens_for_message(message);
+    let after_tokens = approx_tokens_for_len(replacement.len());
+    (after_tokens < before_tokens).then_some(before_tokens - after_tokens)
+}
+
 pub fn compress_chat_apply_head_output(
     mut head_messages: Vec<ChatMessage>,
     immutable_tail: &[ChatMessage],
@@ -255,6 +470,29 @@ pub fn compress_chat_apply_head_output(
     let preserve_cutoff = preserve_cutoff_for(&head_messages, request.preserve_last_turns);
     let mut preserved_tail = head_messages.split_off(preserve_cutoff.min(head_messages.len()));
     let mut stats = CompressChatApplyStats::default();
+    let mut target_results = CompressChatTargetResults::new(request);
+    for message in original_head_messages
+        .iter()
+        .skip(preserve_cutoff.min(original_head_messages.len()))
+        .chain(immutable_tail.iter())
+    {
+        mark_preserved_message_targets(&mut target_results, message, request);
+    }
+    for result in target_results.results.iter_mut() {
+        if result.reason.as_deref() == Some("missing_or_already_dropped")
+            && (target_matches_other_kind(
+                &original_head_messages,
+                &result.operation,
+                &result.target_id,
+            ) || target_matches_other_kind(
+                immutable_tail,
+                &result.operation,
+                &result.target_id,
+            ))
+        {
+            result.reason = Some("mismatched_id".to_string());
+        }
+    }
 
     if request.drop_project_information {
         let first_system_idx = head_messages.iter().position(|m| m.role == "system");
@@ -284,9 +522,17 @@ pub fn compress_chat_apply_head_output(
             updated_head.push(msg);
             continue;
         }
-        if !msg.tool_call_id.is_empty() && request.drop_context_messages.contains(&msg.tool_call_id)
-        {
+        if let Some(target_id) = message_request_id(
+            request.drop_context_messages,
+            compression_context_message_target_id(&msg),
+            &msg,
+        ) {
             stats.context_messages_dropped += 1;
+            target_results.mark_applied(
+                "drop_context_messages",
+                target_id,
+                approx_tokens_for_message(&msg),
+            );
             continue;
         }
 
@@ -299,16 +545,28 @@ pub fn compress_chat_apply_head_output(
         let mut remaining: Vec<ContextFile> = Vec::new();
         for cf in files.drain(..) {
             let is_memory = is_memory_path(&cf.file_name);
-            if request.drop_context_files.contains(&cf.file_name) {
+            if let Some(target_id) =
+                context_file_request_id(request.drop_context_files, &cf, false)
+            {
                 stats.context_files_dropped += 1;
+                target_results.mark_applied(
+                    "drop_context_files",
+                    target_id,
+                    approx_tokens_for_len(cf.file_content.len()),
+                );
                 continue;
             }
             if request.drop_all_memories && is_memory {
                 stats.memory_dropped += 1;
                 continue;
             }
-            if request.drop_memories.contains(&cf.file_name) {
+            if let Some(target_id) = context_file_request_id(request.drop_memories, &cf, true) {
                 stats.memory_dropped += 1;
+                target_results.mark_applied(
+                    "drop_memories",
+                    target_id,
+                    approx_tokens_for_len(cf.file_content.len()),
+                );
                 continue;
             }
             if request.drop_all_context_files {
@@ -354,33 +612,78 @@ pub fn compress_chat_apply_head_output(
         if msg.role != "tool" && msg.role != "diff" {
             continue;
         }
-        if msg.tool_call_id.is_empty() {
-            continue;
-        }
+        let canonical_id = compression_tool_output_target_id(msg);
+        let drop_target =
+            message_request_id(request.drop_tool_outputs, canonical_id.clone(), msg);
+        let truncate_target =
+            message_request_id(request.truncate_tool_outputs, canonical_id, msg);
         if msg.preserve == Some(true) {
+            if let Some(target_id) = drop_target {
+                target_results.mark_skipped("drop_tool_outputs", target_id, "preserve_flag");
+            }
+            if let Some(target_id) = truncate_target {
+                target_results.mark_skipped(
+                    "truncate_tool_outputs",
+                    target_id,
+                    "preserve_flag",
+                );
+            }
             continue;
         }
         if let Some(name) = request.tool_call_names.get(&msg.tool_call_id) {
             if should_preserve_tool(name) && !request.truncate_all_tool_outputs {
+                if let Some(target_id) = drop_target {
+                    target_results.mark_skipped("drop_tool_outputs", target_id, "protected_tool");
+                }
+                if let Some(target_id) = truncate_target {
+                    target_results.mark_skipped(
+                        "truncate_tool_outputs",
+                        target_id,
+                        "protected_tool",
+                    );
+                }
                 continue;
             }
         }
-        if request.drop_tool_outputs.contains(&msg.tool_call_id) {
-            msg.content =
-                ChatContent::SimpleText("Tool result removed by compress_chat_apply".to_string());
-            stats.tool_dropped += 1;
+        if let Some(target_id) = drop_target {
+            let replacement = "Tool result removed by compress_chat_apply";
+            if let Some(tokens_saved) = tool_replacement_tokens_saved(msg, replacement) {
+                msg.content = ChatContent::SimpleText(replacement.to_string());
+                stats.tool_dropped += 1;
+                target_results.mark_applied("drop_tool_outputs", target_id, tokens_saved);
+            } else {
+                target_results.mark_skipped("drop_tool_outputs", target_id, "no_savings");
+            }
+            if let Some(truncate_target) = truncate_target {
+                target_results.mark_skipped(
+                    "truncate_tool_outputs",
+                    truncate_target,
+                    "superseded_by_drop",
+                );
+            }
             continue;
         }
-        if request.truncate_all_tool_outputs
-            || request.truncate_tool_outputs.contains(&msg.tool_call_id)
-        {
+        if request.truncate_all_tool_outputs || truncate_target.is_some() {
             let content = msg.content.content_text_only();
             if content.len() > TOOL_OUTPUT_TRUNCATE_LIMIT {
                 let redacted = redact_sensitive(&content);
                 let preview: String = redacted.chars().take(TOOL_OUTPUT_TRUNCATE_LIMIT).collect();
-                msg.content =
-                    ChatContent::SimpleText(format!("Tool result compressed: {}...", preview));
-                stats.tool_truncated += 1;
+                let replacement = format!("Tool result compressed: {}...", preview);
+                if let Some(tokens_saved) = tool_replacement_tokens_saved(msg, &replacement) {
+                    msg.content = ChatContent::SimpleText(replacement);
+                    stats.tool_truncated += 1;
+                    if let Some(target_id) = truncate_target {
+                        target_results.mark_applied(
+                            "truncate_tool_outputs",
+                            target_id,
+                            tokens_saved,
+                        );
+                    }
+                    continue;
+                }
+            }
+            if let Some(target_id) = truncate_target {
+                target_results.mark_skipped("truncate_tool_outputs", target_id, "no_savings");
             }
         }
     }
@@ -439,9 +742,10 @@ pub fn compress_chat_apply_head_output(
         }
     }
 
-    let report = if stats.has_meaningful_mutation() {
-        let after_tokens_pre_report =
-            tokens_with_tail(&head_messages, &preserved_tail, immutable_tail);
+    let after_tokens_pre_report =
+        tokens_with_tail(&head_messages, &preserved_tail, immutable_tail);
+    let tokens_saved = before_tokens.saturating_sub(after_tokens_pre_report);
+    let report = if stats.has_meaningful_mutation() && tokens_saved > 0 {
         let sorted = |set: &HashSet<String>| -> Vec<String> {
             let mut items: Vec<String> = set.iter().cloned().collect();
             items.sort();
@@ -489,6 +793,8 @@ pub fn compress_chat_apply_head_output(
         messages: head_messages,
         stats,
         before_tokens,
+        tokens_saved,
+        target_results: target_results.results,
         report,
         affected_boundary,
         modifiable_len,

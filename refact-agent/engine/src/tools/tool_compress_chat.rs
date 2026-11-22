@@ -65,6 +65,7 @@ fn compress_chat_apply_head_messages(
         report,
         affected_boundary,
         modifiable_len,
+        ..
     } = compress_chat_apply_head_output(head_messages, immutable_tail, request);
     insert_current_compression_report(&mut messages, report, affected_boundary, modifiable_len);
     (messages, stats, before_tokens)
@@ -171,6 +172,18 @@ mod tests {
             .iter()
             .map(|message| message.content.content_text_only())
             .collect()
+    }
+
+    fn target_result<'a>(
+        output: &'a CompressChatApplyOutput,
+        operation: &str,
+        target_id: &str,
+    ) -> &'a CompressChatTargetResult {
+        output
+            .target_results
+            .iter()
+            .find(|result| result.operation == operation && result.target_id == target_id)
+            .expect("target result should exist")
     }
 
     fn secrets_record() -> refact_privacy::FileRecord {
@@ -1351,5 +1364,328 @@ mod tests {
         assert_eq!(stats.memory_dropped, 1);
         assert_eq!(stats.tool_truncated, 0);
         assert_preserved_tail_unchanged(&messages, &after, 1);
+    }
+
+    #[test]
+    fn probe_tool_id_applies_with_real_savings_and_survives_reload() {
+        let original = "provider visible tool output ".repeat(80);
+        let messages = vec![
+            user_message("old user"),
+            assistant_tool_call_message("known_call", "shell"),
+            tool_message("known_call", &original),
+        ];
+        let target_id = compression_tool_output_target_id(&messages[2]).unwrap();
+        assert_eq!(target_id, "tool_output:tool_call:known_call");
+        let drop_context_files = HashSet::new();
+        let drop_memories = HashSet::new();
+        let truncate_tool_outputs = HashSet::from([target_id.clone()]);
+        let drop_tool_outputs = HashSet::new();
+        let drop_context_messages = HashSet::new();
+        let tool_call_names = HashMap::from([("known_call".to_string(), "shell".to_string())]);
+        let mut request = apply_request(
+            &drop_context_files,
+            &drop_memories,
+            &truncate_tool_outputs,
+            &drop_tool_outputs,
+            &drop_context_messages,
+            &tool_call_names,
+        );
+        request.preserve_last_turns = Some(0);
+
+        let output = compress_chat_apply_head_output(messages, &[], &request);
+
+        assert!(output.tokens_saved > 0);
+        assert!(output.report.is_some());
+        let result = target_result(&output, "truncate_tool_outputs", &target_id);
+        assert!(result.applied);
+        assert_eq!(result.reason, None);
+        assert!(result.tokens_saved > 0);
+        let truncated = output
+            .messages
+            .iter()
+            .find(|message| message.role == "tool")
+            .unwrap()
+            .content
+            .content_text_only();
+        assert!(truncated.len() < original.len());
+        let restored: Vec<ChatMessage> =
+            serde_json::from_str(&serde_json::to_string(&output.messages).unwrap()).unwrap();
+        assert_eq!(
+            restored
+                .iter()
+                .find(|message| message.role == "tool")
+                .unwrap()
+                .content
+                .content_text_only(),
+            truncated
+        );
+    }
+
+    #[test]
+    fn empty_tool_call_id_uses_message_fallback_and_empty_target_is_unsupported() {
+        let mut fallback = tool_message("", &"fallback output ".repeat(80));
+        fallback.message_id = "fallback-message".to_string();
+        let unsupported = tool_message("", &"unsupported output ".repeat(80));
+        let fallback_id = compression_tool_output_target_id(&fallback).unwrap();
+        assert_eq!(fallback_id, "tool_output:message:fallback-message");
+        assert_eq!(compression_tool_output_target_id(&unsupported), None);
+        let messages = vec![user_message("old user"), fallback, unsupported];
+        let drop_context_files = HashSet::new();
+        let drop_memories = HashSet::new();
+        let truncate_tool_outputs = HashSet::from([fallback_id.clone()]);
+        let drop_tool_outputs = HashSet::from([String::new()]);
+        let drop_context_messages = HashSet::new();
+        let tool_call_names = HashMap::new();
+        let mut request = apply_request(
+            &drop_context_files,
+            &drop_memories,
+            &truncate_tool_outputs,
+            &drop_tool_outputs,
+            &drop_context_messages,
+            &tool_call_names,
+        );
+        request.preserve_last_turns = Some(0);
+
+        let output = compress_chat_apply_head_output(messages, &[], &request);
+
+        assert!(target_result(&output, "truncate_tool_outputs", &fallback_id).applied);
+        let unsupported_result = target_result(&output, "drop_tool_outputs", "");
+        assert!(!unsupported_result.applied);
+        assert_eq!(unsupported_result.reason.as_deref(), Some("missing_stable_id"));
+        assert!(output.messages.iter().any(|message| {
+            message.role == "tool" && message.content.content_text_only().starts_with("unsupported output")
+        }));
+    }
+
+    #[test]
+    fn context_and_memory_canonical_ids_apply_to_their_own_types() {
+        let mut context = context_file_message("", "old.rs", &"old context ".repeat(30));
+        context.message_id = "context-message".to_string();
+        let memory = context_file_message(
+            "memory-call",
+            "/repo/.refact/knowledge/old.md",
+            &"old memory ".repeat(30),
+        );
+        let context_id = compression_context_message_target_id(&context).unwrap();
+        let memory_id = compression_context_file_target_id(&ContextFile {
+            file_name: "/repo/.refact/knowledge/old.md".to_string(),
+            ..Default::default()
+        });
+        assert_eq!(context_id, "context_message:message:context-message");
+        assert!(memory_id.starts_with("memory:"));
+        let messages = vec![user_message("old user"), context, memory];
+        let drop_context_files = HashSet::new();
+        let drop_memories = HashSet::from([memory_id.clone()]);
+        let truncate_tool_outputs = HashSet::new();
+        let drop_tool_outputs = HashSet::new();
+        let drop_context_messages = HashSet::from([context_id.clone()]);
+        let tool_call_names = HashMap::new();
+        let mut request = apply_request(
+            &drop_context_files,
+            &drop_memories,
+            &truncate_tool_outputs,
+            &drop_tool_outputs,
+            &drop_context_messages,
+            &tool_call_names,
+        );
+        request.preserve_last_turns = Some(0);
+
+        let output = compress_chat_apply_head_output(messages, &[], &request);
+
+        assert!(target_result(&output, "drop_context_messages", &context_id).applied);
+        assert!(target_result(&output, "drop_memories", &memory_id).applied);
+        assert_eq!(output.stats.context_messages_dropped, 2);
+        assert_eq!(output.stats.memory_dropped, 1);
+        assert!(output.tokens_saved > 0);
+    }
+
+    #[test]
+    fn apply_reports_protected_preserved_and_mismatched_targets() {
+        let protected_name = TOOLS_TO_PRESERVE[0];
+        let protected = tool_message("protected", &"protected output ".repeat(30));
+        let tail = tool_message("tail", &"tail output ".repeat(30));
+        let protected_id = compression_tool_output_target_id(&protected).unwrap();
+        let tail_id = compression_tool_output_target_id(&tail).unwrap();
+        let messages = vec![
+            user_message("old user"),
+            assistant_tool_call_message("protected", protected_name),
+            protected,
+            user_message("tail user"),
+            assistant_tool_call_message("tail", "shell"),
+            tail,
+        ];
+        let drop_context_files = HashSet::new();
+        let drop_memories = HashSet::new();
+        let truncate_tool_outputs = HashSet::from([protected_id.clone(), tail_id.clone()]);
+        let drop_tool_outputs = HashSet::new();
+        let drop_context_messages = HashSet::from([tail_id.clone()]);
+        let tool_call_names = HashMap::from([
+            ("protected".to_string(), protected_name.to_string()),
+            ("tail".to_string(), "shell".to_string()),
+        ]);
+        let request = apply_request(
+            &drop_context_files,
+            &drop_memories,
+            &truncate_tool_outputs,
+            &drop_tool_outputs,
+            &drop_context_messages,
+            &tool_call_names,
+        );
+
+        let output = compress_chat_apply_head_output(messages, &[], &request);
+
+        assert_eq!(
+            target_result(&output, "truncate_tool_outputs", &protected_id)
+                .reason
+                .as_deref(),
+            Some("protected_tool")
+        );
+        assert_eq!(
+            target_result(&output, "truncate_tool_outputs", &tail_id)
+                .reason
+                .as_deref(),
+            Some("preserve_tail")
+        );
+        assert_eq!(
+            target_result(&output, "drop_context_messages", &tail_id)
+                .reason
+                .as_deref(),
+            Some("mismatched_id")
+        );
+        assert_eq!(output.tokens_saved, 0);
+        assert!(output.report.is_none());
+    }
+
+    #[test]
+    fn apply_reports_mixed_applied_no_savings_and_missing_targets() {
+        let long = tool_message("long", &"long output ".repeat(80));
+        let short = tool_message("short", "tiny");
+        let long_id = compression_tool_output_target_id(&long).unwrap();
+        let short_id = compression_tool_output_target_id(&short).unwrap();
+        let missing_id = "tool_output:tool_call:missing".to_string();
+        let messages = vec![
+            user_message("old user"),
+            assistant_tool_call_message("long", "shell"),
+            long,
+            assistant_tool_call_message("short", "shell"),
+            short,
+        ];
+        let drop_context_files = HashSet::new();
+        let drop_memories = HashSet::new();
+        let truncate_tool_outputs =
+            HashSet::from([long_id.clone(), short_id.clone(), missing_id.clone()]);
+        let drop_tool_outputs = HashSet::new();
+        let drop_context_messages = HashSet::new();
+        let tool_call_names = HashMap::from([
+            ("long".to_string(), "shell".to_string()),
+            ("short".to_string(), "shell".to_string()),
+        ]);
+        let mut request = apply_request(
+            &drop_context_files,
+            &drop_memories,
+            &truncate_tool_outputs,
+            &drop_tool_outputs,
+            &drop_context_messages,
+            &tool_call_names,
+        );
+        request.preserve_last_turns = Some(0);
+
+        let output = compress_chat_apply_head_output(messages, &[], &request);
+
+        assert!(target_result(&output, "truncate_tool_outputs", &long_id).applied);
+        assert_eq!(
+            target_result(&output, "truncate_tool_outputs", &short_id)
+                .reason
+                .as_deref(),
+            Some("no_savings")
+        );
+        assert_eq!(
+            target_result(&output, "truncate_tool_outputs", &missing_id)
+                .reason
+                .as_deref(),
+            Some("missing_or_already_dropped")
+        );
+        assert_eq!(output.stats.tool_truncated, 1);
+    }
+
+    #[test]
+    fn repeated_apply_is_a_diagnosed_noop_without_false_success() {
+        let tool = tool_message("drop", &"drop output ".repeat(80));
+        let target_id = compression_tool_output_target_id(&tool).unwrap();
+        let messages = vec![
+            user_message("old user"),
+            assistant_tool_call_message("drop", "shell"),
+            tool,
+        ];
+        let drop_context_files = HashSet::new();
+        let drop_memories = HashSet::new();
+        let truncate_tool_outputs = HashSet::new();
+        let drop_tool_outputs = HashSet::from([target_id.clone()]);
+        let drop_context_messages = HashSet::new();
+        let tool_call_names = HashMap::from([("drop".to_string(), "shell".to_string())]);
+        let mut request = apply_request(
+            &drop_context_files,
+            &drop_memories,
+            &truncate_tool_outputs,
+            &drop_tool_outputs,
+            &drop_context_messages,
+            &tool_call_names,
+        );
+        request.preserve_last_turns = Some(0);
+
+        let first = compress_chat_apply_head_output(messages, &[], &request);
+        assert!(target_result(&first, "drop_tool_outputs", &target_id).applied);
+        let before_second = serde_json::to_string(&first.messages).unwrap();
+        let second = compress_chat_apply_head_output(first.messages, &[], &request);
+
+        assert_eq!(second.tokens_saved, 0);
+        assert!(second.report.is_none());
+        assert_eq!(
+            target_result(&second, "drop_tool_outputs", &target_id)
+                .reason
+                .as_deref(),
+            Some("no_savings")
+        );
+        assert_eq!(serde_json::to_string(&second.messages).unwrap(), before_second);
+    }
+
+    #[test]
+    fn memory_path_cannot_be_dropped_through_context_file_targets() {
+        let memory = context_file_message(
+            "memory-call",
+            "/repo/.refact/knowledge/old.md",
+            &"old memory ".repeat(30),
+        );
+        let messages = vec![user_message("old user"), memory];
+        let drop_context_files = HashSet::from(["/repo/.refact/knowledge/old.md".to_string()]);
+        let drop_memories = HashSet::new();
+        let truncate_tool_outputs = HashSet::new();
+        let drop_tool_outputs = HashSet::new();
+        let drop_context_messages = HashSet::new();
+        let tool_call_names = HashMap::new();
+        let mut request = apply_request(
+            &drop_context_files,
+            &drop_memories,
+            &truncate_tool_outputs,
+            &drop_tool_outputs,
+            &drop_context_messages,
+            &tool_call_names,
+        );
+        request.preserve_last_turns = Some(0);
+
+        let output = compress_chat_apply_head_output(messages, &[], &request);
+
+        assert_eq!(output.stats.context_files_dropped, 0);
+        assert_eq!(output.stats.memory_dropped, 0);
+        assert_eq!(
+            target_result(
+                &output,
+                "drop_context_files",
+                "/repo/.refact/knowledge/old.md"
+            )
+            .reason
+            .as_deref(),
+            Some("mismatched_id")
+        );
     }
 }

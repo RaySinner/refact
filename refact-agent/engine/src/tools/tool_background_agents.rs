@@ -44,7 +44,7 @@ mod tests {
 
     use crate::agents::types::{AgentCompletion, CreateAgentRequest};
     use crate::app_state::AppState;
-    use refact_chat_api::ChatSession;
+    use refact_chat_api::{ChatSession, PendingDelivery, PushMode, SessionState};
     use crate::tools::tools_description::Tool;
     use serde_json::json;
     use tempfile::TempDir;
@@ -113,6 +113,34 @@ mod tests {
             .await,
         ));
         (temp, app, ccx)
+    }
+
+    async fn test_context_with_session(
+        chat_id: &str,
+    ) -> (
+        TempDir,
+        AppState,
+        Arc<AMutex<AtCommandsContext>>,
+        Arc<AMutex<ChatSession>>,
+    ) {
+        let (temp, app, ccx) = test_context(chat_id).await;
+        let session = Arc::new(AMutex::new(ChatSession::new(chat_id.to_string())));
+        app.chat
+            .sessions
+            .write()
+            .await
+            .insert(chat_id.to_string(), session.clone());
+        (temp, app, ccx, session)
+    }
+
+    fn wake_delivery(id: &str) -> PendingDelivery {
+        PendingDelivery::with_id(
+            id,
+            vec![ChatMessage::new("user".into(), "unrelated wake".into())],
+            PushMode::WhenIdle,
+            "test",
+            true,
+        )
     }
 
     async fn create_agent(
@@ -521,6 +549,193 @@ mod tests {
 
         assert!(output.contains("# Agent Result: Concurrent finish"));
         assert!(output.contains("done concurrently"));
+    }
+
+    #[tokio::test]
+    async fn agent_wait_returns_terminal_result_when_target_completes_during_wait() {
+        let (_temp, app, ccx, session) = test_context_with_session(PARENT).await;
+        let record = create_agent(&app, PARENT, BgAgentKind::Subagent, "Finish during wait").await;
+        app.agents
+            .mark_running(&record.agent_id, "subchat-finish-during-wait".to_string())
+            .await
+            .unwrap();
+        {
+            let mut session = session.lock().await;
+            session.set_runtime_state(SessionState::Idle, None);
+            session.begin_interruptible_wait();
+            session.turn_depth = 1;
+            session.draft_message = Some(refact_core::chat_types::ChatMessage::new(
+                "assistant".into(),
+                "waiting".into(),
+            ));
+        }
+
+        let agent_id = record.agent_id.clone();
+        let registry = app.agents.clone();
+        let wake_session = session.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(25)).await;
+            registry
+                .mark_completed(&agent_id, completion("finished during interrupted wait"))
+                .await
+                .unwrap();
+            wake_session
+                .lock()
+                .await
+                .enqueue_delivery(wake_delivery("completion-wake"))
+                .unwrap();
+        });
+
+        let output = output_text(
+            ToolAgentWait {
+                config_path: String::new(),
+            }
+            .tool_execute(
+                ccx,
+                &"call".to_string(),
+                &args(&[
+                    ("agent_id", json!(record.agent_id)),
+                    ("timeout_ms", json!(5000)),
+                ]),
+            )
+            .await
+            .unwrap(),
+        );
+
+        assert!(output.contains("# Agent Result: Finish during wait"));
+        assert!(output.contains("finished during interrupted wait"));
+        assert!(!output.contains("Timed out"));
+    }
+
+    #[tokio::test]
+    async fn agent_wait_returns_failure_when_target_fails_during_wait() {
+        let (_temp, app, ccx, session) = test_context_with_session(PARENT).await;
+        let record = create_agent(&app, PARENT, BgAgentKind::Subagent, "Fail during wait").await;
+        app.agents
+            .mark_running(&record.agent_id, "subchat-fail-during-wait".to_string())
+            .await
+            .unwrap();
+        {
+            let mut session = session.lock().await;
+            session.set_runtime_state(SessionState::Idle, None);
+            session.begin_interruptible_wait();
+            session.turn_depth = 1;
+            session.draft_message = Some(refact_core::chat_types::ChatMessage::new(
+                "assistant".into(),
+                "waiting".into(),
+            ));
+        }
+
+        let agent_id = record.agent_id.clone();
+        let registry = app.agents.clone();
+        let wake_session = session.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(25)).await;
+            registry
+                .mark_failed(&agent_id, "boom during interrupted wait".to_string())
+                .await
+                .unwrap();
+            wake_session
+                .lock()
+                .await
+                .enqueue_delivery(wake_delivery("failure-wake"))
+                .unwrap();
+        });
+
+        let output = output_text(
+            ToolAgentWait {
+                config_path: String::new(),
+            }
+            .tool_execute(
+                ccx,
+                &"call".to_string(),
+                &args(&[
+                    ("agent_id", json!(record.agent_id)),
+                    ("timeout_ms", json!(5000)),
+                ]),
+            )
+            .await
+            .unwrap(),
+        );
+
+        assert!(output.contains("# Agent Result: Fail during wait"));
+        assert!(output.contains("- Status: ❌ failed"));
+        assert!(output.contains("boom during interrupted wait"));
+        assert!(!output.contains("Timed out"));
+    }
+
+    #[tokio::test]
+    async fn agent_wait_unrelated_wake_keeps_running_agent_nonterminal() {
+        let (_temp, app, ccx, session) = test_context_with_session(PARENT).await;
+        let record = create_agent(&app, PARENT, BgAgentKind::Subagent, "Keep running").await;
+        app.agents
+            .mark_running(&record.agent_id, "subchat-still-running".to_string())
+            .await
+            .unwrap();
+        {
+            let mut session = session.lock().await;
+            session.set_runtime_state(SessionState::Idle, None);
+            session.begin_interruptible_wait();
+            session.turn_depth = 1;
+            session.draft_message = Some(refact_core::chat_types::ChatMessage::new(
+                "assistant".into(),
+                "waiting".into(),
+            ));
+            session
+                .enqueue_delivery(wake_delivery("unrelated-wake"))
+                .unwrap();
+        }
+
+        let output = output_text(
+            ToolAgentWait {
+                config_path: String::new(),
+            }
+            .tool_execute(
+                ccx,
+                &"call".to_string(),
+                &args(&[
+                    ("agent_id", json!(record.agent_id)),
+                    ("timeout_ms", json!(5000)),
+                ]),
+            )
+            .await
+            .unwrap(),
+        );
+
+        assert!(output.starts_with("⏰ Interrupted while waiting"));
+        assert!(output.contains("- Status: 🟢 running"));
+        assert!(!output.contains("Agent Result"));
+        assert!(!output.contains("Timed out"));
+    }
+
+    #[tokio::test]
+    async fn agent_wait_already_terminal_returns_result_immediately() {
+        let (_temp, app, ccx) = test_context(PARENT).await;
+        let record = create_agent(&app, PARENT, BgAgentKind::Subagent, "Already finished").await;
+        app.agents
+            .mark_completed(&record.agent_id, completion("already finished"))
+            .await
+            .unwrap();
+
+        let output = output_text(
+            ToolAgentWait {
+                config_path: String::new(),
+            }
+            .tool_execute(
+                ccx,
+                &"call".to_string(),
+                &args(&[
+                    ("agent_id", json!(record.agent_id)),
+                    ("timeout_ms", json!(5000)),
+                ]),
+            )
+            .await
+            .unwrap(),
+        );
+
+        assert!(output.contains("# Agent Result: Already finished"));
+        assert!(output.contains("already finished"));
+        assert!(!output.contains("Timed out"));
     }
     #[tokio::test]
     async fn agent_result_reports_not_finished_for_running_agent() {

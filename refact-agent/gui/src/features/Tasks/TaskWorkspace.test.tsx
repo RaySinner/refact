@@ -1496,8 +1496,8 @@ describe("TaskWorkspace SSE invalidation", () => {
       tasksApi.endpoints.getBoard.select(TASK_ID)(store.getState()).data?.rev,
     ).toBe(10);
     expect(
-      tasksApi.endpoints.getBoard.select(TASK_ID)(store.getState()).data?.cards[0]
-        ?.title,
+      tasksApi.endpoints.getBoard.select(TASK_ID)(store.getState()).data
+        ?.cards[0]?.title,
     ).toBe("Revision 10 card");
 
     store.dispatch(
@@ -1513,8 +1513,8 @@ describe("TaskWorkspace SSE invalidation", () => {
       tasksApi.endpoints.getBoard.select(TASK_ID)(store.getState()).data?.rev,
     ).toBe(11);
     expect(
-      tasksApi.endpoints.getBoard.select(TASK_ID)(store.getState()).data?.cards[0]
-        ?.title,
+      tasksApi.endpoints.getBoard.select(TASK_ID)(store.getState()).data
+        ?.cards[0]?.title,
     ).toBe("Revision 11 card");
   });
 
@@ -1555,8 +1555,8 @@ describe("TaskWorkspace SSE invalidation", () => {
       tasksApi.endpoints.getBoard.select(TASK_ID)(store.getState()).data?.rev,
     ).toBe(10);
     expect(
-      tasksApi.endpoints.getBoard.select(TASK_ID)(store.getState()).data?.cards[0]
-        ?.title,
+      tasksApi.endpoints.getBoard.select(TASK_ID)(store.getState()).data
+        ?.cards[0]?.title,
     ).toBe("Revision 10 card");
   });
 

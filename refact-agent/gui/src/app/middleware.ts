@@ -2454,14 +2454,10 @@ startListening({
         break;
       case "board_changed":
         void listenerApi.dispatch(
-          tasksApi.util.updateQueryData(
-            "getBoard",
-            event.task_id,
-            (draft) => {
-              if (draft.rev > event.rev) return draft;
-              return { ...event.board, rev: event.rev };
-            },
-          ),
+          tasksApi.util.updateQueryData("getBoard", event.task_id, (draft) => {
+            if (draft.rev > event.rev) return draft;
+            return { ...event.board, rev: event.rev };
+          }),
         );
         // Planner trajectory metadata (waiting_for_card_ids, session state) is
         // not included in the board payload, so invalidate to keep it fresh.

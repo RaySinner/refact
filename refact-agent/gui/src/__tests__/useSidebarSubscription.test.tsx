@@ -280,8 +280,9 @@ describe("useSidebarSubscription", () => {
     releaseOversizedBlock();
 
     await waitFor(() => {
-      const board = tasksApi.endpoints.getBoard.select(taskId)(store.getState())
-        .data;
+      const board = tasksApi.endpoints.getBoard.select(taskId)(
+        store.getState(),
+      ).data;
       expect(board?.rev).toBe(2);
       expect(board?.cards[0]?.column).toBe("doing");
     });

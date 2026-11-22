@@ -44,6 +44,7 @@ struct RunnerDeliveryState {
 pub struct BackgroundAgentRegistry {
     records: RwLock<HashMap<String, BackgroundAgent>>,
     runtime: RwLock<HashMap<String, AgentRuntime>>,
+    wait_notify: Arc<Notify>,
     storage_root: PathBuf,
     write_state: Mutex<RegistryWriteState>,
     storage_write: Mutex<()>,
@@ -77,6 +78,7 @@ impl BackgroundAgentRegistry {
         Ok(Arc::new(Self {
             records: RwLock::new(records),
             runtime: RwLock::new(HashMap::new()),
+            wait_notify: Arc::new(Notify::new()),
             storage_root,
             write_state: Mutex::new(RegistryWriteState::default()),
             storage_write: Mutex::new(()),
@@ -370,6 +372,7 @@ impl BackgroundAgentRegistry {
         if let Some(notify) = self.notify_for(agent_id).await {
             notify.notify_one();
         }
+        self.wait_notify.notify_waiters();
         self.retire_runtime(agent_id).await;
         Ok(updated)
     }
@@ -408,6 +411,7 @@ impl BackgroundAgentRegistry {
         if let Some(notify) = self.notify_for(agent_id).await {
             notify.notify_one();
         }
+        self.wait_notify.notify_waiters();
         self.retire_runtime(agent_id).await;
         Ok(updated)
     }
@@ -449,6 +453,7 @@ impl BackgroundAgentRegistry {
         if let Some(notify) = self.notify_for(agent_id).await {
             notify.notify_one();
         }
+        self.wait_notify.notify_waiters();
         self.retire_runtime(agent_id).await;
         Ok(updated)
     }
@@ -483,6 +488,7 @@ impl BackgroundAgentRegistry {
         if let Some(notify) = self.notify_for(agent_id).await {
             notify.notify_one();
         }
+        self.wait_notify.notify_waiters();
         self.retire_runtime(agent_id).await;
         Ok(updated)
     }
@@ -757,10 +763,9 @@ impl BackgroundAgentRegistry {
             if record.status.is_terminal() || timeout.is_zero() {
                 return Ok(record);
             }
-            let Some(runtime) = self.runtime.read().await.get(agent_id).cloned() else {
-                return self.get(parent_chat_id, agent_id).await;
-            };
-            let notified = runtime.notify.notified();
+            let notified = self.wait_notify.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
             let record = self.get(parent_chat_id, agent_id).await?;
             if record.status.is_terminal() {
                 return Ok(record);
@@ -1742,5 +1747,72 @@ mod tests {
                 .unwrap_err(),
             "invalid merge status"
         );
+    }
+
+    #[tokio::test]
+    async fn wait_wakes_all_waiters_when_agent_completes() {
+        let (_temp, registry) = registry().await;
+        let (record, _, _) = registry.create(request("parent")).await.unwrap();
+        let first = tokio::spawn({
+            let registry = registry.clone();
+            let agent_id = record.agent_id.clone();
+            async move { registry.wait("parent", &agent_id, Duration::from_secs(1)).await }
+        });
+        let second = tokio::spawn({
+            let registry = registry.clone();
+            let agent_id = record.agent_id.clone();
+            async move { registry.wait("parent", &agent_id, Duration::from_secs(1)).await }
+        });
+        tokio::task::yield_now().await;
+
+        registry
+            .mark_completed(&record.agent_id, completion())
+            .await
+            .unwrap();
+
+        let first = first.await.unwrap().unwrap();
+        let second = second.await.unwrap().unwrap();
+        assert_eq!(first.status, BgAgentStatus::Completed);
+        assert_eq!(second.status, BgAgentStatus::Completed);
+    }
+
+    #[tokio::test]
+    async fn wait_returns_failed_terminal_state_with_error() {
+        let (_temp, registry) = registry().await;
+        let (record, _, _) = registry.create(request("parent")).await.unwrap();
+        let waiter = tokio::spawn({
+            let registry = registry.clone();
+            let agent_id = record.agent_id.clone();
+            async move { registry.wait("parent", &agent_id, Duration::from_secs(1)).await }
+        });
+        tokio::task::yield_now().await;
+
+        registry
+            .mark_failed(&record.agent_id, "worker failed".to_string())
+            .await
+            .unwrap();
+
+        let result = waiter.await.unwrap().unwrap();
+        assert_eq!(result.status, BgAgentStatus::Failed);
+        assert_eq!(result.error.as_deref(), Some("worker failed"));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn wait_without_runtime_waits_until_deadline() {
+        let (_temp, registry) = registry().await;
+        let (record, _, _) = registry.create(request("parent")).await.unwrap();
+        registry.runtime.write().await.remove(&record.agent_id);
+        let waiter = tokio::spawn({
+            let registry = registry.clone();
+            let agent_id = record.agent_id.clone();
+            async move { registry.wait("parent", &agent_id, Duration::from_secs(1)).await }
+        });
+        tokio::task::yield_now().await;
+        tokio::time::advance(Duration::from_millis(100)).await;
+        assert!(!waiter.is_finished());
+
+        tokio::time::advance(Duration::from_secs(1)).await;
+        let result = waiter.await.unwrap().unwrap();
+        assert_eq!(result.status, BgAgentStatus::Queued);
     }
 }

@@ -108,6 +108,9 @@ import {
   DiffChunk,
 } from "../../../services/refact";
 import { capsApi } from "../../../services/refact";
+import {
+  withCanonicalCreatedAtMs,
+} from "../../../services/refact/messageTimestamps";
 
 const createChatThread = (
   tool_use: ToolUse,
@@ -237,12 +240,13 @@ const getThreadMode = ({
 };
 
 const normalizeMessage = (msg: ChatMessages[number]): ChatMessages[number] => {
-  if (msg.role === "diff" && typeof msg.content === "string") {
+  const timestamped = withCanonicalCreatedAtMs(msg);
+  if (timestamped.role === "diff" && typeof timestamped.content === "string") {
     try {
-      const parsed: unknown = JSON.parse(msg.content);
+      const parsed: unknown = JSON.parse(timestamped.content);
       if (Array.isArray(parsed)) {
         return {
-          ...msg,
+          ...timestamped,
           content: parsed as DiffChunk[],
         } as ChatMessages[number];
       }
@@ -250,7 +254,7 @@ const normalizeMessage = (msg: ChatMessages[number]): ChatMessages[number] => {
       // ignore
     }
   }
-  return msg;
+  return timestamped;
 };
 
 const createInitialState = (): Chat => {

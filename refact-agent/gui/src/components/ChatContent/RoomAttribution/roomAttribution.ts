@@ -1,4 +1,8 @@
 import type { DisplayItem } from "../ChatContentDisplayItems";
+import {
+  decodeMessageCreatedAtMs,
+  epochMsOrNull,
+} from "../../../services/refact/messageTimestamps";
 
 /**
  * Who wrote a transcript item, as the engine recorded it.
@@ -66,10 +70,10 @@ export function messageAuthor(
 /**
  * The instant a message was stamped, in epoch milliseconds.
  *
- * The delivery stamp (`extra.delivery.at_ms`) is the engine's own record of when the
- * message entered a chat, which is the moment a reader means by "when this was said".
- * The bare `created_at_ms` / `at_ms` keys are accepted as fallbacks because plan, goal
- * and event metadata already use them.
+ * `extra.created_at_ms` is the engine's record of when the message was created, so it
+ * wins over the delivery stamp (`extra.delivery.at_ms`), which only records when the
+ * message entered a chat. The bare `at_ms` / `timestamp_ms` keys are accepted as
+ * fallbacks because plan, goal and event metadata already use them.
  *
  * Returns `null` rather than guessing: a wrong clock is worse than no clock.
  */
@@ -78,19 +82,19 @@ export function messageTimestampMs(
 ): number | null {
   if (!extra) return null;
 
-  const delivery = extra.delivery;
-  if (isRecord(delivery)) {
-    const atMs = delivery.at_ms;
-    if (typeof atMs === "number" && Number.isFinite(atMs) && atMs > 0) {
-      return atMs;
-    }
+  if ("created_at_ms" in extra) {
+    return epochMsOrNull(extra.created_at_ms);
   }
 
-  for (const key of ["created_at_ms", "at_ms", "timestamp_ms"]) {
-    const value = extra[key];
-    if (typeof value === "number" && Number.isFinite(value) && value > 0) {
-      return value;
-    }
+  const delivery = extra.delivery;
+  if (isRecord(delivery)) {
+    const atMs = epochMsOrNull(delivery.at_ms);
+    if (atMs !== null) return atMs;
+  }
+
+  for (const key of ["at_ms", "timestamp_ms"]) {
+    const value = epochMsOrNull(extra[key]);
+    if (value !== null) return value;
   }
 
   return null;
@@ -104,7 +108,20 @@ export function displayItemExtra(item: DisplayItem): unknown {
   const record = item as unknown as Record<string, unknown>;
   for (const key of ["message", "event"]) {
     const value = record[key];
-    if (isRecord(value) && "extra" in value) return value.extra;
+    if (!isRecord(value)) continue;
+    const extra = value.extra;
+    const extraRecord = isRecord(extra) ? extra : undefined;
+    const createdAtMs = decodeMessageCreatedAtMs({
+      created_at_ms: value.created_at_ms,
+      extra: extraRecord,
+    });
+    if (createdAtMs === null) {
+      if ("extra" in value) return extra;
+      continue;
+    }
+    const nested = epochMsOrNull(extraRecord?.created_at_ms);
+    if (extraRecord && nested === createdAtMs) return extra;
+    return { ...(extraRecord ?? {}), created_at_ms: createdAtMs };
   }
   if ("rawExtra" in record) return record.rawExtra;
   return null;

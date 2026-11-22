@@ -54,13 +54,22 @@ describe("messageAuthor", () => {
 });
 
 describe("messageTimestampMs", () => {
-  it("prefers the engine's delivery stamp", () => {
+  it("uses the delivery stamp when the message has no creation stamp", () => {
     expect(messageTimestampMs({ delivery: { at_ms: 1_700_000_005_000 } })).toBe(
       1_700_000_005_000,
     );
   });
 
-  it("falls back to created_at_ms and at_ms", () => {
+  it("prefers the creation stamp over the delivery stamp", () => {
+    expect(
+      messageTimestampMs({
+        created_at_ms: 1_700_000_001_000,
+        delivery: { at_ms: 1_700_000_005_000 },
+      }),
+    ).toBe(1_700_000_001_000);
+  });
+
+  it("reads created_at_ms and falls back to at_ms", () => {
     expect(messageTimestampMs({ created_at_ms: 111 })).toBe(111);
     expect(messageTimestampMs({ at_ms: 222 })).toBe(222);
   });
@@ -89,6 +98,20 @@ describe("displayItemExtra", () => {
       run: "single",
     };
     expect(displayItemExtra(eventItem as never)).toBe(extra);
+  });
+
+  it("exposes a flattened creation stamp for a message", () => {
+    const flattenedItem = {
+      key: "m1",
+      message: {
+        role: "assistant",
+        content: "Hi",
+        created_at_ms: 1_700_000_001_000,
+      },
+    };
+    expect(displayItemExtra(flattenedItem as never)).toEqual({
+      created_at_ms: 1_700_000_001_000,
+    });
   });
 });
 
@@ -180,6 +203,21 @@ describe("roomAttributionForItems", () => {
       formatTime,
     );
     expect(attributed.attribution?.timeLabel).toBe("t1234");
+  });
+
+  it("uses the creation stamp instead of the delivery stamp", () => {
+    const extra = {
+      ...provenance("agent-a", "coder", "coder"),
+      created_at_ms: 1111,
+      delivery: { at_ms: 2222 },
+    };
+    const [attributed] = roomAttributionForItems(
+      [item("a1", extra)],
+      (i) => i.key,
+      (i) => (i as { message: { extra?: unknown } }).message.extra,
+      formatTime,
+    );
+    expect(attributed.attribution?.timeLabel).toBe("t1111");
   });
 
   it("falls back to the caller-supplied time only when none was stamped", () => {

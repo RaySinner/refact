@@ -557,6 +557,7 @@ export function isSingleModelToolResult(toolResult: ToolResult) {
 interface BaseMessage {
   role: ChatRole;
   message_id?: string;
+  created_at_ms?: number;
   content:
     | string
     | ChatContextFile[]
@@ -567,7 +568,10 @@ interface BaseMessage {
   extra?: Record<string, unknown>;
 }
 
-type MessageEnvelope = Pick<BaseMessage, "message_id" | "extra">;
+type MessageEnvelope = Pick<
+  BaseMessage,
+  "message_id" | "extra" | "created_at_ms"
+>;
 
 export interface ChatContextFileMessage extends BaseMessage {
   role: "context_file";

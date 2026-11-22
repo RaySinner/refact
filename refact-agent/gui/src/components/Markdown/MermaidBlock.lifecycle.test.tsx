@@ -120,26 +120,30 @@ describe("MermaidBlock render lifecycle", () => {
 
   test("changes theme only when needed and reuses the previous theme render", async () => {
     const source = "theme-change-source";
-    const { rerender } = render(<MermaidBlock code={source} />);
+    const lightCopyClick = () => undefined;
+    const darkCopyClick = () => undefined;
+    const { rerender } = render(
+      <MermaidBlock code={source} onCopyClick={lightCopyClick} />,
+    );
     await advanceTimers(100);
     await flushPromises();
     expect(mermaidMock.render).toHaveBeenCalledTimes(1);
 
     appearanceMock.current = "dark";
-    rerender(<MermaidBlock code={source} />);
+    rerender(<MermaidBlock code={source} onCopyClick={darkCopyClick} />);
     await advanceTimers(100);
     await flushPromises();
     expect(mermaidMock.render).toHaveBeenCalledTimes(2);
     const initializeCalls = mermaidMock.initialize.mock.calls.length;
 
-    rerender(<MermaidBlock code={source} />);
+    rerender(<MermaidBlock code={source} onCopyClick={darkCopyClick} />);
     await advanceTimers(30_000);
     await flushPromises();
     expect(mermaidMock.render).toHaveBeenCalledTimes(2);
     expect(mermaidMock.initialize).toHaveBeenCalledTimes(initializeCalls);
 
     appearanceMock.current = "light";
-    rerender(<MermaidBlock code={source} />);
+    rerender(<MermaidBlock code={source} onCopyClick={lightCopyClick} />);
     await advanceTimers(100);
     await flushPromises();
     expect(mermaidMock.render).toHaveBeenCalledTimes(2);

@@ -25,6 +25,9 @@ impl ChatSession {
             message.message_id = Uuid::new_v4().to_string();
         }
         stamp_created_at_ms(&mut message);
+        if message.role == "assistant" {
+            self.goal_clear_nudge_pending();
+        }
         let affects_goal = message_affects_goal_projection(&message);
         if message.role == "tool"
             && self.goal.is_some()

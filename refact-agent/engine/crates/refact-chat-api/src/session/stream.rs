@@ -320,6 +320,7 @@ impl ChatSession {
         next_state: SessionState,
     ) {
         self.stream_started_at = None;
+        self.goal_clear_nudge_pending();
         if let Some(mut draft) = self.draft_message.take() {
             let should_keep_draft = has_displayable_assistant_content(&draft);
 
@@ -443,6 +444,7 @@ impl ChatSession {
     }
 
     pub fn finish_stream_with_error(&mut self, error: String) {
+        self.goal_clear_nudge_pending();
         if let Some(mut draft) = self.draft_message.take() {
             if has_displayable_assistant_content(&draft) {
                 self.emit(ChatEvent::StreamFinished {

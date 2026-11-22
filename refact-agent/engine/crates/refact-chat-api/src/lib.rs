@@ -772,6 +772,8 @@ pub struct RuntimeState {
     pub goal_tokens_used: u64,
     #[serde(default)]
     pub goal_no_progress_turns: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub goal_nudge_pending_version: Option<u32>,
     #[serde(default)]
     pub is_compressing: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -815,6 +817,7 @@ impl Default for RuntimeState {
             goal_turns_used: 0,
             goal_tokens_used: 0,
             goal_no_progress_turns: 0,
+            goal_nudge_pending_version: None,
             is_compressing: false,
             compression_phase: None,
             compression_reason: None,

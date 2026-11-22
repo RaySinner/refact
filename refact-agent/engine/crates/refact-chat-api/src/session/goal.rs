@@ -312,8 +312,34 @@ impl ChatSession {
             made_progress,
             cost_cents,
         });
+        if made_progress {
+            self.goal_clear_nudge_pending();
+        }
         self.mark_persisted_runtime_changed();
         self.emit_goal_status();
+        true
+    }
+
+    pub fn goal_nudge_pending_for_current_goal(&self) -> bool {
+        match (self.runtime.goal_nudge_pending_version, self.goal.as_ref()) {
+            (Some(pending_version), Some(goal)) => pending_version == goal.version,
+            _ => false,
+        }
+    }
+
+    pub fn goal_mark_nudge_pending(&mut self) -> bool {
+        let Some(version) = self.goal.as_ref().map(|goal| goal.version) else {
+            return false;
+        };
+        self.runtime.goal_nudge_pending_version = Some(version);
+        true
+    }
+
+    pub fn goal_clear_nudge_pending(&mut self) -> bool {
+        if self.runtime.goal_nudge_pending_version.is_none() {
+            return false;
+        }
+        self.runtime.goal_nudge_pending_version = None;
         true
     }
 

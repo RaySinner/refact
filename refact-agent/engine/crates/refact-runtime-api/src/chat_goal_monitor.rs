@@ -78,6 +78,7 @@ pub enum GoalNudgeSkip {
     Busy,
     UserMessageQueued,
     PendingCommand,
+    NudgePending,
     NotStalled,
     QueueRejected,
     Quiescent,
@@ -311,6 +312,9 @@ pub fn try_apply_goal_nudge(
         record_quiescent_event_if_needed(session, trigger, now_ms);
         return GoalNudgeOutcome::Skipped(GoalNudgeSkip::Quiescent);
     }
+    if session.goal_nudge_pending_for_current_goal() {
+        return GoalNudgeOutcome::Skipped(GoalNudgeSkip::NudgePending);
+    }
 
     let context = session.goal.as_ref().map(nudge_context).unwrap_or_default();
     let delivery = PendingDelivery::new(
@@ -335,6 +339,7 @@ pub fn try_apply_goal_nudge(
         // itself so exponential backoff and quiescence still engage.
         session.goal_note_no_progress_turn();
     }
+    session.goal_mark_nudge_pending();
     session.goal_record_nudge(now_ms);
     GoalNudgeOutcome::Nudged(reason)
 }
@@ -733,6 +738,14 @@ mod tests {
             .unwrap()
     }
 
+    fn nudge_event_count(session: &ChatSession) -> usize {
+        session
+            .messages
+            .iter()
+            .filter(|message| goal_pursuit_kind(message) == Some("nudge"))
+            .count()
+    }
+
     #[test]
     fn goal_monitor_idle_stall_delivers_append_and_requests_wake() {
         let (mut session, now) = old_idle_session();
@@ -805,8 +818,7 @@ mod tests {
                     nudges += 1;
                     session.command_queue.clear();
                     session.delivery_wake_sources.clear();
-                    session
-                        .set_runtime_state(SessionState::Error, Some("permanent 400".to_string()));
+                    session.finish_stream_with_error("permanent 400".to_string());
                     session.last_activity = now - Duration::from_secs(10);
                 }
                 GoalNudgeOutcome::Skipped(GoalNudgeSkip::Cooldown) => {}
@@ -1148,6 +1160,123 @@ mod tests {
     }
 
     #[test]
+    fn goal_monitor_nudge_survives_wake_consumption_and_start_stream() {
+        let (mut session, now) = old_idle_session();
+        assert_eq!(
+            apply_monitor(&mut session, 10_000, now),
+            GoalNudgeOutcome::Nudged(GoalNudgeReason::Idle)
+        );
+
+        session.command_queue.clear();
+        session.delivery_wake_sources.clear();
+        assert!(session.start_stream().is_some());
+        session.last_activity = now - Duration::from_secs(10);
+
+        assert_eq!(
+            apply_monitor(&mut session, 20_000, now + Duration::from_secs(10)),
+            GoalNudgeOutcome::Skipped(GoalNudgeSkip::NudgePending)
+        );
+        assert_eq!(nudge_event_count(&session), 1);
+    }
+
+    #[test]
+    fn goal_monitor_real_progress_allows_next_nudge() {
+        let (mut session, now) = old_idle_session();
+        assert_eq!(
+            apply_monitor(&mut session, 10_000, now),
+            GoalNudgeOutcome::Nudged(GoalNudgeReason::Idle)
+        );
+
+        session.command_queue.clear();
+        session.delivery_wake_sources.clear();
+        assert!(session.start_stream().is_some());
+        session.mark_stream_delta();
+        session.last_activity = now - Duration::from_secs(10);
+
+        assert_eq!(
+            apply_monitor(&mut session, 20_000, now + Duration::from_secs(10)),
+            GoalNudgeOutcome::Nudged(GoalNudgeReason::GeneratingNoTokens)
+        );
+        assert_eq!(session.pending_deliveries.len(), 1);
+    }
+
+    #[test]
+    fn goal_monitor_turn_end_allows_next_nudge() {
+        let (mut session, now) = old_idle_session();
+        assert_eq!(
+            apply_monitor(&mut session, 10_000, now),
+            GoalNudgeOutcome::Nudged(GoalNudgeReason::Idle)
+        );
+
+        session.command_queue.clear();
+        session.delivery_wake_sources.clear();
+        assert!(session.start_stream().is_some());
+        session.finish_stream_with_next_state(None, SessionState::Idle);
+        session.last_activity = now - Duration::from_secs(10);
+
+        assert_eq!(
+            apply_monitor(&mut session, 20_000, now + Duration::from_secs(10)),
+            GoalNudgeOutcome::Nudged(GoalNudgeReason::Idle)
+        );
+        assert_eq!(nudge_event_count(&session), 2);
+    }
+
+    #[test]
+    fn goal_monitor_pause_resume_without_progress_does_not_duplicate_nudge() {
+        let (mut session, now) = old_idle_session();
+        assert_eq!(
+            apply_monitor(&mut session, 10_000, now),
+            GoalNudgeOutcome::Nudged(GoalNudgeReason::Idle)
+        );
+
+        session.command_queue.clear();
+        session.delivery_wake_sources.clear();
+        session.set_runtime_state(SessionState::Paused, None);
+        session.set_runtime_state(SessionState::Idle, None);
+        session.last_activity = now - Duration::from_secs(10);
+
+        assert_eq!(
+            apply_monitor(&mut session, 20_000, now + Duration::from_secs(10)),
+            GoalNudgeOutcome::Skipped(GoalNudgeSkip::NudgePending)
+        );
+        assert_eq!(nudge_event_count(&session), 1);
+    }
+
+    #[test]
+    fn goal_monitor_new_goal_version_is_not_blocked_by_pending_nudge() {
+        let (mut session, now) = old_idle_session();
+        assert_eq!(
+            apply_monitor(&mut session, 10_000, now),
+            GoalNudgeOutcome::Nudged(GoalNudgeReason::Idle)
+        );
+
+        session.command_queue.clear();
+        session.delivery_wake_sources.clear();
+        session.install_goal(
+            "agent",
+            "new goal",
+            true,
+            GoalBudget {
+                max_turns: Some(10),
+                max_minutes: Some(60),
+                max_tokens: Some(10_000),
+                max_cost_cents: None,
+                cooldown_ms: 1_000,
+                no_progress_token_threshold: 50,
+                no_progress_turns: Some(2),
+                explicit: false,
+            },
+        );
+        session.last_activity = now - Duration::from_secs(10);
+
+        assert_eq!(
+            apply_monitor(&mut session, 20_000, now + Duration::from_secs(10)),
+            GoalNudgeOutcome::Nudged(GoalNudgeReason::Idle)
+        );
+        assert_eq!(nudge_event_count(&session), 2);
+    }
+
+    #[test]
     fn goal_monitor_consecutive_nudges_preserve_delivered_prefix() {
         let (mut session, now) = old_idle_session();
         assert_eq!(
@@ -1157,6 +1286,7 @@ mod tests {
 
         session.command_queue.clear();
         session.delivery_wake_sources.clear();
+        session.mark_stream_delta();
         session.last_activity = now - Duration::from_secs(10);
         assert_eq!(
             apply_monitor(&mut session, 20_000, now),
@@ -1512,6 +1642,7 @@ mod tests {
             session.delivery_wake_sources.clear();
             session.pending_deliveries.clear();
             session.draft_message = None;
+            session.finish_stream_with_next_state(None, SessionState::Idle);
             now_ms += 600_000;
         }
 

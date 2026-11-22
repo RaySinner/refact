@@ -166,12 +166,14 @@ impl ChatSession {
     pub fn mark_tool_progress(&mut self) {
         let now = Instant::now();
         self.last_tool_progress_at = Some(now);
+        self.goal_clear_nudge_pending();
         self.last_activity = now;
     }
 
     pub fn mark_stream_delta(&mut self) {
         let now = Instant::now();
         self.last_stream_delta_at = Some(now);
+        self.goal_clear_nudge_pending();
         self.last_activity = now;
     }
 

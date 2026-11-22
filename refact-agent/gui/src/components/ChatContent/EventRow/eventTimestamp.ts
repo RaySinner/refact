@@ -1,9 +1,10 @@
 import type { EventMessage } from "../../../services/refact/types";
+import { decodeMessageCreatedAtMs } from "../../../services/refact/messageTimestamps";
 import { eventPayloadRecord } from "./eventPayload";
 
 const SECONDS_TO_MS_THRESHOLD = 10_000_000_000;
 
-function formatClock(value: unknown, milliseconds = false): string | null {
+function eventTimeMs(value: unknown, milliseconds = false): number | null {
   let date: Date | null = null;
 
   if (typeof value === "number" && Number.isFinite(value)) {
@@ -18,6 +19,13 @@ function formatClock(value: unknown, milliseconds = false): string | null {
   }
 
   if (!date || Number.isNaN(date.getTime())) return null;
+  return date.getTime();
+}
+
+function formatClock(value: unknown, milliseconds = false): string | null {
+  const epochMs = eventTimeMs(value, milliseconds);
+  if (epochMs === null) return null;
+  const date = new Date(epochMs);
 
   const hours = date.getHours().toString().padStart(2, "0");
   const minutes = date.getMinutes().toString().padStart(2, "0");
@@ -25,7 +33,10 @@ function formatClock(value: unknown, milliseconds = false): string | null {
   return `${hours}:${minutes}:${seconds}`;
 }
 
-export function eventTimestamp(event: EventMessage): string | null {
+export function eventTimestampMs(event: EventMessage): number | null {
+  const createdAtMs = decodeMessageCreatedAtMs(event);
+  if (createdAtMs !== null) return createdAtMs;
+
   const payload = eventPayloadRecord(event);
   const candidates: [unknown, boolean][] = [
     [payload?.timestamp, false],
@@ -39,9 +50,13 @@ export function eventTimestamp(event: EventMessage): string | null {
   ];
 
   for (const [candidate, milliseconds] of candidates) {
-    const formatted = formatClock(candidate, milliseconds);
-    if (formatted) return formatted;
+    const epochMs = eventTimeMs(candidate, milliseconds);
+    if (epochMs !== null) return epochMs;
   }
 
   return null;
+}
+
+export function eventTimestamp(event: EventMessage): string | null {
+  return formatClock(eventTimestampMs(event), true);
 }

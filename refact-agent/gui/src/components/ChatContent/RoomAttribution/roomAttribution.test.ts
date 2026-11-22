@@ -1,10 +1,19 @@
 import { describe, expect, it } from "vitest";
 import {
   displayItemExtra,
+  displayItemTimestampFallbackMs,
   messageAuthor,
   messageTimestampMs,
   roomAttributionForItems,
 } from "./roomAttribution";
+import type {
+  AssistantMessage,
+  ChatMessages,
+  EventMessage,
+  ToolCall,
+  UserMessage,
+} from "../../../services/refact";
+import { buildDisplayItems } from "../ChatContentDisplayItems";
 
 function provenance(
   chatId: string,
@@ -21,6 +30,45 @@ function item(key: string, extra: unknown) {
 }
 
 const formatTime = (epochMs: number): string => `t${epochMs}`;
+
+function toolCall(startedAtMs?: number): ToolCall {
+  return {
+    id: "call-1",
+    index: 0,
+    type: "function",
+    function: { name: "cat", arguments: "{}" },
+    started_at_ms: startedAtMs,
+  };
+}
+
+function timestampedAssistant(
+  messageId: string,
+  createdAtMs?: number,
+  toolStartedAtMs?: number,
+): AssistantMessage {
+  return {
+    role: "assistant",
+    content: "",
+    message_id: messageId,
+    created_at_ms: createdAtMs,
+    tool_calls: [toolCall(toolStartedAtMs)],
+  };
+}
+
+function transcriptTimeLabels(
+  messages: ChatMessages,
+  firstSeenMs = 9_999,
+): string[] {
+  const items = buildDisplayItems(messages, false);
+  return roomAttributionForItems(
+    items,
+    (item) => item.key,
+    displayItemExtra,
+    formatTime,
+    (_extra, item) => displayItemTimestampFallbackMs(item, firstSeenMs),
+    () => ({ chatId: "", role: "assistant", displayName: "Assistant" }),
+  ).map((attributed) => attributed.attribution?.timeLabel ?? "");
+}
 
 describe("messageAuthor", () => {
   it("reads the engine's stamp", () => {
@@ -116,6 +164,121 @@ describe("displayItemExtra", () => {
 });
 
 describe("roomAttributionForItems", () => {
+  it("uses canonical creation stamps for user, assistant, tool and event rows", () => {
+    const user: UserMessage = {
+      role: "user",
+      content: "question",
+      message_id: "user-1",
+      created_at_ms: 1_000,
+    };
+    const assistant: AssistantMessage = {
+      role: "assistant",
+      content: "answer",
+      message_id: "assistant-1",
+      created_at_ms: 2_000,
+    };
+    const event: EventMessage = {
+      role: "event",
+      content: "notice",
+      message_id: "event-1",
+      subkind: "system_notice",
+      source: "test",
+      created_at_ms: 5_000,
+      payload: { created_at_ms: 4_500 },
+    };
+    const messages: ChatMessages = [
+      user,
+      assistant,
+      timestampedAssistant("tool-owner-1", 3_000, 2_500),
+      {
+        role: "tool",
+        content: "first result",
+        tool_call_id: "call-1",
+        created_at_ms: 3_500,
+      },
+      timestampedAssistant("tool-owner-2", 4_000, 3_500),
+      {
+        role: "tool",
+        content: "second result",
+        tool_call_id: "call-1",
+        created_at_ms: 4_500,
+      },
+      event,
+    ];
+
+    expect(transcriptTimeLabels(messages)).toEqual([
+      "t1000",
+      "t2000",
+      "t3000",
+      "t4000",
+      "t5000",
+    ]);
+  });
+
+  it("uses tool start only without an owning creation stamp and never uses tool result time", () => {
+    const fallbackMessages: ChatMessages = [
+      timestampedAssistant("tool-fallback", undefined, 6_000),
+      {
+        role: "tool",
+        content: "result",
+        tool_call_id: "call-1",
+        created_at_ms: 7_000,
+      },
+    ];
+    const canonicalMessages: ChatMessages = [
+      timestampedAssistant("tool-canonical", 5_000, 6_000),
+      fallbackMessages[1],
+    ];
+
+    expect(transcriptTimeLabels(fallbackMessages)).toEqual(["t6000"]);
+    expect(transcriptTimeLabels(canonicalMessages)).toEqual(["t5000"]);
+  });
+
+  it("keeps live and restored tool instants identical across first-seen changes", () => {
+    const messages: ChatMessages = [
+      timestampedAssistant("tool-live", 5_000, 4_500),
+      {
+        role: "tool",
+        content: "result",
+        tool_call_id: "call-1",
+        created_at_ms: 6_000,
+      },
+    ];
+
+    expect(transcriptTimeLabels(messages, 1_111)).toEqual(["t5000"]);
+    expect(transcriptTimeLabels(messages, 8_888)).toEqual(["t5000"]);
+  });
+
+  it("leaves legacy tool and event rows without first-seen mount labels", () => {
+    const messages: ChatMessages = [
+      timestampedAssistant("legacy-tool"),
+      {
+        role: "tool",
+        content: "result",
+        tool_call_id: "call-1",
+        created_at_ms: 7_000,
+      },
+      {
+        role: "event",
+        content: "legacy event",
+        message_id: "legacy-event",
+        subkind: "system_notice",
+        source: "test",
+      },
+    ];
+
+    expect(transcriptTimeLabels(messages)).toEqual(["", ""]);
+  });
+
+  it("retains first-seen fallback for optimistic non-tool messages", () => {
+    const messages: ChatMessages = [
+      { role: "user", content: "live", message_id: "live-user" },
+      { role: "assistant", content: "live", message_id: "live-assistant" },
+    ];
+
+    expect(transcriptTimeLabels(messages, 8_000)).toEqual(["t8000", "t8000"]);
+  });
+
   it("leaves an unattributed message alone when no resolveAuthor is provided", () => {
     const [attributed] = roomAttributionForItems(
       [item("plain", undefined)],

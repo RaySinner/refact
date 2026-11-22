@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { EventMessage } from "../../../services/refact/types";
 import { eventSummary } from "./eventSummary";
 import { eventDetailFields, eventPayloadJson } from "./eventDetails";
-import { eventTimestamp } from "./eventTimestamp";
+import { eventTimestamp, eventTimestampMs } from "./eventTimestamp";
 const event = (
   subkind: string,
   payload: Record<string, unknown> = {},
@@ -107,5 +107,21 @@ describe("event presentation", () => {
     expect(
       eventTimestamp(event("tick", { timestamp: "2025-01-01T12:34:56" })),
     ).toBe("12:34:56");
+  });
+
+  it("prefers the canonical message creation stamp over event payload time", () => {
+    expect(
+      eventTimestampMs({
+        ...event("tick", { created_at_ms: 2_000 }),
+        created_at_ms: 1_000,
+      }),
+    ).toBe(1_000);
+    expect(
+      eventTimestampMs({
+        ...event("tick", { created_at_ms: 2_000 }),
+        extra: { created_at_ms: 3_000 },
+      }),
+    ).toBe(3_000);
+    expect(eventTimestampMs(event("tick"))).toBeNull();
   });
 });

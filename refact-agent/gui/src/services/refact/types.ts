@@ -40,6 +40,7 @@ export type ToolCall = {
   attached_files?: string[];
   subchat?: string;
   subchat_log?: string[];
+  started_at_ms?: number | null;
 };
 
 export type ToolUsage = {

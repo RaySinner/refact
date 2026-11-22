@@ -73,6 +73,7 @@ import { PlanBanner } from "./PlanBanner";
 import { RoomAttributionFrame } from "./RoomAttribution/RoomAttributionFrame";
 import {
   displayItemExtra,
+  displayItemTimestampFallbackMs,
   roomAttributionForItems,
   type AttributedItem,
 } from "./RoomAttribution/roomAttribution";
@@ -379,7 +380,10 @@ export const ChatContent: React.FC<ChatContentProps> = ({
       displayItemExtra,
       (epochMs) => formatExactClockTime(epochMs, clientTimezone),
       (_extra, item) =>
-        timestampLifecycleRef.current.firstSeenMs.get(item.key) ?? null,
+        displayItemTimestampFallbackMs(
+          item,
+          timestampLifecycleRef.current.firstSeenMs.get(item.key) ?? null,
+        ),
       (item) => {
         if (item.type === "user") {
           return { chatId: "", role: "user", displayName: "User" };

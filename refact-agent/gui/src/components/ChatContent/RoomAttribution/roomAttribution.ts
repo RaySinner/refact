@@ -3,6 +3,7 @@ import {
   decodeMessageCreatedAtMs,
   epochMsOrNull,
 } from "../../../services/refact/messageTimestamps";
+import { eventTimestampMs } from "../EventRow/eventTimestamp";
 
 /**
  * Who wrote a transcript item, as the engine recorded it.
@@ -125,6 +126,30 @@ export function displayItemExtra(item: DisplayItem): unknown {
   }
   if ("rawExtra" in record) return record.rawExtra;
   return null;
+}
+
+export function displayItemTimestampFallbackMs(
+  item: DisplayItem,
+  firstSeenMs: number | null,
+): number | null {
+  if (item.type === "event") return eventTimestampMs(item.event);
+  if (item.type !== "assistant") return firstSeenMs;
+
+  const toolCalls = [
+    ...(item.message.tool_calls ?? []),
+    ...(item.message.server_executed_tools ?? []),
+  ];
+  if (toolCalls.length === 0) return firstSeenMs;
+
+  let startedAtMs: number | null = null;
+  for (const toolCall of toolCalls) {
+    const candidate = epochMsOrNull(toolCall.started_at_ms);
+    if (candidate === null) continue;
+    if (startedAtMs === null || candidate < startedAtMs) {
+      startedAtMs = candidate;
+    }
+  }
+  return startedAtMs;
 }
 
 /**

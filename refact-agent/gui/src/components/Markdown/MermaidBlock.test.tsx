@@ -17,7 +17,10 @@ vi.mock("../../features/Buddy/reportBuddyFrontendError", () => ({
   reportBuddyFrontendError: vi.fn(),
 }));
 
-import { MermaidBlock } from "./MermaidBlock";
+import {
+  MermaidBlock,
+  resetMermaidRenderCacheForTests,
+} from "./MermaidBlock";
 
 type RenderedMermaid = { svg: string };
 
@@ -55,6 +58,7 @@ function renderedBox(canvas: HTMLElement) {
 
 describe("MermaidBlock render failures", () => {
   beforeEach(() => {
+    resetMermaidRenderCacheForTests();
     vi.useFakeTimers();
     mermaidMock.render.mockReset();
     mermaidMock.initialize.mockClear();

@@ -28,6 +28,14 @@ const REPORTED_MERMAID_ERRORS = new Map<string, number>();
 const MERMAID_ERROR_REPORT_INTERVAL_MS = 60_000;
 const MAX_REPORTED_MERMAID_ERRORS = 50;
 
+export function resetMermaidRenderCacheForTests(): void {
+  MERMAID_RENDER_CACHE.clear();
+  mermaidInitializedConfig = null;
+  mermaidElkAvailable = null;
+  mermaidTaskQueue = Promise.resolve();
+  REPORTED_MERMAID_ERRORS.clear();
+}
+
 const FALLBACK_FONT_STACK =
   'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
 

@@ -20,7 +20,10 @@ vi.mock("../../features/Buddy/reportBuddyFrontendError", () => ({
   reportBuddyFrontendError: vi.fn(),
 }));
 
-import { MermaidBlock } from "./MermaidBlock";
+import {
+  MermaidBlock,
+  resetMermaidRenderCacheForTests,
+} from "./MermaidBlock";
 
 type RenderedMermaid = { svg: string };
 
@@ -52,6 +55,7 @@ async function flushPromises() {
 
 describe("MermaidBlock render lifecycle", () => {
   beforeEach(() => {
+    resetMermaidRenderCacheForTests();
     vi.useFakeTimers();
     appearanceMock.current = "light";
     mermaidMock.render.mockReset();

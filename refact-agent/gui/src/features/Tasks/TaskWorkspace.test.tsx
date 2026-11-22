@@ -1462,6 +1462,99 @@ describe("TaskWorkspace layout and chat surfaces", () => {
 });
 
 describe("TaskWorkspace SSE invalidation", () => {
+  it("keeps the cached board revision monotonic across stale events", async () => {
+    const card = makeCard({ title: "Revision 10 card" });
+    const staleCard = makeCard({ title: "Stale revision 9 card" });
+    const newerCard = makeCard({ title: "Revision 11 card" });
+    server.use(
+      http.get("*/v1/tasks/task-1/board", () =>
+        HttpResponse.json({ ...makeBoard(card), rev: 10 }),
+      ),
+    );
+
+    const { store } = render(<TaskWorkspace taskId={TASK_ID} />, {
+      preloadedState: workspacePreloadedState(),
+    });
+
+    await waitFor(() => {
+      expect(
+        tasksApi.endpoints.getBoard.select(TASK_ID)(store.getState()).data?.rev,
+      ).toBe(10);
+    });
+
+    store.dispatch(
+      taskSseEventReceived({
+        type: "board_changed",
+        task_id: TASK_ID,
+        rev: 9,
+        board: { ...makeBoard(staleCard), rev: 9 },
+      }),
+    );
+
+    expect(
+      tasksApi.endpoints.getBoard.select(TASK_ID)(store.getState()).data?.rev,
+    ).toBe(10);
+    expect(
+      tasksApi.endpoints.getBoard.select(TASK_ID)(store.getState()).data?.cards[0]
+        ?.title,
+    ).toBe("Revision 10 card");
+
+    store.dispatch(
+      taskSseEventReceived({
+        type: "board_changed",
+        task_id: TASK_ID,
+        rev: 11,
+        board: { ...makeBoard(newerCard), rev: 11 },
+      }),
+    );
+
+    expect(
+      tasksApi.endpoints.getBoard.select(TASK_ID)(store.getState()).data?.rev,
+    ).toBe(11);
+    expect(
+      tasksApi.endpoints.getBoard.select(TASK_ID)(store.getState()).data?.cards[0]
+        ?.title,
+    ).toBe("Revision 11 card");
+  });
+
+  it("does not let a stale board refetch replace a newer cached revision", async () => {
+    const card = makeCard({ title: "Revision 10 card" });
+    let boardFetchCount = 0;
+    server.use(
+      http.get("*/v1/tasks/task-1/board", () => {
+        boardFetchCount += 1;
+        return HttpResponse.json({
+          ...makeBoard(card),
+          rev: boardFetchCount === 1 ? 10 : 9,
+        });
+      }),
+    );
+
+    const { store } = render(<TaskWorkspace taskId={TASK_ID} />, {
+      preloadedState: workspacePreloadedState(),
+    });
+
+    await waitFor(() => {
+      expect(
+        tasksApi.endpoints.getBoard.select(TASK_ID)(store.getState()).data?.rev,
+      ).toBe(10);
+    });
+
+    store.dispatch(
+      tasksApi.util.invalidateTags([{ type: "Board", id: TASK_ID }]),
+    );
+
+    await waitFor(() => {
+      expect(boardFetchCount).toBe(2);
+      expect(
+        tasksApi.endpoints.getBoard.select(TASK_ID)(store.getState()).isFetching,
+      ).toBe(false);
+    });
+    expect(
+      tasksApi.endpoints.getBoard.select(TASK_ID)(store.getState()).data?.rev,
+    ).toBe(10);
+  });
+
   it("simulated_board_changed_event_updates_board_without_refetch", async () => {
     const card = makeCard();
     const updatedCard = makeCard({ title: "Updated board card" });

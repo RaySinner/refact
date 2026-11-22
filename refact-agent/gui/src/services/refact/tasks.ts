@@ -134,6 +134,18 @@ export interface TaskBoard {
   cards: BoardCard[];
 }
 
+function cachedBoardForTask(
+  state: RootState,
+  taskId: string,
+): TaskBoard | undefined {
+  const query = Object.values(state.tasksApi.queries).find(
+    (candidate) =>
+      candidate?.endpointName === "getBoard" &&
+      candidate.originalArgs === taskId,
+  );
+  return query?.data as TaskBoard | undefined;
+}
+
 export interface ReadyCardsResult {
   ready: string[];
   blocked: string[];
@@ -259,7 +271,8 @@ export const tasksApi = createApi({
         if (
           typeof raw !== "object" ||
           raw === null ||
-          !Array.isArray((raw as Record<string, unknown>).cards)
+          !Array.isArray((raw as Record<string, unknown>).cards) ||
+          typeof (raw as Record<string, unknown>).rev !== "number"
         ) {
           return {
             error: {
@@ -271,7 +284,15 @@ export const tasksApi = createApi({
             },
           };
         }
-        return { data: raw as unknown as TaskBoard };
+        const fetchedBoard = raw as unknown as TaskBoard;
+        const cachedBoard = cachedBoardForTask(
+          api.getState() as RootState,
+          taskId,
+        );
+        if (cachedBoard && fetchedBoard.rev < cachedBoard.rev) {
+          return { data: cachedBoard };
+        }
+        return { data: fetchedBoard };
       },
       providesTags: (_result, _error, taskId) => [
         { type: "Board", id: taskId },

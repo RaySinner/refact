@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useCallback } from "react";
+import { useStore } from "react-redux";
 import { useAppDispatch } from "./useAppDispatch";
 import { useConfig } from "./useConfig";
 import { usePostMessage } from "./usePostMessage";
@@ -10,6 +11,8 @@ import {
   type SidebarSection,
   type SidebarSectionSnapshot,
   type SidebarSectionUpdate,
+  type SidebarDisconnectReason,
+  type SidebarSubscriptionError,
   type TaskEvent,
 } from "../services/refact/sidebarSubscription";
 import type { BuddySSEEvent } from "../features/Buddy/types";
@@ -71,6 +74,8 @@ import {
   getEngineEndpointIdentity,
   hasUsableEngineEndpoint,
 } from "../services/refact/apiUrl";
+import { selectCurrentPage } from "../features/Pages/pagesSlice";
+import type { RootState } from "../app/store";
 
 const RECONNECT_DELAY_MS = 500;
 const MIGRATION_KEY = "refact-trajectories-migrated";
@@ -253,6 +258,7 @@ export function useSidebarSubscription() {
   const postMessage = usePostMessage();
   const historyChats = useAppSelector((state) => state.history.chats);
   const sidebarSections = useAppSelector((state) => state.sidebar.sections);
+  const store = useStore<RootState>();
   const historyRef = useRef(historyChats);
   historyRef.current = historyChats;
   const sidebarSectionsRef = useRef(sidebarSections);
@@ -264,6 +270,10 @@ export function useSidebarSubscription() {
     null,
   );
   const generationRef = useRef(0);
+  const recoveryGenerationRef = useRef<number | null>(null);
+  const recoveryResyncedRef = useRef(false);
+  const tasksSnapshotGenerationRef = useRef<number | null>(null);
+  const suppressNextTasksSnapshotResyncRef = useRef(false);
   const taskListRef = useRef<TaskMeta[]>([]);
   const taskListFlushRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-empty-function
@@ -503,6 +513,33 @@ export function useSidebarSubscription() {
     [scheduleTaskListFlush],
   );
 
+  const resyncActiveBoard = useCallback(() => {
+    const state = store.getState();
+    const currentPage = selectCurrentPage(state);
+    const taskId =
+      currentPage?.name === "task workspace" ? currentPage.taskId : undefined;
+    if (!taskId) return;
+    const boardQuery = tasksApi.endpoints.getBoard.select(taskId)(state);
+    if (!boardQuery.data || boardQuery.isFetching) return;
+    void dispatch(
+      tasksApi.util.invalidateTags([{ type: "Board", id: taskId }]),
+    );
+    return true;
+  }, [dispatch, store]);
+
+  const handleSubscriptionRecovery = useCallback(
+    (generation: number) => {
+      if (recoveryGenerationRef.current === generation) return;
+      recoveryGenerationRef.current = generation;
+      suppressNextTasksSnapshotResyncRef.current = true;
+      if (recoveryResyncedRef.current) return;
+      if (resyncActiveBoard()) {
+        recoveryResyncedRef.current = true;
+      }
+    },
+    [resyncActiveBoard],
+  );
+
   const processTaskEvent = useCallback(
     (event: Extract<SidebarSectionUpdate, { type: string }>) => {
       if (event.type === "snapshot") {
@@ -569,9 +606,20 @@ export function useSidebarSubscription() {
 
   const processTasksSnapshot = useCallback(
     (tasks: TaskMeta[]) => {
+      const generation = generationRef.current;
+      const isFirstSnapshot = tasksSnapshotGenerationRef.current !== generation;
+      tasksSnapshotGenerationRef.current = generation;
+      recoveryResyncedRef.current = false;
       processTaskEvent({ type: "snapshot", tasks });
+      if (suppressNextTasksSnapshotResyncRef.current) {
+        suppressNextTasksSnapshotResyncRef.current = false;
+        return;
+      }
+      if (!isFirstSnapshot) {
+        resyncActiveBoard();
+      }
     },
-    [processTaskEvent],
+    [processTaskEvent, resyncActiveBoard],
   );
 
   const processBuddySnapshot = useCallback(
@@ -911,8 +959,9 @@ export function useSidebarSubscription() {
       }
     };
 
-    const onError = (error: Error) => {
+    const onError = (error: SidebarSubscriptionError) => {
       if (generation !== generationRef.current) return;
+      handleSubscriptionRecovery(generation);
       for (const section of ["workspace", "chats", "tasks", "buddy"] as const) {
         if (sidebarSectionsRef.current[section].status !== "ready") {
           dispatch(
@@ -929,8 +978,11 @@ export function useSidebarSubscription() {
       scheduleReconnect();
     };
 
-    const onDisconnected = () => {
+    const onDisconnected = (reason: SidebarDisconnectReason) => {
       if (generation !== generationRef.current) return;
+      if (reason !== "client_closed") {
+        handleSubscriptionRecovery(generation);
+      }
       scheduleReconnect();
     };
 
@@ -949,6 +1001,7 @@ export function useSidebarSubscription() {
     hasEndpoint,
     dispatch,
     endpointIdentity,
+    handleSubscriptionRecovery,
     prepareInitialHistory,
     processNotification,
     processSectionSnapshot,

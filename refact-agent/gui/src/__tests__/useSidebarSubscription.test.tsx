@@ -9,7 +9,12 @@ import { useSidebarSubscription } from "../hooks/useSidebarSubscription";
 import { server } from "../utils/mockServer";
 import { setCurrentProjectInfo } from "../features/Chat/currentProject";
 import { updateConfig } from "../features/Config/configSlice";
-import { tasksApi } from "../services/refact/tasks";
+import {
+  tasksApi,
+  useGetBoardQuery,
+  type TaskBoard,
+} from "../services/refact/tasks";
+import { push } from "../features/Pages/pagesSlice";
 
 function envelope(
   seq: number,
@@ -153,8 +158,38 @@ function taskMeta(
   };
 }
 
+function taskBoard(rev: number, column: string): TaskBoard {
+  return {
+    schema_version: 1,
+    rev,
+    columns: [
+      { id: "planned", title: "Planned" },
+      { id: "doing", title: "Doing" },
+    ],
+    cards: [
+      {
+        id: "T-1",
+        title: "Move to Doing",
+        column,
+        priority: "P1",
+        depends_on: [],
+        instructions: "",
+        assignee: null,
+        agent_chat_id: null,
+        status_updates: [],
+        final_report: null,
+        created_at: "2024-01-01T00:00:00Z",
+        started_at: null,
+        completed_at: null,
+        target_files: [],
+      },
+    ],
+  };
+}
+
 function renderSidebarSubscription(
   preloadedState: Parameters<typeof setUpStore>[0] = {},
+  activeTaskId?: string,
 ) {
   const store = setUpStore({
     config: {
@@ -170,7 +205,17 @@ function renderSidebarSubscription(
     <Provider store={store}>{children}</Provider>
   );
 
-  renderHook(() => useSidebarSubscription(), { wrapper });
+  if (activeTaskId) {
+    store.dispatch(push({ name: "task workspace", taskId: activeTaskId }));
+  }
+
+  renderHook(
+    () => {
+      useSidebarSubscription();
+      useGetBoardQuery(activeTaskId ?? "", { skip: !activeTaskId });
+    },
+    { wrapper },
+  );
 
   return store;
 }
@@ -180,6 +225,187 @@ afterEach(() => {
 });
 
 describe("useSidebarSubscription", () => {
+  it("refetches the active board once after an oversized SSE block", async () => {
+    const taskId = "task-active";
+    let boardFetchCount = 0;
+    let releaseOversizedBlock: () => void = () => undefined;
+    const oversizedBlockGate = new Promise<void>((resolve) => {
+      releaseOversizedBlock = resolve;
+    });
+    let sidebarRequestCount = 0;
+    server.use(
+      http.get("*/v1/sidebar/subscribe", () => {
+        sidebarRequestCount += 1;
+        if (sidebarRequestCount > 1) {
+          return new HttpResponse(
+            new ReadableStream<Uint8Array>({
+              start() {
+                return undefined;
+              },
+            }),
+            { headers: { "Content-Type": "text/event-stream" } },
+          );
+        }
+        const encoder = new TextEncoder();
+        return new HttpResponse(
+          new ReadableStream<Uint8Array>({
+            async start(controller) {
+              await oversizedBlockGate;
+              controller.enqueue(
+                encoder.encode(`data: ${"x".repeat(4 * 1024 * 1024 + 1)}`),
+              );
+            },
+          }),
+          { headers: { "Content-Type": "text/event-stream" } },
+        );
+      }),
+      http.get("*/v1/tasks/:taskId/board", () => {
+        boardFetchCount += 1;
+        return HttpResponse.json(
+          taskBoard(
+            boardFetchCount,
+            boardFetchCount === 1 ? "planned" : "doing",
+          ),
+        );
+      }),
+    );
+
+    const store = renderSidebarSubscription({}, taskId);
+    await waitFor(() => {
+      expect(
+        tasksApi.endpoints.getBoard.select(taskId)(store.getState()).data?.rev,
+      ).toBe(1);
+    });
+
+    releaseOversizedBlock();
+
+    await waitFor(() => {
+      const board = tasksApi.endpoints.getBoard.select(taskId)(store.getState())
+        .data;
+      expect(board?.rev).toBe(2);
+      expect(board?.cards[0]?.column).toBe("doing");
+    });
+    expect(boardFetchCount).toBe(2);
+  });
+
+  it("refetches the active board once after a clean SSE disconnect", async () => {
+    const taskId = "task-active";
+    let boardFetchCount = 0;
+    let closeSidebarStream: () => void = () => undefined;
+    const sidebarCloseGate = new Promise<void>((resolve) => {
+      closeSidebarStream = resolve;
+    });
+    let sidebarRequestCount = 0;
+    server.use(
+      http.get("*/v1/sidebar/subscribe", () => {
+        sidebarRequestCount += 1;
+        if (sidebarRequestCount > 1) {
+          return new HttpResponse(
+            new ReadableStream<Uint8Array>({
+              start() {
+                return undefined;
+              },
+            }),
+            { headers: { "Content-Type": "text/event-stream" } },
+          );
+        }
+        const stream = new ReadableStream<Uint8Array>({
+          async start(controller) {
+            await sidebarCloseGate;
+            controller.close();
+          },
+        });
+        return new HttpResponse(stream, {
+          headers: { "Content-Type": "text/event-stream" },
+        });
+      }),
+      http.get("*/v1/tasks/:taskId/board", () => {
+        boardFetchCount += 1;
+        return HttpResponse.json(
+          taskBoard(
+            boardFetchCount,
+            boardFetchCount === 1 ? "planned" : "doing",
+          ),
+        );
+      }),
+    );
+
+    const store = renderSidebarSubscription({}, taskId);
+    await waitFor(() => {
+      expect(
+        tasksApi.endpoints.getBoard.select(taskId)(store.getState()).data?.rev,
+      ).toBe(1);
+    });
+
+    closeSidebarStream();
+
+    await waitFor(() => {
+      expect(
+        tasksApi.endpoints.getBoard.select(taskId)(store.getState()).data?.rev,
+      ).toBe(2);
+    });
+    expect(boardFetchCount).toBe(2);
+  });
+
+  it("refetches the active board after a task metadata recovery snapshot", async () => {
+    const taskId = "task-active";
+    let boardFetchCount = 0;
+    let sendRecoverySnapshot: () => void = () => undefined;
+    const encoder = new TextEncoder();
+    server.use(
+      http.get("*/v1/sidebar/subscribe", () => {
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify(
+                  sectionSnapshot(0, "tasks", { tasks: [] }),
+                )}\n\n`,
+              ),
+            );
+            sendRecoverySnapshot = () => {
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify(
+                    sectionSnapshot(1, "tasks", { tasks: [] }),
+                  )}\n\n`,
+                ),
+              );
+            };
+          },
+        });
+        return new HttpResponse(stream, {
+          headers: { "Content-Type": "text/event-stream" },
+        });
+      }),
+      http.get("*/v1/tasks/:taskId/board", () => {
+        boardFetchCount += 1;
+        return HttpResponse.json(
+          taskBoard(
+            boardFetchCount,
+            boardFetchCount === 1 ? "planned" : "doing",
+          ),
+        );
+      }),
+    );
+
+    const store = renderSidebarSubscription({}, taskId);
+    await waitFor(() => {
+      expect(
+        tasksApi.endpoints.getBoard.select(taskId)(store.getState()).data?.rev,
+      ).toBe(1);
+    });
+
+    sendRecoverySnapshot();
+
+    await waitFor(() => {
+      expect(
+        tasksApi.endpoints.getBoard.select(taskId)(store.getState()).data?.rev,
+      ).toBe(2);
+    });
+    expect(boardFetchCount).toBe(2);
+  });
+
   it("reconnects when lspUrl changes with the same port", async () => {
     const firstRequests: string[] = [];
     const secondRequests: string[] = [];

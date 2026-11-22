@@ -2457,7 +2457,10 @@ startListening({
           tasksApi.util.updateQueryData(
             "getBoard",
             event.task_id,
-            () => event.board,
+            (draft) => {
+              if (draft.rev > event.rev) return draft;
+              return { ...event.board, rev: event.rev };
+            },
           ),
         );
         // Planner trajectory metadata (waiting_for_card_ids, session state) is

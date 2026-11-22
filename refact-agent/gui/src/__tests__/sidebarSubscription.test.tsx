@@ -6,6 +6,7 @@ import { useSidebarSubscription } from "../hooks/useSidebarSubscription";
 import { setBuddySnapshot } from "../features/Buddy/buddySlice";
 import type { BuddySnapshot } from "../features/Buddy/types";
 import {
+  SidebarSubscriptionError,
   subscribeToSidebarEvents,
   type SidebarSubscriptionCallbacks,
 } from "../services/refact/sidebarSubscription";
@@ -431,6 +432,13 @@ describe("useSidebarSubscription", () => {
       expect(errors.map((error) => error.message)).toContain(
         "sse_block_too_large",
       );
+      expect(
+        errors.find(
+          (error) =>
+            error instanceof SidebarSubscriptionError &&
+            error.reason === "sse_block_too_large",
+        ),
+      ).toBeDefined();
     });
     disconnect();
   });

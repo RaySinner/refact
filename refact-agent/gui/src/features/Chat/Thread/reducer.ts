@@ -108,9 +108,7 @@ import {
   DiffChunk,
 } from "../../../services/refact";
 import { capsApi } from "../../../services/refact";
-import {
-  withCanonicalCreatedAtMs,
-} from "../../../services/refact/messageTimestamps";
+import { withCanonicalCreatedAtMs } from "../../../services/refact/messageTimestamps";
 
 const createChatThread = (
   tool_use: ToolUse,

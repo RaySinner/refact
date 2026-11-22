@@ -1,9 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { chatReducer } from "./reducer";
 import { newChatAction, applyChatEvent, restoreChat } from "./actions";
-import type {
-  ChatEventEnvelope,
-} from "../../../services/refact/chatSubscription";
+import type { ChatEventEnvelope } from "../../../services/refact/chatSubscription";
 import type { ChatMessage } from "../../../services/refact/types";
 import type { ChatHistoryItem } from "../../History/historySlice";
 import type { Chat } from "./types";
@@ -101,10 +99,7 @@ describe("message creation timestamps", () => {
       restoreChat(historyItem(chatId, [wireMessage])),
     );
     const liveState = chatReducer(
-      chatReducer(
-        initial,
-        applyChatEvent(snapshotEvent(chatId, [])),
-      ),
+      chatReducer(initial, applyChatEvent(snapshotEvent(chatId, []))),
       applyChatEvent({
         chat_id: chatId,
         seq: "2",

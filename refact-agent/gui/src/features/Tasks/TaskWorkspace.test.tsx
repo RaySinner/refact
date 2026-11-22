@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { QueryStatus } from "@reduxjs/toolkit/query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { delay, http, HttpResponse } from "msw";
 import {
@@ -1547,12 +1548,16 @@ describe("TaskWorkspace SSE invalidation", () => {
     await waitFor(() => {
       expect(boardFetchCount).toBe(2);
       expect(
-        tasksApi.endpoints.getBoard.select(TASK_ID)(store.getState()).isFetching,
-      ).toBe(false);
+        tasksApi.endpoints.getBoard.select(TASK_ID)(store.getState()).status,
+      ).toBe(QueryStatus.fulfilled);
     });
     expect(
       tasksApi.endpoints.getBoard.select(TASK_ID)(store.getState()).data?.rev,
     ).toBe(10);
+    expect(
+      tasksApi.endpoints.getBoard.select(TASK_ID)(store.getState()).data?.cards[0]
+        ?.title,
+    ).toBe("Revision 10 card");
   });
 
   it("simulated_board_changed_event_updates_board_without_refetch", async () => {

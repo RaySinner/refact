@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useCallback } from "react";
 import { useStore } from "react-redux";
+import { QueryStatus } from "@reduxjs/toolkit/query";
 import { useAppDispatch } from "./useAppDispatch";
 import { useConfig } from "./useConfig";
 import { usePostMessage } from "./usePostMessage";
@@ -520,7 +521,7 @@ export function useSidebarSubscription() {
       currentPage?.name === "task workspace" ? currentPage.taskId : undefined;
     if (!taskId) return;
     const boardQuery = tasksApi.endpoints.getBoard.select(taskId)(state);
-    if (!boardQuery.data || boardQuery.isFetching) return;
+    if (!boardQuery.data || boardQuery.status === QueryStatus.pending) return;
     void dispatch(
       tasksApi.util.invalidateTags([{ type: "Board", id: taskId }]),
     );

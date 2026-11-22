@@ -19,8 +19,11 @@ const baseState = (): Chat => {
   return chatReducer(emptyState, newChatAction(undefined));
 };
 
-const messagesOf = (state: Chat, chatId: string): ChatMessage[] =>
-  state.threads[chatId].thread.messages;
+const messagesOf = (state: Chat, chatId: string): ChatMessage[] => {
+  const runtime = state.threads[chatId];
+  if (!runtime) throw new Error(`Runtime not found for chat ${chatId}`);
+  return runtime.thread.messages;
+};
 
 const snapshotEvent = (
   chatId: string,

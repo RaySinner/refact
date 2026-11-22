@@ -10,7 +10,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
 };
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tokio::sync::Mutex;
 
@@ -41,6 +41,181 @@ use crate::global_context::{GlobalContextCtx, SharedGlobalContext};
 /// summarizer still fails through the explicit terminal phase well before the
 /// staleness backstop has to step in.
 const RECONSTRUCTION_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
+pub(crate) struct ReconstructionCorrelation {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    chat_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    task_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    card_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    agent_id: Option<String>,
+}
+
+impl ReconstructionCorrelation {
+    fn from_thread(thread: &ThreadParams) -> Self {
+        Self {
+            chat_id: Some(thread.id.clone()),
+            task_id: thread.task_meta.as_ref().map(|meta| meta.task_id.clone()),
+            card_id: thread.task_meta.as_ref().and_then(|meta| meta.card_id.clone()),
+            agent_id: thread.task_meta.as_ref().and_then(|meta| meta.agent_id.clone()),
+        }
+    }
+
+    fn from_chat_id(chat_id: Option<&str>) -> Self {
+        Self {
+            chat_id: chat_id.map(str::to_owned),
+            ..Default::default()
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub(crate) struct ReconstructionEvent {
+    event: &'static str,
+    timestamp_ms: i64,
+    elapsed_ms: u64,
+    #[serde(flatten)]
+    correlation: ReconstructionCorrelation,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    outcome: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error_category: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    configured_timeout_secs: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    request_cap: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    estimated_tokens: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    messages_before: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    messages_after: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tokens_before: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tokens_after: Option<usize>,
+}
+
+impl ReconstructionEvent {
+    fn at(
+        event: &'static str,
+        correlation: ReconstructionCorrelation,
+        timestamp_ms: i64,
+        elapsed: Duration,
+    ) -> Self {
+        Self {
+            event,
+            timestamp_ms,
+            elapsed_ms: elapsed.as_millis().try_into().unwrap_or(u64::MAX),
+            correlation,
+            outcome: None,
+            error_category: None,
+            configured_timeout_secs: None,
+            request_cap: None,
+            estimated_tokens: None,
+            messages_before: None,
+            messages_after: None,
+            tokens_before: None,
+            tokens_after: None,
+        }
+    }
+
+    pub(crate) fn with_outcome(mut self, outcome: &'static str) -> Self {
+        self.outcome = Some(outcome);
+        self
+    }
+
+    pub(crate) fn with_error_category(mut self, category: &'static str) -> Self {
+        self.error_category = Some(category);
+        self
+    }
+
+    fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.configured_timeout_secs = Some(timeout.as_secs());
+        self
+    }
+
+    fn with_prepared_metrics(
+        mut self,
+        request_cap: usize,
+        estimated_tokens: usize,
+        messages_before: usize,
+    ) -> Self {
+        self.request_cap = Some(request_cap);
+        self.estimated_tokens = Some(estimated_tokens);
+        self.messages_before = Some(messages_before);
+        self
+    }
+
+    fn with_metrics(mut self, metrics: ReconstructionMetrics) -> Self {
+        self.messages_before = Some(metrics.messages_before);
+        self.messages_after = Some(metrics.messages_after);
+        self.tokens_before = Some(metrics.tokens_before);
+        self.tokens_after = Some(metrics.tokens_after);
+        self
+    }
+
+    pub(crate) fn emit(self) {
+        tracing::info!(
+            target: "context_rebuild",
+            event = self.event,
+            timestamp_ms = self.timestamp_ms,
+            elapsed_ms = self.elapsed_ms,
+            chat_id = ?self.correlation.chat_id,
+            task_id = ?self.correlation.task_id,
+            card_id = ?self.correlation.card_id,
+            agent_id = ?self.correlation.agent_id,
+            outcome = ?self.outcome,
+            error_category = ?self.error_category,
+            configured_timeout_secs = ?self.configured_timeout_secs,
+            request_cap = ?self.request_cap,
+            estimated_tokens = ?self.estimated_tokens,
+            messages_before = ?self.messages_before,
+            messages_after = ?self.messages_after,
+            tokens_before = ?self.tokens_before,
+            tokens_after = ?self.tokens_after,
+            "context_reconstruction"
+        );
+    }
+}
+
+pub(crate) struct ReconstructionDiagnostics {
+    correlation: ReconstructionCorrelation,
+    started_at: Instant,
+}
+
+impl ReconstructionDiagnostics {
+    fn new(correlation: ReconstructionCorrelation) -> Self {
+        Self {
+            correlation,
+            started_at: Instant::now(),
+        }
+    }
+
+    pub(crate) fn for_chat_id(chat_id: Option<&str>) -> Self {
+        Self::new(ReconstructionCorrelation::from_chat_id(chat_id))
+    }
+
+    fn for_thread(thread: &ThreadParams) -> Self {
+        Self::new(ReconstructionCorrelation::from_thread(thread))
+    }
+
+    pub(crate) fn event(&self, event: &'static str) -> ReconstructionEvent {
+        ReconstructionEvent::at(
+            event,
+            self.correlation.clone(),
+            chrono::Utc::now().timestamp_millis(),
+            self.started_at.elapsed(),
+        )
+    }
+}
+
+pub(crate) fn reconstruction_provider_error_category(error: &str) -> &'static str {
+    refact_core::retry_policy::classify_llm_error_for_retry(error).reason()
+}
 
 async fn model_tokenizer(
     gcx: SharedGlobalContext,
@@ -410,6 +585,9 @@ pub async fn rebuild_session(
             session.tool_catalog.clone(),
         )
     };
+    let diagnostics = ReconstructionDiagnostics::for_thread(&thread);
+    diagnostics.event("accepted").emit();
+    diagnostics.event("started").emit();
     let ctx = gcx.chat_ctx(gcx.clone());
     let _guard = AttemptGuard {
         session: session_arc.clone(),
@@ -495,6 +673,12 @@ pub async fn rebuild_session(
     }
     let request_cap =
         payload_request_cap(&budget_thread, n_ctx, output_reserve, tokenizer.clone())?;
+    let estimated_source_tokens = estimated_tokens(&messages, tokenizer.clone(), false);
+    diagnostics
+        .event("context_prepared")
+        .with_prepared_metrics(request_cap, estimated_source_tokens, messages.len())
+        .emit();
+    diagnostics.event("reconstruction_roundtrip_started").emit();
     let outcome = tokio::time::timeout(
         RECONSTRUCTION_TIMEOUT,
         crate::mode_transition_runtime::reconstruct_context(
@@ -514,19 +698,49 @@ pub async fn rebuild_session(
     )
     .await;
     let outcome = match outcome {
-        Ok(Ok(outcome)) => Ok(outcome),
+        Ok(Ok(outcome)) => {
+            diagnostics
+                .event("reconstruction_roundtrip_finished")
+                .with_outcome("success")
+                .emit();
+            Ok(outcome)
+        }
         // A hung summarizer must reach a terminal phase rather than hold the
         // reservation open forever. Route the elapsed case through the identical
         // terminal-phase path as a provider error.
-        Ok(Err(e)) => Err(e),
-        Err(_) => Err(format!(
-            "Context reconstruction timed out after {}s",
-            RECONSTRUCTION_TIMEOUT.as_secs()
-        )),
+        Ok(Err(e)) => {
+            let category = reconstruction_provider_error_category(&e);
+            diagnostics
+                .event("reconstruction_roundtrip_finished")
+                .with_outcome("error")
+                .with_error_category(category)
+                .emit();
+            Err((category, e))
+        }
+        Err(_) => {
+            diagnostics
+                .event("timeout")
+                .with_outcome("timeout")
+                .with_error_category("timeout")
+                .with_timeout(RECONSTRUCTION_TIMEOUT)
+                .emit();
+            Err((
+                "timeout",
+                format!(
+                    "Context reconstruction timed out after {}s",
+                    RECONSTRUCTION_TIMEOUT.as_secs()
+                ),
+            ))
+        }
     };
     let outcome = match outcome {
         Ok(v) => v,
-        Err(e) => {
+        Err((category, e)) => {
+            diagnostics
+                .event("finished")
+                .with_outcome("error")
+                .with_error_category(category)
+                .emit();
             let mut s = session_arc.lock().await;
             if s.active_compression_attempt == Some(attempt) {
                 status(
@@ -538,7 +752,17 @@ pub async fn rebuild_session(
             return Err(e);
         }
     };
-    let metrics = validate_output(&messages, &outcome.messages, request_cap, tokenizer)?;
+    let metrics = match validate_output(&messages, &outcome.messages, request_cap, tokenizer) {
+        Ok(metrics) => metrics,
+        Err(error) => {
+            diagnostics
+                .event("finished")
+                .with_outcome("error")
+                .with_error_category("output_validation")
+                .emit();
+            return Err(error);
+        }
+    };
     let report = make_reconstruction_report(
         outcome.messages,
         ReconstructionMetadata {
@@ -555,7 +779,7 @@ pub async fn rebuild_session(
     // guard still aborts/checks before this boundary; persistence and publication
     // then finish together under the existing writer/session locks.
     let session_arc = session_arc.clone();
-    tokio::spawn(async move {
+    let result = tokio::spawn(async move {
         let _writer = save_mutex.lock().await;
         let mut session = session_arc.lock().await;
         let result = match report {
@@ -598,7 +822,20 @@ pub async fn rebuild_session(
         result
     })
     .await
-    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+    match &result {
+        Ok(()) => diagnostics
+            .event("finished")
+            .with_outcome("applied")
+            .with_metrics(metrics)
+            .emit(),
+        Err(_) => diagnostics
+            .event("finished")
+            .with_outcome("error")
+            .with_error_category("commit")
+            .emit(),
+    }
+    result
 }
 
 pub async fn apply_manual_context_rebuild(
@@ -847,4 +1084,104 @@ pub async fn drain_pending(
         rebuild_session(gcx, session_arc, request, None, true).await?;
     }
     Ok(false)
+}
+
+#[cfg(test)]
+mod reconstruction_diagnostics_tests {
+    use super::*;
+
+    fn correlation() -> ReconstructionCorrelation {
+        ReconstructionCorrelation {
+            chat_id: Some("chat-1".into()),
+            task_id: Some("task-1".into()),
+            card_id: Some("BUG-005A".into()),
+            agent_id: Some("agent-1".into()),
+        }
+    }
+
+    #[test]
+    fn start_prepare_finish_events_carry_fake_elapsed_metrics_and_correlation() {
+        let started = ReconstructionEvent::at(
+            "started",
+            correlation(),
+            1_000,
+            Duration::ZERO,
+        );
+        let prepared = ReconstructionEvent::at(
+            "context_prepared",
+            correlation(),
+            1_250,
+            Duration::from_millis(250),
+        )
+        .with_prepared_metrics(4_096, 5_000, 12);
+        let finished = ReconstructionEvent::at(
+            "finished",
+            correlation(),
+            2_250,
+            Duration::from_millis(1_250),
+        )
+        .with_outcome("applied")
+        .with_metrics(ReconstructionMetrics {
+            messages_before: 12,
+            messages_after: 4,
+            tokens_before: 5_000,
+            tokens_after: 900,
+        });
+
+        assert_eq!(started.elapsed_ms, 0);
+        assert_eq!(prepared.elapsed_ms, 250);
+        assert_eq!(prepared.request_cap, Some(4_096));
+        assert_eq!(prepared.estimated_tokens, Some(5_000));
+        assert_eq!(prepared.messages_before, Some(12));
+        assert_eq!(finished.elapsed_ms, 1_250);
+        assert_eq!(finished.outcome, Some("applied"));
+        assert_eq!(finished.messages_after, Some(4));
+        assert_eq!(finished.tokens_before, Some(5_000));
+        assert_eq!(finished.tokens_after, Some(900));
+        assert_eq!(finished.correlation, correlation());
+        assert_eq!(finished.timestamp_ms, 2_250);
+    }
+
+    #[test]
+    fn timeout_event_reports_600_seconds_and_omits_absent_correlation() {
+        let event = ReconstructionEvent::at(
+            "timeout",
+            ReconstructionCorrelation::from_chat_id(Some("chat-timeout")),
+            7_000,
+            RECONSTRUCTION_TIMEOUT,
+        )
+        .with_outcome("timeout")
+        .with_error_category("timeout")
+        .with_timeout(RECONSTRUCTION_TIMEOUT);
+        let json = serde_json::to_value(&event).unwrap();
+
+        assert_eq!(json["event"], "timeout");
+        assert_eq!(json["elapsed_ms"], 600_000);
+        assert_eq!(json["configured_timeout_secs"], 600);
+        assert_eq!(json["chat_id"], "chat-timeout");
+        assert!(json.get("task_id").is_none());
+        assert!(json.get("card_id").is_none());
+        assert!(json.get("agent_id").is_none());
+    }
+
+    #[test]
+    fn provider_error_category_survives_without_serializing_error_or_message_content() {
+        let secret = "private message content and provider detail 429 rate limited";
+        let category = reconstruction_provider_error_category(secret);
+        let event = ReconstructionEvent::at(
+            "provider_response_received",
+            correlation(),
+            3_000,
+            Duration::from_millis(900),
+        )
+        .with_outcome("error")
+        .with_error_category(category);
+        let rendered = serde_json::to_string(&event).unwrap();
+
+        assert_eq!(category, "transient_error");
+        assert_eq!(event.error_category, Some("transient_error"));
+        assert!(!rendered.contains("private message content"));
+        assert!(!rendered.contains("provider detail"));
+        assert!(!rendered.contains("429"));
+    }
 }

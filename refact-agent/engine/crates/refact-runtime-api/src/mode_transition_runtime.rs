@@ -129,7 +129,25 @@ async fn analyze_reconstruction(
     )
     .map_err(|e| e.to_string())?;
     mode_transition::check_cancelled(request)?;
-    let result = ctx.subchat.run_subchat(vec![analysis], config).await?;
+    let diagnostics = crate::chat_context_rebuild::ReconstructionDiagnostics::for_chat_id(
+        request.parent_chat_id,
+    );
+    diagnostics.event("provider_request_sent").emit();
+    let result = ctx.subchat.run_subchat(vec![analysis], config).await;
+    match &result {
+        Ok(_) => diagnostics
+            .event("provider_response_received")
+            .with_outcome("success")
+            .emit(),
+        Err(error) => diagnostics
+            .event("provider_response_received")
+            .with_outcome("error")
+            .with_error_category(
+                crate::chat_context_rebuild::reconstruction_provider_error_category(error),
+            )
+            .emit(),
+    }
+    let result = result?;
     mode_transition::check_cancelled(request)?;
     let response = result
         .messages

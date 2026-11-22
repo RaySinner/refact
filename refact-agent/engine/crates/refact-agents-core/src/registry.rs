@@ -575,7 +575,7 @@ impl BackgroundAgentRegistry {
             .read()
             .await
             .values()
-            .filter(|record| record.parent_chat_id == parent_chat_id)
+            .filter(|record| record_in_parent_scope(record, parent_chat_id))
             .filter(|record| filter.kind.map_or(true, |kind| record.kind == kind))
             .filter(|record| {
                 filter
@@ -1286,6 +1286,11 @@ fn terminal_result_payload(
     })
 }
 
+fn record_in_parent_scope(record: &BackgroundAgent, parent_chat_id: &str) -> bool {
+    record.parent_chat_id == parent_chat_id
+        || record.parent_root_chat_id.as_deref() == Some(parent_chat_id)
+}
+
 fn scoped_record(
     records: &HashMap<String, BackgroundAgent>,
     parent_chat_id: &str,
@@ -1293,7 +1298,7 @@ fn scoped_record(
 ) -> Result<BackgroundAgent, String> {
     records
         .get(agent_id)
-        .filter(|record| record.parent_chat_id == parent_chat_id)
+        .filter(|record| record_in_parent_scope(record, parent_chat_id))
         .cloned()
         .ok_or_else(|| "agent not found".to_string())
 }
@@ -1746,6 +1751,183 @@ mod tests {
                 .await
                 .unwrap_err(),
             "invalid merge status"
+        );
+    }
+
+    #[tokio::test]
+    async fn nested_scope_root_lists_and_accesses_direct_and_nested_children() {
+        let (_temp, registry) = registry().await;
+        let mut direct_request = request("root");
+        direct_request.parent_root_chat_id = Some("root".to_string());
+        let (direct, _, _) = registry.create(direct_request).await.unwrap();
+        let mut nested_request = request("child-chat");
+        nested_request.parent_root_chat_id = Some("root".to_string());
+        let (nested, _, _) = registry.create(nested_request).await.unwrap();
+        let mut foreign_request = request("foreign-chat");
+        foreign_request.parent_root_chat_id = Some("other-root".to_string());
+        let (foreign, _, _) = registry.create(foreign_request).await.unwrap();
+
+        let root_records = registry
+            .list_for_parent("root", AgentListFilter::default())
+            .await;
+        let root_ids: HashSet<&str> = root_records
+            .iter()
+            .map(|record| record.agent_id.as_str())
+            .collect();
+        assert_eq!(
+            root_ids,
+            HashSet::from([direct.agent_id.as_str(), nested.agent_id.as_str()])
+        );
+        let direct_parent_records = registry
+            .list_for_parent("child-chat", AgentListFilter::default())
+            .await;
+        assert_eq!(direct_parent_records.len(), 1);
+        assert_eq!(direct_parent_records[0].agent_id, nested.agent_id);
+        let other_root_records = registry
+            .list_for_parent("other-root", AgentListFilter::default())
+            .await;
+        assert_eq!(other_root_records.len(), 1);
+        assert_eq!(other_root_records[0].agent_id, foreign.agent_id);
+        assert!(registry
+            .list_for_parent("sibling-chat", AgentListFilter::default())
+            .await
+            .is_empty());
+
+        assert_eq!(
+            registry
+                .get("root", &direct.agent_id)
+                .await
+                .unwrap()
+                .agent_id,
+            direct.agent_id
+        );
+        assert_eq!(
+            registry
+                .get("root", &nested.agent_id)
+                .await
+                .unwrap()
+                .agent_id,
+            nested.agent_id
+        );
+        assert_eq!(
+            registry
+                .get("child-chat", &nested.agent_id)
+                .await
+                .unwrap()
+                .agent_id,
+            nested.agent_id
+        );
+        for requesting_chat in ["sibling-chat", "other-root"] {
+            assert_eq!(
+                registry
+                    .get(requesting_chat, &nested.agent_id)
+                    .await
+                    .unwrap_err(),
+                "agent not found"
+            );
+            assert_eq!(
+                registry
+                    .wait(requesting_chat, &nested.agent_id, Duration::ZERO)
+                    .await
+                    .unwrap_err(),
+                "agent not found"
+            );
+        }
+        assert_eq!(
+            registry.get("root", &foreign.agent_id).await.unwrap_err(),
+            "agent not found"
+        );
+    }
+
+    #[tokio::test]
+    async fn nested_scope_terminal_result_is_immediately_available_to_root() {
+        let (_temp, registry) = registry().await;
+        let mut nested_request = request("child-chat");
+        nested_request.parent_root_chat_id = Some("root".to_string());
+        let (nested, _, _) = registry.create(nested_request).await.unwrap();
+        registry
+            .mark_completed(&nested.agent_id, completion())
+            .await
+            .unwrap();
+
+        let waited = registry
+            .wait("root", &nested.agent_id, Duration::ZERO)
+            .await
+            .unwrap();
+        assert_eq!(waited.status, BgAgentStatus::Completed);
+        assert_eq!(waited.result_summary.as_deref(), Some("done"));
+        let result = registry.get("root", &nested.agent_id).await.unwrap();
+        assert_eq!(result.status, BgAgentStatus::Completed);
+        assert_eq!(result.result_summary.as_deref(), Some("done"));
+        assert_eq!(
+            registry
+                .get("other-root", &nested.agent_id)
+                .await
+                .unwrap_err(),
+            "agent not found"
+        );
+        assert_eq!(
+            registry
+                .wait("other-root", &nested.agent_id, Duration::ZERO)
+                .await
+                .unwrap_err(),
+            "agent not found"
+        );
+    }
+
+    #[tokio::test]
+    async fn nested_scope_failed_wait_returns_error_to_root() {
+        let (_temp, registry) = registry().await;
+        let mut nested_request = request("child-chat");
+        nested_request.parent_root_chat_id = Some("root".to_string());
+        let (nested, _, _) = registry.create(nested_request).await.unwrap();
+        let waiter = tokio::spawn({
+            let registry = registry.clone();
+            let agent_id = nested.agent_id.clone();
+            async move { registry.wait("root", &agent_id, Duration::from_secs(1)).await }
+        });
+        tokio::task::yield_now().await;
+
+        registry
+            .mark_failed(&nested.agent_id, "nested worker failed".to_string())
+            .await
+            .unwrap();
+
+        let result = waiter.await.unwrap().unwrap();
+        assert_eq!(result.status, BgAgentStatus::Failed);
+        assert_eq!(result.error.as_deref(), Some("nested worker failed"));
+    }
+
+    #[tokio::test]
+    async fn nested_scope_legacy_records_remain_direct_parent_only() {
+        let (_temp, registry) = registry().await;
+        let (legacy, _, _) = registry.create(request("parent")).await.unwrap();
+        assert!(legacy.parent_root_chat_id.is_none());
+        assert_eq!(
+            registry
+                .get("parent", &legacy.agent_id)
+                .await
+                .unwrap()
+                .agent_id,
+            legacy.agent_id
+        );
+        assert_eq!(
+            registry
+                .list_for_parent("parent", AgentListFilter::default())
+                .await
+                .len(),
+            1
+        );
+        assert_eq!(
+            registry.get("root", &legacy.agent_id).await.unwrap_err(),
+            "agent not found"
+        );
+        assert_eq!(
+            registry
+                .wait("root", &legacy.agent_id, Duration::ZERO)
+                .await
+                .unwrap_err(),
+            "agent not found"
         );
     }
 

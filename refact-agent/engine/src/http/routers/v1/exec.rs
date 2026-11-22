@@ -345,6 +345,134 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn exec_list_scopes_same_chat_across_workspaces_and_legacy_by_workspace() {
+        let (temp, app) = test_app().await;
+        let foreign_workspace = tempfile::tempdir().unwrap();
+        let registry = &app.runtime.exec_registry;
+
+        let same_chat_active = registry
+            .register(
+                crate::exec::ExecProcessMeta::new(
+                    crate::exec::ExecMode::Background,
+                    "same chat active".to_string(),
+                )
+                .with_chat_id("chat-a")
+                .with_workspace(temp.path().to_path_buf()),
+                1024,
+            )
+            .await;
+        app.runtime
+            .exec_registry
+            .mark_started(&same_chat_active.meta.process_id)
+            .await
+            .unwrap();
+        let same_chat_foreign = registry
+            .register(
+                crate::exec::ExecProcessMeta::new(
+                    crate::exec::ExecMode::Background,
+                    "same chat foreign".to_string(),
+                )
+                .with_chat_id("chat-a")
+                .with_workspace(foreign_workspace.path().to_path_buf()),
+                1024,
+            )
+            .await;
+        app.runtime
+            .exec_registry
+            .mark_exited(&same_chat_foreign.meta.process_id, Some(0))
+            .await
+            .unwrap();
+        let other_chat = registry
+            .register(
+                crate::exec::ExecProcessMeta::new(
+                    crate::exec::ExecMode::Background,
+                    "other chat".to_string(),
+                )
+                .with_chat_id("chat-b")
+                .with_workspace(temp.path().to_path_buf()),
+                1024,
+            )
+            .await;
+        let legacy_active = registry
+            .register(
+                crate::exec::ExecProcessMeta::new(
+                    crate::exec::ExecMode::Background,
+                    "legacy active".to_string(),
+                )
+                .with_workspace(temp.path().to_path_buf()),
+                1024,
+            )
+            .await;
+        let legacy_foreign = registry
+            .register(
+                crate::exec::ExecProcessMeta::new(
+                    crate::exec::ExecMode::Background,
+                    "legacy foreign".to_string(),
+                )
+                .with_workspace(foreign_workspace.path().to_path_buf()),
+                1024,
+            )
+            .await;
+        let router = make_refact_http_server(app);
+
+        let (status, chat_list) = json_response(
+            router.clone(),
+            Request::builder()
+                .uri("/v1/exec/list?chat_id=chat-a")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let chat_processes = chat_list["processes"].as_array().unwrap();
+        assert!(chat_processes
+            .iter()
+            .any(|process| {
+                process["process_id"] == same_chat_active.meta.process_id.as_str()
+            }));
+        assert!(chat_processes
+            .iter()
+            .any(|process| {
+                process["process_id"] == same_chat_foreign.meta.process_id.as_str()
+            }));
+        assert!(!chat_processes
+            .iter()
+            .any(|process| process["process_id"] == other_chat.meta.process_id.as_str()));
+        assert!(!chat_processes
+            .iter()
+            .any(|process| process["process_id"] == legacy_active.meta.process_id.as_str()));
+        assert!(!chat_processes
+            .iter()
+            .any(|process| process["process_id"] == legacy_foreign.meta.process_id.as_str()));
+
+        for uri in ["/v1/exec/list", "/v1/exec/list?chat_id="] {
+            let (status, workspace_list) = json_response(
+                router.clone(),
+                Request::builder().uri(uri).body(Body::empty()).unwrap(),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK);
+            let workspace_processes = workspace_list["processes"].as_array().unwrap();
+            assert!(workspace_processes
+                .iter()
+                .any(|process| {
+                    process["process_id"] == same_chat_active.meta.process_id.as_str()
+                }));
+            assert!(workspace_processes
+                .iter()
+                .any(|process| process["process_id"] == legacy_active.meta.process_id.as_str()));
+            assert!(!workspace_processes
+                .iter()
+                .any(|process| {
+                    process["process_id"] == same_chat_foreign.meta.process_id.as_str()
+                }));
+            assert!(!workspace_processes
+                .iter()
+                .any(|process| process["process_id"] == legacy_foreign.meta.process_id.as_str()));
+        }
+    }
+
     #[cfg(unix)]
     #[tokio::test]
     #[serial_test::parallel(exec_http_env)]

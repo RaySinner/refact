@@ -373,15 +373,20 @@ pub async fn handle_v1_exec_list(
     let snapshots = app
         .runtime
         .exec_registry
-        .list(ExecProcessFilter {
-            chat_id: query.chat_id,
-            workspace: Some(workspace),
-            ..ExecProcessFilter::default()
-        })
+        .list(exec_list_filter(query.chat_id, Some(workspace)))
         .await;
     Ok(Json(ExecListHttpResponse {
         processes: snapshots.iter().map(http_snapshot).collect(),
     }))
+}
+
+fn exec_list_filter(chat_id: Option<String>, workspace: Option<PathBuf>) -> ExecProcessFilter {
+    let chat_id = chat_id.filter(|chat_id| !chat_id.is_empty());
+    ExecProcessFilter {
+        chat_id,
+        workspace: if chat_id.is_some() { None } else { workspace },
+        ..ExecProcessFilter::default()
+    }
 }
 
 pub async fn handle_v1_exec_read(
@@ -823,5 +828,23 @@ mod tests {
             Some(FsPath::new("/workspace-b")),
         ));
         assert!(!process_access_allowed(&owner, None, None));
+    }
+
+    #[test]
+    fn chat_list_filter_does_not_scope_by_workspace() {
+        let filter = exec_list_filter(Some("chat-a".to_string()), Some(PathBuf::from("/workspace-a")));
+
+        assert_eq!(filter.chat_id.as_deref(), Some("chat-a"));
+        assert_eq!(filter.workspace, None);
+    }
+
+    #[test]
+    fn legacy_list_filter_uses_exact_active_workspace() {
+        for chat_id in [None, Some(String::new())] {
+            let filter = exec_list_filter(chat_id, Some(PathBuf::from("/workspace-a")));
+
+            assert_eq!(filter.chat_id, None);
+            assert_eq!(filter.workspace, Some(PathBuf::from("/workspace-a")));
+        }
     }
 }

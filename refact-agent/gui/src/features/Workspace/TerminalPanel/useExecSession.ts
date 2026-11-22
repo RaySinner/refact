@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { EngineApiConnection } from "../../../services/refact/chatCommands";
 import {
+  ExecHttpError,
   execSubscribeUrl,
   readExec,
   resizeExec,
@@ -75,6 +76,20 @@ export function exitNoticeText(
   }
 }
 
+export function isAccessDeniedError(cause: unknown): boolean {
+  return (
+    (cause instanceof ExecHttpError || typeof cause === "object") &&
+    cause !== null &&
+    "status" in cause &&
+    cause.status === 403
+  );
+}
+
+function execErrorText(cause: unknown): string {
+  const message = cause instanceof Error ? cause.message : String(cause);
+  return isAccessDeniedError(cause) ? `Access denied: ${message}` : message;
+}
+
 export function useExecSession({
   processId,
   chatId,
@@ -89,6 +104,11 @@ export function useExecSession({
   const [reconnecting, setReconnecting] = useState(false);
   const statusRef = useRef<ExecStatus>("running");
   const nextSequenceRef = useRef(0);
+
+  useEffect(() => {
+    setError(null);
+    setReconnecting(false);
+  }, [chatId, processId]);
 
   useEffect(() => {
     if (!runtime) return;
@@ -280,8 +300,12 @@ export function useExecSession({
         connect();
       } catch (cause) {
         if (stopped) return;
-        setError(cause instanceof Error ? cause.message : String(cause));
-        scheduleReconnect();
+        setError(execErrorText(cause));
+        if (!isAccessDeniedError(cause)) {
+          scheduleReconnect();
+        } else {
+          setReconnecting(false);
+        }
       }
     }
 

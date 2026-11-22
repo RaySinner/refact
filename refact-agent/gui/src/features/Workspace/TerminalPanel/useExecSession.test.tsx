@@ -6,9 +6,9 @@ import { http, HttpResponse } from "msw";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import type { Config } from "../../Config/configSlice";
-import type { ExecStatus } from "../../../services/refact/exec";
+import { ExecHttpError, type ExecStatus } from "../../../services/refact/exec";
 import { server } from "../../../utils/mockServer";
-import { useExecSession } from "./useExecSession";
+import { isAccessDeniedError, useExecSession } from "./useExecSession";
 
 const CONFIG: Config = {
   host: "web",
@@ -128,7 +128,11 @@ function Harness({
     onStatusChange,
     onResize,
   });
-  return <div data-reconnecting={state.reconnecting}>{state.error}</div>;
+  return (
+    <div data-reconnecting={state.reconnecting} role="alert">
+      {state.error}
+    </div>
+  );
 }
 
 describe("useExecSession", () => {
@@ -142,6 +146,13 @@ describe("useExecSession", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  test("classifies only HTTP 403 as non-retryable access denial", () => {
+    expect(isAccessDeniedError(new ExecHttpError("denied", 403))).toBe(true);
+    expect(isAccessDeniedError(new ExecHttpError("unauthorized", 401))).toBe(false);
+    expect(isAccessDeniedError(new ExecHttpError("missing", 404))).toBe(false);
+    expect(isAccessDeniedError(new Error("network"))).toBe(false);
   });
 
   test("backfills, streams, batches stdin, resizes, and renders exit", async () => {
@@ -453,6 +464,55 @@ describe("useExecSession", () => {
     expect(readCount).toBe(2);
     expect(fixture.write).toHaveBeenCalledWith("recovered");
     expect(FakeEventSource.instances[1].url).toContain("since_seq=3");
+
+    view.unmount();
+  });
+
+  test("does not reconnect after an HTTP 403 read error", async () => {
+    let readCount = 0;
+    server.use(
+      http.get("*/v1/exec/proc-1/read", () => {
+        readCount += 1;
+        return HttpResponse.json({ detail: "chat access denied" }, { status: 403 });
+      }),
+      http.post("*/v1/exec/proc-1/resize", () => HttpResponse.json({})),
+    );
+    const fixture = makeRuntime();
+    const view = render(
+      <Harness runtime={fixture.runtime} onStatusChange={vi.fn()} />,
+    );
+
+    await waitFor(() => expect(readCount).toBe(1));
+    await waitFor(() =>
+      expect(view.getByRole("alert")).toHaveTextContent("Access denied"),
+    );
+    expect(FakeEventSource.instances).toHaveLength(0);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(readCount).toBe(1);
+
+    view.unmount();
+  });
+
+  test("keeps reconnecting after a transient HTTP 500 read error", async () => {
+    let readCount = 0;
+    server.use(
+      http.get("*/v1/exec/proc-1/read", () => {
+        readCount += 1;
+        if (readCount === 1) {
+          return HttpResponse.json({ detail: "temporary" }, { status: 500 });
+        }
+        return HttpResponse.json({ chunks: [], next_seq: 0, status: "running" });
+      }),
+      http.post("*/v1/exec/proc-1/resize", () => HttpResponse.json({})),
+    );
+    const fixture = makeRuntime();
+    const view = render(
+      <Harness runtime={fixture.runtime} onStatusChange={vi.fn()} />,
+    );
+
+    await waitFor(() => expect(readCount).toBe(1));
+    await waitFor(() => expect(readCount).toBe(2), { timeout: 2_000 });
+    expect(FakeEventSource.instances).toHaveLength(1);
 
     view.unmount();
   });

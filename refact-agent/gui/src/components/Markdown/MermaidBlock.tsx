@@ -18,6 +18,12 @@ let mermaidInitializedConfig: {
 } | null = null;
 let mermaidElkAvailable: boolean | null = null;
 let mermaidTaskQueue: Promise<unknown> = Promise.resolve();
+const MERMAID_RENDER_CACHE = new Map<
+  string,
+  { svg: string; renderId: string }
+>();
+const MAX_MERMAID_RENDER_CACHE_ENTRIES = 20;
+const MERMAID_RENDER_CANCELLED = new Error("Mermaid render cancelled");
 const REPORTED_MERMAID_ERRORS = new Map<string, number>();
 const MERMAID_ERROR_REPORT_INTERVAL_MS = 60_000;
 const MAX_REPORTED_MERMAID_ERRORS = 50;
@@ -281,6 +287,46 @@ function initializeMermaid(
   mermaidInitializedConfig = { theme, flowchartRenderer };
 }
 
+function mermaidRenderCacheKey(theme: MermaidTheme, code: string): string {
+  return JSON.stringify([theme, code]);
+}
+
+function getCachedMermaidRender(theme: MermaidTheme, code: string) {
+  const key = mermaidRenderCacheKey(theme, code);
+  const cached = MERMAID_RENDER_CACHE.get(key);
+  if (!cached) return null;
+  MERMAID_RENDER_CACHE.delete(key);
+  MERMAID_RENDER_CACHE.set(key, cached);
+  return cached;
+}
+
+function reuseCachedMermaidRender(
+  cached: { svg: string; renderId: string },
+  renderId: string,
+): { svg: string } {
+  return {
+    svg:
+      cached.renderId === renderId
+        ? cached.svg
+        : cached.svg.split(cached.renderId).join(renderId),
+  };
+}
+
+function cacheMermaidRender(
+  theme: MermaidTheme,
+  code: string,
+  renderId: string,
+  svg: string,
+): void {
+  const key = mermaidRenderCacheKey(theme, code);
+  MERMAID_RENDER_CACHE.delete(key);
+  MERMAID_RENDER_CACHE.set(key, { svg, renderId });
+  if (MERMAID_RENDER_CACHE.size > MAX_MERMAID_RENDER_CACHE_ENTRIES) {
+    const oldest = MERMAID_RENDER_CACHE.keys().next().value;
+    if (oldest) MERMAID_RENDER_CACHE.delete(oldest);
+  }
+}
+
 // Serializes mermaid.initialize + mermaid.render pairs. mermaid.initialize is
 // global, so without serialization two blocks rendering concurrently after a
 // theme change can race and render with the wrong theme variables. Each task
@@ -290,32 +336,56 @@ function enqueueMermaidRender(
   theme: MermaidTheme,
   id: string,
   code: string,
+  isCancelled: () => boolean,
 ): Promise<{ svg: string }> {
+  const cached = getCachedMermaidRender(theme, code);
+  if (cached) return Promise.resolve(reuseCachedMermaidRender(cached, id));
+
+  const throwIfCancelled = () => {
+    if (isCancelled()) throw MERMAID_RENDER_CANCELLED;
+  };
+
   const task = mermaidTaskQueue.then(async () => {
+    throwIfCancelled();
+    const cachedBeforeStart = getCachedMermaidRender(theme, code);
+    if (cachedBeforeStart) {
+      return reuseCachedMermaidRender(cachedBeforeStart, id);
+    }
+
     const mermaidModule = await withTimeout(
       import("mermaid"),
       MERMAID_RENDER_TIMEOUT_MS,
     );
+    throwIfCancelled();
     const mermaid = mermaidModule.default;
     const flowchart = isFlowchart(mermaid, code);
     const flowchartRenderer: FlowchartRenderer =
       flowchart && (await canUseElkLayout(mermaid)) ? "elk" : "dagre-wrapper";
+    throwIfCancelled();
     const retriesWithDagre =
       flowchartRenderer === "elk" && !sourceRequestsElkLayout(code);
     initializeMermaid(mermaid, theme, flowchartRenderer);
 
-    try {
-      return await withTimeout(
-        mermaid.render(id, code),
-        MERMAID_RENDER_TIMEOUT_MS,
-      );
-    } catch (error) {
-      if (!retriesWithDagre || isRenderTimeout(error)) throw error;
+    const render = async () => {
+      try {
+        return await withTimeout(
+          mermaid.render(id, code),
+          MERMAID_RENDER_TIMEOUT_MS,
+        );
+      } catch (error) {
+        throwIfCancelled();
+        if (!retriesWithDagre || isRenderTimeout(error)) throw error;
 
-      document.getElementById(id)?.remove();
-      initializeMermaid(mermaid, theme, "dagre-wrapper");
-      return withTimeout(mermaid.render(id, code), MERMAID_RENDER_TIMEOUT_MS);
-    }
+        document.getElementById(id)?.remove();
+        initializeMermaid(mermaid, theme, "dagre-wrapper");
+        return withTimeout(mermaid.render(id, code), MERMAID_RENDER_TIMEOUT_MS);
+      }
+    };
+
+    const result = await render();
+    throwIfCancelled();
+    cacheMermaidRender(theme, code, id, result.svg);
+    return result;
   });
   mermaidTaskQueue = task.then(
     () => undefined,
@@ -367,6 +437,7 @@ const _MermaidBlock: React.FC<MermaidBlockProps> = ({ code, onCopyClick }) => {
           theme,
           renderId,
           source,
+          () => cancelled,
         );
 
         if (!cancelled) {

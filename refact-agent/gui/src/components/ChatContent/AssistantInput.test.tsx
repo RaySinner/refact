@@ -155,7 +155,7 @@ describe("AssistantInput", () => {
       });
 
     render(
-      <AssistantInput message={"```mermaid\nflowchart LR\nA --> B\n```"} />,
+      <AssistantInput message={"```mermaid\nflowchart LR\nA --> C\n```"} />,
     );
 
     await waitFor(() => expect(mermaidMock.render).toHaveBeenCalledTimes(2));
@@ -233,7 +233,7 @@ describe("AssistantInput", () => {
 
   test("dispatches uppercase fence languages to the special renderers", async () => {
     render(
-      <AssistantInput message={"```MERMAID\nflowchart LR\nA --> B\n```"} />,
+      <AssistantInput message={"```MERMAID\nflowchart LR\nA --> D\n```"} />,
     );
 
     await waitFor(() => expect(mermaidMock.render).toHaveBeenCalledTimes(1));

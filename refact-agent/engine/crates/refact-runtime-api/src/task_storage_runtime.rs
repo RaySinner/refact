@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::global_context::GlobalContext;
 use crate::GlobalContextCtx;
-use refact_tasks::types::{TaskBoard, TaskMeta};
+use refact_tasks::types::TaskMeta;
 use crate::task_events::{emit_task_event_via, TaskEvent};
 
 pub use crate::task_storage::{
@@ -62,15 +62,14 @@ impl crate::task_storage::TaskStorageRuntime for EngineTaskStorageRuntime {
         &self,
         ctx: &crate::chat_ctx::ChatCtx,
         task_id: &str,
-        board: &TaskBoard,
+        rev: u64,
     ) {
         emit_task_event_via(
             &Some(ctx.chat.task_events_tx.clone()),
             &Some(ctx.chat.task_events_seq.clone()),
             TaskEvent::BoardChanged {
                 task_id: task_id.to_string(),
-                rev: board.rev,
-                board: board.clone(),
+                rev,
             },
         )
         .await;

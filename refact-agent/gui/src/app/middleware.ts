@@ -2452,21 +2452,19 @@ startListening({
         invalidateDeletedTaskCaches(event.task_id, listenerApi);
         clearDeletedTaskState(event.task_id, listenerApi);
         break;
-      case "board_changed":
-        void listenerApi.dispatch(
-          tasksApi.util.updateQueryData("getBoard", event.task_id, (draft) => {
-            if (draft.rev > event.rev) return draft;
-            return { ...event.board, rev: event.rev };
-          }),
-        );
-        // Planner trajectory metadata (waiting_for_card_ids, session state) is
-        // not included in the board payload, so invalidate to keep it fresh.
+      case "board_changed": {
+        const cachedBoard = tasksApi.endpoints.getBoard.select(event.task_id)(
+          listenerApi.getState(),
+        ).data;
+        if (cachedBoard && event.rev <= cachedBoard.rev) break;
         void listenerApi.dispatch(
           tasksApi.util.invalidateTags([
+            { type: "Board", id: event.task_id },
             { type: "TaskTrajectories", id: `${event.task_id}/planner` },
           ]),
         );
         break;
+      }
       case "task_comments_changed":
         void listenerApi.dispatch(
           tasksApi.util.invalidateTags([{ type: "Board", id: event.task_id }]),

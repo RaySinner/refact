@@ -1463,14 +1463,19 @@ describe("TaskWorkspace layout and chat surfaces", () => {
 });
 
 describe("TaskWorkspace SSE invalidation", () => {
-  it("keeps the cached board revision monotonic across stale events", async () => {
+  it("ignores stale events and refetches newer board revisions", async () => {
     const card = makeCard({ title: "Revision 10 card" });
-    const staleCard = makeCard({ title: "Stale revision 9 card" });
     const newerCard = makeCard({ title: "Revision 11 card" });
+    let boardFetchCount = 0;
     server.use(
-      http.get("*/v1/tasks/task-1/board", () =>
-        HttpResponse.json({ ...makeBoard(card), rev: 10 }),
-      ),
+      http.get("*/v1/tasks/task-1/board", () => {
+        boardFetchCount += 1;
+        return HttpResponse.json(
+          boardFetchCount === 1
+            ? { ...makeBoard(card), rev: 10 }
+            : { ...makeBoard(newerCard), rev: 11 },
+        );
+      }),
     );
 
     const { store } = render(<TaskWorkspace taskId={TASK_ID} />, {
@@ -1482,16 +1487,31 @@ describe("TaskWorkspace SSE invalidation", () => {
         tasksApi.endpoints.getBoard.select(TASK_ID)(store.getState()).data?.rev,
       ).toBe(10);
     });
+    expect(boardFetchCount).toBe(1);
 
     store.dispatch(
       taskSseEventReceived({
         type: "board_changed",
         task_id: TASK_ID,
         rev: 9,
-        board: { ...makeBoard(staleCard), rev: 9 },
+      }),
+    );
+    store.dispatch(
+      taskSseEventReceived({
+        type: "board_changed",
+        task_id: TASK_ID,
+        rev: 10,
+      }),
+    );
+    store.dispatch(
+      taskSseEventReceived({
+        type: "board_changed",
+        task_id: "task-other",
+        rev: 99,
       }),
     );
 
+    expect(boardFetchCount).toBe(1);
     expect(
       tasksApi.endpoints.getBoard.select(TASK_ID)(store.getState()).data?.rev,
     ).toBe(10);
@@ -1499,19 +1519,24 @@ describe("TaskWorkspace SSE invalidation", () => {
       tasksApi.endpoints.getBoard.select(TASK_ID)(store.getState()).data
         ?.cards[0]?.title,
     ).toBe("Revision 10 card");
+    expect(
+      tasksApi.endpoints.getBoard.select("task-other")(store.getState()).status,
+    ).toBe(QueryStatus.uninitialized);
 
     store.dispatch(
       taskSseEventReceived({
         type: "board_changed",
         task_id: TASK_ID,
         rev: 11,
-        board: { ...makeBoard(newerCard), rev: 11 },
       }),
     );
 
-    expect(
-      tasksApi.endpoints.getBoard.select(TASK_ID)(store.getState()).data?.rev,
-    ).toBe(11);
+    await waitFor(() => {
+      expect(boardFetchCount).toBe(2);
+      expect(
+        tasksApi.endpoints.getBoard.select(TASK_ID)(store.getState()).data?.rev,
+      ).toBe(11);
+    });
     expect(
       tasksApi.endpoints.getBoard.select(TASK_ID)(store.getState()).data
         ?.cards[0]?.title,
@@ -1560,15 +1585,19 @@ describe("TaskWorkspace SSE invalidation", () => {
     ).toBe("Revision 10 card");
   });
 
-  it("simulated_board_changed_event_updates_board_without_refetch", async () => {
+  it("simulated_board_changed_event_refetches_the_full_board", async () => {
     const card = makeCard();
     const updatedCard = makeCard({ title: "Updated board card" });
     let boardFetchCount = 0;
+    let returnUpdated = false;
     server.use(...taskWorkspaceHandlers(card, []));
     server.use(
       http.get("*/v1/tasks/task-1/board", () => {
         boardFetchCount++;
-        return HttpResponse.json(makeBoard(card));
+        return HttpResponse.json({
+          ...makeBoard(returnUpdated ? updatedCard : card),
+          rev: returnUpdated ? 2 : 1,
+        });
       }),
     );
 
@@ -1578,18 +1607,18 @@ describe("TaskWorkspace SSE invalidation", () => {
 
     await screen.findAllByText(card.title);
     const initialCount = boardFetchCount;
+    returnUpdated = true;
 
     store.dispatch(
       taskSseEventReceived({
         type: "board_changed",
         task_id: TASK_ID,
         rev: 2,
-        board: makeBoard(updatedCard),
       }),
     );
 
     await screen.findAllByText(updatedCard.title);
-    expect(boardFetchCount).toBe(initialCount);
+    expect(boardFetchCount).toBe(initialCount + 1);
   });
 
   it("selected_card_modal_shows_latest_data_after_board_refresh", async () => {
@@ -1603,7 +1632,10 @@ describe("TaskWorkspace SSE invalidation", () => {
     server.use(...taskWorkspaceHandlers(card, []));
     server.use(
       http.get("*/v1/tasks/task-1/board", () =>
-        HttpResponse.json(makeBoard(returnUpdated ? updatedCard : card)),
+        HttpResponse.json({
+          ...makeBoard(returnUpdated ? updatedCard : card),
+          rev: returnUpdated ? 2 : 1,
+        }),
       ),
     );
 
@@ -1620,7 +1652,6 @@ describe("TaskWorkspace SSE invalidation", () => {
         type: "board_changed",
         task_id: TASK_ID,
         rev: 2,
-        board: makeBoard(updatedCard),
       }),
     );
 
@@ -1644,7 +1675,7 @@ describe("TaskWorkspace SSE invalidation", () => {
 
     server.use(
       http.get("*/v1/tasks/task-1/board", () =>
-        HttpResponse.json({ ...makeBoard(card), cards: [] }),
+        HttpResponse.json({ ...makeBoard(card), cards: [], rev: 2 }),
       ),
     );
 
@@ -1653,7 +1684,6 @@ describe("TaskWorkspace SSE invalidation", () => {
         type: "board_changed",
         task_id: TASK_ID,
         rev: 2,
-        board: { ...makeBoard(card), cards: [] },
       }),
     );
 

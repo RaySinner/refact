@@ -68,13 +68,13 @@ mod tests {
 
     fn collect_board_events(
         rx: &mut tokio::sync::broadcast::Receiver<TaskEventEnvelope>,
-    ) -> Vec<(u64, TaskBoard)> {
+    ) -> Vec<u64> {
         let mut events = Vec::new();
         loop {
             match rx.try_recv() {
                 Ok(envelope) => {
-                    if let TaskEvent::BoardChanged { rev, board, .. } = envelope.event {
-                        events.push((rev, board));
+                    if let TaskEvent::BoardChanged { rev, .. } = envelope.event {
+                        events.push(rev);
                     }
                 }
                 Err(TryRecvError::Empty) => break,
@@ -153,9 +153,8 @@ mod tests {
 
         let events = collect_board_events(&mut rx);
         assert_eq!(events.len(), 4);
-        for (index, (rev, event_board)) in events.iter().enumerate() {
+        for (index, rev) in events.iter().enumerate() {
             assert_eq!(*rev, index as u64 + 1);
-            assert_eq!(event_board.rev, *rev);
         }
     }
 
@@ -288,11 +287,42 @@ mod tests {
 
         let events = collect_board_events(&mut rx);
         assert_eq!(events.len(), CARD_COUNT);
-        for (index, (rev, event_board)) in events.iter().enumerate() {
+        for (index, rev) in events.iter().enumerate() {
             assert_eq!(*rev, index as u64 + 1);
-            assert_eq!(event_board.rev, *rev);
-            assert_eq!(event_board.cards.len(), index + 1);
         }
+    }
+
+    #[tokio::test]
+    async fn large_card_payload_is_not_serialized_into_board_changed_event() {
+        let (_temp, gcx, ccx, task_id) = make_board_context().await;
+        let mut rx = gcx.task_events_tx.as_ref().unwrap().subscribe();
+        let instructions = "x".repeat(5 * 1024 * 1024);
+
+        let mut create = ToolTaskBoardCreateCard::new();
+        run_board_tool(
+            &mut create,
+            &ccx,
+            HashMap::from([
+                ("card_id".to_string(), serde_json::json!("T-1")),
+                ("title".to_string(), serde_json::json!("Large card")),
+                ("instructions".to_string(), serde_json::json!(instructions)),
+            ]),
+        )
+        .await
+        .unwrap();
+
+        let board = load_board(&ccx, &task_id).await;
+        assert_eq!(board.cards[0].instructions.len(), 5 * 1024 * 1024);
+        let envelope = rx.try_recv().unwrap();
+        let json = serde_json::to_string(&envelope).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(matches!(envelope.event, TaskEvent::BoardChanged { .. }));
+        assert_eq!(value["type"], "board_changed");
+        assert_eq!(value["task_id"], task_id.as_str());
+        assert_eq!(value["rev"], 1);
+        assert!(value.get("board").is_none());
+        assert!(value.get("cards").is_none());
+        assert!(json.len() < 1024);
     }
 
     #[test]

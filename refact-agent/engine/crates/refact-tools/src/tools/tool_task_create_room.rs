@@ -19,8 +19,6 @@ use tokio::sync::Mutex as AMutex;
 use refact_runtime_api::AtCommandsContext;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use refact_runtime_api::AppState;
-use refact_tasks::events::TaskEvent;
-use refact_tasks::events_emit::emit_task_event_for_services;
 use refact_tasks::rooms;
 use refact_runtime_api::task_storage as storage;
 use refact_tasks::types::{BoardCard, StatusUpdate, TeamMember};
@@ -398,7 +396,7 @@ impl Tool for ToolTaskCreateRoom {
 
         let roster = members.clone();
         let card_id_for_update = card_id.clone();
-        let (board, _) = storage::update_board_atomic_for_ctx(&app.chat_ctx(), &task_id, move |board| {
+        storage::update_board_atomic_for_ctx(&app.chat_ctx(), &task_id, move |board| {
             let card = board
                 .get_card_mut(&card_id_for_update)
                 .ok_or_else(|| format!("Card {} not found", card_id_for_update))?;
@@ -422,15 +420,6 @@ impl Tool for ToolTaskCreateRoom {
         })
         .await?;
 
-        emit_task_event_for_services(
-            &app.chat,
-            TaskEvent::BoardChanged {
-                task_id: task_id.clone(),
-                rev: board.rev,
-                board: board.clone(),
-            },
-        )
-        .await;
         storage::update_task_stats_for_ctx(&app.chat_ctx(), &task_id).await?;
 
         Ok((

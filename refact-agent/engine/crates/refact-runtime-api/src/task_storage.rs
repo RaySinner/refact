@@ -96,7 +96,7 @@ pub trait TaskStorageRuntime: Send + Sync {
     ) -> Result<(), String>;
     async fn create_task(&self, ctx: &ChatCtx, name: &str) -> Result<TaskMeta, String>;
     async fn next_planner_chat_id(&self, ctx: &ChatCtx, task_id: &str) -> Result<String, String>;
-    async fn emit_board_changed(&self, ctx: &ChatCtx, task_id: &str, board: &TaskBoard);
+    async fn emit_board_changed(&self, ctx: &ChatCtx, task_id: &str, rev: u64);
     async fn emit_task_updated(&self, ctx: &ChatCtx, task_id: &str, meta: &TaskMeta);
 }
 
@@ -248,7 +248,7 @@ where
         };
     }
     ctx.task_storage_runtime
-        .emit_board_changed(ctx, task_id, &board)
+        .emit_board_changed(ctx, task_id, board.rev)
         .await;
     Ok((board, result))
 }

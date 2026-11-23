@@ -10,7 +10,7 @@ import {
   subscribeToSidebarEvents,
   type SidebarSubscriptionCallbacks,
 } from "../services/refact/sidebarSubscription";
-import { type TaskBoard, type TaskMeta } from "../services/refact/tasks";
+import { type TaskMeta } from "../services/refact/tasks";
 
 const CONFIG_STATE = {
   config: {
@@ -136,13 +136,6 @@ function subscribeForTest(
   );
   return { events, errors, liveness, disconnect };
 }
-
-const testBoard: TaskBoard = {
-  schema_version: 1,
-  rev: 2,
-  columns: [],
-  cards: [],
-};
 
 const taskA: TaskMeta = {
   id: "task-a",
@@ -472,8 +465,7 @@ describe("useSidebarSubscription", () => {
         sectionUpdate(1, "tasks", {
           type: "board_changed",
           task_id: "task-a",
-          rev: testBoard.rev,
-          board: testBoard,
+          rev: 2,
         }),
       ]),
     );
@@ -489,8 +481,7 @@ describe("useSidebarSubscription", () => {
       update: {
         type: "board_changed",
         task_id: "task-a",
-        rev: testBoard.rev,
-        board: testBoard,
+        rev: 2,
       },
     });
     disconnect();

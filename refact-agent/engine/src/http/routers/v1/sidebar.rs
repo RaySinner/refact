@@ -186,7 +186,6 @@ mod tests {
                 update: SidebarSectionUpdate::Task(TaskEvent::BoardChanged {
                     task_id: "task-1".to_string(),
                     rev: 2,
-                    board: Default::default(),
                 }),
             },
             buffered_notification(),

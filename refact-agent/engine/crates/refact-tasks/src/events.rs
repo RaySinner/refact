@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::types::{TaskBoard, TaskMeta};
+use crate::types::TaskMeta;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -22,7 +22,6 @@ pub enum TaskEvent {
     BoardChanged {
         task_id: String,
         rev: u64,
-        board: TaskBoard,
     },
     TaskCommentsChanged {
         task_id: String,
@@ -122,30 +121,30 @@ mod tests {
     }
 
     #[test]
-    fn board_changed_event_roundtrips_with_board_defaults() {
+    fn board_changed_event_is_invalidation_only() {
         let envelope = TaskEventEnvelope {
             seq: 8,
             event: TaskEvent::BoardChanged {
                 task_id: "task-1".into(),
                 rev: 3,
-                board: TaskBoard::default(),
             },
         };
 
         let json = serde_json::to_string(&envelope).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
         let decoded: TaskEventEnvelope = serde_json::from_str(&json).unwrap();
 
+        assert_eq!(value["type"], "board_changed");
+        assert_eq!(value["task_id"], "task-1");
+        assert_eq!(value["rev"], 3);
+        assert!(value.get("board").is_none());
+        assert!(value.get("cards").is_none());
+        assert_eq!(value.as_object().unwrap().len(), 4);
         match decoded.event {
-            TaskEvent::BoardChanged {
-                task_id,
-                rev,
-                board,
-            } => {
+            TaskEvent::BoardChanged { task_id, rev } => {
                 assert_eq!(decoded.seq, 8);
                 assert_eq!(task_id, "task-1");
                 assert_eq!(rev, 3);
-                assert_eq!(board.schema_version, 1);
-                assert_eq!(board.columns.len(), 5);
             }
             _ => panic!("unexpected event variant"),
         }

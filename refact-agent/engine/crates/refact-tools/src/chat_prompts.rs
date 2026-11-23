@@ -870,6 +870,7 @@ pub struct TaskBriefingTestState {
     enabled_task_id: Option<String>,
     calls: usize,
     responses: std::collections::VecDeque<Result<String, String>>,
+    response_gate: Option<tokio::sync::watch::Sender<bool>>,
 }
 
 #[cfg(any(test, feature = "test-util"))]
@@ -882,15 +883,27 @@ fn task_briefing_test_state() -> &'static AMutex<TaskBriefingTestState> {
 
 #[cfg(any(test, feature = "test-util"))]
 pub async fn task_briefing_test_response(task_id: &str) -> Result<String, String> {
-    let mut state = task_briefing_test_state().lock().await;
-    if state.enabled_task_id.as_deref() != Some(task_id) {
-        return Err("task briefing subchat disabled in tests".to_string());
+    let (response, mut response_gate) = {
+        let mut state = task_briefing_test_state().lock().await;
+        if state.enabled_task_id.as_deref() != Some(task_id) {
+            return Err("task briefing subchat disabled in tests".to_string());
+        }
+        state.calls += 1;
+        let response = state
+            .responses
+            .pop_front()
+            .unwrap_or_else(|| Err("task briefing test response missing".to_string()));
+        let response_gate = state.response_gate.as_ref().map(|gate| gate.subscribe());
+        (response, response_gate)
+    };
+    if let Some(gate) = response_gate.as_mut() {
+        while !*gate.borrow() {
+            if gate.changed().await.is_err() {
+                break;
+            }
+        }
     }
-    state.calls += 1;
-    state
-        .responses
-        .pop_front()
-        .unwrap_or_else(|| Err("task briefing test response missing".to_string()))
+    response
 }
 
 #[cfg(any(test, feature = "test-util"))]
@@ -899,6 +912,20 @@ pub async fn set_task_briefing_test_responses(task_id: &str, responses: Vec<Resu
     state.enabled_task_id = Some(task_id.to_string());
     state.calls = 0;
     state.responses = responses.into_iter().collect();
+}
+
+#[cfg(any(test, feature = "test-util"))]
+pub async fn hold_task_briefing_test_responses() {
+    let (sender, _receiver) = tokio::sync::watch::channel(false);
+    task_briefing_test_state().lock().await.response_gate = Some(sender);
+}
+
+#[cfg(any(test, feature = "test-util"))]
+pub async fn release_task_briefing_test_responses() {
+    let state = task_briefing_test_state().lock().await;
+    if let Some(gate) = state.response_gate.as_ref() {
+        gate.send_replace(true);
+    }
 }
 
 #[cfg(any(test, feature = "test-util"))]

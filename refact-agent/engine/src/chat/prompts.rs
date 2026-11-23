@@ -866,6 +866,7 @@ mod tests {
             vec![Ok("## Active Plans\n- Shared result".to_string())],
         )
         .await;
+        hold_task_briefing_test_responses().await;
         write_task_memory(
             &task_dir,
             "large.md",
@@ -881,6 +882,7 @@ mod tests {
         );
         assert!(combined_task_memory_content(&first).contains("CONCURRENT_MEMORY"));
         assert!(combined_task_memory_content(&second).contains("CONCURRENT_MEMORY"));
+        release_task_briefing_test_responses().await;
         wait_for_task_briefing(1).await;
 
         let briefing =

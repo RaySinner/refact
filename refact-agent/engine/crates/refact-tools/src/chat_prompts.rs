@@ -854,9 +854,14 @@ struct TaskBriefingCacheEntry {
 
 static TASK_BRIEFING_CACHE: OnceLock<AMutex<HashMap<(String, String), TaskBriefingCacheEntry>>> =
     OnceLock::new();
+static TASK_BRIEFING_IN_FLIGHT: OnceLock<AMutex<HashSet<(String, String)>>> = OnceLock::new();
 
 fn task_briefing_cache() -> &'static AMutex<HashMap<(String, String), TaskBriefingCacheEntry>> {
     TASK_BRIEFING_CACHE.get_or_init(|| AMutex::new(HashMap::new()))
+}
+
+fn task_briefing_in_flight() -> &'static AMutex<HashSet<(String, String)>> {
+    TASK_BRIEFING_IN_FLIGHT.get_or_init(|| AMutex::new(HashSet::new()))
 }
 
 #[cfg(any(test, feature = "test-util"))]
@@ -910,9 +915,17 @@ pub async fn task_briefing_test_calls() -> usize {
 }
 
 #[cfg(any(test, feature = "test-util"))]
+pub async fn task_briefing_test_in_flight() -> usize {
+    task_briefing_in_flight().lock().await.len()
+}
+
+#[cfg(any(test, feature = "test-util"))]
 pub async fn clear_task_briefing_cache_for_tests() {
     if let Some(cache) = TASK_BRIEFING_CACHE.get() {
         cache.lock().await.clear();
+    }
+    if let Some(in_flight) = TASK_BRIEFING_IN_FLIGHT.get() {
+        in_flight.lock().await.clear();
     }
 }
 
@@ -1548,17 +1561,38 @@ async fn task_briefing_for_plan(
     {
         return Ok(Some(briefing));
     }
-    let prompt_source = source;
-    let briefing: Arc<str> = run_task_briefing_subchat(app, task_id, role, &prompt_source)
-        .await?
-        .into();
-    task_briefing_cache().lock().await.insert(
-        cache_key,
-        TaskBriefingCacheEntry {
-            briefing: Arc::clone(&briefing),
-        },
-    );
-    Ok(Some(briefing))
+    {
+        let mut in_flight = task_briefing_in_flight().lock().await;
+        if !in_flight.insert(cache_key.clone()) {
+            return Ok(None);
+        }
+    }
+    let app = app.clone();
+    let background_task_id = task_id.to_string();
+    let background_role = role.to_string();
+    tokio::spawn(async move {
+        match run_task_briefing_subchat(&app, &background_task_id, &background_role, &source)
+            .await
+        {
+            Ok(briefing) => {
+                task_briefing_cache().lock().await.insert(
+                    cache_key.clone(),
+                    TaskBriefingCacheEntry {
+                        briefing: briefing.into(),
+                    },
+                );
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Background task briefing failed for task {}: {}",
+                    background_task_id,
+                    e
+                );
+            }
+        }
+        task_briefing_in_flight().lock().await.remove(&cache_key);
+    });
+    Ok(None)
 }
 
 fn insert_task_context_message(

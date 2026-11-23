@@ -223,6 +223,22 @@ mod tests {
         guard
     }
 
+    async fn wait_for_task_briefing(expected_calls: usize) {
+        for _ in 0..128 {
+            if task_briefing_test_calls().await == expected_calls
+                && task_briefing_test_in_flight().await == 0
+            {
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+        panic!(
+            "task briefing did not finish: calls={}, in_flight={}",
+            task_briefing_test_calls().await,
+            task_briefing_test_in_flight().await
+        );
+    }
+
     fn task_meta(task_id: &str, role: &str, card_id: Option<&str>) -> crate::chat::types::TaskMeta {
         crate::chat::types::TaskMeta {
             task_id: task_id.to_string(),
@@ -782,28 +798,37 @@ mod tests {
         .await;
 
         let meta = task_meta(task_id, "planner", None);
-        let first =
+        let first = injected_task_memory_files(&app, task_id, Some(&meta)).await;
+        assert!(combined_task_memory_content(&first).contains("CACHE_MEMORY"));
+        wait_for_task_briefing(1).await;
+        let second =
             injected_task_context_files(&app, task_id, Some(&meta), TASK_BRIEFING_CONTEXT_MARKER)
                 .await;
-        let second =
+        let third =
             injected_task_context_files(&app, task_id, Some(&meta), TASK_BRIEFING_CONTEXT_MARKER)
                 .await;
 
         assert_eq!(task_briefing_test_calls().await, 1);
-        assert!(combined_task_memory_content(&first).contains("Use cached plan"));
+        assert!(combined_task_memory_content(&second).contains("Use cached plan"));
         assert_eq!(
-            combined_task_memory_content(&first),
-            combined_task_memory_content(&second)
+            combined_task_memory_content(&second),
+            combined_task_memory_content(&third)
         );
     }
 
     #[tokio::test]
-    async fn task_briefing_failure_falls_back_to_raw() {
+    async fn task_briefing_failure_preserves_raw_and_retries() {
         let _guard = reset_task_briefing_tests().await;
         let task_id = "task-briefing-fallback";
         let (_temp, app, task_dir) = task_memory_test_app(task_id).await;
-        set_task_briefing_test_responses(task_id, vec![Err("briefing unavailable".to_string())])
-            .await;
+        set_task_briefing_test_responses(
+            task_id,
+            vec![
+                Err("briefing unavailable".to_string()),
+                Ok("## Active Plans\n- Retry succeeded".to_string()),
+            ],
+        )
+        .await;
         write_task_memory(
             &task_dir,
             "large.md",
@@ -816,9 +841,53 @@ mod tests {
         let files = injected_task_memory_files(&app, task_id, Some(&meta)).await;
         let content = combined_task_memory_content(&files);
 
-        assert_eq!(task_briefing_test_calls().await, 1);
         assert!(content.contains("FALLBACK_MEMORY"));
         assert!(content.contains("Showing 1 of 1 memories"));
+        wait_for_task_briefing(1).await;
+
+        let retry = injected_task_memory_files(&app, task_id, Some(&meta)).await;
+        assert!(combined_task_memory_content(&retry).contains("FALLBACK_MEMORY"));
+        wait_for_task_briefing(2).await;
+
+        let briefing =
+            injected_task_context_files(&app, task_id, Some(&meta), TASK_BRIEFING_CONTEXT_MARKER)
+                .await;
+        assert!(combined_task_memory_content(&briefing).contains("Retry succeeded"));
+        assert_eq!(task_briefing_test_calls().await, 2);
+    }
+
+    #[tokio::test]
+    async fn task_briefing_concurrent_misses_share_subchat() {
+        let _guard = reset_task_briefing_tests().await;
+        let task_id = "task-briefing-concurrent";
+        let (_temp, app, task_dir) = task_memory_test_app(task_id).await;
+        set_task_briefing_test_responses(
+            task_id,
+            vec![Ok("## Active Plans\n- Shared result".to_string())],
+        )
+        .await;
+        write_task_memory(
+            &task_dir,
+            "large.md",
+            "created_at: 2026-05-22T00:00:00Z\nnamespace: task",
+            &"CONCURRENT_MEMORY ".repeat(250),
+        )
+        .await;
+
+        let meta = task_meta(task_id, "planner", None);
+        let (first, second) = tokio::join!(
+            injected_task_memory_files(&app, task_id, Some(&meta)),
+            injected_task_memory_files(&app, task_id, Some(&meta))
+        );
+        assert!(combined_task_memory_content(&first).contains("CONCURRENT_MEMORY"));
+        assert!(combined_task_memory_content(&second).contains("CONCURRENT_MEMORY"));
+        wait_for_task_briefing(1).await;
+
+        let briefing =
+            injected_task_context_files(&app, task_id, Some(&meta), TASK_BRIEFING_CONTEXT_MARKER)
+                .await;
+        assert!(combined_task_memory_content(&briefing).contains("Shared result"));
+        assert_eq!(task_briefing_test_calls().await, 1);
     }
 
     #[tokio::test]
@@ -852,6 +921,12 @@ mod tests {
         .await;
 
         let meta = task_meta(task_id, "agents", Some("T-1"));
+        let raw = injected_task_memory_files(&app, task_id, Some(&meta)).await;
+        let raw_content = combined_task_memory_content(&raw);
+        assert!(raw_content.contains("Risk details"));
+        assert!(raw_content.contains("Pinned task document"));
+        wait_for_task_briefing(1).await;
+
         let files =
             injected_task_context_files(&app, task_id, Some(&meta), TASK_BRIEFING_CONTEXT_MARKER)
                 .await;

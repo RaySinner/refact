@@ -1109,16 +1109,21 @@ pub async fn process_command_queue_inner(
                     session.abort_stream();
                 }
                 if let Some(idx) = session.remove_message(&message_id) {
-                    if regenerate && idx < session.messages.len() {
+                    let should_regenerate = regenerate && idx < session.messages.len();
+                    if should_regenerate {
                         session.truncate_messages(idx);
                         session.set_runtime_state(SessionState::Idle, None);
                         session.reactivate_goal_stopped_by_manual_abort();
-                        drop(session);
-                        maybe_save_trajectory_background_with_intent(
-                            app.clone(),
+                    }
+                    drop(session);
+                    app.ctx
+                        .trajectories
+                        .maybe_save_trajectory_with_intent(
                             session_arc.clone(),
-                            TrajectoryCommitIntent::Checkpoint,
-                        );
+                            TrajectoryCommitIntent::Required,
+                        )
+                        .await;
+                    if should_regenerate {
                         prepare_session_preamble_and_knowledge(app.clone(), session_arc.clone())
                             .await;
                         if aborted_before_start_generation(&session_arc).await {

@@ -414,6 +414,93 @@ async fn process_command_queue_wakes_for_paused_decision_enqueued_after_wait() {
 }
 
 #[tokio::test]
+async fn remove_message_without_regenerate_persists_deletion() {
+    let workspace = tempfile::tempdir().unwrap();
+    let gcx = crate::global_context::tests::make_test_gcx().await;
+    *gcx.documents_state.workspace_folders.lock().unwrap() =
+        vec![crate::files_correction::canonicalize_normalized_path(
+            workspace.path().to_path_buf(),
+        )];
+    let app = crate::app_state::app_state_from_gcx(gcx).await;
+    let chat_id = "remove-message-durable";
+    let session_arc = Arc::new(AMutex::new(ChatSession::new(chat_id.to_string())));
+    app.chat
+        .sessions
+        .write()
+        .await
+        .insert(chat_id.to_string(), session_arc.clone());
+
+    let processor_running = {
+        let mut session = session_arc.lock().await;
+        let mut removed = ChatMessage::new("user".to_string(), "delete me".to_string());
+        removed.message_id = "remove-me".to_string();
+        let mut retained = ChatMessage::new("assistant".to_string(), "keep me".to_string());
+        retained.message_id = "keep-me".to_string();
+        session.add_message(removed);
+        session.add_message(retained);
+        session.queue_processor_running.clone()
+    };
+    crate::chat::trajectories::try_save_trajectory_with_intent(
+        app.clone(),
+        session_arc.clone(),
+        TrajectoryCommitIntent::Required,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        crate::chat::trajectories::load_trajectory_for_chat(&app.chat_ctx(), chat_id)
+            .await
+            .unwrap()
+            .messages
+            .len(),
+        2
+    );
+
+    let mut events = session_arc.lock().await.subscribe();
+    {
+        let mut session = session_arc.lock().await;
+        session.command_queue.push_back(make_request(ChatCommand::RemoveMessage {
+            message_id: "remove-me".to_string(),
+            regenerate: false,
+        }));
+        session.command_queue.push_back(make_request(ChatCommand::RemoveMessage {
+            message_id: "unknown-message".to_string(),
+            regenerate: false,
+        }));
+    }
+    processor_running.store(true, Ordering::SeqCst);
+    let handle = tokio::spawn(process_command_queue(
+        app.clone(),
+        session_arc.clone(),
+        processor_running,
+    ));
+    wait_for_queue_to_drain(&session_arc).await;
+    close_processor(&session_arc, handle).await;
+
+    let session = session_arc.lock().await;
+    assert_eq!(session.messages.len(), 1);
+    assert_eq!(session.messages[0].message_id, "keep-me");
+    assert_eq!(session.runtime.state, SessionState::Idle);
+    assert_eq!(session.trajectory_version, 3);
+    assert_eq!(session.trajectory_committed_version, 3);
+    assert!(!session.trajectory_dirty);
+    drop(session);
+    assert!(!drain_events(&mut events)
+        .iter()
+        .any(|event| matches!(event, ChatEvent::StreamStarted { .. })));
+
+    let persisted = crate::chat::trajectories::load_trajectory_for_chat(&app.chat_ctx(), chat_id)
+        .await
+        .expect("persisted trajectory should reload");
+    assert_eq!(persisted.messages.len(), 1);
+    assert_eq!(persisted.messages[0].message_id, "keep-me");
+    assert!(persisted
+        .messages
+        .iter()
+        .all(|message| message.message_id != "remove-me"));
+}
+
+#[tokio::test]
 async fn process_command_queue_wakes_for_waiting_ide_callback_enqueued_after_wait() {
     let gcx = crate::global_context::tests::make_test_gcx().await;
     let app = crate::app_state::app_state_from_gcx(gcx).await;

@@ -133,8 +133,10 @@ describe("MermaidBlock render lifecycle", () => {
     await flushPromises();
     expect(mermaidMock.render).toHaveBeenCalledTimes(1);
 
-    appearanceMock.current = "dark";
-    rerender(<MermaidBlock code={source} onCopyClick={darkCopyClick} />);
+    await act(async () => {
+      appearanceMock.current = "dark";
+      rerender(<MermaidBlock code={source} onCopyClick={darkCopyClick} />);
+    });
     await advanceTimers(100);
     await flushPromises();
     expect(mermaidMock.render).toHaveBeenCalledTimes(2);
@@ -146,8 +148,10 @@ describe("MermaidBlock render lifecycle", () => {
     expect(mermaidMock.render).toHaveBeenCalledTimes(2);
     expect(mermaidMock.initialize).toHaveBeenCalledTimes(initializeCalls);
 
-    appearanceMock.current = "light";
-    rerender(<MermaidBlock code={source} onCopyClick={lightCopyClick} />);
+    await act(async () => {
+      appearanceMock.current = "light";
+      rerender(<MermaidBlock code={source} onCopyClick={lightCopyClick} />);
+    });
     await advanceTimers(100);
     await flushPromises();
     expect(mermaidMock.render).toHaveBeenCalledTimes(2);

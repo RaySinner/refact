@@ -6,6 +6,7 @@ import { server, goodCaps } from "../../utils/mockServer";
 import { createDefaultChatState } from "../../utils/test-utils";
 import { ChatSettingsDropdown } from "./ChatSettingsDropdown";
 import { ChatThreadProvider } from "../../features/Chat/Thread";
+import styles from "./ChatSettingsDropdown.module.css";
 
 function chatStateWithReasoning(enabled: boolean) {
   const chat = createDefaultChatState();
@@ -93,6 +94,30 @@ describe("ChatSettingsDropdown", () => {
     expect(thread?.boost_reasoning).toBe(false);
     expect(thread?.reasoning_effort).toBeNull();
     expect(thread?.thinking_budget).toBeNull();
+  });
+
+  test("reasoning filter labels share an icon row and keep switch behavior", async () => {
+    const chat = chatStateWithReasoning(false);
+    const { user, store } = render(<ChatSettingsDropdown />, {
+      preloadedState: { chat, config },
+    });
+
+    await user.click(await screen.findByRole("button", { name: /openai\/o1/ }));
+
+    const filterLabel = await screen.findByText("Reasoning filter");
+    const filterHint = screen.getByText("Excludes reasoning");
+    const labelRow = filterLabel.closest(`.${styles.reasoningLabel}`);
+
+    expect(labelRow).toHaveClass(styles.reasoningLabel);
+    expect(filterLabel.parentElement).toBe(labelRow);
+    expect(filterHint.parentElement).toBe(labelRow);
+    expect(labelRow?.querySelector("svg")).toBeInTheDocument();
+
+    await user.click(screen.getAllByRole("switch")[1]);
+    expect(
+      store.getState().chat.threads[chat.current_thread_id]?.thread
+        .strip_reasoning_from_prompt,
+    ).toBe(true);
   });
 
   test("selected model change only updates the scoped thread", async () => {

@@ -15,10 +15,7 @@ vi.mock("../../features/Buddy/reportBuddyFrontendError", () => ({
   reportBuddyFrontendError: vi.fn(),
 }));
 
-import {
-  MermaidBlock,
-  resetMermaidRenderCacheForTests,
-} from "./MermaidBlock";
+import { MermaidBlock, resetMermaidRenderCacheForTests } from "./MermaidBlock";
 
 type RenderedMermaid = { svg: string };
 
@@ -171,9 +168,7 @@ describe("MermaidBlock render lifecycle", () => {
       expect.any(String),
       "independent-healthy-source",
     );
-    expect(
-      screen.getByText("independent-healthy-source"),
-    ).toBeInTheDocument();
+    expect(screen.getByText("independent-healthy-source")).toBeInTheDocument();
 
     rerender(
       <>
@@ -184,9 +179,7 @@ describe("MermaidBlock render lifecycle", () => {
     await advanceTimers(30_000);
     await flushPromises();
     expect(mermaidMock.render).toHaveBeenCalledTimes(2);
-    expect(
-      screen.getByText("independent-healthy-source"),
-    ).toBeInTheDocument();
+    expect(screen.getByText("independent-healthy-source")).toBeInTheDocument();
   });
 
   test("skips a cancelled queued source instead of running stale and current revisions", async () => {

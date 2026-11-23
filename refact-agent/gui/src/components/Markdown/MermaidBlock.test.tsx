@@ -17,10 +17,7 @@ vi.mock("../../features/Buddy/reportBuddyFrontendError", () => ({
   reportBuddyFrontendError: vi.fn(),
 }));
 
-import {
-  MermaidBlock,
-  resetMermaidRenderCacheForTests,
-} from "./MermaidBlock";
+import { MermaidBlock, resetMermaidRenderCacheForTests } from "./MermaidBlock";
 
 type RenderedMermaid = { svg: string };
 
@@ -119,9 +116,7 @@ describe("MermaidBlock render failures", () => {
   });
 
   test("shows persistent raw source and a readable error when no SVG succeeded", async () => {
-    mermaidMock.render.mockRejectedValueOnce(
-      new Error("initial syntax error"),
-    );
+    mermaidMock.render.mockRejectedValueOnce(new Error("initial syntax error"));
     const { rerender } = render(<MermaidBlock code="invalid source" />);
 
     await advanceTimers(100);

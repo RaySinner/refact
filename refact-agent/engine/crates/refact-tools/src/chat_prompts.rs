@@ -1582,11 +1582,10 @@ async fn task_briefing_for_plan(
                     },
                 );
             }
-            Err(e) => {
+            Err(_) => {
                 tracing::warn!(
-                    "Background task briefing failed for task {}: {}",
-                    background_task_id,
-                    e
+                    "Background task briefing failed for task {}; raw context remains in use",
+                    background_task_id
                 );
             }
         }

@@ -1,9 +1,6 @@
 import { act, render, screen } from "../../utils/test-utils";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-
-const appearanceMock = vi.hoisted(() => ({
-  current: "light" as "light" | "dark",
-}));
+import { setThemeMode } from "../../features/Config/configSlice";
 
 const mermaidMock = vi.hoisted(() => ({
   render: vi.fn(),
@@ -13,9 +10,6 @@ const mermaidMock = vi.hoisted(() => ({
 }));
 
 vi.mock("mermaid", () => ({ default: mermaidMock }));
-vi.mock("../../hooks/useAppearance", () => ({
-  useAppearance: () => ({ appearance: appearanceMock.current }),
-}));
 vi.mock("../../features/Buddy/reportBuddyFrontendError", () => ({
   reportBuddyFrontendError: vi.fn(),
 }));
@@ -57,7 +51,6 @@ describe("MermaidBlock render lifecycle", () => {
   beforeEach(() => {
     resetMermaidRenderCacheForTests();
     vi.useFakeTimers();
-    appearanceMock.current = "light";
     mermaidMock.render.mockReset();
     mermaidMock.render.mockImplementation((id: string, code: string) =>
       Promise.resolve({ svg: diagram(code, id) }),
@@ -124,33 +117,30 @@ describe("MermaidBlock render lifecycle", () => {
 
   test("changes theme only when needed and reuses the previous theme render", async () => {
     const source = "theme-change-source";
-    const lightCopyClick = () => undefined;
-    const darkCopyClick = () => undefined;
-    const { rerender } = render(
-      <MermaidBlock code={source} onCopyClick={lightCopyClick} />,
-    );
+    const { rerender, store } = render(<MermaidBlock code={source} />);
+    await act(async () => {
+      store.dispatch(setThemeMode("light"));
+    });
     await advanceTimers(100);
     await flushPromises();
     expect(mermaidMock.render).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      appearanceMock.current = "dark";
-      rerender(<MermaidBlock code={source} onCopyClick={darkCopyClick} />);
+      store.dispatch(setThemeMode("dark"));
     });
     await advanceTimers(100);
     await flushPromises();
     expect(mermaidMock.render).toHaveBeenCalledTimes(2);
     const initializeCalls = mermaidMock.initialize.mock.calls.length;
 
-    rerender(<MermaidBlock code={source} onCopyClick={darkCopyClick} />);
+    rerender(<MermaidBlock code={source} />);
     await advanceTimers(30_000);
     await flushPromises();
     expect(mermaidMock.render).toHaveBeenCalledTimes(2);
     expect(mermaidMock.initialize).toHaveBeenCalledTimes(initializeCalls);
 
     await act(async () => {
-      appearanceMock.current = "light";
-      rerender(<MermaidBlock code={source} onCopyClick={lightCopyClick} />);
+      store.dispatch(setThemeMode("light"));
     });
     await advanceTimers(100);
     await flushPromises();

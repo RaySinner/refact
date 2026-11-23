@@ -28,6 +28,7 @@ const REPORTED_MERMAID_ERRORS = new Map<string, number>();
 const MERMAID_ERROR_REPORT_INTERVAL_MS = 60_000;
 const MAX_REPORTED_MERMAID_ERRORS = 50;
 
+// eslint-disable-next-line react-refresh/only-export-components -- test-only helper
 export function resetMermaidRenderCacheForTests(): void {
   MERMAID_RENDER_CACHE.clear();
   mermaidInitializedConfig = null;

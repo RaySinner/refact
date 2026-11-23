@@ -1,4 +1,5 @@
-import { act, render, screen } from "../../utils/test-utils";
+import { act } from "react-dom/test-utils";
+import { render, screen } from "../../utils/test-utils";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { setThemeMode } from "../../features/Config/configSlice";
 
@@ -118,14 +119,14 @@ describe("MermaidBlock render lifecycle", () => {
   test("changes theme only when needed and reuses the previous theme render", async () => {
     const source = "theme-change-source";
     const { rerender, store } = render(<MermaidBlock code={source} />);
-    await act(async () => {
+    act(() => {
       store.dispatch(setThemeMode("light"));
     });
     await advanceTimers(100);
     await flushPromises();
     expect(mermaidMock.render).toHaveBeenCalledTimes(1);
 
-    await act(async () => {
+    act(() => {
       store.dispatch(setThemeMode("dark"));
     });
     await advanceTimers(100);
@@ -139,7 +140,7 @@ describe("MermaidBlock render lifecycle", () => {
     expect(mermaidMock.render).toHaveBeenCalledTimes(2);
     expect(mermaidMock.initialize).toHaveBeenCalledTimes(initializeCalls);
 
-    await act(async () => {
+    act(() => {
       store.dispatch(setThemeMode("light"));
     });
     await advanceTimers(100);

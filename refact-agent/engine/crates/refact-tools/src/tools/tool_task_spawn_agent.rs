@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use serde_json::{json, Value};
 use tokio::sync::Mutex as AMutex;
 use async_trait::async_trait;
@@ -28,6 +29,230 @@ use refact_runtime_api::CreateSessionRequest;
 pub const FILES_TO_OPEN_PER_FILE_LIMIT: usize = 256 * 1024;
 pub const FILES_TO_OPEN_TOTAL_LIMIT: usize = 1024 * 1024;
 pub const MAX_ID_LEN: usize = 64;
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+struct SpawnPreparationCorrelation {
+    task_id: String,
+    card_id: String,
+    agent_id: String,
+    agent_chat_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+struct SpawnPreparationEvent {
+    event: &'static str,
+    timestamp_ms: i64,
+    elapsed_ms: u64,
+    #[serde(flatten)]
+    correlation: SpawnPreparationCorrelation,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error_stage: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    files_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    files_bytes: Option<usize>,
+}
+
+impl SpawnPreparationEvent {
+    fn at(
+        event: &'static str,
+        correlation: SpawnPreparationCorrelation,
+        timestamp_ms: i64,
+        elapsed: Duration,
+    ) -> Self {
+        Self {
+            event,
+            timestamp_ms,
+            elapsed_ms: elapsed.as_millis().try_into().unwrap_or(u64::MAX),
+            correlation,
+            error_stage: None,
+            files_count: None,
+            files_bytes: None,
+        }
+    }
+
+    fn with_error_stage(mut self, stage: &'static str) -> Self {
+        self.error_stage = Some(stage);
+        self
+    }
+
+    fn with_file_metrics(mut self, count: usize, bytes: usize) -> Self {
+        self.files_count = Some(count);
+        self.files_bytes = Some(bytes);
+        self
+    }
+
+    fn emit(self) {
+        tracing::info!(
+            target: "spawn_preparation",
+            event = self.event,
+            timestamp_ms = self.timestamp_ms,
+            elapsed_ms = self.elapsed_ms,
+            task_id = %self.correlation.task_id,
+            card_id = %self.correlation.card_id,
+            agent_id = %self.correlation.agent_id,
+            agent_chat_id = %self.correlation.agent_chat_id,
+            error_stage = ?self.error_stage,
+            files_count = ?self.files_count,
+            files_bytes = ?self.files_bytes,
+            "spawn_preparation"
+        );
+    }
+}
+
+struct SpawnPreparationDiagnostics {
+    correlation: SpawnPreparationCorrelation,
+    started_at: Instant,
+    stage: &'static str,
+    terminal: bool,
+    #[cfg(test)]
+    events: Vec<SpawnPreparationEvent>,
+}
+
+impl SpawnPreparationDiagnostics {
+    fn new(
+        task_id: &str,
+        card_id: &str,
+        agent_id: &str,
+        agent_chat_id: &str,
+    ) -> Self {
+        Self::new_at(
+            SpawnPreparationCorrelation {
+                task_id: task_id.to_string(),
+                card_id: card_id.to_string(),
+                agent_id: agent_id.to_string(),
+                agent_chat_id: agent_chat_id.to_string(),
+            },
+            Utc::now().timestamp_millis(),
+        )
+    }
+
+    fn new_at(correlation: SpawnPreparationCorrelation, timestamp_ms: i64) -> Self {
+        let mut diagnostics = Self {
+            correlation,
+            started_at: Instant::now(),
+            stage: "spawn_preflight",
+            terminal: false,
+            #[cfg(test)]
+            events: Vec::new(),
+        };
+        diagnostics.transition_at(
+            "spawn_preflight",
+            "spawn_accepted",
+            timestamp_ms,
+            Duration::ZERO,
+            None,
+        );
+        diagnostics
+    }
+
+    fn transition(&mut self, stage: &'static str, event: &'static str) {
+        self.transition_at(
+            stage,
+            event,
+            Utc::now().timestamp_millis(),
+            self.started_at.elapsed(),
+            None,
+        );
+    }
+
+    fn transition_with_file_metrics(
+        &mut self,
+        stage: &'static str,
+        event: &'static str,
+        count: usize,
+        bytes: usize,
+    ) {
+        self.transition_at(
+            stage,
+            event,
+            Utc::now().timestamp_millis(),
+            self.started_at.elapsed(),
+            Some((count, bytes)),
+        );
+    }
+
+    fn transition_at(
+        &mut self,
+        stage: &'static str,
+        event: &'static str,
+        timestamp_ms: i64,
+        elapsed: Duration,
+        file_metrics: Option<(usize, usize)>,
+    ) {
+        if self.terminal {
+            return;
+        }
+        self.stage = stage;
+        let mut event = SpawnPreparationEvent::at(
+            event,
+            self.correlation.clone(),
+            timestamp_ms,
+            elapsed,
+        );
+        if let Some((count, bytes)) = file_metrics {
+            event = event.with_file_metrics(count, bytes);
+        }
+        self.record(event);
+    }
+
+    fn set_stage(&mut self, stage: &'static str) {
+        if !self.terminal {
+            self.stage = stage;
+        }
+    }
+
+    fn complete(&mut self, stage: &'static str, event: &'static str) {
+        self.complete_at(
+            stage,
+            event,
+            Utc::now().timestamp_millis(),
+            self.started_at.elapsed(),
+        );
+    }
+
+    fn complete_at(
+        &mut self,
+        stage: &'static str,
+        event: &'static str,
+        timestamp_ms: i64,
+        elapsed: Duration,
+    ) {
+        self.transition_at(stage, event, timestamp_ms, elapsed, None);
+        self.terminal = true;
+    }
+
+    fn fail(&mut self) {
+        self.fail_at(Utc::now().timestamp_millis(), self.started_at.elapsed());
+    }
+
+    fn fail_at(&mut self, timestamp_ms: i64, elapsed: Duration) {
+        if self.terminal {
+            return;
+        }
+        self.terminal = true;
+        let event = SpawnPreparationEvent::at(
+            "spawn_error",
+            self.correlation.clone(),
+            timestamp_ms,
+            elapsed,
+        )
+        .with_error_stage(self.stage);
+        self.record(event);
+    }
+
+    fn record(&mut self, event: SpawnPreparationEvent) {
+        #[cfg(test)]
+        self.events.push(event.clone());
+        event.emit();
+    }
+}
+
+impl Drop for SpawnPreparationDiagnostics {
+    fn drop(&mut self) {
+        self.fail();
+    }
+}
 
 pub fn validate_id(id: &str, name: &str) -> Result<(), String> {
     if id.is_empty() {
@@ -974,6 +1199,16 @@ pub async fn context_files_from_files_to_open(
     Ok(context_files)
 }
 
+fn initial_file_metrics(context_files: &[ContextFile]) -> (usize, usize) {
+    (
+        context_files.len(),
+        context_files
+            .iter()
+            .map(|file| file.file_content.len())
+            .sum(),
+    )
+}
+
 pub fn context_file_message(
     gcx: &Arc<GlobalContext>,
     context_files: Vec<ContextFile>,
@@ -1117,6 +1352,11 @@ impl Tool for ToolTaskSpawnAgent {
         };
         let suggested_steps = suggested_steps.min(50).max(1);
 
+        let agent_id = Uuid::new_v4().to_string();
+        let agent_chat_id = format!("agent-{}-{}", card_id, &agent_id[..8]);
+        let mut diagnostics =
+            SpawnPreparationDiagnostics::new(&task_id, card_id, &agent_id, &agent_chat_id);
+
         let task_meta = storage::load_task_meta_for_ctx(&ctx, &task_id).await?;
         let explicit_base_branch = optional_nonempty_string_arg(args, "base_branch")?;
         let explicit_base_commit = optional_nonempty_string_arg(args, "base_commit")?;
@@ -1127,6 +1367,7 @@ impl Tool for ToolTaskSpawnAgent {
         validate_id(&task_id, "task_id")?;
         validate_id(card_id, "card_id")?;
 
+        diagnostics.transition("abandoned_preflight", "abandoned_preflight_started");
         let board = storage::load_board_for_ctx(&ctx, &task_id).await?;
         let abandoned_worktrees = find_abandoned_worktrees(&board);
         if !abandoned_worktrees.is_empty() {
@@ -1135,6 +1376,8 @@ impl Tool for ToolTaskSpawnAgent {
                 &abandoned_worktrees,
             ));
         }
+        diagnostics.transition("abandoned_preflight", "abandoned_preflight_done");
+        diagnostics.set_stage("card_validation");
 
         let card = board
             .get_card(card_id)
@@ -1158,9 +1401,6 @@ impl Tool for ToolTaskSpawnAgent {
         let role = spawn_role(args)?;
         let mandate = optional_nonempty_string_arg(args, "role_mandate")?;
 
-        let agent_id = Uuid::new_v4().to_string();
-        let agent_chat_id = format!("agent-{}-{}", card_id, &agent_id[..8]);
-
         let project_dirs = refact_runtime_api::files_correction::get_unscoped_project_dirs_for_ctx(&ctx).await;
         let workspace_root = project_dirs.first().ok_or_else(|| {
             "No workspace folder found; task agents require an isolated git worktree".to_string()
@@ -1172,6 +1412,7 @@ impl Tool for ToolTaskSpawnAgent {
             workspace_root,
             &task_meta,
         );
+        diagnostics.transition("worktree_prepare", "worktree_prepare_started");
         let prepared_worktree = prepare_agent_worktree_with_base_and_suffix(
             &ctx,
             &task_meta,
@@ -1184,10 +1425,12 @@ impl Tool for ToolTaskSpawnAgent {
             None,
         )
         .await?;
+        diagnostics.transition("worktree_prepare", "worktree_ready");
 
         let dirty_tree_warning = prepared_worktree.spawned_with_dirty_tree;
         let base_branch_mismatch_warning = prepared_worktree.base_branch_mismatch_warning.clone();
 
+        diagnostics.transition("initial_files_read", "initial_files_read_started");
         let initial_context_files = if files_to_open.is_empty() {
             Vec::new()
         } else {
@@ -1203,6 +1446,7 @@ impl Tool for ToolTaskSpawnAgent {
             {
                 Ok(context_files) => context_files,
                 Err(e) => {
+                    diagnostics.fail();
                     prepared_worktree
                         .cleanup_unlinked(app.paths.cache_dir.clone())
                         .await;
@@ -1210,12 +1454,21 @@ impl Tool for ToolTaskSpawnAgent {
                 }
             }
         };
+        let (initial_files_count, initial_files_bytes) =
+            initial_file_metrics(&initial_context_files);
+        diagnostics.transition_with_file_metrics(
+            "initial_files_read",
+            "initial_files_read_done",
+            initial_files_count,
+            initial_files_bytes,
+        );
         let initial_context_message = if initial_context_files.is_empty() {
             None
         } else {
             match context_file_message(&app.gcx, initial_context_files) {
                 Ok(message) => Some(message),
                 Err(e) => {
+                    diagnostics.fail();
                     prepared_worktree
                         .cleanup_unlinked(app.paths.cache_dir.clone())
                         .await;
@@ -1223,6 +1476,7 @@ impl Tool for ToolTaskSpawnAgent {
                 }
             }
         };
+        diagnostics.set_stage("card_session_preparation");
 
         let card_id_owned = card_id.to_string();
         let agent_id_clone = agent_id.clone();
@@ -1297,6 +1551,7 @@ impl Tool for ToolTaskSpawnAgent {
         let (board, commit_info) = match board_update_result {
             Ok(result) => result,
             Err(e) => {
+                diagnostics.fail();
                 prepared_worktree
                     .cleanup_unlinked(app.paths.cache_dir.clone())
                     .await;
@@ -1307,6 +1562,7 @@ impl Tool for ToolTaskSpawnAgent {
         let starting_new_run = commit_info.unwrap();
 
         if let Err(e) = storage::update_task_stats_for_ctx(&ctx, &task_id).await {
+            diagnostics.fail();
             rollback_retain(&ctx, &task_id, card_id, &agent_chat_id, &e).await;
             prepared_worktree.retain().await;
             return Err(e);
@@ -1315,6 +1571,7 @@ impl Tool for ToolTaskSpawnAgent {
         let mut meta = match storage::load_task_meta_for_ctx(&ctx, &task_id).await {
             Ok(m) => m,
             Err(e) => {
+                diagnostics.fail();
                 rollback_retain(&ctx, &task_id, card_id, &agent_chat_id, &e).await;
                 prepared_worktree.retain().await;
                 return Err(e);
@@ -1333,6 +1590,7 @@ impl Tool for ToolTaskSpawnAgent {
             meta.last_agents_summary_at = Some(earliest.unwrap_or_else(Utc::now).to_rfc3339());
         }
         if let Err(e) = storage::save_task_meta_for_ctx(&ctx, &task_id, &meta).await {
+            diagnostics.fail();
             rollback_retain(&ctx, &task_id, card_id, &agent_chat_id, &e).await;
             prepared_worktree.retain().await;
             return Err(e);
@@ -1409,6 +1667,7 @@ impl Tool for ToolTaskSpawnAgent {
             messages.push(context_message);
         }
 
+        diagnostics.transition("session_create", "session_create_started");
         let session_result = async {
             app.chat
                 .facade
@@ -1419,6 +1678,7 @@ impl Tool for ToolTaskSpawnAgent {
                 })
                 .await?;
             app.chat.facade.maybe_save_session(&agent_chat_id).await?;
+            diagnostics.transition("generation_queue", "session_ready");
             app.chat
                 .facade
                 .push_priority_command(&agent_chat_id, ChatCommand::Regenerate {})
@@ -1426,10 +1686,12 @@ impl Tool for ToolTaskSpawnAgent {
         }
         .await;
         if let Err(e) = session_result {
+            diagnostics.fail();
             rollback_retain(&ctx, &task_id, card_id, &agent_chat_id, &e).await;
             prepared_worktree.retain().await;
             return Err(e);
         }
+        diagnostics.complete("generation_queue", "generation_queued");
 
         tracing::info!(
             "Spawned agent {} for card {}: {} (model: {})",
@@ -1475,5 +1737,179 @@ The agent will call `agent_finish()` when done. Use `check_agents` to monitor pr
 
     fn tool_depends_on(&self) -> Vec<String> {
         vec![]
+    }
+}
+
+#[cfg(test)]
+mod spawn_preparation_diagnostics_tests {
+    use super::*;
+
+    fn correlation() -> SpawnPreparationCorrelation {
+        SpawnPreparationCorrelation {
+            task_id: "task-1".to_string(),
+            card_id: "BUG-005B".to_string(),
+            agent_id: "agent-1".to_string(),
+            agent_chat_id: "agent-chat-1".to_string(),
+        }
+    }
+
+    #[test]
+    fn timeline_has_fake_elapsed_correlation_and_file_metrics() {
+        let mut diagnostics = SpawnPreparationDiagnostics::new_at(correlation(), 1_000);
+        diagnostics.transition_at(
+            "abandoned_preflight",
+            "abandoned_preflight_started",
+            1_100,
+            Duration::from_millis(100),
+            None,
+        );
+        diagnostics.transition_at(
+            "abandoned_preflight",
+            "abandoned_preflight_done",
+            1_250,
+            Duration::from_millis(250),
+            None,
+        );
+        diagnostics.transition_at(
+            "worktree_prepare",
+            "worktree_prepare_started",
+            1_300,
+            Duration::from_millis(300),
+            None,
+        );
+        diagnostics.transition_at(
+            "worktree_prepare",
+            "worktree_ready",
+            1_800,
+            Duration::from_millis(800),
+            None,
+        );
+        diagnostics.transition_at(
+            "initial_files_read",
+            "initial_files_read_started",
+            1_850,
+            Duration::from_millis(850),
+            None,
+        );
+        let files = vec![
+            ContextFile {
+                file_content: "abcd".to_string(),
+                ..Default::default()
+            },
+            ContextFile {
+                file_content: "ef".to_string(),
+                ..Default::default()
+            },
+        ];
+        let (count, bytes) = initial_file_metrics(&files);
+        diagnostics.transition_at(
+            "initial_files_read",
+            "initial_files_read_done",
+            1_950,
+            Duration::from_millis(950),
+            Some((count, bytes)),
+        );
+        diagnostics.transition_at(
+            "session_create",
+            "session_create_started",
+            2_000,
+            Duration::from_millis(1_000),
+            None,
+        );
+        diagnostics.transition_at(
+            "generation_queue",
+            "session_ready",
+            2_200,
+            Duration::from_millis(1_200),
+            None,
+        );
+        diagnostics.complete_at(
+            "generation_queue",
+            "generation_queued",
+            2_250,
+            Duration::from_millis(1_250),
+        );
+
+        let names = diagnostics
+            .events
+            .iter()
+            .map(|event| event.event)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            names,
+            vec![
+                "spawn_accepted",
+                "abandoned_preflight_started",
+                "abandoned_preflight_done",
+                "worktree_prepare_started",
+                "worktree_ready",
+                "initial_files_read_started",
+                "initial_files_read_done",
+                "session_create_started",
+                "session_ready",
+                "generation_queued",
+            ]
+        );
+        assert_eq!(diagnostics.events[0].elapsed_ms, 0);
+        assert_eq!(diagnostics.events[4].elapsed_ms, 800);
+        assert_eq!(diagnostics.events[6].files_count, Some(2));
+        assert_eq!(diagnostics.events[6].files_bytes, Some(6));
+        assert_eq!(diagnostics.events[9].timestamp_ms, 2_250);
+        assert_eq!(diagnostics.events[9].elapsed_ms, 1_250);
+        assert!(diagnostics
+            .events
+            .iter()
+            .all(|event| event.correlation == correlation()));
+    }
+
+    #[test]
+    fn error_stage_is_terminal_and_suppresses_later_ready_events() {
+        let mut diagnostics = SpawnPreparationDiagnostics::new_at(correlation(), 1_000);
+        diagnostics.transition_at(
+            "worktree_prepare",
+            "worktree_prepare_started",
+            1_100,
+            Duration::from_millis(100),
+            None,
+        );
+        diagnostics.fail_at(1_400, Duration::from_millis(400));
+        diagnostics.transition_at(
+            "worktree_prepare",
+            "worktree_ready",
+            1_500,
+            Duration::from_millis(500),
+            None,
+        );
+
+        assert_eq!(diagnostics.events.len(), 3);
+        let error = diagnostics.events.last().unwrap();
+        assert_eq!(error.event, "spawn_error");
+        assert_eq!(error.error_stage, Some("worktree_prepare"));
+        assert_eq!(error.elapsed_ms, 400);
+        assert_eq!(error.timestamp_ms, 1_400);
+    }
+
+    #[test]
+    fn events_do_not_serialize_instruction_content_or_worktree_paths() {
+        let secret = "private card instructions and provider message content";
+        let worktree_path = "C:/private/full/worktree/path";
+        let mut diagnostics = SpawnPreparationDiagnostics::new_at(correlation(), 1_000);
+        diagnostics.transition_at(
+            "initial_files_read",
+            "initial_files_read_done",
+            1_100,
+            Duration::from_millis(100),
+            Some((0, 0)),
+        );
+        diagnostics.fail_at(1_200, Duration::from_millis(200));
+        let rendered = serde_json::to_string(&diagnostics.events).unwrap();
+
+        assert!(!rendered.contains(secret));
+        assert!(!rendered.contains(worktree_path));
+        assert!(!rendered.contains("instructions"));
+        assert!(!rendered.contains("file_content"));
+        assert!(!rendered.contains("worktree_path"));
+        assert!(rendered.contains("initial_files_read"));
+        assert!(rendered.contains("spawn_error"));
     }
 }

@@ -1178,8 +1178,8 @@ mod reconstruction_diagnostics_tests {
         .with_error_category(category);
         let rendered = serde_json::to_string(&event).unwrap();
 
-        assert_eq!(category, "transient_error");
-        assert_eq!(event.error_category, Some("transient_error"));
+        assert_eq!(category, "retryable_http_status");
+        assert_eq!(event.error_category, Some("retryable_http_status"));
         assert!(!rendered.contains("private message content"));
         assert!(!rendered.contains("provider detail"));
         assert!(!rendered.contains("429"));

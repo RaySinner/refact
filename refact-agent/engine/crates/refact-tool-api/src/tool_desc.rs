@@ -259,7 +259,8 @@ pub fn make_openai_tool_value(
 }
 
 // The descriptor gate is used because the registry facade hides the Tool trait.
-pub const INTERRUPTIBLE_WAIT_TOOLS: &[&str] = &["sleep", "process_wait", "agent_wait"];
+pub const INTERRUPTIBLE_WAIT_TOOLS: &[&str] =
+    &["sleep", "process_wait", "agent_wait", "wait_agents"];
 
 /// Whether `name` is one of the interruptible wait tools, regardless of source.
 ///
@@ -297,7 +298,7 @@ mod tests {
             "display_name": "Wait", "source": {"source_type": "builtin", "config_path": ""}
         }))
         .unwrap();
-        for name in ["sleep", "process_wait", "agent_wait"] {
+        for name in ["sleep", "process_wait", "agent_wait", "wait_agents"] {
             desc.name = name.into();
             assert!(desc.is_interruptible_wait(), "{name}");
         }
@@ -306,7 +307,6 @@ mod tests {
             "process_start",
             "process_subscribe",
             "task_wait_for_agents",
-            "wait_agents",
         ] {
             desc.name = name.into();
             assert!(!desc.is_interruptible_wait(), "{name}");
@@ -320,7 +320,7 @@ mod tests {
     fn is_interruptible_wait_tool_name_matches_by_name_only() {
         // The descriptor gate additionally requires a builtin source; the name-only
         // helper must not, so a caller holding just a name still gets the exemption.
-        for name in ["sleep", "process_wait", "agent_wait"] {
+        for name in ["sleep", "process_wait", "agent_wait", "wait_agents"] {
             assert!(is_interruptible_wait_tool_name(name), "{name}");
         }
         for name in [
@@ -329,7 +329,6 @@ mod tests {
             "process_read",
             "process_list",
             "task_wait_for_agents",
-            "wait_agents",
             "cat",
             "",
         ] {
@@ -343,6 +342,7 @@ mod tests {
             "sleep",
             "process_wait",
             "agent_wait",
+            "wait_agents",
             "shell",
             "process_read",
         ] {

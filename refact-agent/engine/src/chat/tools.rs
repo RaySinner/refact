@@ -1511,7 +1511,37 @@ fn runtime_event_lines_with_fallback(
 #[cfg(test)]
 mod interruptible_wait_tests {
     use super::*;
+    use refact_tools::tools::tool_task_wait_for_agents::ToolTaskWaitForAgents;
     use std::sync::atomic::Ordering;
+
+    struct HeldWaitForAgents {
+        inner: ToolTaskWaitForAgents,
+        hold: Arc<tokio::sync::Notify>,
+    }
+
+    #[async_trait::async_trait]
+    impl crate::tools::tools_description::Tool for HeldWaitForAgents {
+        async fn tool_execute(
+            &mut self,
+            ccx: Arc<AMutex<AtCommandsContext>>,
+            tool_call_id: &String,
+            args: &std::collections::HashMap<String, serde_json::Value>,
+        ) -> Result<(bool, Vec<ContextEnum>), String> {
+            let result = crate::tools::tools_description::Tool::tool_execute(
+                &mut self.inner,
+                ccx,
+                tool_call_id,
+                args,
+            )
+            .await?;
+            self.hold.notified().await;
+            Ok(result)
+        }
+
+        fn tool_description(&self) -> ToolDesc {
+            crate::tools::tools_description::Tool::tool_description(&self.inner)
+        }
+    }
 
     #[tokio::test]
     async fn live_sleep_execution_yields_to_append_and_when_idle() {
@@ -1662,6 +1692,230 @@ mod interruptible_wait_tests {
                 .iter()
                 .skip(2)
                 .any(|message| message.content.content_text_only().contains("wake up")));
+        }
+    }
+
+    #[tokio::test]
+    async fn live_wait_agents_execution_yields_to_completion_delivery() {
+        use crate::tools::tools_description::Tool;
+        use refact_core::chat_types::{PendingDelivery, PushMode};
+        use refact_tasks::types::{BoardCard, TaskBoard};
+
+        for (index, push) in [PushMode::Append, PushMode::WhenIdle]
+            .into_iter()
+            .enumerate()
+        {
+            let temp = tempfile::tempdir().unwrap();
+            let gcx = crate::global_context::tests::make_test_gcx().await;
+            *gcx.documents_state.workspace_folders.lock().unwrap() =
+                vec![temp.path().to_path_buf()];
+            let task = refact_runtime_api::task_storage::create_task(
+                gcx.clone(),
+                "Interrupt wait agents",
+            )
+            .await
+            .unwrap();
+            let agent_chat_id = format!("agent-wait-{index}");
+            let card: BoardCard = serde_json::from_value(serde_json::json!({
+                "id": "T-1",
+                "title": "Running card",
+                "column": "doing",
+                "assignee": "agent-1",
+                "agent_chat_id": agent_chat_id.clone(),
+                "created_at": Utc::now().to_rfc3339(),
+                "started_at": Utc::now().to_rfc3339(),
+            }))
+            .unwrap();
+            refact_runtime_api::task_storage::save_board(
+                gcx.clone(),
+                &task.id,
+                &TaskBoard {
+                    cards: vec![card],
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+
+            let hold = Arc::new(tokio::sync::Notify::new());
+            let factory_hold = hold.clone();
+            let base_app = crate::app_state::app_state_from_gcx(gcx).await;
+            let app = AppState {
+                tool_registry: Arc::new(
+                    crate::app_state::AppToolRegistry::with_fixture_tool_factory(
+                        base_app.gcx.clone(),
+                        Arc::new(move || {
+                            vec![Box::new(HeldWaitForAgents {
+                                inner: ToolTaskWaitForAgents::new(),
+                                hold: factory_hold.clone(),
+                            })
+                                as Box<dyn crate::tools::tools_description::Tool + Send>]
+                        }),
+                    ),
+                ),
+                ..base_app
+            };
+            let mut agent = ChatSession::new(agent_chat_id.clone());
+            agent.runtime.state = SessionState::Generating;
+            let agent_session = Arc::new(AMutex::new(agent));
+            app.chat
+                .sessions
+                .write()
+                .await
+                .insert(agent_chat_id, agent_session.clone());
+
+            let chat_id = format!("planner-wait-{index}");
+            let task_meta = TaskMeta {
+                task_id: task.id.clone(),
+                role: "planner".into(),
+                agent_id: None,
+                card_id: None,
+                planner_chat_id: Some(chat_id.clone()),
+            };
+            let mut planner = ChatSession::new(chat_id.clone());
+            planner.thread.task_meta = Some(task_meta.clone());
+            let session = Arc::new(AMutex::new(planner));
+            app.chat
+                .sessions
+                .write()
+                .await
+                .insert(chat_id.clone(), session.clone());
+            let ccx = Arc::new(AMutex::new(
+                crate::at_commands::at_commands::at_commands_new_from_app(
+                    app.clone(),
+                    4096,
+                    20,
+                    false,
+                    vec![],
+                    chat_id,
+                    None,
+                    "model".into(),
+                    Some(task_meta),
+                    None,
+                )
+                .await,
+            ));
+            let desc = ToolTaskWaitForAgents::new().tool_description();
+            let catalog = Arc::new(ToolCatalogSnapshot {
+                index: refact_runtime_api::ToolRegistryIndex {
+                    tools: vec![desc],
+                    mcp_lazy_mode: false,
+                    mcp_total_count: 0,
+                    mcp_tool_index: vec![],
+                },
+                policy: vec![],
+                aliases: refact_tool_api::ToolAliasRegistry::new(),
+            });
+            let tool_call_id = format!("wait-for-completion-{index}");
+            let tool_call = ChatToolCall {
+                id: tool_call_id.clone(),
+                index: Some(0),
+                tool_type: "function".into(),
+                function: crate::call_validation::ChatToolFunction {
+                    name: "wait_agents".into(),
+                    arguments: serde_json::json!({"wake_up_after_secs": 30}).to_string(),
+                },
+                extra_content: None,
+                started_at_ms: None,
+                completed_at_ms: None,
+            };
+            {
+                let mut locked = session.lock().await;
+                locked.turn_depth = 1;
+                locked.add_message(ChatMessage {
+                    role: "assistant".into(),
+                    tool_calls: Some(vec![tool_call.clone()]),
+                    ..Default::default()
+                });
+            }
+            let run = tokio::spawn(async move {
+                execute_single_tool(
+                    app,
+                    ccx,
+                    0,
+                    tool_call,
+                    catalog,
+                    None,
+                    Arc::new(Default::default()),
+                    true,
+                    1,
+                    "agent",
+                    None,
+                )
+                .await
+            });
+            tokio::time::timeout(std::time::Duration::from_secs(10), async {
+                loop {
+                    let registered = {
+                        let locked = session.lock().await;
+                        locked.runtime.waiting_interruptible
+                            && locked.waiting_for_card_ids == ["T-1"]
+                            && locked.wake_up_at.is_some()
+                    };
+                    if registered {
+                        break;
+                    }
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .expect("wait_agents did not register its interruptible wait");
+            let wake_up_at = session.lock().await.wake_up_at.clone();
+            agent_session.lock().await.runtime.state = SessionState::Completed;
+            session
+                .lock()
+                .await
+                .enqueue_delivery(PendingDelivery::with_id(
+                    "incoming",
+                    vec![ChatMessage {
+                        role: "user".into(),
+                        content: ChatContent::SimpleText("T-1 completed".into()),
+                        ..Default::default()
+                    }],
+                    push,
+                    "test",
+                    true,
+                ))
+                .unwrap();
+            let (_, corrected, messages, _) =
+                tokio::time::timeout(std::time::Duration::from_secs(10), run)
+                    .await
+                    .unwrap()
+                    .unwrap();
+            assert!(!corrected);
+            assert_eq!(messages.len(), 1);
+            assert_eq!(messages[0].role, "tool");
+            assert_eq!(messages[0].tool_call_id, tool_call_id);
+            assert_eq!(messages[0].tool_failed, Some(false));
+            let result: serde_json::Value =
+                serde_json::from_str(&messages[0].content.content_text_only()).unwrap();
+            assert_eq!(result["interrupted"], true);
+            assert!(result["reason"]
+                .as_str()
+                .unwrap()
+                .contains("message arrived"));
+
+            let mut locked = session.lock().await;
+            assert!(!locked.abort_flag.load(Ordering::SeqCst));
+            assert!(!locked.runtime.waiting_interruptible);
+            assert_eq!(locked.waiting_for_card_ids, ["T-1"]);
+            assert_eq!(locked.wake_up_at, wake_up_at);
+            for message in messages {
+                locked.add_message(message);
+            }
+            assert!(!locked.has_pending_tool_result_window());
+            assert_eq!(
+                locked.drain_pending_deliveries(),
+                (vec!["incoming".into()], true)
+            );
+            assert_eq!(locked.drain_pending_deliveries(), (vec![], false));
+            assert_eq!(locked.wake_up_at, wake_up_at);
+            assert_eq!(locked.waiting_for_card_ids, ["T-1"]);
+            assert!(locked
+                .messages
+                .iter()
+                .skip(2)
+                .any(|message| message.content.content_text_only().contains("T-1 completed")));
         }
     }
 

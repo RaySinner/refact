@@ -1,6 +1,6 @@
 [package]
 name = "refact-daemon"
-version = "8.9.2"
+version = "8.9.3"
 edition = "2021"
 
 [dependencies]

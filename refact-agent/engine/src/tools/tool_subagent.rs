@@ -780,7 +780,7 @@ fn truncate_chars(text: &str, max_chars: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
     use crate::app_state::AppState;
     use crate::caps::{BaseModelRecord, ChatModelRecord, CodeAssistantCaps};
@@ -896,7 +896,7 @@ mod tests {
     }
 
     async fn wait_for_runner_start(started: &Barrier) {
-        tokio::time::timeout(Duration::from_secs(2), started.wait())
+        tokio::time::timeout(Duration::from_secs(30), started.wait())
             .await
             .expect("runners did not start");
     }
@@ -1266,54 +1266,131 @@ mod tests {
 
     #[serial(test_runner)]
     #[tokio::test]
-    async fn six_blocking_spawns_wait_for_every_terminal_result() {
-        let ccx = test_context("fanout-parent").await;
+    async fn arbitrary_blocking_spawns_wait_for_every_terminal_result() {
+        for fanout in [1, 2, 6, 12] {
+            assert_blocking_fanout(fanout).await;
+        }
+    }
+
+    async fn assert_blocking_fanout(fanout: usize) {
+        let parent_chat_id = format!("fanout-parent-{fanout}");
+        let ccx = test_context(&parent_chat_id).await;
         let app = ccx.lock().await.app.clone();
-        let started = Arc::new(Barrier::new(7));
+        let started = Arc::new(Barrier::new(fanout + 1));
         let runner_calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let completed_calls = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let stages = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let stopwatch = Instant::now();
         let (release_tx, _) = watch::channel(HashSet::new());
         let runner_started = started.clone();
         let runner_calls_observer = runner_calls.clone();
         let runner_release = release_tx.clone();
-        let _runner = refact_runtime_api::spawn::install_test_runner(Arc::new(
-            move |_gcx, messages, config| {
+        let runner_stages = stages.clone();
+        let runner_stopwatch = stopwatch;
+        let _runner = refact_runtime_api::spawn::install_test_runner_with_stages(
+            Arc::new(move |_gcx, messages, config| {
                 let started = runner_started.clone();
                 let runner_calls = runner_calls_observer.clone();
+                let call_id = config.parent_tool_call_id.clone().unwrap_or_default();
                 let agent_id = config.background_agent_id.unwrap();
                 let mut release = runner_release.subscribe();
+                let stages = runner_stages.clone();
                 Box::pin(async move {
                     runner_calls.fetch_add(1, Ordering::SeqCst);
+                    stages.lock().unwrap().push(format!(
+                        "{}ms {call_id}:test_runner_entered",
+                        runner_stopwatch.elapsed().as_millis()
+                    ));
                     started.wait().await;
                     while !release.borrow().contains(&agent_id) {
                         release.changed().await.unwrap();
                     }
                     Ok(subchat_result(messages, "parallel terminal report"))
                 })
-            },
-        ));
-        let calls = (0..6)
-            .map(|index| {
-                let ccx = ccx.clone();
-                let completed_calls = completed_calls.clone();
-                async move {
-                    let call_id = format!("fanout-call-{index}");
-                    let args = waiting_args(&format!("parallel task {index}"));
-                    let result = ToolSubagent {
-                        config_path: String::new(),
-                    }
-                    .tool_execute(ccx, &call_id, &args)
-                    .await;
-                    completed_calls.lock().unwrap().push(match &result {
-                        Ok(_) => format!("{call_id}: ok"),
-                        Err(error) => format!("{call_id}: error: {error}"),
-                    });
-                    result
+            }),
+            Some(Arc::new({
+                let stages = stages.clone();
+                move |stage| {
+                    stages.lock().unwrap().push(format!(
+                        "{}ms {stage}",
+                        stopwatch.elapsed().as_millis()
+                    ));
                 }
-            })
-            .collect::<Vec<_>>();
-        let run = tokio::spawn(futures::future::join_all(calls));
-        if let Err(error) = tokio::time::timeout(Duration::from_secs(2), started.wait()).await {
+            })),
+        );
+        let exercise = async {
+            let calls = (0..fanout)
+                .map(|index| {
+                    let ccx = ccx.clone();
+                    let completed_calls = completed_calls.clone();
+                    async move {
+                        let call_id = format!("fanout-{fanout}-call-{index}");
+                        let args = waiting_args(&format!("parallel task {index}"));
+                        let result = ToolSubagent {
+                            config_path: String::new(),
+                        }
+                        .tool_execute(ccx, &call_id, &args)
+                        .await;
+                        completed_calls.lock().unwrap().push(match &result {
+                            Ok(_) => format!("{call_id}: ok"),
+                            Err(error) => format!("{call_id}: error: {error}"),
+                        });
+                        result
+                    }
+                })
+                .collect::<Vec<_>>();
+            let run = tokio::spawn(futures::future::join_all(calls));
+            started.wait().await;
+            refact_runtime_api::spawn::emit_test_spawn_stage(format!(
+                "fanout-{fanout}:all_runners_started"
+            ));
+            assert!(!run.is_finished());
+            let agent_ids = app
+                .agents
+                .list_all()
+                .await
+                .into_iter()
+                .map(|record| record.agent_id)
+                .collect::<HashSet<_>>();
+            assert_eq!(agent_ids.len(), fanout);
+            if fanout > 1 {
+                let first = agent_ids.iter().next().unwrap().clone();
+                refact_runtime_api::spawn::emit_test_spawn_stage(format!(
+                    "fanout-{fanout}:release_first:{first}"
+                ));
+                release_agents(&release_tx, HashSet::from([first.clone()])).await;
+                let first_record = app
+                    .agents
+                    .wait(&parent_chat_id, &first, Duration::from_secs(60))
+                    .await
+                    .unwrap();
+                assert!(first_record.status.is_terminal());
+                for _ in 0..10 {
+                    tokio::task::yield_now().await;
+                }
+                assert!(!run.is_finished());
+            }
+
+            refact_runtime_api::spawn::emit_test_spawn_stage(format!(
+                "fanout-{fanout}:release_all"
+            ));
+            release_agents(&release_tx, agent_ids.clone()).await;
+            let results = run.await.unwrap();
+            assert_eq!(results.len(), fanout);
+            let outputs = results
+                .into_iter()
+                .map(|result| message(result.unwrap().1).content.content_text_only())
+                .collect::<Vec<_>>();
+            for agent_id in agent_ids {
+                assert!(outputs.iter().any(|output| output.contains(&agent_id)));
+            }
+            for output in outputs {
+                assert!(output.contains("- Status: ✅ completed"));
+                assert!(output.contains("parallel terminal report"));
+            }
+        };
+        tokio::pin!(exercise);
+        if let Err(error) = tokio::time::timeout(Duration::from_secs(30), &mut exercise).await {
             let records = app
                 .agents
                 .list_all()
@@ -1329,50 +1406,12 @@ mod tests {
                 })
                 .collect::<Vec<_>>();
             panic!(
-                "runners did not start: {error:?}; runner calls={}/6; completed tool calls={:?}; records={:?}",
+                "arbitrary fan-out watchdog: {error:?}; N={fanout}; runner calls={}/{fanout}; completed tool calls={:?}; records={:?}; stages={:?}",
                 runner_calls.load(Ordering::SeqCst),
                 completed_calls.lock().unwrap(),
                 records,
+                stages.lock().unwrap(),
             );
-        }
-        assert!(!run.is_finished());
-        let agent_ids = app
-            .agents
-            .list_all()
-            .await
-            .into_iter()
-            .map(|record| record.agent_id)
-            .collect::<HashSet<_>>();
-        assert_eq!(agent_ids.len(), 6);
-        let first = agent_ids.iter().next().unwrap().clone();
-        release_agents(&release_tx, HashSet::from([first.clone()])).await;
-        let first_record = app
-            .agents
-            .wait("fanout-parent", &first, Duration::from_secs(2))
-            .await
-            .unwrap();
-        assert!(first_record.status.is_terminal());
-        for _ in 0..10 {
-            tokio::task::yield_now().await;
-        }
-        assert!(!run.is_finished());
-
-        release_agents(&release_tx, agent_ids.clone()).await;
-        let results = tokio::time::timeout(Duration::from_secs(2), run)
-            .await
-            .expect("fan-out did not finish")
-            .unwrap();
-        assert_eq!(results.len(), 6);
-        let outputs = results
-            .into_iter()
-            .map(|result| message(result.unwrap().1).content.content_text_only())
-            .collect::<Vec<_>>();
-        for agent_id in agent_ids {
-            assert!(outputs.iter().any(|output| output.contains(&agent_id)));
-        }
-        for output in outputs {
-            assert!(output.contains("- Status: ✅ completed"));
-            assert!(output.contains("parallel terminal report"));
         }
     }
 

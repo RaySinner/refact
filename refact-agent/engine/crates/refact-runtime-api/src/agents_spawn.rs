@@ -29,6 +29,22 @@ use crate::at_commands_ctx::MAX_SUBCHAT_DEPTH;
 const MAX_DIFF_SUMMARY_PATHSPECS: usize = 100;
 
 #[cfg(any(test, feature = "test-util"))]
+macro_rules! spawn_stage {
+    ($req:expr, $stage:literal) => {
+        crate::spawn::emit_test_spawn_stage(format!(
+            "{}:{}",
+            ($req).parent_tool_call_id.as_deref().unwrap_or("-"),
+            $stage
+        ));
+    };
+}
+
+#[cfg(not(any(test, feature = "test-util")))]
+macro_rules! spawn_stage {
+    ($req:expr, $stage:literal) => {};
+}
+
+#[cfg(any(test, feature = "test-util"))]
 pub use crate::spawn::{current_test_runner, install_test_runner, TestRunnerGuard};
 
 #[derive(Clone)]
@@ -55,6 +71,7 @@ pub async fn spawn_background_agent(
             MAX_SUBCHAT_DEPTH
         ));
     }
+    spawn_stage!(req, "spawn_requested");
     let child_uuid = Uuid::new_v4();
     let child_chat_id = format!("subchat-{}", child_uuid);
     let config_name = req.config_name.clone();
@@ -71,6 +88,7 @@ pub async fn spawn_background_agent(
         &child_uuid,
     )
     .await?;
+    spawn_stage!(req, "worktree_ready");
     let effective_worktree = spawned_worktree
         .as_ref()
         .map(|worktree| worktree.meta.clone())
@@ -186,6 +204,7 @@ pub async fn spawn_background_agent(
         }
     };
     config.model = req.model.clone();
+    spawn_stage!(req, "config_resolved");
 
     let messages = match build_messages(
         app.clone(),
@@ -202,6 +221,7 @@ pub async fn spawn_background_agent(
             return Err(error);
         }
     };
+    spawn_stage!(req, "messages_built");
 
     let (record, abort_flag, _) = match app
         .agents
@@ -238,6 +258,7 @@ pub async fn spawn_background_agent(
         .await?;
     let record = app.agents.get_any(&record.agent_id).await?;
     emit_background_agent_update(app.clone(), &record).await;
+    spawn_stage!(req, "registry_created");
 
     let agent_id = record.agent_id.clone();
     let handle_agent_id = agent_id.clone();
@@ -257,6 +278,7 @@ pub async fn spawn_background_agent(
         record.title,
         format_notice_files(&record.target_files),
     );
+    spawn_stage!(req, "scheduling_runner");
 
     tokio::spawn(async move {
         let agent_id_for_run = agent_id.clone();
@@ -294,7 +316,9 @@ pub async fn spawn_background_agent(
         };
         let _ = completion_tx.send(final_record);
     });
+    spawn_stage!(notice_req, "runner_scheduled");
     push_sibling_notice(&notice_app, &notice_agent_id, &notice_req, notice_text).await;
+    spawn_stage!(notice_req, "sibling_notices_delivered");
 
     Ok(SpawnHandle {
         agent_id: handle_agent_id,
@@ -343,6 +367,7 @@ async fn run_spawned_agent(
     abort_flag: Arc<AtomicBool>,
     spawned_worktree: Option<SpawnedWorktree>,
 ) -> BackgroundAgent {
+    spawn_stage!(req, "runner_entered");
     config.abort_flag = Some(abort_flag);
     config.background_agent_id = Some(agent_id.clone());
     config.chat_id = Some(stable_child_chat_id(&config, &child_chat_id));
@@ -405,12 +430,14 @@ async fn run_spawned_agent(
     if let Ok(record) = running.as_ref() {
         emit_background_agent_update(app.clone(), record).await;
     }
+    spawn_stage!(req, "running_marked");
 
     let scope_worktree = spawned_worktree
         .as_ref()
         .map(|worktree| &worktree.meta)
         .or(req.parent_worktree.as_ref());
     let dirty_baseline = collect_worktree_dirty_files(scope_worktree).await;
+    spawn_stage!(req, "dirty_baseline_collected");
 
     let result = run_background_subchat(app.clone(), messages, config).await;
     let final_record = match result {
@@ -461,6 +488,7 @@ async fn run_spawned_agent(
         }
         Err(error) => fallback_failed_record(agent_id, req.clone(), error),
     };
+    spawn_stage!(req, "terminal_recorded");
 
     push_sibling_notice(
         &app,

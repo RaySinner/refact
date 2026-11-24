@@ -1456,6 +1456,7 @@ mod tests {
 
     fn member(role: &str, status: Option<TeamStatus>) -> TeamMember {
         TeamMember {
+            role: role.into(),
             writes: Some(role == "coder"),
             member_status: status,
             ..Default::default()

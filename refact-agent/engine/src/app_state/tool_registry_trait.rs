@@ -425,6 +425,7 @@ impl ToolRegistry for AppToolRegistry {
             .downcast_ref::<Arc<AMutex<crate::at_commands::at_commands::AtCommandsContext>>>()
             .ok_or_else(|| "invalid AtCommandsContext passed to ToolRegistry".to_string())?
             .clone();
+        Self::ensure_tool_execution_allowed(&ccx, tool_name).await?;
         let lookup_span = perf_diagnostics::span(PerfComponent::ToolExecutionLookup, None, None);
         let catalog_desc = match Self::find_catalog_descriptor(catalog, tool_name) {
             Some(desc) => desc,
@@ -551,6 +552,7 @@ impl ToolRegistry for AppToolRegistry {
             .downcast_ref::<Arc<AMutex<crate::at_commands::at_commands::AtCommandsContext>>>()
             .ok_or_else(|| "invalid AtCommandsContext passed to ToolRegistry".to_string())?
             .clone();
+        Self::ensure_tool_execution_allowed(&ccx, tool_name).await?;
         let lookup_span = perf_diagnostics::span(PerfComponent::ToolExecutionLookup, None, None);
         let catalog_desc = match Self::find_catalog_descriptor(catalog, tool_name) {
             Some(desc) => desc,

@@ -434,7 +434,7 @@ pub async fn ensure_session_preamble_inner(
         let execution_scope = thread
             .worktree
             .as_ref()
-            .map(|worktree| worktree.root.to_string_lossy().into_owned());
+            .map(refact_worktrees::scope::tool_catalog_scope);
         let tools_for_mode = app
             .tool_registry
             .get_tools_index_for_mode_and_scope(

@@ -1822,7 +1822,7 @@ pub async fn handle_tool_decisions(
                         thread
                             .worktree
                             .as_ref()
-                            .map(|worktree| worktree.root.to_string_lossy().into_owned())
+                            .map(refact_worktrees::scope::tool_catalog_scope)
                             .as_deref(),
                     )
                     .await

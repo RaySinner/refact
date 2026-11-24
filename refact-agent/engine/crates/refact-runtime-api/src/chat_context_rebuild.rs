@@ -618,7 +618,7 @@ pub async fn rebuild_session(
         let scope = thread
             .worktree
             .as_ref()
-            .map(|w| w.root.to_string_lossy().into_owned());
+            .map(refact_worktrees::scope::tool_catalog_scope);
         let tools = match catalog {
             Some(catalog) => catalog.index.tools.clone(),
             None => app

@@ -198,7 +198,7 @@ fn execution_scope_for_thread(thread: &ThreadParams) -> Option<String> {
     thread
         .worktree
         .as_ref()
-        .map(|worktree| worktree.root.to_string_lossy().into_owned())
+        .map(refact_worktrees::scope::tool_catalog_scope)
 }
 
 pub async fn acquire_session_turn_tool_pool(
@@ -711,11 +711,7 @@ pub async fn process_tool_calls_once(
                 .acquire_tool_catalog(
                     mode_id,
                     model_id,
-                    thread
-                        .worktree
-                        .as_ref()
-                        .map(|worktree| worktree.root.to_string_lossy().into_owned())
-                        .as_deref(),
+                    execution_scope_for_thread(thread).as_deref(),
                 )
                 .await
         }
@@ -1434,11 +1430,7 @@ pub async fn execute_tools_with_session(
                 .acquire_tool_catalog(
                     mode_id,
                     model_id,
-                    thread
-                        .worktree
-                        .as_ref()
-                        .map(|worktree| worktree.root.to_string_lossy().into_owned())
-                        .as_deref(),
+                    execution_scope_for_thread(thread).as_deref(),
                 )
                 .await
         }
@@ -2484,11 +2476,7 @@ pub async fn execute_tools(
                 .acquire_tool_catalog(
                     mode_id,
                     model_id,
-                    thread
-                        .worktree
-                        .as_ref()
-                        .map(|worktree| worktree.root.to_string_lossy().into_owned())
-                        .as_deref(),
+                    execution_scope_for_thread(thread).as_deref(),
                 )
                 .await
         }

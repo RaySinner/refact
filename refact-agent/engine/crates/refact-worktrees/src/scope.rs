@@ -4,6 +4,22 @@ use crate::types::WorktreeMeta;
 
 pub use refact_core::worktree_meta::WorktreeThread;
 
+pub const ROOM_ADVISOR_WORKTREE_KIND: &str = "room_advisor";
+const ROOM_ADVISOR_CATALOG_PREFIX: &str = "room_advisor:";
+
+pub fn tool_catalog_scope(worktree: &WorktreeMeta) -> String {
+    let root = worktree.root.to_string_lossy();
+    if worktree.kind == ROOM_ADVISOR_WORKTREE_KIND {
+        format!("{ROOM_ADVISOR_CATALOG_PREFIX}{root}")
+    } else {
+        root.into_owned()
+    }
+}
+
+pub fn is_room_advisor_catalog_scope(scope: &str) -> bool {
+    scope.starts_with(ROOM_ADVISOR_CATALOG_PREFIX)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScopedPath {
     pub path: PathBuf,
@@ -45,6 +61,14 @@ impl ExecutionScope {
 
     pub fn is_enforced(&self) -> bool {
         self.worktree.enforce
+    }
+
+    pub fn is_room_advisor(&self) -> bool {
+        self.worktree.kind == ROOM_ADVISOR_WORKTREE_KIND
+    }
+
+    pub fn catalog_scope(&self) -> String {
+        tool_catalog_scope(&self.worktree)
     }
 
     pub fn worktree(&self) -> &WorktreeMeta {
@@ -348,6 +372,27 @@ mod tests {
         assert_eq!(scope.effective_root(), root.as_path());
         assert_eq!(scope.effective_project_dirs(), vec![root]);
         assert_eq!(scope.repo_root(), repo.as_path());
+    }
+
+    #[test]
+    fn room_advisor_scope_uses_writer_root_without_merge_branch() {
+        let (_temp, root, source, repo, _outside) = setup_dirs();
+        let mut worktree = make_scope(&root, &source, &repo).worktree().clone();
+        worktree.kind = ROOM_ADVISOR_WORKTREE_KIND.to_string();
+        worktree.branch = None;
+        let scope = ExecutionScope::from_worktree(&worktree);
+
+        assert!(scope.is_room_advisor());
+        assert_eq!(scope.effective_root(), root.as_path());
+        assert!(is_room_advisor_catalog_scope(&scope.catalog_scope()));
+        assert_eq!(scope.worktree().branch, None);
+        assert_eq!(
+            scope
+                .resolve_existing_path(Path::new("src/main.rs"))
+                .unwrap()
+                .path,
+            root.join("src").join("main.rs")
+        );
     }
 
     #[test]

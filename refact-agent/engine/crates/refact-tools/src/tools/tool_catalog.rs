@@ -11,9 +11,7 @@ use refact_runtime_api::global_context::GlobalContext;
 use refact_runtime_api::integr_abstract::IntegrationTrait;
 use refact_runtime_api::integrations_runtime::load_integrations;
 
-use crate::tools::tools_description::{
-    Tool, ToolDesc, ToolGroup, ToolGroupCategory, ToolSourceType,
-};
+use crate::tools::tools_description::{Tool, ToolDesc, ToolGroup, ToolGroupCategory, ToolSourceType};
 
 /// When MCP tool count exceeds this threshold, lazy loading activates.
 /// The full MCP schemas are replaced by two fixed proxy tools:
@@ -25,6 +23,63 @@ pub const MCP_LAZY_THRESHOLD: usize = 15;
 
 pub type LoadedIntegrations = indexmap::IndexMap<String, Box<dyn IntegrationTrait + Send + Sync>>;
 
+pub fn room_read_only_tool_allowed(tool_name: &str) -> bool {
+    matches!(
+        tool_name,
+        "set_trajectory_label"
+            | "codegraph_overview"
+            | "code_health"
+            | "git_risk"
+            | "code_why"
+            | "code_duplication"
+            | "dead_code"
+            | "security_scan"
+            | "pr_blast"
+            | "code_map"
+            | "tree"
+            | "cat"
+            | "glob"
+            | "search_pattern"
+            | "search_symbol_definition"
+            | "search_semantic"
+            | "knowledge"
+            | "agents_overview"
+            | "agent_message"
+            | "progress_report"
+            | "agent_list"
+            | "agent_status"
+            | "agent_wait"
+            | "agent_result"
+            | "agent_finish"
+            | "task_mem_search"
+            | "doc_list"
+            | "doc_get"
+            | "get_plan"
+            | "get_goal"
+            | "agent_ask_planner"
+            | "card_comment_add"
+            | "card_comment_list"
+    )
+}
+
+pub fn retain_room_read_only_tools(tools: &mut Vec<Box<dyn Tool + Send>>) {
+    tools.retain(|tool| room_read_only_tool_allowed(&tool.tool_description().name));
+}
+
+pub fn room_read_only_tool_error(
+    execution_scope: Option<&refact_worktrees::scope::ExecutionScope>,
+    tool_name: &str,
+) -> Option<String> {
+    let scope = execution_scope.filter(|scope| scope.is_room_advisor())?;
+    if room_read_only_tool_allowed(tool_name) {
+        return None;
+    }
+    Some(format!(
+        "Tool '{tool_name}' is denied in the internal room advisor read-only scope '{}'. Use read/search/review tools or ask the writer to make changes.",
+        scope.effective_root().display()
+    ))
+}
+
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 struct IntegrationToolsCacheKey {
     config_dir: PathBuf,
@@ -35,8 +90,7 @@ struct IntegrationToolsCacheKey {
 struct IntegrationToolsCache {
     integrations: tokio::sync::RwLock<HashMap<IntegrationToolsCacheKey, Arc<LoadedIntegrations>>>,
     yaml_errors: tokio::sync::RwLock<HashMap<IntegrationToolsCacheKey, Arc<Vec<YamlError>>>>,
-    build_locks:
-        tokio::sync::Mutex<HashMap<IntegrationToolsCacheKey, Arc<tokio::sync::Mutex<()>>>>,
+    build_locks: tokio::sync::Mutex<HashMap<IntegrationToolsCacheKey, Arc<tokio::sync::Mutex<()>>>>,
 }
 
 impl IntegrationToolsCache {
@@ -375,4 +429,80 @@ pub async fn get_integration_tools(gcx: Arc<GlobalContext>) -> Vec<ToolGroup> {
     span.finish_tool(PerfOutcome::Success, 1, tool_groups.len() as u64, None);
 
     tool_groups
+}
+
+#[cfg(test)]
+mod room_read_only_tests {
+    use super::*;
+    use refact_worktrees::scope::{ExecutionScope, ROOM_ADVISOR_WORKTREE_KIND};
+    use refact_worktrees::types::WorktreeMeta;
+
+    fn advisor_scope() -> ExecutionScope {
+        ExecutionScope::from_worktree(&WorktreeMeta {
+            id: "advisor".to_string(),
+            kind: ROOM_ADVISOR_WORKTREE_KIND.to_string(),
+            root: PathBuf::from("writer"),
+            source_workspace_root: PathBuf::from("source"),
+            repo_root: PathBuf::from("source"),
+            branch: None,
+            base_branch: None,
+            base_commit: None,
+            task_id: Some("task".to_string()),
+            card_id: Some("card".to_string()),
+            agent_id: Some("advisor".to_string()),
+            enforce: true,
+        })
+    }
+
+    #[test]
+    fn room_read_only_allows_read_search_and_review_tools() {
+        for name in [
+            "cat",
+            "search_pattern",
+            "code_health",
+            "pr_blast",
+            "agent_finish",
+        ] {
+            assert!(room_read_only_tool_allowed(name), "{name}");
+            assert_eq!(
+                room_read_only_tool_error(Some(&advisor_scope()), name),
+                None
+            );
+        }
+    }
+
+    #[test]
+    fn room_read_only_denies_every_write_channel() {
+        for name in [
+            "apply_patch",
+            "create_textdoc",
+            "update_textdoc",
+            "rm",
+            "mv",
+            "shell",
+            "process_start",
+            "process_write_stdin",
+            "task_verify_card",
+            "merge_agent",
+            "agent_diff",
+            "subagent",
+            "mcp_call",
+        ] {
+            let error = room_read_only_tool_error(Some(&advisor_scope()), name).unwrap();
+            assert!(error.contains("read-only"), "{name}: {error}");
+        }
+    }
+
+    #[test]
+    fn room_read_only_does_not_change_writer_or_subagent_scopes() {
+        let mut scope = advisor_scope().worktree().clone();
+        scope.kind = "task_agent".to_string();
+        let writer = ExecutionScope::from_worktree(&scope);
+
+        assert_eq!(
+            room_read_only_tool_error(Some(&writer), "apply_patch"),
+            None
+        );
+        assert_eq!(room_read_only_tool_error(None, "shell"), None);
+    }
 }

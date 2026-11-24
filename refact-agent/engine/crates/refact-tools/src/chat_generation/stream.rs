@@ -939,7 +939,7 @@ pub async fn run_llm_generation(
     let execution_scope = thread
         .worktree
         .as_ref()
-        .map(|worktree| worktree.root.to_string_lossy().into_owned());
+        .map(refact_worktrees::scope::tool_catalog_scope);
     let existing_catalog = {
         let session = session_arc.lock().await;
         session.tool_catalog.clone()

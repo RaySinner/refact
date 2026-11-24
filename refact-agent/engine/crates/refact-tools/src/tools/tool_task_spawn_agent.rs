@@ -312,6 +312,7 @@ pub async fn resolve_agent_model(
 pub struct PreparedWorktree {
     pub meta: WorktreeMeta,
     pub branch_was_created: bool,
+    pub owns_worktree: bool,
     pub spawned_with_dirty_tree: bool,
     pub base_branch_mismatch_warning: Option<String>,
 }
@@ -338,6 +339,9 @@ impl PreparedWorktree {
     }
 
     pub async fn cleanup_unlinked(self, cache_dir: PathBuf) {
+        if !self.owns_worktree {
+            return;
+        }
         if let Ok(service) =
             WorktreeService::new_async(cache_dir, self.meta.source_workspace_root.clone()).await
         {
@@ -375,6 +379,64 @@ impl PreparedWorktree {
                 .unwrap_or_else(|| "<unknown>".to_string())
         );
     }
+}
+
+pub fn prepare_room_advisor_worktree(
+    card: &BoardCard,
+    role: &str,
+    task_id: &str,
+    agent_id: &str,
+    workspace_root: &Path,
+    planner_worktree: Option<&WorktreeMeta>,
+) -> Result<Option<PreparedWorktree>, String> {
+    let Some(member) = card.team_members.iter().find(|member| member.role == role) else {
+        return Ok(None);
+    };
+    if member.writes() {
+        return Ok(None);
+    }
+    let writer_root = card
+        .team_members
+        .iter()
+        .find(|member| member.writes() && member.agent_worktree.is_some())
+        .and_then(|member| member.agent_worktree.as_deref())
+        .map(PathBuf::from)
+        .ok_or_else(|| {
+            "Internal room advisor requires the writer's active worktree; spawn the writer first"
+                .to_string()
+        })?;
+    if !writer_root.is_dir() {
+        return Err(format!(
+            "Internal room advisor cannot read missing writer worktree '{}'",
+            writer_root.display()
+        ));
+    }
+    let source_workspace_root = planner_worktree
+        .map(|worktree| worktree.source_workspace_root.clone())
+        .unwrap_or_else(|| workspace_root.to_path_buf());
+    let repo_root = planner_worktree
+        .map(|worktree| worktree.repo_root.clone())
+        .unwrap_or_else(|| workspace_root.to_path_buf());
+    Ok(Some(PreparedWorktree {
+        meta: WorktreeMeta {
+            id: format!("room-advisor-{agent_id}"),
+            kind: refact_worktrees::scope::ROOM_ADVISOR_WORKTREE_KIND.to_string(),
+            root: writer_root,
+            source_workspace_root,
+            repo_root,
+            branch: None,
+            base_branch: None,
+            base_commit: None,
+            task_id: Some(task_id.to_string()),
+            card_id: Some(card.id.clone()),
+            agent_id: Some(agent_id.to_string()),
+            enforce: true,
+        },
+        branch_was_created: false,
+        owns_worktree: false,
+        spawned_with_dirty_tree: false,
+        base_branch_mismatch_warning: None,
+    }))
 }
 
 pub fn current_branch_for_workspace(
@@ -613,6 +675,7 @@ pub async fn prepare_agent_worktree_with_base_and_suffix(
     Ok(PreparedWorktree {
         meta: created.worktree.meta,
         branch_was_created: created.branch_was_created,
+        owns_worktree: true,
         spawned_with_dirty_tree: created.dirty_source_warning,
         base_branch_mismatch_warning,
     })
@@ -1426,18 +1489,30 @@ impl Tool for ToolTaskSpawnAgent {
             &task_meta,
         );
         diagnostics.transition("worktree_prepare", "worktree_prepare_started");
-        let prepared_worktree = prepare_agent_worktree_with_base_and_suffix(
-            &ctx,
-            &task_meta,
+        let prepared_worktree = match prepare_room_advisor_worktree(
+            card,
+            &role,
             &task_id,
             &agent_id,
-            card_id,
-            &agent_chat_id,
-            base_branch,
-            base_commit,
-            None,
-        )
-        .await?;
+            workspace_root,
+            planner_worktree.as_ref(),
+        )? {
+            Some(worktree) => worktree,
+            None => {
+                prepare_agent_worktree_with_base_and_suffix(
+                    &ctx,
+                    &task_meta,
+                    &task_id,
+                    &agent_id,
+                    card_id,
+                    &agent_chat_id,
+                    base_branch,
+                    base_commit,
+                    None,
+                )
+                .await?
+            }
+        };
         diagnostics.transition("worktree_prepare", "worktree_ready");
 
         let dirty_tree_warning = prepared_worktree.spawned_with_dirty_tree;
@@ -1499,10 +1574,12 @@ impl Tool for ToolTaskSpawnAgent {
         // The tool names this member actually gets, recorded on the card so peers can see what
         // their neighbours are able to do. Resolved from the member's own mode, not from the
         // template it was spawned from: the allowed set is a per-spawn fact.
+        let catalog_scope = refact_worktrees::scope::tool_catalog_scope(&prepared_worktree.meta);
         let member_tools: Vec<String> = tool
             .tool_registry
-            .get_tools_for_mode("task_agent", Some(&model))
+            .get_tools_index_for_mode_and_scope("task_agent", Some(&model), Some(&catalog_scope))
             .await
+            .tools
             .into_iter()
             .map(|description| description.name)
             .collect();
@@ -1514,8 +1591,16 @@ impl Tool for ToolTaskSpawnAgent {
                 .to_string(),
         );
         let worktree_name = Some(prepared_worktree.worktree_name());
-        let base_branch_from_prep = prepared_worktree.meta.base_branch.clone();
-        let base_commit_from_prep = prepared_worktree.meta.base_commit.clone();
+        let base_branch_from_prep = prepared_worktree
+            .meta
+            .base_branch
+            .clone()
+            .or_else(|| card.base_branch.clone());
+        let base_commit_from_prep = prepared_worktree
+            .meta
+            .base_commit
+            .clone()
+            .or_else(|| card.base_commit.clone());
 
         let board_update_result =
             storage::update_board_atomic_for_ctx(&ctx, &task_id, move |board| {
@@ -1754,6 +1839,125 @@ The agent will call `agent_finish()` when done. Use `check_agents` to monitor pr
 
     fn tool_depends_on(&self) -> Vec<String> {
         vec![]
+    }
+}
+
+#[cfg(test)]
+mod room_advisor_scope_tests {
+    use super::*;
+    use refact_tasks::types::TeamMember;
+
+    fn room_card(writer_root: &Path) -> BoardCard {
+        let mut card: BoardCard = serde_json::from_value(json!({
+            "id": "T-1",
+            "title": "Room card",
+            "column": "doing",
+            "assignee": "writer-1",
+            "agent_chat_id": "writer-chat",
+            "created_at": "2026-01-01T00:00:00Z",
+            "started_at": "2026-01-01T00:00:00Z",
+            "completed_at": null
+        }))
+        .unwrap();
+        card.team_members = vec![
+            TeamMember {
+                role: "coder".to_string(),
+                agent_id: Some("writer-1".to_string()),
+                agent_chat_id: Some("writer-chat".to_string()),
+                agent_branch: Some("writer-branch".to_string()),
+                agent_worktree: Some(writer_root.to_string_lossy().into_owned()),
+                writes: Some(true),
+                ..Default::default()
+            },
+            TeamMember {
+                role: "reviewer".to_string(),
+                writes: Some(false),
+                ..Default::default()
+            },
+        ];
+        card
+    }
+
+    #[tokio::test]
+    async fn advisor_reads_live_writer_root_and_never_owns_cleanup() {
+        let temp = tempfile::tempdir().unwrap();
+        let writer = temp.path().join("writer");
+        std::fs::create_dir_all(&writer).unwrap();
+        let source = temp.path().join("source");
+        std::fs::create_dir_all(&source).unwrap();
+        let card = room_card(&writer);
+        let prepared =
+            prepare_room_advisor_worktree(&card, "reviewer", "task-1", "advisor-1", &source, None)
+                .unwrap()
+                .unwrap();
+
+        assert_eq!(prepared.meta.root, writer);
+        assert_eq!(prepared.meta.branch, None);
+        assert!(!prepared.owns_worktree);
+        assert_eq!(
+            prepared.meta.kind,
+            refact_worktrees::scope::ROOM_ADVISOR_WORKTREE_KIND
+        );
+        std::fs::write(writer.join("current.rs"), "uncommitted writer change").unwrap();
+        let scope = refact_worktrees::scope::ExecutionScope::from_worktree(&prepared.meta);
+        let resolved = scope
+            .resolve_existing_path(Path::new("current.rs"))
+            .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(resolved.path).unwrap(),
+            "uncommitted writer change"
+        );
+
+        prepared.cleanup_unlinked(temp.path().join("cache")).await;
+        assert!(writer.join("current.rs").exists());
+    }
+
+    #[test]
+    fn writer_and_single_agent_keep_owned_worktree_preparation() {
+        let temp = tempfile::tempdir().unwrap();
+        let writer = temp.path().join("writer");
+        std::fs::create_dir_all(&writer).unwrap();
+        let card = room_card(&writer);
+
+        assert!(prepare_room_advisor_worktree(
+            &card,
+            "coder",
+            "task-1",
+            "writer-2",
+            temp.path(),
+            None,
+        )
+        .unwrap()
+        .is_none());
+        let mut single = card.clone();
+        single.team_members.clear();
+        assert!(prepare_room_advisor_worktree(
+            &single,
+            "coder",
+            "task-1",
+            "writer-2",
+            temp.path(),
+            None,
+        )
+        .unwrap()
+        .is_none());
+    }
+
+    #[test]
+    fn advisor_fails_closed_when_writer_root_is_not_active() {
+        let temp = tempfile::tempdir().unwrap();
+        let card = room_card(&temp.path().join("missing"));
+
+        let error = prepare_room_advisor_worktree(
+            &card,
+            "reviewer",
+            "task-1",
+            "advisor-1",
+            temp.path(),
+            None,
+        )
+        .unwrap_err();
+        assert!(error.contains("writer worktree"));
     }
 }
 

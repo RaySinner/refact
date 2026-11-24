@@ -751,6 +751,59 @@ mod tests {
 
     #[serial(runtime_settings)]
     #[tokio::test]
+    async fn tool_task_spawn_agent_room_read_only_catalog_filters_write_channels() {
+        let _env = ToolCatalogSnapshotsEnvGuard::enable();
+        let gcx = crate::global_context::tests::make_test_gcx().await;
+        let builds = Arc::new(AtomicUsize::new(0));
+        let registry = fixture_registry_with_names(
+            gcx,
+            builds,
+            vec![
+                "cat".to_string(),
+                "apply_patch".to_string(),
+                "shell".to_string(),
+                "search_pattern".to_string(),
+                "process_start".to_string(),
+            ],
+        );
+
+        let advisor = registry
+            .snapshot_for_mode_with_scope_for_test(
+                "task_agent",
+                Some("provider/model"),
+                Some("room_advisor:/workspace/writer".to_string()),
+            )
+            .await;
+        let writer = registry
+            .snapshot_for_mode_with_scope_for_test(
+                "task_agent",
+                Some("provider/model"),
+                Some("/workspace/writer".to_string()),
+            )
+            .await;
+
+        let advisor_names = advisor
+            .index
+            .tools
+            .iter()
+            .map(|tool| tool.name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(advisor_names, vec!["cat", "search_pattern"]);
+        assert!(writer
+            .index
+            .tools
+            .iter()
+            .any(|tool| tool.name == "apply_patch"));
+        assert!(writer.index.tools.iter().any(|tool| tool.name == "shell"));
+        assert!(writer
+            .index
+            .tools
+            .iter()
+            .any(|tool| tool.name == "process_start"));
+    }
+
+    #[serial(runtime_settings)]
+    #[tokio::test]
     async fn turn_tool_pool_unique_batch_uses_one_mutable_vector() {
         let _env = ToolCatalogSnapshotsEnvGuard::enable();
         let gcx = crate::global_context::tests::make_test_gcx().await;

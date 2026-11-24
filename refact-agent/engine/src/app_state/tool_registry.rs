@@ -88,10 +88,14 @@ impl AppToolRegistry {
         gcx: SharedGlobalContext,
         mode: &str,
         model_id: Option<&str>,
+        execution_scope: Option<&str>,
     ) -> ToolCatalogSnapshot {
-        let tools = crate::tools::tools_list::apply_mcp_lazy_filter(
+        let mut tools = crate::tools::tools_list::apply_mcp_lazy_filter(
             self.tools_for_mode(gcx, mode, model_id).await,
         );
+        if execution_scope.is_some_and(refact_worktrees::scope::is_room_advisor_catalog_scope) {
+            crate::tools::tools_list::retain_room_read_only_tools(&mut tools.tools);
+        }
         let policy = crate::tools::tools_list::catalog_policy_for_tools(&tools.tools);
         let descriptions = tools
             .tools
@@ -131,7 +135,21 @@ impl AppToolRegistry {
             .await
             .execution_scope
             .as_ref()
-            .map(|scope| scope.effective_root().to_string_lossy().to_string())
+            .map(|scope| scope.catalog_scope())
+    }
+
+    pub(super) async fn ensure_tool_execution_allowed(
+        ccx: &Arc<AMutex<crate::at_commands::at_commands::AtCommandsContext>>,
+        tool_name: &str,
+    ) -> Result<(), String> {
+        let scope = ccx.lock().await.execution_scope.clone();
+        let resolved = crate::llm::adapters::claude_code_compat::cc_resolve_tool_name(tool_name);
+        if let Some(error) =
+            crate::tools::tools_list::room_read_only_tool_error(scope.as_ref(), resolved.as_str())
+        {
+            return Err(error);
+        }
+        Ok(())
     }
 
     pub(super) async fn fresh_mutable_tools(
@@ -177,7 +195,9 @@ impl AppToolRegistry {
         pool
     }
 
-    pub(super) fn app_turn_tool_pool<'a>(pool: &'a TurnToolPool) -> Result<&'a AppTurnToolPool, String> {
+    pub(super) fn app_turn_tool_pool<'a>(
+        pool: &'a TurnToolPool,
+    ) -> Result<&'a AppTurnToolPool, String> {
         pool.downcast_ref::<AppTurnToolPool>()
             .ok_or_else(|| "invalid TurnToolPool passed to AppToolRegistry".to_string())
     }
@@ -277,7 +297,10 @@ impl AppToolRegistry {
     ) -> Arc<ToolCatalogSnapshot> {
         if !Self::snapshot_cache_enabled() {
             let span = perf_diagnostics::span(PerfComponent::ToolCatalogBuild, None, None);
-            let snapshot = Arc::new(self.build_snapshot(gcx, mode, model_id).await);
+            let snapshot = Arc::new(
+                self.build_snapshot(gcx, mode, model_id, execution_scope.as_deref())
+                    .await,
+            );
             span.finish_tool(
                 PerfOutcome::Success,
                 1,
@@ -287,7 +310,7 @@ impl AppToolRegistry {
             return snapshot;
         }
         let key = self
-            .catalog_key_with_scope(gcx.clone(), mode, model_id, execution_scope)
+            .catalog_key_with_scope(gcx.clone(), mode, model_id, execution_scope.clone())
             .await;
         if let Some(snapshot) = gcx.tool_catalog_cache.get(&key).await {
             return snapshot;
@@ -298,7 +321,10 @@ impl AppToolRegistry {
             return snapshot;
         }
         let span = perf_diagnostics::span(PerfComponent::ToolCatalogBuild, None, None);
-        let snapshot = Arc::new(self.build_snapshot(gcx.clone(), mode, model_id).await);
+        let snapshot = Arc::new(
+            self.build_snapshot(gcx.clone(), mode, model_id, execution_scope.as_deref())
+                .await,
+        );
         span.finish_tool(
             PerfOutcome::Success,
             1,
@@ -335,4 +361,3 @@ impl AppToolRegistry {
             .await
     }
 }
-

@@ -2,6 +2,8 @@ use crate::{EnvironmentStatus, RequestFingerprint, StreamFailure, UhpErrorObject
 
 #[derive(Debug, thiserror::Error)]
 pub enum UhpError {
+    #[error("invalid durable UHP binding: {0}")]
+    InvalidBinding(String),
     #[error("invalid UHP base URL: {0}")]
     InvalidBaseUrl(String),
     #[error("Idempotency-Key must be non-empty ASCII without control characters")]

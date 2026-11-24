@@ -546,7 +546,34 @@ pub struct UhpDeliveryState {
     #[serde(default)]
     pub source_digest: Option<String>,
     #[serde(default)]
+    pub environment_version: Option<u64>,
+    #[serde(default)]
     pub error_class: Option<String>,
     pub created_at: u64,
     pub updated_at: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum EvidenceCheckStatus {
+    Pass,
+    Fail,
+    Skip,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct EvidenceCheck {
+    pub name: String,
+    pub status: EvidenceCheckStatus,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct ExternalEvidenceRecord {
+    pub smoke_suite_id: String,
+    pub server_version: String,
+    pub cli_version: String,
+    pub model_version: String,
+    pub checks: Vec<EvidenceCheck>,
+    pub generated_at: u64,
+    pub sanitized_report_location: String,
 }

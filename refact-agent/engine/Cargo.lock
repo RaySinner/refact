@@ -4866,6 +4866,7 @@ dependencies = [
  "refact-stats",
  "refact-tasks",
  "refact-tool-api",
+ "refact-uhp",
  "refact-vecdb",
  "refact-worktrees",
  "refact-yaml-configs",

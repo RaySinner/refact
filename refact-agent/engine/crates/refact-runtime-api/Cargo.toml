@@ -40,6 +40,7 @@ refact-pricing-core = { path = "../refact-pricing-core" }
 refact-stats = { path = "../refact-stats" }
 refact-integrations = { path = "../refact-integrations" }
 refact-room = { path = "../refact-room" }
+refact-uhp = { path = "../refact-uhp" }
 rmcp.workspace = true
 sse-stream.workspace = true
 shell-words.workspace = true

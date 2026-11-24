@@ -50,6 +50,7 @@ fn production_dependencies_stay_within_standalone_protocol_boundary() {
     assert_production_dependency_boundary(manifest);
 
     let source = [
+        include_str!("../src/bindings.rs"),
         include_str!("../src/lib.rs"),
         include_str!("../src/client.rs"),
         include_str!("../src/environment.rs"),

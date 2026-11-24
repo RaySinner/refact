@@ -328,6 +328,11 @@ impl CreateResponse {
         self
     }
 
+    pub fn streaming(mut self) -> Self {
+        self.stream = true;
+        self
+    }
+
     pub fn max_step(mut self, max_step: u64) -> Self {
         self.max_step = Some(max_step);
         self
@@ -354,6 +359,10 @@ impl CreateResponse {
 
     pub fn harness_id(&self) -> &str {
         &self.metadata.harness_id
+    }
+
+    pub fn is_streaming(&self) -> bool {
+        self.stream
     }
 
     pub fn fingerprint(&self, scope: &RequestScope) -> Result<RequestFingerprint, UhpError> {
@@ -384,11 +393,15 @@ impl CreateResponse {
         Ok(RequestFingerprint(hex::encode(Sha256::digest(bytes))))
     }
 
-    pub(crate) fn validate(&self) -> Result<(), UhpError> {
-        if self.stream || !self.store {
+    pub(crate) fn validate(&self, streaming: bool) -> Result<(), UhpError> {
+        if self.stream != streaming || !self.store {
             return Err(UhpError::InvalidResponse {
                 operation: "validate response request",
-                message: "only non-streaming stored response requests are supported".to_string(),
+                message: if streaming {
+                    "streaming recovery requires stream=true and store=true".to_string()
+                } else {
+                    "non-streaming response reads require stream=false and store=true".to_string()
+                },
             });
         }
         Ok(())

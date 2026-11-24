@@ -1,4 +1,4 @@
-use crate::{RequestFingerprint, UhpErrorObject};
+use crate::{RequestFingerprint, StreamFailure, UhpErrorObject};
 
 #[derive(Debug, thiserror::Error)]
 pub enum UhpError {
@@ -40,4 +40,6 @@ pub enum UhpError {
         expected: RequestFingerprint,
         actual: RequestFingerprint,
     },
+    #[error(transparent)]
+    Stream(#[from] StreamFailure),
 }

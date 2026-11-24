@@ -7,7 +7,8 @@ use serde::de::DeserializeOwned;
 
 use crate::{
     ConformanceClass, CreateResponse, Discovery, ErrorEnvelope, IdempotencyKey, RequestFingerprint,
-    RequestScope, Response, UhpError, IDEMPOTENCY_KEY_HEADER, UHP_VERSION, UHP_VERSION_HEADER,
+    RequestScope, RecoveryBinding, Response, ResponseStream, UhpError, IDEMPOTENCY_KEY_HEADER,
+    UHP_VERSION, UHP_VERSION_HEADER,
 };
 
 #[derive(Clone)]
@@ -61,21 +62,72 @@ impl Client {
         idempotency_key: &IdempotencyKey,
         scope: &RequestScope,
     ) -> Result<Response, UhpError> {
-        request.validate()?;
+        request.validate(false)?;
         let fingerprint = request.fingerprint(scope)?;
         self.register_idempotency(idempotency_key, fingerprint)?;
-        let body = serde_json::to_vec(request).map_err(|source| UhpError::Schema {
-            operation: "serialize response request",
-            source,
-        })?;
-        let builder = self
-            .authenticated(Method::POST, self.endpoint(&["v1", "responses"])?)
-            .header(IDEMPOTENCY_KEY_HEADER, idempotency_key.as_str())
-            .header(reqwest::header::CONTENT_TYPE, "application/json")
-            .body(body);
+        let builder = self.response_request(request, idempotency_key)?;
         let response: Response = self.execute(builder, "create response").await?;
         validate_response(&response, "create response")?;
         Ok(response)
+    }
+
+    pub async fn create_response_stream(
+        &self,
+        request: &CreateResponse,
+        idempotency_key: &IdempotencyKey,
+        scope: &RequestScope,
+    ) -> Result<ResponseStream, UhpError> {
+        request.validate(true)?;
+        let fingerprint = request.fingerprint(scope)?;
+        self.register_idempotency(idempotency_key, fingerprint)?;
+        let builder = self.response_request(request, idempotency_key)?;
+        let response = builder.send().await.map_err(|source| UhpError::Transport {
+            operation: "create streaming response",
+            source,
+        })?;
+        validate_version(response.headers())?;
+        if !response.status().is_success() {
+            return Err(decode_server_error(response).await?);
+        }
+        let content_type = response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default();
+        if !content_type.starts_with("text/event-stream") {
+            return Err(UhpError::InvalidResponse {
+                operation: "create streaming response",
+                message: "expected Content-Type text/event-stream".to_string(),
+            });
+        }
+        Ok(ResponseStream::new(response))
+    }
+
+    pub async fn recover_response(
+        &self,
+        request: &CreateResponse,
+        idempotency_key: &IdempotencyKey,
+        scope: &RequestScope,
+        binding: &RecoveryBinding,
+    ) -> Result<Response, UhpError> {
+        let actual = request.fingerprint(scope)?;
+        if actual != binding.request_fingerprint {
+            return Err(UhpError::FingerprintConflict {
+                expected: binding.request_fingerprint.clone(),
+                actual,
+            });
+        }
+        self.register_idempotency(idempotency_key, binding.request_fingerprint.clone())?;
+        if let Some(response_id) = &binding.response_id {
+            return self.get_response(response_id).await;
+        }
+        if request.is_streaming() {
+            let stream = self
+                .create_response_stream(request, idempotency_key, scope)
+                .await?;
+            return Ok(stream.complete().await?);
+        }
+        self.create_response(request, idempotency_key, scope).await
     }
 
     pub async fn get_response(&self, response_id: &str) -> Result<Response, UhpError> {
@@ -86,6 +138,49 @@ impl Client {
         let response: Response = self.execute(request, "get stored response").await?;
         validate_response(&response, "get stored response")?;
         Ok(response)
+    }
+
+    pub async fn cancel_response(&self, response_id: &str) -> Result<Response, UhpError> {
+        let request = self.authenticated(
+            Method::POST,
+            self.endpoint(&["v1", "responses", response_id, "cancel"])?,
+        );
+        let response: Response = self.execute(request, "cancel response").await?;
+        validate_response(&response, "cancel response")?;
+        Ok(response)
+    }
+
+    pub async fn cancel_session(&self, session_id: &str) -> Result<(), UhpError> {
+        let request = self.authenticated(
+            Method::POST,
+            self.endpoint(&["v1", "sessions", session_id, "cancel"])?,
+        );
+        let response = request.send().await.map_err(|source| UhpError::Transport {
+            operation: "cancel session",
+            source,
+        })?;
+        validate_version(response.headers())?;
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            Err(decode_server_error(response).await?)
+        }
+    }
+
+    fn response_request(
+        &self,
+        request: &CreateResponse,
+        idempotency_key: &IdempotencyKey,
+    ) -> Result<RequestBuilder, UhpError> {
+        let body = serde_json::to_vec(request).map_err(|source| UhpError::Schema {
+            operation: "serialize response request",
+            source,
+        })?;
+        Ok(self
+            .authenticated(Method::POST, self.endpoint(&["v1", "responses"])?)
+            .header(IDEMPOTENCY_KEY_HEADER, idempotency_key.as_str())
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .body(body))
     }
 
     fn authenticated(&self, method: Method, url: Url) -> RequestBuilder {
@@ -158,6 +253,26 @@ impl Client {
         }
         serde_json::from_slice(&body).map_err(|source| UhpError::Schema { operation, source })
     }
+}
+
+async fn decode_server_error(response: reqwest::Response) -> Result<UhpError, UhpError> {
+    let status = response.status();
+    let body = response
+        .bytes()
+        .await
+        .map_err(|source| UhpError::Transport {
+            operation: "read error envelope",
+            source,
+        })?;
+    let envelope: ErrorEnvelope =
+        serde_json::from_slice(&body).map_err(|source| UhpError::Schema {
+            operation: "decode error envelope",
+            source,
+        })?;
+    Ok(UhpError::Server {
+        status: status.as_u16(),
+        error: envelope.error,
+    })
 }
 
 fn validate_version(headers: &HeaderMap) -> Result<(), UhpError> {

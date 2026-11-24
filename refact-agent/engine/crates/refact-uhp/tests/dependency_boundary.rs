@@ -27,10 +27,20 @@ fn production_dependency_names(manifest: &str) -> BTreeSet<String> {
 
 fn assert_production_dependency_boundary(manifest: &str) {
     let actual = production_dependency_names(manifest);
-    let expected = ["hex", "reqwest", "serde", "serde_json", "sha2", "thiserror"]
-        .into_iter()
-        .map(str::to_string)
-        .collect::<BTreeSet<_>>();
+    let expected = [
+        "eventsource-stream",
+        "futures",
+        "hex",
+        "reqwest",
+        "serde",
+        "serde_json",
+        "sha2",
+        "thiserror",
+        "tokio",
+    ]
+    .into_iter()
+    .map(str::to_string)
+    .collect::<BTreeSet<_>>();
     assert_eq!(actual, expected, "standalone protocol dependencies changed");
 }
 
@@ -43,6 +53,9 @@ fn production_dependencies_stay_within_standalone_protocol_boundary() {
         include_str!("../src/lib.rs"),
         include_str!("../src/client.rs"),
         include_str!("../src/error.rs"),
+        include_str!("../src/recovery.rs"),
+        include_str!("../src/session.rs"),
+        include_str!("../src/streaming.rs"),
         include_str!("../src/types.rs"),
     ]
     .join("\n");

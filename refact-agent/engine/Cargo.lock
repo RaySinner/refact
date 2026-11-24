@@ -4857,6 +4857,7 @@ dependencies = [
  "refact-pricing-core",
  "refact-privacy",
  "refact-providers",
+ "refact-room",
  "refact-sandbox",
  "refact-scheduler-core",
  "refact-scope-utils",
@@ -4890,6 +4891,19 @@ dependencies = [
  "uuid",
  "walkdir",
  "winreg 0.55.0",
+]
+
+[[package]]
+name = "refact-room"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "hex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.18",
+ "tokio",
 ]
 
 [[package]]

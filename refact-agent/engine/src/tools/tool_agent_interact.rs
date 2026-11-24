@@ -1278,12 +1278,15 @@ mod tests {
             message.reasoning_content = Some("PRIVATE_REASONING_SENTINEL".to_string());
             message.tool_calls = Some(vec![refact_core::chat_types::ChatToolCall {
                 id: "private-call".to_string(),
+                index: None,
                 function: refact_core::chat_types::ChatToolFunction {
                     name: "private_tool".to_string(),
                     arguments: "PRIVATE_ARGUMENTS_SENTINEL".to_string(),
                 },
                 tool_type: "function".to_string(),
                 extra_content: None,
+                started_at_ms: None,
+                completed_at_ms: None,
             }]);
             session.add_message(message);
         }

@@ -186,6 +186,72 @@ async fn discovery_rejects_response_version_mismatch() {
 }
 
 #[tokio::test]
+async fn normalizes_base_url_matrix_for_all_endpoints() {
+    for has_prefix in [false, true] {
+        for trailing_slash in [false, true] {
+            let requests = Arc::new(Mutex::new(Vec::new()));
+            let captured = requests.clone();
+            let server = MockServer::start(move |request| {
+                let is_discovery = request.uri.path().ends_with("/v1/uhp");
+                captured.lock().unwrap().push(request.uri);
+                if is_discovery {
+                    MockReply::json(json!({
+                        "object": "uhp.discovery",
+                        "protocol": "uhp",
+                        "versions": [UHP_VERSION],
+                        "default_version": UHP_VERSION,
+                        "conformance_class": "full",
+                        "capabilities": {},
+                        "implementation": {"name": "mock", "version": "1"}
+                    }))
+                } else {
+                    MockReply::json(response_json("resp-matrix"))
+                }
+            })
+            .await;
+            let prefix = if has_prefix {
+                server.base_url.clone()
+            } else {
+                server.base_url.trim_end_matches("/api/harness").to_string()
+            };
+            let base_url = if trailing_slash {
+                format!("{prefix}/")
+            } else {
+                prefix
+            };
+            let client = Client::new(&base_url, None).unwrap();
+
+            client.discover().await.unwrap();
+            client
+                .create_response(
+                    &CreateResponse::new("matrix", "harness-1"),
+                    &key("matrix-key"),
+                    &scope(),
+                )
+                .await
+                .unwrap();
+            client.get_response("resp-matrix").await.unwrap();
+
+            let expected_prefix = if has_prefix { "/api/harness" } else { "" };
+            let requests = requests.lock().unwrap();
+            let paths = requests
+                .iter()
+                .map(|uri| uri.path().to_string())
+                .collect::<Vec<_>>();
+            assert_eq!(
+                paths,
+                [
+                    format!("{expected_prefix}/v1/uhp"),
+                    format!("{expected_prefix}/v1/responses"),
+                    format!("{expected_prefix}/v1/responses/resp-matrix"),
+                ],
+                "base URL: {base_url}"
+            );
+        }
+    }
+}
+
+#[tokio::test]
 async fn creates_non_streaming_task_and_continuation() {
     let bodies = Arc::new(Mutex::new(Vec::new()));
     let captured = bodies.clone();

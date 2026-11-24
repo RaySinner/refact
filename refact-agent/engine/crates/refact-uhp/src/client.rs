@@ -103,6 +103,7 @@ impl Client {
         let mut url = self.base_url.clone();
         url.path_segments_mut()
             .map_err(|_| UhpError::InvalidBaseUrl("URL cannot contain path segments".to_string()))?
+            .pop_if_empty()
             .extend(segments);
         Ok(url)
     }

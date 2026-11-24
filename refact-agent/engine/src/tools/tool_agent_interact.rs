@@ -1431,7 +1431,14 @@ mod tests {
             message.message_id = "assistant-partial-failure".to_string();
             session.add_message(message);
         }
-        code.lock().await.runtime.state = refact_chat_api::SessionState::Generating;
+        {
+            let mut session = code.lock().await;
+            session.runtime.state = refact_chat_api::SessionState::Generating;
+            session.draft_message = Some(ChatMessage::new(
+                "assistant".to_string(),
+                "Still generating.".to_string(),
+            ));
+        }
 
         let report = refact_runtime_api::room_delivery::publish_latest_assistant_message(
             app.clone(),

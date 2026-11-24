@@ -1248,7 +1248,13 @@ fn goal_command_rejections_leave_snapshot_messages_ledger_and_runtime_untouched(
     );
 
     assert_eq!(session.goal, snapshot);
-    assert_eq!(session.messages, messages);
+    assert_eq!(session.messages.len(), messages.len());
+    for (actual, expected) in session.messages.iter().zip(messages.iter()) {
+        assert_eq!(actual.message_id, expected.message_id);
+        assert_eq!(actual.role, expected.role);
+        assert_eq!(actual.content, expected.content);
+        assert_eq!(actual.extra, expected.extra);
+    }
     assert_eq!(session.goal_ledger, ledger);
     assert_eq!(session.runtime.state, runtime_state);
     assert!(drain_events(&mut rx).is_empty());
@@ -1270,7 +1276,13 @@ fn transferred_goal_rejects_user_requirements_update_without_mutation() {
     assert!(handle_update_goal_command(&mut session, "obsolete owner".to_string()).is_err());
 
     assert_eq!(session.goal, snapshot);
-    assert_eq!(session.messages, messages);
+    assert_eq!(session.messages.len(), messages.len());
+    for (actual, expected) in session.messages.iter().zip(messages.iter()) {
+        assert_eq!(actual.message_id, expected.message_id);
+        assert_eq!(actual.role, expected.role);
+        assert_eq!(actual.content, expected.content);
+        assert_eq!(actual.extra, expected.extra);
+    }
     assert_eq!(session.goal_ledger, ledger);
 }
 

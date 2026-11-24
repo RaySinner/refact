@@ -225,7 +225,8 @@ pub fn goal_snapshot_from_messages(
                 .and_then(|value| serde_json::from_value(value.clone()).ok())
         })
         .unwrap_or_default();
-    let derived_events = goal_events_from_messages(messages);
+    let current_generation = &messages[base_index..];
+    let derived_events = goal_events_from_messages(current_generation);
     let extra_events: Option<Vec<GoalEvent>> =
         prior.map(|goal| goal.events.clone()).or_else(|| {
             meta.and_then(|meta| meta.get("events"))
@@ -233,7 +234,7 @@ pub fn goal_snapshot_from_messages(
         });
     let events = merge_goal_events(derived_events, extra_events);
     let mut snapshot = GoalSnapshot {
-        content: synthesized_goal_content(messages, base),
+        content: synthesized_goal_content(current_generation, base),
         version,
         active,
         status,
@@ -282,6 +283,31 @@ pub fn goal_snapshot_from_messages(
                     .map(str::to_string)
             }),
     };
+    if let Some(revision) = meta
+        .and_then(|meta| meta.get("revision"))
+        .and_then(|value| value.as_u64())
+    {
+        snapshot.revision = snapshot.revision.max(revision);
+    }
+    for message in current_generation.iter().skip(1) {
+        let Some(payload) = message
+            .extra
+            .get("event")
+            .and_then(|event| event.get("payload"))
+        else {
+            continue;
+        };
+        if let Some(revision) = payload.get("revision").and_then(|value| value.as_u64()) {
+            snapshot.revision = snapshot.revision.max(revision);
+        }
+        if goal_event_subkind(message) == Some("goal_pursuit")
+            && payload.get("kind").and_then(|value| value.as_str()) == Some("cleared")
+        {
+            snapshot.active = false;
+            snapshot.apply_legacy_status(GoalStatus::Stopped);
+            snapshot.stop_reason = Some("goal cleared by user".to_string());
+        }
+    }
     if !has_prior
         && matches!(
             snapshot.status,
@@ -300,7 +326,37 @@ pub fn goal_snapshot_from_messages(
     Some(snapshot)
 }
 
+pub fn goal_snapshot_including_queued(
+    session: &ChatSession,
+) -> Result<Option<GoalSnapshot>, String> {
+    let projection = session.try_accepted_control_projection()?;
+    Ok(goal_snapshot_from_messages(
+        &projection.messages,
+        session.goal.as_ref(),
+    ))
+}
+
 impl ChatSession {
+    pub fn goal_record_transition(&mut self, authorization: GoalTransitionAuthorization) -> bool {
+        let Some(goal) = self.goal.as_mut() else {
+            return false;
+        };
+        goal.revision = authorization.revision;
+        if authorization.transition == crate::GoalTransition::Clear {
+            goal.active = false;
+            goal.apply_legacy_status(GoalStatus::Stopped);
+            goal.stop_reason = Some("goal cleared by user".to_string());
+        }
+        self.goal_ledger_append(GoalLedgerOp::TransitionRecorded {
+            transition: authorization.transition,
+            actor: authorization.actor,
+            revision: authorization.revision,
+        });
+        self.mark_persisted_runtime_changed();
+        self.emit_goal_status();
+        true
+    }
+
     pub fn refresh_goal_runtime_mirror(&mut self) {
         if let Some(goal) = self.goal.as_mut() {
             goal.refresh_derived();
@@ -839,6 +895,29 @@ impl ChatSession {
         budget: GoalBudget,
         criteria: Vec<GoalCriterion>,
     ) -> crate::goal_role::GoalInstallReport {
+        self.install_goal_with_criteria_inner(mode, body, active, budget, criteria, false)
+    }
+
+    pub fn replace_goal_with_criteria(
+        &mut self,
+        mode: &str,
+        body: &str,
+        active: bool,
+        budget: GoalBudget,
+        criteria: Vec<GoalCriterion>,
+    ) -> crate::goal_role::GoalInstallReport {
+        self.install_goal_with_criteria_inner(mode, body, active, budget, criteria, true)
+    }
+
+    fn install_goal_with_criteria_inner(
+        &mut self,
+        mode: &str,
+        body: &str,
+        active: bool,
+        budget: GoalBudget,
+        criteria: Vec<GoalCriterion>,
+        replace: bool,
+    ) -> crate::goal_role::GoalInstallReport {
         let mut projection = match self.try_accepted_control_projection() {
             Ok(projection) => projection,
             Err(error) => {
@@ -849,7 +928,11 @@ impl ChatSession {
                 };
             }
         };
-        if let Some(message) = self
+        let previous_revision = self.goal.as_ref().map(|goal| goal.revision).or_else(|| {
+            crate::goal_role::current_base_goal(&projection)
+                .and_then(|message| message.extra["goal"]["revision"].as_u64())
+        });
+        let pending_goal = self
             .post_tool_side_effects
             .iter()
             .chain(
@@ -857,8 +940,14 @@ impl ChatSession {
                     .iter()
                     .flat_map(|delivery| delivery.messages.iter()),
             )
-            .find(|message| message.role == GOAL_ROLE)
-        {
+            .find(|message| message.role == GOAL_ROLE);
+        if replace && pending_goal.is_some() {
+            return crate::goal_role::GoalInstallReport {
+                version: 0,
+                supersedes: None,
+            };
+        }
+        if let Some(message) = pending_goal.filter(|_| !replace) {
             return crate::goal_role::GoalInstallReport {
                 version: message.extra["goal"]["version"].as_u64().unwrap_or(1) as u32,
                 supersedes: message.extra["goal"]["supersedes"]
@@ -889,6 +978,24 @@ impl ChatSession {
                     .and_then(|value| value.as_object_mut())
                 {
                     meta.insert("criteria".to_string(), json!(criteria));
+                }
+            }
+        }
+        if report.version > 1 {
+            let revision = previous_revision.unwrap_or(0).saturating_add(1);
+            if let Some(message) = self
+                .messages
+                .iter_mut()
+                .skip(installed_index)
+                .rev()
+                .find(|message| message.role == GOAL_ROLE)
+            {
+                if let Some(meta) = message
+                    .extra
+                    .get_mut("goal")
+                    .and_then(|value| value.as_object_mut())
+                {
+                    meta.insert("revision".to_string(), json!(revision));
                 }
             }
         }

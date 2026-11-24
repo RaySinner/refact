@@ -20,9 +20,10 @@ pub use crate::{
     CompressionPhase, CompressionReason, CriterionVerdict, DeliveryOutcome, DeltaOp, DiffBox,
     EventEnvelope, GoalAttempt, GoalAutonomy, GoalBudget, GoalCriterion, GoalEvent, GoalExecution,
     GoalLedgerEntry, GoalLedgerOp, GoalOwner, GoalProgress, GoalResolution, GoalSnapshot,
-    GoalStatus, PauseReason, PendingDelivery, PushMode, QueuedItem, RuntimeState, SessionState,
-    TaskMeta, ThreadParams, TimelineEntry, ToolDecisionItem, WindowBounds, WorktreeMeta,
-    CLIENT_MESSAGE_ID_EXTRA_KEY, DELIVERY_COMMAND_TYPE, DELIVERY_EXTRA_KEY,
+    GoalStatus, GoalTransitionAuthorization, PauseReason, PendingDelivery, PushMode, QueuedItem,
+    RuntimeState, SessionState, TaskMeta, ThreadParams, TimelineEntry, ToolDecisionItem,
+    WindowBounds, WorktreeMeta, CLIENT_MESSAGE_ID_EXTRA_KEY, DELIVERY_COMMAND_TYPE,
+    DELIVERY_EXTRA_KEY,
 };
 
 pub fn epoch_ms_now() -> u64 {

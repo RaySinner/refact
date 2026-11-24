@@ -41,8 +41,8 @@ use refact_runtime_api::trajectories::store::maybe_save_trajectory_background_wi
 use refact_tools::chat_queue_setparams::{
     add_mode_switch_event_and_plan_if_changed, add_thread_worktree_reference,
     apply_setparams_patch, emit_goal_command_error, handle_goal_control_command,
-    handle_set_goal_budget_command, handle_set_goal_command, handle_update_goal_command,
-    resolve_worktree_setparams_update,
+    handle_replace_goal_command, handle_set_goal_autonomy_command, handle_set_goal_budget_command,
+    handle_set_goal_command, handle_update_goal_command, resolve_worktree_setparams_update,
 };
 use refact_tools::chat_tools::{
     acquire_session_turn_tool_pool, execute_tools_with_session,
@@ -361,10 +361,15 @@ pub async fn process_command_queue_inner(
                 content,
                 budget,
                 criteria,
+                replace,
             } => {
                 let result = {
                     let mut session = session_arc.lock().await;
-                    handle_set_goal_command(&mut session, content, budget, criteria)
+                    if replace.unwrap_or(false) {
+                        handle_replace_goal_command(&mut session, content, budget, criteria)
+                    } else {
+                        handle_set_goal_command(&mut session, content, budget, criteria)
+                    }
                 };
                 match result {
                     Ok(_) => {
@@ -400,6 +405,28 @@ pub async fn process_command_queue_inner(
                     }
                     Err(error) => {
                         warn!("SetGoalBudget command rejected: {}", error);
+                        let mut session = session_arc.lock().await;
+                        emit_goal_command_error(&mut session, error);
+                    }
+                }
+            }
+            ChatCommand::SetGoalAutonomy { autonomy } => {
+                let result = {
+                    let mut session = session_arc.lock().await;
+                    handle_set_goal_autonomy_command(&mut session, autonomy)
+                };
+                match result {
+                    Ok(_) => {
+                        app.ctx
+                            .trajectories
+                            .maybe_save_trajectory_with_intent(
+                                session_arc.clone(),
+                                TrajectoryCommitIntent::Required,
+                            )
+                            .await
+                    }
+                    Err(error) => {
+                        warn!("SetGoalAutonomy command rejected: {}", error);
                         let mut session = session_arc.lock().await;
                         emit_goal_command_error(&mut session, error);
                     }

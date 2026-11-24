@@ -107,6 +107,38 @@ pub fn is_goal_prompt_message(msg: &ChatMessage) -> bool {
                 == Some("goal_delta"))
 }
 
+pub fn is_superseded_goal_prompt_message(messages: &[ChatMessage], msg: &ChatMessage) -> bool {
+    let current_version = messages
+        .iter()
+        .filter_map(|message| message.extra.get(GOAL_META_KEY)?.get("version")?.as_u64())
+        .max();
+    let Some(current_version) = current_version else {
+        return false;
+    };
+    if is_goal_role(&msg.role) {
+        return msg
+            .extra
+            .get(GOAL_META_KEY)
+            .and_then(|meta| meta.get("version"))
+            .and_then(|version| version.as_u64())
+            .is_some_and(|version| version != current_version);
+    }
+    if !is_goal_prompt_message(msg) {
+        return false;
+    }
+    let Some(index) = messages
+        .iter()
+        .position(|message| message.message_id == msg.message_id && std::ptr::eq(message, msg))
+    else {
+        return false;
+    };
+    messages[..index]
+        .iter()
+        .rev()
+        .find_map(|message| message.extra.get(GOAL_META_KEY)?.get("version")?.as_u64())
+        .is_some_and(|version| version != current_version)
+}
+
 pub fn goal_prompt_enabled(messages: &[ChatMessage]) -> bool {
     let current = messages
         .iter()
@@ -413,5 +445,24 @@ mod tests {
         msg.extra[GOAL_META_KEY]["execution"] = json!("idle");
         msg.extra[GOAL_META_KEY]["resolution"] = json!("failed");
         assert!(!goal_prompt_enabled(&[msg]));
+    }
+
+    #[test]
+    fn goal_prompt_visibility_excludes_superseded_generation() {
+        let old = goal("agent", 1, "old goal");
+        let old_delta = event("goal_delta", json!({"seq": 1}), "old update");
+        let current = goal("agent", 2, "current goal");
+        let current_delta = event("goal_delta", json!({"seq": 2}), "current update");
+        let messages = vec![
+            old.clone(),
+            old_delta.clone(),
+            current.clone(),
+            current_delta.clone(),
+        ];
+
+        assert!(is_superseded_goal_prompt_message(&messages, &messages[0]));
+        assert!(is_superseded_goal_prompt_message(&messages, &messages[1]));
+        assert!(!is_superseded_goal_prompt_message(&messages, &messages[2]));
+        assert!(!is_superseded_goal_prompt_message(&messages, &messages[3]));
     }
 }

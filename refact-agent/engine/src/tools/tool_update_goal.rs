@@ -32,7 +32,9 @@ use refact_chat_api::internal_roles;
 use refact_chat_api::types::{ChatSession, PendingDelivery, PushMode};
 #[cfg(test)]
 #[allow(unused_imports)]
-use crate::tools::tools_description::{ json_schema_from_params, Tool, ToolDesc, ToolSource, ToolSourceType, };
+use crate::tools::tools_description::{
+    json_schema_from_params, Tool, ToolDesc, ToolSource, ToolSourceType,
+};
 
 #[cfg(test)]
 mod tests {
@@ -227,9 +229,15 @@ mod tests {
             json!({
                 "subkind": "goal_delta",
                 "source": "tool.update_goal",
-                "payload": {"seq": 2}
+                "payload": {
+                    "seq": 2,
+                    "kind": "progress",
+                    "author": "model",
+                    "revision": 1
+                }
             })
         );
+        assert_eq!(session.goal.as_ref().unwrap().revision, 1);
     }
 
     #[tokio::test]
@@ -292,6 +300,47 @@ mod tests {
             .unwrap_err();
 
         assert_eq!(err, "no goal to update; call set_goal first");
+    }
+
+    #[tokio::test]
+    async fn rejects_terminal_and_transferred_goals_without_delivery() {
+        for transferred in [false, true] {
+            let mut session = ChatSession::new(CHAT_ID.to_string());
+            crate::chat::goal_role::install_goal(
+                &mut session,
+                "agent",
+                "base goal",
+                true,
+                GoalBudget::default(),
+            );
+            if transferred {
+                let goal = session.goal.as_mut().unwrap();
+                goal.active = false;
+                goal.transferred_to = Some("new-owner".to_string());
+            } else {
+                session.goal_set_status(refact_chat_api::GoalStatus::Completed);
+            }
+            let (gcx, ccx) = ccx_for_session(session).await;
+            let mut tool = ToolUpdateGoal {
+                config_path: String::new(),
+            };
+            let args = HashMap::from([("note".to_string(), json!("progress"))]);
+
+            assert!(tool
+                .tool_execute(ccx, &"call".to_string(), &args)
+                .await
+                .is_err());
+
+            let session_arc = gcx
+                .chat_sessions
+                .read()
+                .await
+                .get(CHAT_ID)
+                .cloned()
+                .unwrap();
+            let session = session_arc.lock().await;
+            assert!(delivery_messages(&session).is_empty());
+        }
     }
 
     #[tokio::test]

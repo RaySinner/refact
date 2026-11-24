@@ -10,11 +10,13 @@ use refact_chat_api::internal_roles::{
 };
 use refact_chat_api::session_goal_role::{current_base_goal, goal_delta_events};
 use refact_chat_api::goal_role::goal_version;
+use refact_chat_api::session::goal_snapshot_including_queued;
 use refact_chat_api::session_plan_role::try_current_base_plan;
 use refact_chat_api::types::{
     ChatSession, GoalBudget, GoalCriterion, GoalLedgerOp, GoalSnapshotBudgetExt, GoalStatus,
     SessionState, ThreadParams,
 };
+use refact_chat_api::{authorize_goal_transition, GoalActor, GoalAutonomy, GoalTransition};
 use refact_core::active_context::{active_context, writeback_active_context};
 use refact_runtime_api::AppState;
 use refact_runtime_api::customization_registry_gcx::get_mode_config;
@@ -197,12 +199,38 @@ pub fn handle_set_goal_command(
     budget: Option<GoalBudget>,
     criteria: Option<Vec<GoalCriterion>>,
 ) -> Result<serde_json::Value, String> {
+    handle_set_goal_command_with_replace(session, content, budget, criteria, false)
+}
+
+pub fn handle_replace_goal_command(
+    session: &mut ChatSession,
+    content: String,
+    budget: Option<GoalBudget>,
+    criteria: Option<Vec<GoalCriterion>>,
+) -> Result<serde_json::Value, String> {
+    handle_set_goal_command_with_replace(session, content, budget, criteria, true)
+}
+
+fn handle_set_goal_command_with_replace(
+    session: &mut ChatSession,
+    content: String,
+    budget: Option<GoalBudget>,
+    criteria: Option<Vec<GoalCriterion>>,
+    replace: bool,
+) -> Result<serde_json::Value, String> {
     if content.trim().is_empty() {
         return Err("argument `content` must be non-empty".to_string());
     }
-    if goal_exists_including_pending(session) {
-        return Err("goal already exists; use update_goal".to_string());
-    }
+    let current = goal_snapshot_including_queued(session)?;
+    let authorization = authorize_goal_transition(
+        current.as_ref(),
+        GoalActor::User,
+        if replace {
+            GoalTransition::Replace
+        } else {
+            GoalTransition::Install
+        },
+    )?;
     let current_mode =
         refact_chat_api::setparams::map_legacy_mode_to_id(&session.thread.mode).to_string();
     let budget = match budget {
@@ -212,13 +240,19 @@ pub fn handle_set_goal_command(
         }
         None => GoalBudget::default(),
     };
-    let report = session.install_goal_with_criteria(
-        &current_mode,
-        &content,
-        true,
-        budget,
-        criteria.unwrap_or_default(),
-    );
+    let criteria = criteria.unwrap_or_default();
+    let report = if replace {
+        session.replace_goal_with_criteria(&current_mode, &content, true, budget, criteria)
+    } else {
+        session.install_goal_with_criteria(&current_mode, &content, true, budget, criteria)
+    };
+    if report.version == 0 {
+        return Err(
+            "goal installation or replacement is blocked by invalid context or a pending install"
+                .to_string(),
+        );
+    }
+    session.goal_record_transition(authorization);
     session.add_message(internal_roles::event(
         EventSubkind::SystemNotice,
         "chat.command.set_goal",
@@ -231,14 +265,10 @@ pub fn handle_set_goal_command(
     }))
 }
 
-pub fn handle_set_goal_budget_command(
+fn update_current_goal_meta(
     session: &mut ChatSession,
-    mut budget: GoalBudget,
-) -> Result<serde_json::Value, String> {
-    if session.goal.is_none() {
-        return Err("no goal to set budget for; call set_goal first".to_string());
-    }
-
+    update: impl FnOnce(&mut serde_json::Map<String, serde_json::Value>),
+) -> Result<(), String> {
     let view = active_context(&session.messages).map_err(|e| e.to_string())?;
     let mut messages = view.messages.clone();
     let Some((base_index, _, _)) = messages
@@ -249,25 +279,44 @@ pub fn handle_set_goal_budget_command(
         })
         .max_by_key(|(index, version, _)| (*version, *index))
     else {
-        return Err("no goal to set budget for; call set_goal first".to_string());
+        return Err("no goal installed; call set_goal first".to_string());
     };
-
-    budget.explicit = true;
-    let serialized_budget = serde_json::to_value(&budget)
-        .map_err(|error| format!("failed to serialize goal budget: {error}"))?;
     let goal_meta = messages[base_index]
         .extra
         .get_mut("goal")
         .and_then(|value| value.as_object_mut())
-        .ok_or_else(|| "no goal to set budget for; call set_goal first".to_string())?;
-    goal_meta.insert("budget".to_string(), serialized_budget.clone());
-
-    session.messages = writeback_active_context(&session.messages, &view, &messages)
-        .map_err(|e| e.to_string())?;
+        .ok_or_else(|| "no goal installed; call set_goal first".to_string())?;
+    update(goal_meta);
+    session.messages =
+        writeback_active_context(&session.messages, &view, &messages).map_err(|e| e.to_string())?;
     session.rebuild_goal_projection_from_messages();
+    Ok(())
+}
+
+pub fn handle_set_goal_budget_command(
+    session: &mut ChatSession,
+    mut budget: GoalBudget,
+) -> Result<serde_json::Value, String> {
+    if session.goal.is_none() {
+        return Err("no goal to set budget for; call set_goal first".to_string());
+    }
+    let authorization = authorize_goal_transition(
+        session.goal.as_ref(),
+        GoalActor::User,
+        GoalTransition::SetBudget,
+    )?;
+
+    budget.explicit = true;
+    let serialized_budget = serde_json::to_value(&budget)
+        .map_err(|error| format!("failed to serialize goal budget: {error}"))?;
+    update_current_goal_meta(session, |goal_meta| {
+        goal_meta.insert("budget".to_string(), serialized_budget.clone());
+        goal_meta.insert("revision".to_string(), json!(authorization.revision));
+    })?;
     session.goal_ledger_append(GoalLedgerOp::BudgetSet {
         budget: budget.clone(),
     });
+    session.goal_record_transition(authorization);
     let budget_status_change = session.goal.as_ref().and_then(|goal| {
         match goal.goal_budget_exhaustion_status_at(epoch_ms_now()) {
             Some(status) if goal.active && goal.status != status => Some(status),
@@ -288,10 +337,34 @@ pub fn handle_set_goal_budget_command(
     if let Some(status) = budget_status_change {
         session.goal_set_status_reason(status, "budget_set");
     }
-    session.mark_persisted_runtime_changed();
-    session.emit_goal_status();
-
     Ok(serde_json::json!({ "budget": serialized_budget }))
+}
+
+pub fn handle_set_goal_autonomy_command(
+    session: &mut ChatSession,
+    autonomy: GoalAutonomy,
+) -> Result<serde_json::Value, String> {
+    if session.goal.is_none() {
+        return Err("no goal to set autonomy for; call set_goal first".to_string());
+    }
+    let authorization = authorize_goal_transition(
+        session.goal.as_ref(),
+        GoalActor::User,
+        GoalTransition::SetAutonomy,
+    )?;
+    update_current_goal_meta(session, |goal_meta| {
+        goal_meta.insert("autonomy".to_string(), json!(autonomy));
+        goal_meta.insert("revision".to_string(), json!(authorization.revision));
+    })?;
+    if let Some(goal) = session.goal.as_mut() {
+        goal.autonomy = autonomy;
+    }
+    session.goal_ledger_append(GoalLedgerOp::AutonomySet { autonomy });
+    session.goal_record_transition(authorization);
+    Ok(json!({
+        "autonomy": autonomy,
+        "revision": authorization.revision,
+    }))
 }
 
 pub fn handle_update_goal_command(
@@ -301,17 +374,33 @@ pub fn handle_update_goal_command(
     if note.trim().is_empty() {
         return Err("argument `note` must be non-empty".to_string());
     }
-    if !goal_base_exists_including_pending(session) {
-        return Err("no goal to update; call set_goal first".to_string());
-    }
+    let current = goal_snapshot_including_queued(session)?;
+    let authorization = authorize_goal_transition(
+        current.as_ref(),
+        GoalActor::User,
+        GoalTransition::UpdateRequirements,
+    )
+    .map_err(|error| {
+        if current.is_none() {
+            "no goal to update; call set_goal first".to_string()
+        } else {
+            error
+        }
+    })?;
     let seq = goal_delta_count_including_pending(session) + 1;
     let (delta, truncation) = internal_roles::goal_delta_with_truncation(
         "chat.command.update_goal",
-        serde_json::json!({"seq": seq, "at_ms": epoch_ms_now()}),
+        serde_json::json!({
+            "seq": seq,
+            "at_ms": epoch_ms_now(),
+            "kind": "requirements",
+            "author": GoalActor::User,
+            "revision": authorization.revision,
+        }),
         note,
     );
     session.add_message(delta);
-    session.emit_goal_status();
+    session.goal_record_transition(authorization);
     Ok(update_goal_result(seq, truncation))
 }
 
@@ -319,30 +408,54 @@ pub fn handle_goal_control_command(
     session: &mut ChatSession,
     action: String,
 ) -> Result<serde_json::Value, String> {
+    let normalized = action.trim().to_ascii_lowercase();
+    let transition = match normalized.as_str() {
+        "pause" => GoalTransition::Pause,
+        "resume" => GoalTransition::Resume,
+        "stop" | "cancel" => GoalTransition::Stop,
+        "clear" => GoalTransition::Clear,
+        _ => {
+            return Err(
+                "goal_control action must be pause, resume, stop, cancel, or clear".to_string(),
+            )
+        }
+    };
     if session.goal.is_none() {
         return Err("no goal to control; call set_goal first".to_string());
     }
-    let normalized = action.trim().to_ascii_lowercase();
-    let status = match normalized.as_str() {
-        "pause" => GoalStatus::Paused,
-        "resume" => GoalStatus::Active,
-        "stop" => GoalStatus::Stopped,
-        _ => return Err("goal_control action must be pause, resume, or stop".to_string()),
-    };
-    if normalized == "resume"
-        && !matches!(
-            session.goal_status,
-            Some(GoalStatus::Paused | GoalStatus::Stopped)
-        )
-    {
-        return Err("goal_control resume requires a paused or stopped goal".to_string());
-    }
+    let authorization =
+        authorize_goal_transition(session.goal.as_ref(), GoalActor::User, transition)?;
     session.clear_goal_stopped_by_abort_marker();
-    if matches!(status, GoalStatus::Paused | GoalStatus::Stopped) {
+    if matches!(
+        transition,
+        GoalTransition::Pause | GoalTransition::Stop | GoalTransition::Clear
+    ) {
         session.purge_goal_generated_wakes();
     }
-    session.goal_set_status_reason(status, "goal_control");
-    if status == GoalStatus::Stopped {
+    if transition == GoalTransition::Clear {
+        session.add_message(internal_roles::event(
+            EventSubkind::GoalPursuit,
+            "chat.command.goal_control",
+            serde_json::json!({
+                "kind": "cleared",
+                "trigger": "goal_control",
+                "author": GoalActor::User,
+                "revision": authorization.revision,
+                "at_ms": epoch_ms_now(),
+            }),
+            "Goal cleared by user; its history is preserved.".to_string(),
+        ));
+    } else {
+        let status = match transition {
+            GoalTransition::Pause => GoalStatus::Paused,
+            GoalTransition::Resume => GoalStatus::Active,
+            GoalTransition::Stop => GoalStatus::Stopped,
+            _ => unreachable!(),
+        };
+        session.goal_set_status_reason(status, "goal_control");
+    }
+    session.goal_record_transition(authorization);
+    if transition == GoalTransition::Stop {
         session.add_message(internal_roles::event(
             EventSubkind::GoalPursuit,
             "chat.command.goal_control",
@@ -350,10 +463,14 @@ pub fn handle_goal_control_command(
             "Goal pursuit stopped by user.".to_string(),
         ));
     }
-    Ok(serde_json::json!({
+    let mut result = serde_json::json!({
         "action": normalized,
-        "status": status,
-    }))
+        "status": session.goal_status,
+    });
+    if transition == GoalTransition::Clear {
+        result["revision"] = json!(authorization.revision);
+    }
+    Ok(result)
 }
 
 pub fn emit_goal_command_error(session: &mut ChatSession, error: String) {

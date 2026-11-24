@@ -202,8 +202,8 @@ fn reasoning_requested(reasoning: &ReasoningIntent) -> bool {
 fn convert_messages_to_ollama(messages: &[ChatMessage]) -> Vec<Value> {
     use super::render_extra::{
         append_text_to_tool_json, goal_prompt_enabled, is_context_role, is_event_role,
-        is_goal_prompt_message, is_goal_role, is_plan_role, render_context_message,
-        render_event_message, render_goal_message, render_plan_message,
+        is_goal_prompt_message, is_goal_role, is_plan_role, is_superseded_goal_prompt_message,
+        render_context_message, render_event_message, render_goal_message, render_plan_message,
     };
 
     let mut result: Vec<Value> = Vec::new();
@@ -216,7 +216,9 @@ fn convert_messages_to_ollama(messages: &[ChatMessage]) -> Vec<Value> {
     // to the next user message because Ollama expects images on user messages.
     let goals_enabled = goal_prompt_enabled(messages);
     for msg in messages {
-        if !goals_enabled && is_goal_prompt_message(msg) {
+        if is_superseded_goal_prompt_message(messages, msg)
+            || (!goals_enabled && is_goal_prompt_message(msg))
+        {
             continue;
         }
         if is_goal_role(&msg.role) || is_plan_role(&msg.role) {

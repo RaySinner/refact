@@ -40,8 +40,8 @@ mod tests;
 pub use goal::{
     apply_goal_runtime_projection, goal_budget_has_hard_limits, goal_event_subkind,
     goal_events_from_messages, goal_runtime_projection, goal_snapshot_from_messages,
-    is_goal_projection_event, message_affects_goal_projection, synthesized_goal_content,
-    tool_result_counts_as_goal_evidence,
+    goal_snapshot_including_queued, is_goal_projection_event, message_affects_goal_projection,
+    synthesized_goal_content, tool_result_counts_as_goal_evidence,
 };
 pub use snapshot::sse_broadcast_outcome;
 pub use stream::StreamStartRefusal;

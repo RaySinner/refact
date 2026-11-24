@@ -795,8 +795,7 @@ fn goal_budget_set_goal_budget_legacy_quad_is_stamped_explicit() {
     let mut session = ChatSession::new("goal-command".to_string());
     handle_set_goal_command(&mut session, "Base".to_string(), None, None).unwrap();
 
-    handle_set_goal_budget_command(&mut session, GoalBudget::legacy_default_hard_limits())
-        .unwrap();
+    handle_set_goal_budget_command(&mut session, GoalBudget::legacy_default_hard_limits()).unwrap();
 
     let goal_meta = session.messages[0].extra.get_mut("goal").unwrap();
     assert_eq!(goal_meta["budget"]["explicit"], json!(true));
@@ -879,8 +878,7 @@ fn goal_budget_set_goal_budget_command_clears_limits_and_heals_terminal_status()
     handle_set_goal_command(&mut session, "Base".to_string(), Some(budget), None).unwrap();
     session.goal.as_mut().unwrap().progress.turns_used = 1;
     session.goal_set_status(GoalStatus::BudgetExhausted);
-    session.messages[0].extra["goal"]["progress"] =
-        json!(session.goal.as_ref().unwrap().progress);
+    session.messages[0].extra["goal"]["progress"] = json!(session.goal.as_ref().unwrap().progress);
     session.messages[0].extra["goal"]["status"] = json!(GoalStatus::BudgetExhausted);
 
     handle_set_goal_budget_command(&mut session, GoalBudget::default()).unwrap();
@@ -906,8 +904,7 @@ fn goal_budget_set_goal_budget_command_clears_limits_and_heals_terminal_status()
 fn goal_budget_set_goal_budget_command_rejects_without_goal() {
     let mut session = ChatSession::new("goal-command".to_string());
 
-    let error =
-        handle_set_goal_budget_command(&mut session, GoalBudget::default()).unwrap_err();
+    let error = handle_set_goal_budget_command(&mut session, GoalBudget::default()).unwrap_err();
 
     assert_eq!(error, "no goal to set budget for; call set_goal first");
     assert!(session.goal.is_none());
@@ -985,8 +982,27 @@ fn goal_control_resume_requires_paused_or_stopped() {
     assert_eq!(session.goal_status, Some(GoalStatus::Completed));
 
     session.goal_set_status(GoalStatus::Stopped);
+    assert!(handle_goal_control_command(&mut session, "resume".to_string()).is_err());
+    assert_eq!(session.goal_status, Some(GoalStatus::Stopped));
+    assert_eq!(
+        session.goal.as_ref().unwrap().resolution,
+        refact_chat_api::GoalResolution::Achieved
+    );
+}
+
+#[test]
+fn goal_control_resume_allows_manually_stopped_goal() {
+    let mut session = ChatSession::new("goal-command".to_string());
+    handle_set_goal_command(&mut session, "Base".to_string(), None, None).unwrap();
+    handle_goal_control_command(&mut session, "stop".to_string()).unwrap();
+
     handle_goal_control_command(&mut session, "resume".to_string()).unwrap();
+
     assert_eq!(session.goal_status, Some(GoalStatus::Active));
+    assert_eq!(
+        session.goal.as_ref().unwrap().resolution,
+        refact_chat_api::GoalResolution::Active
+    );
 }
 
 #[test]
@@ -1167,4 +1183,120 @@ fn branch_keeps_goal_and_goal_events() {
         branched_pursuit.extra["event"]["subkind"],
         json!("goal_pursuit")
     );
+}
+
+#[test]
+fn goal_command_replace_and_clear_preserve_history_without_carrying_old_updates() {
+    let mut session = ChatSession::new("goal-command".to_string());
+    handle_set_goal_command(&mut session, "Base".to_string(), None, None).unwrap();
+    handle_update_goal_command(&mut session, "Old requirement".to_string()).unwrap();
+    session.goal_set_status(GoalStatus::Completed);
+
+    let replaced =
+        handle_replace_goal_command(&mut session, "Replacement".to_string(), None, None).unwrap();
+
+    assert_eq!(replaced["version"], json!(2));
+    assert_eq!(session.goal.as_ref().unwrap().revision, 3);
+    assert_eq!(session.goal.as_ref().unwrap().content, "Replacement");
+    assert_eq!(
+        session
+            .messages
+            .iter()
+            .filter(|message| message.role == "goal")
+            .count(),
+        2
+    );
+    assert!(session.messages.iter().any(|message| {
+        message.role == "goal" && message.content.content_text_only() == "Base"
+    }));
+
+    handle_goal_control_command(&mut session, "clear".to_string()).unwrap();
+
+    let cleared = session.goal.as_ref().unwrap();
+    assert!(!cleared.active);
+    assert!(!cleared.prompt_enabled);
+    assert_eq!(cleared.revision, 4);
+    assert_eq!(session.goal_status, Some(GoalStatus::Stopped));
+    let replayed =
+        refact_chat_api::session::goal_snapshot_from_messages(&session.messages, None).unwrap();
+    assert!(!replayed.active);
+    assert_eq!(replayed.revision, 4);
+
+    let installed = handle_set_goal_command(&mut session, "Fresh".to_string(), None, None).unwrap();
+    assert_eq!(installed["version"], json!(3));
+    assert_eq!(session.goal.as_ref().unwrap().revision, 5);
+    assert_eq!(session.goal.as_ref().unwrap().content, "Fresh");
+}
+
+#[test]
+fn goal_command_rejections_leave_snapshot_messages_ledger_and_runtime_untouched() {
+    let mut session = ChatSession::new("goal-command".to_string());
+    handle_set_goal_command(&mut session, "Base".to_string(), None, None).unwrap();
+    session.goal_set_status(GoalStatus::Completed);
+    let snapshot = session.goal.clone();
+    let messages = session.messages.clone();
+    let ledger = session.goal_ledger.clone();
+    let runtime_state = session.runtime.state;
+    let mut rx = session.subscribe();
+
+    for action in ["stop", "pause", "resume"] {
+        assert!(handle_goal_control_command(&mut session, action.to_string()).is_err());
+    }
+    assert!(handle_update_goal_command(&mut session, "rewrite".to_string()).is_err());
+    assert!(
+        handle_set_goal_autonomy_command(&mut session, refact_chat_api::GoalAutonomy::Off).is_err()
+    );
+
+    assert_eq!(session.goal, snapshot);
+    assert_eq!(session.messages, messages);
+    assert_eq!(session.goal_ledger, ledger);
+    assert_eq!(session.runtime.state, runtime_state);
+    assert!(drain_events(&mut rx).is_empty());
+}
+
+#[test]
+fn transferred_goal_rejects_user_requirements_update_without_mutation() {
+    let mut session = ChatSession::new("goal-command".to_string());
+    handle_set_goal_command(&mut session, "Base".to_string(), None, None).unwrap();
+    {
+        let goal = session.goal.as_mut().unwrap();
+        goal.active = false;
+        goal.transferred_to = Some("new-owner".to_string());
+    }
+    let snapshot = session.goal.clone();
+    let messages = session.messages.clone();
+    let ledger = session.goal_ledger.clone();
+
+    assert!(handle_update_goal_command(&mut session, "obsolete owner".to_string()).is_err());
+
+    assert_eq!(session.goal, snapshot);
+    assert_eq!(session.messages, messages);
+    assert_eq!(session.goal_ledger, ledger);
+}
+
+#[test]
+fn goal_command_requirements_and_autonomy_are_audited_revisions() {
+    let mut session = ChatSession::new("goal-command".to_string());
+    handle_set_goal_command(&mut session, "Base".to_string(), None, None).unwrap();
+
+    handle_update_goal_command(&mut session, "New requirement".to_string()).unwrap();
+    assert_eq!(session.goal.as_ref().unwrap().revision, 2);
+    assert!(session.goal_ledger.iter().any(|entry| matches!(
+        entry.op,
+        refact_chat_api::GoalLedgerOp::TransitionRecorded {
+            transition: refact_chat_api::GoalTransition::UpdateRequirements,
+            actor: refact_chat_api::GoalActor::User,
+            revision: 2,
+        }
+    )));
+
+    handle_set_goal_autonomy_command(&mut session, refact_chat_api::GoalAutonomy::Off).unwrap();
+    assert_eq!(session.goal.as_ref().unwrap().revision, 3);
+    assert_eq!(
+        session.goal.as_ref().unwrap().autonomy,
+        refact_chat_api::GoalAutonomy::Off
+    );
+    let replayed = refact_chat_api::reduce_goal_ledger(&session.goal_ledger).unwrap();
+    assert_eq!(replayed.revision, 3);
+    assert_eq!(replayed.autonomy, refact_chat_api::GoalAutonomy::Off);
 }

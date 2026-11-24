@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     apply_legacy_status_dimensions, GoalAttempt, GoalAutonomy, GoalBudget, GoalCriterion,
     GoalEvent, GoalExecution, GoalOwner, GoalProgress, GoalResolution, GoalSnapshot, GoalStatus,
+    GoalTransition,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -54,6 +55,14 @@ pub enum GoalLedgerOp {
     },
     BudgetSet {
         budget: GoalBudget,
+    },
+    AutonomySet {
+        autonomy: GoalAutonomy,
+    },
+    TransitionRecorded {
+        transition: GoalTransition,
+        actor: crate::GoalActor,
+        revision: u64,
     },
     CriteriaSet {
         criteria: Vec<GoalCriterion>,
@@ -338,6 +347,20 @@ fn apply_op(state: &mut GoalLedgerState, op: &GoalLedgerOp, at_ms: u64) {
         GoalLedgerOp::BudgetSet { budget } => {
             state.budget = budget.clone();
         }
+        GoalLedgerOp::AutonomySet { autonomy } => {
+            state.autonomy = *autonomy;
+        }
+        GoalLedgerOp::TransitionRecorded {
+            transition,
+            revision,
+            ..
+        } => {
+            state.revision = *revision;
+            if *transition == GoalTransition::Clear {
+                state.active = false;
+                state.apply_legacy_status(GoalStatus::Stopped);
+            }
+        }
         GoalLedgerOp::CriteriaSet { criteria } => {
             state.criteria = criteria.clone();
         }
@@ -401,6 +424,10 @@ pub fn status_changed_since(entries: &[GoalLedgerEntry], seq: u64) -> bool {
             GoalLedgerOp::StatusChanged { .. }
                 | GoalLedgerOp::TransferredOut { .. }
                 | GoalLedgerOp::TransferredIn { .. }
+                | GoalLedgerOp::TransitionRecorded {
+                    transition: GoalTransition::Clear,
+                    ..
+                }
         )
     })
 }

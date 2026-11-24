@@ -8,8 +8,10 @@ use refact_runtime_api::AtCommandsContext;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use refact_chat_api::goal_role::GoalInstallReport;
 use refact_chat_api::session_goal_role as goal_role;
+use refact_chat_api::session::goal_snapshot_including_queued;
 use refact_chat_api::internal_roles::{self, EventSubkind};
 use refact_chat_api::types::{ChatSession, PendingDelivery, PushMode};
+use refact_chat_api::{authorize_goal_transition, GoalActor, GoalTransition};
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
 use refact_chat_api::setparams::map_legacy_mode_to_id;
 pub struct ToolSetGoal {
@@ -62,6 +64,9 @@ impl Tool for ToolSetGoal {
         args: &HashMap<String, Value>,
     ) -> Result<(bool, Vec<ContextEnum>), String> {
         let push = PushMode::from_args(args)?;
+        if args.contains_key("replace") || args.contains_key("autonomy") {
+            return Err("replace and autonomy require an explicit user command".to_string());
+        }
         let content = string_arg(args, "content")?;
         if content.trim().is_empty() {
             return Err("argument `content` must be non-empty".to_string());
@@ -87,15 +92,21 @@ impl Tool for ToolSetGoal {
 
         let report = {
             let mut session = session_arc.lock().await;
-            if current_goal_including_queued(&session)?.is_some() {
-                return Err("goal already exists; use update_goal".to_string());
-            }
+            let current = goal_snapshot_including_queued(&session)?;
+            let authorization = authorize_goal_transition(
+                current.as_ref(),
+                GoalActor::Model,
+                GoalTransition::Install,
+            )?;
+            let previous = current_goal_including_queued(&session)?;
             let current_mode = map_legacy_mode_to_id(&session.thread.mode).to_string();
             let report = queue_goal_side_effect(
                 &mut session,
                 &current_mode,
                 &content,
                 &criteria,
+                previous,
+                authorization.revision,
                 push,
                 tool_call_id,
             )?;
@@ -124,16 +135,30 @@ fn queue_goal_side_effect(
     mode: &str,
     body: &str,
     criteria: &[refact_chat_api::GoalCriterion],
+    previous: Option<ChatMessage>,
+    revision: u64,
     push: PushMode,
     tool_call_id: &str,
 ) -> Result<GoalInstallReport, String> {
-    let mut message =
-        internal_roles::delegated_goal(mode, 1, body, None, true, GoalBudget::default());
+    let version = previous
+        .as_ref()
+        .and_then(goal_role::goal_version)
+        .map_or(1, |version| version.saturating_add(1));
+    let supersedes = previous.map(|message| message.message_id);
+    let mut message = internal_roles::delegated_goal(
+        mode,
+        version,
+        body,
+        supersedes.clone(),
+        true,
+        GoalBudget::default(),
+    );
     if let Some(meta) = message
         .extra
         .get_mut("goal")
         .and_then(|value| value.as_object_mut())
     {
+        meta.insert("revision".to_string(), json!(revision));
         if !criteria.is_empty() {
             meta.insert("criteria".to_string(), json!(criteria));
         }
@@ -144,8 +169,8 @@ fn queue_goal_side_effect(
             internal_roles::event(
                 EventSubkind::SystemNotice,
                 "tool.set_goal",
-                json!({"version": 1}),
-                "Goal updated to v1",
+                json!({"version": version}),
+                format!("Goal updated to v{version}"),
             ),
         ],
         push,
@@ -155,8 +180,8 @@ fn queue_goal_side_effect(
     delivery.after_tool_call_id = Some(tool_call_id.to_string());
     session.enqueue_delivery(delivery)?;
     Ok(GoalInstallReport {
-        version: 1,
-        supersedes: None,
+        version,
+        supersedes,
     })
 }
 

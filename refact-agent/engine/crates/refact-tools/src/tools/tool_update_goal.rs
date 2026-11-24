@@ -6,8 +6,10 @@ use tokio::sync::Mutex as AMutex;
 use refact_runtime_api::AtCommandsContext;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use refact_chat_api::session_goal_role as goal_role;
+use refact_chat_api::session::goal_snapshot_including_queued;
 use refact_chat_api::internal_roles;
 use refact_chat_api::types::{ChatSession, PendingDelivery, PushMode};
+use refact_chat_api::{authorize_goal_transition, GoalActor, GoalTransition};
 use crate::tools::tools_description::{ json_schema_from_params, Tool, ToolDesc, ToolSource, ToolSourceType, };
 pub struct ToolUpdateGoal {
     pub config_path: String,
@@ -62,19 +64,35 @@ impl Tool for ToolUpdateGoal {
 
         let (seq, result_truncation) = {
             let mut session = session_arc.lock().await;
-            if !has_base_goal_including_queued(&session)? {
-                return Err("no goal to update; call set_goal first".to_string());
-            }
+            let current = goal_snapshot_including_queued(&session)?;
+            let authorization = authorize_goal_transition(
+                current.as_ref(),
+                GoalActor::Model,
+                GoalTransition::AddProgress,
+            )
+            .map_err(|error| {
+                if current.is_none() {
+                    "no goal to update; call set_goal first".to_string()
+                } else {
+                    error
+                }
+            })?;
             let seq = goal_delta_count_including_queued(&session)? + 1;
             let (delta, result_truncation) = internal_roles::goal_delta_with_truncation(
                 "tool.update_goal",
-                json!({"seq": seq}),
+                json!({
+                    "seq": seq,
+                    "kind": "progress",
+                    "author": GoalActor::Model,
+                    "revision": authorization.revision,
+                }),
                 note,
             );
             let messages = vec![delta];
             let mut delivery = PendingDelivery::new(messages, push, "tool.update_goal", false);
             delivery.after_tool_call_id = Some(tool_call_id.clone());
             session.enqueue_delivery(delivery)?;
+            session.goal_record_transition(authorization);
             (seq, result_truncation)
         };
 

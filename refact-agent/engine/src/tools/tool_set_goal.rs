@@ -286,6 +286,27 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn model_cannot_replace_or_change_autonomy() {
+        for privileged_field in ["replace", "autonomy"] {
+            let (_gcx, ccx) = ccx_for_session("agent").await;
+            let mut tool = ToolSetGoal {
+                config_path: String::new(),
+            };
+            let args = HashMap::from([
+                ("content".to_string(), json!("replacement")),
+                (privileged_field.to_string(), json!(true)),
+            ]);
+
+            let err = tool
+                .tool_execute(ccx, &"call".to_string(), &args)
+                .await
+                .unwrap_err();
+
+            assert_eq!(err, "replace and autonomy require an explicit user command");
+        }
+    }
+
+    #[tokio::test]
     async fn set_goal_side_effects_are_after_tool_result() {
         let (gcx, ccx) = ccx_for_session("agent").await;
         let session_arc = gcx

@@ -481,8 +481,8 @@ fn convert_to_anthropic(
 ) -> (Option<Value>, Vec<Value>) {
     use super::render_extra::{
         goal_prompt_enabled, is_context_role, is_event_role, is_goal_prompt_message, is_goal_role,
-        is_plan_role, render_context_message, render_event_message, render_goal_message,
-        render_plan_message,
+        is_plan_role, is_superseded_goal_prompt_message, render_context_message,
+        render_event_message, render_goal_message, render_plan_message,
     };
 
     let mut system_text = None;
@@ -493,7 +493,9 @@ fn convert_to_anthropic(
     let goals_enabled = goal_prompt_enabled(messages);
 
     for msg in normalized_messages.iter() {
-        if !goals_enabled && is_goal_prompt_message(msg) {
+        if is_superseded_goal_prompt_message(&normalized_messages, msg)
+            || (!goals_enabled && is_goal_prompt_message(msg))
+        {
             continue;
         }
         match msg.role.as_str() {

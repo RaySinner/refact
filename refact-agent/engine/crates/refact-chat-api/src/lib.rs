@@ -14,6 +14,7 @@ pub mod diagnostics;
 pub mod goal_ledger;
 pub mod goal_role;
 pub mod goal_state;
+pub mod goal_transitions;
 pub mod goal_verifier;
 pub mod internal_roles;
 pub mod message_provenance;
@@ -47,6 +48,9 @@ pub use goal_ledger::{
 pub use goal_state::{
     apply_legacy_status_dimensions, GoalAutonomy, GoalExecution, GoalOwner, GoalResolution,
     GoalSnapshot, GoalStatus,
+};
+pub use goal_transitions::{
+    authorize_goal_transition, GoalActor, GoalTransition, GoalTransitionAuthorization,
 };
 
 pub use chat_local_types::{
@@ -1124,9 +1128,14 @@ pub enum ChatCommand {
         criteria: Option<Vec<GoalCriterion>>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         budget: Option<GoalBudget>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        replace: Option<bool>,
     },
     SetGoalBudget {
         budget: GoalBudget,
+    },
+    SetGoalAutonomy {
+        autonomy: GoalAutonomy,
     },
     UpdateGoal {
         note: String,
@@ -1257,6 +1266,11 @@ impl CommandRequest {
             ChatCommand::SetGoalBudget { .. } => {
                 ("set_goal_budget".to_string(), String::new(), String::new())
             }
+            ChatCommand::SetGoalAutonomy { .. } => (
+                "set_goal_autonomy".to_string(),
+                String::new(),
+                String::new(),
+            ),
             ChatCommand::UpdateGoal { note } => {
                 ("update_goal".to_string(), note.clone(), note.clone())
             }
@@ -2760,6 +2774,7 @@ mod tests {
             criteria: None,
             content: "ship".to_string(),
             budget: Some(budget.clone()),
+            replace: None,
         };
         let json = serde_json::to_value(&cmd).unwrap();
         assert_eq!(json["type"], "set_goal");
@@ -2799,6 +2814,39 @@ mod tests {
         assert_eq!(queued.command_type, "set_goal_budget");
         assert!(queued.preview.is_empty());
         assert!(queued.content.is_empty());
+    }
+
+    #[test]
+    fn test_goal_replace_and_autonomy_commands_are_additive() {
+        let legacy: ChatCommand =
+            serde_json::from_str(r#"{"type":"set_goal","content":"ship"}"#).unwrap();
+        assert!(matches!(legacy, ChatCommand::SetGoal { replace: None, .. }));
+
+        let replace: ChatCommand =
+            serde_json::from_str(r#"{"type":"set_goal","content":"new","replace":true}"#).unwrap();
+        assert!(matches!(
+            replace,
+            ChatCommand::SetGoal {
+                replace: Some(true),
+                ..
+            }
+        ));
+
+        let autonomy = ChatCommand::SetGoalAutonomy {
+            autonomy: GoalAutonomy::Off,
+        };
+        let value = serde_json::to_value(autonomy).unwrap();
+        assert_eq!(
+            value,
+            json!({"type": "set_goal_autonomy", "autonomy": "off"})
+        );
+        let decoded: ChatCommand = serde_json::from_value(value).unwrap();
+        assert!(matches!(
+            decoded,
+            ChatCommand::SetGoalAutonomy {
+                autonomy: GoalAutonomy::Off
+            }
+        ));
     }
 
     #[test]

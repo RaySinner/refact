@@ -52,10 +52,15 @@ export type ChatCommandBase =
       type: "set_goal";
       content: string;
       budget?: GoalBudgetCommand;
+      replace?: boolean;
     }
   | {
       type: "set_goal_budget";
       budget: GoalBudgetCommand;
+    }
+  | {
+      type: "set_goal_autonomy";
+      autonomy: GoalAutonomyCommand;
     }
   | {
       type: "update_goal";
@@ -127,7 +132,13 @@ export type ChatCommand = ChatCommandBase & {
   priority?: boolean;
 };
 
-export type GoalControlAction = "pause" | "resume" | "stop";
+export type GoalControlAction =
+  | "pause"
+  | "resume"
+  | "stop"
+  | "cancel"
+  | "clear";
+export type GoalAutonomyCommand = "off" | "on";
 
 const appliedChatParams = new Map<string, Record<string, unknown>>();
 const chatParamsSyncTails = new Map<string, Promise<void>>();
@@ -408,13 +419,27 @@ export async function setGoal(
   connection: PortOrConnection,
   apiKey?: string,
   budget?: GoalBudgetCommand,
+  replace?: boolean,
 ): Promise<void> {
   const command: ChatCommandBase = {
     type: "set_goal",
     content,
     ...(budget === undefined ? {} : { budget }),
+    ...(replace === undefined ? {} : { replace }),
   };
   await sendChatCommand(chatId, connection, apiKey, command);
+}
+
+export async function setGoalAutonomy(
+  chatId: string,
+  autonomy: GoalAutonomyCommand,
+  connection: PortOrConnection,
+  apiKey?: string,
+): Promise<void> {
+  await sendChatCommand(chatId, connection, apiKey, {
+    type: "set_goal_autonomy",
+    autonomy,
+  });
 }
 
 export async function setGoalBudget(

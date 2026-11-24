@@ -7,6 +7,9 @@ use refact_runtime_api::AtCommandsContext;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use refact_chat_api::internal_roles::{self, EventSubkind};
 use refact_chat_api::types::{ChatSession, GoalStatus, PendingDelivery, PushMode};
+use refact_chat_api::{
+    authorize_goal_transition, GoalActor, GoalTransition, GoalTransitionAuthorization,
+};
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
 const GOAL_CONTROL_SOURCE: &str = "tool.goal_pursuit";
 const MIN_SNOOZE_MINUTES: u64 = 1;
@@ -31,23 +34,14 @@ fn tool_message(tool_call_id: &str, content: String) -> Result<(bool, Vec<Contex
     ))
 }
 
-pub fn require_pursuable_goal(session: &ChatSession) -> Result<(), String> {
-    let Some(goal) = session.goal.as_ref() else {
-        return Err("no goal installed; call set_goal first".to_string());
-    };
-    if !goal.active {
-        return Err("this chat does not own the goal".to_string());
-    }
-    if goal.status != GoalStatus::Active {
-        return Err(format!(
-            "goal is not actively pursued (status: {})",
-            serde_json::to_value(goal.status)
-                .ok()
-                .and_then(|value| value.as_str().map(str::to_string))
-                .unwrap_or_default()
-        ));
-    }
-    Ok(())
+pub fn require_pursuable_goal(
+    session: &ChatSession,
+) -> Result<GoalTransitionAuthorization, String> {
+    authorize_goal_transition(
+        session.goal.as_ref(),
+        GoalActor::Model,
+        GoalTransition::Pause,
+    )
 }
 
 async fn session_for_chat(
@@ -115,7 +109,7 @@ impl Tool for ToolPauseGoal {
             .to_string();
         let session_arc = session_for_chat(ccx).await?;
         let mut session = session_arc.lock().await;
-        require_pursuable_goal(&session)?;
+        let authorization = require_pursuable_goal(&session)?;
         let ledger_reason = if reason.is_empty() {
             "pause_goal".to_string()
         } else {
@@ -136,6 +130,7 @@ impl Tool for ToolPauseGoal {
         session.enqueue_delivery(delivery)?;
         session.purge_goal_generated_wakes();
         session.goal_set_status_reason(GoalStatus::Paused, &ledger_reason);
+        session.goal_record_transition(authorization);
         tool_message(
             tool_call_id,
             "Goal pursuit paused. The user can resume it with goal_control(resume).".to_string(),

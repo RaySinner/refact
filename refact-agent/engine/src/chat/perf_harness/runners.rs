@@ -857,6 +857,7 @@ async fn run_full_soak_sample(
                     content: format!("full soak chat {chat_index}"),
                     criteria: None,
                     budget: None,
+                    replace: None,
                 },
             };
             locked.enqueue_accepted_command(request);

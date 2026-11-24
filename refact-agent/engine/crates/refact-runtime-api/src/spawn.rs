@@ -44,16 +44,8 @@ pub type TestRunner = Arc<
 >;
 
 #[cfg(any(test, feature = "test-util"))]
-pub type SpawnStageObserver = Arc<dyn Fn(String) + Send + Sync>;
-
-#[cfg(any(test, feature = "test-util"))]
 static TEST_RUNNER: std::sync::OnceLock<std::sync::Mutex<Option<TestRunner>>> =
     std::sync::OnceLock::new();
-
-#[cfg(any(test, feature = "test-util"))]
-static TEST_SPAWN_STAGE_OBSERVER: std::sync::OnceLock<
-    std::sync::Mutex<Option<SpawnStageObserver>>,
-> = std::sync::OnceLock::new();
 
 #[cfg(any(test, feature = "test-util"))]
 pub struct TestRunnerGuard;
@@ -64,30 +56,15 @@ impl Drop for TestRunnerGuard {
         if let Some(runner) = TEST_RUNNER.get() {
             *runner.lock().unwrap() = None;
         }
-        if let Some(observer) = TEST_SPAWN_STAGE_OBSERVER.get() {
-            *observer.lock().unwrap() = None;
-        }
     }
 }
 
 #[cfg(any(test, feature = "test-util"))]
 pub fn install_test_runner(runner: TestRunner) -> TestRunnerGuard {
-    install_test_runner_with_stages(runner, None)
-}
-
-#[cfg(any(test, feature = "test-util"))]
-pub fn install_test_runner_with_stages(
-    runner: TestRunner,
-    observer: Option<SpawnStageObserver>,
-) -> TestRunnerGuard {
     *TEST_RUNNER
         .get_or_init(|| std::sync::Mutex::new(None))
         .lock()
         .unwrap() = Some(runner);
-    *TEST_SPAWN_STAGE_OBSERVER
-        .get_or_init(|| std::sync::Mutex::new(None))
-        .lock()
-        .unwrap() = observer;
     TestRunnerGuard
 }
 
@@ -98,16 +75,4 @@ pub fn current_test_runner() -> Option<TestRunner> {
         .lock()
         .unwrap()
         .clone()
-}
-
-#[cfg(any(test, feature = "test-util"))]
-pub fn emit_test_spawn_stage(stage: String) {
-    let observer = TEST_SPAWN_STAGE_OBSERVER
-        .get_or_init(|| std::sync::Mutex::new(None))
-        .lock()
-        .unwrap()
-        .clone();
-    if let Some(observer) = observer {
-        observer(stage);
-    }
 }

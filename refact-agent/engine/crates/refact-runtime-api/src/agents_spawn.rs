@@ -249,18 +249,14 @@ pub async fn spawn_background_agent(
         .as_ref()
         .map(|worktree| worktree.auto_merge);
     let (completion_tx, completion_rx) = oneshot::channel();
-
-    push_sibling_notice(
-        &app,
-        &record.agent_id,
-        &req,
-        format!(
-            "▸ sibling started: {} targeting {}",
-            record.title,
-            format_notice_files(&record.target_files),
-        ),
-    )
-    .await;
+    let notice_app = app.clone();
+    let notice_agent_id = record.agent_id.clone();
+    let notice_req = req.clone();
+    let notice_text = format!(
+        "▸ sibling started: {} targeting {}",
+        record.title,
+        format_notice_files(&record.target_files),
+    );
 
     tokio::spawn(async move {
         let agent_id_for_run = agent_id.clone();
@@ -298,6 +294,7 @@ pub async fn spawn_background_agent(
         };
         let _ = completion_tx.send(final_record);
     });
+    push_sibling_notice(&notice_app, &notice_agent_id, &notice_req, notice_text).await;
 
     Ok(SpawnHandle {
         agent_id: handle_agent_id,

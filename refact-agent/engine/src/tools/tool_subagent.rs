@@ -6,7 +6,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use refact_core::chat_types::PushMode;
 use serde_json::{Map, Value, json};
-use tokio::sync::Mutex as AMutex;
+use tokio::sync::{oneshot, Mutex as AMutex};
 
 use refact_agents_core::spawn::{NotifyParent, SpawnGoal, SpawnRequest, SpawnWorktreeMode};
 use refact_runtime_api::spawn::spawn_background_agent;
@@ -38,7 +38,6 @@ const MODEL_TYPES: &[&str] = &[
     "task_planner",
 ];
 
-const SUBAGENT_WAIT_POLL_INTERVAL: Duration = Duration::from_millis(100);
 const SUBAGENT_ABORT_POLL_INTERVAL: Duration = Duration::from_millis(50);
 
 #[derive(Clone)]
@@ -190,9 +189,8 @@ impl Tool for ToolSubagent {
         if args.wait {
             let interrupt = refact_runtime_api::WaitInterrupt::from_context(&ccx).await;
             let record = wait_for_subagent_terminal(
-                &app,
-                &parent_chat_id,
                 &handle.agent_id,
+                handle.completion_rx,
                 interrupt,
             )
             .await?;
@@ -315,30 +313,27 @@ async fn wait_for_subagent_abort(interrupt: &refact_runtime_api::WaitInterrupt) 
 }
 
 async fn wait_for_subagent_terminal(
-    app: &crate::app_state::AppState,
-    parent_chat_id: &str,
     agent_id: &str,
+    completion_rx: oneshot::Receiver<BackgroundAgent>,
     interrupt: refact_runtime_api::WaitInterrupt,
 ) -> Result<BackgroundAgent, String> {
-    loop {
-        let waited = app.agents.wait(
-            parent_chat_id,
-            agent_id,
-            SUBAGENT_WAIT_POLL_INTERVAL,
-        );
-        tokio::pin!(waited);
-        let record = tokio::select! {
-            biased;
-            result = &mut waited => result?,
-            _ = wait_for_subagent_abort(&interrupt) => {
-                return Err(format!(
-                    "Subagent wait aborted by user; child agent '{agent_id}' was not cancelled."
-                ));
-            }
-        };
-        if record.status.is_terminal() {
-            return Ok(record);
+    let record = tokio::select! {
+        biased;
+        result = completion_rx => {
+            result.map_err(|_| "subagent task ended without a result".to_string())?
         }
+        _ = wait_for_subagent_abort(&interrupt) => {
+            return Err(format!(
+                "Subagent wait aborted by user; child agent '{agent_id}' was not cancelled."
+            ));
+        }
+    };
+    if record.status.is_terminal() {
+        Ok(record)
+    } else {
+        Err(format!(
+            "subagent task returned non-terminal status for '{agent_id}'"
+        ))
     }
 }
 
@@ -1494,9 +1489,11 @@ mod tests {
                 _ => unreachable!(),
             }
             let interrupt = refact_runtime_api::WaitInterrupt::from_context(&ccx).await;
+            let (completion_tx, completion_rx) = oneshot::channel();
+            completion_tx.send(record.clone()).unwrap();
             let waited = tokio::time::timeout(
                 Duration::from_secs(1),
-                wait_for_subagent_terminal(&app, "terminal-parent", &record.agent_id, interrupt),
+                wait_for_subagent_terminal(&record.agent_id, completion_rx, interrupt),
             )
             .await
             .expect("already terminal wait blocked")

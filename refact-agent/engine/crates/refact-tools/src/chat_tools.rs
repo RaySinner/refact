@@ -711,7 +711,7 @@ pub async fn process_tool_calls_once(
                 .acquire_tool_catalog(
                     mode_id,
                     model_id,
-                    execution_scope_for_thread(thread).as_deref(),
+                    execution_scope_for_thread(&thread).as_deref(),
                 )
                 .await
         }
@@ -1430,7 +1430,7 @@ pub async fn execute_tools_with_session(
                 .acquire_tool_catalog(
                     mode_id,
                     model_id,
-                    execution_scope_for_thread(thread).as_deref(),
+                    execution_scope_for_thread(&thread).as_deref(),
                 )
                 .await
         }
@@ -2476,7 +2476,7 @@ pub async fn execute_tools(
                 .acquire_tool_catalog(
                     mode_id,
                     model_id,
-                    execution_scope_for_thread(thread).as_deref(),
+                    execution_scope_for_thread(&thread).as_deref(),
                 )
                 .await
         }

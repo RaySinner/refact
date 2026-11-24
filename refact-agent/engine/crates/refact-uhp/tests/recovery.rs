@@ -166,7 +166,8 @@ async fn recovery_before_response_id_retries_same_key_and_body() {
     assert_eq!(requests[0].uri.path(), "/api/harness/v1/responses");
     assert_eq!(requests[0].body["input"], "same expensive prompt");
     assert_eq!(requests[0].body["metadata"]["harness_id"], "harness-1");
-    assert_eq!(requests[0].body["environment"], "env-1");
+    assert_eq!(requests[0].body["metadata"]["environment"], "env-1");
+    assert!(requests[0].body.get("environment").is_none());
     assert_eq!(
         requests[0].headers.get(IDEMPOTENCY_KEY_HEADER).unwrap(),
         "restart-key"

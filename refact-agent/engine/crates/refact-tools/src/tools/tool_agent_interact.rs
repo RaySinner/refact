@@ -219,150 +219,6 @@ async fn room_card_id(ccx: &Arc<AMutex<AtCommandsContext>>) -> Option<(String, S
     Some((task_id, card_id))
 }
 
-/// The room peers `to` addresses, and who is writing to them.
-///
-/// A task agent is a plain chat session, not a `BackgroundAgent`, so peers are addressed by chat
-/// id and found through the caller's card roster — not through the parent/child tree. The bus is
-/// deliberately scoped to one card: two members of *different* rooms stay unreachable, exactly as
-/// the tree rule keeps unrelated agents unreachable.
-///
-/// `to = None` means "the whole room": the default, because a room is a team and a message meant
-/// for the team is the common case. `to = Some(chat)` narrows it to one member, and a name that is
-/// not on this card yields `None` rather than an empty broadcast — reaching the wrong room is
-/// exactly what this scoping exists to prevent.
-///
-/// The author's provenance comes out of the same roster read, so attribution costs no second
-/// board load and cannot disagree with the reachability decision that permitted the delivery.
-pub(crate) async fn resolve_room_peers(
-    gcx: Arc<GlobalContext>,
-    task_id: &str,
-    caller_card_id: &str,
-    caller_chat_id: &str,
-    to: Option<&str>,
-) -> Option<Vec<RoomPeer>> {
-    let board = refact_runtime_api::task_storage::load_board(gcx, task_id).await.ok()?;
-    let card = board.get_card(caller_card_id)?;
-    let author = refact_chat_api::room_provenance::room_member_provenance(card, caller_chat_id)?;
-    match to {
-        Some(target) => {
-            let peer_member = card
-                .team()
-                .iter()
-                .filter(|member| {
-                    !member
-                        .agent_chat_id
-                        .as_deref()
-                        .is_some_and(|id| id == caller_chat_id)
-                })
-                .find(|member| {
-                    member.agent_chat_id.as_deref() == Some(target)
-                        || member.agent_id.as_deref() == Some(target)
-                })
-                .or_else(|| {
-                    card.team()
-                        .iter()
-                        .filter(|member| {
-                            !member
-                                .agent_chat_id
-                                .as_deref()
-                                .is_some_and(|id| id == caller_chat_id)
-                        })
-                        .find(|member| {
-                            member.role.trim().eq_ignore_ascii_case(target.trim())
-                                || refact_chat_api::room_provenance::member_provenance(card, member)
-                                    .display_name
-                                    .trim()
-                                    .eq_ignore_ascii_case(target.trim())
-                        })
-                })?;
-            let peer_chat_id = peer_member
-                .agent_chat_id
-                .as_deref()
-                .map(str::trim)
-                .filter(|id| !id.is_empty())?;
-            Some(vec![RoomPeer {
-                chat_id: peer_chat_id.to_string(),
-                author,
-            }])
-        }
-        None => {
-            let peers: Vec<RoomPeer> = card
-                .team()
-                .iter()
-                .filter(|member| {
-                    member
-                        .agent_chat_id
-                        .as_deref()
-                        .map(str::trim)
-                        .filter(|id| !id.is_empty())
-                        .is_some_and(|id| id != caller_chat_id)
-                })
-                .map(|member| RoomPeer {
-                    chat_id: member.agent_chat_id.clone().unwrap_or_default(),
-                    author: author.clone(),
-                })
-                .collect();
-            // A room of one is not a room. Say "nobody to tell" instead of
-            // reporting a successful delivery of zero messages.
-            if peers.is_empty() {
-                None
-            } else {
-                Some(peers)
-            }
-        }
-    }
-}
-
-/// A reachable room peer plus who is writing to it.
-#[derive(Clone)]
-pub(crate) struct RoomPeer {
-    pub chat_id: String,
-    pub author: refact_chat_api::MessageProvenance,
-}
-
-/// Deliver one room message to every peer, naming the ones that got it.
-///
-/// The author is stamped *before* the text is built: the byline a GUI draws must survive the
-/// delivery intact, so the notice content names the peer while the provenance names the speaker.
-/// A failure on one peer aborts the rest — a partially delivered room message that then claims
-/// success would leave half the room believing it was told something the other half never heard.
-async fn deliver_room_message(
-    app: AppState,
-    peers: Vec<RoomPeer>,
-    card_id: &str,
-    from_chat_id: &str,
-    text: &str,
-    push: PushMode,
-) -> Result<String, String> {
-    let targets: Vec<String> = peers.iter().map(|peer| peer.chat_id.clone()).collect();
-    for peer in peers {
-        let author_json = serde_json::to_value(&peer.author).unwrap_or(serde_json::Value::Null);
-        let mut message = refact_chat_api::internal_roles::event(
-            refact_chat_api::internal_roles::EventSubkind::SystemNotice,
-            "agents.room_message",
-            json!({
-                "card_id": card_id,
-                "from": from_chat_id,
-                "provenance": author_json,
-            }),
-            format!("[message from room peer {}]\n{text}", peer.chat_id),
-        );
-        refact_chat_api::attach_provenance(&mut message, peer.author);
-        refact_chat_api::delivery::deliver_to_chat(
-            app.clone(),
-            &peer.chat_id,
-            PendingDelivery::new(
-                vec![message],
-                push,
-                "agents.room_message".to_string(),
-                true,
-            ),
-        )
-        .await?;
-    }
-    Ok(format!("Message queued for: {}.", targets.join(", ")))
-}
-
 pub fn short_id(agent_id: &str) -> &str {
     agent_id.get(..agent_id.len().min(16)).unwrap_or(agent_id)
 }
@@ -517,33 +373,61 @@ impl Tool for ToolAgentMessage {
             let is_parent = to.as_deref() == Some("parent");
             if !is_parent {
                 let target = if is_broadcast { None } else { to.as_deref() };
-                if let Some(peers) = resolve_room_peers(
-                    app.gcx.clone(),
-                    &task_id,
-                    &peer_card_id,
-                    &chat_id,
+                let session_arc = app
+                    .chat
+                    .sessions
+                    .read()
+                    .await
+                    .get(&chat_id)
+                    .cloned()
+                    .ok_or_else(|| format!("Room chat '{chat_id}' is unavailable"))?;
+                match refact_runtime_api::room_delivery::publish_explicit_message(
+                    app.clone(),
+                    session_arc,
+                    tool_call_id,
+                    &text,
                     target,
+                    push,
                 )
                 .await
                 {
-                    return Ok(output(
-                        tool_call_id,
-                        deliver_room_message(app, peers, &peer_card_id, &chat_id, &text, push).await?,
-                    ));
-                } else if is_broadcast {
-                    return Err(
-                        "No other room member to message on this card.".to_string(),
-                    );
-                } else if let Some(target) = target {
-                    if target_is_foreign_room_member(
-                        app.gcx.clone(),
-                        &task_id,
-                        &peer_card_id,
-                        target,
-                    )
-                    .await
-                    {
-                        return Err(OUT_OF_REACH.to_string());
+                    Ok(report) => {
+                        if report.delivered.is_empty() && report.failed.is_empty() {
+                            return Err("No other room member to message on this card.".to_string());
+                        }
+                        let mut result = format!(
+                            "Room event {} queued for: {}.",
+                            report.event_id,
+                            report.delivered.join(", ")
+                        );
+                        if !report.failed.is_empty() {
+                            result.push_str(&format!(
+                                " Failed recipients: {}.",
+                                report
+                                    .failed
+                                    .iter()
+                                    .map(|(recipient, error)| format!("{recipient}: {error}"))
+                                    .collect::<Vec<_>>()
+                                    .join("; ")
+                            ));
+                        }
+                        return Ok(output(tool_call_id, result));
+                    }
+                    Err(error) if is_broadcast => return Err(error),
+                    Err(error) => {
+                        if let Some(target) = target {
+                            if target_is_foreign_room_member(
+                                app.gcx.clone(),
+                                &task_id,
+                                &peer_card_id,
+                                target,
+                            )
+                            .await
+                            {
+                                return Err(OUT_OF_REACH.to_string());
+                            }
+                        }
+                        return Err(error);
                     }
                 }
             }
@@ -562,7 +446,8 @@ impl Tool for ToolAgentMessage {
             if expects_reply {
                 let (updated, question_id) =
                     app.agents.add_question(&agent_id, text.clone()).await?;
-                refact_agents_core::spawn::emit_background_agent_update(app.clone(), &updated).await;
+                refact_agents_core::spawn::emit_background_agent_update(app.clone(), &updated)
+                    .await;
                 {
                     refact_agents_core::push::push_notice_to_chat_with_mode(
                         app,

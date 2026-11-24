@@ -360,6 +360,14 @@ pub fn prepare_session_preamble_and_knowledge(
     session_arc: Arc<AMutex<ChatSession>>,
 ) -> futures::future::BoxFuture<'static, ()> {
     Box::pin(async move {
+        if let Err(error) = refact_runtime_api::room_delivery::replay_room_history(
+            app.clone(),
+            session_arc.clone(),
+        )
+        .await
+        {
+            warn!("Failed to replay room history: {error}");
+        }
         ensure_session_preamble_inner(app.clone(), session_arc.clone()).await;
         prepare_session_knowledge_inner(app, session_arc).await;
     })

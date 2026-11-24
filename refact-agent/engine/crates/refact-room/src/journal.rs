@@ -127,7 +127,9 @@ impl RoomJournal {
 }
 
 fn duplicate(existing: &RoomEvent, draft: &RoomEventDraft) -> Result<AppendOutcome, RoomError> {
-    if existing.to_draft() == *draft {
+    let mut retried = draft.clone();
+    retried.created_at = existing.created_at.clone();
+    if existing.to_draft() == retried {
         return Ok(AppendOutcome::Duplicate(existing.clone()));
     }
     Err(RoomError::Conflict(format!(
@@ -363,6 +365,18 @@ mod tests {
         assert_eq!(duplicate.event().room_seq, 1);
         assert!(journal.append(draft("event-1", "changed")).is_err());
         assert_eq!(journal.events().len(), 2);
+    }
+
+    #[test]
+    fn event_id_retry_ignores_a_new_transport_timestamp() {
+        let mut journal = RoomJournal::default();
+        let original = journal.append(draft("event-1", "one")).unwrap();
+        let mut retried = draft("event-1", "one");
+        retried.created_at = "later".to_string();
+        let duplicate = journal.append(retried).unwrap();
+        assert!(!duplicate.was_appended());
+        assert_eq!(duplicate.event(), original.event());
+        assert_eq!(journal.events().len(), 1);
     }
 
     #[test]

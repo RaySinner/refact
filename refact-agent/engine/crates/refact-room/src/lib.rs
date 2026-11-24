@@ -4,6 +4,7 @@ mod journal;
 mod participant;
 mod projection;
 mod roster;
+mod router;
 
 pub use delivery::DeliveryAttempt;
 pub use event::{RoomAuthor, RoomEvent, RoomEventDraft, RoomEventKind, ROOM_EVENT_SCHEMA_VERSION};
@@ -13,6 +14,7 @@ pub use journal::{
 pub use participant::{Participant, RoomParticipant, RoomRoster};
 pub use projection::{project_assistant_message, PublicProjectionInput, PublicRoomEvent};
 pub use roster::{spawn_order, validate_roster, validate_spawn, RosterMember};
+pub use router::{replay_deliveries, route_event, RoomDelivery};
 
 #[derive(Debug, thiserror::Error)]
 pub enum RoomError {

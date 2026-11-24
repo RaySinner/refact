@@ -1242,6 +1242,213 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn completed_assistant_body_is_published_to_peer_without_private_traces() {
+        let gcx = crate::global_context::tests::make_test_gcx().await;
+        let app = refact_runtime_api::app_state_from_gcx(gcx.clone()).await;
+        let workspace = room_workspace();
+        *gcx.documents_state.workspace_folders.lock().unwrap() =
+            vec![workspace.path().to_path_buf()];
+        refact_runtime_api::task_storage::save_board(
+            gcx.clone(),
+            "task-room",
+            &refact_tasks::types::TaskBoard {
+                cards: vec![room_board_card(&["agent-T-1-arch", "agent-T-1-code"])],
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let architect = room_session_only(&app, "agent-T-1-arch").await;
+        let code = room_session_only(&app, "agent-T-1-code").await;
+        {
+            let mut session = architect.lock().await;
+            session.thread.task_meta = Some(refact_chat_api::TaskMeta {
+                task_id: "task-room".to_string(),
+                role: "agents".to_string(),
+                agent_id: Some("agent-id-0".to_string()),
+                card_id: Some("T-1".to_string()),
+                planner_chat_id: Some("planner-room".to_string()),
+            });
+            let mut message = ChatMessage::new(
+                "assistant".to_string(),
+                "The public review result is ready.".to_string(),
+            );
+            message.message_id = "assistant-public-1".to_string();
+            message.reasoning_content = Some("PRIVATE_REASONING_SENTINEL".to_string());
+            message.tool_calls = Some(vec![refact_core::chat_types::ChatToolCall {
+                id: "private-call".to_string(),
+                function: refact_core::chat_types::ChatToolFunction {
+                    name: "private_tool".to_string(),
+                    arguments: "PRIVATE_ARGUMENTS_SENTINEL".to_string(),
+                },
+                tool_type: "function".to_string(),
+                extra_content: None,
+            }]);
+            session.add_message(message);
+        }
+
+        refact_runtime_api::room_delivery::publish_latest_assistant_message(
+            app.clone(),
+            architect.clone(),
+        )
+        .await
+        .unwrap()
+        .expect("room body published");
+
+        let peer_messages = code.lock().await.messages.clone();
+        let delivered = peer_messages
+            .iter()
+            .find(|message| {
+                message
+                    .content
+                    .content_text_only()
+                    .contains("The public review result is ready.")
+            })
+            .expect("public body reaches the peer");
+        let serialized = serde_json::to_string(delivered).unwrap();
+        assert!(!serialized.contains("PRIVATE_REASONING_SENTINEL"));
+        assert!(!serialized.contains("PRIVATE_ARGUMENTS_SENTINEL"));
+        assert!(!serialized.contains("private_tool"));
+        let provenance = refact_chat_api::provenance_from_message(delivered).unwrap();
+        assert_eq!(provenance.chat_id, "agent-T-1-arch");
+        assert_eq!(provenance.role, "architect");
+        assert_eq!(provenance.card_id.as_deref(), Some("T-1"));
+        assert!(refact_core::active_context::active_context(&peer_messages)
+            .unwrap()
+            .messages
+            .iter()
+            .any(|message| message.message_id == delivered.message_id));
+        assert!(
+            !architect.lock().await.messages.iter().any(|message| {
+                message.role == "event"
+                    && message.content.content_text_only().contains(
+                        "The public review result is ready.",
+                    )
+            }),
+            "the author must not receive its own room body"
+        );
+    }
+
+    #[tokio::test]
+    async fn repeated_publication_is_deduplicated_per_recipient() {
+        let gcx = crate::global_context::tests::make_test_gcx().await;
+        let app = refact_runtime_api::app_state_from_gcx(gcx.clone()).await;
+        let workspace = room_workspace();
+        *gcx.documents_state.workspace_folders.lock().unwrap() =
+            vec![workspace.path().to_path_buf()];
+        refact_runtime_api::task_storage::save_board(
+            gcx.clone(),
+            "task-room",
+            &refact_tasks::types::TaskBoard {
+                cards: vec![room_board_card(&["agent-T-1-arch", "agent-T-1-code"])],
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let architect = room_session_only(&app, "agent-T-1-arch").await;
+        let code = room_session_only(&app, "agent-T-1-code").await;
+        {
+            let mut session = architect.lock().await;
+            session.thread.task_meta = Some(refact_chat_api::TaskMeta {
+                task_id: "task-room".to_string(),
+                role: "agents".to_string(),
+                agent_id: Some("agent-id-0".to_string()),
+                card_id: Some("T-1".to_string()),
+                planner_chat_id: Some("planner-room".to_string()),
+            });
+            let mut message =
+                ChatMessage::new("assistant".to_string(), "One public body only.".to_string());
+            message.message_id = "assistant-public-dedup".to_string();
+            session.add_message(message);
+        }
+
+        for _ in 0..2 {
+            refact_runtime_api::room_delivery::publish_latest_assistant_message(
+                app.clone(),
+                architect.clone(),
+            )
+            .await
+            .unwrap()
+            .expect("room body published");
+        }
+
+        let matching = code
+            .lock()
+            .await
+            .messages
+            .iter()
+            .filter(|message| {
+                message
+                    .content
+                    .content_text_only()
+                    .contains("One public body only.")
+            })
+            .count();
+        assert_eq!(matching, 1, "the same body must reach a peer once");
+    }
+
+    #[tokio::test]
+    async fn partial_recipient_failure_preserves_busy_peer_delivery() {
+        let gcx = crate::global_context::tests::make_test_gcx().await;
+        let app = refact_runtime_api::app_state_from_gcx(gcx.clone()).await;
+        let workspace = room_workspace();
+        *gcx.documents_state.workspace_folders.lock().unwrap() =
+            vec![workspace.path().to_path_buf()];
+        refact_runtime_api::task_storage::save_board(
+            gcx.clone(),
+            "task-room",
+            &refact_tasks::types::TaskBoard {
+                cards: vec![room_board_card(&[
+                    "agent-T-1-arch",
+                    "agent-T-1-code",
+                    "agent-T-1-missing",
+                ])],
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let architect = room_session_only(&app, "agent-T-1-arch").await;
+        let code = room_session_only(&app, "agent-T-1-code").await;
+        {
+            let mut session = architect.lock().await;
+            session.thread.task_meta = Some(refact_chat_api::TaskMeta {
+                task_id: "task-room".to_string(),
+                role: "agents".to_string(),
+                agent_id: Some("agent-id-0".to_string()),
+                card_id: Some("T-1".to_string()),
+                planner_chat_id: Some("planner-room".to_string()),
+            });
+            let mut message = ChatMessage::new(
+                "assistant".to_string(),
+                "Deliver despite the missing peer.".to_string(),
+            );
+            message.message_id = "assistant-partial-failure".to_string();
+            session.add_message(message);
+        }
+        code.lock().await.runtime.state = refact_chat_api::SessionState::Generating;
+
+        let report = refact_runtime_api::room_delivery::publish_latest_assistant_message(
+            app.clone(),
+            architect,
+        )
+        .await
+        .unwrap()
+        .expect("room body published");
+
+        assert_eq!(report.delivered, vec!["agent-T-1-code".to_string()]);
+        assert_eq!(report.failed.len(), 1);
+        assert_eq!(report.failed[0].0, "agent-T-1-missing");
+        let session = code.lock().await;
+        assert_eq!(session.pending_deliveries.len(), 1);
+        assert!(session.pending_deliveries[0]
+            .preview_text()
+            .contains("Deliver despite the missing peer."));
+        assert!(session.messages.is_empty());
+    }
+
     /// Provenance of the message carrying `needle` in the peer's chat.
     async fn delivered_provenance(
         session: &Arc<AMutex<ChatSession>>,
@@ -1366,6 +1573,15 @@ mod tests {
         task_id: &str,
         card_id: &str,
     ) -> Arc<AMutex<AtCommandsContext>> {
+        let task_meta = refact_chat_api::TaskMeta {
+            task_id: task_id.to_string(),
+            role: "agents".to_string(),
+            agent_id: Some("agent-id-0".to_string()),
+            card_id: Some(card_id.to_string()),
+            planner_chat_id: Some("planner-room".to_string()),
+        };
+        let session = room_session_only(app, chat_id).await;
+        session.lock().await.thread.task_meta = Some(task_meta.clone());
         let ccx = Arc::new(AMutex::new(
             crate::at_commands::at_commands::at_commands_new_from_app(
                 app.clone(),
@@ -1381,13 +1597,7 @@ mod tests {
             )
             .await,
         ));
-        ccx.lock().await.task_meta = Some(refact_chat_api::TaskMeta {
-            task_id: task_id.to_string(),
-            role: "agents".to_string(),
-            agent_id: Some("agent-id-0".to_string()),
-            card_id: Some(card_id.to_string()),
-            planner_chat_id: Some("planner-room".to_string()),
-        });
+        ccx.lock().await.task_meta = Some(task_meta);
         ccx
     }
 

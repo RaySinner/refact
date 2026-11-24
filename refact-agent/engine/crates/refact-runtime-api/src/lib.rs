@@ -578,6 +578,7 @@ pub mod caps_models_dev;
 pub mod caps_model_caps;
 pub mod room_roster;
 pub mod room_event_store;
+pub mod room_delivery;
 pub mod customization_registry;
 pub mod customization_registry_gcx;
 pub mod memories;

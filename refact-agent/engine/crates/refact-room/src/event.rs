@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+use crate::delivery::DeliveryAttempt;
 use crate::RoomError;
 
 pub const ROOM_EVENT_SCHEMA_VERSION: u32 = 1;
@@ -30,6 +31,8 @@ pub struct RoomEventDraft {
     pub kind: RoomEventKind,
     pub author: RoomAuthor,
     pub body: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recipient_id: Option<String>,
     pub source_message_id: String,
     pub turn_id: String,
     pub created_at: String,
@@ -37,6 +40,10 @@ pub struct RoomEventDraft {
     pub source_revision: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_digest: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delivery: Option<DeliveryAttempt>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delivery_error: Option<String>,
 }
 
 impl Default for RoomEventDraft {
@@ -48,11 +55,14 @@ impl Default for RoomEventDraft {
             kind: RoomEventKind::AssistantMessage,
             author: RoomAuthor::default(),
             body: String::new(),
+            recipient_id: None,
             source_message_id: String::new(),
             turn_id: String::new(),
             created_at: String::new(),
             source_revision: None,
             source_digest: None,
+            delivery: None,
+            delivery_error: None,
         }
     }
 }
@@ -82,6 +92,8 @@ pub struct RoomEvent {
     pub kind: RoomEventKind,
     pub author: RoomAuthor,
     pub body: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recipient_id: Option<String>,
     pub source_message_id: String,
     pub turn_id: String,
     pub created_at: String,
@@ -89,6 +101,10 @@ pub struct RoomEvent {
     pub source_revision: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_digest: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delivery: Option<DeliveryAttempt>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delivery_error: Option<String>,
 }
 
 impl Default for RoomEvent {
@@ -101,11 +117,14 @@ impl Default for RoomEvent {
             kind: RoomEventKind::AssistantMessage,
             author: RoomAuthor::default(),
             body: String::new(),
+            recipient_id: None,
             source_message_id: String::new(),
             turn_id: String::new(),
             created_at: String::new(),
             source_revision: None,
             source_digest: None,
+            delivery: None,
+            delivery_error: None,
         }
     }
 }
@@ -120,11 +139,14 @@ impl RoomEvent {
             kind: draft.kind,
             author: draft.author,
             body: draft.body,
+            recipient_id: draft.recipient_id,
             source_message_id: draft.source_message_id,
             turn_id: draft.turn_id,
             created_at: draft.created_at,
             source_revision: draft.source_revision,
             source_digest: draft.source_digest,
+            delivery: draft.delivery,
+            delivery_error: draft.delivery_error,
         }
     }
 
@@ -136,11 +158,14 @@ impl RoomEvent {
             kind: self.kind,
             author: self.author.clone(),
             body: self.body.clone(),
+            recipient_id: self.recipient_id.clone(),
             source_message_id: self.source_message_id.clone(),
             turn_id: self.turn_id.clone(),
             created_at: self.created_at.clone(),
             source_revision: self.source_revision.clone(),
             source_digest: self.source_digest.clone(),
+            delivery: self.delivery.clone(),
+            delivery_error: self.delivery_error.clone(),
         }
     }
 

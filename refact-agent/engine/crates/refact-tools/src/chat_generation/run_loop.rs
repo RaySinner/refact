@@ -147,6 +147,14 @@ pub fn start_generation(
                         });
                         session.set_runtime_state(SessionState::Idle, None);
                         drop(session);
+                        if let Err(error) = refact_runtime_api::room_delivery::publish_latest_assistant_message(
+                            app.clone(),
+                            session_arc.clone(),
+                        )
+                        .await
+                        {
+                            warn!("Failed to publish room assistant message: {error}");
+                        }
                         spawn_completion_activity_reaction(app.clone(), session_arc.clone()).await;
                         maybe_save_trajectory_with_intent(
                             app.clone(),
@@ -482,6 +490,14 @@ pub fn start_generation(
                 break;
             }
 
+            if let Err(error) = refact_runtime_api::room_delivery::publish_latest_assistant_message(
+                app.clone(),
+                session_arc.clone(),
+            )
+            .await
+            {
+                warn!("Failed to publish room assistant message: {error}");
+            }
             network_retry_attempt = 0;
 
             {

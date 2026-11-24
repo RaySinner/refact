@@ -1277,3 +1277,17 @@ impl Tool for ToolBoardCreateBatch {
         vec![]
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn spawn_args_forwards_writer_role() {
+        let item = parse_spawn_item(&json!({"card_id": "T-1", "role": "coder"})).unwrap();
+
+        let args = spawn_args("task-1", &item);
+
+        assert_eq!(args.get("role"), Some(&json!("coder")));
+    }
+}

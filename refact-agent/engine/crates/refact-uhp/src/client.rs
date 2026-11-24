@@ -17,6 +17,7 @@ pub struct Client {
     bearer_token: Option<Arc<str>>,
     http: reqwest::Client,
     idempotency: Arc<Mutex<HashMap<String, RequestFingerprint>>>,
+    harness_idempotency: Arc<Mutex<HashMap<String, RequestFingerprint>>>,
 }
 
 impl Client {
@@ -43,6 +44,7 @@ impl Client {
             bearer_token: bearer_token.map(Arc::from),
             http,
             idempotency: Arc::new(Mutex::new(HashMap::new())),
+            harness_idempotency: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
@@ -183,7 +185,7 @@ impl Client {
             .body(body))
     }
 
-    fn authenticated(&self, method: Method, url: Url) -> RequestBuilder {
+    pub(crate) fn authenticated(&self, method: Method, url: Url) -> RequestBuilder {
         let request = self
             .http
             .request(method, url)
@@ -194,7 +196,7 @@ impl Client {
         }
     }
 
-    fn endpoint(&self, segments: &[&str]) -> Result<Url, UhpError> {
+    pub(crate) fn endpoint(&self, segments: &[&str]) -> Result<Url, UhpError> {
         let mut url = self.base_url.clone();
         url.path_segments_mut()
             .map_err(|_| UhpError::InvalidBaseUrl("URL cannot contain path segments".to_string()))?
@@ -225,17 +227,50 @@ impl Client {
         Ok(())
     }
 
-    async fn execute<T: DeserializeOwned>(
+    pub(crate) fn register_harness_idempotency(
+        &self,
+        key: &IdempotencyKey,
+        fingerprint: RequestFingerprint,
+    ) -> Result<(), UhpError> {
+        let mut registry = self
+            .harness_idempotency
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(expected) = registry.get(key.as_str()) {
+            if expected != &fingerprint {
+                return Err(UhpError::FingerprintConflict {
+                    expected: expected.clone(),
+                    actual: fingerprint,
+                });
+            }
+            return Ok(());
+        }
+        registry.insert(key.as_str().to_string(), fingerprint);
+        Ok(())
+    }
+
+    pub(crate) async fn execute<T: DeserializeOwned>(
         &self,
         request: RequestBuilder,
         operation: &'static str,
     ) -> Result<T, UhpError> {
+        self.execute_with_headers(request, operation)
+            .await
+            .map(|(value, _)| value)
+    }
+
+    pub(crate) async fn execute_with_headers<T: DeserializeOwned>(
+        &self,
+        request: RequestBuilder,
+        operation: &'static str,
+    ) -> Result<(T, HeaderMap), UhpError> {
         let response = request
             .send()
             .await
             .map_err(|source| UhpError::Transport { operation, source })?;
         validate_version(response.headers())?;
         let status = response.status();
+        let headers = response.headers().clone();
         let body = response
             .bytes()
             .await
@@ -251,7 +286,9 @@ impl Client {
                 error: envelope.error,
             });
         }
-        serde_json::from_slice(&body).map_err(|source| UhpError::Schema { operation, source })
+        serde_json::from_slice(&body)
+            .map(|value| (value, headers))
+            .map_err(|source| UhpError::Schema { operation, source })
     }
 }
 

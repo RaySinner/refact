@@ -108,6 +108,8 @@ pub struct Discovery {
     pub capabilities: Capabilities,
     #[serde(default)]
     pub implementation: Option<Implementation>,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Value>,
 }
 
 impl Discovery {
@@ -190,6 +192,8 @@ pub struct ResponseMetadata {
     pub model_fallback: bool,
     #[serde(default)]
     pub model_fallback_reason: Option<String>,
+    #[serde(default)]
+    pub environment: Option<String>,
     #[serde(flatten)]
     pub extra: BTreeMap<String, Value>,
 }
@@ -278,6 +282,8 @@ pub fn completed_assistant_bodies(response: &Response) -> Vec<String> {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct CreateResponseMetadata {
     pub harness_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub environment: Option<String>,
     #[serde(flatten)]
     pub extra: BTreeMap<String, Value>,
 }
@@ -296,8 +302,6 @@ pub struct CreateResponse {
     max_step: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     timeout_seconds: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    environment: Option<String>,
 }
 
 impl CreateResponse {
@@ -307,6 +311,7 @@ impl CreateResponse {
             model: None,
             metadata: CreateResponseMetadata {
                 harness_id: harness_id.into(),
+                environment: None,
                 extra: BTreeMap::new(),
             },
             stream: false,
@@ -314,7 +319,6 @@ impl CreateResponse {
             store: true,
             max_step: None,
             timeout_seconds: None,
-            environment: None,
         }
     }
 
@@ -344,7 +348,7 @@ impl CreateResponse {
     }
 
     pub fn environment(mut self, environment: impl Into<String>) -> Self {
-        self.environment = Some(environment.into());
+        self.metadata.environment = Some(environment.into());
         self
     }
 
@@ -372,25 +376,7 @@ impl CreateResponse {
                 source,
             })?,
         );
-        let input = canonicalize(
-            serde_json::to_value(FingerprintInput {
-                method: "POST",
-                path: "/v1/responses",
-                protocol_version: UHP_VERSION,
-                participant_id: &scope.participant_id,
-                credential_scope_id: &scope.credential_scope_id,
-                body,
-            })
-            .map_err(|source| UhpError::Schema {
-                operation: "serialize response fingerprint",
-                source,
-            })?,
-        );
-        let bytes = serde_json::to_vec(&input).map_err(|source| UhpError::Schema {
-            operation: "serialize response fingerprint",
-            source,
-        })?;
-        Ok(RequestFingerprint(hex::encode(Sha256::digest(bytes))))
+        request_fingerprint("POST", "/v1/responses", scope, body)
     }
 
     pub(crate) fn validate(&self, streaming: bool) -> Result<(), UhpError> {
@@ -431,6 +417,33 @@ struct FingerprintInput<'a> {
     participant_id: &'a str,
     credential_scope_id: &'a str,
     body: Value,
+}
+
+pub(crate) fn request_fingerprint(
+    method: &'static str,
+    path: &'static str,
+    scope: &RequestScope,
+    body: Value,
+) -> Result<RequestFingerprint, UhpError> {
+    let input = canonicalize(
+        serde_json::to_value(FingerprintInput {
+            method,
+            path,
+            protocol_version: UHP_VERSION,
+            participant_id: &scope.participant_id,
+            credential_scope_id: &scope.credential_scope_id,
+            body,
+        })
+        .map_err(|source| UhpError::Schema {
+            operation: "serialize request fingerprint",
+            source,
+        })?,
+    );
+    let bytes = serde_json::to_vec(&input).map_err(|source| UhpError::Schema {
+        operation: "serialize request fingerprint",
+        source,
+    })?;
+    Ok(RequestFingerprint(hex::encode(Sha256::digest(bytes))))
 }
 
 fn canonicalize(value: Value) -> Value {

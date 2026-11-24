@@ -52,7 +52,9 @@ fn production_dependencies_stay_within_standalone_protocol_boundary() {
     let source = [
         include_str!("../src/lib.rs"),
         include_str!("../src/client.rs"),
+        include_str!("../src/environment.rs"),
         include_str!("../src/error.rs"),
+        include_str!("../src/harness.rs"),
         include_str!("../src/recovery.rs"),
         include_str!("../src/session.rs"),
         include_str!("../src/streaming.rs"),

@@ -1,5 +1,7 @@
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use refact_core::chat_types::PushMode;
@@ -9,12 +11,13 @@ use tokio::sync::Mutex as AMutex;
 use refact_agents_core::spawn::{NotifyParent, SpawnGoal, SpawnRequest, SpawnWorktreeMode};
 use refact_runtime_api::spawn::spawn_background_agent;
 use refact_runtime_api::GlobalContextCtx;
-use refact_agents_core::types::BgAgentKind;
+use refact_agents_core::types::{BackgroundAgent, BgAgentKind};
 use refact_runtime_api::{AtCommandsContext, MAX_SUBCHAT_DEPTH};
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextEnum};
 use refact_chat_api::types::{GoalBudget, GoalCriterion};
 use refact_postprocessing::pp_command_output::OutputFilter;
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
+use crate::tools::tool_background_agents::format_agent_result;
 use crate::tools::tools_list::get_available_tools;
 use refact_yaml_configs::customization_registry::resolve_subagent_for_model;
 
@@ -35,6 +38,9 @@ const MODEL_TYPES: &[&str] = &[
     "task_planner",
 ];
 
+const SUBAGENT_WAIT_POLL_INTERVAL: Duration = Duration::from_millis(100);
+const SUBAGENT_ABORT_POLL_INTERVAL: Duration = Duration::from_millis(50);
+
 #[derive(Clone)]
 pub struct ToolSubagent {
     pub config_path: String,
@@ -52,6 +58,7 @@ struct SubagentArgs {
     plan: Option<String>,
     worktree_mode: SpawnWorktreeMode,
     completion_push: PushMode,
+    wait: bool,
 }
 
 #[async_trait]
@@ -66,7 +73,7 @@ impl Tool for ToolSubagent {
             },
             experimental: false,
             allow_parallel: true,
-            description: "Spawn a background-only, stateful child trajectory for research or implementation. The child inherits all parent-chat tools by default, can select a configured model or named model, and may receive a goal with a step budget, plan, target files, and an isolated worktree that auto-merges by default. A trajectory link is returned immediately and completion is auto-pushed. Use `agents_overview` and `agent_message` to coordinate with peers.".to_string(),
+            description: "Spawn a background-only, stateful child trajectory for research or implementation. The child inherits all parent-chat tools by default, can select a configured model or named model, and may receive a goal with a step budget, plan, target files, and an isolated worktree that auto-merges by default. By default a trajectory link is returned immediately and completion is auto-pushed. Set wait=true to return only when this child reaches a terminal state; parallel blocking calls still run concurrently. Use `agents_overview` and `agent_message` to coordinate with peers.".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -80,7 +87,8 @@ impl Tool for ToolSubagent {
                     "plan": {"type": "string", "description": "Optional installed plan; it is ground truth for the child."},
                     "worktree": {"type": "string", "enum": ["inherit", "isolated"], "default": "inherit", "description": "Use the parent worktree or create an isolated worktree."},
                     "push": PushMode::schema(),
-                    "auto_merge": {"type": "boolean", "default": true, "description": "Only for worktree=isolated. Squash-merge completion automatically."}
+                    "auto_merge": {"type": "boolean", "default": true, "description": "Only for worktree=isolated. Squash-merge completion automatically."},
+                    "wait": {"type": "boolean", "default": false, "description": "Wait for this child to reach a terminal state and return its final result. Unrelated messages do not end the wait; user abort does not cancel the child."}
                 },
                 "required": ["task", "expected_result"]
             }),
@@ -178,7 +186,34 @@ impl Tool for ToolSubagent {
             notify_parent: NotifyParent::Auto,
             completion_push: args.completion_push,
         };
-        let handle = spawn_background_agent(app, req).await?;
+        let handle = spawn_background_agent(app.clone(), req).await?;
+        if args.wait {
+            let interrupt = refact_runtime_api::WaitInterrupt::from_context(&ccx).await;
+            let record = wait_for_subagent_terminal(
+                &app,
+                &parent_chat_id,
+                &handle.agent_id,
+                interrupt,
+            )
+            .await?;
+            let content = format_agent_result(&record, false).await?;
+            return Ok((
+                false,
+                vec![tool_message(
+                    content,
+                    tool_call_id,
+                    Map::from_iter([
+                        ("background_agent_id".to_string(), json!(record.agent_id)),
+                        ("background_agent_kind".to_string(), json!("subagent")),
+                        (
+                            "background_agent_status".to_string(),
+                            json!(record.status.as_str()),
+                        ),
+                        ("child_chat_id".to_string(), json!(handle.child_chat_id)),
+                    ]),
+                )],
+            ));
+        }
         Ok((
             false,
             vec![build_background_start_tool_result(
@@ -244,7 +279,67 @@ fn parse_subagent_args(args: &HashMap<String, Value>) -> Result<SubagentArgs, St
         plan,
         worktree_mode,
         completion_push: PushMode::from_args(args)?,
+        wait: parse_wait(args)?,
     })
+}
+
+fn parse_wait(args: &HashMap<String, Value>) -> Result<bool, String> {
+    match args.get("wait") {
+        None | Some(Value::Null) => Ok(false),
+        Some(Value::Bool(wait)) => Ok(*wait),
+        Some(value) => Err(format!("argument `wait` must be true or false: {value:?}")),
+    }
+}
+
+async fn wait_for_subagent_abort(interrupt: &refact_runtime_api::WaitInterrupt) {
+    loop {
+        if interrupt.abort_flag.load(Ordering::SeqCst) {
+            return;
+        }
+        let notified = async {
+            if let Some(notify) = &interrupt.notify {
+                notify.notified().await;
+            } else {
+                std::future::pending::<()>().await;
+            }
+        };
+        tokio::pin!(notified);
+        if interrupt.abort_flag.load(Ordering::SeqCst) {
+            return;
+        }
+        tokio::select! {
+            _ = &mut notified => {},
+            _ = tokio::time::sleep(SUBAGENT_ABORT_POLL_INTERVAL) => {},
+        }
+    }
+}
+
+async fn wait_for_subagent_terminal(
+    app: &crate::app_state::AppState,
+    parent_chat_id: &str,
+    agent_id: &str,
+    interrupt: refact_runtime_api::WaitInterrupt,
+) -> Result<BackgroundAgent, String> {
+    loop {
+        let waited = app.agents.wait(
+            parent_chat_id,
+            agent_id,
+            SUBAGENT_WAIT_POLL_INTERVAL,
+        );
+        tokio::pin!(waited);
+        let record = tokio::select! {
+            biased;
+            result = &mut waited => result?,
+            _ = wait_for_subagent_abort(&interrupt) => {
+                return Err(format!(
+                    "Subagent wait aborted by user; child agent '{agent_id}' was not cancelled."
+                ));
+            }
+        };
+        if record.status.is_terminal() {
+            return Ok(record);
+        }
+    }
 }
 
 fn parse_required_string(args: &HashMap<String, Value>, name: &str) -> Result<String, String> {
@@ -694,14 +789,37 @@ mod tests {
 
     use crate::app_state::AppState;
     use crate::caps::{BaseModelRecord, ChatModelRecord, CodeAssistantCaps};
-    use refact_chat_api::{SubchatResult, ToolsPolicy};
+    use refact_agents_core::types::{AgentCompletion, BgAgentStatus, CreateAgentRequest};
+    use refact_chat_api::internal_roles::{event, EventSubkind};
+    use refact_chat_api::{ChatSession, PendingDelivery, SubchatResult, ToolsPolicy};
     use serial_test::serial;
+    use tokio::sync::{watch, Barrier};
 
     fn args() -> HashMap<String, Value> {
         HashMap::from([
             ("task".to_string(), json!("Implement frog support")),
             ("expected_result".to_string(), json!("Frogs are supported")),
         ])
+    }
+
+    fn waiting_args(task: &str) -> HashMap<String, Value> {
+        let mut args = args();
+        args.insert("task".to_string(), json!(task));
+        args.insert("wait".to_string(), json!(true));
+        args
+    }
+
+    fn subchat_result(mut messages: Vec<ChatMessage>, summary: &str) -> SubchatResult {
+        messages.push(ChatMessage::new(
+            "assistant".to_string(),
+            summary.to_string(),
+        ));
+        SubchatResult {
+            messages,
+            metering: Map::new(),
+            chat_id: Some("ignored".to_string()),
+            aborted: false,
+        }
     }
 
     async fn install_test_caps(gcx: Arc<crate::global_context::GlobalContext>) {
@@ -774,6 +892,20 @@ mod tests {
         }
     }
 
+    async fn release_agents(
+        release: &watch::Sender<HashSet<String>>,
+        agent_ids: HashSet<String>,
+    ) {
+        release.send(agent_ids).unwrap();
+        tokio::task::yield_now().await;
+    }
+
+    async fn wait_for_runner_start(started: &Barrier) {
+        tokio::time::timeout(Duration::from_secs(2), started.wait())
+            .await
+            .expect("runners did not start");
+    }
+
     #[test]
     fn schema_is_background_only() {
         let schema = ToolSubagent {
@@ -782,7 +914,7 @@ mod tests {
         .tool_description()
         .input_schema;
         let properties = schema["properties"].as_object().unwrap();
-        for absent in ["wait", "max_steps", "notify_parent"] {
+        for absent in ["max_steps", "notify_parent"] {
             assert!(
                 !properties.contains_key(absent),
                 "{absent} must not be exposed"
@@ -800,11 +932,23 @@ mod tests {
             "worktree",
             "auto_merge",
             "push",
+            "wait",
         ] {
             assert!(
                 properties.contains_key(present),
                 "{present} must be exposed"
             );
+        }
+    }
+
+    #[test]
+    fn wait_is_strictly_boolean_and_defaults_to_false() {
+        assert!(!parse_subagent_args(&args()).unwrap().wait);
+        let mut values = waiting_args("blocking");
+        assert!(parse_subagent_args(&values).unwrap().wait);
+        for invalid in [json!("true"), json!(1), json!({})] {
+            values.insert("wait".to_string(), invalid);
+            assert!(parse_subagent_args(&values).is_err());
         }
     }
 
@@ -959,6 +1103,438 @@ mod tests {
         .unwrap_err();
         assert!(error.contains("not configured"));
         assert!(error.contains("Configured model slots"));
+    }
+
+    #[serial(test_runner)]
+    #[tokio::test]
+    async fn default_spawn_returns_start_result_before_child_terminal() {
+        let ccx = test_context("default-async-parent").await;
+        let app = ccx.lock().await.app.clone();
+        let (release_tx, release_rx) = watch::channel(false);
+        let _runner = refact_runtime_api::spawn::install_test_runner(Arc::new(
+            move |_gcx, messages, _config| {
+                let mut release_rx = release_rx.clone();
+                Box::pin(async move {
+                    while !*release_rx.borrow() {
+                        release_rx.changed().await.unwrap();
+                    }
+                    Ok(subchat_result(messages, "eventual done"))
+                })
+            },
+        ));
+        let (_, contexts) = ToolSubagent {
+            config_path: String::new(),
+        }
+        .tool_execute(ccx, &"default-call".to_string(), &args())
+        .await
+        .unwrap();
+        let message = message(contexts);
+        let text = message.content.content_text_only();
+        let agent_id = message.extra["background_agent_id"].as_str().unwrap();
+        assert!(text.contains("✓ Started background subagent"));
+        assert!(text.contains("- status: running"));
+        assert!(!text.contains("# Agent Result"));
+        assert_eq!(message.extra["background_agent_status"], "running");
+
+        release_tx.send(true).unwrap();
+        let record = app
+            .agents
+            .wait("default-async-parent", agent_id, Duration::from_secs(2))
+            .await
+            .unwrap();
+        assert_eq!(record.status, BgAgentStatus::Completed);
+    }
+
+    #[serial(test_runner)]
+    #[tokio::test]
+    async fn blocking_spawn_returns_terminal_agent_result() {
+        let ccx = test_context("blocking-parent").await;
+        let _runner = refact_runtime_api::spawn::install_test_runner(Arc::new(
+            |_gcx, messages, _config| {
+                Box::pin(async move { Ok(subchat_result(messages, "terminal frog report")) })
+            },
+        ));
+        let (_, contexts) = ToolSubagent {
+            config_path: String::new(),
+        }
+        .tool_execute(
+            ccx,
+            &"blocking-call".to_string(),
+            &waiting_args("blocking task"),
+        )
+        .await
+        .unwrap();
+        let message = message(contexts);
+        let text = message.content.content_text_only();
+        assert!(text.contains("# Agent Result"));
+        assert!(text.contains("- Status: ✅ completed"));
+        assert!(text.contains("terminal frog report"));
+        assert!(!text.contains("✓ Started background subagent"));
+        assert_eq!(message.extra["background_agent_status"], "completed");
+        assert!(text.contains(message.extra["background_agent_id"].as_str().unwrap()));
+    }
+
+    #[serial(test_runner)]
+    #[tokio::test]
+    async fn blocking_spawn_ignores_unrelated_and_goal_deliveries() {
+        let ccx = test_context("wake-parent").await;
+        let app = ccx.lock().await.app.clone();
+        let session = Arc::new(AMutex::new(ChatSession::new("wake-parent".to_string())));
+        app.chat
+            .sessions
+            .write()
+            .await
+            .insert("wake-parent".to_string(), session.clone());
+        {
+            let mut session_lock = session.lock().await;
+            session_lock.turn_depth = 1;
+            session_lock.draft_message = Some(ChatMessage::new(
+                "assistant".to_string(),
+                "waiting".to_string(),
+            ));
+            session_lock.begin_interruptible_wait();
+        }
+        let started = Arc::new(Barrier::new(2));
+        let (release_tx, _) = watch::channel(HashSet::new());
+        let runner_started = started.clone();
+        let runner_release = release_tx.clone();
+        let _runner = refact_runtime_api::spawn::install_test_runner(Arc::new(
+            move |_gcx, messages, config| {
+                let started = runner_started.clone();
+                let agent_id = config.background_agent_id.unwrap();
+                let mut release = runner_release.subscribe();
+                Box::pin(async move {
+                    started.wait().await;
+                    while !release.borrow().contains(&agent_id) {
+                        release.changed().await.unwrap();
+                    }
+                    Ok(subchat_result(messages, "finished after wakes"))
+                })
+            },
+        ));
+        let run = tokio::spawn({
+            let ccx = ccx.clone();
+            async move {
+                ToolSubagent {
+                    config_path: String::new(),
+                }
+                .tool_execute(
+                    ccx,
+                    &"wake-call".to_string(),
+                    &waiting_args("ignore wakes"),
+                )
+                .await
+            }
+        });
+        wait_for_runner_start(&started).await;
+        let agent_id = app.agents.list_all().await[0].agent_id.clone();
+        for delivery in [
+            PendingDelivery::with_id(
+                "message-wake",
+                vec![ChatMessage::new("user".to_string(), "sibling update".to_string())],
+                PushMode::Append,
+                "test.sibling",
+                true,
+            ),
+            PendingDelivery::with_id(
+                "goal-wake",
+                vec![event(
+                    EventSubkind::GoalPursuit,
+                    "chat.goal_monitor",
+                    json!({"kind": "nudge"}),
+                    "continue the goal",
+                )],
+                PushMode::Append,
+                "chat.goal_monitor",
+                true,
+            ),
+        ] {
+            session.lock().await.enqueue_delivery(delivery).unwrap();
+            for _ in 0..10 {
+                tokio::task::yield_now().await;
+            }
+            assert!(!run.is_finished());
+        }
+        assert!(session.lock().await.wait_interrupt_flag.load(Ordering::SeqCst));
+
+        release_agents(&release_tx, HashSet::from([agent_id.clone()])).await;
+        let (_, contexts) = tokio::time::timeout(Duration::from_secs(2), run)
+            .await
+            .expect("blocking spawn did not finish")
+            .unwrap()
+            .unwrap();
+        let text = message(contexts).content.content_text_only();
+        assert!(text.contains(&agent_id));
+        assert!(text.contains("finished after wakes"));
+        assert!(session.lock().await.wait_interrupt_flag.load(Ordering::SeqCst));
+    }
+
+    #[serial(test_runner)]
+    #[tokio::test]
+    async fn six_blocking_spawns_wait_for_every_terminal_result() {
+        let ccx = test_context("fanout-parent").await;
+        let app = ccx.lock().await.app.clone();
+        let started = Arc::new(Barrier::new(7));
+        let (release_tx, _) = watch::channel(HashSet::new());
+        let runner_started = started.clone();
+        let runner_release = release_tx.clone();
+        let _runner = refact_runtime_api::spawn::install_test_runner(Arc::new(
+            move |_gcx, messages, config| {
+                let started = runner_started.clone();
+                let agent_id = config.background_agent_id.unwrap();
+                let mut release = runner_release.subscribe();
+                Box::pin(async move {
+                    started.wait().await;
+                    while !release.borrow().contains(&agent_id) {
+                        release.changed().await.unwrap();
+                    }
+                    Ok(subchat_result(messages, "parallel terminal report"))
+                })
+            },
+        ));
+        let calls = (0..6)
+            .map(|index| {
+                let ccx = ccx.clone();
+                async move {
+                    let call_id = format!("fanout-call-{index}");
+                    let args = waiting_args(&format!("parallel task {index}"));
+                    ToolSubagent {
+                        config_path: String::new(),
+                    }
+                    .tool_execute(ccx, &call_id, &args)
+                    .await
+                }
+            })
+            .collect::<Vec<_>>();
+        let run = tokio::spawn(futures::future::join_all(calls));
+        wait_for_runner_start(&started).await;
+        assert!(!run.is_finished());
+        let agent_ids = app
+            .agents
+            .list_all()
+            .await
+            .into_iter()
+            .map(|record| record.agent_id)
+            .collect::<HashSet<_>>();
+        assert_eq!(agent_ids.len(), 6);
+        let first = agent_ids.iter().next().unwrap().clone();
+        release_agents(&release_tx, HashSet::from([first.clone()])).await;
+        let first_record = app
+            .agents
+            .wait("fanout-parent", &first, Duration::from_secs(2))
+            .await
+            .unwrap();
+        assert!(first_record.status.is_terminal());
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+        assert!(!run.is_finished());
+
+        release_agents(&release_tx, agent_ids.clone()).await;
+        let results = tokio::time::timeout(Duration::from_secs(2), run)
+            .await
+            .expect("fan-out did not finish")
+            .unwrap();
+        assert_eq!(results.len(), 6);
+        let outputs = results
+            .into_iter()
+            .map(|result| message(result.unwrap().1).content.content_text_only())
+            .collect::<Vec<_>>();
+        for agent_id in agent_ids {
+            assert!(outputs.iter().any(|output| output.contains(&agent_id)));
+        }
+        for output in outputs {
+            assert!(output.contains("- Status: ✅ completed"));
+            assert!(output.contains("parallel terminal report"));
+        }
+    }
+
+    #[serial(test_runner)]
+    #[tokio::test]
+    async fn parallel_blocking_failure_is_a_result_not_a_group_error() {
+        let ccx = test_context("failure-parent").await;
+        let _runner = refact_runtime_api::spawn::install_test_runner(Arc::new(
+            |_gcx, messages, config| {
+                let failed = config.title.unwrap().contains("fail child");
+                Box::pin(async move {
+                    if failed {
+                        Err("intentional child failure".to_string())
+                    } else {
+                        Ok(subchat_result(messages, "successful sibling report"))
+                    }
+                })
+            },
+        ));
+        let calls = ["fail child", "succeed child"].map(|task| {
+            let ccx = ccx.clone();
+            async move {
+                ToolSubagent {
+                    config_path: String::new(),
+                }
+                .tool_execute(ccx, &format!("{task}-call"), &waiting_args(task))
+                .await
+            }
+        });
+        let results = tokio::time::timeout(
+            Duration::from_secs(2),
+            futures::future::join_all(calls),
+        )
+        .await
+        .expect("mixed fan-out did not finish");
+        assert_eq!(results.len(), 2);
+        let mut results = results.into_iter();
+        let failed = message(results.next().unwrap().unwrap().1)
+            .content
+            .content_text_only();
+        let succeeded = message(results.next().unwrap().unwrap().1)
+            .content
+            .content_text_only();
+        assert!(failed.contains("- Status: ❌ failed"));
+        assert!(failed.contains("intentional child failure"));
+        assert!(succeeded.contains("- Status: ✅ completed"));
+        assert!(succeeded.contains("successful sibling report"));
+    }
+
+    #[tokio::test]
+    async fn blocking_wait_returns_every_already_terminal_status_immediately() {
+        let ccx = test_context("terminal-parent").await;
+        let app = ccx.lock().await.app.clone();
+        for status in [
+            BgAgentStatus::Completed,
+            BgAgentStatus::Failed,
+            BgAgentStatus::Cancelled,
+            BgAgentStatus::Interrupted,
+        ] {
+            let (record, _, _) = app
+                .agents
+                .create(CreateAgentRequest {
+                    parent_chat_id: "terminal-parent".to_string(),
+                    parent_root_chat_id: Some("root-chat".to_string()),
+                    parent_tool_call_id: None,
+                    kind: BgAgentKind::Subagent,
+                    config_name: "subagent".to_string(),
+                    title: format!("Already {}", status.as_str()),
+                    prompt: String::new(),
+                    target_files: Vec::new(),
+                    model: "test/default".to_string(),
+                    model_type: None,
+                    goal_summary: None,
+                    plan_present: false,
+                    worktree_id: None,
+                    worktree_branch: None,
+                })
+                .await
+                .unwrap();
+            match status {
+                BgAgentStatus::Completed => {
+                    app.agents
+                        .mark_completed(
+                            &record.agent_id,
+                            AgentCompletion {
+                                result_summary: "already done".to_string(),
+                                edited_files: Vec::new(),
+                                diff_summary: None,
+                                conflict_summary: None,
+                                child_chat_id: None,
+                            },
+                        )
+                        .await
+                        .unwrap();
+                }
+                BgAgentStatus::Failed => {
+                    app.agents
+                        .mark_failed(&record.agent_id, "already failed".to_string())
+                        .await
+                        .unwrap();
+                }
+                BgAgentStatus::Cancelled => {
+                    app.agents
+                        .mark_cancelled(&record.agent_id, Some("already cancelled".to_string()))
+                        .await
+                        .unwrap();
+                }
+                BgAgentStatus::Interrupted => {
+                    app.agents
+                        .mark_interrupted(&record.agent_id, "already interrupted".to_string())
+                        .await
+                        .unwrap();
+                }
+                _ => unreachable!(),
+            }
+            let interrupt = refact_runtime_api::WaitInterrupt::from_context(&ccx).await;
+            let waited = tokio::time::timeout(
+                Duration::from_secs(1),
+                wait_for_subagent_terminal(&app, "terminal-parent", &record.agent_id, interrupt),
+            )
+            .await
+            .expect("already terminal wait blocked")
+            .unwrap();
+            assert_eq!(waited.status, status);
+        }
+    }
+
+    #[serial(test_runner)]
+    #[tokio::test]
+    async fn blocking_spawn_abort_does_not_cancel_child() {
+        let ccx = test_context("abort-parent").await;
+        let app = ccx.lock().await.app.clone();
+        let session = Arc::new(AMutex::new(ChatSession::new("abort-parent".to_string())));
+        app.chat
+            .sessions
+            .write()
+            .await
+            .insert("abort-parent".to_string(), session.clone());
+        let started = Arc::new(Barrier::new(2));
+        let (release_tx, release_rx) = watch::channel(false);
+        let runner_started = started.clone();
+        let _runner = refact_runtime_api::spawn::install_test_runner(Arc::new(
+            move |_gcx, messages, _config| {
+                let started = runner_started.clone();
+                let mut release_rx = release_rx.clone();
+                Box::pin(async move {
+                    started.wait().await;
+                    while !*release_rx.borrow() {
+                        release_rx.changed().await.unwrap();
+                    }
+                    Ok(subchat_result(messages, "child survived parent abort"))
+                })
+            },
+        ));
+        let run = tokio::spawn({
+            let ccx = ccx.clone();
+            async move {
+                ToolSubagent {
+                    config_path: String::new(),
+                }
+                .tool_execute(
+                    ccx,
+                    &"abort-call".to_string(),
+                    &waiting_args("abort blocking wait"),
+                )
+                .await
+            }
+        });
+        wait_for_runner_start(&started).await;
+        let agent_id = app.agents.list_all().await[0].agent_id.clone();
+        ccx.lock().await.abort_flag.store(true, Ordering::SeqCst);
+        session.lock().await.abort_notify.notify_waiters();
+        let error = tokio::time::timeout(Duration::from_secs(2), run)
+            .await
+            .expect("abort did not interrupt blocking wait")
+            .unwrap()
+            .unwrap_err();
+        assert!(error.contains("aborted by user"));
+        assert!(error.contains(&agent_id));
+        let record = app.agents.get("abort-parent", &agent_id).await.unwrap();
+        assert!(!record.status.is_terminal());
+
+        release_tx.send(true).unwrap();
+        let record = app
+            .agents
+            .wait("abort-parent", &agent_id, Duration::from_secs(2))
+            .await
+            .unwrap();
+        assert_eq!(record.status, BgAgentStatus::Completed);
     }
 
     #[serial(test_runner)]

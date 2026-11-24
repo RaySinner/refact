@@ -541,7 +541,7 @@ fn format_agent_status_block(record: &BackgroundAgent) -> String {
     result
 }
 
-async fn format_agent_result(
+pub async fn format_agent_result(
     record: &BackgroundAgent,
     include_details: bool,
 ) -> Result<String, String> {

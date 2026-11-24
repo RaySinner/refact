@@ -1527,6 +1527,7 @@ mod tests {
                 }
                 _ => unreachable!(),
             }
+            let record = app.agents.get_any(&record.agent_id).await.unwrap();
             let interrupt = refact_runtime_api::WaitInterrupt::from_context(&ccx).await;
             let (completion_tx, completion_rx) = oneshot::channel();
             completion_tx.send(record.clone()).unwrap();

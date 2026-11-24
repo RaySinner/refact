@@ -290,14 +290,16 @@ async fn recovery_restart_restores_binding_and_never_unlocks_on_drop() {
         .recover_terminal(&response("resp-1", ResponseStatus::Completed))
         .await
         .unwrap();
-    drop(waiting.await);
 
+    // Read the completed state before the waiting begin call starts a new pending task.
     let binding = chain.binding().await;
     let durable = serde_json::to_string(&binding).unwrap();
     let binding: SessionBinding = serde_json::from_str(&durable).unwrap();
     assert_eq!(binding.session_id.as_deref(), Some("session-1"));
     assert_eq!(binding.latest_response_id.as_deref(), Some("resp-1"));
     assert!(!binding.task_pending);
+    drop(waiting.await);
+
     let restored = SessionChain::restore(binding).unwrap();
     let mut continuation = restored.begin().await;
     let request = continuation.request("continue", "harness-1").await.unwrap();

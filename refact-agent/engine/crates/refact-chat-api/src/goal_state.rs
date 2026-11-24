@@ -153,6 +153,7 @@ impl GoalSnapshot {
             && self.resolution == GoalResolution::Active
             && self.autonomy == GoalAutonomy::On
             && self.execution.allows_scheduling()
+            && self.transferred_to.is_none()
             && crate::goal_budget_exhaustion_status(&self.budget, &self.progress, now_ms).is_none()
     }
 
@@ -439,6 +440,28 @@ mod tests {
         goal.budget.max_turns = None;
         goal.resolution = GoalResolution::Failed;
         goal.refresh_derived();
+        assert!(!goal.can_pursue);
+        assert!(!goal.prompt_enabled);
+    }
+
+    #[test]
+    fn goal_transfer_ownership_controls_pursuit() {
+        let mut goal = GoalSnapshot {
+            active: true,
+            ..Default::default()
+        };
+        goal.refresh_derived();
+        assert!(goal.can_pursue);
+        assert!(goal.prompt_enabled);
+
+        goal.transferred_from = Some("source-chat".to_string());
+        goal.refresh_derived();
+        assert!(goal.can_pursue);
+        assert!(goal.prompt_enabled);
+
+        goal.transferred_to = Some("target-chat".to_string());
+        goal.refresh_derived();
+        assert!(!goal.goal_can_pursue_at(0));
         assert!(!goal.can_pursue);
         assert!(!goal.prompt_enabled);
     }

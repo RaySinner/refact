@@ -1591,9 +1591,13 @@ mod tests {
         assert_eq!(json["progress"]["turns_used"], 3);
         assert_eq!(json["attempts"][0]["gaps"][0], "tests");
         assert_eq!(json["events"][0]["text"], "Added verification");
+        assert_eq!(json["can_pursue"], false);
+        assert_eq!(json["prompt_enabled"], false);
 
         let roundtrip: GoalSnapshot = serde_json::from_value(json).unwrap();
         assert_eq!(roundtrip, snapshot);
+        assert!(!roundtrip.can_pursue);
+        assert!(!roundtrip.prompt_enabled);
     }
 
     #[test]
@@ -2470,10 +2474,17 @@ mod tests {
         assert_eq!(json["type"], "snapshot");
         assert_eq!(json["goal"]["content"], "Ship the frog pond");
         assert_eq!(json["goal"]["status"], "verifying");
+        assert_eq!(json["goal"]["can_pursue"], false);
+        assert_eq!(json["goal"]["prompt_enabled"], false);
 
         let parsed: ChatEvent = serde_json::from_value(json).unwrap();
         match parsed {
-            ChatEvent::Snapshot { goal: parsed, .. } => assert_eq!(parsed, Some(goal)),
+            ChatEvent::Snapshot { goal: parsed, .. } => {
+                assert_eq!(parsed, Some(goal));
+                let parsed = parsed.expect("goal snapshot present");
+                assert!(!parsed.can_pursue);
+                assert!(!parsed.prompt_enabled);
+            }
             _ => panic!("Expected Snapshot"),
         }
     }

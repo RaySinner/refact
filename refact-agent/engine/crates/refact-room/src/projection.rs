@@ -28,11 +28,14 @@ pub fn project_assistant_message(input: PublicProjectionInput) -> Option<RoomEve
         kind: RoomEventKind::AssistantMessage,
         author: input.author,
         body: input.body,
+        recipient_id: None,
         source_message_id: input.source_message_id,
         turn_id: input.turn_id,
         created_at: input.created_at,
         source_revision: input.source_revision,
         source_digest: input.source_digest,
+        delivery: None,
+        delivery_error: None,
     })
 }
 

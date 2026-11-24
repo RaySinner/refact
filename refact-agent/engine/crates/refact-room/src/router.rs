@@ -25,7 +25,7 @@ pub fn route_event(
                 event.event_id.clone(),
                 recipient.participant_id.clone(),
             ),
-            recipient,
+            recipient: (*recipient).clone(),
             event: public.clone(),
         })
         .collect())

@@ -142,7 +142,7 @@ fn queue_goal_side_effect(
 ) -> Result<GoalInstallReport, String> {
     let version = previous
         .as_ref()
-        .and_then(goal_role::goal_version)
+        .and_then(refact_chat_api::goal_role::goal_version)
         .map_or(1, |version| version.saturating_add(1));
     let supersedes = previous.map(|message| message.message_id);
     let mut message = internal_roles::delegated_goal(
@@ -196,5 +196,66 @@ fn string_arg(args: &HashMap<String, Value>, name: &str) -> Result<String, Strin
         Some(Value::String(value)) => Ok(value.clone()),
         Some(value) => Err(format!("argument `{name}` is not a string: {value:?}")),
         None => Err(format!("argument `{name}` is missing")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn queued_install_uses_latest_base_version_after_replace_and_progress() {
+        let mut empty_session = ChatSession::new("set-goal-empty".to_string());
+        let initial = queue_goal_side_effect(
+            &mut empty_session,
+            "agent",
+            "initial",
+            &[],
+            None,
+            1,
+            PushMode::Append,
+            "call-initial",
+        )
+        .unwrap();
+        assert_eq!(initial.version, 1);
+
+        let mut session = ChatSession::new("set-goal-version".to_string());
+        session.install_goal("agent", "initial", true, GoalBudget::default());
+
+        let replaced = session.replace_goal_with_criteria(
+            "agent",
+            "replacement",
+            true,
+            GoalBudget::default(),
+            Vec::new(),
+        );
+        assert_eq!(replaced.version, 2);
+        let (progress, _) = internal_roles::goal_delta_with_truncation(
+            "tool.update_goal",
+            json!({"seq": 1, "kind": "progress", "revision": 2}),
+            "progress",
+        );
+        session.add_message(progress);
+
+        let previous = current_goal_including_queued(&session).unwrap();
+        assert_eq!(
+            previous
+                .as_ref()
+                .and_then(refact_chat_api::goal_role::goal_version),
+            Some(2)
+        );
+        let next = queue_goal_side_effect(
+            &mut session,
+            "agent",
+            "next",
+            &[],
+            previous,
+            3,
+            PushMode::Append,
+            "call-next",
+        )
+        .unwrap();
+
+        assert_eq!(next.version, 3);
     }
 }

@@ -686,7 +686,7 @@ pub fn spawn_args(task_id: &str, item: &SpawnBatchItem) -> HashMap<String, Value
     args.insert("task_id".to_string(), json!(task_id));
     args.insert("card_id".to_string(), json!(item.card_id));
     if let Some(role) = item.role.as_ref() {
-        args.insert("role", json!(role));
+        args.insert("role".to_string(), json!(role));
     }
     if let Some(suggested_steps) = item.suggested_steps {
         args.insert("suggested_steps".to_string(), json!(suggested_steps));

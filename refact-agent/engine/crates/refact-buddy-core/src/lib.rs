@@ -32,6 +32,7 @@ pub mod stalled_turn;
 pub mod state;
 pub mod storage;
 pub mod supervision;
+pub mod supervision_journal;
 pub mod types;
 pub mod user_action;
 pub mod user_activity;

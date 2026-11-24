@@ -61,7 +61,7 @@ impl From<SupervisionVersion> for u16 {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub struct SupervisionHash([u8; 32]);
 
@@ -732,6 +732,15 @@ pub struct InterventionRecord {
     pub delivery: InterventionDelivery,
     pub detected_at: u64,
     pub decided_at: u64,
+}
+
+impl InterventionRecord {
+    pub fn journal_id(&self) -> Result<SupervisionHash, serde_json::Error> {
+        Ok(SupervisionHash::digest(
+            "supervision.intervention.v1",
+            &serde_json::to_vec(self)?,
+        ))
+    }
 }
 
 #[cfg(test)]

@@ -3,7 +3,8 @@ use std::collections::HashSet;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-use crate::{DeliveryAttempt, PublicRoomEvent, RoomAuthor, RoomError};
+use crate::roster::validate_complete_roster;
+use crate::{DeliveryAttempt, PublicRoomEvent, RoomAuthor, RoomError, RosterMember};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(default)]
@@ -48,18 +49,16 @@ impl RoomRoster {
                 ));
             }
         }
-        if self
+        let members = self
             .participants
             .iter()
-            .filter(|member| member.writes)
-            .count()
-            != 1
-        {
-            return Err(RoomError::Validation(
-                "room roster requires exactly one writer".to_string(),
-            ));
-        }
-        Ok(())
+            .map(|member| RosterMember {
+                role: &member.role,
+                writes: member.writes,
+                claimed: true,
+            })
+            .collect::<Vec<_>>();
+        validate_complete_roster(&members)
     }
 }
 

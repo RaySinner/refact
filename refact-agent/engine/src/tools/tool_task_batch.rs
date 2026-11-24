@@ -251,29 +251,19 @@ mod tests {
             ],
             ..Default::default()
         };
-        let items = vec![
-            Ok(SpawnBatchItem {
-                card_id: "T-1".to_string(),
-                suggested_steps: None,
-                files_to_open: vec![],
-                base_branch: None,
-                base_commit: None,
-            }),
-            Ok(SpawnBatchItem {
-                card_id: "T-2".to_string(),
-                suggested_steps: None,
-                files_to_open: vec![],
-                base_branch: None,
-                base_commit: None,
-            }),
-            Ok(SpawnBatchItem {
-                card_id: "T-3".to_string(),
-                suggested_steps: None,
-                files_to_open: vec![],
-                base_branch: None,
-                base_commit: None,
-            }),
-        ];
+        let items = ["T-1", "T-2", "T-3"]
+            .into_iter()
+            .map(|card_id| {
+                Ok(SpawnBatchItem {
+                    role: None,
+                    card_id: card_id.to_string(),
+                    suggested_steps: None,
+                    files_to_open: vec![],
+                    base_branch: None,
+                    base_commit: None,
+                })
+            })
+            .collect::<Vec<_>>();
 
         let errors = validate_spawn_agent_cards(&board, &items);
 
@@ -281,14 +271,58 @@ mod tests {
     }
 
     #[test]
+    fn spawn_batch_rejects_advisor_before_writer() {
+        let mut room = card("T-1", "planned", vec![]);
+        room.team_members = vec![
+            refact_tasks::rooms::planned_room_member(refact_tasks::rooms::RoomSlot {
+                role: "coder".to_string(),
+                mandate: None,
+                writes: true,
+                decision_maker: false,
+                room_role_hint: None,
+                tools: vec![],
+                target_files: vec![],
+            }),
+            refact_tasks::rooms::planned_room_member(refact_tasks::rooms::RoomSlot {
+                role: "reviewer".to_string(),
+                mandate: None,
+                writes: false,
+                decision_maker: false,
+                room_role_hint: None,
+                tools: vec![],
+                target_files: vec![],
+            }),
+        ];
+        let board = TaskBoard {
+            cards: vec![room],
+            ..Default::default()
+        };
+        let advisor = vec![parse_spawn_item(
+            &json!({"card_id": "T-1", "role": "reviewer"}),
+        )];
+
+        let errors = validate_spawn_agent_cards(&board, &advisor);
+        assert!(errors[0]
+            .as_deref()
+            .is_some_and(|error| error.contains("coder")));
+
+        let writer = vec![parse_spawn_item(
+            &json!({"card_id": "T-1", "role": "coder"}),
+        )];
+        assert_eq!(validate_spawn_agent_cards(&board, &writer), vec![None]);
+    }
+
+    #[test]
     fn spawn_batch_forwards_card_base_refs() {
         let item = parse_spawn_item(&json!({
             "card_id": "T-1",
+            "role": "coder",
             "base_branch": "release",
             "base_commit": "abc123"
         }))
         .unwrap();
         let args = spawn_args("task-1", &item);
+        assert_eq!(args.get("role"), Some(&json!("coder")));
         assert_eq!(args.get("base_branch"), Some(&json!("release")));
         assert_eq!(args.get("base_commit"), Some(&json!("abc123")));
     }

@@ -163,9 +163,9 @@ pub fn unknown_config_name_error(
 
 /// Read the `agents` argument: a list of `config_name` plus optional per-member detail.
 pub fn parse_agents(args: &HashMap<String, Value>) -> Result<Vec<RoomRequest>, String> {
-    let raw = args
-        .get("agents")
-        .ok_or("Missing 'agents': the names of the agent definitions that should work on the card")?;
+    let raw = args.get("agents").ok_or(
+        "Missing 'agents': the names of the agent definitions that should work on the card",
+    )?;
     let items = raw
         .as_array()
         .ok_or("'agents' must be an array of objects, each with a 'config_name'")?;
@@ -173,7 +173,9 @@ pub fn parse_agents(args: &HashMap<String, Value>) -> Result<Vec<RoomRequest>, S
     let mut requests = Vec::with_capacity(items.len());
     for (index, item) in items.iter().enumerate() {
         let Some(object) = item.as_object() else {
-            return Err(format!("agents[{index}] must be an object with a 'config_name'"));
+            return Err(format!(
+                "agents[{index}] must be an object with a 'config_name'"
+            ));
         };
         let config_name = object
             .get("config_name")
@@ -245,9 +247,7 @@ async fn planner_room_context(
             .as_ref()
             .map(|meta| meta.task_id.clone())
             .filter(|task_id| !task_id.is_empty())
-            .ok_or_else(|| {
-                "Missing 'task_id' (and chat is not bound to a task)".to_string()
-            })?,
+            .ok_or_else(|| "Missing 'task_id' (and chat is not bound to a task)".to_string())?,
     };
     Ok((ccx_lock.app.clone(), task_id))
 }
@@ -269,9 +269,11 @@ async fn sorted_subagent_registry(
     Ok(entries)
 }
 
-pub fn roster_summary(card_id: &str, members: &[TeamMember]) -> String {
-    let lines = members
-        .iter()
+pub fn roster_summary(card_id: &str, members: &[TeamMember]) -> Result<String, String> {
+    let order = rooms::writer_first_indices(members)?;
+    let lines = order
+        .into_iter()
+        .map(|index| &members[index])
         .map(|member| {
             let mut line = format!("- {} — pending", member.role);
             if let Some(mandate) = member.mandate.as_deref() {
@@ -286,20 +288,17 @@ pub fn roster_summary(card_id: &str, members: &[TeamMember]) -> String {
                 line.push_str(" [decides]");
             }
             if !member.target_files.is_empty() {
-                line.push_str(&format!(
-                    " files: {}",
-                    member.target_files.join(", ")
-                ));
+                line.push_str(&format!(" files: {}", member.target_files.join(", ")));
             }
             line
         })
         .collect::<Vec<_>>()
         .join("\n");
-    format!(
-        "# Room created on card {card_id}\n\n{lines}\n\n\
-         Nobody has started yet. Call `spawn_agent(card_id=\"{card_id}\", role=...)` once per member, \
-         using exactly the role names above; each spawn claims its reserved slot."
-    )
+    Ok(format!(
+        "# Room created on card {card_id}\n\nLaunch order (writer first):\n{lines}\n\n\
+         Nobody has started yet. Call `spawn_agent(card_id=\"{card_id}\", role=...)` once per member \
+         in this order, using exactly the role names above; each spawn claims its reserved slot."
+    ))
 }
 
 pub struct ToolTaskCreateRoom;
@@ -322,7 +321,7 @@ impl Tool for ToolTaskCreateRoom {
             },
             experimental: false,
             allow_parallel: false,
-            description: "Staff a card with several of the agents the user has prepared. Takes the agents' registry names (config_name), not job titles, and reserves a slot per agent with its mandate and the files it owns. This is the room tool: it writes the roster and starts nobody — follow it with one spawn_agent per member, using the same role name, and each spawn claims its reserved slot. Use spawn_agent alone when one agent is enough. A name that is not in the registry is an error listing the available agents; there is no default agent."
+            description: "Staff a card with agents from the registry. Multi-member rooms require exactly one writer and any number of advisors. This atomically reserves every slot and returns writer-first launch order; follow it with spawn_agent in that order, using the same role names. Use spawn_agent alone when one agent is enough."
                 .to_string(),
             input_schema: json!({
                 "type": "object",
@@ -411,7 +410,12 @@ impl Tool for ToolTaskCreateRoom {
             if let Some(error) = rooms::reject_room_growth(card, roster.len()) {
                 return Err(error);
             }
-            card.team_members = roster.clone();
+            let mut candidate = card.clone();
+            candidate.team_members = roster.clone();
+            candidate
+                .validate_team()
+                .map_err(|error| format!("Card {}: {error}", candidate.id))?;
+            card.team_members = candidate.team_members;
             card.status_updates.push(StatusUpdate {
                 timestamp: chrono::Utc::now().to_rfc3339(),
                 message: format!("Room created with {} reserved members", roster.len()),
@@ -426,7 +430,7 @@ impl Tool for ToolTaskCreateRoom {
             false,
             vec![ContextEnum::ChatMessage(ChatMessage {
                 role: "tool".to_string(),
-                content: ChatContent::SimpleText(roster_summary(&card_id, &members)),
+                content: ChatContent::SimpleText(roster_summary(&card_id, &members)?),
                 tool_calls: None,
                 tool_call_id: tool_call_id.clone(),
                 ..Default::default()

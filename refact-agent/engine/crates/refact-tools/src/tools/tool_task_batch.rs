@@ -15,7 +15,9 @@ use refact_tasks::types::{BoardCard, TaskBoard};
 use crate::tools::tool_task_board::ToolTaskBoardCreateCard;
 use crate::tools::tool_task_mark_card::{ToolTaskMarkCardDone, ToolTaskMarkCardFailed};
 use crate::tools::tool_task_merge_agent::ToolTaskMergeAgent;
-use crate::tools::tool_task_spawn_agent::ToolTaskSpawnAgent;
+use crate::tools::tool_task_spawn_agent::{
+    check_spawn_precondition, ToolTaskSpawnAgent, DEFAULT_ROOM_ROLE,
+};
 use crate::tools::tools_description::{Tool, ToolDesc, ToolSource, ToolSourceType};
 
 const MAX_SPAWN_BATCH: usize = 10;
@@ -198,6 +200,7 @@ pub fn auto_revert_timeout_secs_arg(args: &HashMap<String, Value>) -> Result<u64
 
 #[derive(Clone, Debug)]
 pub struct SpawnBatchItem {
+    pub role: Option<String>,
     pub card_id: String,
     pub suggested_steps: Option<usize>,
     pub files_to_open: Vec<String>,
@@ -247,6 +250,7 @@ pub fn parse_spawn_item(value: &Value) -> Result<SpawnBatchItem, String> {
         return Err("spawn item must be an object".to_string());
     }
     Ok(SpawnBatchItem {
+        role: optional_nonempty_string(value, "role")?,
         card_id: required_string(value, "card_id")?,
         suggested_steps: optional_usize(value, "suggested_steps")?,
         files_to_open: optional_string_vec(value.get("files_to_open"), "files_to_open")?,
@@ -324,7 +328,8 @@ pub fn validate_spawn_agent_cards(
                 continue;
             }
         }
-        if let Err(error) = card.validate_team() {
+        let role = item.role.as_deref().unwrap_or(DEFAULT_ROOM_ROLE);
+        if let Err(error) = check_spawn_precondition(card, role) {
             errors[idx] = Some(error);
             continue;
         }
@@ -680,6 +685,9 @@ pub fn spawn_args(task_id: &str, item: &SpawnBatchItem) -> HashMap<String, Value
     let mut args = HashMap::new();
     args.insert("task_id".to_string(), json!(task_id));
     args.insert("card_id".to_string(), json!(item.card_id));
+    if let Some(role) = item.role.as_ref() {
+        args.insert("role", json!(role));
+    }
     if let Some(suggested_steps) = item.suggested_steps {
         args.insert("suggested_steps".to_string(), json!(suggested_steps));
     }
@@ -780,6 +788,7 @@ impl Tool for ToolSpawnAgentsBatch {
                             "type": "object",
                             "properties": {
                                 "card_id": { "type": "string" },
+                                "role": { "type": "string", "description": "Room role to claim; the sole writer must be spawned before advisors" },
                                 "suggested_steps": { "type": "integer" },
                                 "files_to_open": { "type": "array", "items": { "type": "string" } },
                                 "base_branch": { "type": "string" },
@@ -1268,4 +1277,3 @@ impl Tool for ToolBoardCreateBatch {
         vec![]
     }
 }
-

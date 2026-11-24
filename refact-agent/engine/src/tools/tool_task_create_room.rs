@@ -41,11 +41,14 @@ mod tests {
     }
 
     fn registry() -> Vec<(String, SubagentConfig)> {
-        vec![
+        let mut entries = vec![
             ("code_edit".to_string(), config("code_edit")),
             ("design_review".to_string(), config("design_review")),
             ("visual_qa".to_string(), config("visual_qa")),
-        ]
+        ];
+        entries[1].1.writes = false;
+        entries[2].1.writes = false;
+        entries
     }
 
     fn card() -> BoardCard {
@@ -108,7 +111,10 @@ mod tests {
                 "a reserved slot has no chat until it is spawned"
             );
         }
-        assert!(members[0].writes(), "code_edit has no writes:false in the test registry");
+        assert!(
+            members[0].writes(),
+            "code_edit has no writes:false in the test registry"
+        );
     }
 
     #[test]
@@ -148,26 +154,32 @@ mod tests {
     #[test]
     fn room_members_get_behaviour_stamped_from_definition() {
         let mut registry = registry();
-        registry[0].1.writes = false;
+        registry[0].1.writes = true;
         registry[0].1.room_role_hint = Some("  edits the parser  ".to_string());
         registry[0].1.tools = vec!["cat".to_string(), "apply_patch".to_string()];
         registry[1].1.decision_maker = true;
         registry[1].1.writes = false;
         registry[1].1.room_role_hint = Some("decides the room".to_string());
 
-        let members =
-            build_room_members(&card(), &[request("code_edit"), request("design_review")], &registry)
-                .unwrap();
+        let members = build_room_members(
+            &card(),
+            &[request("code_edit"), request("design_review")],
+            &registry,
+        )
+        .unwrap();
 
         let editor = &members[0];
-        assert!(!editor.writes(), "writes: false must survive the stamp");
+        assert!(editor.writes(), "writes: true must survive the stamp");
         assert_eq!(editor.room_role_hint.as_deref(), Some("edits the parser"));
         assert_eq!(
             editor.tools,
             vec!["cat".to_string(), "apply_patch".to_string()],
             "the roster must show peers what the definition allows"
         );
-        assert_eq!(editor.role, "edits the parser", "role falls back to the hint");
+        assert_eq!(
+            editor.role, "edits the parser",
+            "role falls back to the hint"
+        );
 
         let decider = &members[1];
         assert!(decider.is_decision_maker());
@@ -193,25 +205,30 @@ mod tests {
     }
 
     #[test]
-    fn room_honours_target_files_disjointness() {
-        let mut ok_requests = vec![request("code_edit"), request("code_edit")];
-        ok_requests[0].role = Some("parser".to_string());
-        ok_requests[0].target_files = vec!["src/parser.rs".to_string()];
-        ok_requests[1].role = Some("store".to_string());
-        ok_requests[1].target_files = vec!["src/store.rs".to_string()];
+    fn room_rejects_multiple_writers_even_with_disjoint_files() {
+        let mut requests = vec![request("code_edit"), request("code_edit")];
+        requests[0].role = Some("parser".to_string());
+        requests[0].target_files = vec!["src/parser.rs".to_string()];
+        requests[1].role = Some("store".to_string());
+        requests[1].target_files = vec!["src/store.rs".to_string()];
 
-        let members = build_room_members(&card(), &ok_requests, &registry()).unwrap();
+        let error = build_room_members(&card(), &requests, &registry()).unwrap_err();
 
-        assert_eq!(members[0].target_files, vec!["src/parser.rs".to_string()]);
-        assert_eq!(members[1].target_files, vec!["src/store.rs".to_string()]);
+        assert!(error.contains("exactly one writer"), "{error}");
+        assert!(error.contains("parser"), "{error}");
+        assert!(error.contains("store"), "{error}");
+    }
 
-        let mut clashing = ok_requests.clone();
-        clashing[1].target_files = vec![" src/parser.rs ".to_string(), "src/parser.rs".to_string()];
+    #[test]
+    fn room_rejects_advisors_without_a_writer() {
+        let error = build_room_members(
+            &card(),
+            &[request("design_review"), request("visual_qa")],
+            &registry(),
+        )
+        .unwrap_err();
 
-        let error = build_room_members(&card(), &clashing, &registry()).unwrap_err();
-
-        assert!(error.contains("both write"), "{error}");
-        assert!(error.contains("src/parser.rs"), "{error}");
+        assert!(error.contains("exactly one writer"), "{error}");
     }
 
     #[test]
@@ -247,7 +264,6 @@ mod tests {
         let mut registry = registry();
         for entry in registry.iter_mut() {
             entry.1.decision_maker = true;
-            entry.1.writes = false;
         }
 
         let error = build_room_members(
@@ -305,14 +321,17 @@ mod tests {
         assert!(parse_agents(&HashMap::new())
             .unwrap_err()
             .contains("Missing 'agents'"));
-        assert!(parse_agents(&HashMap::from([("agents".to_string(), json!("code_edit"))]))
-            .unwrap_err()
-            .contains("must be an array"));
         assert!(
-            parse_agents(&HashMap::from([("agents".to_string(), json!([{"role": "x"}]))]))
+            parse_agents(&HashMap::from([("agents".to_string(), json!("code_edit"))]))
                 .unwrap_err()
-                .contains("agents[0]")
+                .contains("must be an array")
         );
+        assert!(parse_agents(&HashMap::from([(
+            "agents".to_string(),
+            json!([{"role": "x"}])
+        )]))
+        .unwrap_err()
+        .contains("agents[0]"));
         assert!(parse_agents(&HashMap::from([(
             "agents".to_string(),
             json!([{"config_name": "code_edit", "target_files": [42]}])
@@ -331,14 +350,19 @@ mod tests {
         requests[0].target_files = vec!["src/parser.rs".to_string()];
 
         let members = build_room_members(&card(), &requests, &registry).unwrap();
-        let summary = roster_summary("T-1", &members);
+        let summary = roster_summary("T-1", &members).unwrap();
 
-        assert!(summary.contains("code_edit — pending: write the parser"), "{summary}");
+        assert!(
+            summary.contains("code_edit — pending: write the parser"),
+            "{summary}"
+        );
         assert!(summary.contains("src/parser.rs"), "{summary}");
         assert!(summary.contains("[writes]"), "{summary}");
         assert!(summary.contains("[read-only]"), "{summary}");
         assert!(summary.contains("[decides]"), "{summary}");
         assert!(summary.contains("spawn_agent(card_id=\"T-1\""), "{summary}");
+        assert!(summary.contains("Launch order (writer first)"), "{summary}");
+        assert!(summary.find("code_edit").unwrap() < summary.find("design_review").unwrap());
     }
 
     #[test]
@@ -349,7 +373,10 @@ mod tests {
 
         let claimed = rooms::claim_planned_slot(&mut card, "code_edit").expect("slot is reserved");
         claimed.agent_chat_id = Some("agent-T-1-1234".to_string());
-        assert!(claimed.writes(), "the definition's behaviour survives the spawn");
+        assert!(
+            claimed.writes(),
+            "the definition's behaviour survives the spawn"
+        );
 
         assert!(
             rooms::claim_planned_slot(&mut card, "code_edit").is_none(),

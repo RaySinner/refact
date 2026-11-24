@@ -1,6 +1,5 @@
 pub use refact_tools::tools::tool_task_spawn_agent::*;
 
-
 #[cfg(test)]
 use std::collections::HashMap;
 #[cfg(test)]
@@ -25,7 +24,6 @@ use refact_worktrees::git;
 use refact_worktrees::service::WorktreeService;
 #[cfg(test)]
 use refact_worktrees::types::WorktreeMeta;
-
 
 #[cfg(test)]
 mod tests {
@@ -92,7 +90,10 @@ mod tests {
     }
 
     async fn test_caps_provider(gcx: &Arc<GlobalContext>) -> Arc<dyn CapsProvider> {
-        refact_runtime_api::app_state_from_gcx(gcx.clone()).await.tool.caps
+        refact_runtime_api::app_state_from_gcx(gcx.clone())
+            .await
+            .tool
+            .caps
     }
 
     async fn test_gcx_with_privacy(blocked: Vec<String>) -> Arc<GlobalContext> {
@@ -233,7 +234,9 @@ mod tests {
         caps.defaults.chat_default_model = "provider/chat".to_string();
         set_caps(&gcx, caps).await;
 
-        let model = resolve_agent_model(&test_caps_provider(&gcx).await, "provider/current").await.unwrap();
+        let model = resolve_agent_model(&test_caps_provider(&gcx).await, "provider/current")
+            .await
+            .unwrap();
 
         assert_eq!(model, "provider/task-planner");
     }
@@ -245,7 +248,9 @@ mod tests {
         caps.defaults.chat_default_model = "provider/chat".to_string();
         set_caps(&gcx, caps).await;
 
-        let model = resolve_agent_model(&test_caps_provider(&gcx).await, "provider/current").await.unwrap();
+        let model = resolve_agent_model(&test_caps_provider(&gcx).await, "provider/current")
+            .await
+            .unwrap();
 
         assert_eq!(model, "provider/current");
     }
@@ -257,7 +262,9 @@ mod tests {
         caps.defaults.chat_default_model = "provider/chat".to_string();
         set_caps(&gcx, caps).await;
 
-        let model = resolve_agent_model(&test_caps_provider(&gcx).await, "").await.unwrap();
+        let model = resolve_agent_model(&test_caps_provider(&gcx).await, "")
+            .await
+            .unwrap();
 
         assert_eq!(model, "provider/chat");
     }
@@ -273,7 +280,8 @@ mod tests {
         let task_id = "a".repeat(100);
         let card_id = "b".repeat(100);
         let task_meta = sample_task_meta(None);
-        let err = prepare_agent_worktree_with_suffix(&test_chat_ctx(&gcx).await,
+        let err = prepare_agent_worktree_with_suffix(
+            &test_chat_ctx(&gcx).await,
             &task_meta,
             &task_id,
             "agent-12345678",
@@ -298,7 +306,8 @@ mod tests {
         set_workspace(gcx.clone(), &source).await;
 
         let task_meta = sample_task_meta(None);
-        let err = prepare_agent_worktree(&test_chat_ctx(&gcx).await,
+        let err = prepare_agent_worktree(
+            &test_chat_ctx(&gcx).await,
             &task_meta,
             "task-1",
             "agent-12345678",
@@ -322,7 +331,8 @@ mod tests {
         let before = refact_runtime_api::files_correction::get_project_dirs(gcx.clone()).await;
 
         let task_meta = sample_task_meta(None);
-        let prepared = prepare_agent_worktree(&test_chat_ctx(&gcx).await,
+        let prepared = prepare_agent_worktree(
+            &test_chat_ctx(&gcx).await,
             &task_meta,
             "task-1",
             "agent-12345678",
@@ -354,7 +364,8 @@ mod tests {
         let gcx = crate::global_context::tests::make_test_gcx().await;
         set_workspace(gcx.clone(), &source).await;
         let task_meta = sample_task_meta(None);
-        let prepared = prepare_agent_worktree(&test_chat_ctx(&gcx).await,
+        let prepared = prepare_agent_worktree(
+            &test_chat_ctx(&gcx).await,
             &task_meta,
             "task-1",
             "agent-abcdef12",
@@ -391,7 +402,8 @@ mod tests {
         set_workspace(gcx.clone(), &source).await;
         let task_meta = sample_task_meta(Some("main"));
 
-        let prepared = prepare_agent_worktree(&test_chat_ctx(&gcx).await,
+        let prepared = prepare_agent_worktree(
+            &test_chat_ctx(&gcx).await,
             &task_meta,
             "task-1",
             "agent-11111111",
@@ -425,7 +437,8 @@ mod tests {
         set_workspace(gcx.clone(), &source).await;
         let task_meta = sample_task_meta(None);
 
-        let prepared = prepare_agent_worktree(&test_chat_ctx(&gcx).await,
+        let prepared = prepare_agent_worktree(
+            &test_chat_ctx(&gcx).await,
             &task_meta,
             "task-1",
             "agent-22222222",
@@ -458,7 +471,8 @@ mod tests {
         set_workspace(gcx.clone(), &source).await;
         let task_meta = sample_task_meta(Some("task-base"));
 
-        let err = prepare_agent_worktree(&test_chat_ctx(&gcx).await,
+        let err = prepare_agent_worktree(
+            &test_chat_ctx(&gcx).await,
             &task_meta,
             "task-1",
             "agent-33333333",
@@ -486,7 +500,8 @@ mod tests {
         set_workspace(gcx.clone(), &source).await;
         let task_meta = sample_task_meta(Some("main"));
 
-        let prepared = prepare_agent_worktree(&test_chat_ctx(&gcx).await,
+        let prepared = prepare_agent_worktree(
+            &test_chat_ctx(&gcx).await,
             &task_meta,
             "task-1",
             "agent-44444444",
@@ -1011,7 +1026,8 @@ mod tests {
         let gcx = crate::global_context::tests::make_test_gcx().await;
         set_workspace(gcx.clone(), &source).await;
         let task_meta = sample_task_meta(None);
-        let prepared = prepare_agent_worktree(&test_chat_ctx(&gcx).await,
+        let prepared = prepare_agent_worktree(
+            &test_chat_ctx(&gcx).await,
             &task_meta,
             "task-1",
             "agent-abcdef12",
@@ -1039,7 +1055,8 @@ mod tests {
 
         let task_id = "task-retain-test";
         let task_meta = sample_task_meta(None);
-        let prepared = prepare_agent_worktree(&test_chat_ctx(&gcx).await,
+        let prepared = prepare_agent_worktree(
+            &test_chat_ctx(&gcx).await,
             &task_meta,
             task_id,
             "agent-abcdef12",
@@ -1055,7 +1072,8 @@ mod tests {
         card.agent_chat_id = Some("agent-T-1-abcdef12".to_string());
         setup_task_storage(gcx.clone(), &source, task_id, card).await;
 
-        rollback_retain(&test_chat_ctx(&gcx).await,
+        rollback_retain(
+            &test_chat_ctx(&gcx).await,
             task_id,
             "T-1",
             "agent-T-1-abcdef12",
@@ -1100,7 +1118,8 @@ mod tests {
         setup_task_storage(gcx.clone(), &source, task_id, card).await;
 
         let long_error: String = "x".repeat(400);
-        rollback_retain(&test_chat_ctx(&gcx).await,
+        rollback_retain(
+            &test_chat_ctx(&gcx).await,
             task_id,
             "T-2",
             "agent-T-2-msgtest",
@@ -1178,38 +1197,13 @@ mod tests {
     }
 
     #[test]
-    fn second_agent_claims_reserved_slot_and_becomes_primary_owner() {
+    fn writer_claims_first_and_advisor_cannot_take_primary_owner() {
         let mut card = test_card("T-1", "planned", None);
-        // The roster is reserved up front: a deciding (read-only) architect and a writing coder.
-        card.team_members =
-            vec![reserved_slot("architect", Some(false)), reserved_slot("coder", Some(true))];
+        card.team_members = vec![
+            reserved_slot("architect", Some(false)),
+            reserved_slot("coder", Some(true)),
+        ];
 
-        // The architect's spawn claims its slot. A sequential role stays Pending, so the room is
-        // still valid, and it does not take the card (it will decide, not implement).
-        claim_room_slot(
-            &mut card,
-            "architect",
-            "agent-1",
-            "agent-T-1-arch",
-            Some("branch-1".into()),
-            Some("/wt/1".into()),
-            None,
-            None,
-            vec!["cat".into()],
-        )
-        .unwrap();
-        assert_eq!(card.team_members.len(), 2);
-        assert_eq!(
-            card.team_members[0].member_status,
-            Some(refact_tasks::types::TeamStatus::Pending)
-        );
-        assert!(
-            card.agent_chat_id.is_none(),
-            "a deciding/reading member must not own the card"
-        );
-
-        // The coder's spawn claims the second slot. It is the first writer, so it becomes the
-        // primary owner: its scalars are promoted, it goes Running, and the card starts.
         claim_room_slot(
             &mut card,
             "coder",
@@ -1222,15 +1216,28 @@ mod tests {
             vec!["cat".into(), "shell".into()],
         )
         .unwrap();
+        claim_room_slot(
+            &mut card,
+            "architect",
+            "agent-1",
+            "agent-T-1-arch",
+            Some("branch-1".into()),
+            Some("/wt/1".into()),
+            None,
+            None,
+            vec!["cat".into()],
+        )
+        .unwrap();
 
-        // The reserved slot was *filled in place* — not a second member appended for "coder".
         assert_eq!(card.team_members.len(), 2);
-        assert_eq!(card.team_members[1].role, "coder");
         assert_eq!(
             card.team_members[1].agent_chat_id.as_deref(),
             Some("agent-T-1-code")
         );
-        assert_eq!(card.team_members[1].agent_branch.as_deref(), Some("branch-2"));
+        assert_eq!(
+            card.team_members[1].agent_branch.as_deref(),
+            Some("branch-2")
+        );
         assert_eq!(
             card.team_members[1].agent_worktree.as_deref(),
             Some("/wt/2")
@@ -1241,16 +1248,12 @@ mod tests {
         );
         assert_eq!(
             card.team_members[1].tools,
-            vec!["cat".to_string(), "shell".to_string()],
-            "the roster must be able to tell peers what each member may use"
+            vec!["cat".to_string(), "shell".to_string()]
         );
         assert_eq!(
-            card.team_members[1].member_status,
-            Some(refact_tasks::types::TeamStatus::Running)
+            card.team_members[0].member_status,
+            Some(refact_tasks::types::TeamStatus::Pending)
         );
-
-        // Primary owner promotion: the card's scalars now point at the coder, and the card moved
-        // to doing with a start time, so every legacy reader (monitor, diff, merge) sees it.
         assert_eq!(card.assignee.as_deref(), Some("agent-2"));
         assert_eq!(card.agent_chat_id.as_deref(), Some("agent-T-1-code"));
         assert_eq!(card.agent_branch.as_deref(), Some("branch-2"));
@@ -1260,10 +1263,6 @@ mod tests {
             .status_updates
             .iter()
             .any(|update| update.message.contains("primary owner")));
-        assert!(card
-            .status_updates
-            .iter()
-            .any(|update| update.message.contains("joined the room as coder")));
     }
 
     #[test]
@@ -1380,45 +1379,107 @@ mod tests {
     }
 
     #[test]
-    fn spawn_into_room_rejected_when_validate_team_fails() {
-        // Two writing members that claim the same file: the roster is a valid room shape, but the
-        // pair would overwrite each other, so `validate_team` must refuse it.
+    fn legacy_multi_writer_board_deserializes_but_refuses_new_spawns() {
         let mut card = test_card("T-1", "doing", None);
         card.team_members = vec![
-            refact_tasks::rooms::new_room_member("implementer", "a1", "agent-T-1-a1", None, None, None, vec![]),
-            refact_tasks::rooms::new_room_member("refactorer", "a2", "agent-T-1-a2", None, None, None, vec![]),
+            reserved_slot("implementer", Some(true)),
+            reserved_slot("refactorer", Some(true)),
         ];
-        card.team_members[0].target_files = vec!["src/lib.rs".into()];
-        card.team_members[1].target_files = vec!["src/lib.rs".into()];
+        let encoded = serde_json::to_string(&card).unwrap();
+        let decoded: BoardCard = serde_json::from_str(&encoded).unwrap();
 
-        let error = check_spawn_precondition(&card).unwrap_err();
+        assert_eq!(decoded.team_members.len(), 2);
+        let error = check_spawn_precondition(&decoded, "implementer").unwrap_err();
+        assert!(error.contains("exactly one writer"), "{error}");
 
-        assert!(error.contains("both write"), "{error}");
-        assert!(error.contains("src/lib.rs"), "{error}");
+        let mut legacy = decoded;
+        let error = claim_room_slot(
+            &mut legacy,
+            "implementer",
+            "agent-new",
+            "agent-T-1-new",
+            None,
+            None,
+            None,
+            None,
+            vec![],
+        )
+        .unwrap_err();
+        assert!(error.contains("exactly one writer"), "{error}");
+        assert!(legacy
+            .team_members
+            .iter()
+            .all(|member| member.agent_id.is_none()));
     }
 
     #[test]
-    fn spawn_accepts_a_room_of_readers_and_free_roles() {
-        // The removed "a room must contain a coder" rule: what used to be an invalid room is now a
-        // legitimate one, because roles are labels and nobody is required to write.
+    fn spawn_rejects_advisors_without_a_writer() {
         let mut card = test_card("T-1", "doing", None);
         card.team_members = vec![
-            refact_tasks::rooms::new_room_member("researcher", "a1", "agent-T-1-a1", None, None, None, vec![]),
-            refact_tasks::rooms::new_room_member("дизайнер", "a2", "agent-T-1-a2", None, None, None, vec![]),
+            reserved_slot("researcher", Some(false)),
+            reserved_slot("designer", Some(false)),
         ];
 
-        assert!(check_spawn_precondition(&card).is_ok());
+        let error = check_spawn_precondition(&card, "researcher").unwrap_err();
+        assert!(error.contains("exactly one writer"), "{error}");
+    }
+
+    #[test]
+    fn advisor_first_spawn_is_rejected_without_mutating_roster() {
+        let mut card = test_card("T-1", "planned", None);
+        card.team_members = vec![
+            reserved_slot("coder", Some(true)),
+            reserved_slot("reviewer", Some(false)),
+        ];
+
+        let error = claim_room_slot(
+            &mut card,
+            "reviewer",
+            "agent-2",
+            "agent-T-1-rev",
+            None,
+            None,
+            None,
+            None,
+            vec![],
+        )
+        .unwrap_err();
+
+        assert!(error.contains("coder"), "{error}");
+        assert!(error.contains("writer"), "{error}");
+        assert!(card
+            .team_members
+            .iter()
+            .all(|member| member.agent_id.is_none()));
+        assert!(card.agent_chat_id.is_none());
     }
 
     #[test]
     fn spawn_rejects_duplicate_room_identity() {
         let mut card = test_card("T-1", "doing", None);
         card.team_members = vec![
-            refact_tasks::rooms::new_room_member("architect", "same", "agent-T-1-a", None, None, None, vec![]),
-            refact_tasks::rooms::new_room_member("coder", "same", "agent-T-1-b", None, None, None, vec![]),
+            refact_tasks::rooms::new_room_member(
+                "architect",
+                "same",
+                "agent-T-1-a",
+                None,
+                None,
+                None,
+                vec![],
+            ),
+            refact_tasks::rooms::new_room_member(
+                "coder",
+                "same",
+                "agent-T-1-b",
+                None,
+                None,
+                None,
+                vec![],
+            ),
         ];
+        card.team_members[0].writes = Some(false);
 
-        let error = check_spawn_precondition(&card).unwrap_err();
+        let error = check_spawn_precondition(&card, "architect").unwrap_err();
 
         assert!(error.contains("duplicate team member identity"), "{error}");
         assert!(error.contains("same"), "{error}");
@@ -1428,13 +1489,30 @@ mod tests {
     fn spawn_rejects_running_architect_beside_active_peer() {
         let mut card = test_card("T-1", "doing", None);
         card.team_members = vec![
-            refact_tasks::rooms::new_room_member("architect", "a1", "agent-T-1-a1", None, None, None, vec![]),
-            refact_tasks::rooms::new_room_member("coder", "a2", "agent-T-1-a2", None, None, None, vec![]),
+            refact_tasks::rooms::new_room_member(
+                "architect",
+                "a1",
+                "agent-T-1-a1",
+                None,
+                None,
+                None,
+                vec![],
+            ),
+            refact_tasks::rooms::new_room_member(
+                "coder",
+                "a2",
+                "agent-T-1-a2",
+                None,
+                None,
+                None,
+                vec![],
+            ),
         ];
+        card.team_members[0].writes = Some(false);
         card.team_members[0].member_status = Some(refact_tasks::types::TeamStatus::Running);
         card.team_members[1].member_status = Some(refact_tasks::types::TeamStatus::Running);
 
-        let error = check_spawn_precondition(&card).unwrap_err();
+        let error = check_spawn_precondition(&card, "architect").unwrap_err();
 
         assert!(error.contains("sequential"), "{error}");
     }
@@ -1446,8 +1524,6 @@ mod tests {
         let args = HashMap::from([("role".to_string(), json!("architect"))]);
         assert_eq!(spawn_role(&args).unwrap(), "architect");
 
-        // Roles are free text: the user names a member for this card, and refusing an unknown
-        // word would reintroduce the hardcoded job list this card removed.
         for role in ["wizard", "designer", "qa-инженер"] {
             let args = HashMap::from([("role".to_string(), json!(role))]);
             assert_eq!(spawn_role(&args).unwrap(), role);
@@ -1455,25 +1531,20 @@ mod tests {
     }
 
     #[test]
-    fn concurrent_room_claims_do_not_lose_members() {
-        // `update_board_atomic` gives each claim the whole board, so a claim can never read a
-        // stale roster. Model the critical section: a reserved roster, then each spawn claims its
-        // own slot in sequence and every member must be filled, none duplicated or lost.
+    fn concurrent_room_claims_do_not_lose_members_or_replace_owner() {
         let mut card = test_card("T-1", "planned", None);
         card.team_members = vec![
             reserved_slot("coder", Some(true)),
             reserved_slot("reviewer", Some(false)),
-            reserved_slot("designer", Some(true)),
+            reserved_slot("designer", Some(false)),
         ];
 
-        for index in 0..3 {
+        for (index, role) in ["coder", "reviewer", "designer"].into_iter().enumerate() {
             let room = card.clone();
-            // Each claimant validated against the snapshot it was handed...
-            check_spawn_precondition(&room).unwrap();
-            // ...then applied its own mutation on top of the current board.
+            check_spawn_precondition(&room, role).unwrap();
             claim_room_slot(
                 &mut card,
-                ["coder", "reviewer", "designer"][index],
+                role,
                 &format!("agent-{index}"),
                 &format!("agent-T-1-{index}"),
                 None,
@@ -1486,19 +1557,30 @@ mod tests {
         }
 
         assert_eq!(card.team_members.len(), 3);
-        let chats: Vec<&str> = card
+        let chats = card
             .team_members
             .iter()
             .filter_map(|member| member.agent_chat_id.as_deref())
-            .collect();
-        assert_eq!(
-            chats,
-            vec!["agent-T-1-0", "agent-T-1-1", "agent-T-1-2"],
-            "every claim must fill its slot, none duplicated"
-        );
-        assert_eq!(card.validate_team().unwrap(), ());
-        // The first writer (the coder) is the primary owner.
+            .collect::<Vec<_>>();
+        assert_eq!(chats, vec!["agent-T-1-0", "agent-T-1-1", "agent-T-1-2"]);
         assert_eq!(card.assignee.as_deref(), Some("agent-0"));
+
+        let error = claim_room_slot(
+            &mut card,
+            "coder",
+            "agent-other",
+            "agent-T-1-other",
+            Some("other-branch".into()),
+            Some("/wt/other".into()),
+            None,
+            None,
+            vec![],
+        )
+        .unwrap_err();
+        assert!(error.contains("no reserved slot"), "{error}");
+        assert_eq!(card.assignee.as_deref(), Some("agent-0"));
+        assert_eq!(card.agent_chat_id.as_deref(), Some("agent-T-1-0"));
+        assert!(card.agent_branch.is_none());
     }
 
     #[test]
@@ -1524,5 +1606,4 @@ mod tests {
         assert!(prompt.contains("agent_finish()"), "{prompt}");
         assert!(prompt.contains("## Instructions"), "{prompt}");
     }
-
 }

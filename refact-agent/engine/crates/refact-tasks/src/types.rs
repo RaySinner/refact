@@ -803,6 +803,7 @@ impl BoardCard {
         if !self.is_room() {
             return Ok(());
         }
+        crate::rooms::validate_writer_roster(self)?;
 
         let decision_makers: Vec<&TeamMember> = self
             .team_members
@@ -939,12 +940,7 @@ fn shared_target_file(left: &TeamMember, right: &TeamMember) -> Option<String> {
         .iter()
         .map(|file| file.trim())
         .filter(|file| !file.is_empty())
-        .find(|file| {
-            right
-                .target_files
-                .iter()
-                .any(|other| other.trim() == *file)
-        })
+        .find(|file| right.target_files.iter().any(|other| other.trim() == *file))
         .map(str::to_string)
 }
 
@@ -1460,7 +1456,7 @@ mod tests {
 
     fn member(role: &str, status: Option<TeamStatus>) -> TeamMember {
         TeamMember {
-            role: role.into(),
+            writes: Some(role == "coder"),
             member_status: status,
             ..Default::default()
         }
@@ -1477,7 +1473,10 @@ mod tests {
             member_status: Some(TeamStatus::Pending),
             writes: Some(writes),
             decision_maker: Some(decision_maker),
-            target_files: target_files.iter().map(|file| (*file).to_string()).collect(),
+            target_files: target_files
+                .iter()
+                .map(|file| (*file).to_string())
+                .collect(),
             ..Default::default()
         }
     }
@@ -1632,16 +1631,10 @@ team_members:
         let mut card = card("T-1", "Room", "doing", vec![]);
         card.team_members = vec![
             member("reviewer", Some(TeamStatus::Pending)),
-            member("architect", Some(TeamStatus::Pending)),
+            member("coder", Some(TeamStatus::Pending)),
         ];
 
-        for role in [
-            "coder",
-            "reviewer",
-            "architect",
-            "researcher",
-            "specialist",
-        ] {
+        for role in ["coder", "reviewer", "architect", "researcher", "specialist"] {
             assert!(TeamRole::parse(role).is_some(), "{role} must still parse");
         }
         assert_eq!(
@@ -1651,7 +1644,7 @@ team_members:
         );
         assert!(
             card.validate_team().is_ok(),
-            "a room of legacy roles needs no coder"
+            "legacy role strings coexist with the single-writer rule"
         );
     }
 
@@ -1662,6 +1655,7 @@ team_members:
             member("дизайнер", Some(TeamStatus::Running)),
             member("qa-инженер", Some(TeamStatus::Running)),
         ];
+        card.team_members[0].writes = Some(true);
 
         assert!(card.team_members[0].typed_role().is_none());
         assert!(
@@ -1669,7 +1663,6 @@ team_members:
             "a free role is parallel-capable and needs no enum variant"
         );
     }
-
     #[test]
     fn at_most_one_decision_maker_in_room() {
         let mut card = card("T-1", "Room", "doing", vec![]);
@@ -1691,7 +1684,7 @@ team_members:
         let mut card = card("T-1", "Room", "doing", vec![]);
         card.team_members = vec![
             behaviour("tech-lead", true, true, &["src/lib.rs"]),
-            behaviour("coder", true, false, &["src/other.rs"]),
+            behaviour("coder", false, false, &["src/other.rs"]),
         ];
 
         let error = card.validate_team().unwrap_err();
@@ -1705,7 +1698,7 @@ team_members:
         let mut card = card("T-1", "Room", "doing", vec![]);
         card.team_members = vec![
             behaviour("implementer", true, false, &["src/a.rs"]),
-            behaviour("tester", true, false, &["src/b.rs"]),
+            behaviour("tester", false, false, &["src/b.rs"]),
         ];
 
         assert!(
@@ -1736,8 +1729,7 @@ team_members:
 
         let error = card.validate_team().unwrap_err();
 
-        assert!(error.contains("src/a.rs"), "{error}");
-        assert!(error.contains("overwrite each other"), "{error}");
+        assert!(error.contains("exactly one writer"), "{error}");
         assert_eq!(
             card.writer_file_conflict(),
             Some(("implementer", "refactorer", "src/a.rs".to_string()))
@@ -1745,7 +1737,7 @@ team_members:
     }
 
     #[test]
-    fn writers_with_disjoint_files_are_accepted() {
+    fn writers_with_disjoint_files_are_rejected() {
         let mut card = card("T-1", "Room", "doing", vec![]);
         card.team_members = vec![
             behaviour("implementer", true, false, &["src/a.rs"]),
@@ -1754,7 +1746,8 @@ team_members:
         ];
 
         assert!(card.writer_file_conflict().is_none());
-        assert!(card.validate_team().is_ok());
+
+        assert!(card.validate_team().is_err());
     }
 
     #[test]
@@ -1831,6 +1824,7 @@ team_members:
             TeamMember {
                 role: "architect".into(),
                 agent_id: Some("bgagent-same".into()),
+                writes: Some(false),
                 member_status: Some(TeamStatus::Pending),
                 ..Default::default()
             },

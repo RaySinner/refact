@@ -7,6 +7,7 @@
 //! git worktrees.
 
 use serde_json::Value;
+use refact_room::{validate_roster, validate_spawn, RosterMember};
 
 use crate::types::{BoardCard, TeamMember, TeamStatus};
 
@@ -17,6 +18,29 @@ use crate::types::{BoardCard, TeamMember, TeamStatus};
 /// fan-out one batch call can already produce, so 12 keeps a legitimate batch legal while
 /// still refusing a runaway "room".
 pub const MAX_ROOM_SIZE: usize = 12;
+
+fn neutral_roster(members: &[TeamMember]) -> Vec<RosterMember<'_>> {
+    members
+        .iter()
+        .map(|member| RosterMember {
+            role: &member.role,
+            writes: member.writes(),
+            claimed: member.agent_id.is_some() || member.agent_chat_id.is_some(),
+        })
+        .collect()
+}
+
+pub fn validate_writer_roster(card: &BoardCard) -> Result<(), String> {
+    validate_roster(&neutral_roster(&card.team_members)).map_err(|error| error.to_string())
+}
+
+pub fn validate_spawn_roster(card: &BoardCard, role: &str) -> Result<(), String> {
+    validate_spawn(&neutral_roster(&card.team_members), role).map_err(|error| error.to_string())
+}
+
+pub fn writer_first_indices(members: &[TeamMember]) -> Result<Vec<usize>, String> {
+    refact_room::spawn_order(&neutral_roster(members)).map_err(|error| error.to_string())
+}
 
 /// Columns that can never take a new member: the card is finished.
 pub fn is_terminal_column(column: &str) -> bool {
@@ -47,8 +71,7 @@ pub fn reject_spawn_into_card(card: &BoardCard) -> Option<String> {
 /// is what the member reaches once it is actually working. This matters because `validate_team`
 /// refuses a running sequential role alongside any other active member — if a spawn marked itself
 /// `Running`, an architect could never staff its own room. Starting as `Pending` keeps the
-/// architect-first flow legal while still letting `validate_team` enforce the structural rules (a
-/// coder must exist, identities must be unique).
+/// reserved roster valid while still letting `validate_team` enforce its structural rules.
 ///
 /// The card's existing members are left untouched: appending is the caller's job inside the same
 /// `update_board_atomic` critical section, so a second agent can never observe a half-written room.
@@ -399,4 +422,64 @@ pub fn describe_room(card: &BoardCard) -> Vec<String> {
         ));
     }
     lines
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn slot(role: &str, writes: bool) -> TeamMember {
+        planned_room_member(RoomSlot {
+            role: role.to_string(),
+            mandate: None,
+            writes,
+            decision_maker: false,
+            room_role_hint: None,
+            tools: vec![],
+            target_files: vec![],
+        })
+    }
+
+    #[test]
+    fn board_mapping_delegates_writer_order_and_claim_state() {
+        let mut card = BoardCard {
+            id: "T-1".to_string(),
+            title: "Room".to_string(),
+            column: "planned".to_string(),
+            priority: "P1".to_string(),
+            depends_on: vec![],
+            instructions: String::new(),
+            assignee: None,
+            agent_chat_id: None,
+            retry_count: 0,
+            status_updates: vec![],
+            comments: vec![],
+            final_report: None,
+            final_report_structured: None,
+            verifier_report: None,
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            started_at: None,
+            last_heartbeat_at: None,
+            completed_at: None,
+            agent_branch: None,
+            agent_worktree: None,
+            agent_worktree_name: None,
+            base_branch: None,
+            base_commit: None,
+            ab_variants: None,
+            team_members: vec![slot("reviewer", false), slot("coder", true)],
+            target_files: vec![],
+            scope_guard_mode: Default::default(),
+        };
+        assert_eq!(
+            writer_first_indices(&card.team_members).unwrap(),
+            vec![1, 0]
+        );
+        assert!(validate_spawn_roster(&card, "reviewer").is_err());
+        assert!(validate_spawn_roster(&card, "coder").is_ok());
+
+        card.team_members[1].agent_id = Some("writer-1".to_string());
+        assert!(validate_spawn_roster(&card, "reviewer").is_ok());
+        assert!(validate_writer_roster(&card).is_ok());
+    }
 }

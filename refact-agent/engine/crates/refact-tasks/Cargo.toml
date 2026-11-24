@@ -12,6 +12,7 @@ tracing.workspace = true
 uuid.workspace = true
 chrono = { version = "0.4.31", features = ["serde"] }
 git2 = "0.20.2"
+refact-room = { path = "../refact-room" }
 
 [dev-dependencies]
 serde_json.workspace = true

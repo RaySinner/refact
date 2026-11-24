@@ -110,12 +110,7 @@ struct SpawnPreparationDiagnostics {
 }
 
 impl SpawnPreparationDiagnostics {
-    fn new(
-        task_id: &str,
-        card_id: &str,
-        agent_id: &str,
-        agent_chat_id: &str,
-    ) -> Self {
+    fn new(task_id: &str, card_id: &str, agent_id: &str, agent_chat_id: &str) -> Self {
         Self::new_at(
             SpawnPreparationCorrelation {
                 task_id: task_id.to_string(),
@@ -184,12 +179,8 @@ impl SpawnPreparationDiagnostics {
             return;
         }
         self.stage = stage;
-        let mut event = SpawnPreparationEvent::at(
-            event,
-            self.correlation.clone(),
-            timestamp_ms,
-            elapsed,
-        );
+        let mut event =
+            SpawnPreparationEvent::at(event, self.correlation.clone(), timestamp_ms, elapsed);
         if let Some((count, bytes)) = file_metrics {
             event = event.with_file_metrics(count, bytes);
         }
@@ -538,7 +529,8 @@ pub async fn prepare_agent_worktree_with_base_and_suffix(
     base_commit: Option<String>,
     branch_suffix: Option<&str>,
 ) -> Result<PreparedWorktree, String> {
-    let project_dirs = refact_runtime_api::files_correction::get_unscoped_project_dirs_for_ctx(ctx).await;
+    let project_dirs =
+        refact_runtime_api::files_correction::get_unscoped_project_dirs_for_ctx(ctx).await;
     let workspace_root = project_dirs.first().cloned().ok_or_else(|| {
         "No workspace folder found; task agents require an isolated git worktree".to_string()
     })?;
@@ -724,7 +716,12 @@ pub fn build_room_member_prompt(
     mandate: Option<&str>,
     roster: &[String],
 ) -> String {
-    let base = build_agent_prompt(card_title, instructions, dependency_context, suggested_steps);
+    let base = build_agent_prompt(
+        card_title,
+        instructions,
+        dependency_context,
+        suggested_steps,
+    );
     let mandate_line = mandate
         .map(|mandate| format!("\n**Your mandate:** {mandate}"))
         .unwrap_or_default();
@@ -824,6 +821,7 @@ pub fn claim_room_slot(
     let is_room = !card.team_members.is_empty();
 
     if is_room {
+        rooms::validate_spawn_roster(card, role)?;
         let branch_for_promote = worktree_branch.clone();
         let path_for_promote = worktree_path.clone();
         // Claiming the slot borrows `card.team_members`, so the decision to promote (which only
@@ -944,7 +942,10 @@ pub fn spawn_role(args: &HashMap<String, Value>) -> Result<String, String> {
     // Roles are free text now. The user names a member for what it is on this card, so refusing
     // "designer" or "qa" would put the hardcoded job list back in the way. What a member may do is
     // decided by its agent definition (`writes`, `decision_maker`), not by its name.
-    Ok(optional_nonempty_string_arg(args, "role")?.unwrap_or_else(|| DEFAULT_ROOM_ROLE.to_string()))
+    Ok(
+        optional_nonempty_string_arg(args, "role")?
+            .unwrap_or_else(|| DEFAULT_ROOM_ROLE.to_string()),
+    )
 }
 
 /// Refuse a spawn that the card cannot accept, re-checking every rule the room contract has.
@@ -953,10 +954,11 @@ pub fn spawn_role(args: &HashMap<String, Value>) -> Result<String, String> {
 /// update (so two concurrent spawns cannot both pass on a stale snapshot). `Err` messages name
 /// the room limit, the terminal column, or `validate_team`'s own reason so the planner can act
 /// without reading the source.
-pub fn check_spawn_precondition(card: &BoardCard) -> Result<(), String> {
+pub fn check_spawn_precondition(card: &BoardCard, role: &str) -> Result<(), String> {
     if let Some(error) = rooms::reject_spawn_into_card(card) {
         return Err(error);
     }
+    rooms::validate_spawn_roster(card, role)?;
     card.validate_team()
 }
 
@@ -1075,7 +1077,13 @@ pub async fn resolve_invoking_planner_chat_id(
             return root_chat_id.to_string();
         }
     }
-    resolve_task_planner_controller_chat_id(&gcx.chat_ctx(gcx.clone()), chat_id, Some(root_chat_id), task_meta).await
+    resolve_task_planner_controller_chat_id(
+        &gcx.chat_ctx(gcx.clone()),
+        chat_id,
+        Some(root_chat_id),
+        task_meta,
+    )
+    .await
 }
 
 pub async fn root_chat_is_planner_for_task(
@@ -1102,17 +1110,21 @@ pub async fn root_chat_is_planner_for_task(
         &gcx.chat_ctx(gcx.clone()),
         root_chat_id,
     )
-        .await
-        .is_some_and(|loaded| {
-            loaded
-                .thread
-                .task_meta
-                .as_ref()
-                .is_some_and(|meta| meta.role == "planner" && meta.task_id == task_id)
-        })
+    .await
+    .is_some_and(|loaded| {
+        loaded
+            .thread
+            .task_meta
+            .as_ref()
+            .is_some_and(|meta| meta.role == "planner" && meta.task_id == task_id)
+    })
 }
 
-pub fn resolve_files_to_open_path(worktree_root: &Path, source_root: &Path, path_str: &str) -> PathBuf {
+pub fn resolve_files_to_open_path(
+    worktree_root: &Path,
+    source_root: &Path,
+    path_str: &str,
+) -> PathBuf {
     let requested = Path::new(path_str);
     if requested.is_absolute() {
         if let Ok(relative) = requested.strip_prefix(source_root) {
@@ -1251,7 +1263,7 @@ impl Tool for ToolTaskSpawnAgent {
                     },
                     "role": {
                         "type": "string",
-                        "description": "Free-text name for this member's part of the work (default: coder): coder, reviewer, designer, qa, whatever fits the card. Roles are labels, not a fixed job list, and a room needs nobody in particular. What a member may do comes from its agent definition (writes, decision_maker), not from this name. The architect label is sequential: it cannot run while another member is active."
+                        "description": "Free-text name for this member's part of the work (default: coder). Multi-member rooms require exactly one writer from the agent definition; spawn that writer role before any advisors. The architect label is sequential: it cannot run while another member is active."
                     },
                     "role_mandate": {
                         "type": "string",
@@ -1397,11 +1409,12 @@ impl Tool for ToolTaskSpawnAgent {
                 card_id, card.column
             ));
         }
-        check_spawn_precondition(card)?;
         let role = spawn_role(args)?;
+        check_spawn_precondition(card, &role)?;
         let mandate = optional_nonempty_string_arg(args, "role_mandate")?;
 
-        let project_dirs = refact_runtime_api::files_correction::get_unscoped_project_dirs_for_ctx(&ctx).await;
+        let project_dirs =
+            refact_runtime_api::files_correction::get_unscoped_project_dirs_for_ctx(&ctx).await;
         let workspace_root = project_dirs.first().ok_or_else(|| {
             "No workspace folder found; task agents require an isolated git worktree".to_string()
         })?;
@@ -1504,10 +1517,8 @@ impl Tool for ToolTaskSpawnAgent {
         let base_branch_from_prep = prepared_worktree.meta.base_branch.clone();
         let base_commit_from_prep = prepared_worktree.meta.base_commit.clone();
 
-        let board_update_result = storage::update_board_atomic_for_ctx(
-            &ctx,
-            &task_id,
-            move |board| {
+        let board_update_result =
+            storage::update_board_atomic_for_ctx(&ctx, &task_id, move |board| {
                 let agents_active_before = board
                     .cards
                     .iter()
@@ -1522,12 +1533,18 @@ impl Tool for ToolTaskSpawnAgent {
                     return Err(format!("Card {} is already done", card_id_owned));
                 }
                 if card.column == "failed" {
-                    return Err(format!("Card {} has failed. Reset it first if you want to retry.", card_id_owned));
+                    return Err(format!(
+                        "Card {} has failed. Reset it first if you want to retry.",
+                        card_id_owned
+                    ));
                 }
                 if card.column != "planned" && card.column != "doing" {
-                    return Err(format!("Card {} is in column '{}', expected 'planned' or 'doing'", card_id_owned, card.column));
+                    return Err(format!(
+                        "Card {} is in column '{}', expected 'planned' or 'doing'",
+                        card_id_owned, card.column
+                    ));
                 }
-                check_spawn_precondition(card)?;
+                check_spawn_precondition(card, &role_clone)?;
                 claim_room_slot(
                     card,
                     &role_clone,
@@ -1540,14 +1557,14 @@ impl Tool for ToolTaskSpawnAgent {
                     member_tools.clone(),
                 )
                 .map_err(|error| format!("Card {card_id_owned}: {error}"))?;
-                card.validate_team().map_err(|error| format!("Card {card_id_owned}: {error}"))?;
+                card.validate_team()
+                    .map_err(|error| format!("Card {card_id_owned}: {error}"))?;
                 card.base_branch = base_branch_from_prep.clone();
                 card.base_commit = base_commit_from_prep.clone();
 
                 Ok(Some(agents_active_before == 0))
-            },
-        )
-        .await;
+            })
+            .await;
         let (board, commit_info) = match board_update_result {
             Ok(result) => result,
             Err(e) => {

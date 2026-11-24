@@ -991,7 +991,8 @@ impl Tool for ToolTaskBoardUpdateCard {
             source: make_source(),
             experimental: false,
             allow_parallel: false,
-            description: "Update an existing card's fields, including the roster of an agent room.".to_string(),
+            description: "Update an existing card's fields, including the roster of an agent room."
+                .to_string(),
             input_schema: {
                 let mut schema = json_schema_from_params(
                     &[
@@ -1014,7 +1015,7 @@ impl Tool for ToolTaskBoardUpdateCard {
                 );
                 schema["properties"]["team_members"] = json!({
                     "type": "array",
-                    "description": "Room roster. Replaces the card's members; spawn_agent adds to it. A room must contain a coder.",
+                    "description": "Room roster. Replaces the card's members. Multi-member rooms require exactly one writer; spawn the writer before advisors.",
                     "items": {
                         "type": "object",
                         "properties": {
@@ -1131,9 +1132,7 @@ impl Tool for ToolTaskBoardMoveCard {
             if column_owned == "doing" && card.started_at.is_none() {
                 card.started_at = Some(now.clone());
             }
-            if (column_owned == "done"
-                || column_owned == "failed"
-                || column_owned == "regressed")
+            if (column_owned == "done" || column_owned == "failed" || column_owned == "regressed")
                 && card.completed_at.is_none()
             {
                 card.completed_at = Some(now);

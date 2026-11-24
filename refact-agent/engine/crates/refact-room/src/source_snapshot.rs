@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::{Component, Path};
 
 use serde::{Deserialize, Serialize};
@@ -38,6 +38,10 @@ pub struct SourceDeliveryVersion {
     pub delivery_id: String,
     pub environment_version: u64,
     pub source: SourceIdentity,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous_delivery_id: Option<String>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    delivery_lineage: BTreeSet<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -102,8 +106,11 @@ impl SourceSnapshot {
                 "environment_version must be greater than zero".to_string(),
             ));
         }
+        let mut delivery_lineage = BTreeSet::new();
         if let Some(previous) = previous {
-            if previous.delivery_id == delivery_id {
+            delivery_lineage.clone_from(&previous.delivery_lineage);
+            delivery_lineage.insert(previous.delivery_id.clone());
+            if delivery_lineage.contains(&delivery_id) {
                 return Err(SourceSnapshotError::Validation(
                     "a delivery id cannot be rebound to another source version".to_string(),
                 ));
@@ -114,10 +121,13 @@ impl SourceSnapshot {
                 ));
             }
         }
+        delivery_lineage.insert(delivery_id.clone());
         Ok(SourceDeliveryVersion {
             delivery_id,
             environment_version,
             source: self.identity.clone(),
+            previous_delivery_id: previous.map(|previous| previous.delivery_id.clone()),
+            delivery_lineage,
         })
     }
 }
@@ -277,5 +287,46 @@ mod tests {
         assert!(snapshot
             .bind_delivery("delivery-1", 6, Some(&second))
             .is_err());
+    }
+
+    #[test]
+    fn source_snapshot_delivery_lineage_survives_serde_and_legacy_records() {
+        let snapshot = source_snapshot();
+        let legacy_json = serde_json::json!({
+            "delivery_id": "delivery-1",
+            "environment_version": 1,
+            "source": {
+                "source_revision": "commit-1",
+                "source_digest": snapshot.identity().source_digest.clone(),
+            }
+        });
+        let legacy: SourceDeliveryVersion = serde_json::from_value(legacy_json.clone()).unwrap();
+        assert!(legacy.previous_delivery_id.is_none());
+        assert!(legacy.delivery_lineage.is_empty());
+        assert_eq!(serde_json::to_value(&legacy).unwrap(), legacy_json);
+
+        let second = snapshot
+            .bind_delivery("delivery-2", 2, Some(&legacy))
+            .unwrap();
+        assert_eq!(second.previous_delivery_id.as_deref(), Some("delivery-1"));
+        let second: SourceDeliveryVersion =
+            serde_json::from_str(&serde_json::to_string(&second).unwrap()).unwrap();
+        let third = snapshot
+            .bind_delivery("delivery-3", 3, Some(&second))
+            .unwrap();
+        assert_eq!(third.previous_delivery_id.as_deref(), Some("delivery-2"));
+        let third: SourceDeliveryVersion =
+            serde_json::from_str(&serde_json::to_string(&third).unwrap()).unwrap();
+
+        assert!(snapshot
+            .bind_delivery("delivery-1", 4, Some(&third))
+            .is_err());
+        assert!(snapshot
+            .bind_delivery("delivery-2", 4, Some(&third))
+            .is_err());
+        let fourth = snapshot
+            .bind_delivery("delivery-4", 4, Some(&third))
+            .unwrap();
+        assert_eq!(fourth.environment_version, 4);
     }
 }

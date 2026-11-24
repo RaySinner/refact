@@ -49,6 +49,7 @@ members = [
     "crates/refact-scheduler-core",
     "crates/refact-daemon",
     "crates/refact-room",
+    "crates/refact-uhp",
 ]
 resolver = "2"
 

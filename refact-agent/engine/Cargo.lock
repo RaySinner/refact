@@ -5164,6 +5164,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "refact-uhp"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "hex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
 name = "refact-vecdb"
 version = "0.1.0"
 dependencies = [

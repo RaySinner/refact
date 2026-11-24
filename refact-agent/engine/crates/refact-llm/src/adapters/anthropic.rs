@@ -480,8 +480,9 @@ fn convert_to_anthropic(
     context_sanitizer: Option<&dyn Fn(&str) -> String>,
 ) -> (Option<Value>, Vec<Value>) {
     use super::render_extra::{
-        is_context_role, is_event_role, is_goal_role, is_plan_role, render_context_message,
-        render_event_message, render_goal_message, render_plan_message,
+        goal_prompt_enabled, is_context_role, is_event_role, is_goal_prompt_message, is_goal_role,
+        is_plan_role, render_context_message, render_event_message, render_goal_message,
+        render_plan_message,
     };
 
     let mut system_text = None;
@@ -489,8 +490,12 @@ fn convert_to_anthropic(
     let mut pending_tool_results: Vec<Value> = Vec::new();
     let mut pending_context_text: Vec<PendingText> = Vec::new();
     let normalized_messages = normalize_tool_results_after_assistant(messages);
+    let goals_enabled = goal_prompt_enabled(messages);
 
     for msg in normalized_messages.iter() {
+        if !goals_enabled && is_goal_prompt_message(msg) {
+            continue;
+        }
         match msg.role.as_str() {
             "system" => {
                 system_text = Some(msg.content.content_text_only());
@@ -1759,6 +1764,31 @@ mod tests {
         assert_eq!(serialized.matches("<plan mode=").count(), 1);
         assert!(serialized.find("<goal mode=").unwrap() < serialized.find("<plan mode=").unwrap());
         assert!(!serialized.contains("\"role\":\"goal\""));
+    }
+
+    #[test]
+    fn convert_paused_goal_and_delta_are_not_active_prompt() {
+        let mut goal = goal_message("agent", 1, "Paused requirement");
+        goal.extra["goal"]["active"] = json!(true);
+        goal.extra["goal"]["status"] = json!("paused");
+        let delta = event_message(
+            "goal_delta",
+            "tool.update_goal",
+            json!({"seq": 1}),
+            "Paused update",
+        );
+        let messages = vec![
+            goal,
+            delta,
+            ChatMessage::new("user".to_string(), "continue"),
+        ];
+
+        let (_, converted) = convert_to_anthropic(&messages, None);
+        let body = json!({"messages": converted}).to_string();
+
+        assert!(!body.contains("Paused requirement"));
+        assert!(!body.contains("Paused update"));
+        assert!(body.contains("continue"));
     }
 
     #[test]

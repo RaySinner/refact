@@ -175,7 +175,7 @@ mod tests {
     use refact_core::chat_types::ChatContent;
 
     fn goal_snapshot() -> GoalSnapshot {
-        GoalSnapshot {
+        let mut goal = GoalSnapshot {
             content: "ship the card".to_string(),
             version: 1,
             active: true,
@@ -196,7 +196,10 @@ mod tests {
             stop_reason: None,
             transferred_from: None,
             transferred_to: None,
-        }
+            ..Default::default()
+        };
+        goal.refresh_derived();
+        goal
     }
 
     fn snapshot() -> TrajectorySnapshot {

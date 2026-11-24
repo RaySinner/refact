@@ -25,10 +25,7 @@ pub fn message_affects_goal_projection(message: &ChatMessage) -> bool {
 const GOAL_EVIDENCE_EXEMPT_TOOLS: &[&str] =
     &["sleep", "get_goal", "get_plan", "pause_goal", "snooze_goal"];
 
-pub fn tool_result_counts_as_goal_evidence(
-    message: &ChatMessage,
-    history: &[ChatMessage],
-) -> bool {
+pub fn tool_result_counts_as_goal_evidence(message: &ChatMessage, history: &[ChatMessage]) -> bool {
     if message.tool_failed == Some(true) {
         return false;
     }
@@ -64,10 +61,7 @@ pub fn goal_runtime_projection(
     .unwrap_or((false, None, 0, 0, 0))
 }
 
-pub fn apply_goal_runtime_projection(
-    runtime: &mut RuntimeState,
-    goal: Option<&GoalSnapshot>,
-) {
+pub fn apply_goal_runtime_projection(runtime: &mut RuntimeState, goal: Option<&GoalSnapshot>) {
     let (goal_active, goal_status, goal_turns_used, goal_tokens_used, goal_no_progress_turns) =
         goal_runtime_projection(goal);
     runtime.goal_active = goal_active;
@@ -183,6 +177,41 @@ pub fn goal_snapshot_from_messages(
         } else {
             GoalStatus::Paused
         });
+    let resolution = prior
+        .map(|goal| goal.resolution)
+        .or_else(|| {
+            meta.and_then(|meta| meta.get("resolution"))
+                .and_then(|value| serde_json::from_value(value.clone()).ok())
+        })
+        .unwrap_or_else(|| GoalResolution::from_legacy_status(status));
+    let execution = prior
+        .map(|goal| goal.execution)
+        .or_else(|| {
+            meta.and_then(|meta| meta.get("execution"))
+                .and_then(|value| serde_json::from_value(value.clone()).ok())
+        })
+        .unwrap_or_else(|| GoalExecution::from_legacy_status(status));
+    let autonomy = prior
+        .map(|goal| goal.autonomy)
+        .or_else(|| {
+            meta.and_then(|meta| meta.get("autonomy"))
+                .and_then(|value| serde_json::from_value(value.clone()).ok())
+        })
+        .unwrap_or_default();
+    let owner = prior
+        .map(|goal| goal.owner)
+        .or_else(|| {
+            meta.and_then(|meta| meta.get("owner"))
+                .and_then(|value| serde_json::from_value(value.clone()).ok())
+        })
+        .unwrap_or_default();
+    let revision = prior
+        .map(|goal| goal.revision)
+        .or_else(|| {
+            meta.and_then(|meta| meta.get("revision"))
+                .and_then(|value| value.as_u64())
+        })
+        .unwrap_or(1);
     let budget = meta
         .and_then(|meta| meta.get("budget"))
         .and_then(|value| serde_json::from_value(value.clone()).ok())
@@ -208,6 +237,13 @@ pub fn goal_snapshot_from_messages(
         version,
         active,
         status,
+        resolution,
+        execution,
+        autonomy,
+        owner,
+        revision,
+        can_pursue: false,
+        prompt_enabled: false,
         budget,
         progress,
         attempts: prior
@@ -226,7 +262,11 @@ pub fn goal_snapshot_from_messages(
             })
             .unwrap_or_default(),
         snoozed_until_ms: prior.and_then(|goal| goal.snoozed_until_ms),
-        stop_reason: prior.and_then(|goal| goal.stop_reason.clone()),
+        stop_reason: prior.and_then(|goal| goal.stop_reason.clone()).or_else(|| {
+            meta.and_then(|meta| meta.get("stop_reason"))
+                .and_then(|value| value.as_str())
+                .map(str::to_string)
+        }),
         transferred_from: prior
             .and_then(|goal| goal.transferred_from.clone())
             .or_else(|| {
@@ -249,17 +289,22 @@ pub fn goal_snapshot_from_messages(
         )
         && !goal_budget_has_hard_limits(&snapshot.budget)
     {
-        snapshot.status = if snapshot.active {
+        let status = if snapshot.active {
             GoalStatus::Active
         } else {
             GoalStatus::Paused
         };
+        snapshot.apply_legacy_status(status);
     }
+    snapshot.refresh_derived();
     Some(snapshot)
 }
 
 impl ChatSession {
     pub fn refresh_goal_runtime_mirror(&mut self) {
+        if let Some(goal) = self.goal.as_mut() {
+            goal.refresh_derived();
+        }
         let (goal_active, goal_status, goal_turns_used, goal_tokens_used, goal_no_progress_turns) =
             goal_runtime_projection(self.goal.as_ref());
         self.goal_active = goal_active;
@@ -268,6 +313,51 @@ impl ChatSession {
         self.goal_tokens_used = goal_tokens_used;
         self.goal_no_progress_turns = goal_no_progress_turns;
         apply_goal_runtime_projection(&mut self.runtime, self.goal.as_ref());
+        self.sync_goal_message_metadata();
+    }
+
+    fn sync_goal_message_metadata(&mut self) {
+        let Some(goal) = self.goal.clone() else {
+            return;
+        };
+        let Some(base) = crate::session_goal_role::current_base_goal(self) else {
+            return;
+        };
+        let Some(message) = self
+            .messages
+            .iter_mut()
+            .find(|message| message.message_id == base.message_id)
+        else {
+            return;
+        };
+        let Ok(projection) = serde_json::to_value(goal) else {
+            return;
+        };
+        let Some(meta) = message
+            .extra
+            .get_mut("goal")
+            .and_then(|value| value.as_object_mut())
+        else {
+            return;
+        };
+        for key in [
+            "active",
+            "status",
+            "resolution",
+            "execution",
+            "autonomy",
+            "owner",
+            "revision",
+            "can_pursue",
+            "prompt_enabled",
+            "stop_reason",
+            "transferred_from",
+            "transferred_to",
+        ] {
+            if let Some(value) = projection.get(key) {
+                meta.insert(key.to_string(), value.clone());
+            }
+        }
     }
 
     pub fn set_goal_projection(&mut self, goal: Option<GoalSnapshot>) {
@@ -493,7 +583,7 @@ impl ChatSession {
             return true;
         }
         let from = goal.status;
-        goal.status = status;
+        goal.apply_legacy_status(status);
         if status == GoalStatus::Stopped {
             goal.stop_reason = (!reason.is_empty()).then(|| reason.to_string());
         } else if matches!(status, GoalStatus::Active | GoalStatus::Verifying) {
@@ -683,21 +773,29 @@ impl ChatSession {
             return;
         }
         let (active, budget, criteria) = (goal.active, goal.budget.clone(), goal.criteria.clone());
+        let (resolution, execution, autonomy, owner, revision) = (
+            goal.resolution,
+            goal.execution,
+            goal.autonomy,
+            goal.owner,
+            goal.revision,
+        );
         self.goal_ledger_append(GoalLedgerOp::Installed {
             version,
             active,
             budget,
+            resolution: Some(resolution),
+            execution: Some(execution),
+            autonomy: Some(autonomy),
+            owner: Some(owner),
+            revision: Some(revision),
             criteria,
         });
     }
 }
 
 impl ChatSession {
-    pub fn install_plan(
-        &mut self,
-        mode: &str,
-        body: &str,
-    ) -> crate::plan_role::PlanInstallReport {
+    pub fn install_plan(&mut self, mode: &str, body: &str) -> crate::plan_role::PlanInstallReport {
         let projection = match self.try_accepted_control_projection() {
             Ok(projection) => projection,
             Err(error) => {

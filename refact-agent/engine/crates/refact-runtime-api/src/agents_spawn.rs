@@ -562,7 +562,7 @@ fn append_goal_and_plan_messages(
         messages.push(internal_roles::plan("agent", 1, plan, None));
     }
     if let Some(goal) = goal {
-        let mut goal_message = internal_roles::goal(
+        let mut goal_message = internal_roles::delegated_goal(
             "agent",
             1,
             &goal.content,

@@ -48,3 +48,33 @@ pub fn install_goal(
 ) -> GoalInstallReport {
     session.install_goal(mode, body, active, budget)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{GoalAutonomy, GoalExecution, GoalOwner, GoalResolution, GoalStatus};
+
+    #[test]
+    fn goal_status_metadata_tracks_prompt_visibility_without_erasing_history() {
+        let mut session = ChatSession::new("goal-metadata".to_string());
+        session.install_goal("agent", "ship it", true, GoalBudget::default());
+        let original = session.messages.clone();
+        assert_eq!(session.goal.as_ref().unwrap().owner, GoalOwner::User);
+        assert_eq!(session.goal.as_ref().unwrap().revision, 1);
+        assert_eq!(session.goal.as_ref().unwrap().autonomy, GoalAutonomy::On);
+        assert!(session.messages[0].extra["goal"]["prompt_enabled"]
+            .as_bool()
+            .unwrap());
+
+        session.goal_set_status_reason(GoalStatus::Paused, "wait");
+
+        let goal = session.goal.as_ref().unwrap();
+        assert_eq!(goal.resolution, GoalResolution::Active);
+        assert_eq!(goal.execution, GoalExecution::Paused);
+        assert!(!goal.prompt_enabled);
+        assert_eq!(session.messages[0].extra["goal"]["status"], "paused");
+        assert_eq!(session.messages[0].extra["goal"]["execution"], "paused");
+        assert_eq!(session.messages[0].content.content_text_only(), "ship it");
+        assert_eq!(session.messages[0].message_id, original[0].message_id);
+    }
+}

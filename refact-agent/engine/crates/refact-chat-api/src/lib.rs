@@ -13,6 +13,7 @@ pub mod delivery;
 pub mod diagnostics;
 pub mod goal_ledger;
 pub mod goal_role;
+pub mod goal_state;
 pub mod goal_verifier;
 pub mod internal_roles;
 pub mod message_provenance;
@@ -42,6 +43,10 @@ pub mod wait_interrupt;
 pub use goal_ledger::{
     goal_budget_exhaustion_status, reduce_goal_ledger, seed_transferred_goal_ledger,
     status_changed_since, GoalLedgerEntry, GoalLedgerOp, GoalLedgerState,
+};
+pub use goal_state::{
+    apply_legacy_status_dimensions, GoalAutonomy, GoalExecution, GoalOwner, GoalResolution,
+    GoalSnapshot, GoalStatus,
 };
 
 pub use chat_local_types::{
@@ -252,20 +257,6 @@ pub enum CompressionReason {
     InsufficientSavings,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum GoalStatus {
-    #[default]
-    Active,
-    Verifying,
-    Paused,
-    Completed,
-    Stopped,
-    BudgetExhausted,
-    NoProgress,
-    Transferred,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct GoalBudget {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -396,26 +387,6 @@ pub struct GoalEvent {
     pub at_ms: u64,
     pub kind: String,
     pub text: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
-pub struct GoalSnapshot {
-    pub content: String,
-    pub version: u32,
-    pub active: bool,
-    pub status: GoalStatus,
-    pub budget: GoalBudget,
-    pub progress: GoalProgress,
-    pub attempts: Vec<GoalAttempt>,
-    pub events: Vec<GoalEvent>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub criteria: Vec<GoalCriterion>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub snoozed_until_ms: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub stop_reason: Option<String>,
-    pub transferred_from: Option<String>,
-    pub transferred_to: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
@@ -1528,6 +1499,7 @@ mod tests {
             stop_reason: None,
             transferred_from: Some("source-chat".to_string()),
             transferred_to: Some("target-chat".to_string()),
+            ..Default::default()
         }
     }
 

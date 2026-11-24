@@ -196,11 +196,12 @@ pub fn clamp_goal_snapshot_for_load(mut goal: GoalSnapshot) -> GoalSnapshot {
         goal.progress.no_progress_turns = goal.progress.no_progress_turns.min(no_progress_turns);
     }
     if goal.status == GoalStatus::Verifying {
-        goal.status = if goal.active {
+        let status = if goal.active {
             GoalStatus::Active
         } else {
             GoalStatus::Paused
         };
+        goal.apply_legacy_status(status);
     }
     if matches!(
         goal.status,
@@ -213,12 +214,14 @@ pub fn clamp_goal_snapshot_for_load(mut goal: GoalSnapshot) -> GoalSnapshot {
     .is_none()
         && !goal_budget_has_hard_limits_for_load(&goal.budget)
     {
-        goal.status = if goal.active {
+        let status = if goal.active {
             GoalStatus::Active
         } else {
             GoalStatus::Paused
         };
+        goal.apply_legacy_status(status);
     }
+    goal.refresh_derived();
     goal
 }
 

@@ -127,13 +127,14 @@ fn queue_goal_side_effect(
     push: PushMode,
     tool_call_id: &str,
 ) -> Result<GoalInstallReport, String> {
-    let mut message = internal_roles::goal(mode, 1, body, None, true, GoalBudget::default());
-    if !criteria.is_empty() {
-        if let Some(meta) = message
-            .extra
-            .get_mut("goal")
-            .and_then(|value| value.as_object_mut())
-        {
+    let mut message =
+        internal_roles::delegated_goal(mode, 1, body, None, true, GoalBudget::default());
+    if let Some(meta) = message
+        .extra
+        .get_mut("goal")
+        .and_then(|value| value.as_object_mut())
+    {
+        if !criteria.is_empty() {
             meta.insert("criteria".to_string(), json!(criteria));
         }
     }

@@ -96,6 +96,72 @@ pub fn is_goal_role(role: &str) -> bool {
     role == "goal"
 }
 
+pub fn is_goal_prompt_message(msg: &ChatMessage) -> bool {
+    is_goal_role(&msg.role)
+        || (is_event_role(&msg.role)
+            && msg
+                .extra
+                .get("event")
+                .and_then(|event| event.get("subkind"))
+                .and_then(|subkind| subkind.as_str())
+                == Some("goal_delta"))
+}
+
+pub fn goal_prompt_enabled(messages: &[ChatMessage]) -> bool {
+    let current = messages
+        .iter()
+        .enumerate()
+        .filter_map(|(index, message)| {
+            if !is_goal_role(&message.role) {
+                return None;
+            }
+            let version = message
+                .extra
+                .get(GOAL_META_KEY)
+                .and_then(|meta| meta.get("version"))
+                .and_then(|version| version.as_u64())?;
+            Some((version, index, message))
+        })
+        .max_by_key(|(version, index, _)| (*version, *index));
+    let Some((_, _, message)) = current else {
+        return true;
+    };
+    let Some(meta) = message.extra.get(GOAL_META_KEY) else {
+        return true;
+    };
+    if !meta
+        .get("active")
+        .and_then(|active| active.as_bool())
+        .unwrap_or(true)
+        || meta
+            .get("transferred_to")
+            .is_some_and(|target| !target.is_null())
+    {
+        return false;
+    }
+    let status = meta
+        .get("status")
+        .and_then(|status| status.as_str())
+        .unwrap_or("active");
+    let resolution = meta
+        .get("resolution")
+        .and_then(|resolution| resolution.as_str())
+        .unwrap_or(match status {
+            "completed" => "achieved",
+            "stopped" => "cancelled",
+            _ => "active",
+        });
+    let execution = meta
+        .get("execution")
+        .and_then(|execution| execution.as_str())
+        .unwrap_or(match status {
+            "paused" | "budget_exhausted" | "no_progress" | "transferred" => "paused",
+            "verifying" => "verifying",
+            _ => "idle",
+        });
+    resolution == "active" && execution != "paused"
+}
+
 pub fn render_event_message(msg: &ChatMessage) -> String {
     let meta = msg.extra.get("event");
     let subkind = meta
@@ -301,5 +367,51 @@ mod tests {
         assert!(rendered.contains("<event subkind=\"goal_pursuit\""));
         assert!(rendered.contains("<message>still pursuing</message>"));
         assert!(!rendered.contains("<goal-update"));
+    }
+
+    #[test]
+    fn goal_prompt_visibility_uses_latest_goal_and_legacy_status() {
+        for status in ["paused", "completed", "stopped", "transferred"] {
+            let mut msg = goal("agent", 1, "archived goal");
+            msg.extra[GOAL_META_KEY]["status"] = json!(status);
+            if status == "transferred" {
+                msg.extra[GOAL_META_KEY]["transferred_to"] = json!("target");
+            }
+            let delta = event("goal_delta", json!({"seq": 1}), "archived update");
+            let messages = vec![msg, delta];
+            assert!(!goal_prompt_enabled(&messages), "{status}");
+            assert!(messages.iter().all(is_goal_prompt_message));
+        }
+
+        let mut active = goal("agent", 2, "current goal");
+        active.extra[GOAL_META_KEY]["active"] = json!(true);
+        active.extra[GOAL_META_KEY]["status"] = json!("active");
+        active.extra[GOAL_META_KEY]["autonomy"] = json!("off");
+        let messages = vec![active];
+        assert!(goal_prompt_enabled(&messages));
+
+        let mut paused = goal("agent", 1, "old paused goal");
+        paused.extra[GOAL_META_KEY]["status"] = json!("paused");
+        let mut current = goal("agent", 2, "current active goal");
+        current.extra[GOAL_META_KEY]["status"] = json!("active");
+        assert!(goal_prompt_enabled(&[paused.clone(), current.clone()]));
+        current.extra[GOAL_META_KEY]["status"] = json!("completed");
+        assert!(!goal_prompt_enabled(&[paused, current]));
+    }
+
+    #[test]
+    fn goal_prompt_visibility_honors_independent_resolution_and_execution() {
+        let mut msg = goal("agent", 1, "waiting goal");
+        msg.extra[GOAL_META_KEY]["active"] = json!(true);
+        msg.extra[GOAL_META_KEY]["status"] = json!("active");
+        msg.extra[GOAL_META_KEY]["resolution"] = json!("active");
+        msg.extra[GOAL_META_KEY]["execution"] = json!("waiting_input");
+        assert!(goal_prompt_enabled(&[msg.clone()]));
+
+        msg.extra[GOAL_META_KEY]["execution"] = json!("paused");
+        assert!(!goal_prompt_enabled(&[msg.clone()]));
+        msg.extra[GOAL_META_KEY]["execution"] = json!("idle");
+        msg.extra[GOAL_META_KEY]["resolution"] = json!("failed");
+        assert!(!goal_prompt_enabled(&[msg]));
     }
 }

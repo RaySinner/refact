@@ -201,8 +201,9 @@ fn reasoning_requested(reasoning: &ReasoningIntent) -> bool {
 
 fn convert_messages_to_ollama(messages: &[ChatMessage]) -> Vec<Value> {
     use super::render_extra::{
-        append_text_to_tool_json, is_context_role, is_event_role, is_goal_role, is_plan_role,
-        render_context_message, render_event_message, render_goal_message, render_plan_message,
+        append_text_to_tool_json, goal_prompt_enabled, is_context_role, is_event_role,
+        is_goal_prompt_message, is_goal_role, is_plan_role, render_context_message,
+        render_event_message, render_goal_message, render_plan_message,
     };
 
     let mut result: Vec<Value> = Vec::new();
@@ -213,7 +214,11 @@ fn convert_messages_to_ollama(messages: &[ChatMessage]) -> Vec<Value> {
     // with tool_call_id for correlation and for Ollama versions that validate IDs. Assistant
     // history tool_calls include matching IDs when available. Tool-result images are deferred
     // to the next user message because Ollama expects images on user messages.
+    let goals_enabled = goal_prompt_enabled(messages);
     for msg in messages {
+        if !goals_enabled && is_goal_prompt_message(msg) {
+            continue;
+        }
         if is_goal_role(&msg.role) || is_plan_role(&msg.role) {
             push_pending_user_message(
                 &mut result,
@@ -637,6 +642,34 @@ mod tests {
         assert_eq!(serialized.matches("<plan mode=").count(), 1);
         assert!(serialized.find("<goal mode=").unwrap() < serialized.find("<plan mode=").unwrap());
         assert!(!serialized.contains("\"role\":\"goal\""));
+    }
+
+    #[test]
+    fn convert_paused_goal_and_delta_are_not_active_prompt() {
+        let mut goal = goal_message("agent", 1, "Paused requirement");
+        goal.extra["goal"]["active"] = json!(true);
+        goal.extra["goal"]["status"] = json!("paused");
+        let mut delta = ChatMessage::new("event".to_string(), "Paused update");
+        delta.extra.insert(
+            "event".to_string(),
+            json!({
+                "subkind": "goal_delta",
+                "source": "tool.update_goal",
+                "payload": {"seq": 1}
+            }),
+        );
+        let messages = vec![
+            goal,
+            delta,
+            ChatMessage::new("user".to_string(), "continue"),
+        ];
+
+        let converted = convert_messages_to_ollama(&messages);
+        let body = json!({"messages": converted}).to_string();
+
+        assert!(!body.contains("Paused requirement"));
+        assert!(!body.contains("Paused update"));
+        assert!(body.contains("continue"));
     }
 
     #[test]

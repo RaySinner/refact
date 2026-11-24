@@ -18,11 +18,11 @@ pub use crate::{
     delivery_id_of_message, ActiveCommandContext, BackgroundAgentSummary, BrowserMeta,
     BrowserSnapshot, BrowserTabInfo, BuddyThreadMeta, ChatCommand, ChatEvent, CommandRequest,
     CompressionPhase, CompressionReason, CriterionVerdict, DeliveryOutcome, DeltaOp, DiffBox,
-    EventEnvelope, GoalAttempt, GoalBudget, GoalCriterion, GoalEvent, GoalLedgerEntry,
-    GoalLedgerOp, GoalProgress, GoalSnapshot, GoalStatus, PauseReason, PendingDelivery, PushMode,
-    QueuedItem, RuntimeState, SessionState, TaskMeta, ThreadParams, TimelineEntry,
-    ToolDecisionItem, WindowBounds, WorktreeMeta, CLIENT_MESSAGE_ID_EXTRA_KEY,
-    DELIVERY_COMMAND_TYPE, DELIVERY_EXTRA_KEY,
+    EventEnvelope, GoalAttempt, GoalAutonomy, GoalBudget, GoalCriterion, GoalEvent, GoalExecution,
+    GoalLedgerEntry, GoalLedgerOp, GoalOwner, GoalProgress, GoalResolution, GoalSnapshot,
+    GoalStatus, PauseReason, PendingDelivery, PushMode, QueuedItem, RuntimeState, SessionState,
+    TaskMeta, ThreadParams, TimelineEntry, ToolDecisionItem, WindowBounds, WorktreeMeta,
+    CLIENT_MESSAGE_ID_EXTRA_KEY, DELIVERY_COMMAND_TYPE, DELIVERY_EXTRA_KEY,
 };
 
 pub fn epoch_ms_now() -> u64 {
@@ -44,6 +44,7 @@ pub trait GoalSnapshotBudgetExt {
     fn goal_budget_exhausted(&self) -> bool;
     fn goal_can_pursue_at(&self, now_ms: u64) -> bool;
     fn goal_can_pursue(&self) -> bool;
+    fn goal_prompt_enabled(&self) -> bool;
     fn goal_nudge_ready_at(&self, now_ms: u64) -> bool;
     fn goal_nudge_ready_at_with_backoff(&self, now_ms: u64) -> bool;
     fn goal_record_progress(&mut self, tokens: u64, made_progress: bool, cost_cents: u64);
@@ -69,11 +70,15 @@ impl GoalSnapshotBudgetExt for GoalSnapshot {
     }
 
     fn goal_can_pursue_at(&self, now_ms: u64) -> bool {
-        self.active && self.status == GoalStatus::Active && !self.goal_budget_exhausted_at(now_ms)
+        GoalSnapshot::goal_can_pursue_at(self, now_ms)
     }
 
     fn goal_can_pursue(&self) -> bool {
         self.goal_can_pursue_at(epoch_ms_now())
+    }
+
+    fn goal_prompt_enabled(&self) -> bool {
+        GoalSnapshot::goal_prompt_enabled(self)
     }
 
     fn goal_nudge_ready_at(&self, now_ms: u64) -> bool {
@@ -118,15 +123,15 @@ impl GoalSnapshotBudgetExt for GoalSnapshot {
             self.progress.no_progress_turns = self.progress.no_progress_turns.saturating_add(1);
         }
         match self.goal_budget_exhaustion_status_at(epoch_ms_now()) {
-            Some(status) => self.status = status,
+            Some(status) => self.apply_legacy_status(status),
             None if matches!(
                 self.status,
                 GoalStatus::BudgetExhausted | GoalStatus::NoProgress
             ) =>
             {
-                self.status = GoalStatus::Active;
+                self.apply_legacy_status(GoalStatus::Active);
             }
-            None => {}
+            None => self.refresh_derived(),
         }
     }
 
@@ -137,15 +142,15 @@ impl GoalSnapshotBudgetExt for GoalSnapshot {
         self.progress.turns_used = self.progress.turns_used.saturating_add(1);
         self.progress.tokens_used = self.progress.tokens_used.saturating_add(tokens);
         match self.goal_budget_exhaustion_status_at(epoch_ms_now()) {
-            Some(status) => self.status = status,
+            Some(status) => self.apply_legacy_status(status),
             None if matches!(
                 self.status,
                 GoalStatus::BudgetExhausted | GoalStatus::NoProgress
             ) =>
             {
-                self.status = GoalStatus::Active;
+                self.apply_legacy_status(GoalStatus::Active);
             }
-            None => {}
+            None => self.refresh_derived(),
         }
     }
 
@@ -155,15 +160,15 @@ impl GoalSnapshotBudgetExt for GoalSnapshot {
         }
         self.progress.no_progress_turns = self.progress.no_progress_turns.saturating_add(1);
         match self.goal_budget_exhaustion_status_at(epoch_ms_now()) {
-            Some(status) => self.status = status,
+            Some(status) => self.apply_legacy_status(status),
             None if matches!(
                 self.status,
                 GoalStatus::BudgetExhausted | GoalStatus::NoProgress
             ) =>
             {
-                self.status = GoalStatus::Active;
+                self.apply_legacy_status(GoalStatus::Active);
             }
-            None => {}
+            None => self.refresh_derived(),
         }
     }
 
@@ -178,10 +183,12 @@ impl GoalSnapshotBudgetExt for GoalSnapshot {
             self.status,
             GoalStatus::BudgetExhausted | GoalStatus::NoProgress
         ) {
-            self.status = self
+            let status = self
                 .goal_budget_exhaustion_status_at(epoch_ms_now())
                 .unwrap_or(GoalStatus::Active);
+            self.apply_legacy_status(status);
         }
+        self.refresh_derived();
     }
 
     fn goal_push_attempt(&mut self, attempt: GoalAttempt) {

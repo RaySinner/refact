@@ -6,7 +6,10 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
-use refact_chat_api::{GoalBudget, GoalEvent, GoalProgress, GoalSnapshot, GoalStatus};
+use refact_chat_api::{
+    GoalAutonomy, GoalBudget, GoalEvent, GoalExecution, GoalOwner, GoalProgress, GoalResolution,
+    GoalSnapshot, GoalStatus,
+};
 use refact_context_api::PathsAccess;
 use refact_core::chat_types::{ChatContent, ChatMessage, ContextFile, MultimodalElement};
 
@@ -1317,6 +1320,31 @@ fn goal_snapshot_for_transfer(
         version,
         active,
         status,
+        resolution: existing
+            .map(|goal| goal.resolution)
+            .or_else(|| goal_meta_value(meta, "resolution"))
+            .unwrap_or_else(|| GoalResolution::from_legacy_status(status)),
+        execution: existing
+            .map(|goal| goal.execution)
+            .or_else(|| goal_meta_value(meta, "execution"))
+            .unwrap_or_else(|| GoalExecution::from_legacy_status(status)),
+        autonomy: existing
+            .map(|goal| goal.autonomy)
+            .or_else(|| goal_meta_value(meta, "autonomy"))
+            .unwrap_or_default(),
+        owner: existing
+            .map(|goal| goal.owner)
+            .or_else(|| goal_meta_value(meta, "owner"))
+            .unwrap_or_default(),
+        revision: existing
+            .map(|goal| goal.revision)
+            .or_else(|| {
+                meta.and_then(|meta| meta.get("revision"))
+                    .and_then(|value| value.as_u64())
+            })
+            .unwrap_or(1),
+        can_pursue: false,
+        prompt_enabled: false,
         budget,
         progress,
         attempts,
@@ -1358,6 +1386,20 @@ fn set_goal_message_metadata(
     meta.insert("supersedes".to_string(), serde_json::json!(supersedes));
     meta.insert("active".to_string(), serde_json::json!(goal.active));
     meta.insert("status".to_string(), serde_json::json!(goal.status));
+    meta.insert("resolution".to_string(), serde_json::json!(goal.resolution));
+    meta.insert("execution".to_string(), serde_json::json!(goal.execution));
+    meta.insert("autonomy".to_string(), serde_json::json!(goal.autonomy));
+    meta.insert("owner".to_string(), serde_json::json!(goal.owner));
+    meta.insert("revision".to_string(), serde_json::json!(goal.revision));
+    meta.insert("can_pursue".to_string(), serde_json::json!(goal.can_pursue));
+    meta.insert(
+        "prompt_enabled".to_string(),
+        serde_json::json!(goal.prompt_enabled),
+    );
+    meta.insert(
+        "stop_reason".to_string(),
+        serde_json::json!(goal.stop_reason),
+    );
     meta.insert("budget".to_string(), serde_json::json!(goal.budget));
     meta.insert("progress".to_string(), serde_json::json!(goal.progress));
     meta.insert("attempts".to_string(), serde_json::json!(goal.attempts));
@@ -1471,7 +1513,7 @@ pub fn transfer_goal_ownership(
 
     let mut source_goal = source_snapshot.clone();
     source_goal.active = false;
-    source_goal.status = GoalStatus::Transferred;
+    source_goal.apply_legacy_status(GoalStatus::Transferred);
     source_goal.transferred_to = Some(target_chat_id.to_string());
 
     let (transfer_message, transfer_goal_event) =
@@ -1479,7 +1521,7 @@ pub fn transfer_goal_ownership(
     let mut target_goal = source_snapshot.clone();
     target_goal.version = target_goal_version(source_snapshot.version, target_existing_messages);
     target_goal.active = true;
-    target_goal.status = GoalStatus::Active;
+    target_goal.apply_legacy_status(GoalStatus::Active);
     target_goal.progress = source_snapshot.progress.clone();
     if target_goal.progress.started_at_ms == 0 {
         target_goal.progress.started_at_ms = at_ms;

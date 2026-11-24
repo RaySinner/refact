@@ -37,6 +37,7 @@ use serde_json::json;
                 stop_reason: None,
                 transferred_from: None,
                 transferred_to: None,
+                ..Default::default()
             }
         }
 
@@ -791,6 +792,7 @@ use serde_json::json;
             stop_reason: None,
             transferred_from: None,
             transferred_to: None,
+            ..Default::default()
         };
 
         let session = ChatSession::new_with_trajectory(

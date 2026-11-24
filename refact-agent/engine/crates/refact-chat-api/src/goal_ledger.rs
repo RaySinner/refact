@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{GoalAttempt, GoalBudget, GoalCriterion, GoalEvent, GoalProgress, GoalSnapshot, GoalStatus};
+use crate::{
+    apply_legacy_status_dimensions, GoalAttempt, GoalAutonomy, GoalBudget, GoalCriterion,
+    GoalEvent, GoalExecution, GoalOwner, GoalProgress, GoalResolution, GoalSnapshot, GoalStatus,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case", tag = "op")]
@@ -9,6 +12,16 @@ pub enum GoalLedgerOp {
         version: u32,
         active: bool,
         budget: GoalBudget,
+        #[serde(default)]
+        resolution: Option<GoalResolution>,
+        #[serde(default)]
+        execution: Option<GoalExecution>,
+        #[serde(default)]
+        autonomy: Option<GoalAutonomy>,
+        #[serde(default)]
+        owner: Option<GoalOwner>,
+        #[serde(default)]
+        revision: Option<u64>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         criteria: Vec<GoalCriterion>,
     },
@@ -106,13 +119,13 @@ pub fn goal_budget_exhaustion_status(
 
 fn transition_after_accounting(state: &mut GoalLedgerState, at_ms: u64) {
     match goal_budget_exhaustion_status(&state.budget, &state.progress, at_ms) {
-        Some(status) => state.status = status,
+        Some(status) => state.apply_legacy_status(status),
         None if matches!(
             state.status,
             GoalStatus::BudgetExhausted | GoalStatus::NoProgress
         ) =>
         {
-            state.status = GoalStatus::Active;
+            state.apply_legacy_status(GoalStatus::Active);
         }
         None => {}
     }
@@ -123,6 +136,11 @@ pub struct GoalLedgerState {
     pub version: u32,
     pub active: bool,
     pub status: GoalStatus,
+    pub resolution: GoalResolution,
+    pub execution: GoalExecution,
+    pub autonomy: GoalAutonomy,
+    pub owner: GoalOwner,
+    pub revision: u64,
     pub budget: GoalBudget,
     pub progress: GoalProgress,
     pub attempts: Vec<GoalAttempt>,
@@ -136,15 +154,31 @@ pub struct GoalLedgerState {
 }
 
 impl GoalLedgerState {
-    fn new(version: u32, active: bool, budget: GoalBudget, criteria: Vec<GoalCriterion>) -> Self {
+    fn new(
+        version: u32,
+        active: bool,
+        budget: GoalBudget,
+        criteria: Vec<GoalCriterion>,
+        resolution: Option<GoalResolution>,
+        execution: Option<GoalExecution>,
+        autonomy: Option<GoalAutonomy>,
+        owner: Option<GoalOwner>,
+        revision: Option<u64>,
+    ) -> Self {
+        let status = if active {
+            GoalStatus::Active
+        } else {
+            GoalStatus::Paused
+        };
         Self {
             version,
             active,
-            status: if active {
-                GoalStatus::Active
-            } else {
-                GoalStatus::Paused
-            },
+            status,
+            resolution: resolution.unwrap_or_else(|| GoalResolution::from_legacy_status(status)),
+            execution: execution.unwrap_or_else(|| GoalExecution::from_legacy_status(status)),
+            autonomy: autonomy.unwrap_or_default(),
+            owner: owner.unwrap_or_default(),
+            revision: revision.unwrap_or(1),
             budget,
             progress: GoalProgress::default(),
             attempts: Vec::new(),
@@ -161,6 +195,11 @@ impl GoalLedgerState {
     pub fn apply_to_snapshot(&self, snapshot: &mut GoalSnapshot) {
         snapshot.active = self.active;
         snapshot.status = self.status;
+        snapshot.resolution = self.resolution;
+        snapshot.execution = self.execution;
+        snapshot.autonomy = self.autonomy;
+        snapshot.owner = self.owner;
+        snapshot.revision = self.revision;
         snapshot.progress = self.progress.clone();
         snapshot.attempts = self.attempts.clone();
         snapshot.criteria = self.criteria.clone();
@@ -172,6 +211,19 @@ impl GoalLedgerState {
         if self.transferred_to.is_some() {
             snapshot.transferred_to = self.transferred_to.clone();
         }
+        snapshot.refresh_derived();
+    }
+
+    fn apply_legacy_status(&mut self, status: GoalStatus) {
+        let previous = self.status;
+        self.status = status;
+        if status == GoalStatus::Active
+            && previous == GoalStatus::Stopped
+            && self.resolution == GoalResolution::Cancelled
+        {
+            self.resolution = GoalResolution::Active;
+        }
+        apply_legacy_status_dimensions(&mut self.resolution, &mut self.execution, status);
     }
 }
 
@@ -183,6 +235,11 @@ pub fn reduce_goal_ledger(entries: &[GoalLedgerEntry]) -> Option<GoalLedgerState
                 version,
                 active,
                 budget,
+                resolution,
+                execution,
+                autonomy,
+                owner,
+                revision,
                 criteria,
             } => {
                 state = Some(GoalLedgerState::new(
@@ -190,6 +247,11 @@ pub fn reduce_goal_ledger(entries: &[GoalLedgerEntry]) -> Option<GoalLedgerState
                     *active,
                     budget.clone(),
                     criteria.clone(),
+                    *resolution,
+                    *execution,
+                    *autonomy,
+                    *owner,
+                    *revision,
                 ));
             }
             op => {
@@ -210,7 +272,7 @@ fn apply_op(state: &mut GoalLedgerState, op: &GoalLedgerOp, at_ms: u64) {
     match op {
         GoalLedgerOp::Installed { .. } => {}
         GoalLedgerOp::StatusChanged { to, reason, .. } => {
-            state.status = *to;
+            state.apply_legacy_status(*to);
             if *to == GoalStatus::Stopped {
                 state.stop_reason = (!reason.is_empty()).then(|| reason.clone());
             } else if matches!(to, GoalStatus::Active | GoalStatus::Verifying) {
@@ -262,8 +324,9 @@ fn apply_op(state: &mut GoalLedgerState, op: &GoalLedgerOp, at_ms: u64) {
                 state.status,
                 GoalStatus::BudgetExhausted | GoalStatus::NoProgress
             ) {
-                state.status = goal_budget_exhaustion_status(&state.budget, &state.progress, at_ms)
+                let status = goal_budget_exhaustion_status(&state.budget, &state.progress, at_ms)
                     .unwrap_or(GoalStatus::Active);
+                state.apply_legacy_status(status);
             }
         }
         GoalLedgerOp::AttemptPushed { attempt } => {
@@ -283,7 +346,7 @@ fn apply_op(state: &mut GoalLedgerState, op: &GoalLedgerOp, at_ms: u64) {
         }
         GoalLedgerOp::TransferredOut { target_chat_id } => {
             state.active = false;
-            state.status = GoalStatus::Transferred;
+            state.apply_legacy_status(GoalStatus::Transferred);
             state.transferred_to = Some(target_chat_id.clone());
         }
         GoalLedgerOp::TransferredIn {
@@ -291,7 +354,7 @@ fn apply_op(state: &mut GoalLedgerState, op: &GoalLedgerOp, at_ms: u64) {
             progress,
         } => {
             state.active = true;
-            state.status = GoalStatus::Active;
+            state.apply_legacy_status(GoalStatus::Active);
             state.progress = progress.clone();
             state.transferred_from = Some(source_chat_id.clone());
             state.transferred_to = None;
@@ -312,6 +375,11 @@ pub fn seed_transferred_goal_ledger(
                 version: target_goal.version,
                 active: true,
                 budget: target_goal.budget.clone(),
+                resolution: Some(target_goal.resolution),
+                execution: Some(target_goal.execution),
+                autonomy: Some(target_goal.autonomy),
+                owner: Some(target_goal.owner),
+                revision: Some(target_goal.revision),
                 criteria: target_goal.criteria.clone(),
             },
         },
@@ -353,6 +421,11 @@ mod tests {
                 version: 1,
                 active: true,
                 budget: GoalBudget::default(),
+                resolution: None,
+                execution: None,
+                autonomy: None,
+                owner: None,
+                revision: None,
                 criteria: Vec::new(),
             },
         )
@@ -445,6 +518,11 @@ mod tests {
                 version: 1,
                 active: true,
                 budget,
+                resolution: None,
+                execution: None,
+                autonomy: None,
+                owner: None,
+                revision: None,
                 criteria: Vec::new(),
             },
         )];
@@ -498,6 +576,11 @@ mod tests {
                         max_cost_cents: Some(10),
                         ..Default::default()
                     },
+                    resolution: None,
+                    execution: None,
+                    autonomy: None,
+                    owner: None,
+                    revision: None,
                     criteria: Vec::new(),
                 },
             ),
@@ -573,5 +656,36 @@ mod tests {
             },
         ));
         assert_eq!(reduce_goal_ledger(&cleared).unwrap().snoozed_until_ms, None);
+    }
+
+    #[test]
+    fn goal_ledger_replays_independent_dimensions_and_owner() {
+        let entries = vec![entry(
+            1,
+            1_000,
+            GoalLedgerOp::Installed {
+                version: 3,
+                active: true,
+                budget: GoalBudget::default(),
+                resolution: Some(GoalResolution::Active),
+                execution: Some(GoalExecution::WaitingApproval),
+                autonomy: Some(GoalAutonomy::Off),
+                owner: Some(GoalOwner::Delegate),
+                revision: Some(7),
+                criteria: Vec::new(),
+            },
+        )];
+
+        let state = reduce_goal_ledger(&entries).unwrap();
+        assert_eq!(state.status, GoalStatus::Active);
+        assert_eq!(state.execution, GoalExecution::WaitingApproval);
+        assert_eq!(state.autonomy, GoalAutonomy::Off);
+        assert_eq!(state.owner, GoalOwner::Delegate);
+        assert_eq!(state.revision, 7);
+
+        let mut snapshot = GoalSnapshot::default();
+        state.apply_to_snapshot(&mut snapshot);
+        assert!(!snapshot.can_pursue);
+        assert!(snapshot.prompt_enabled);
     }
 }

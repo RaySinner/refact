@@ -719,8 +719,9 @@ fn convert_to_responses_format(
     messages: &[refact_core::chat_types::ChatMessage],
 ) -> (Value, Option<String>) {
     use super::render_extra::{
-        is_context_role, is_event_role, is_goal_role, is_plan_role, render_context_message,
-        render_event_message, render_goal_message, render_plan_message,
+        goal_prompt_enabled, is_context_role, is_event_role, is_goal_prompt_message, is_goal_role,
+        is_plan_role, render_context_message, render_event_message, render_goal_message,
+        render_plan_message,
     };
 
     let mut instructions = None;
@@ -731,7 +732,11 @@ fn convert_to_responses_format(
     // results ({"type":"input_image",...}) both accumulate here.
     let mut pending_user_content: Vec<Value> = Vec::new();
 
+    let goals_enabled = goal_prompt_enabled(messages);
     for msg in messages {
+        if !goals_enabled && is_goal_prompt_message(msg) {
+            continue;
+        }
         match msg.role.as_str() {
             "system" | "developer" => {
                 system_count += 1;
@@ -1433,6 +1438,31 @@ mod tests {
         assert_eq!(serialized.matches("<plan mode=").count(), 1);
         assert!(serialized.find("<goal mode=").unwrap() < serialized.find("<plan mode=").unwrap());
         assert!(!serialized.contains("\"role\":\"goal\""));
+    }
+
+    #[test]
+    fn convert_paused_goal_and_delta_are_not_active_prompt() {
+        let mut goal = goal_message("agent", 1, "Paused requirement");
+        goal.extra["goal"]["active"] = json!(true);
+        goal.extra["goal"]["status"] = json!("paused");
+        let delta = event_message(
+            "goal_delta",
+            "tool.update_goal",
+            json!({"seq": 1}),
+            "Paused update",
+        );
+        let messages = vec![
+            goal,
+            delta,
+            ChatMessage::new("user".to_string(), "continue"),
+        ];
+
+        let (input, _) = convert_to_responses_format(&messages);
+        let body = json!({"input": input}).to_string();
+
+        assert!(!body.contains("Paused requirement"));
+        assert!(!body.contains("Paused update"));
+        assert!(body.contains("continue"));
     }
 
     #[test]

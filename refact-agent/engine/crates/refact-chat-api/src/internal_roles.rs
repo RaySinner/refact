@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use refact_core::chat_types::{ChatContent, ChatMessage};
 
-use crate::GoalBudget;
+use crate::{GoalAutonomy, GoalBudget, GoalOwner, GoalSnapshot, GoalStatus};
 
 pub const EVENT_ROLE: &str = "event";
 pub const PLAN_ROLE: &str = "plan";
@@ -274,12 +274,30 @@ pub fn goal(
     } else {
         (content_str, false)
     };
+    let mut projection = GoalSnapshot {
+        version,
+        active,
+        budget: budget.clone(),
+        ..Default::default()
+    };
+    if !active {
+        projection.apply_legacy_status(GoalStatus::Paused);
+    }
+    projection.refresh_derived();
     let mut goal_meta = json!({
         "mode": mode.into(),
         "version": version,
         "created_at_ms": created_at_ms,
         "supersedes": supersedes,
         "active": active,
+        "status": projection.status,
+        "resolution": projection.resolution,
+        "execution": projection.execution,
+        "autonomy": projection.autonomy,
+        "owner": projection.owner,
+        "revision": projection.revision,
+        "can_pursue": projection.can_pursue,
+        "prompt_enabled": projection.prompt_enabled,
         "budget": budget,
     });
     if truncated {
@@ -295,6 +313,27 @@ pub fn goal(
         extra,
         ..Default::default()
     }
+}
+
+pub fn delegated_goal(
+    mode: impl Into<String>,
+    version: u32,
+    content: impl Into<String>,
+    supersedes: Option<String>,
+    active: bool,
+    budget: GoalBudget,
+) -> ChatMessage {
+    let mut message = goal(mode, version, content, supersedes, active, budget);
+    if let Some(meta) = message
+        .extra
+        .get_mut("goal")
+        .and_then(|value| value.as_object_mut())
+    {
+        meta.insert("owner".to_string(), json!(GoalOwner::Delegate));
+        meta.insert("autonomy".to_string(), json!(GoalAutonomy::Off));
+        meta.insert("can_pursue".to_string(), json!(false));
+    }
+    message
 }
 
 #[cfg(test)]
@@ -356,6 +395,23 @@ mod tests {
         assert_eq!(goal_meta["supersedes"], json!("prev-goal-id"));
         assert_eq!(goal_meta["active"], json!(true));
         assert_eq!(goal_meta["budget"], json!(budget));
+    }
+
+    #[test]
+    fn goal_delegated_helper_disables_autonomy_without_hiding_prompt() {
+        let msg = delegated_goal(
+            "agent",
+            1,
+            "delegated",
+            None,
+            true,
+            GoalBudget::default(),
+        );
+        let meta = &msg.extra["goal"];
+        assert_eq!(meta["owner"], json!("delegate"));
+        assert_eq!(meta["autonomy"], json!("off"));
+        assert_eq!(meta["can_pursue"], json!(false));
+        assert_eq!(meta["prompt_enabled"], json!(true));
     }
 
     #[test]

@@ -31,6 +31,7 @@ pub mod speech_policy;
 pub mod stalled_turn;
 pub mod state;
 pub mod storage;
+pub mod supervision;
 pub mod types;
 pub mod user_action;
 pub mod user_activity;

@@ -7,8 +7,8 @@ use axum::Router;
 use refact_uhp::{
     interrupted_resume_advice, retry_advice, Client, CreateResponse, IdempotencyKey,
     InterruptedResumeAdvice, LinkedAttemptReason, RecoveryBinding, RequestScope, Response,
-    ResponseStatus, RetryAdvice, SessionChain, UhpError, UhpErrorObject, UnsafeResumeReason,
-    IDEMPOTENCY_KEY_HEADER, UHP_VERSION, UHP_VERSION_HEADER,
+    ResponseStatus, RetryAdvice, SessionBinding, SessionChain, UhpError, UhpErrorObject,
+    UnsafeResumeReason, IDEMPOTENCY_KEY_HEADER, UHP_VERSION, UHP_VERSION_HEADER,
 };
 use serde_json::{json, Value};
 use tokio::sync::oneshot;
@@ -294,7 +294,7 @@ async fn recovery_restart_restores_binding_and_never_unlocks_on_drop() {
 
     let binding = chain.binding().await;
     let durable = serde_json::to_string(&binding).unwrap();
-    let binding = serde_json::from_str(&durable).unwrap();
+    let binding: SessionBinding = serde_json::from_str(&durable).unwrap();
     assert_eq!(binding.session_id.as_deref(), Some("session-1"));
     assert_eq!(binding.latest_response_id.as_deref(), Some("resp-1"));
     assert!(!binding.task_pending);

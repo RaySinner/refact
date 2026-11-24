@@ -1079,7 +1079,7 @@ mod tests {
         let messages = vec![
             goal,
             delta,
-            ChatMessage::new("user".to_string(), "continue"),
+            ChatMessage::new("user".to_string(), "continue".to_string()),
         ];
 
         let converted = convert_messages_to_openai(&messages, false);

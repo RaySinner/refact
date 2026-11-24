@@ -1454,7 +1454,7 @@ mod tests {
         let messages = vec![
             goal,
             delta,
-            ChatMessage::new("user".to_string(), "continue"),
+            ChatMessage::new("user".to_string(), "continue".to_string()),
         ];
 
         let (input, _) = convert_to_responses_format(&messages);

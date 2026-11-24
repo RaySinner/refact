@@ -1780,7 +1780,7 @@ mod tests {
         let messages = vec![
             goal,
             delta,
-            ChatMessage::new("user".to_string(), "continue"),
+            ChatMessage::new("user".to_string(), "continue".to_string()),
         ];
 
         let (_, converted) = convert_to_anthropic(&messages, None);

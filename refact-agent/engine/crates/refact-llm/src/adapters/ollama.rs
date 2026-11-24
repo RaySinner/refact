@@ -649,7 +649,7 @@ mod tests {
         let mut goal = goal_message("agent", 1, "Paused requirement");
         goal.extra["goal"]["active"] = json!(true);
         goal.extra["goal"]["status"] = json!("paused");
-        let mut delta = ChatMessage::new("event".to_string(), "Paused update");
+        let mut delta = ChatMessage::new("event".to_string(), "Paused update".to_string());
         delta.extra.insert(
             "event".to_string(),
             json!({
@@ -661,7 +661,7 @@ mod tests {
         let messages = vec![
             goal,
             delta,
-            ChatMessage::new("user".to_string(), "continue"),
+            ChatMessage::new("user".to_string(), "continue".to_string()),
         ];
 
         let converted = convert_messages_to_ollama(&messages);

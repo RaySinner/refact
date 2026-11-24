@@ -315,6 +315,7 @@ mod tests {
         repository
             .commit(Some("HEAD"), &signature, &signature, "initial", &tree, &[])
             .unwrap();
+        drop(tree);
         (directory, repository)
     }
 

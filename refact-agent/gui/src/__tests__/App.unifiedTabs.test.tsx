@@ -195,7 +195,9 @@ describe("App unified tab regression", () => {
 
     await screen.findByRole("tab", { name: /Chat Alpha/ });
 
-    expect(screen.getAllByRole("tablist")).toHaveLength(1);
+    expect(
+      screen.getAllByRole("tablist", { name: "Open workspace tabs" }),
+    ).toHaveLength(1);
     expect(
       screen.getByRole("tablist", { name: "Open workspace tabs" }),
     ).toBeInTheDocument();
@@ -232,7 +234,9 @@ describe("App unified tab regression", () => {
       newSurfaceKey,
     ]);
     expect(new Set(store.getState().workspace.tabs).size).toBe(2);
-    expect(screen.getAllByRole("tablist")).toHaveLength(1);
+    expect(
+      screen.getAllByRole("tablist", { name: "Open workspace tabs" }),
+    ).toHaveLength(1);
     expect(screen.getAllByRole("tab")).toHaveLength(2);
     expect(selectedTabs()).toHaveLength(1);
   });
@@ -256,7 +260,9 @@ describe("App unified tab regression", () => {
       chat("chat-a"),
       chat("chat-b"),
     ]);
-    expect(screen.getAllByRole("tablist")).toHaveLength(1);
+    expect(
+      screen.getAllByRole("tablist", { name: "Open workspace tabs" }),
+    ).toHaveLength(1);
     expect(screen.getAllByRole("tab")).toHaveLength(2);
     expect(selectedTabs()).toHaveLength(1);
     expect(selectedTabs()[0]).toHaveTextContent("Chat Beta");
@@ -285,7 +291,9 @@ describe("App unified tab regression", () => {
       name: "task workspace",
       taskId: "task-a",
     });
-    expect(screen.getAllByRole("tablist")).toHaveLength(1);
+    expect(
+      screen.getAllByRole("tablist", { name: "Open workspace tabs" }),
+    ).toHaveLength(1);
     expect(screen.getByRole("tab", { name: /Task Alpha/ })).toHaveAttribute(
       "aria-selected",
       "true",
@@ -301,7 +309,9 @@ describe("App unified tab regression", () => {
 
     expect(await screen.findByTestId("buddy-home")).toBeInTheDocument();
     expect(store.getState().pages.at(-1)).toEqual({ name: "buddy" });
-    expect(screen.getAllByRole("tablist")).toHaveLength(1);
+    expect(
+      screen.getAllByRole("tablist", { name: "Open workspace tabs" }),
+    ).toHaveLength(1);
     expect(screen.getByRole("tab", { name: /Buddy/ })).toHaveAttribute(
       "aria-selected",
       "true",
@@ -325,7 +335,9 @@ describe("App unified tab regression", () => {
       expect(store.getState().workspace.groups[chat("chat-a")]).toBeDefined();
     });
 
-    expect(screen.getAllByRole("tablist")).toHaveLength(1);
+    expect(
+      screen.getAllByRole("tablist", { name: "Open workspace tabs" }),
+    ).toHaveLength(1);
     expect(screen.getAllByRole("tab")).toHaveLength(1);
     const groupTab = screen.getByRole("tab", { name: /Chat Alpha/ });
     expect(within(groupTab).getByLabelText("2 panes")).toHaveTextContent("2");

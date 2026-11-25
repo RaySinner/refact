@@ -1106,6 +1106,16 @@ pub(super) async fn run_action(
                                 )
                                 .await
                         }
+                        GoalCommandKind::Replace => {
+                            client
+                                .send_replace_goal(
+                                    &project_id,
+                                    &chat_id,
+                                    content.as_deref().unwrap_or_default(),
+                                    budget,
+                                )
+                                .await
+                        }
                         GoalCommandKind::SetBudget => {
                             client
                                 .send_set_goal_budget(
@@ -1118,6 +1128,15 @@ pub(super) async fn run_action(
                         GoalCommandKind::Update => {
                             client
                                 .send_update_goal(
+                                    &project_id,
+                                    &chat_id,
+                                    content.as_deref().unwrap_or_default(),
+                                )
+                                .await
+                        }
+                        GoalCommandKind::SetAutonomy => {
+                            client
+                                .send_set_goal_autonomy(
                                     &project_id,
                                     &chat_id,
                                     content.as_deref().unwrap_or_default(),
@@ -1157,6 +1176,8 @@ pub(super) async fn run_action(
                                 crate::client::GoalControlAction::Pause => "pause",
                                 crate::client::GoalControlAction::Resume => "resume",
                                 crate::client::GoalControlAction::Stop => "stop",
+                                crate::client::GoalControlAction::Cancel => "cancel",
+                                crate::client::GoalControlAction::Clear => "clear",
                             },
                         )
                         .await

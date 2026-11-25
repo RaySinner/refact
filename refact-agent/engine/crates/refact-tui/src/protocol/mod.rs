@@ -459,6 +459,13 @@ pub struct RuntimeGoalBudgetSnapshot {
 pub struct RuntimeGoalSnapshot {
     pub active: Option<bool>,
     pub status: Option<String>,
+    pub resolution: Option<String>,
+    pub execution: Option<String>,
+    pub autonomy: Option<String>,
+    pub owner: Option<String>,
+    pub revision: Option<u64>,
+    pub stop_reason: Option<String>,
+    pub snoozed_until_ms: Option<u64>,
     pub turn_count: Option<u64>,
     pub token_count: Option<u64>,
     pub no_progress_turn_count: Option<u64>,
@@ -502,6 +509,13 @@ impl RuntimeUpdatedEvent {
                     .and_then(Value::as_bool),
                 status: optional_value_string(goal, &["status", "goal_status"])
                     .or_else(|| optional_value_string(raw, &["goal_status"])),
+                resolution: optional_value_string(goal, &["resolution"]),
+                execution: optional_value_string(goal, &["execution"]),
+                autonomy: optional_value_string(goal, &["autonomy"]),
+                owner: optional_value_string(goal, &["owner"]),
+                revision: goal.get("revision").and_then(Value::as_u64),
+                stop_reason: optional_value_string(goal, &["stop_reason"]),
+                snoozed_until_ms: goal.get("snoozed_until_ms").and_then(Value::as_u64),
                 turn_count: first_value(
                     goal,
                     &["turn_count", "turns", "goal_turn_count", "goal_turns_used"],

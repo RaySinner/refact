@@ -69,7 +69,7 @@ impl App {
         match action {
             "set" => {
                 if !allow_set {
-                    self.add_notice("A goal is already installed; use /goal update to evolve it");
+                    self.add_notice("A goal is already installed; use /goal replace to replace it");
                     return AppAction::None;
                 }
                 if rest.trim().is_empty() {
@@ -93,6 +93,43 @@ impl App {
                         content: Some(rest.trim().to_string()),
                         budget: None,
                     }
+                }
+            }
+            "replace" => {
+                if rest.trim().is_empty() {
+                    self.add_notice("Usage: /goal replace <goal text>");
+                    return AppAction::None;
+                }
+                if !self
+                    .goal_presentation()
+                    .is_some_and(|goal| goal.allows_replace())
+                {
+                    self.add_notice("Goal replacement is not available for the current goal");
+                    return AppAction::None;
+                }
+                AppAction::GoalCommand {
+                    kind: GoalCommandKind::Replace,
+                    content: Some(rest.trim().to_string()),
+                    budget: None,
+                }
+            }
+            "autonomy" => {
+                let autonomy = rest.trim();
+                if !matches!(autonomy, "on" | "off") {
+                    self.add_notice("Usage: /goal autonomy on|off");
+                    return AppAction::None;
+                }
+                if !self
+                    .goal_presentation()
+                    .is_some_and(|goal| goal.allows_autonomy())
+                {
+                    self.add_notice("Autonomy controls are not available for the current goal");
+                    return AppAction::None;
+                }
+                AppAction::GoalCommand {
+                    kind: GoalCommandKind::SetAutonomy,
+                    content: Some(autonomy.to_string()),
+                    budget: None,
                 }
             }
             "budget" => {
@@ -125,9 +162,11 @@ impl App {
             "pause" => self.goal_control_action(GoalControlAction::Pause),
             "resume" => self.goal_control_action(GoalControlAction::Resume),
             "stop" => self.goal_control_action(GoalControlAction::Stop),
+            "cancel" => self.goal_control_action(GoalControlAction::Cancel),
+            "clear" => self.goal_control_action(GoalControlAction::Clear),
             _ => {
                 self.add_notice(
-                    "Usage: /goal [set <text>|update <note>|budget [turns minutes tokens cost no_progress]|pause|resume|stop]",
+                    "Usage: /goal [set <text>|replace <text>|update <note>|budget [turns minutes tokens cost no_progress]|autonomy on|off|pause|resume|stop|cancel|clear]",
                 );
                 AppAction::None
             }
@@ -153,6 +192,8 @@ impl App {
 #[derive(Debug, Clone, PartialEq)]
 pub enum GoalCommandKind {
     Set,
+    Replace,
     SetBudget,
     Update,
+    SetAutonomy,
 }

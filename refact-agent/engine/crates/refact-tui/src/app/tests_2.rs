@@ -1752,3 +1752,93 @@ fn goal_commands_dispatch_all_four_wrappers_and_controls_respect_status() {
         None => std::env::remove_var("REFACT_TUI_SURFACES"),
     }
 }
+
+#[test]
+fn modern_goal_commands_dispatch_and_terminal_goal_cannot_resume() {
+    let _surface_lock = goal_dock::test_surface_lock();
+    let previous = std::env::var_os("REFACT_TUI_SURFACES");
+    std::env::set_var("REFACT_TUI_SURFACES", "1");
+    let mut app = App::new(project());
+    app.handle_chat_event(ChatEvent {
+        chat_id: Some(app.chat_id().to_string()),
+        seq: None,
+        kind: "snapshot".to_string(),
+        raw: json!({
+            "runtime": {"state": "idle"},
+            "messages": [{
+                "role": "goal",
+                "content": "Ship it",
+                "extra": {"goal": {
+                    "status": "active",
+                    "resolution": "active",
+                    "execution": "idle",
+                    "autonomy": "on",
+                    "owner": "user",
+                    "revision": 2,
+                    "active": true
+                }}
+            }]
+        }),
+    });
+
+    assert!(matches!(
+        app.execute_command_name("goal replace Ship the replacement"),
+        AppAction::GoalCommand {
+            kind: GoalCommandKind::Replace,
+            content: Some(content),
+            budget: None,
+        } if content == "Ship the replacement"
+    ));
+    assert!(matches!(
+        app.execute_command_name("goal autonomy off"),
+        AppAction::GoalCommand {
+            kind: GoalCommandKind::SetAutonomy,
+            content: Some(content),
+            budget: None,
+        } if content == "off"
+    ));
+    assert_eq!(
+        app.execute_command_name("goal cancel"),
+        AppAction::GoalControl {
+            action: GoalControlAction::Cancel
+        }
+    );
+    assert_eq!(
+        app.execute_command_name("goal clear"),
+        AppAction::GoalControl {
+            action: GoalControlAction::Clear
+        }
+    );
+
+    app.handle_chat_event(ChatEvent {
+        chat_id: Some(app.chat_id().to_string()),
+        seq: None,
+        kind: "snapshot".to_string(),
+        raw: json!({
+            "runtime": {"state": "idle"},
+            "messages": [{
+                "role": "goal",
+                "content": "Ship it",
+                "extra": {"goal": {
+                    "status": "completed",
+                    "resolution": "achieved",
+                    "execution": "idle",
+                    "autonomy": "on",
+                    "active": true
+                }}
+            }]
+        }),
+    });
+    assert_eq!(app.execute_command_name("goal resume"), AppAction::None);
+    assert_eq!(
+        app.execute_command_name("goal clear"),
+        AppAction::GoalControl {
+            action: GoalControlAction::Clear
+        }
+    );
+
+    match previous {
+        Some(value) => std::env::set_var("REFACT_TUI_SURFACES", value),
+        None => std::env::remove_var("REFACT_TUI_SURFACES"),
+    }
+}

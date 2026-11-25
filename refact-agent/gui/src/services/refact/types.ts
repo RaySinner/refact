@@ -1105,10 +1105,25 @@ export type GoalStatus =
   | "no_progress"
   | "transferred";
 
+export type GoalResolution = "active" | "achieved" | "failed" | "cancelled";
+
+export type GoalExecution =
+  | "idle"
+  | "running"
+  | "verifying"
+  | "waiting_input"
+  | "waiting_approval"
+  | "paused"
+  | "retry_scheduled";
+
+export type GoalAutonomy = "off" | "on";
+export type GoalOwner = "user" | "delegate";
+
 export type GoalBudget = {
   max_turns?: number | null;
   max_minutes?: number | null;
   max_tokens?: number | null;
+  max_cost_cents?: number | null;
   cooldown_ms: number;
   no_progress_token_threshold: number;
   no_progress_turns?: number | null;
@@ -1120,6 +1135,7 @@ export type GoalProgress = {
   started_at_ms: number;
   no_progress_turns: number;
   last_nudge_at_ms: number;
+  cost_used_cents?: number;
 };
 
 export type GoalAttempt = {
@@ -1141,10 +1157,19 @@ export type GoalSnapshot = {
   version: number;
   active: boolean;
   status: GoalStatus;
+  resolution?: GoalResolution;
+  execution?: GoalExecution;
+  autonomy?: GoalAutonomy;
+  owner?: GoalOwner;
+  revision?: number;
+  can_pursue?: boolean;
+  prompt_enabled?: boolean;
   budget: GoalBudget;
   progress: GoalProgress;
   attempts: GoalAttempt[];
   events: GoalEvent[];
+  snoozed_until_ms?: number | null;
+  stop_reason?: string | null;
   transferred_from?: string | null;
   transferred_to?: string | null;
 };

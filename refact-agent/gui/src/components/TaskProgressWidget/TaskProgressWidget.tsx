@@ -1,7 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import * as Collapsible from "@radix-ui/react-collapsible";
 import classNames from "classnames";
-import { Pause, Play, Square, Target, type LucideIcon } from "lucide-react";
+import {
+  Ban,
+  Pause,
+  Play,
+  Square,
+  Target,
+  Trash2,
+  type LucideIcon,
+} from "lucide-react";
 
 import { useChatActions } from "../../hooks/useChatActions";
 import { useAppDispatch } from "../../hooks/useAppDispatch";
@@ -24,10 +32,16 @@ import type { TodoItem, TodoStatus } from "../../features/Chat/Thread/types";
 import type {
   GoalAttempt,
   GoalEvent,
+  GoalExecution,
+  GoalResolution,
   GoalSnapshot,
   GoalStatus,
 } from "../../services/refact/types";
-import type { GoalBudgetCommand } from "../../services/refact/chatCommands";
+import type {
+  GoalAutonomyCommand,
+  GoalBudgetCommand,
+  GoalControlAction,
+} from "../../services/refact/chatCommands";
 import { Box, Flex, Separator, Text } from "../LongTailPrimitives";
 import { Badge, Button, Icon, IconButton } from "../ui";
 import { Chevron } from "../Collapsible";
@@ -92,6 +106,62 @@ function goalStatusTone(
   }
 }
 
+function hasModernGoalProjection(goal: GoalSnapshot): boolean {
+  return (
+    goal.resolution !== undefined &&
+    goal.execution !== undefined &&
+    goal.autonomy !== undefined
+  );
+}
+
+function goalResolution(goal: GoalSnapshot): GoalResolution {
+  if (goal.resolution) return goal.resolution;
+  if (goal.status === "completed") return "achieved";
+  if (goal.status === "stopped") return "cancelled";
+  return "active";
+}
+
+function goalExecution(goal: GoalSnapshot): GoalExecution {
+  if (goal.execution) return goal.execution;
+  switch (goal.status) {
+    case "verifying":
+      return "verifying";
+    case "paused":
+    case "budget_exhausted":
+    case "no_progress":
+    case "transferred":
+      return "paused";
+    default:
+      return "idle";
+  }
+}
+
+function goalIsQuiescent(goal: GoalSnapshot): boolean {
+  const latestEvent = goal.events.at(-1);
+  return (
+    latestEvent?.kind === "pursuit_quiescent" ||
+    latestEvent?.kind === "quiescent"
+  );
+}
+
+function goalExecutionLabel(goal: GoalSnapshot): string {
+  const resolution = goalResolution(goal);
+  if (resolution !== "active") return humanizeIdentifier(resolution);
+  if (goal.snoozed_until_ms != null) return "Snoozed";
+  if (goalIsQuiescent(goal)) return "Quiescent";
+  const execution = goalExecution(goal);
+  if (goal.status === "budget_exhausted") return "Paused · budget exhausted";
+  if (goal.status === "no_progress") return "Paused · no progress";
+  if (execution === "idle" && goal.autonomy === "off") {
+    return "Idle · autonomy off";
+  }
+  return humanizeIdentifier(execution);
+}
+
+function goalIsTransferred(goal: GoalSnapshot): boolean {
+  return goal.status === "transferred" || Boolean(goal.transferred_to);
+}
+
 function hasGoalWork(goal: GoalSnapshot | null): boolean {
   return goal !== null && goal.content.trim().length > 0;
 }
@@ -139,6 +209,16 @@ function GoalBudgetProgress({ goal }: { goal: GoalSnapshot }) {
       saturated:
         isPositiveGoalLimit(budget.max_tokens) &&
         progress.tokens_used >= budget.max_tokens,
+    },
+    {
+      text: formatGoalBudgetPart(
+        progress.no_progress_turns,
+        budget.no_progress_turns,
+        "no-progress",
+      ),
+      saturated:
+        isPositiveGoalLimit(budget.no_progress_turns) &&
+        progress.no_progress_turns >= budget.no_progress_turns,
     },
   ];
   const hasBudgetLimit = [
@@ -203,8 +283,6 @@ function hasBudgetCommandLimits(budget: GoalBudgetCommand): boolean {
   return Object.keys(budget).length > 0;
 }
 
-type GoalControlAction = "pause" | "resume" | "stop";
-
 const GOAL_STOPPABLE_STATUSES: ReadonlySet<GoalStatus> = new Set<GoalStatus>([
   "active",
   "verifying",
@@ -223,11 +301,29 @@ function goalControlAvailability(goal: GoalSnapshot): {
   canPause: boolean;
   canResume: boolean;
   canStop: boolean;
+  canCancel: boolean;
+  canClear: boolean;
+  canSetAutonomy: boolean;
 } {
+  if (hasModernGoalProjection(goal)) {
+    const owned = goal.active && !goalIsTransferred(goal);
+    const activeResolution = goalResolution(goal) === "active";
+    return {
+      canPause: owned && activeResolution && goalExecution(goal) !== "paused",
+      canResume: owned && activeResolution && goalExecution(goal) === "paused",
+      canStop: owned && activeResolution,
+      canCancel: owned && activeResolution,
+      canClear: owned,
+      canSetAutonomy: owned && activeResolution,
+    };
+  }
   return {
     canPause: goal.active && goal.status === "active",
     canResume: GOAL_RESUMABLE_STATUSES.has(goal.status),
     canStop: GOAL_STOPPABLE_STATUSES.has(goal.status),
+    canCancel: false,
+    canClear: false,
+    canSetAutonomy: false,
   };
 }
 
@@ -248,35 +344,58 @@ function goalControlActions(
   goal: GoalSnapshot,
   onControl: (action: GoalControlAction) => void,
 ): GoalControlDescriptor[] {
-  const { canPause, canResume, canStop } = goalControlAvailability(goal);
-  if (!canPause && !canResume && !canStop) return [];
+  const { canPause, canResume, canStop, canCancel, canClear } =
+    goalControlAvailability(goal);
+  if (!canPause && !canResume && !canStop && !canCancel && !canClear) {
+    return [];
+  }
 
-  const primary: GoalControlDescriptor = canResume
-    ? {
-        key: "resume",
-        label: "Resume",
-        icon: Play,
-        handler: () => onControl("resume"),
-        disabled: false,
-      }
-    : {
-        key: "pause",
-        label: "Pause",
-        icon: Pause,
-        handler: () => onControl("pause"),
-        disabled: !canPause,
-      };
-
-  return [
-    primary,
-    {
+  const actions: GoalControlDescriptor[] = [];
+  if (canResume) {
+    actions.push({
+      key: "resume",
+      label: "Resume",
+      icon: Play,
+      handler: () => onControl("resume"),
+      disabled: false,
+    });
+  } else if (canPause || (!hasModernGoalProjection(goal) && canStop)) {
+    actions.push({
+      key: "pause",
+      label: "Pause",
+      icon: Pause,
+      handler: () => onControl("pause"),
+      disabled: !canPause,
+    });
+  }
+  if (canStop) {
+    actions.push({
       key: "stop",
       label: "Stop",
       icon: Square,
       handler: () => onControl("stop"),
-      disabled: !canStop,
-    },
-  ];
+      disabled: false,
+    });
+  }
+  if (canCancel) {
+    actions.push({
+      key: "cancel",
+      label: "Cancel goal",
+      icon: Ban,
+      handler: () => onControl("cancel"),
+      disabled: false,
+    });
+  }
+  if (canClear) {
+    actions.push({
+      key: "clear",
+      label: "Clear goal",
+      icon: Trash2,
+      handler: () => onControl("clear"),
+      disabled: false,
+    });
+  }
+  return actions;
 }
 
 const GOAL_SUPPORTED_MODES = new Set(["agent", "task_agent", "task_planner"]);
@@ -338,10 +457,48 @@ const GoalIndicator: React.FC<GoalIndicatorProps> = ({ goal }) => (
       Goal set
     </Text>
     <Badge tone={goalStatusTone(goal.status)} size="xs" variant="soft">
-      {humanizeIdentifier(goal.status)}
+      {goalExecutionLabel(goal)}
     </Badge>
   </Flex>
 );
+
+const GoalStateDetails: React.FC<{ goal: GoalSnapshot }> = ({ goal }) => {
+  if (!hasModernGoalProjection(goal)) {
+    return (
+      <Text size="1" color="gray">
+        Legacy status: {humanizeIdentifier(goal.status)}
+      </Text>
+    );
+  }
+  return (
+    <Flex direction="column" gap="1">
+      <Text size="1" color="gray">
+        Resolution: {humanizeIdentifier(goalResolution(goal))} · Execution:{" "}
+        {goalExecutionLabel(goal)}
+      </Text>
+      <Text size="1" color="gray">
+        Owner: {humanizeIdentifier(goal.owner ?? "user")} · Revision:{" "}
+        {goal.revision ?? 1} · Autonomy:{" "}
+        {humanizeIdentifier(goal.autonomy ?? "on")}
+      </Text>
+      {goal.stop_reason ? (
+        <Text size="1" color="gray">
+          Stop reason: {goal.stop_reason}
+        </Text>
+      ) : null}
+      {goal.snoozed_until_ms != null ? (
+        <Text size="1" color="gray">
+          Snoozed until: {new Date(goal.snoozed_until_ms).toLocaleString()}
+        </Text>
+      ) : null}
+      {goalIsQuiescent(goal) ? (
+        <Text size="1" color="gray">
+          Pursuit is quiescent and resumes on your next message.
+        </Text>
+      ) : null}
+    </Flex>
+  );
+};
 
 type GoalControlIconsProps = {
   goal: GoalSnapshot;
@@ -355,8 +512,11 @@ const GoalControlIcons: React.FC<GoalControlIconsProps> = ({
   className,
 }) => {
   const actions = goalControlActions(goal, onControl);
+  const visibleActions = actions.filter((action) =>
+    ["pause", "resume", "stop"].includes(action.key),
+  );
 
-  if (actions.length === 0) return null;
+  if (visibleActions.length === 0) return null;
 
   return (
     <Flex
@@ -364,7 +524,7 @@ const GoalControlIcons: React.FC<GoalControlIconsProps> = ({
       gap="1"
       className={classNames(styles.goalControlIcons, className)}
     >
-      {actions.map((action) => (
+      {visibleActions.map((action) => (
         <IconButton
           key={action.key}
           aria-label={`${action.label} goal`}
@@ -384,7 +544,9 @@ type GoalSectionProps = {
   expanded: boolean;
   onExpandedChange: (open: boolean) => void;
   onCreate: (content: string, budget?: GoalBudgetCommand) => void;
+  onReplace: (content: string, budget?: GoalBudgetCommand) => void;
   onUpdateText: (content: string) => void;
+  onSetAutonomy: (autonomy: GoalAutonomyCommand) => void;
   onApplyBudget: (budget: GoalBudgetCommand) => void;
   onControl: (action: GoalControlAction) => void;
 };
@@ -394,7 +556,9 @@ const GoalSection: React.FC<GoalSectionProps> = ({
   expanded,
   onExpandedChange,
   onCreate,
+  onReplace,
   onUpdateText,
+  onSetAutonomy,
   onApplyBudget,
   onControl,
 }) => {
@@ -420,6 +584,7 @@ const GoalSection: React.FC<GoalSectionProps> = ({
   }, [goalMaxMinutes, goalMaxTokens, goalMaxTurns]);
 
   const [editingGoal, setEditingGoal] = useState(false);
+  const [replacingGoal, setReplacingGoal] = useState(false);
   const trimmedDraft = draft.trim();
   const hasGoal = goal !== null;
   const canSave =
@@ -431,6 +596,15 @@ const GoalSection: React.FC<GoalSectionProps> = ({
 
   const handleSave = useCallback(() => {
     if (!canSave) return;
+    if (hasGoal && replacingGoal) {
+      onReplace(
+        trimmedDraft,
+        hasBudgetCommandLimits(budgetCommand) ? budgetCommand : undefined,
+      );
+      setEditingGoal(false);
+      setReplacingGoal(false);
+      return;
+    }
     if (hasGoal) {
       onUpdateText(trimmedDraft);
       setEditingGoal(false);
@@ -440,7 +614,27 @@ const GoalSection: React.FC<GoalSectionProps> = ({
       trimmedDraft,
       hasBudgetCommandLimits(budgetCommand) ? budgetCommand : undefined,
     );
-  }, [budgetCommand, canSave, hasGoal, onCreate, onUpdateText, trimmedDraft]);
+  }, [
+    budgetCommand,
+    canSave,
+    hasGoal,
+    onCreate,
+    onReplace,
+    onUpdateText,
+    replacingGoal,
+    trimmedDraft,
+  ]);
+
+  const modernProjection = goal ? hasModernGoalProjection(goal) : false;
+  const activeResolution = goal ? goalResolution(goal) === "active" : false;
+  const canReplace = Boolean(
+    goal && modernProjection && goal.active && !goalIsTransferred(goal),
+  );
+  const canEdit = Boolean(
+    goal &&
+      (!modernProjection || (activeResolution && goal.active)) &&
+      !goalIsTransferred(goal),
+  );
 
   const handleBudgetChange = useCallback(
     (field: keyof GoalBudgetDraft, value: string) => {
@@ -470,7 +664,7 @@ const GoalSection: React.FC<GoalSectionProps> = ({
                     size="xs"
                     variant="soft"
                   >
-                    {humanizeIdentifier(goal.status)}
+                    {goalExecutionLabel(goal)}
                   </Badge>
                 ) : (
                   <Badge tone="muted" size="xs" variant="soft">
@@ -496,6 +690,7 @@ const GoalSection: React.FC<GoalSectionProps> = ({
               {goal && !editingGoal ? (
                 <>
                   <Markdown>{goal.content}</Markdown>
+                  <GoalStateDetails goal={goal} />
                   {goal.status === "transferred" && goal.transferred_to ? (
                     <Text size="1" color="gray">
                       Transferred to {goal.transferred_to}
@@ -518,7 +713,7 @@ const GoalSection: React.FC<GoalSectionProps> = ({
               )}
               <GoalBudgetEditor
                 draft={budgetDraft}
-                showApply={hasGoal}
+                showApply={hasGoal && (!modernProjection || activeResolution)}
                 onApply={handleApplyBudget}
                 onChange={handleBudgetChange}
               />
@@ -531,13 +726,29 @@ const GoalSection: React.FC<GoalSectionProps> = ({
                   )}
                 </Text>
                 {goal && !editingGoal ? (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => setEditingGoal(true)}
-                  >
-                    Edit
-                  </Button>
+                  <>
+                    {canReplace ? (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setReplacingGoal(true);
+                          setEditingGoal(true);
+                        }}
+                      >
+                        Replace
+                      </Button>
+                    ) : null}
+                    {canEdit ? (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setEditingGoal(true)}
+                      >
+                        Edit
+                      </Button>
+                    ) : null}
+                  </>
                 ) : (
                   <>
                     {goal ? (
@@ -547,6 +758,7 @@ const GoalSection: React.FC<GoalSectionProps> = ({
                         onClick={() => {
                           setDraft(goal.content);
                           setEditingGoal(false);
+                          setReplacingGoal(false);
                         }}
                       >
                         Cancel
@@ -558,7 +770,7 @@ const GoalSection: React.FC<GoalSectionProps> = ({
                       disabled={!canSave}
                       onClick={handleSave}
                     >
-                      Save
+                      {replacingGoal ? "Replace goal" : "Save"}
                     </Button>
                   </>
                 )}
@@ -567,7 +779,11 @@ const GoalSection: React.FC<GoalSectionProps> = ({
 
             {goal ? (
               <>
-                <GoalControls goal={goal} onControl={onControl} />
+                <GoalControls
+                  goal={goal}
+                  onControl={onControl}
+                  onSetAutonomy={onSetAutonomy}
+                />
                 <GoalAttempts attempts={goal.attempts} />
                 <GoalEvents events={goal.events} />
               </>
@@ -649,12 +865,18 @@ const GoalBudgetEditor: React.FC<GoalBudgetEditorProps> = ({
 type GoalControlsProps = {
   goal: GoalSnapshot;
   onControl: (action: GoalControlAction) => void;
+  onSetAutonomy: (autonomy: GoalAutonomyCommand) => void;
 };
 
-const GoalControls: React.FC<GoalControlsProps> = ({ goal, onControl }) => {
+const GoalControls: React.FC<GoalControlsProps> = ({
+  goal,
+  onControl,
+  onSetAutonomy,
+}) => {
   const actions = goalControlActions(goal, onControl);
+  const { canSetAutonomy } = goalControlAvailability(goal);
 
-  if (actions.length === 0) return null;
+  if (actions.length === 0 && !canSetAutonomy) return null;
 
   return (
     <Flex align="center" gap="2" wrap="wrap" className={styles.goalControls}>
@@ -662,7 +884,9 @@ const GoalControls: React.FC<GoalControlsProps> = ({ goal, onControl }) => {
         <Button
           key={action.key}
           size="sm"
-          variant={action.key === "stop" ? "danger" : "soft"}
+          variant={
+            ["stop", "cancel", "clear"].includes(action.key) ? "danger" : "soft"
+          }
           leftIcon={action.icon}
           disabled={action.disabled}
           onClick={action.handler}
@@ -670,6 +894,15 @@ const GoalControls: React.FC<GoalControlsProps> = ({ goal, onControl }) => {
           {action.label}
         </Button>
       ))}
+      {canSetAutonomy ? (
+        <Button
+          size="sm"
+          variant="soft"
+          onClick={() => onSetAutonomy(goal.autonomy === "on" ? "off" : "on")}
+        >
+          Turn autonomy {goal.autonomy === "on" ? "off" : "on"}
+        </Button>
+      ) : null}
     </Flex>
   );
 };
@@ -786,8 +1019,9 @@ export const TaskProgressWidget: React.FC = () => {
   const { done, total, activeTitle } = useAppSelector((state) =>
     selectTaskProgressById(state, chatId),
   );
-  const { setGoal, setGoalBudget, updateGoal, controlGoal } =
+  const { setGoal, setGoalBudget, updateGoal, setGoalAutonomy, controlGoal } =
     useChatActions(chatId);
+  const [goalActionError, setGoalActionError] = useState<string | null>(null);
   const hasGoal = hasGoalWork(goal);
   const goalSupported = isGoalSupported(threadMode, threadToolUse);
   const isFreshGoalOpportunity =
@@ -829,30 +1063,74 @@ export const TaskProgressWidget: React.FC = () => {
 
   const handleGoalCreate = useCallback(
     (content: string, budget?: GoalBudgetCommand) => {
-      void setGoal(content, budget);
+      setGoalActionError(null);
+      void setGoal(content, budget).catch((error: unknown) => {
+        setGoalActionError(
+          error instanceof Error ? error.message : String(error),
+        );
+      });
+    },
+    [setGoal],
+  );
+
+  const handleGoalReplace = useCallback(
+    (content: string, budget?: GoalBudgetCommand) => {
+      setGoalActionError(null);
+      void setGoal(content, budget, true).catch((error: unknown) => {
+        setGoalActionError(
+          error instanceof Error ? error.message : String(error),
+        );
+      });
     },
     [setGoal],
   );
 
   const handleGoalTextUpdate = useCallback(
     (content: string) => {
-      void updateGoal(content);
+      setGoalActionError(null);
+      void updateGoal(content).catch((error: unknown) => {
+        setGoalActionError(
+          error instanceof Error ? error.message : String(error),
+        );
+      });
     },
     [updateGoal],
   );
 
   const handleGoalBudgetApply = useCallback(
     (budget: GoalBudgetCommand) => {
-      void setGoalBudget(budget);
+      setGoalActionError(null);
+      void setGoalBudget(budget).catch((error: unknown) => {
+        setGoalActionError(
+          error instanceof Error ? error.message : String(error),
+        );
+      });
     },
     [setGoalBudget],
   );
 
   const handleGoalControl = useCallback(
     (action: GoalControlAction) => {
-      void controlGoal(action);
+      setGoalActionError(null);
+      void controlGoal(action).catch((error: unknown) => {
+        setGoalActionError(
+          error instanceof Error ? error.message : String(error),
+        );
+      });
     },
     [controlGoal],
+  );
+
+  const handleGoalAutonomy = useCallback(
+    (autonomy: GoalAutonomyCommand) => {
+      setGoalActionError(null);
+      void setGoalAutonomy(autonomy).catch((error: unknown) => {
+        setGoalActionError(
+          error instanceof Error ? error.message : String(error),
+        );
+      });
+    },
+    [setGoalAutonomy],
   );
 
   if (!shouldRender) return null;
@@ -936,12 +1214,19 @@ export const TaskProgressWidget: React.FC = () => {
 
         <Collapsible.Content>
           <Flex direction="column" gap="3" className={styles.content}>
+            {goalActionError ? (
+              <Text size="1" color="red" role="alert">
+                Goal command failed: {goalActionError}
+              </Text>
+            ) : null}
             <GoalSection
               goal={goal}
               expanded={goalExpanded}
               onExpandedChange={handleGoalOpenChange}
               onCreate={handleGoalCreate}
+              onReplace={handleGoalReplace}
               onUpdateText={handleGoalTextUpdate}
+              onSetAutonomy={handleGoalAutonomy}
               onApplyBudget={handleGoalBudgetApply}
               onControl={handleGoalControl}
             />

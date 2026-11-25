@@ -51,6 +51,19 @@ function makeGoal(overrides: Partial<GoalSnapshot> = {}): GoalSnapshot {
   };
 }
 
+function makeModernGoal(overrides: Partial<GoalSnapshot> = {}): GoalSnapshot {
+  return makeGoal({
+    resolution: "active",
+    execution: "idle",
+    autonomy: "on",
+    owner: "user",
+    revision: 4,
+    can_pursue: true,
+    prompt_enabled: true,
+    ...overrides,
+  });
+}
+
 function taskMessages(tasks: TodoItem[]): ChatMessages {
   return [
     {
@@ -205,7 +218,7 @@ describe("TaskProgressWidget goal projection", () => {
     renderWidget(makeRuntime({ goal: makeGoal() }));
 
     expect(screen.getByText("Goal set")).toBeInTheDocument();
-    expect(screen.getByText("Active")).toBeInTheDocument();
+    expect(screen.getByText("Idle")).toBeInTheDocument();
   });
 
   test("expanded widget starts with the goal row", () => {
@@ -213,7 +226,78 @@ describe("TaskProgressWidget goal projection", () => {
 
     expect(screen.getByText("Task Progress")).toBeInTheDocument();
     expect(screen.getByText("Goal")).toBeInTheDocument();
-    expect(screen.getByText("Active")).toBeInTheDocument();
+    expect(screen.getByText("Idle")).toBeInTheDocument();
+  });
+
+  test.each<[Partial<GoalSnapshot>, string]>([
+    [{ execution: "running" }, "Running"],
+    [{ execution: "verifying", status: "verifying" }, "Verifying"],
+    [{ execution: "paused", status: "paused" }, "Paused"],
+    [
+      { execution: "paused", status: "budget_exhausted" },
+      "Paused · budget exhausted",
+    ],
+    [{ snoozed_until_ms: 4102444800000 }, "Snoozed"],
+    [
+      {
+        events: [
+          { at_ms: 5000, kind: "pursuit_quiescent", text: "No progress" },
+        ],
+      },
+      "Quiescent",
+    ],
+    [{ autonomy: "off", can_pursue: false }, "Idle · autonomy off"],
+  ])("renders effective goal state %s", (override, label) => {
+    renderWidget(
+      makeRuntime({
+        goal: makeModernGoal(override),
+        expanded: true,
+        goalExpanded: true,
+      }),
+    );
+
+    expect(screen.getAllByText(label).length).toBeGreaterThan(0);
+  });
+
+  test("renders owner, revision, stop reason, and latest verdict from the projection", () => {
+    renderWidget(
+      makeRuntime({
+        goal: makeModernGoal({
+          owner: "delegate",
+          revision: 7,
+          execution: "paused",
+          status: "paused",
+          stop_reason: "waiting for product decision",
+        }),
+        expanded: true,
+        goalExpanded: true,
+      }),
+    );
+
+    expect(
+      screen.getByText(/Owner: Delegate · Revision: 7/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Stop reason: waiting for product decision"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Needs work")).toBeInTheDocument();
+  });
+
+  test("legacy snapshots keep legacy rendering and hide modern-only commands", () => {
+    renderWidget(
+      makeRuntime({ goal: makeGoal(), expanded: true, goalExpanded: true }),
+    );
+
+    expect(screen.getByText("Legacy status: Active")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Replace" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Clear goal" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Turn autonomy off" }),
+    ).not.toBeInTheDocument();
   });
 
   test("expanded goal block renders verifier attempts, events, and finite budget ratios", () => {
@@ -620,5 +704,93 @@ describe("TaskProgressWidget goal projection", () => {
     expect(
       screen.queryByRole("button", { name: "Resume" }),
     ).not.toBeInTheDocument();
+  });
+
+  test("modern goal dispatches replace, clear, cancel, and autonomy commands", async () => {
+    const commands = captureCommands();
+    const { user } = renderWidget(
+      makeRuntime({
+        goal: makeModernGoal(),
+        expanded: true,
+        goalExpanded: true,
+      }),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Turn autonomy off" }));
+    await user.click(screen.getByRole("button", { name: "Cancel goal" }));
+    await user.click(screen.getByRole("button", { name: "Clear goal" }));
+    await user.click(screen.getByRole("button", { name: "Replace" }));
+    const input = screen.getByLabelText("Goal text");
+    await user.clear(input);
+    await user.type(input, "Ship the replacement");
+    await user.click(screen.getByRole("button", { name: "Replace goal" }));
+
+    await waitFor(() => expect(commands).toHaveLength(4));
+    expect(commands[0]).toMatchObject({
+      type: "set_goal_autonomy",
+      autonomy: "off",
+    });
+    expect(commands[1]).toMatchObject({
+      type: "goal_control",
+      action: "cancel",
+    });
+    expect(commands[2]).toMatchObject({
+      type: "goal_control",
+      action: "clear",
+    });
+    expect(commands[3]).toMatchObject({
+      type: "set_goal",
+      content: "Ship the replacement",
+      replace: true,
+    });
+  });
+
+  test("terminal goals expose replace and clear but cannot be resumed", () => {
+    renderWidget(
+      makeRuntime({
+        goal: makeModernGoal({
+          resolution: "achieved",
+          execution: "idle",
+          status: "completed",
+          can_pursue: false,
+          prompt_enabled: false,
+        }),
+        expanded: true,
+        goalExpanded: true,
+      }),
+    );
+
+    expect(screen.getAllByText("Achieved").length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "Replace" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Clear goal" })).toBeEnabled();
+    for (const name of ["Resume", "Pause", "Stop", "Cancel goal"]) {
+      expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
+    }
+  });
+
+  test("server transition errors are visible without changing the projected goal", async () => {
+    server.use(
+      http.post("*/v1/chats/:id/commands", () =>
+        HttpResponse.json(
+          { detail: "goal pause requires an active goal" },
+          { status: 409 },
+        ),
+      ),
+    );
+    const { user } = renderWidget(
+      makeRuntime({
+        goal: makeModernGoal(),
+        expanded: true,
+        goalExpanded: true,
+      }),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Pause" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /goal pause requires an active goal/,
+    );
+    expect(screen.getByText("Ship the frog pond")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Pause" })).toBeEnabled();
   });
 });

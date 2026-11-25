@@ -154,10 +154,10 @@ Offline protocol fixtures live in `tests/fixtures/*.jsonl`. Each line is one Ref
 |---|---|
 | Conversation control | `branch_from_chat`, `user_message`, `retry_from_index`, `abort`, `regenerate` |
 | Thread mutations | `set_params`, `update_message`, `remove_message`, `restore_messages` |
-| Goal control | `set_goal`, `set_goal_budget`, `update_goal`, `goal_control` |
+| Goal control | `set_goal`, `set_goal_budget`, `set_goal_autonomy`, `update_goal`, `goal_control` |
 | Tool and runtime responses | `ide_tool_result`, `tool_decisions`, `clean_background_processes`, `browser_context_decision` |
 
-The singular tool-decision wrapper deliberately serializes the shared plural `tool_decisions` envelope. `set_goal` omits `budget` for unlimited goals, and only `pause`, `resume`, and `stop` are valid goal-control actions.
+The singular tool-decision wrapper deliberately serializes the shared plural `tool_decisions` envelope. `set_goal` omits `budget` for unlimited goals and uses `replace: true` for explicit replacement. Goal-control actions are `pause`, `resume`, `stop`, `cancel`, and `clear`.
 
 ## Render snapshot strategy
 

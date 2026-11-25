@@ -36,9 +36,18 @@ struct GoalProgress {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct GoalPresentation {
+    content: String,
     status: String,
     active: bool,
     version: u64,
+    resolution: Option<String>,
+    execution: Option<String>,
+    autonomy: Option<String>,
+    owner: Option<String>,
+    revision: Option<u64>,
+    stop_reason: Option<String>,
+    snoozed_until_ms: Option<u64>,
+    quiescent: bool,
     budget: GoalBudget,
     progress: GoalProgress,
     latest_verdict: Option<String>,
@@ -59,9 +68,23 @@ impl GoalPresentation {
             .max_by_key(|message| goal_version(message))?;
         let metadata = goal.extra.get("goal").unwrap_or(&Value::Null);
         let mut presentation = Self {
+            content: goal.content.clone(),
             status: string_field(metadata, "status").unwrap_or_else(|| "active".to_string()),
             active: bool_field(metadata, "active").unwrap_or(true),
             version: goal_version(goal).max(1),
+            resolution: string_field(metadata, "resolution"),
+            execution: string_field(metadata, "execution"),
+            autonomy: string_field(metadata, "autonomy"),
+            owner: string_field(metadata, "owner"),
+            revision: metadata.get("revision").and_then(Value::as_u64),
+            stop_reason: string_field(metadata, "stop_reason"),
+            snoozed_until_ms: metadata.get("snoozed_until_ms").and_then(Value::as_u64),
+            quiescent: metadata
+                .get("events")
+                .and_then(Value::as_array)
+                .and_then(|events| events.last())
+                .and_then(|event| string_field(event, "kind"))
+                .is_some_and(|kind| matches!(kind.as_str(), "pursuit_quiescent" | "quiescent")),
             budget: GoalBudget::from_value(metadata.get("budget")),
             progress: GoalProgress::from_value(metadata.get("progress")),
             latest_verdict: None,
@@ -84,7 +107,7 @@ impl GoalPresentation {
 
     pub(crate) fn dock_line(&self) -> String {
         let mut sections = vec![
-            format!("Goal {}", status_label(&self.status)),
+            format!("Goal {}", self.effective_execution_label()),
             turn_counter(self.progress.turns_used, self.budget.max_turns),
             token_counter(self.progress.tokens_used, self.budget.max_tokens),
             format!(
@@ -105,7 +128,10 @@ impl GoalPresentation {
 
     pub(crate) fn detail_lines(&self) -> Vec<String> {
         let mut lines = vec![
+            format!("Goal: {}", self.content),
             format!("Status: {}", status_label(&self.status)),
+            format!("Resolution: {}", self.resolution_label()),
+            format!("Execution: {}", self.effective_execution_label()),
             format!(
                 "Pursuit: {}",
                 if self.active { "owned" } else { "not owned" }
@@ -137,6 +163,25 @@ impl GoalPresentation {
                     .unwrap_or("PENDING")
             ),
         ];
+        if let Some(owner) = self.owner.as_deref() {
+            lines.push(format!(
+                "Owner: {} · Revision: {}",
+                owner_label(owner),
+                self.revision.unwrap_or(1)
+            ));
+        }
+        if let Some(autonomy) = self.autonomy.as_deref() {
+            lines.push(format!("Autonomy: {}", autonomy_label(autonomy)));
+        }
+        if let Some(reason) = self.stop_reason.as_deref() {
+            lines.push(format!("Stop reason: {reason}"));
+        }
+        if let Some(until) = self.snoozed_until_ms {
+            lines.push(format!("Snoozed until (epoch ms): {until}"));
+        }
+        if self.quiescent {
+            lines.push("Pursuit is quiescent; it resumes on your next message".to_string());
+        }
         if self.gaps.is_empty() {
             lines.push("Verifier gaps: none reported".to_string());
         } else {
@@ -165,12 +210,79 @@ impl GoalPresentation {
     }
 
     pub(crate) fn allows(&self, action: GoalControlAction) -> bool {
+        if self.has_modern_projection() {
+            let owned = self.active && self.transferred_to.is_none();
+            let active_resolution = self.resolution.as_deref() == Some("active");
+            return match action {
+                GoalControlAction::Pause => {
+                    owned && active_resolution && self.execution.as_deref() != Some("paused")
+                }
+                GoalControlAction::Resume => {
+                    owned && active_resolution && self.execution.as_deref() == Some("paused")
+                }
+                GoalControlAction::Stop | GoalControlAction::Cancel => owned && active_resolution,
+                GoalControlAction::Clear => owned,
+            };
+        }
         match action {
             GoalControlAction::Pause | GoalControlAction::Stop => {
                 self.active && self.status == "active"
             }
             GoalControlAction::Resume => matches!(self.status.as_str(), "paused" | "stopped"),
+            GoalControlAction::Cancel | GoalControlAction::Clear => false,
         }
+    }
+
+    pub(crate) fn allows_replace(&self) -> bool {
+        self.has_modern_projection() && self.active && self.transferred_to.is_none()
+    }
+
+    pub(crate) fn allows_autonomy(&self) -> bool {
+        self.allows_replace() && self.resolution.as_deref() == Some("active")
+    }
+
+    fn has_modern_projection(&self) -> bool {
+        self.resolution.is_some() && self.execution.is_some() && self.autonomy.is_some()
+    }
+
+    fn resolution_label(&self) -> &'static str {
+        match self.resolution.as_deref() {
+            Some("achieved") => "ACHIEVED",
+            Some("failed") => "FAILED",
+            Some("cancelled") => "CANCELLED",
+            Some("active") => "ACTIVE",
+            _ => "LEGACY",
+        }
+    }
+
+    fn effective_execution_label(&self) -> String {
+        if self.has_modern_projection() && self.resolution.as_deref() != Some("active") {
+            return self.resolution_label().to_string();
+        }
+        if self.snoozed_until_ms.is_some() {
+            return "SNOOZED".to_string();
+        }
+        if self.quiescent {
+            return "QUIESCENT".to_string();
+        }
+        if self.status == "budget_exhausted" {
+            return "PAUSED / BUDGET EXHAUSTED".to_string();
+        }
+        if self.status == "no_progress" {
+            return "PAUSED / NO PROGRESS".to_string();
+        }
+        let execution = self
+            .execution
+            .as_deref()
+            .unwrap_or_else(|| match self.status.as_str() {
+                "verifying" => "verifying",
+                "paused" | "budget_exhausted" | "no_progress" | "transferred" => "paused",
+                _ => "idle",
+            });
+        if execution == "idle" && self.autonomy.as_deref() == Some("off") {
+            return "IDLE / AUTONOMY OFF".to_string();
+        }
+        execution_label(execution).to_string()
     }
 
     fn controls(&self) -> Vec<String> {
@@ -184,6 +296,18 @@ impl GoalPresentation {
         if self.allows(GoalControlAction::Stop) {
             controls.push("Stop (s)".to_string());
         }
+        if self.allows(GoalControlAction::Cancel) {
+            controls.push("Cancel (/goal cancel)".to_string());
+        }
+        if self.allows(GoalControlAction::Clear) {
+            controls.push("Clear (/goal clear)".to_string());
+        }
+        if self.allows_replace() {
+            controls.push("Replace (/goal replace <text>)".to_string());
+        }
+        if self.allows_autonomy() {
+            controls.push("Autonomy (/goal autonomy on|off)".to_string());
+        }
         controls
     }
 
@@ -193,6 +317,17 @@ impl GoalPresentation {
         }
         if let Some(status) = runtime.status.as_deref() {
             self.status = status.to_string();
+        }
+        merge_string(&mut self.resolution, &runtime.resolution);
+        merge_string(&mut self.execution, &runtime.execution);
+        merge_string(&mut self.autonomy, &runtime.autonomy);
+        merge_string(&mut self.owner, &runtime.owner);
+        merge_string(&mut self.stop_reason, &runtime.stop_reason);
+        if runtime.revision.is_some() {
+            self.revision = runtime.revision;
+        }
+        if runtime.snoozed_until_ms.is_some() {
+            self.snoozed_until_ms = runtime.snoozed_until_ms;
         }
         if let Some(turns) = runtime.turn_count {
             self.progress.turns_used = turns;
@@ -238,6 +373,7 @@ impl GoalPresentation {
                 .and_then(|event| event.get("payload"))
                 .unwrap_or(&Value::Null);
             let kind = string_field(payload, "kind").unwrap_or_else(|| "updated".to_string());
+            self.quiescent = matches!(kind.as_str(), "pursuit_quiescent" | "quiescent");
             let label = pursuit_label(&kind);
             push_unique(&mut self.events, label);
             if matches!(kind.as_str(), "verified" | "verification_gaps") {
@@ -441,6 +577,12 @@ fn merge_limit(target: &mut Option<u64>, value: Option<u64>) {
     }
 }
 
+fn merge_string(target: &mut Option<String>, value: &Option<String>) {
+    if let Some(value) = value {
+        *target = Some(value.clone());
+    }
+}
+
 fn status_label(status: &str) -> &'static str {
     match status {
         "active" => "ACTIVE",
@@ -458,9 +600,38 @@ fn status_label(status: &str) -> &'static str {
 fn verdict_label(verdict: &str) -> &'static str {
     match verdict.trim().to_ascii_lowercase().as_str() {
         "met" | "completed" | "verified" => "MET",
-        "unmet" | "gaps" | "verification_gaps" => "UNMET",
+        "unmet" | "needs_work" | "gaps" | "verification_gaps" => "UNMET",
+        "impossible" => "IMPOSSIBLE",
+        "inconclusive" => "INCONCLUSIVE",
         "blocked" | "verification_blocked" => "BLOCKED",
         _ => "PENDING",
+    }
+}
+
+fn execution_label(execution: &str) -> &'static str {
+    match execution {
+        "idle" => "IDLE",
+        "running" => "RUNNING",
+        "verifying" => "VERIFYING",
+        "waiting_input" => "WAITING FOR INPUT",
+        "waiting_approval" => "WAITING FOR APPROVAL",
+        "paused" => "PAUSED",
+        "retry_scheduled" => "RETRY SCHEDULED",
+        _ => "UNKNOWN",
+    }
+}
+
+fn owner_label(owner: &str) -> &'static str {
+    match owner {
+        "delegate" => "DELEGATE",
+        _ => "USER",
+    }
+}
+
+fn autonomy_label(autonomy: &str) -> &'static str {
+    match autonomy {
+        "off" => "OFF",
+        _ => "ON",
     }
 }
 
@@ -673,6 +844,108 @@ mod tests {
             assert!(!goal.allows(GoalControlAction::Pause));
             assert!(!goal.allows(GoalControlAction::Stop));
         }
+    }
+
+    #[test]
+    fn modern_projection_shows_effective_state_owner_revision_and_stop_reason() {
+        let goal = presentation(json!({
+            "version": 3,
+            "revision": 7,
+            "status": "active",
+            "resolution": "active",
+            "execution": "idle",
+            "autonomy": "off",
+            "owner": "delegate",
+            "active": true,
+            "stop_reason": "manual check",
+            "budget": {"max_turns": 5},
+            "progress": {"turns_used": 2},
+            "attempts": [{"verdict": "inconclusive", "gaps": []}]
+        }));
+        let dock = goal.dock_line();
+        let details = goal.detail_lines().join("\n");
+
+        assert!(dock.contains("Goal IDLE / AUTONOMY OFF"));
+        assert!(!dock.contains("Goal ACTIVE"));
+        assert!(details.contains("Goal: Ship goal controls"));
+        assert!(details.contains("Resolution: ACTIVE"));
+        assert!(details.contains("Owner: DELEGATE · Revision: 7"));
+        assert!(details.contains("Stop reason: manual check"));
+        assert!(details.contains("Latest verifier: INCONCLUSIVE"));
+        assert!(goal.allows(GoalControlAction::Cancel));
+        assert!(goal.allows(GoalControlAction::Clear));
+        assert!(goal.allows_replace());
+        assert!(goal.allows_autonomy());
+    }
+
+    #[test]
+    fn snoozed_quiescent_and_budget_states_are_not_reported_as_running() {
+        let snoozed = presentation(json!({
+            "status": "active",
+            "resolution": "active",
+            "execution": "retry_scheduled",
+            "autonomy": "on",
+            "active": true,
+            "snoozed_until_ms": 12345
+        }));
+        assert!(snoozed.dock_line().contains("Goal SNOOZED"));
+
+        let quiescent_event = json!({
+            "role": "event",
+            "content": "",
+            "extra": {"event": {"subkind": "goal_pursuit", "payload": {"kind": "pursuit_quiescent"}}}
+        });
+        let quiescent = GoalPresentation::from_messages(
+            &messages(
+                json!({"status": "active", "resolution": "active", "execution": "idle", "autonomy": "on"}),
+                vec![quiescent_event],
+            ),
+            None,
+        )
+        .unwrap();
+        assert!(quiescent.dock_line().contains("Goal QUIESCENT"));
+
+        let budget = presentation(json!({
+            "status": "budget_exhausted",
+            "resolution": "active",
+            "execution": "paused",
+            "autonomy": "on"
+        }));
+        assert!(budget.dock_line().contains("PAUSED / BUDGET EXHAUSTED"));
+    }
+
+    #[test]
+    fn terminal_modern_goal_can_be_replaced_or_cleared_but_not_resumed() {
+        let goal = presentation(json!({
+            "status": "completed",
+            "resolution": "achieved",
+            "execution": "idle",
+            "autonomy": "on",
+            "active": true
+        }));
+
+        assert!(goal.dock_line().contains("Goal ACHIEVED"));
+        assert!(!goal.allows(GoalControlAction::Resume));
+        assert!(!goal.allows(GoalControlAction::Pause));
+        assert!(!goal.allows(GoalControlAction::Stop));
+        assert!(!goal.allows(GoalControlAction::Cancel));
+        assert!(goal.allows(GoalControlAction::Clear));
+        assert!(goal.allows_replace());
+        assert!(!goal.allows_autonomy());
+    }
+
+    #[test]
+    fn legacy_projection_keeps_legacy_controls_and_status() {
+        let goal = presentation(json!({"status": "active", "active": true}));
+
+        assert!(goal.dock_line().contains("Goal IDLE"));
+        assert!(goal
+            .detail_lines()
+            .join("\n")
+            .contains("Resolution: LEGACY"));
+        assert!(!goal.allows(GoalControlAction::Cancel));
+        assert!(!goal.allows(GoalControlAction::Clear));
+        assert!(!goal.allows_replace());
     }
 
     #[test]

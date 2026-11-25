@@ -1903,6 +1903,86 @@ impl DaemonClient {
         .await
     }
 
+    pub async fn send_replace_goal(
+        &self,
+        project_id: &str,
+        chat_id: &str,
+        content: &str,
+        budget: Option<GoalBudget>,
+    ) -> Result<(), ClientError> {
+        let mut body = json!({
+            "client_request_id": request_id("replace-goal"),
+            "type": "set_goal",
+            "content": content,
+            "replace": true,
+        });
+        if let Some(budget) = budget {
+            body["budget"] = serde_json::to_value(budget).map_err(|error| {
+                ClientError::Json(format!("failed to serialize goal budget: {error}"))
+            })?;
+        }
+        self.send_command(project_id, chat_id, body).await
+    }
+
+    pub async fn send_replace_goal_with_id(
+        &self,
+        project_id: &str,
+        chat_id: &str,
+        client_request_id: &str,
+        content: &str,
+    ) -> Result<(), ClientError> {
+        self.send_command(
+            project_id,
+            chat_id,
+            json!({
+                "client_request_id": client_request_id,
+                "type": "set_goal",
+                "content": content,
+                "replace": true,
+            }),
+        )
+        .await
+    }
+
+    pub async fn send_set_goal_autonomy(
+        &self,
+        project_id: &str,
+        chat_id: &str,
+        autonomy: &str,
+    ) -> Result<(), ClientError> {
+        self.send_set_goal_autonomy_with_id(
+            project_id,
+            chat_id,
+            &request_id("set-goal-autonomy"),
+            autonomy,
+        )
+        .await
+    }
+
+    pub async fn send_set_goal_autonomy_with_id(
+        &self,
+        project_id: &str,
+        chat_id: &str,
+        client_request_id: &str,
+        autonomy: &str,
+    ) -> Result<(), ClientError> {
+        if !matches!(autonomy, "on" | "off") {
+            return Err(ClientError::Json(
+                "goal autonomy must be on or off".to_string(),
+            ));
+        }
+        self.send_command(
+            project_id,
+            chat_id,
+            json!({
+                "client_request_id": client_request_id,
+                "type": "set_goal_autonomy",
+                "autonomy": autonomy,
+            }),
+        )
+        .await
+    }
+
     pub async fn send_set_goal_budget_with_id(
         &self,
         project_id: &str,
@@ -2993,6 +3073,8 @@ pub enum GoalControlAction {
     Pause,
     Resume,
     Stop,
+    Cancel,
+    Clear,
 }
 
 impl TryFrom<&str> for GoalControlAction {
@@ -3003,7 +3085,9 @@ impl TryFrom<&str> for GoalControlAction {
             "pause" => Ok(Self::Pause),
             "resume" => Ok(Self::Resume),
             "stop" => Ok(Self::Stop),
-            _ => Err("goal control action must be pause, resume, or stop"),
+            "cancel" => Ok(Self::Cancel),
+            "clear" => Ok(Self::Clear),
+            _ => Err("goal control action must be pause, resume, stop, cancel, or clear"),
         }
     }
 }
@@ -3496,7 +3580,7 @@ mod tests {
 
     #[tokio::test]
     async fn goal_control_accepts_only_wire_actions() {
-        for action in ["pause", "resume", "stop"] {
+        for action in ["pause", "resume", "stop", "cancel", "clear"] {
             let body = capture_command(|client| async move {
                 client
                     .send_goal_control_with_id("project", "chat", "goal-control", action)
@@ -3514,8 +3598,49 @@ mod tests {
         }
         assert_eq!(
             GoalControlAction::try_from("snooze").unwrap_err(),
-            "goal control action must be pause, resume, or stop"
+            "goal control action must be pause, resume, stop, cancel, or clear"
         );
+    }
+
+    #[tokio::test]
+    async fn goal_replace_and_autonomy_serialize_exact_wire_shapes() {
+        let replace = capture_command(|client| async move {
+            client
+                .send_replace_goal_with_id("project", "chat", "replace-goal", "new goal")
+                .await
+        })
+        .await;
+        assert_command(
+            &replace,
+            json!({
+                "client_request_id": "replace-goal",
+                "type": "set_goal",
+                "content": "new goal",
+                "replace": true,
+            }),
+        );
+
+        for autonomy in ["off", "on"] {
+            let body = capture_command(|client| async move {
+                client
+                    .send_set_goal_autonomy_with_id("project", "chat", "goal-autonomy", autonomy)
+                    .await
+            })
+            .await;
+            assert_command(
+                &body,
+                json!({
+                    "client_request_id": "goal-autonomy",
+                    "type": "set_goal_autonomy",
+                    "autonomy": autonomy,
+                }),
+            );
+        }
+        assert!(DaemonClient::new("http://localhost:1".to_string(), None)
+            .unwrap()
+            .send_set_goal_autonomy("project", "chat", "invalid")
+            .await
+            .is_err());
     }
 
     #[tokio::test]

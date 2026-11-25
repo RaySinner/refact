@@ -224,7 +224,7 @@ async fn external_participant_crud_reloads_and_never_creates_a_local_agent() {
     let registry = ExternalParticipantRegistry::with_transport(directory.path(), transport.clone());
     let created = registry.create(config()).await.unwrap();
     assert_eq!(created.state, ExternalParticipantState::Staged);
-    assert!(!created.writes);
+    assert!(!created.config.writes);
     assert_eq!(created.agent_chat_id, None);
     assert!(registry.create(config()).await.is_err());
 

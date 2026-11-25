@@ -597,8 +597,18 @@ async fn auxiliary_buddy_prompt_receives_empty_completed_response() {
     assert_eq!(provider_request(&provider, "other", 1).await, auxiliary);
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn spawn_to_provider_room_delivery_preserves_privacy_scope_and_idempotency() {
+#[test]
+fn spawn_to_provider_room_delivery_preserves_privacy_scope_and_idempotency() {
+    tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(4)
+        .thread_stack_size(32 * 1024 * 1024)
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(run_room_delivery_scenario());
+}
+
+async fn run_room_delivery_scenario() {
     let temp = tempfile::tempdir().unwrap();
     let repo = temp.path().join("repo");
     init_repo(&repo);

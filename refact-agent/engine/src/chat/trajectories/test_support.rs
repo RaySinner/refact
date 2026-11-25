@@ -14,7 +14,7 @@ use refact_runtime_api::GlobalContextCtx;
     };
     use serial_test::serial;
     use std::sync::Arc;
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::path::{Path, PathBuf};
     use std::process::Command;
     use std::sync::Mutex as StdMutex;
@@ -672,14 +672,19 @@ use refact_runtime_api::GlobalContextCtx;
         session.runtime.compression_reason = Some(CompressionReason::PressureLow);
         session.compression_attempt_generation = 9;
         session.active_compression_attempt = Some(9);
+        session.compression_attempt_started_at_ms =
+            Some(chrono::Utc::now().timestamp_millis().max(0) as u64);
+        session.compression_abort_flag = Some(Arc::new(AtomicBool::new(false)));
     }
 
-    pub(super) async fn assert_external_remove_clears_active_compression(phase: CompressionPhase) {
+    pub(super) async fn assert_external_remove_defers_active_compression_until_terminal(
+        phase: CompressionPhase,
+    ) {
         let dir = tempfile::tempdir().unwrap();
         let (gcx, app) = make_app_with_workspace(dir.path()).await;
         let chat_id = format!("external-remove-{:?}", phase).to_lowercase();
         let session_arc = Arc::new(AMutex::new(ChatSession::new(chat_id.clone())));
-        let mut chat_rx = {
+        let (mut chat_rx, compression_abort) = {
             let mut session = session_arc.lock().await;
             session.messages.push(ChatMessage::new(
                 "user".to_string(),
@@ -687,7 +692,8 @@ use refact_runtime_api::GlobalContextCtx;
             ));
             mark_active_compression(&mut session, phase);
             session.trajectory_dirty = false;
-            session.subscribe()
+            let compression_abort = session.compression_abort_flag.clone().unwrap();
+            (session.subscribe(), compression_abort)
         };
         app.chat
             .sessions
@@ -697,8 +703,38 @@ use refact_runtime_api::GlobalContextCtx;
 
         process_trajectory_change(&gcx.chat_ctx(gcx.clone()), &chat_id, true).await;
 
+        {
+            let session = session_arc.lock().await;
+            assert_eq!(session.messages.len(), 1);
+            assert_eq!(
+                session.external_reload_pending,
+                Some(ExternalReloadPending::delete(
+                    TrajectorySourceIdentity::Normal
+                ))
+            );
+            assert!(session.is_compressing);
+            assert!(session.runtime.is_compressing);
+            assert_eq!(session.compression_phase, Some(phase));
+            assert_eq!(session.runtime.compression_phase, Some(phase));
+            assert_eq!(session.active_compression_attempt, Some(9));
+            assert!(!compression_abort.load(Ordering::SeqCst));
+        }
+        assert_no_chat_event_for(&mut chat_rx, std::time::Duration::from_millis(100)).await;
+
+        let mut chat_rx = {
+            let mut session = session_arc.lock().await;
+            refact_chat_api::context_rebuild::status(
+                &mut session,
+                CompressionPhase::Applied,
+                None,
+            );
+            session.subscribe()
+        };
+        check_external_reload_pending(&gcx.chat_ctx(gcx.clone()), session_arc.clone()).await;
+
         let session = session_arc.lock().await;
         assert!(session.messages.is_empty());
+        assert_eq!(session.external_reload_pending, None);
         assert!(!session.is_compressing);
         assert!(!session.runtime.is_compressing);
         assert_eq!(session.compression_phase, None);
@@ -706,6 +742,7 @@ use refact_runtime_api::GlobalContextCtx;
         assert_eq!(session.compression_reason, None);
         assert_eq!(session.runtime.compression_reason, None);
         assert_eq!(session.active_compression_attempt, None);
+        assert!(!compression_abort.load(Ordering::SeqCst));
         drop(session);
 
         let json = chat_rx.recv().await.unwrap();

@@ -3,6 +3,7 @@ use std::sync::Arc;
 use serde_json::json;
 use tokio::sync::Mutex as AMutex;
 use tracing::{info, warn};
+use refact_chat_api::compression_gate::compression_attempt_active;
 use refact_chat_api::types::TrajectorySourceIdentitySessionExt;
 #[cfg(any(test, feature = "test-util"))]
 use crate::global_context::GlobalContextCtx;
@@ -265,6 +266,7 @@ pub fn external_delete_matches_session(
 pub fn can_apply_external_reload(session: &ChatSession) -> bool {
     session.runtime.state == SessionState::Idle
         && !session.trajectory_dirty
+        && !compression_attempt_active(session)
         && session.pending_deliveries.is_empty()
         && session.runner_pending_deliveries.is_empty()
 }

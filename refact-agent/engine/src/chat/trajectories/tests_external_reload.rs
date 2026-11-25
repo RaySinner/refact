@@ -20,8 +20,124 @@ use super::test_support::*;
     use std::process::Command;
     use std::sync::Mutex as StdMutex;
     #[tokio::test]
-    async fn external_remove_clears_running_compression_state_and_snapshot() {
-        assert_external_remove_clears_active_compression(CompressionPhase::Running).await;
+    async fn external_remove_defers_running_compression_until_terminal() {
+        assert_external_remove_defers_active_compression_until_terminal(CompressionPhase::Running)
+            .await;
+    }
+
+    #[test]
+    fn external_reload_guard_ignores_terminal_aborted_and_stale_attempts() {
+        let mut session = ChatSession::new("external-reload-compression-guard".to_string());
+        session.runtime.state = SessionState::Idle;
+        session.trajectory_dirty = false;
+        mark_active_compression(&mut session, CompressionPhase::Running);
+
+        assert!(!can_apply_external_reload(&session));
+        assert!(!session_is_stale_refresh_candidate(&session, true));
+
+        refact_chat_api::context_rebuild::status(
+            &mut session,
+            CompressionPhase::Applied,
+            None,
+        );
+        assert!(can_apply_external_reload(&session));
+        assert!(session_is_stale_refresh_candidate(&session, true));
+
+        mark_active_compression(&mut session, CompressionPhase::Running);
+        session
+            .compression_abort_flag
+            .as_ref()
+            .unwrap()
+            .store(true, Ordering::SeqCst);
+        assert!(can_apply_external_reload(&session));
+        assert!(session_is_stale_refresh_candidate(&session, true));
+
+        session
+            .compression_abort_flag
+            .as_ref()
+            .unwrap()
+            .store(false, Ordering::SeqCst);
+        session.compression_attempt_started_at_ms = Some(0);
+        assert!(can_apply_external_reload(&session));
+        assert!(session_is_stale_refresh_candidate(&session, true));
+    }
+
+    #[tokio::test]
+    async fn active_compression_defers_pending_external_update_until_terminal() {
+        let dir = tempfile::tempdir().unwrap();
+        let (gcx, app) = make_app_with_workspace(dir.path()).await;
+        let chat_id = "active-compression-pending-update";
+        let path = dir
+            .path()
+            .join(".refact")
+            .join("trajectories")
+            .join(format!("{chat_id}.json"));
+        write_trajectory_file_with_user_message(
+            &path,
+            chat_id,
+            "Reloaded After Compression",
+            "external update after compression",
+        )
+        .await;
+        let session_arc = Arc::new(AMutex::new(ChatSession::new(chat_id.to_string())));
+        let compression_abort = {
+            let mut session = session_arc.lock().await;
+            session.messages.push(ChatMessage::new(
+                "user".to_string(),
+                "keep during compression".to_string(),
+            ));
+            session.thread.title = "Before External Update".to_string();
+            session.runtime.state = SessionState::Idle;
+            session.trajectory_dirty = false;
+            mark_active_compression(&mut session, CompressionPhase::Running);
+            session.compression_abort_flag.clone().unwrap()
+        };
+        app.chat
+            .sessions
+            .write()
+            .await
+            .insert(chat_id.to_string(), session_arc.clone());
+
+        process_trajectory_change(&gcx.chat_ctx(gcx.clone()), chat_id, false).await;
+
+        {
+            let session = session_arc.lock().await;
+            assert_eq!(
+                session.external_reload_pending,
+                Some(ExternalReloadPending::update(
+                    TrajectorySourceIdentity::Normal
+                ))
+            );
+            assert_eq!(session.thread.title, "Before External Update");
+            assert_eq!(session.messages.len(), 1);
+            assert_eq!(
+                session.messages[0].content.content_text_only(),
+                "keep during compression"
+            );
+            assert_eq!(session.active_compression_attempt, Some(9));
+            assert!(!compression_abort.load(Ordering::SeqCst));
+        }
+
+        {
+            let mut session = session_arc.lock().await;
+            refact_chat_api::context_rebuild::status(
+                &mut session,
+                CompressionPhase::Applied,
+                None,
+            );
+        }
+        check_external_reload_pending(&gcx.chat_ctx(gcx.clone()), session_arc.clone()).await;
+
+        let session = session_arc.lock().await;
+        assert_eq!(session.external_reload_pending, None);
+        assert_eq!(session.thread.title, "Reloaded After Compression");
+        assert_eq!(session.messages.len(), 1);
+        assert_eq!(
+            session.messages[0].content.content_text_only(),
+            "external update after compression"
+        );
+        assert_eq!(session.active_compression_attempt, None);
+        assert!(!compression_abort.load(Ordering::SeqCst));
     }
 
     #[tokio::test]
@@ -289,6 +405,7 @@ use super::test_support::*;
             let mut session = session_arc.lock().await;
             session.runtime.state = SessionState::Idle;
             session.trajectory_dirty = false;
+            session.reset_compaction_runtime_state();
         }
         check_external_reload_pending(&gcx.chat_ctx(gcx.clone()), session_arc.clone()).await;
 

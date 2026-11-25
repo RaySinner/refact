@@ -902,6 +902,7 @@ use super::test_support::*;
     }
 
     #[tokio::test]
-    async fn external_remove_clears_checking_compression_state_and_snapshot() {
-        assert_external_remove_clears_active_compression(CompressionPhase::Checking).await;
+    async fn external_remove_defers_checking_compression_until_terminal() {
+        assert_external_remove_defers_active_compression_until_terminal(CompressionPhase::Checking)
+            .await;
     }

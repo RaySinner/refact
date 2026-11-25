@@ -1920,6 +1920,239 @@ mod interruptible_wait_tests {
     }
 
     #[tokio::test]
+    async fn wait_agents_batch_closes_tool_window_and_drains_append_completion() {
+        use refact_core::chat_types::{PendingDelivery, PushMode};
+        use refact_tasks::types::{BoardCard, TaskBoard};
+
+        let temp = tempfile::tempdir().unwrap();
+        let gcx = crate::global_context::tests::make_test_gcx().await;
+        *gcx.documents_state.workspace_folders.lock().unwrap() =
+            vec![temp.path().to_path_buf()];
+        let task = refact_runtime_api::task_storage::create_task(
+            gcx.clone(),
+            "Close skipped tool result window",
+        )
+        .await
+        .unwrap();
+        let card: BoardCard = serde_json::from_value(serde_json::json!({
+            "id": "T-1",
+            "title": "Running card",
+            "column": "doing",
+            "assignee": "agent-1",
+            "agent_chat_id": "agent-1",
+            "created_at": Utc::now().to_rfc3339(),
+            "started_at": Utc::now().to_rfc3339(),
+        }))
+        .unwrap();
+        refact_runtime_api::task_storage::save_board(
+            gcx.clone(),
+            &task.id,
+            &TaskBoard {
+                cards: vec![card],
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
+        let memories_dir = refact_tools::tools::tool_task_memory::get_task_memories_dir(
+            &app.chat_ctx(),
+            &task.id,
+        )
+        .await
+        .unwrap();
+        let chat_id = "planner-skipped-tool-results";
+        let task_meta = TaskMeta {
+            task_id: task.id.clone(),
+            role: "planner".into(),
+            agent_id: None,
+            card_id: None,
+            planner_chat_id: Some(chat_id.into()),
+        };
+        let mut planner = ChatSession::new(chat_id.into());
+        planner.thread.task_meta = Some(task_meta);
+        planner.thread.model = "model".into();
+        let session = Arc::new(AMutex::new(planner));
+        app.chat
+            .sessions
+            .write()
+            .await
+            .insert(chat_id.into(), session.clone());
+
+        let wait_call = ChatToolCall {
+            id: "wait-call".into(),
+            index: Some(0),
+            tool_type: "function".into(),
+            function: crate::call_validation::ChatToolFunction {
+                name: "wait_agents".into(),
+                arguments: "{}".into(),
+            },
+            extra_content: None,
+            started_at_ms: None,
+            completed_at_ms: None,
+        };
+        let skipped_call = ChatToolCall {
+            id: "memory-call".into(),
+            index: Some(1),
+            tool_type: "function".into(),
+            function: crate::call_validation::ChatToolFunction {
+                name: "task_mem_save".into(),
+                arguments: serde_json::json!({
+                    "title": "must not execute",
+                    "content": "this memory must not be saved"
+                })
+                .to_string(),
+            },
+            extra_content: None,
+            started_at_ms: None,
+            completed_at_ms: None,
+        };
+        {
+            let mut locked = session.lock().await;
+            locked.turn_depth = 1;
+            locked.add_message(ChatMessage {
+                role: "assistant".into(),
+                tool_calls: Some(vec![wait_call, skipped_call]),
+                ..Default::default()
+            });
+            locked
+                .enqueue_delivery(PendingDelivery::with_id(
+                    "agent-completion",
+                    vec![ChatMessage {
+                        role: "user".into(),
+                        content: ChatContent::SimpleText("T-1 completed".into()),
+                        ..Default::default()
+                    }],
+                    PushMode::Append,
+                    "test",
+                    true,
+                ))
+                .unwrap();
+            assert!(locked.has_pending_tool_result_window());
+            assert_eq!(locked.pending_deliveries.len(), 1);
+        }
+
+        let outcome = process_tool_calls_once(app, session.clone(), "task_planner", None).await;
+        assert!(matches!(outcome, ToolStepOutcome::Stop));
+
+        if let Ok(mut entries) = tokio::fs::read_dir(&memories_dir).await {
+            while let Some(entry) = entries.next_entry().await.unwrap() {
+                assert!(!entry
+                    .file_name()
+                    .to_string_lossy()
+                    .contains("must-not-execute"));
+            }
+        }
+
+        let mut locked = session.lock().await;
+        assert_eq!(locked.runtime.state, SessionState::WaitingUserInput);
+        assert_eq!(locked.waiting_for_card_ids, ["T-1"]);
+        assert!(!locked.has_pending_tool_result_window());
+        let results = locked
+            .messages
+            .iter()
+            .filter(|message| message.role == "tool")
+            .collect::<Vec<_>>();
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].tool_call_id, "wait-call");
+        assert_eq!(results[0].tool_failed, Some(false));
+        assert_eq!(results[1].tool_call_id, "memory-call");
+        assert_eq!(results[1].tool_failed, Some(true));
+        assert!(results[1]
+            .content
+            .content_text_only()
+            .contains("skipped"));
+        assert_eq!(locked.pending_deliveries.len(), 1);
+
+        assert_eq!(
+            locked.drain_pending_deliveries(),
+            (vec!["agent-completion".into()], true)
+        );
+        assert!(locked.pending_deliveries.is_empty());
+        assert!(locked
+            .messages
+            .iter()
+            .any(|message| message.content.content_text_only().contains("T-1 completed")));
+    }
+
+    #[tokio::test]
+    async fn early_aborted_parallel_tool_returns_skipped_result() {
+        use crate::tools::tools_description::Tool;
+
+        let gcx = crate::global_context::tests::make_test_gcx().await;
+        let app = crate::app_state::app_state_from_gcx(gcx).await;
+        let ccx = Arc::new(AMutex::new(
+            crate::at_commands::at_commands::at_commands_new_from_app(
+                app.clone(),
+                4096,
+                20,
+                false,
+                vec![],
+                "parallel-abort".into(),
+                None,
+                "model".into(),
+                None,
+                None,
+            )
+            .await,
+        ));
+        ccx.lock().await.abort_flag.store(true, Ordering::SeqCst);
+        let desc = crate::tools::tool_sleep::ToolSleep {
+            config_path: String::new(),
+        }
+        .tool_description();
+        let catalog = Arc::new(ToolCatalogSnapshot {
+            index: refact_runtime_api::ToolRegistryIndex {
+                tools: vec![desc],
+                mcp_lazy_mode: false,
+                mcp_total_count: 0,
+                mcp_tool_index: vec![],
+            },
+            policy: vec![],
+            aliases: refact_tool_api::ToolAliasRegistry::new(),
+        });
+        let tool_call = ChatToolCall {
+            id: "aborted-parallel-call".into(),
+            index: Some(0),
+            tool_type: "function".into(),
+            function: crate::call_validation::ChatToolFunction {
+                name: "sleep".into(),
+                arguments: serde_json::json!({"duration_ms": 1000}).to_string(),
+            },
+            extra_content: None,
+            started_at_ms: None,
+            completed_at_ms: None,
+        };
+
+        let (_, corrected, messages, files) = execute_single_tool(
+            app,
+            ccx,
+            0,
+            tool_call,
+            catalog,
+            None,
+            Arc::new(Default::default()),
+            true,
+            1,
+            "agent",
+            None,
+        )
+        .await;
+
+        assert!(!corrected);
+        assert!(files.is_empty());
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].role, "tool");
+        assert_eq!(messages[0].tool_call_id, "aborted-parallel-call");
+        assert_eq!(messages[0].tool_failed, Some(true));
+        assert!(messages[0]
+            .content
+            .content_text_only()
+            .contains("skipped"));
+    }
+
+    #[tokio::test]
     async fn guard_clears_runtime_on_finish_and_drop() {
         let session = Arc::new(AMutex::new(ChatSession::new("wait-guard".into())));
         let mut first = InterruptibleWaitGuard::begin(session.clone()).await;

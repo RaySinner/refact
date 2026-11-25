@@ -196,6 +196,19 @@ fn context_error_results(tool_calls: &[ChatToolCall], error: String) -> (Vec<Cha
     )
 }
 
+fn skipped_tool_result(tool_call: &ChatToolCall) -> ChatMessage {
+    ChatMessage {
+        message_id: Uuid::new_v4().to_string(),
+        role: "tool".to_string(),
+        content: ChatContent::SimpleText(
+            "Tool call skipped because the turn was aborted before execution.".to_string(),
+        ),
+        tool_call_id: tool_call.id.clone(),
+        tool_failed: Some(true),
+        ..Default::default()
+    }
+}
+
 fn execution_scope_for_thread(thread: &ThreadParams) -> Option<String> {
     thread
         .worktree
@@ -1819,7 +1832,12 @@ pub async fn execute_single_tool(
         cgcx.abort_flag.clone()
     };
     if abort_flag.load(Ordering::Relaxed) {
-        return (idx, false, Vec::new(), Vec::new());
+        return (
+            idx,
+            false,
+            vec![skipped_tool_result(&tool_call)],
+            Vec::new(),
+        );
     }
 
     let args: std::collections::HashMap<String, serde_json::Value> =
@@ -2187,7 +2205,13 @@ async fn execute_tools_inner(
             cgcx.abort_flag.load(Ordering::Relaxed)
         };
         if is_aborted {
-            break;
+            all_results.push((
+                idx,
+                false,
+                vec![skipped_tool_result(tool_call)],
+                Vec::new(),
+            ));
+            continue;
         }
 
         let resolved_name_pre = refact_llm::adapters::claude_code_compat::cc_resolve_tool_name(

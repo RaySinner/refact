@@ -540,6 +540,8 @@ pub struct UhpDeliveryState {
     #[serde(default)]
     pub response_id: Option<String>,
     #[serde(default)]
+    pub previous_response_id: Option<String>,
+    #[serde(default)]
     pub session_id: Option<String>,
     #[serde(default)]
     pub source_revision: Option<String>,

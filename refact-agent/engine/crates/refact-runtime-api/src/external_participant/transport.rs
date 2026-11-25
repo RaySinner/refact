@@ -69,6 +69,14 @@ pub trait ExternalParticipantTransport: Send + Sync {
         binding: &RecoveryBinding,
     ) -> Result<Response, UhpError>;
 
+    async fn publish_snapshot(
+        &self,
+        connection: &ExternalConnection,
+        discovery: &Discovery,
+        environment_id: &str,
+        archive: Vec<u8>,
+    ) -> Result<u64, UhpError>;
+
     async fn retire(
         &self,
         connection: &ExternalConnection,
@@ -150,6 +158,26 @@ impl ExternalParticipantTransport for UhpParticipantTransport {
             .client()?
             .recover_response(request, key, scope, binding)
             .await
+    }
+
+    async fn publish_snapshot(
+        &self,
+        connection: &ExternalConnection,
+        discovery: &Discovery,
+        environment_id: &str,
+        archive: Vec<u8>,
+    ) -> Result<u64, UhpError> {
+        crate::room_snapshot::publish_snapshot_environment(
+            &connection.client()?,
+            discovery,
+            environment_id,
+            archive,
+        )
+        .await
+        .map_err(|message| UhpError::InvalidResponse {
+            operation: "publish room source snapshot",
+            message,
+        })
     }
 
     async fn retire(

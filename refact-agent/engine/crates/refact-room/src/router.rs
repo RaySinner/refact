@@ -111,6 +111,7 @@ mod tests {
             role: role.to_string(),
             display_name: format!("{role} display"),
             writes: role == "coder",
+            external_participant_id: None,
         }
     }
 

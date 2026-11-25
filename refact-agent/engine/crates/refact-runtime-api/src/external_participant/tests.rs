@@ -169,6 +169,17 @@ impl ExternalParticipantTransport for MockTransport {
         ))
     }
 
+    async fn publish_snapshot(
+        &self,
+        _: &ExternalConnection,
+        _: &Discovery,
+        _: &str,
+        _: Vec<u8>,
+    ) -> Result<u64, UhpError> {
+        self.calls.lock().unwrap().push("publish_snapshot");
+        Ok(1)
+    }
+
     async fn retire(
         &self,
         _: &ExternalConnection,
@@ -455,6 +466,7 @@ fn delivery(request: &CreateResponse) -> ExternalDeliveryRecord {
             idempotency_key: IdempotencyKey::new("delivery-key-1").unwrap(),
             request_state: UhpDeliveryRequestState::Failed,
             response_id: Some("resp-1".to_string()),
+            previous_response_id: None,
             session_id: Some("session-1".to_string()),
             source_revision: Some("commit-1".to_string()),
             source_digest: Some("ab".repeat(32)),

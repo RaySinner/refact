@@ -1,9 +1,16 @@
 use std::sync::Arc;
 
 use refact_uhp::{
-    CreateResponse, Discovery, ExternalEvidenceRecord, HarnessConfig, IdempotencyKey,
-    RecoveryBinding, RequestScope, ResponseStatus, UhpDeliveryRequestState, UhpSessionBinding,
+    completed_assistant_bodies, retry_advice, CreateResponse, Discovery, ExternalEvidenceRecord,
+    HarnessConfig, IdempotencyKey, RecoveryBinding, RequestScope, ResponseStatus, RetryAdvice,
+    UhpDeliveryRequestState, UhpSessionBinding,
 };
+use refact_room::{
+    participant_recovery_action, DeliveryAttempt, ParticipantRecoveryAction,
+    ParticipantRecoveryAdvice, PublicRoomEvent, SourceDeliveryVersion,
+};
+
+use crate::room_snapshot_export::ExportedSourceSnapshot;
 
 use super::*;
 
@@ -413,7 +420,8 @@ impl ExternalParticipantRegistry {
         if !state.participants.contains_key(&session.participant_id) {
             return Err(not_found(&session.participant_id));
         }
-        state.sessions.insert(session.session_id.clone(), session);
+        let key = external_session_lookup_key(&state, &session.participant_id, &session.session_id);
+        state.sessions.insert(key, session);
         self.store.save(&state)
     }
 
@@ -546,6 +554,265 @@ impl ExternalParticipantRegistry {
         })
     }
 
+    pub async fn deliver_room_event(
+        &self,
+        event: &PublicRoomEvent,
+        attempt: &DeliveryAttempt,
+        exported: &ExportedSourceSnapshot,
+    ) -> Result<ExternalRoomDelivery, ExternalParticipantError> {
+        let participant_id = attempt.recipient_id.as_str();
+        match self
+            .deliver_room_attempt(event, attempt, exported, participant_id, false)
+            .await
+        {
+            Err(ExternalParticipantError::SessionExpired) if attempt.logical_attempt == 0 => {
+                self.deliver_room_attempt(
+                    event,
+                    &attempt.linked_attempt(),
+                    exported,
+                    participant_id,
+                    true,
+                )
+                .await
+            }
+            result => result,
+        }
+    }
+
+    async fn deliver_room_attempt(
+        &self,
+        event: &PublicRoomEvent,
+        attempt: &DeliveryAttempt,
+        exported: &ExportedSourceSnapshot,
+        participant_id: &str,
+        reset_session: bool,
+    ) -> Result<ExternalRoomDelivery, ExternalParticipantError> {
+        self.authorize_delivery(participant_id)?;
+        let _operation = self.operations.lock().await;
+        let mut state = self.store.load()?;
+        let participant = state
+            .participants
+            .get(participant_id)
+            .cloned()
+            .ok_or_else(|| not_found(participant_id))?;
+        let discovery = require_discovery(&participant)?.clone();
+        let existing = state.deliveries.get(&attempt.delivery_id).cloned();
+        let previous_delivery = if existing.is_none() {
+            latest_delivery(&state, participant_id, None).and_then(|record| {
+                SourceDeliveryVersion::from_persisted(
+                    record.delivery.delivery_id.clone(),
+                    record.delivery.environment_version?,
+                    refact_room::SourceIdentity {
+                        source_revision: record.delivery.source_revision.clone()?,
+                        source_digest: record.delivery.source_digest.clone()?,
+                    },
+                    None,
+                )
+                .ok()
+            })
+        } else {
+            None
+        };
+        let source = if let Some(record) = &existing {
+            source_version(record)?
+        } else {
+            let environment_id = participant
+                .config
+                .environment_id
+                .as_deref()
+                .ok_or(ExternalParticipantError::NotVerified)?;
+            let connection = self.connection(&participant.config)?;
+            let environment_version = self
+                .transport
+                .publish_snapshot(
+                    &connection,
+                    &discovery,
+                    environment_id,
+                    exported.archive.clone(),
+                )
+                .await
+                .map_err(|error| ExternalParticipantError::Transport(sanitize_uhp_error(&error)))?;
+            exported
+                .snapshot
+                .bind_delivery(
+                    attempt.delivery_id.clone(),
+                    environment_version,
+                    previous_delivery.as_ref(),
+                )
+                .map_err(|_| {
+                    ExternalParticipantError::InvalidOperation(
+                        "snapshot environment versions must increase for each delivery",
+                    )
+                })?
+        };
+
+        let previous_response_id = if reset_session {
+            None
+        } else if let Some(record) = &existing {
+            record.delivery.previous_response_id.clone()
+        } else {
+            latest_delivery(&state, participant_id, Some(&event.room_id))
+                .and_then(|record| record.delivery.session_id)
+                .and_then(|session_id| {
+                    state.sessions.get(&external_session_lookup_key(
+                        &state,
+                        participant_id,
+                        &session_id,
+                    ))
+                })
+                .and_then(|session| session.last_response_id.clone())
+        };
+        let scope = request_scope(&participant.config);
+        let request = room_request(
+            event,
+            attempt,
+            &participant,
+            &source,
+            previous_response_id.clone(),
+        );
+        let request_fingerprint = request
+            .fingerprint(&scope)
+            .map_err(|error| ExternalParticipantError::Transport(sanitize_uhp_error(&error)))?;
+        let idempotency_key = IdempotencyKey::new(attempt.idempotency_key.clone())
+            .map_err(|error| ExternalParticipantError::Transport(sanitize_uhp_error(&error)))?;
+        if let Some(record) = &existing {
+            if record.delivery.request_fingerprint != request_fingerprint
+                || record.delivery.idempotency_key != idempotency_key
+            {
+                return Err(ExternalParticipantError::InvalidOperation(
+                    "recovery request does not match the durable delivery",
+                ));
+            }
+        }
+        let latest_updated_at = latest_delivery(&state, participant_id, None)
+            .map(|record| record.delivery.updated_at)
+            .unwrap_or(0);
+        let now =
+            (chrono::Utc::now().timestamp().max(0) as u64).max(latest_updated_at.saturating_add(1));
+        let created_at = existing
+            .as_ref()
+            .map(|record| record.delivery.created_at)
+            .unwrap_or(now);
+        let record = ExternalDeliveryRecord {
+            delivery: refact_uhp::UhpDeliveryState {
+                delivery_id: attempt.delivery_id.clone(),
+                room_id: event.room_id.clone(),
+                event_id: event.event_id.clone(),
+                recipient_id: participant_id.to_string(),
+                logical_attempt: attempt.logical_attempt,
+                request_fingerprint: request_fingerprint.clone(),
+                idempotency_key: idempotency_key.clone(),
+                request_state: existing
+                    .as_ref()
+                    .map(|record| record.delivery.request_state.clone())
+                    .unwrap_or(UhpDeliveryRequestState::Pending),
+                response_id: existing
+                    .as_ref()
+                    .and_then(|record| record.delivery.response_id.clone()),
+                previous_response_id,
+                session_id: existing
+                    .as_ref()
+                    .and_then(|record| record.delivery.session_id.clone()),
+                source_revision: Some(source.source.source_revision.clone()),
+                source_digest: Some(source.source.source_digest.clone()),
+                environment_version: Some(source.environment_version),
+                error_class: None,
+                created_at,
+                updated_at: now,
+            },
+            retrying: true,
+            source_freshness: ExternalSourceFreshness::Unknown,
+        };
+        state
+            .deliveries
+            .insert(attempt.delivery_id.clone(), record.clone());
+        if let Some(participant_record) = state.participants.get_mut(participant_id) {
+            participant_record.environment_version = Some(source.environment_version);
+        }
+        self.store.save(&state)?;
+
+        let connection = self.connection(&participant.config)?;
+        let binding = RecoveryBinding {
+            request_fingerprint,
+            response_id: record.delivery.response_id.clone(),
+        };
+        match self
+            .transport
+            .retry(&connection, &request, &idempotency_key, &scope, &binding)
+            .await
+        {
+            Ok(response) => {
+                apply_response(
+                    &mut state,
+                    participant_id,
+                    Some(&attempt.delivery_id),
+                    &response,
+                );
+                let record = state
+                    .deliveries
+                    .get(&attempt.delivery_id)
+                    .cloned()
+                    .expect("completed delivery remains stored");
+                self.store.save(&state)?;
+                Ok(external_room_delivery(
+                    record,
+                    completed_assistant_bodies(&response),
+                )?)
+            }
+            Err(error) => {
+                let advice = participant_recovery_action(attempt, &uhp_participant_advice(&error));
+                let sanitized = sanitize_uhp_error(&error);
+                let record = state
+                    .deliveries
+                    .get_mut(&attempt.delivery_id)
+                    .expect("delivery remains stored");
+                record.retrying = false;
+                if let ParticipantRecoveryAction::RecoverResponse { response_id } = &advice {
+                    if response_id.is_some() {
+                        record.delivery.response_id = response_id.clone();
+                    }
+                }
+                record.delivery.error_class = Some(sanitized.code.clone());
+                record.delivery.request_state =
+                    if matches!(&advice, ParticipantRecoveryAction::Wait) {
+                        UhpDeliveryRequestState::Pending
+                    } else {
+                        UhpDeliveryRequestState::Failed
+                    };
+                let record = record.clone();
+                self.store.save(&state)?;
+                match advice {
+                    ParticipantRecoveryAction::Wait => {
+                        Ok(external_room_delivery(record, Vec::new())?)
+                    }
+                    ParticipantRecoveryAction::StartLinkedAttempt => {
+                        Err(ExternalParticipantError::SessionExpired)
+                    }
+                    _ => Err(ExternalParticipantError::Transport(sanitized)),
+                }
+            }
+        }
+    }
+
+    pub async fn set_source_freshness(
+        &self,
+        participant_id: &str,
+        delivery_id: &str,
+        freshness: ExternalSourceFreshness,
+    ) -> Result<(), ExternalParticipantError> {
+        let _operation = self.operations.lock().await;
+        let mut state = self.store.load()?;
+        let record = state
+            .deliveries
+            .get_mut(delivery_id)
+            .ok_or_else(|| not_found(delivery_id))?;
+        if record.delivery.recipient_id != participant_id {
+            return Err(not_found(delivery_id));
+        }
+        record.source_freshness = freshness;
+        self.store.save(&state)
+    }
+
     pub async fn cancel(
         &self,
         id: &str,
@@ -569,11 +836,8 @@ impl ExternalParticipantRegistry {
                 }
             }
             ExternalCancelTarget::Session(session_id) => {
-                if state
-                    .sessions
-                    .get(session_id)
-                    .is_none_or(|session| session.participant_id != id)
-                {
+                let key = external_session_lookup_key(&state, id, session_id);
+                if state.sessions.get(&key).is_none() {
                     return Err(not_found(session_id));
                 }
             }
@@ -599,7 +863,8 @@ impl ExternalParticipantRegistry {
                         }
                         record.retrying = false;
                     }
-                    if let Some(session) = state.sessions.get_mut(&session_id) {
+                    let key = external_session_lookup_key(&state, id, &session_id);
+                    if let Some(session) = state.sessions.get_mut(&key) {
                         session.last_terminal_status = Some(ResponseStatus::Cancelled);
                     }
                 }
@@ -787,6 +1052,124 @@ fn not_found(id: &str) -> ExternalParticipantError {
     ExternalParticipantError::NotFound(id.to_string())
 }
 
+fn latest_delivery(
+    state: &ExternalParticipantStateData,
+    participant_id: &str,
+    room_id: Option<&str>,
+) -> Option<ExternalDeliveryRecord> {
+    state
+        .deliveries
+        .values()
+        .filter(|record| {
+            record.delivery.recipient_id == participant_id
+                && room_id.is_none_or(|room_id| record.delivery.room_id == room_id)
+        })
+        .max_by_key(|record| record.delivery.updated_at)
+        .cloned()
+}
+
+fn uhp_participant_advice(error: &refact_uhp::UhpError) -> ParticipantRecoveryAdvice {
+    match retry_advice(error) {
+        RetryAdvice::RecoverResponse { response_id } => {
+            ParticipantRecoveryAdvice::RecoverResponse { response_id }
+        }
+        RetryAdvice::WaitForTerminalAndRetry { .. } => {
+            ParticipantRecoveryAdvice::WaitForTerminalAndRetry
+        }
+        RetryAdvice::StartLinkedAttempt { .. } => ParticipantRecoveryAdvice::SessionExpired,
+        RetryAdvice::NoAutomaticRetry => ParticipantRecoveryAdvice::NoAutomaticRetry,
+    }
+}
+
+fn source_version(
+    record: &ExternalDeliveryRecord,
+) -> Result<SourceDeliveryVersion, ExternalParticipantError> {
+    SourceDeliveryVersion::from_persisted(
+        record.delivery.delivery_id.clone(),
+        record
+            .delivery
+            .environment_version
+            .ok_or(ExternalParticipantError::InvalidOperation(
+                "delivery has no environment version",
+            ))?,
+        refact_room::SourceIdentity {
+            source_revision: record.delivery.source_revision.clone().ok_or(
+                ExternalParticipantError::InvalidOperation("delivery has no source revision"),
+            )?,
+            source_digest: record.delivery.source_digest.clone().ok_or(
+                ExternalParticipantError::InvalidOperation("delivery has no source digest"),
+            )?,
+        },
+        None,
+    )
+    .map_err(|_| ExternalParticipantError::InvalidOperation("invalid durable source version"))
+}
+
+fn external_room_delivery(
+    record: ExternalDeliveryRecord,
+    completed_bodies: Vec<String>,
+) -> Result<ExternalRoomDelivery, ExternalParticipantError> {
+    Ok(ExternalRoomDelivery {
+        response_id: record.delivery.response_id.clone(),
+        source: source_version(&record)?,
+        delivery: ExternalDeliveryRead::from_record(&record),
+        completed_bodies,
+    })
+}
+
+fn room_request(
+    event: &PublicRoomEvent,
+    attempt: &DeliveryAttempt,
+    participant: &ExternalParticipantRecord,
+    source: &SourceDeliveryVersion,
+    previous_response_id: Option<String>,
+) -> CreateResponse {
+    let label = if event.author.display_name.trim().is_empty() {
+        event.author.role.as_str()
+    } else {
+        event.author.display_name.as_str()
+    };
+    let mut request = CreateResponse::new(
+        format!(
+            "[message from room {label} ({})]\n{}",
+            event.author.participant_id, event.body
+        ),
+        participant
+            .config
+            .harness_id
+            .clone()
+            .expect("authorized participant has a harness"),
+    )
+    .model(participant.config.model.clone())
+    .environment(
+        participant
+            .config
+            .environment_id
+            .clone()
+            .expect("authorized participant has an environment"),
+    );
+    if let Some(previous_response_id) = previous_response_id {
+        request = request.previous_response_id(previous_response_id);
+    }
+    if let Some(max_step) = participant.config.max_step {
+        request = request.max_step(max_step);
+    }
+    if let Some(timeout_seconds) = participant.config.timeout_seconds {
+        request = request.timeout_seconds(timeout_seconds);
+    }
+    for (key, value) in source.prompt_metadata() {
+        request = request.metadata(key, serde_json::Value::String(value));
+    }
+    request
+        .metadata("refact.room.room_id", serde_json::json!(event.room_id))
+        .metadata("refact.room.room_seq", serde_json::json!(event.room_seq))
+        .metadata("refact.room.event_id", serde_json::json!(event.event_id))
+        .metadata(
+            "refact.room.logical_attempt",
+            serde_json::json!(attempt.logical_attempt),
+        )
+}
+
 fn request_scope(config: &ExternalParticipantConfig) -> RequestScope {
     RequestScope::new(config.id.clone(), config.credential_profile_ref.clone())
 }
@@ -880,19 +1263,19 @@ fn apply_response(
                 | ResponseStatus::Cancelled
         )
         .then(|| response.status.clone());
-        let session =
-            state
-                .sessions
-                .entry(session_id.clone())
-                .or_insert_with(|| UhpSessionBinding {
-                    participant_id: participant_id.to_string(),
-                    session_id: session_id.clone(),
-                    last_response_id: None,
-                    last_terminal_status: None,
-                    created_at: response.created_at,
-                    updated_at: response.created_at,
-                    replay_cursor: None,
-                });
+        let session_key = external_session_lookup_key(state, participant_id, session_id);
+        let session = state
+            .sessions
+            .entry(session_key)
+            .or_insert_with(|| UhpSessionBinding {
+                participant_id: participant_id.to_string(),
+                session_id: session_id.clone(),
+                last_response_id: None,
+                last_terminal_status: None,
+                created_at: response.created_at,
+                updated_at: response.created_at,
+                replay_cursor: None,
+            });
         session.last_response_id = Some(response.id.clone());
         session.last_terminal_status = terminal.or_else(|| session.last_terminal_status.clone());
         session.updated_at = session.updated_at.max(response.created_at);

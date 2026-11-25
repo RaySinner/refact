@@ -414,7 +414,9 @@ fn api_error(error: ExternalParticipantError) -> (StatusCode, Json<SanitizedExte
         | ExternalParticipantError::CapabilityUnsupported { .. }
         | ExternalParticipantError::NotVerified => StatusCode::CONFLICT,
         ExternalParticipantError::Storage(_) => StatusCode::INTERNAL_SERVER_ERROR,
-        ExternalParticipantError::Transport(_) => StatusCode::BAD_GATEWAY,
+        ExternalParticipantError::Transport(_) | ExternalParticipantError::SessionExpired => {
+            StatusCode::BAD_GATEWAY
+        }
     };
     (status, Json(error.sanitized()))
 }
@@ -656,6 +658,16 @@ mod tests {
                 binding.response_id.as_deref().unwrap_or("resp-recovered"),
                 "completed",
             ))
+        }
+
+        async fn publish_snapshot(
+            &self,
+            _: &ExternalConnection,
+            _: &Discovery,
+            _: &str,
+            _: Vec<u8>,
+        ) -> Result<u64, UhpError> {
+            Ok(1)
         }
 
         async fn retire(
@@ -1009,6 +1021,7 @@ mod tests {
                     idempotency_key: IdempotencyKey::new("delivery-key-1").unwrap(),
                     request_state: UhpDeliveryRequestState::Failed,
                     response_id: Some("resp-1".to_string()),
+                    previous_response_id: None,
                     session_id: Some("session-1".to_string()),
                     source_revision: Some("commit-1".to_string()),
                     source_digest: Some("ab".repeat(32)),

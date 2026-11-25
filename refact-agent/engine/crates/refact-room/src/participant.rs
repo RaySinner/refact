@@ -13,6 +13,7 @@ pub struct RoomParticipant {
     pub role: String,
     pub display_name: String,
     pub writes: bool,
+    pub external_participant_id: Option<String>,
 }
 
 impl RoomParticipant {
@@ -71,4 +72,61 @@ pub trait Participant: Send + Sync {
         event: PublicRoomEvent,
         attempt: DeliveryAttempt,
     ) -> Result<(), RoomError>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ParticipantRecoveryAdvice {
+    RecoverResponse { response_id: Option<String> },
+    WaitForTerminalAndRetry,
+    SessionExpired,
+    NoAutomaticRetry,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ParticipantRecoveryAction {
+    RecoverResponse { response_id: Option<String> },
+    Wait,
+    StartLinkedAttempt,
+    Fail,
+}
+
+pub fn participant_recovery_action(
+    attempt: &DeliveryAttempt,
+    advice: &ParticipantRecoveryAdvice,
+) -> ParticipantRecoveryAction {
+    match advice {
+        ParticipantRecoveryAdvice::RecoverResponse { response_id } => {
+            ParticipantRecoveryAction::RecoverResponse {
+                response_id: response_id.clone(),
+            }
+        }
+        ParticipantRecoveryAdvice::WaitForTerminalAndRetry => ParticipantRecoveryAction::Wait,
+        ParticipantRecoveryAdvice::SessionExpired if attempt.logical_attempt == 0 => {
+            ParticipantRecoveryAction::StartLinkedAttempt
+        }
+        ParticipantRecoveryAdvice::SessionExpired | ParticipantRecoveryAdvice::NoAutomaticRetry => {
+            ParticipantRecoveryAction::Fail
+        }
+    }
+}
+
+#[cfg(test)]
+mod recovery_tests {
+    use super::*;
+
+    #[test]
+    fn session_expiry_allows_only_one_linked_attempt() {
+        let attempt = DeliveryAttempt::new("room-1", "event-1", "external-1");
+        assert_eq!(
+            participant_recovery_action(&attempt, &ParticipantRecoveryAdvice::SessionExpired),
+            ParticipantRecoveryAction::StartLinkedAttempt
+        );
+        assert_eq!(
+            participant_recovery_action(
+                &attempt.linked_attempt(),
+                &ParticipantRecoveryAdvice::SessionExpired,
+            ),
+            ParticipantRecoveryAction::Fail
+        );
+    }
 }

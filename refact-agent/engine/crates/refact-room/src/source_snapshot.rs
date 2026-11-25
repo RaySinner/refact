@@ -133,6 +133,28 @@ impl SourceSnapshot {
 }
 
 impl SourceDeliveryVersion {
+    pub fn from_persisted(
+        delivery_id: impl Into<String>,
+        environment_version: u64,
+        source: SourceIdentity,
+        previous_delivery_id: Option<String>,
+    ) -> Result<Self, SourceSnapshotError> {
+        let delivery_id = delivery_id.into();
+        require("delivery_id", &delivery_id)?;
+        if environment_version == 0 {
+            return Err(SourceSnapshotError::Validation(
+                "environment_version must be greater than zero".to_string(),
+            ));
+        }
+        Ok(Self {
+            delivery_lineage: BTreeSet::from([delivery_id.clone()]),
+            delivery_id,
+            environment_version,
+            source,
+            previous_delivery_id,
+        })
+    }
+
     pub fn prompt_metadata(&self) -> BTreeMap<String, String> {
         BTreeMap::from([
             (

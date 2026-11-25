@@ -6,6 +6,7 @@ use refact_uhp::{
     RetiredSessions, UhpDeliveryRequestState, UhpDeliveryState, UhpError, UhpSessionBinding,
 };
 use serde::{Deserialize, Serialize};
+use refact_room::SourceDeliveryVersion;
 
 pub const EXTERNAL_PARTICIPANT_SCHEMA_VERSION: u32 = 1;
 
@@ -149,6 +150,7 @@ pub enum ExternalParticipantError {
         action: &'static str,
     },
     NotVerified,
+    SessionExpired,
     ProvisionConflict,
     Storage(String),
     Transport(SanitizedExternalError),
@@ -180,6 +182,10 @@ impl ExternalParticipantError {
             Self::NotVerified => SanitizedExternalError::new(
                 "live_evidence_required",
                 "matching all-pass live evidence is required",
+            ),
+            Self::SessionExpired => SanitizedExternalError::new(
+                "session_expired",
+                "the external session expired and requires a linked attempt",
             ),
             Self::ProvisionConflict => SanitizedExternalError::new(
                 "provision_conflict",
@@ -354,7 +360,9 @@ impl ExternalParticipantStateData {
             }
         }
         for (id, session) in &self.sessions {
-            if id != &session.session_id || !self.participants.contains_key(&session.participant_id)
+            if (id != &session.session_id
+                && id != &external_session_key(&session.participant_id, &session.session_id))
+                || !self.participants.contains_key(&session.participant_id)
             {
                 return Err(ExternalParticipantError::Storage(
                     "session has an invalid identity or participant".to_string(),
@@ -377,7 +385,8 @@ impl ExternalParticipantStateData {
                 .validate()
                 .map_err(|error| ExternalParticipantError::Storage(error.to_string()))?;
             if let Some(session_id) = &delivery.session_id {
-                let session = self.sessions.get(session_id).ok_or_else(|| {
+                let key = external_session_lookup_key(self, &delivery.recipient_id, session_id);
+                let session = self.sessions.get(&key).ok_or_else(|| {
                     ExternalParticipantError::Storage(
                         "delivery references an unknown session".to_string(),
                     )
@@ -403,6 +412,29 @@ impl ExternalParticipantStateData {
                 .map_err(|error| ExternalParticipantError::Storage(error.to_string()))?;
         }
         Ok(())
+    }
+}
+
+pub(crate) fn external_session_key(participant_id: &str, session_id: &str) -> String {
+    format!("{participant_id}\u{1f}{session_id}")
+}
+
+pub(crate) fn external_session_lookup_key(
+    state: &ExternalParticipantStateData,
+    participant_id: &str,
+    session_id: &str,
+) -> String {
+    let scoped = external_session_key(participant_id, session_id);
+    if state.sessions.contains_key(&scoped) {
+        scoped
+    } else if state
+        .sessions
+        .get(session_id)
+        .is_some_and(|session| session.participant_id == participant_id)
+    {
+        session_id.to_string()
+    } else {
+        scoped
     }
 }
 
@@ -618,6 +650,14 @@ pub struct ExternalDeliveryAuthorization {
     pub environment_version: u64,
     pub writes: bool,
     pub agent_chat_id: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExternalRoomDelivery {
+    pub delivery: ExternalDeliveryRead,
+    pub source: SourceDeliveryVersion,
+    pub response_id: Option<String>,
+    pub completed_bodies: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]

@@ -4,6 +4,8 @@ mod transport;
 mod types;
 
 #[cfg(test)]
+mod room_tests;
+#[cfg(test)]
 mod tests;
 
 pub use registry::ExternalParticipantRegistry;

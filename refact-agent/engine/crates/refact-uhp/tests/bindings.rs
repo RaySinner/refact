@@ -60,6 +60,7 @@ fn bindings() -> UhpBindingRecords {
             idempotency_key: IdempotencyKey::new("delivery-key-1").unwrap(),
             request_state: UhpDeliveryRequestState::Completed,
             response_id: Some("response-1".to_string()),
+            previous_response_id: None,
             session_id: Some("session-1".to_string()),
             source_revision: Some("commit-1".to_string()),
             source_digest: Some("ab".repeat(32)),

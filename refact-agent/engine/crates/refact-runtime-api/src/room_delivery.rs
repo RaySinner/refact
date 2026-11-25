@@ -151,6 +151,17 @@ pub async fn publish_explicit_message(
                     })
                     .and_then(|member| member.agent_chat_id.clone())
             })
+            .or_else(|| {
+                room.participants
+                    .iter()
+                    .find(|participant| {
+                        participant.external_participant_id.is_some()
+                            && participant.participant_id != chat_id
+                            && (participant.participant_id == target
+                                || participant.role.trim().eq_ignore_ascii_case(target.trim()))
+                    })
+                    .map(|participant| participant.participant_id.clone())
+            })
             .ok_or_else(|| format!("Room recipient '{target}' is unavailable"))?;
         draft.recipient_id = Some(resolved);
     }
@@ -223,8 +234,9 @@ pub async fn retry_room_delivery(
         delivered: Vec::new(),
         failed: Vec::new(),
     };
-    deliver_one_with_report(
+    deliver_routed(
         &app,
+        &room,
         &journal,
         delivery,
         PushMode::Append,
@@ -253,20 +265,43 @@ async fn load_room(
     if !card.is_room() {
         return Ok(None);
     }
-    let participants = card
-        .team()
-        .iter()
-        .filter_map(|member| {
-            let participant_id = member.agent_chat_id.clone()?;
+    let mut participants = Vec::new();
+    for member in card.team() {
+        if let Some(participant_id) = member.agent_chat_id.clone() {
             let provenance = refact_chat_api::room_provenance::member_provenance(&card, member);
-            Some(RoomParticipant {
+            participants.push(RoomParticipant {
                 participant_id,
                 role: provenance.role,
                 display_name: provenance.display_name,
                 writes: member.writes.unwrap_or(false),
-            })
-        })
-        .collect::<Vec<_>>();
+                external_participant_id: None,
+            });
+            continue;
+        }
+        let Some(participant_id) = member.agent_id.clone() else {
+            continue;
+        };
+        if let Err(error) = app.external_participants.participant(&participant_id) {
+            if matches!(
+                error,
+                crate::external_participant::ExternalParticipantError::NotFound(_)
+            ) {
+                continue;
+            }
+            return Err(error.to_string());
+        }
+        if member.writes() {
+            return Err("external participants are always read-only".to_string());
+        }
+        let provenance = refact_chat_api::room_provenance::member_provenance(&card, member);
+        participants.push(RoomParticipant {
+            participant_id: participant_id.clone(),
+            role: provenance.role,
+            display_name: provenance.display_name,
+            writes: false,
+            external_participant_id: Some(participant_id),
+        });
+    }
     Ok(Some(RoomContext {
         room_id: format!("{task_id}:{card_id}"),
         card,
@@ -304,9 +339,88 @@ async fn publish_draft(
         failed: Vec::new(),
     };
     for delivery in deliveries {
-        deliver_one_with_report(&app, &journal, delivery, push, wake, &mut report).await;
+        deliver_routed(&app, &room, &journal, delivery, push, wake, &mut report).await;
     }
     Ok(report)
+}
+
+async fn deliver_routed(
+    app: &AppState,
+    room: &RoomContext,
+    journal: &DurableRoomJournal<JsonRoomEventStore>,
+    delivery: RoomDelivery,
+    push: PushMode,
+    wake: bool,
+    report: &mut RoomPublicationReport,
+) {
+    if delivery.recipient.external_participant_id.is_none() {
+        deliver_one_with_report(app, journal, delivery, push, wake, report).await;
+        return;
+    }
+    let recipient_id = delivery.recipient.participant_id.clone();
+    let writer_root = room.card.team().iter().find_map(|member| {
+        (member.writes() && member.agent_chat_id.is_some())
+            .then(|| member.agent_worktree.clone())
+            .flatten()
+    });
+    let Some(writer_root) = writer_root else {
+        if let Err(error) = record_receipt(journal, &delivery, "failed").await {
+            tracing::warn!("Failed to record external room delivery failure: {error}");
+        }
+        report.failed.push((
+            recipient_id,
+            "external advisor requires the writer worktree".to_string(),
+        ));
+        return;
+    };
+    match crate::room_uhp::deliver_external_advisor(
+        app,
+        std::path::Path::new(&writer_root),
+        delivery.clone(),
+    )
+    .await
+    {
+        Ok(publication) => {
+            let terminal =
+                publication.status == crate::external_participant::ExternalDeliveryStatus::Terminal;
+            let receipt = if terminal { "delivered" } else { "pending" };
+            if let Err(error) = record_receipt(journal, &delivery, receipt).await {
+                tracing::warn!("Failed to record external room delivery receipt: {error}");
+            }
+            if terminal {
+                report.delivered.push(recipient_id);
+            }
+            for draft in publication.drafts {
+                if let Err(error) =
+                    publish_advisor_response(app, room, journal, draft, push, wake).await
+                {
+                    tracing::warn!("Failed to publish external advisor response: {error}");
+                }
+            }
+        }
+        Err(error) => {
+            if let Err(receipt_error) = record_receipt(journal, &delivery, "failed").await {
+                tracing::warn!("Failed to record external room delivery failure: {receipt_error}");
+            }
+            report.failed.push((recipient_id, error));
+        }
+    }
+}
+
+async fn publish_advisor_response(
+    app: &AppState,
+    room: &RoomContext,
+    journal: &DurableRoomJournal<JsonRoomEventStore>,
+    draft: RoomEventDraft,
+    push: PushMode,
+    wake: bool,
+) -> Result<(), String> {
+    let outcome = journal.append(draft).await.map_err(room_error)?;
+    let deliveries = route_event(outcome.event(), &room.participants).map_err(room_error)?;
+    for delivery in deliveries {
+        deliver_one(app, journal, delivery, push, wake).await;
+    }
+    Ok(())
 }
 
 async fn deliver_one(

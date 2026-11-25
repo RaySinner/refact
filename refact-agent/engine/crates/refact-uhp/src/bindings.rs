@@ -129,6 +129,13 @@ impl UhpBindingRecords {
                     "delivery key does not match delivery_id".to_string(),
                 ));
             }
+            if delivery.previous_response_id.is_some()
+                && delivery.previous_response_id == delivery.response_id
+            {
+                return Err(UhpError::InvalidBinding(
+                    "a delivery cannot continue from its own response".to_string(),
+                ));
+            }
             delivery.validate()?;
             if !self.participants.contains_key(&delivery.recipient_id) {
                 return Err(UhpError::InvalidBinding(

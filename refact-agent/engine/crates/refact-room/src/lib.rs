@@ -12,7 +12,10 @@ pub use event::{RoomAuthor, RoomEvent, RoomEventDraft, RoomEventKind, ROOM_EVENT
 pub use journal::{
     AppendOutcome, DurableRoomJournal, RoomJournal, RoomJournalSnapshot, RoomJournalStore,
 };
-pub use participant::{Participant, RoomParticipant, RoomRoster};
+pub use participant::{
+    participant_recovery_action, Participant, ParticipantRecoveryAction, ParticipantRecoveryAdvice,
+    RoomParticipant, RoomRoster,
+};
 pub use projection::{project_assistant_message, PublicProjectionInput, PublicRoomEvent};
 pub use roster::{spawn_order, validate_roster, validate_spawn, RosterMember};
 pub use router::{replay_deliveries, route_event, RoomDelivery};

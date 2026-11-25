@@ -17,6 +17,7 @@ pub mod customization_editor;
 pub mod exec;
 pub mod ext_management;
 pub mod ext_marketplace_sources;
+pub mod external_participants;
 pub mod file_edit_tools;
 pub mod files;
 pub mod git_read;

@@ -9,6 +9,7 @@ use refact_chat_api::agent_notifications::{ChatAgentHost, ChatAgentScope};
 
 use crate::chat_ctx::ChatCtx;
 use crate::tool_ctx::ToolCtx;
+use crate::external_participant::ExternalParticipantRegistry;
 use crate::global_context::SharedGlobalContext;
 use crate::services::{
     BuddyServices, ChatServices, IntegrationServices, ModelServices, PathServices, RuntimeServices,
@@ -32,6 +33,7 @@ pub struct AppState {
     pub buddy_event_sink: Arc<dyn BuddyEventSink>,
     pub tool_registry: Arc<dyn ToolRegistry>,
     pub agents: Arc<BackgroundAgentRegistry>,
+    pub external_participants: Arc<ExternalParticipantRegistry>,
 }
 
 impl AppState {

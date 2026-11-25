@@ -127,6 +127,9 @@ use crate::http::routers::v1::background_agents::{
     handle_v1_background_agents_cancel, handle_v1_background_agents_get,
     handle_v1_background_agents_message,
 };
+use crate::http::routers::v1::external_participants::{
+    external_participants_router, ExternalParticipantApi,
+};
 
 mod ast;
 pub mod at_commands;
@@ -152,6 +155,7 @@ mod customization_editor;
 pub mod exec;
 pub mod ext_management;
 mod ext_marketplace_sources;
+mod external_participants;
 mod file_edit_tools;
 mod files;
 mod git;
@@ -389,6 +393,9 @@ pub fn make_v1_router(app_state: AppState) -> Router<AppState> {
             "/background-agents/:agent_id/message",
             post(handle_v1_background_agents_message),
         )
+        .merge(external_participants_router(ExternalParticipantApi::from_app(
+            &app_state,
+        )))
         .route("/chat-modes", get(handle_v1_chat_modes))
         .route(
             "/customization/registry",

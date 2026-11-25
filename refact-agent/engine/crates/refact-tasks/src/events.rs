@@ -2,6 +2,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::types::TaskMeta;
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ExternalParticipantEventError {
+    pub code: String,
+    pub message: String,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum TaskEvent {
@@ -34,6 +40,14 @@ pub enum TaskEvent {
     },
     TaskMemoriesChanged {
         task_id: String,
+    },
+    ExternalParticipantChanged {
+        participant_id: String,
+        change: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        details: Option<serde_json::Value>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<ExternalParticipantEventError>,
     },
     Heartbeat {
         ts: String,

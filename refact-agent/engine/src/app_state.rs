@@ -321,6 +321,11 @@ impl ContextFactory for EngineContextFactory {
             buddy_event_sink: ctx.buddy_event_sink.clone(),
             tool_registry: ctx.tool_registry.clone(),
             agents: ctx.agents.clone(),
+            external_participants: Arc::new(
+                refact_runtime_api::external_participant::ExternalParticipantRegistry::new(
+                    gcx.config_dir.clone(),
+                ),
+            ),
             ctx,
             tool,
         }

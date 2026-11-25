@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
@@ -36,6 +37,7 @@ const PRIVATE_REASONING: &str = "PRIVATE_REASONING_SENTINEL";
 const PRIVATE_ARGUMENTS: &str = "PRIVATE_ARGUMENTS_SENTINEL";
 const PRIVATE_TOOL_CALL: &str = "private-tool-call-sentinel";
 const ADVISOR_INITIAL: &str = "ADVISOR_INITIAL_RESPONSE";
+const QUIET_REASONING: &str = "NON_PUBLIC_QUIET_REASONING";
 const UNCOMMITTED_WRITER_CONTENT: &str = "UNCOMMITTED_WRITER_CONTENT_SENTINEL";
 
 #[derive(Clone)]
@@ -48,6 +50,8 @@ struct FakeProvider {
     requests: Arc<StdMutex<HashMap<String, Vec<RecordedRequest>>>>,
     release_writer_final: Arc<Notify>,
     release_advisor_first: Arc<Notify>,
+    writer_final_released: Arc<AtomicBool>,
+    advisor_first_released: Arc<AtomicBool>,
     server: JoinHandle<()>,
 }
 
@@ -58,6 +62,8 @@ impl FakeProvider {
         let requests = Arc::new(StdMutex::new(HashMap::<String, Vec<RecordedRequest>>::new()));
         let release_writer_final = Arc::new(Notify::new());
         let release_advisor_first = Arc::new(Notify::new());
+        let writer_final_released = Arc::new(AtomicBool::new(false));
+        let advisor_first_released = Arc::new(AtomicBool::new(false));
         let server_requests = requests.clone();
         let server_writer_final = release_writer_final.clone();
         let server_advisor_first = release_advisor_first.clone();
@@ -132,7 +138,11 @@ impl FakeProvider {
                         _ => {
                             write_complete_response(
                                 &mut socket,
-                                json!({"role": "assistant", "content": ""}),
+                                json!({
+                                    "role": "assistant",
+                                    "content": "",
+                                    "reasoning_content": quiet_reasoning(&role, ordinal)
+                                }),
                                 "stop",
                             )
                             .await;
@@ -146,8 +156,20 @@ impl FakeProvider {
             requests,
             release_writer_final,
             release_advisor_first,
+            writer_final_released,
+            advisor_first_released,
             server,
         }
+    }
+
+    fn release_writer_final(&self) {
+        self.writer_final_released.store(true, Ordering::SeqCst);
+        self.release_writer_final.notify_one();
+    }
+
+    fn release_advisor_first(&self) {
+        self.advisor_first_released.store(true, Ordering::SeqCst);
+        self.release_advisor_first.notify_one();
     }
 
     fn request(&self, role: &str, ordinal: usize) -> Option<Value> {
@@ -166,6 +188,14 @@ impl FakeProvider {
             .get(role)
             .map(Vec::len)
             .unwrap_or(0)
+    }
+
+    fn release_state(&self) -> String {
+        format!(
+            "writer_final_released={}, advisor_first_released={}",
+            self.writer_final_released.load(Ordering::SeqCst),
+            self.advisor_first_released.load(Ordering::SeqCst)
+        )
     }
 }
 
@@ -217,6 +247,10 @@ fn request_role(body: &Value) -> String {
     } else {
         "other".to_string()
     }
+}
+
+fn quiet_reasoning(role: &str, ordinal: usize) -> String {
+    format!("{QUIET_REASONING}:{role}:{ordinal}")
 }
 
 async fn write_complete_response(socket: &mut TcpStream, delta: Value, finish_reason: &str) {
@@ -426,6 +460,79 @@ async fn member_session(app: &AppState, chat_id: &str) -> Arc<AMutex<ChatSession
         .get(chat_id)
         .cloned()
         .unwrap_or_else(|| panic!("missing room session {chat_id}"))
+}
+
+async fn wait_for_session_idle(
+    description: &str,
+    session_arc: &Arc<AMutex<ChatSession>>,
+    provider: &FakeProvider,
+    expected_reasoning: &str,
+) {
+    let result = tokio::time::timeout(Duration::from_secs(20), async {
+        loop {
+            let session = session_arc.lock().await;
+            let response_completed = session
+                .messages
+                .iter()
+                .rev()
+                .find(|message| message.role == "assistant")
+                .is_some_and(|message| {
+                    message.reasoning_content.as_deref() == Some(expected_reasoning)
+                });
+            if session.runtime.state == SessionState::Idle && response_completed {
+                return;
+            }
+            drop(session);
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await;
+    if result.is_err() {
+        panic!(
+            "timed out waiting for {description}\n{}",
+            session_timeout_diagnostics(session_arc, provider).await
+        );
+    }
+}
+
+async fn session_timeout_diagnostics(
+    session_arc: &Arc<AMutex<ChatSession>>,
+    provider: &FakeProvider,
+) -> String {
+    let mut output = format!(
+        "provider request counts: writer={}, advisor={}\nprovider release state: {}\n",
+        provider.request_count("writer"),
+        provider.request_count("advisor"),
+        provider.release_state()
+    );
+    match session_arc.try_lock() {
+        Ok(session) => {
+            output.push_str(&format!("runtime.state: {:?}\n", session.runtime.state));
+            output.push_str(&format!("runtime.error: {:?}\n", session.runtime.error));
+            output.push_str(&format!("draft_message: {:#?}\n", session.draft_message));
+            output.push_str(&format!("command_queue: {:#?}\n", session.command_queue));
+            output.push_str(&format!(
+                "pending_deliveries: {:#?}\n",
+                session.pending_deliveries
+            ));
+            output.push_str(&format!(
+                "queue_processor_running: {}\n",
+                session.queue_processor_running.load(Ordering::SeqCst)
+            ));
+            output.push_str(&format!("turn_depth: {}\n", session.turn_depth));
+            let messages = session
+                .messages
+                .iter()
+                .rev()
+                .take(8)
+                .rev()
+                .cloned()
+                .collect::<Vec<_>>();
+            output.push_str(&format!("last messages: {messages:#?}\n"));
+        }
+        Err(_) => output.push_str("session: locked at timeout\n"),
+    }
+    output
 }
 
 fn public_message_count(session: &ChatSession) -> usize {
@@ -713,7 +820,7 @@ async fn spawn_to_provider_room_delivery_preserves_privacy_scope_and_idempotency
     })
     .await;
 
-    provider.release_writer_final.notify_one();
+    provider.release_writer_final();
     let writer_session = member_session(&app, &writer_chat_id).await;
     wait_until("writer final public body", || async {
         writer_session.lock().await.messages.iter().any(|message| {
@@ -757,16 +864,19 @@ async fn spawn_to_provider_room_delivery_preserves_privacy_scope_and_idempotency
         format!("assistant:{}", final_writer_message.message_id)
     };
 
-    provider.release_advisor_first.notify_one();
+    provider.release_advisor_first();
     let second_advisor_request = provider_request(&provider, "advisor", 2).await;
     assert_public_wire_request(&second_advisor_request, &writer_chat_id);
     wait_until("advisor delivered public message", || async {
         public_message_count(&*advisor_session.lock().await) == 1
     })
     .await;
-    wait_until("advisor idle after peer delivery", || async {
-        advisor_session.lock().await.runtime.state == SessionState::Idle
-    })
+    wait_for_session_idle(
+        "advisor idle after peer delivery",
+        &advisor_session,
+        &provider,
+        &quiet_reasoning("advisor", 2),
+    )
     .await;
 
     let delivered = advisor_session
@@ -823,10 +933,21 @@ async fn spawn_to_provider_room_delivery_preserves_privacy_scope_and_idempotency
         .unwrap();
     let third_advisor_request = provider_request(&provider, "advisor", 3).await;
     assert_public_wire_request(&third_advisor_request, &writer_chat_id);
-    wait_until("advisor idle after retry regeneration", || async {
-        advisor_session.lock().await.runtime.state == SessionState::Idle
-    })
+    wait_for_session_idle(
+        "advisor idle after retry regeneration",
+        &advisor_session,
+        &provider,
+        &quiet_reasoning("advisor", 3),
+    )
     .await;
     assert_eq!(public_message_count(&*advisor_session.lock().await), 1);
-    assert!(provider.request_count("writer") >= 2);
+    wait_for_session_idle(
+        "writer idle after advisor publications",
+        &writer_session,
+        &provider,
+        &quiet_reasoning("writer", 3),
+    )
+    .await;
+    assert_eq!(provider.request_count("advisor"), 3);
+    assert_eq!(provider.request_count("writer"), 3);
 }

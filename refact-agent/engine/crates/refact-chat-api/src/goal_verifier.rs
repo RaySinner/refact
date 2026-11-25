@@ -14,6 +14,10 @@ use refact_core::string_utils::safe_truncate;
 use crate::ThreadParams;
 
 use crate::internal_roles::{self, EventSubkind};
+use crate::pursuit::{
+    arbitrate_pursuit, stamp_pursuit_message, PursuitArbitrationContext, PursuitDecision,
+    PursuitRequest, PursuitSource,
+};
 use crate::types::epoch_ms_now;
 use crate::types::{
     ChatSession, CriterionVerdict, CriterionVerdictStatus, GoalAttempt, GoalCriterion, GoalEvent,
@@ -533,13 +537,33 @@ fn apply_goal_verdict_with_delivery(
             }
         }
     };
-    deliver_verifier_event(
-        session,
-        event,
-        push,
-        tool_call_id,
-        outcome == GoalVerificationApplyOutcome::Rearmed,
-    );
+    let mut pursuit_request = (outcome == GoalVerificationApplyOutcome::Rearmed).then(|| {
+        PursuitRequest::new(
+            PursuitSource::VerifierRearm,
+            "verification_gaps",
+            session.event_seq,
+            true,
+        )
+    });
+    let wake = if let Some(request) = pursuit_request.as_ref() {
+        matches!(
+            arbitrate_pursuit(session, request, PursuitArbitrationContext::new(at_ms),),
+            PursuitDecision::StartTurn
+        )
+    } else {
+        false
+    };
+    let mut event = event;
+    if let Some(request) = pursuit_request.as_mut() {
+        request.wake_requested = wake;
+        let revision = session.goal.as_ref().map(|goal| goal.revision).unwrap_or(0);
+        stamp_pursuit_message(&mut event, request, revision);
+    }
+    let accepted = deliver_verifier_event(session, event, push, tool_call_id, wake);
+    if accepted && wake {
+        session.goal_mark_nudge_pending();
+        session.goal_record_nudge(at_ms);
+    }
     outcome
 }
 
@@ -649,15 +673,20 @@ fn deliver_verifier_event(
     push: PushMode,
     tool_call_id: Option<&str>,
     wake: bool,
-) {
+) -> bool {
     let mut delivery = PendingDelivery::new(vec![event], push, GOAL_VERIFIER_SOURCE, wake);
     delivery.after_tool_call_id = tool_call_id.map(str::to_string);
     match session.enqueue_delivery(delivery) {
         Ok(DeliveryOutcome::Delivered) if wake => {
             session.queue_notify.notify_one();
+            true
         }
-        Err(error) => tracing::warn!(%error, "Goal verifier delivery rejected"),
-        _ => {}
+        Ok(DeliveryOutcome::Delivered | DeliveryOutcome::Queued) => wake,
+        Err(error) => {
+            tracing::warn!(%error, "Goal verifier delivery rejected");
+            false
+        }
+        _ => false,
     }
 }
 

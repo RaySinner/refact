@@ -13,6 +13,10 @@ use tokio::sync::Mutex as AMutex;
 use tokio::time::sleep;
 
 use refact_chat_api::internal_roles::{self, EventSubkind};
+use refact_chat_api::pursuit::{
+    arbitrate_pursuit, stamp_pursuit_message, PursuitArbitrationContext, PursuitDecision,
+    PursuitRequest, PursuitSource, PursuitSuppressReason,
+};
 use refact_chat_api::types::*;
 use refact_core::chat_types::ChatMessage;
 
@@ -79,6 +83,8 @@ pub enum GoalNudgeSkip {
     UserMessageQueued,
     PendingCommand,
     NudgePending,
+    AutonomyOff,
+    DuplicateEvidence,
     NotStalled,
     QueueRejected,
     Quiescent,
@@ -251,74 +257,53 @@ pub fn try_apply_goal_nudge(
     now_instant: Instant,
     config: GoalNudgeConfig,
 ) -> GoalNudgeOutcome {
-    if session.closed {
-        return GoalNudgeOutcome::Skipped(GoalNudgeSkip::Closed);
-    }
-
-    let Some(goal) = session.goal.as_ref() else {
-        return GoalNudgeOutcome::Skipped(GoalNudgeSkip::NoGoal);
+    let source = match trigger {
+        GoalNudgeTrigger::Monitor => PursuitSource::GoalMonitor,
+        GoalNudgeTrigger::InlineTurnEnd => PursuitSource::InlineTurnEnd,
     };
-    if !goal.active {
-        return GoalNudgeOutcome::Skipped(GoalNudgeSkip::InactiveGoal);
+    let request = PursuitRequest::new(source, trigger.as_str(), session.event_seq, true);
+    let decision = arbitrate_pursuit(
+        session,
+        &request,
+        PursuitArbitrationContext {
+            now_ms,
+            now_instant,
+            stall_grace: config.stall_grace,
+            no_token_grace: config.no_token_grace,
+        },
+    );
+    match decision {
+        PursuitDecision::StartTurn => {}
+        PursuitDecision::VisibleOnly => {
+            return GoalNudgeOutcome::Skipped(GoalNudgeSkip::NotStalled)
+        }
+        PursuitDecision::Suppress(PursuitSuppressReason::BudgetExhausted(status)) => {
+            apply_goal_terminal_status(session, status, trigger, now_ms);
+            return GoalNudgeOutcome::BudgetExhausted(status);
+        }
+        PursuitDecision::Suppress(PursuitSuppressReason::Quiescent) => {
+            record_quiescent_event_if_needed(session, trigger, now_ms);
+            return GoalNudgeOutcome::Skipped(GoalNudgeSkip::Quiescent);
+        }
+        PursuitDecision::Suppress(reason) => {
+            return GoalNudgeOutcome::Skipped(map_pursuit_suppression(reason));
+        }
     }
-    if goal.status != GoalStatus::Active {
-        return GoalNudgeOutcome::Skipped(GoalNudgeSkip::NonActiveGoalStatus);
-    }
-    if goal
-        .snoozed_until_ms
-        .is_some_and(|until_ms| now_ms < until_ms)
-    {
-        return GoalNudgeOutcome::Skipped(GoalNudgeSkip::Snoozed);
-    }
-    if session.abort_flag.load(Ordering::SeqCst)
-        || session.user_interrupt_flag.load(Ordering::SeqCst)
-    {
-        return GoalNudgeOutcome::Skipped(GoalNudgeSkip::Aborted);
-    }
-    if let Some(status) = goal.goal_budget_exhaustion_status_at(now_ms) {
-        apply_goal_terminal_status(session, status, trigger, now_ms);
-        return GoalNudgeOutcome::BudgetExhausted(status);
-    }
-    if refact_chat_api::compression_gate::compression_attempt_active(session) {
-        return GoalNudgeOutcome::Skipped(GoalNudgeSkip::Busy);
-    }
-    if !goal.goal_nudge_ready_at_with_backoff(now_ms) {
-        return GoalNudgeOutcome::Skipped(GoalNudgeSkip::Cooldown);
-    }
-    if waiting_for_user_or_ide(session) {
-        return GoalNudgeOutcome::Skipped(GoalNudgeSkip::WaitingForInput);
-    }
-    if busy_without_stall(session, trigger, now_instant, config) {
-        return GoalNudgeOutcome::Skipped(GoalNudgeSkip::Busy);
-    }
-    if queued_user_message(session) {
-        return GoalNudgeOutcome::Skipped(GoalNudgeSkip::UserMessageQueued);
-    }
-    if !session.command_queue.is_empty()
-        || !session.delivery_wake_sources.is_empty()
-        || session
-            .pending_deliveries
-            .iter()
-            .any(|delivery| delivery.wake)
-    {
-        return GoalNudgeOutcome::Skipped(GoalNudgeSkip::PendingCommand);
-    }
-
     let Some(reason) = nudge_reason(session, trigger, now_instant, config) else {
         return GoalNudgeOutcome::Skipped(GoalNudgeSkip::NotStalled);
     };
 
-    if goal_is_quiescent(session) {
-        record_quiescent_event_if_needed(session, trigger, now_ms);
-        return GoalNudgeOutcome::Skipped(GoalNudgeSkip::Quiescent);
-    }
-    if session.goal_nudge_pending_for_current_goal() {
-        return GoalNudgeOutcome::Skipped(GoalNudgeSkip::NudgePending);
-    }
-
     let context = session.goal.as_ref().map(nudge_context).unwrap_or_default();
+    let goal_revision = session.goal.as_ref().map(|goal| goal.revision).unwrap_or(0);
     let delivery = PendingDelivery::new(
-        vec![goal_nudge_event(trigger, reason, now_ms, &context)],
+        vec![goal_nudge_event(
+            trigger,
+            reason,
+            now_ms,
+            &context,
+            &request,
+            goal_revision,
+        )],
         PushMode::Append,
         GOAL_MONITOR_SOURCE,
         true,
@@ -344,38 +329,29 @@ pub fn try_apply_goal_nudge(
     GoalNudgeOutcome::Nudged(reason)
 }
 
-fn waiting_for_user_or_ide(session: &ChatSession) -> bool {
-    matches!(
-        session.runtime.state,
-        SessionState::Paused | SessionState::WaitingUserInput | SessionState::WaitingIde
-    ) || !session.runtime.pause_reasons.is_empty()
-        || session.pending_browser_message.is_some()
-}
-
-fn busy_without_stall(
-    session: &ChatSession,
-    trigger: GoalNudgeTrigger,
-    now: Instant,
-    config: GoalNudgeConfig,
-) -> bool {
-    match trigger {
-        GoalNudgeTrigger::InlineTurnEnd => session.runtime.state != SessionState::Idle,
-        GoalNudgeTrigger::Monitor => match session.runtime.state {
-            SessionState::Generating => {
-                generation_has_live_work(session)
-                    || generating_quiet_for(session, now, config.no_token_grace).is_none()
-            }
-            SessionState::ExecutingTools => true,
-            _ => false,
-        },
+fn map_pursuit_suppression(reason: PursuitSuppressReason) -> GoalNudgeSkip {
+    match reason {
+        PursuitSuppressReason::Closed => GoalNudgeSkip::Closed,
+        PursuitSuppressReason::NoGoal => GoalNudgeSkip::NoGoal,
+        PursuitSuppressReason::InactiveGoal => GoalNudgeSkip::InactiveGoal,
+        PursuitSuppressReason::NonActiveGoalStatus
+        | PursuitSuppressReason::NonActiveResolution
+        | PursuitSuppressReason::NonActiveExecution
+        | PursuitSuppressReason::Transferred => GoalNudgeSkip::NonActiveGoalStatus,
+        PursuitSuppressReason::AutonomyOff => GoalNudgeSkip::AutonomyOff,
+        PursuitSuppressReason::Snoozed => GoalNudgeSkip::Snoozed,
+        PursuitSuppressReason::Aborted => GoalNudgeSkip::Aborted,
+        PursuitSuppressReason::Compression | PursuitSuppressReason::LiveWork => GoalNudgeSkip::Busy,
+        PursuitSuppressReason::Cooldown => GoalNudgeSkip::Cooldown,
+        PursuitSuppressReason::WaitingForInput => GoalNudgeSkip::WaitingForInput,
+        PursuitSuppressReason::UserMessageQueued => GoalNudgeSkip::UserMessageQueued,
+        PursuitSuppressReason::PendingCommand => GoalNudgeSkip::PendingCommand,
+        PursuitSuppressReason::NotStalled => GoalNudgeSkip::NotStalled,
+        PursuitSuppressReason::Quiescent => GoalNudgeSkip::Quiescent,
+        PursuitSuppressReason::PursuitPending => GoalNudgeSkip::NudgePending,
+        PursuitSuppressReason::DuplicateEvidence => GoalNudgeSkip::DuplicateEvidence,
+        PursuitSuppressReason::BudgetExhausted(_) => GoalNudgeSkip::NotStalled,
     }
-}
-
-fn queued_user_message(session: &ChatSession) -> bool {
-    session
-        .command_queue
-        .iter()
-        .any(|request| matches!(request.command, ChatCommand::UserMessage { .. }))
 }
 
 fn nudge_reason(
@@ -420,17 +396,13 @@ fn generating_quiet_for(session: &ChatSession, now: Instant, grace: Duration) ->
     }
 }
 
-fn generation_has_live_work(session: &ChatSession) -> bool {
-    session.has_pending_tool_result_window()
-        || session.interruptible_waits > 0
-        || session.runtime.waiting_interruptible
-}
-
 fn goal_nudge_event(
     trigger: GoalNudgeTrigger,
     reason: GoalNudgeReason,
     at_ms: u64,
     context: &str,
+    request: &PursuitRequest,
+    goal_revision: u64,
 ) -> refact_core::chat_types::ChatMessage {
     let mut content = format!(
         "Goal pursuit nudge: continue the active goal ({}, {}).",
@@ -441,7 +413,7 @@ fn goal_nudge_event(
         content.push('\n');
         content.push_str(context);
     }
-    internal_roles::event(
+    let mut message = internal_roles::event(
         EventSubkind::GoalPursuit,
         GOAL_MONITOR_SOURCE,
         json!({
@@ -452,7 +424,9 @@ fn goal_nudge_event(
             "account_progress": true,
         }),
         content,
-    )
+    );
+    stamp_pursuit_message(&mut message, request, goal_revision);
+    message
 }
 
 fn nudge_context(goal: &GoalSnapshot) -> String {
@@ -770,6 +744,19 @@ mod tests {
         assert_eq!(payload["reason"], json!("idle"));
         assert_eq!(payload["account_progress"], json!(true));
         assert!(!session.goal.as_ref().unwrap().events.is_empty());
+    }
+
+    #[test]
+    fn goal_monitor_autonomy_off_does_not_create_turn() {
+        let (mut session, now) = old_idle_session();
+        session.goal.as_mut().unwrap().autonomy = GoalAutonomy::Off;
+
+        assert_eq!(
+            apply_monitor(&mut session, 10_000, now),
+            GoalNudgeOutcome::Skipped(GoalNudgeSkip::AutonomyOff)
+        );
+        assert!(session.command_queue.is_empty());
+        assert!(session.delivery_wake_sources.is_empty());
     }
 
     #[test]
@@ -1440,12 +1427,10 @@ mod tests {
         assert!(!session.user_interrupt_flag.load(Ordering::SeqCst));
         assert!(session.draft_message.is_some());
         assert_eq!(session.runtime.state, SessionState::Generating);
-        assert!(session.messages.iter().all(|message| {
-            !matches!(
-                goal_pursuit_kind(message),
-                Some("stopped" | "resumed")
-            )
-        }));
+        assert!(session
+            .messages
+            .iter()
+            .all(|message| { !matches!(goal_pursuit_kind(message), Some("stopped" | "resumed")) }));
         assert_eq!(
             session.goal.as_ref().unwrap().progress.no_progress_turns,
             1,

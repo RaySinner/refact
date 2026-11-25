@@ -49,6 +49,11 @@ pub use goal_state::{
     apply_legacy_status_dimensions, GoalAutonomy, GoalExecution, GoalOwner, GoalResolution,
     GoalSnapshot, GoalStatus,
 };
+pub mod pursuit;
+pub use pursuit::{
+    arbitrate_pursuit, stamp_pursuit_message, PursuitArbitrationContext, PursuitDecision,
+    PursuitRequest, PursuitSource, PursuitSuppressReason,
+};
 pub use goal_transitions::{
     authorize_goal_transition, GoalActor, GoalTransition, GoalTransitionAuthorization,
 };

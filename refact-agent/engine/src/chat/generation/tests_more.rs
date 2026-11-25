@@ -699,6 +699,32 @@ async fn silent_tail_nudge_fires_for_reasoning_only_tail() {
 }
 
 #[tokio::test]
+async fn silent_tail_nudge_respects_goal_autonomy_off() {
+    let gcx = crate::global_context::tests::make_test_gcx().await;
+    let app = crate::app_state::app_state_from_gcx(gcx).await;
+    let mut session = reasoning_only_tail_session(false);
+    session.install_goal(
+        "agent",
+        "finish the card",
+        true,
+        refact_chat_api::GoalBudget::default(),
+    );
+    session.goal.as_mut().unwrap().autonomy = refact_chat_api::GoalAutonomy::Off;
+    let session_arc = Arc::new(AMutex::new(session));
+
+    assert!(matches!(
+        maybe_nudge_after_silent_tail(app, &session_arc).await,
+        SilentTailNudge::NotApplicable
+    ));
+    assert!(session_arc
+        .lock()
+        .await
+        .messages
+        .iter()
+        .all(|message| message.role != NUDGE_ROLE));
+}
+
+#[tokio::test]
 async fn silent_tail_nudge_fires_for_thinking_blocks_only_tail() {
     let gcx = crate::global_context::tests::make_test_gcx().await;
     let app = crate::app_state::app_state_from_gcx(gcx).await;

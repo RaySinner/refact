@@ -744,6 +744,7 @@ impl ChatSession {
         for id in &commands {
             self.clear_queue_timestamp(id);
         }
+        self.goal_clear_nudge_pending();
         self.mark_persisted_runtime_changed();
         suppressed + commands.len()
     }

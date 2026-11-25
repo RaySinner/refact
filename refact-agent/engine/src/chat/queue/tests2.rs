@@ -1302,6 +1302,8 @@ fn goal_command_requirements_and_autonomy_are_audited_revisions() {
         }
     )));
 
+    session.delivery_wake_sources.insert("goal");
+    session.goal_mark_nudge_pending();
     handle_set_goal_autonomy_command(&mut session, refact_chat_api::GoalAutonomy::Off).unwrap();
     assert_eq!(session.goal.as_ref().unwrap().revision, 3);
     assert_eq!(
@@ -1311,4 +1313,6 @@ fn goal_command_requirements_and_autonomy_are_audited_revisions() {
     let replayed = refact_chat_api::reduce_goal_ledger(&session.goal_ledger).unwrap();
     assert_eq!(replayed.revision, 3);
     assert_eq!(replayed.autonomy, refact_chat_api::GoalAutonomy::Off);
+    assert!(session.delivery_wake_sources.is_empty());
+    assert!(!session.goal_nudge_pending_for_current_goal());
 }

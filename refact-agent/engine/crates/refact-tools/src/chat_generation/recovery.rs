@@ -3,10 +3,16 @@ use std::sync::Arc;
 use tokio::sync::{Mutex as AMutex};
 use tracing::warn;
 use refact_chat_api::{NUDGE_MARKER, NUDGE_ROLE, SilentTailSignal};
+use refact_chat_api::pursuit::{
+    arbitrate_pursuit, stamp_pursuit_message, PursuitArbitrationContext, PursuitDecision,
+    PursuitRequest, PursuitSource,
+};
 use refact_runtime_api::ToolCatalogSnapshot;
 
 use refact_runtime_api::app_state::AppState;
-use refact_runtime_api::buddy_chat_reactions::{maybe_enqueue_chat_activity_reaction, ChatActivityCompletion};
+use refact_runtime_api::buddy_chat_reactions::{
+    maybe_enqueue_chat_activity_reaction, ChatActivityCompletion,
+};
 use refact_runtime_api::chat_ctx::SubchatLauncher;
 
 use refact_core::call_validation::{ChatContent, ChatMessage};
@@ -25,9 +31,7 @@ pub fn is_claude_code_model(model: &BaseModelRecord) -> bool {
     model.wire_format == refact_llm::WireFormat::AnthropicMessages && !model.auth_token.is_empty()
 }
 
-pub async fn completion_activity(
-    session_arc: &Arc<AMutex<ChatSession>>,
-) -> ChatActivityCompletion {
+pub async fn completion_activity(session_arc: &Arc<AMutex<ChatSession>>) -> ChatActivityCompletion {
     let session = session_arc.lock().await;
     ChatActivityCompletion {
         chat_id: session.chat_id.clone(),
@@ -161,15 +165,11 @@ pub fn is_reasoning_token_limit_stop(message: &ChatMessage) -> bool {
                 .is_some_and(|blocks| !blocks.is_empty()))
 }
 
-pub fn length_like_finish_reason(
-    finish_reason: Option<&str>,
-) -> Option<NormalizedStopReason> {
+pub fn length_like_finish_reason(finish_reason: Option<&str>) -> Option<NormalizedStopReason> {
     finish_reason.and_then(normalize_stop_reason)
 }
 
-pub fn has_empty_or_near_empty_visible_output(
-    message: &ChatMessage,
-) -> bool {
+pub fn has_empty_or_near_empty_visible_output(message: &ChatMessage) -> bool {
     message.content.content_text_only().trim().chars().count()
         <= LENGTH_STOP_NEAR_EMPTY_VISIBLE_CHARS
 }
@@ -203,9 +203,7 @@ pub fn is_high_pressure_length_stop(
     )
 }
 
-pub fn is_length_stop_compression_candidate(
-    message: &ChatMessage,
-) -> bool {
+pub fn is_length_stop_compression_candidate(message: &ChatMessage) -> bool {
     message.role == "assistant"
         && !message
             .tool_calls
@@ -301,9 +299,7 @@ pub enum LengthStopKind {
     PartialOutput,
 }
 
-pub fn length_stop_kind(
-    message: &ChatMessage,
-) -> Option<LengthStopKind> {
+pub fn length_stop_kind(message: &ChatMessage) -> Option<LengthStopKind> {
     if message.role != "assistant"
         || message
             .tool_calls
@@ -321,9 +317,7 @@ pub fn length_stop_kind(
     }
 }
 
-pub fn length_stop_recovery_attempts(
-    messages: &[ChatMessage],
-) -> usize {
+pub fn length_stop_recovery_attempts(messages: &[ChatMessage]) -> usize {
     let start = messages
         .iter()
         .rposition(|message| message.role == "user")
@@ -336,9 +330,7 @@ pub fn length_stop_recovery_attempts(
         .count()
 }
 
-pub fn trailing_token_budget_marker_index(
-    messages: &[ChatMessage],
-) -> Option<usize> {
+pub fn trailing_token_budget_marker_index(messages: &[ChatMessage]) -> Option<usize> {
     messages
         .last()
         .is_some_and(|message| {
@@ -347,9 +339,7 @@ pub fn trailing_token_budget_marker_index(
         .then_some(messages.len().saturating_sub(1))
 }
 
-pub fn length_stop_continue_instruction(
-    kind: LengthStopKind,
-) -> ChatMessage {
+pub fn length_stop_continue_instruction(kind: LengthStopKind) -> ChatMessage {
     let text = match kind {
         LengthStopKind::EmptyOutput => {
             " The previous response was cut off by the output token limit before any visible output was produced. Respond again, keep internal reasoning brief, and produce the answer directly."
@@ -384,9 +374,7 @@ pub fn is_task_agent_chat(thread: &ThreadParams) -> bool {
         .is_some_and(|meta| meta.role == "agents")
 }
 
-pub fn chat_exposes_finish_tool(
-    catalog: Option<&ToolCatalogSnapshot>,
-) -> bool {
+pub fn chat_exposes_finish_tool(catalog: Option<&ToolCatalogSnapshot>) -> bool {
     catalog.is_some_and(|catalog| {
         catalog
             .index
@@ -531,12 +519,31 @@ pub async fn maybe_nudge_after_silent_tail(
 
     {
         let mut session = session_arc.lock().await;
-        session.add_message(ChatMessage {
+        let request = PursuitRequest::new(
+            PursuitSource::SilentTail,
+            "silent_tail",
+            session.event_seq,
+            true,
+        );
+        if arbitrate_pursuit(
+            &session,
+            &request,
+            PursuitArbitrationContext::new(epoch_ms_now()),
+        ) != PursuitDecision::StartTurn
+        {
+            return SilentTailNudge::NotApplicable;
+        }
+        let goal_revision = session.goal.as_ref().map(|goal| goal.revision).unwrap_or(0);
+        let mut message = ChatMessage {
             role: NUDGE_ROLE.to_string(),
             tool_call_id: NUDGE_MARKER.to_string(),
             content: ChatContent::SimpleText(text),
             ..Default::default()
-        });
+        };
+        stamp_pursuit_message(&mut message, &request, goal_revision);
+        session.add_message(message);
+        session.goal_mark_nudge_pending();
+        session.goal_record_nudge(epoch_ms_now());
     }
     maybe_save_trajectory_with_intent(app, session_arc.clone(), TrajectoryCommitIntent::Checkpoint)
         .await;

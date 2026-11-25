@@ -359,6 +359,9 @@ pub fn handle_set_goal_autonomy_command(
     if let Some(goal) = session.goal.as_mut() {
         goal.autonomy = autonomy;
     }
+    if autonomy == GoalAutonomy::Off {
+        session.purge_goal_generated_wakes();
+    }
     session.goal_ledger_append(GoalLedgerOp::AutonomySet { autonomy });
     session.goal_record_transition(authorization);
     Ok(json!({
@@ -512,7 +515,8 @@ pub async fn worktree_service_from_gcx(
     requested_source_root: Option<&std::path::Path>,
 ) -> Result<WorktreeService, String> {
     let cache_dir = app.paths.cache_dir.clone();
-    let project_dirs = refact_runtime_api::files_correction::get_project_dirs(app.gcx.clone()).await;
+    let project_dirs =
+        refact_runtime_api::files_correction::get_project_dirs(app.gcx.clone()).await;
     if project_dirs.is_empty() {
         return Err("No project root available".to_string());
     }

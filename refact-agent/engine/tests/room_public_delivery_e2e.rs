@@ -215,7 +215,7 @@ fn request_role(body: &Value) -> String {
     } else if wire.contains("You are the `advisor`") {
         "advisor".to_string()
     } else {
-        panic!("provider request did not belong to a spawned room member: {wire}")
+        "other".to_string()
     }
 }
 
@@ -446,6 +446,48 @@ fn assert_public_wire_request(body: &Value, writer_chat_id: &str) {
     for private in [PRIVATE_REASONING, PRIVATE_ARGUMENTS, PRIVATE_TOOL_CALL] {
         assert!(!wire.contains(private), "wire leaked {private}: {wire}");
     }
+}
+
+#[tokio::test]
+async fn auxiliary_buddy_prompt_receives_empty_completed_response() {
+    let provider = FakeProvider::start().await;
+    let auxiliary = json!({
+        "model": MODEL_ID,
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are Buddy, a persistent coding companion for this project."
+            },
+            {"role": "user", "content": "Generate a concise title for this chat."}
+        ],
+        "stream": true
+    });
+    let address = provider
+        .endpoint
+        .strip_prefix("http://")
+        .unwrap()
+        .split('/')
+        .next()
+        .unwrap();
+    let mut socket = TcpStream::connect(address).await.unwrap();
+    let body = serde_json::to_vec(&auxiliary).unwrap();
+    let headers = format!(
+        "POST /v1/chat/completions HTTP/1.1\r\nHost: {address}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        body.len()
+    );
+    socket.write_all(headers.as_bytes()).await.unwrap();
+    socket.write_all(&body).await.unwrap();
+    let mut response = Vec::new();
+    socket.read_to_end(&mut response).await.unwrap();
+    let response = String::from_utf8(response).unwrap();
+    assert!(response.starts_with("HTTP/1.1 200 OK\r\n"), "{response}");
+    assert!(response.contains("\"content\":\"\""), "{response}");
+    assert!(
+        response.contains("\"finish_reason\":\"stop\""),
+        "{response}"
+    );
+    assert!(response.contains("data: [DONE]"), "{response}");
+    assert_eq!(provider_request(&provider, "other", 1).await, auxiliary);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

@@ -31,7 +31,7 @@ impl Tool for ToolValidateGoal {
             },
             experimental: false,
             allow_parallel: false,
-            description: "Validate the chat's active goal against its success criteria. If met, the goal is marked complete and pursuit stops; otherwise returns the remaining gaps.".to_string(),
+            description: "Validate the chat's active goal against its success criteria. MET completes the goal, UNMET returns gaps, IMPOSSIBLE marks it failed with evidence, and INCONCLUSIVE pauses without resolving it.".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {"push": PushMode::schema()},
@@ -166,22 +166,36 @@ pub fn validation_content(
         GoalVerificationApplyOutcome::Finalized => {
             format!("GOAL MET — goal marked complete; pursuit disabled.\n\n{verifier_reply}")
         }
+        GoalVerificationApplyOutcome::Failed => {
+            format!("GOAL IMPOSSIBLE — goal marked failed; pursuit disabled.\n\n{verifier_reply}")
+        }
         GoalVerificationApplyOutcome::Superseded => {
             "Goal state changed during validation; verdict discarded.".to_string()
         }
         GoalVerificationApplyOutcome::Rearmed
         | GoalVerificationApplyOutcome::Continued
-        | GoalVerificationApplyOutcome::Stalled => {
-            let gaps = match verdict {
-                GoalVerdict::Unmet(gaps) => gaps.as_slice(),
-                GoalVerdict::Met => &[],
-            };
-            format!(
+        | GoalVerificationApplyOutcome::Stalled => match verdict {
+            GoalVerdict::Inconclusive(gaps) => format!(
+                "GOAL INCONCLUSIVE — goal remains unproven; pursuit paused.\n{}\n\n{}",
+                format_gaps(gaps),
+                verifier_reply
+            ),
+            GoalVerdict::Unmet(gaps) => format!(
                 "GOAL NOT YET MET — remaining gaps:\n{}\n\n{}",
                 format_gaps(gaps),
                 verifier_reply
-            )
-        }
+            ),
+            GoalVerdict::Impossible(gaps) => format!(
+                "GOAL IMPOSSIBLE — evidence:\n{}\n\n{}",
+                format_gaps(gaps),
+                verifier_reply
+            ),
+            GoalVerdict::Met => format!(
+                "GOAL NOT YET MET — remaining gaps:\n{}\n\n{}",
+                format_gaps(&[]),
+                verifier_reply
+            ),
+        },
         GoalVerificationApplyOutcome::NoGoal => "No active goal to validate.".to_string(),
     }
 }
@@ -192,6 +206,10 @@ pub fn validation_extra(
 ) -> Map<String, Value> {
     let marker = match (outcome, verdict) {
         (GoalVerificationApplyOutcome::Finalized, GoalVerdict::Met) => Some("met"),
+        (GoalVerificationApplyOutcome::Failed, GoalVerdict::Impossible(_)) => Some("impossible"),
+        (GoalVerificationApplyOutcome::Stalled, GoalVerdict::Inconclusive(_)) => {
+            Some("inconclusive")
+        }
         (
             GoalVerificationApplyOutcome::Rearmed
             | GoalVerificationApplyOutcome::Continued

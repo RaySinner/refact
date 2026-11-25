@@ -18,10 +18,11 @@ pub use refact_chat_api::goal_verifier::{
     apply_goal_verdict_guarded, apply_goal_verdict_guarded_with_delivery,
     begin_goal_verification_if_needed, goal_text_for_verifier, goal_verification_message,
     handle_verifier_failure, handle_verifier_failure_with_delivery, parse_criteria_verdicts,
-    parse_goal_verdict, should_verify_goal_on_done, verifier_cancel_requested,
-    verifier_sampling_parameters, GoalCompletionGateOutcome, GoalVerificationApplyOutcome,
-    GoalVerificationBegin, GoalVerdict, GoalVerifierReply, GOAL_VERIFIER_BLOCKED_BACKOFF_MS,
-    GOAL_VERIFIER_MAX_TOKENS, GOAL_VERIFIER_SOURCE, INCONCLUSIVE_GAP,
+    parse_goal_verdict, parse_goal_verdict_with_criteria, should_verify_goal_on_done,
+    verifier_cancel_requested, verifier_sampling_parameters, GoalCompletionGateOutcome,
+    GoalVerificationApplyOutcome, GoalVerificationBegin, GoalVerdict, GoalVerifierReply,
+    GOAL_VERIFIER_BLOCKED_BACKOFF_MS, GOAL_VERIFIER_MAX_TOKENS, GOAL_VERIFIER_SOURCE,
+    INCONCLUSIVE_GAP,
 };
 
 use crate::call_validation::{ChatMessage, ChatMeta, ChatUsage, SamplingParameters};

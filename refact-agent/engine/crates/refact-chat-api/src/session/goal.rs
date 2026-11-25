@@ -630,6 +630,17 @@ impl ChatSession {
         self.goal_set_status_reason(status, "")
     }
 
+    pub fn goal_mark_failed(&mut self, reason: &str) -> bool {
+        let Some(goal) = self.goal.as_mut() else {
+            return false;
+        };
+        goal.resolution = GoalResolution::Failed;
+        self.goal_ledger_append(GoalLedgerOp::ResolutionRecorded {
+            resolution: GoalResolution::Failed,
+        });
+        self.goal_set_status_reason(GoalStatus::Stopped, reason)
+    }
+
     pub fn goal_set_status_reason(&mut self, status: GoalStatus, reason: &str) -> bool {
         let Some(goal) = self.goal.as_mut() else {
             return false;

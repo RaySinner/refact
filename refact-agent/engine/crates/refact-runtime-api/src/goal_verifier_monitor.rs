@@ -95,6 +95,7 @@ pub async fn verify_goal_before_completion(
         fork_trajectory_version,
     ) {
         GoalVerificationApplyOutcome::Finalized => GoalCompletionGateOutcome::Finalized,
+        GoalVerificationApplyOutcome::Failed => GoalCompletionGateOutcome::Finalized,
         GoalVerificationApplyOutcome::Rearmed => GoalCompletionGateOutcome::Rearmed,
         GoalVerificationApplyOutcome::Continued => GoalCompletionGateOutcome::Rearmed,
         GoalVerificationApplyOutcome::Stalled => GoalCompletionGateOutcome::VerificationStalled,

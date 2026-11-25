@@ -17,13 +17,13 @@ pub use crate::chat_local_types::{
 pub use crate::{
     delivery_id_of_message, ActiveCommandContext, BackgroundAgentSummary, BrowserMeta,
     BrowserSnapshot, BrowserTabInfo, BuddyThreadMeta, ChatCommand, ChatEvent, CommandRequest,
-    CompressionPhase, CompressionReason, CriterionVerdict, DeliveryOutcome, DeltaOp, DiffBox,
-    EventEnvelope, GoalAttempt, GoalAutonomy, GoalBudget, GoalCriterion, GoalEvent, GoalExecution,
-    GoalLedgerEntry, GoalLedgerOp, GoalOwner, GoalProgress, GoalResolution, GoalSnapshot,
-    GoalStatus, GoalTransitionAuthorization, PauseReason, PendingDelivery, PushMode, QueuedItem,
-    RuntimeState, SessionState, TaskMeta, ThreadParams, TimelineEntry, ToolDecisionItem,
-    WindowBounds, WorktreeMeta, CLIENT_MESSAGE_ID_EXTRA_KEY, DELIVERY_COMMAND_TYPE,
-    DELIVERY_EXTRA_KEY,
+    CompressionPhase, CompressionReason, CriterionVerdict, CriterionVerdictStatus, DeliveryOutcome,
+    DeltaOp, DiffBox, EventEnvelope, GoalAttempt, GoalAutonomy, GoalBudget, GoalCriterion,
+    GoalEvent, GoalExecution, GoalLedgerEntry, GoalLedgerOp, GoalOwner, GoalProgress,
+    GoalResolution, GoalSnapshot, GoalStatus, GoalTransitionAuthorization, PauseReason,
+    PendingDelivery, PushMode, QueuedItem, RuntimeState, SessionState, TaskMeta, ThreadParams,
+    TimelineEntry, ToolDecisionItem, WindowBounds, WorktreeMeta, CLIENT_MESSAGE_ID_EXTRA_KEY,
+    DELIVERY_COMMAND_TYPE, DELIVERY_EXTRA_KEY,
 };
 
 pub fn epoch_ms_now() -> u64 {

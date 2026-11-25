@@ -223,18 +223,18 @@ use crate::chat::internal_roles;
     }
 
     #[test]
-    fn parse_goal_verdict_tool_call_or_empty_is_unmet() {
+    fn parse_goal_verdict_tool_call_or_empty_is_inconclusive() {
         assert_eq!(
             parse_goal_verdict("GOAL: MET", true),
-            GoalVerdict::Unmet(vec![INCONCLUSIVE_GAP.to_string()])
+            GoalVerdict::Inconclusive(vec![INCONCLUSIVE_GAP.to_string()])
         );
         assert_eq!(
             parse_goal_verdict("", false),
-            GoalVerdict::Unmet(vec![INCONCLUSIVE_GAP.to_string()])
+            GoalVerdict::Inconclusive(vec![INCONCLUSIVE_GAP.to_string()])
         );
         assert_eq!(
             parse_goal_verdict("maybe", false),
-            GoalVerdict::Unmet(vec![INCONCLUSIVE_GAP.to_string()])
+            GoalVerdict::Inconclusive(vec![INCONCLUSIVE_GAP.to_string()])
         );
     }
 

@@ -16,7 +16,8 @@ use crate::ThreadParams;
 use crate::internal_roles::{self, EventSubkind};
 use crate::types::epoch_ms_now;
 use crate::types::{
-    ChatSession, CriterionVerdict, GoalAttempt, GoalCriterion, GoalEvent, GoalStatus, SessionState,
+    ChatSession, CriterionVerdict, CriterionVerdictStatus, GoalAttempt, GoalCriterion, GoalEvent,
+    GoalStatus, SessionState,
 };
 use crate::types::GoalSnapshotBudgetExt;
 
@@ -33,6 +34,8 @@ pub const QUIESCENCE_NUDGES: u32 = 3;
 pub enum GoalVerdict {
     Met,
     Unmet(Vec<String>),
+    Impossible(Vec<String>),
+    Inconclusive(Vec<String>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,6 +55,7 @@ pub enum GoalVerificationBegin {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GoalVerificationApplyOutcome {
     Finalized,
+    Failed,
     Rearmed,
     Continued,
     Stalled,
@@ -120,14 +124,14 @@ pub fn goal_verification_message(goal_text: &str, criteria: &[GoalCriterion]) ->
             .collect::<Vec<_>>()
             .join("\n");
         format!(
-            "\n\nStructured criteria:\n{list}\n\nFor EACH criterion also output a line `CRITERION <id>: MET` or `CRITERION <id>: UNMET — <short note>`."
+            "\n\nStructured criteria:\n{list}\n\nFor EACH criterion also output exactly one line `CRITERION <id>: MET`, `CRITERION <id>: UNMET — <short note>`, `CRITERION <id>: IMPOSSIBLE — <evidence>`, or `CRITERION <id>: INCONCLUSIVE — <short note>`."
         )
     };
     ChatMessage {
         message_id: Uuid::new_v4().to_string(),
         role: "user".to_string(),
         content: ChatContent::SimpleText(format!(
-            "[goal verification]\n\nSynthesized goal:\n{goal_text}\n\nAcceptance criteria:\nUse every explicit criterion in the synthesized goal above.{criteria_block}\n\nJudge ONLY whether the work so far FULLY satisfies the goal and every criterion. Respond EXACTLY: first line `GOAL: MET` or `GOAL: UNMET`; if UNMET, a bullet list of unmet requirements; call NO tools."
+            "[goal verification]\n\nSynthesized goal:\n{goal_text}\n\nAcceptance criteria:\nUse every explicit criterion in the synthesized goal above.{criteria_block}\n\nJudge ONLY whether the work so far FULLY satisfies the goal and every criterion. Respond EXACTLY: first line `GOAL: MET`, `GOAL: UNMET`, `GOAL: IMPOSSIBLE`, or `GOAL: INCONCLUSIVE`; for UNMET list unmet requirements, for IMPOSSIBLE provide evidence, and for INCONCLUSIVE explain what could not be determined; call NO tools."
         )),
         extra: serde_json::Map::from_iter([(
             "goal_verification".to_string(),
@@ -138,46 +142,62 @@ pub fn goal_verification_message(goal_text: &str, criteria: &[GoalCriterion]) ->
 }
 
 pub fn parse_goal_verdict(answer: &str, tool_called: bool) -> GoalVerdict {
+    parse_goal_verdict_with_criteria(answer, tool_called, &[])
+}
+
+pub fn parse_goal_verdict_with_criteria(
+    answer: &str,
+    tool_called: bool,
+    criteria: &[GoalCriterion],
+) -> GoalVerdict {
     if tool_called {
         return inconclusive_verdict();
     }
-    let mut lines = answer
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty());
-    let Some(first) = lines.next() else {
+    let Some(first) = answer.lines().map(str::trim).find(|line| !line.is_empty()) else {
         return inconclusive_verdict();
     };
     if first.eq_ignore_ascii_case("GOAL: MET") {
-        return GoalVerdict::Met;
+        return validate_met_criteria(answer, criteria);
     }
     if first.eq_ignore_ascii_case("GOAL: UNMET") {
         let criteria_verdicts = parse_criteria_verdicts(answer);
-        let gaps = lines
-            .filter(|line| !line.starts_with("CRITERION "))
-            .map(|line| line.trim_start_matches(['-', '*', '•', ' ']).trim())
-            .filter(|line| !line.is_empty())
-            .map(ToString::to_string)
-            .collect::<Vec<_>>();
+        let gaps = verdict_gaps(answer);
         if !gaps.is_empty() {
             GoalVerdict::Unmet(gaps)
         } else {
-            let criterion_gaps = criteria_verdicts
-                .into_iter()
-                .filter(|criterion| !criterion.met)
-                .map(|criterion| {
-                    if criterion.note.is_empty() {
-                        format!("{}: unmet", criterion.id)
-                    } else {
-                        format!("{}: {}", criterion.id, criterion.note)
-                    }
-                })
-                .collect::<Vec<_>>();
+            let criterion_gaps =
+                criterion_gaps(criteria_verdicts.iter(), CriterionVerdictStatus::Unmet);
             if criterion_gaps.is_empty() {
                 inconclusive_verdict()
             } else {
                 GoalVerdict::Unmet(criterion_gaps)
             }
+        }
+    } else if first.eq_ignore_ascii_case("GOAL: IMPOSSIBLE") {
+        let mut evidence = verdict_gaps(answer);
+        if evidence.is_empty() {
+            evidence = criterion_gaps(
+                parse_criteria_verdicts(answer).iter(),
+                CriterionVerdictStatus::Impossible,
+            );
+        }
+        if evidence.is_empty() {
+            GoalVerdict::Inconclusive(vec!["impossible verdict requires evidence".to_string()])
+        } else {
+            GoalVerdict::Impossible(evidence)
+        }
+    } else if first.eq_ignore_ascii_case("GOAL: INCONCLUSIVE") {
+        let mut gaps = verdict_gaps(answer);
+        if gaps.is_empty() {
+            gaps = criterion_gaps(
+                parse_criteria_verdicts(answer).iter(),
+                CriterionVerdictStatus::Inconclusive,
+            );
+        }
+        if gaps.is_empty() {
+            inconclusive_verdict()
+        } else {
+            GoalVerdict::Inconclusive(gaps)
         }
     } else {
         inconclusive_verdict()
@@ -185,7 +205,79 @@ pub fn parse_goal_verdict(answer: &str, tool_called: bool) -> GoalVerdict {
 }
 
 fn inconclusive_verdict() -> GoalVerdict {
-    GoalVerdict::Unmet(vec![INCONCLUSIVE_GAP.to_string()])
+    GoalVerdict::Inconclusive(vec![INCONCLUSIVE_GAP.to_string()])
+}
+
+fn verdict_gaps(answer: &str) -> Vec<String> {
+    answer
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .skip(1)
+        .filter(|line| !line.starts_with("CRITERION "))
+        .map(|line| line.trim_start_matches(['-', '*', '•', ' ']).trim())
+        .filter(|line| !line.is_empty())
+        .map(ToString::to_string)
+        .collect()
+}
+
+fn criterion_gaps<'a>(
+    verdicts: impl Iterator<Item = &'a CriterionVerdict>,
+    status: CriterionVerdictStatus,
+) -> Vec<String> {
+    verdicts
+        .filter(|criterion| {
+            criterion.status() == status
+                && (status != CriterionVerdictStatus::Impossible || !criterion.note.is_empty())
+        })
+        .map(|criterion| {
+            let fallback = match status {
+                CriterionVerdictStatus::Met => "met",
+                CriterionVerdictStatus::Unmet => "unmet",
+                CriterionVerdictStatus::Impossible => "impossible",
+                CriterionVerdictStatus::Inconclusive => "inconclusive",
+            };
+            if criterion.note.is_empty() {
+                format!("{}: {fallback}", criterion.id)
+            } else {
+                format!("{}: {}", criterion.id, criterion.note)
+            }
+        })
+        .collect()
+}
+
+fn validate_met_criteria(answer: &str, criteria: &[GoalCriterion]) -> GoalVerdict {
+    let verdicts = parse_criteria_verdicts(answer);
+    let unmet = criterion_gaps(verdicts.iter(), CriterionVerdictStatus::Unmet);
+    if !unmet.is_empty() {
+        return GoalVerdict::Unmet(unmet);
+    }
+    let impossible = criterion_gaps(verdicts.iter(), CriterionVerdictStatus::Impossible);
+    if !impossible.is_empty() {
+        return GoalVerdict::Impossible(impossible);
+    }
+    let inconclusive = criterion_gaps(verdicts.iter(), CriterionVerdictStatus::Inconclusive);
+    if !inconclusive.is_empty() {
+        return GoalVerdict::Inconclusive(inconclusive);
+    }
+    let mut missing = Vec::new();
+    for criterion in criteria {
+        let matches = verdicts
+            .iter()
+            .filter(|verdict| verdict.id == criterion.id)
+            .collect::<Vec<_>>();
+        if matches.len() != 1 || matches[0].status() != CriterionVerdictStatus::Met {
+            missing.push(format!(
+                "{}: criterion verdict missing, unrecognized, or ambiguous",
+                criterion.id
+            ));
+        }
+    }
+    if missing.is_empty() {
+        GoalVerdict::Met
+    } else {
+        GoalVerdict::Inconclusive(missing)
+    }
 }
 
 pub fn parse_criteria_verdicts(answer: &str) -> Vec<CriterionVerdict> {
@@ -195,16 +287,19 @@ pub fn parse_criteria_verdicts(answer: &str) -> Vec<CriterionVerdict> {
             let rest = line.trim().strip_prefix("CRITERION ")?;
             let (id, verdict) = rest.split_once(':')?;
             let verdict = verdict.trim();
-            let (met, note) = if let Some(note) = verdict.strip_prefix("UNMET") {
-                (false, note)
-            } else if let Some(note) = verdict.strip_prefix("MET") {
-                (true, note)
-            } else {
-                return None;
+            let mut parts = verdict.splitn(2, char::is_whitespace);
+            let status = match parts.next()? {
+                "MET" => CriterionVerdictStatus::Met,
+                "UNMET" => CriterionVerdictStatus::Unmet,
+                "IMPOSSIBLE" => CriterionVerdictStatus::Impossible,
+                "INCONCLUSIVE" => CriterionVerdictStatus::Inconclusive,
+                _ => return None,
             };
+            let note = parts.next().unwrap_or_default();
             Some(CriterionVerdict {
                 id: id.trim().trim_matches(['[', ']']).to_string(),
-                met,
+                met: status == CriterionVerdictStatus::Met,
+                status: Some(status),
                 note: note.trim_start_matches(['—', '-', ':', ' ']).to_string(),
             })
         })
@@ -309,6 +404,28 @@ fn apply_goal_verdict_with_delivery(
             return GoalVerificationApplyOutcome::Superseded;
         }
     }
+    let mut reply = reply;
+    let criteria = session
+        .goal
+        .as_ref()
+        .map(|goal| goal.criteria.clone())
+        .unwrap_or_default();
+    if reply.verdict == GoalVerdict::Met {
+        let is_met_reply = reply
+            .verifier_reply
+            .lines()
+            .map(str::trim)
+            .find(|line| !line.is_empty())
+            .is_some_and(|line| line.eq_ignore_ascii_case("GOAL: MET"));
+        reply.verdict = if is_met_reply {
+            validate_met_criteria(&reply.verifier_reply, &criteria)
+        } else {
+            inconclusive_verdict()
+        };
+    } else if matches!(&reply.verdict, GoalVerdict::Impossible(evidence) if evidence.is_empty()) {
+        reply.verdict =
+            GoalVerdict::Inconclusive(vec!["impossible verdict requires evidence".to_string()]);
+    }
     let held_status = match session.goal_status {
         Some(status @ (GoalStatus::Paused | GoalStatus::Stopped)) => Some(status),
         _ => None,
@@ -329,6 +446,21 @@ fn apply_goal_verdict_with_delivery(
             gaps.clone(),
             "verification_gaps".to_string(),
             format!("Goal verification found gaps:\n{}", gaps.join("\n")),
+        ),
+        GoalVerdict::Impossible(evidence) => (
+            "impossible".to_string(),
+            evidence.clone(),
+            "verification_impossible".to_string(),
+            format!(
+                "Goal verification found the goal impossible:\n{}",
+                evidence.join("\n")
+            ),
+        ),
+        GoalVerdict::Inconclusive(gaps) => (
+            "inconclusive".to_string(),
+            gaps.clone(),
+            "verification_inconclusive".to_string(),
+            format!("Goal verification was inconclusive:\n{}", gaps.join("\n")),
         ),
     };
     let criteria_verdicts = parse_criteria_verdicts(&reply.verifier_reply);
@@ -358,6 +490,25 @@ fn apply_goal_verdict_with_delivery(
             }
             GoalVerificationApplyOutcome::Finalized
         }
+        GoalVerdict::Impossible(_) => {
+            session.goal_mark_failed("verification_impossible");
+            if trigger != "validate_goal" {
+                session.set_runtime_state(SessionState::Completed, None);
+            }
+            GoalVerificationApplyOutcome::Failed
+        }
+        GoalVerdict::Inconclusive(_) => {
+            if let Some(status) = held_status {
+                session.goal_set_status(status);
+            } else if !matches!(
+                session.goal_status,
+                Some(GoalStatus::BudgetExhausted | GoalStatus::NoProgress)
+            ) {
+                session.goal_set_status_reason(GoalStatus::Paused, "verification_inconclusive");
+            }
+            session.set_runtime_state(SessionState::Idle, None);
+            GoalVerificationApplyOutcome::Stalled
+        }
         GoalVerdict::Unmet(_) => {
             if let Some(status) = held_status {
                 session.goal_set_status(status);
@@ -369,10 +520,10 @@ fn apply_goal_verdict_with_delivery(
                 if trigger == "validate_goal" {
                     GoalVerificationApplyOutcome::Continued
                 } else if session.goal_status != Some(GoalStatus::Active)
-                    || session.goal.as_ref().is_some_and(|goal| {
-                        goal.progress.no_progress_turns
-                            >= QUIESCENCE_NUDGES
-                    })
+                    || session
+                        .goal
+                        .as_ref()
+                        .is_some_and(|goal| goal.progress.no_progress_turns >= QUIESCENCE_NUDGES)
                 {
                     GoalVerificationApplyOutcome::Stalled
                 } else {
@@ -507,5 +658,238 @@ fn deliver_verifier_event(
         }
         Err(error) => tracing::warn!(%error, "Goal verifier delivery rejected"),
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{GoalBudget, GoalResolution};
+
+    fn criteria() -> Vec<GoalCriterion> {
+        vec![
+            GoalCriterion {
+                id: "C1".to_string(),
+                text: "tests pass".to_string(),
+                verify_hint: None,
+            },
+            GoalCriterion {
+                id: "C2".to_string(),
+                text: "docs updated".to_string(),
+                verify_hint: None,
+            },
+        ]
+    }
+
+    fn session_with_criteria() -> ChatSession {
+        let mut session = ChatSession::new("goal-verifier-domain".to_string());
+        session.install_goal("agent", "ship feature", true, GoalBudget::default());
+        session.goal.as_mut().unwrap().criteria = criteria();
+        session.goal_set_status(GoalStatus::Verifying);
+        session
+    }
+
+    #[test]
+    fn structured_met_rejects_conflicting_unmet_criterion() {
+        let verdict = parse_goal_verdict_with_criteria(
+            "GOAL: MET\nCRITERION C1: MET\nCRITERION C2: UNMET — docs missing",
+            false,
+            &criteria(),
+        );
+
+        assert_eq!(
+            verdict,
+            GoalVerdict::Unmet(vec!["C2: docs missing".to_string()])
+        );
+        let mut session = session_with_criteria();
+        let outcome = apply_goal_verdict(
+            &mut session,
+            "task_done",
+            GoalVerifierReply {
+                verdict: GoalVerdict::Met,
+                verifier_reply: "GOAL: MET\nCRITERION C1: MET\nCRITERION C2: UNMET — docs missing"
+                    .to_string(),
+                tokens: 1,
+            },
+            None,
+        );
+        assert_eq!(outcome, GoalVerificationApplyOutcome::Rearmed);
+        assert_eq!(session.goal_status, Some(GoalStatus::Active));
+        assert_eq!(
+            session.goal.as_ref().unwrap().resolution,
+            GoalResolution::Active
+        );
+    }
+
+    #[test]
+    fn structured_met_requires_complete_recognized_criteria() {
+        for answer in [
+            "GOAL: MET\nCRITERION C1: MET",
+            "GOAL: MET\nCRITERION C1: MET\nCRITERION C2: UNKNOWN",
+            "GOAL: MET\nCRITERION C1: MET\nCRITERION C2: METAL",
+            "GOAL: MET\nCRITERION C1: MET\nCRITERION C2: MET\nCRITERION C2: MET",
+        ] {
+            let verdict = parse_goal_verdict_with_criteria(answer, false, &criteria());
+            assert!(matches!(verdict, GoalVerdict::Inconclusive(_)), "{answer}");
+        }
+        assert_eq!(
+            parse_goal_verdict_with_criteria(
+                "GOAL: MET\nCRITERION C1: MET\nCRITERION C2: MET",
+                false,
+                &criteria(),
+            ),
+            GoalVerdict::Met
+        );
+    }
+
+    #[test]
+    fn impossible_requires_evidence_and_marks_failed_for_manual_and_automatic() {
+        assert!(matches!(
+            parse_goal_verdict("GOAL: IMPOSSIBLE", false),
+            GoalVerdict::Inconclusive(_)
+        ));
+        for trigger in ["task_done", "validate_goal"] {
+            let mut session = session_with_criteria();
+            let outcome = apply_goal_verdict(
+                &mut session,
+                trigger,
+                GoalVerifierReply {
+                    verdict: GoalVerdict::Impossible(vec!["requirements conflict".to_string()]),
+                    verifier_reply: "GOAL: IMPOSSIBLE\n- requirements conflict".to_string(),
+                    tokens: 2,
+                },
+                None,
+            );
+            assert_eq!(outcome, GoalVerificationApplyOutcome::Failed);
+            let goal = session.goal.as_ref().unwrap();
+            assert_eq!(goal.status, GoalStatus::Stopped);
+            assert_eq!(goal.resolution, GoalResolution::Failed);
+            assert_eq!(goal.stop_reason.as_deref(), Some("verification_impossible"));
+            assert_eq!(goal.attempts[0].verdict, "impossible");
+            assert_eq!(goal.attempts[0].gaps, vec!["requirements conflict"]);
+            let replayed = crate::goal_ledger::reduce_goal_ledger(&session.goal_ledger).unwrap();
+            assert_eq!(replayed.resolution, GoalResolution::Failed);
+            assert_eq!(replayed.status, GoalStatus::Stopped);
+        }
+    }
+
+    #[test]
+    fn inconclusive_and_malformed_pause_without_success_or_failure() {
+        for answer in [
+            "GOAL: INCONCLUSIVE\n- evidence unavailable",
+            "not a verdict",
+        ] {
+            let verdict = parse_goal_verdict(answer, false);
+            assert!(matches!(verdict, GoalVerdict::Inconclusive(_)));
+            let mut session = session_with_criteria();
+            let outcome = apply_goal_verdict(
+                &mut session,
+                "task_done",
+                GoalVerifierReply {
+                    verdict,
+                    verifier_reply: answer.to_string(),
+                    tokens: 2,
+                },
+                None,
+            );
+            assert_eq!(outcome, GoalVerificationApplyOutcome::Stalled);
+            let goal = session.goal.as_ref().unwrap();
+            assert_eq!(goal.status, GoalStatus::Paused);
+            assert_eq!(goal.resolution, GoalResolution::Active);
+            assert_eq!(
+                goal.stop_reason.as_deref(),
+                Some("verification_inconclusive")
+            );
+            assert_eq!(goal.attempts[0].verdict, "inconclusive");
+            assert_eq!(goal.progress.no_progress_turns, 0);
+            assert_ne!(session.runtime.state, SessionState::Completed);
+        }
+    }
+
+    #[test]
+    fn provider_failure_stays_active_and_distinct_from_budget_exhaustion() {
+        let mut session = session_with_criteria();
+        let outcome = handle_verifier_failure(&mut session, "task_done", "provider unavailable");
+        assert_eq!(outcome, GoalCompletionGateOutcome::VerificationUnavailable);
+        assert_eq!(
+            session.goal.as_ref().unwrap().resolution,
+            GoalResolution::Active
+        );
+        assert_eq!(session.goal_status, Some(GoalStatus::Active));
+        assert!(session.goal_verification_blocked_until_ms.is_some());
+        assert_ne!(session.goal_status, Some(GoalStatus::BudgetExhausted));
+    }
+
+    #[test]
+    fn inconclusive_budget_exhaustion_is_not_failed() {
+        let mut session = ChatSession::new("goal-verifier-budget".to_string());
+        session.install_goal(
+            "agent",
+            "ship feature",
+            true,
+            GoalBudget {
+                max_turns: Some(1),
+                ..Default::default()
+            },
+        );
+        session.goal_set_status(GoalStatus::Verifying);
+
+        let outcome = apply_goal_verdict(
+            &mut session,
+            "task_done",
+            GoalVerifierReply {
+                verdict: GoalVerdict::Inconclusive(vec![INCONCLUSIVE_GAP.to_string()]),
+                verifier_reply: "not a verdict".to_string(),
+                tokens: 1,
+            },
+            None,
+        );
+
+        assert_eq!(outcome, GoalVerificationApplyOutcome::Stalled);
+        assert_eq!(session.goal_status, Some(GoalStatus::BudgetExhausted));
+        assert_eq!(
+            session.goal.as_ref().unwrap().resolution,
+            GoalResolution::Active
+        );
+    }
+
+    #[test]
+    fn stale_impossible_verdict_does_not_fail_goal() {
+        let mut session = session_with_criteria();
+        let epoch = session.goal_ledger_last_seq();
+        session.goal_set_status_reason(GoalStatus::Stopped, "user_stop");
+
+        let outcome = apply_goal_verdict(
+            &mut session,
+            "task_done",
+            GoalVerifierReply {
+                verdict: GoalVerdict::Impossible(vec!["requirements conflict".to_string()]),
+                verifier_reply: "GOAL: IMPOSSIBLE\n- requirements conflict".to_string(),
+                tokens: 1,
+            },
+            Some(epoch),
+        );
+
+        assert_eq!(outcome, GoalVerificationApplyOutcome::Superseded);
+        assert_eq!(session.goal_status, Some(GoalStatus::Stopped));
+        assert_eq!(
+            session.goal.as_ref().unwrap().resolution,
+            GoalResolution::Cancelled
+        );
+        assert!(session.goal.as_ref().unwrap().attempts.is_empty());
+    }
+
+    #[test]
+    fn legacy_criterion_wire_still_deserializes() {
+        let unmet: CriterionVerdict = serde_json::from_value(json!({
+            "id": "C1",
+            "met": false,
+            "note": "missing"
+        }))
+        .unwrap();
+        assert_eq!(unmet.status(), CriterionVerdictStatus::Unmet);
+        let met: CriterionVerdict =
+            serde_json::from_value(json!({"id": "C2", "met": true})).unwrap();
+        assert_eq!(met.status(), CriterionVerdictStatus::Met);
     }
 }

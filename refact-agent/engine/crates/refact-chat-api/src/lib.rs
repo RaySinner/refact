@@ -382,8 +382,29 @@ pub struct GoalCriterion {
 pub struct CriterionVerdict {
     pub id: String,
     pub met: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<CriterionVerdictStatus>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub note: String,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CriterionVerdictStatus {
+    Met,
+    Unmet,
+    Impossible,
+    Inconclusive,
+}
+
+impl CriterionVerdict {
+    pub fn status(&self) -> CriterionVerdictStatus {
+        self.status.unwrap_or(if self.met {
+            CriterionVerdictStatus::Met
+        } else {
+            CriterionVerdictStatus::Unmet
+        })
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

@@ -32,6 +32,9 @@ pub enum GoalLedgerOp {
         #[serde(default, skip_serializing_if = "String::is_empty")]
         reason: String,
     },
+    ResolutionRecorded {
+        resolution: GoalResolution,
+    },
     ProgressRecorded {
         tokens: u64,
         made_progress: bool,
@@ -287,6 +290,9 @@ fn apply_op(state: &mut GoalLedgerState, op: &GoalLedgerOp, at_ms: u64) {
             } else if matches!(to, GoalStatus::Active | GoalStatus::Verifying) {
                 state.stop_reason = None;
             }
+        }
+        GoalLedgerOp::ResolutionRecorded { resolution } => {
+            state.resolution = *resolution;
         }
         GoalLedgerOp::ProgressRecorded {
             tokens,

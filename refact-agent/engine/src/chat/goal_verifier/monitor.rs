@@ -135,7 +135,7 @@ pub async fn run_goal_verifier(
         thread,
         messages,
         goal_text,
-        criteria,
+        criteria.clone(),
         chat_id,
         tools_for_gen.tools,
     );
@@ -219,12 +219,15 @@ pub async fn run_goal_verifier(
             }
         })?;
     let choice = choices.into_iter().next().unwrap_or_default();
-    Ok(goal_verifier_reply_from_choice(choice))
+    Ok(goal_verifier_reply_from_choice(choice, &criteria))
 }
 
-pub(super) fn goal_verifier_reply_from_choice(choice: ChoiceFinal) -> GoalVerifierReply {
+pub(super) fn goal_verifier_reply_from_choice(
+    choice: ChoiceFinal,
+    criteria: &[GoalCriterion],
+) -> GoalVerifierReply {
     let tool_called = !choice.tool_calls_raw.is_empty();
-    let verdict = parse_goal_verdict(&choice.content, tool_called);
+    let verdict = parse_goal_verdict_with_criteria(&choice.content, tool_called, criteria);
     let tokens = choice
         .usage
         .as_ref()

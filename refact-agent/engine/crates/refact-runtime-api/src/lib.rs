@@ -585,6 +585,7 @@ pub mod room_delivery;
 pub mod room_binding_store;
 pub mod room_snapshot_export;
 pub mod room_snapshot;
+pub mod external_participant;
 pub mod customization_registry;
 pub mod customization_registry_gcx;
 pub mod memories;

@@ -584,10 +584,13 @@ impl ExternalParticipantRegistry {
                 if let Some(response) = response {
                     apply_response(&mut state, id, None, &response);
                 } else if let ExternalCancelTarget::Session(session_id) = target {
-                    for delivery in state.deliveries.values_mut().filter(|record| {
-                        record.delivery.recipient_id == id
-                            && record.delivery.session_id.as_deref() == Some(session_id.as_str())
-                    }) {
+                    for record in state.deliveries.values_mut() {
+                        let record: &mut ExternalDeliveryRecord = record;
+                        if record.delivery.recipient_id != id
+                            || record.delivery.session_id.as_deref() != Some(session_id.as_str())
+                        {
+                            continue;
+                        }
                         if matches!(
                             &record.delivery.request_state,
                             UhpDeliveryRequestState::Pending | UhpDeliveryRequestState::InProgress

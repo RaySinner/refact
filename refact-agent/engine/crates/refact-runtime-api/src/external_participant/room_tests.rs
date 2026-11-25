@@ -189,6 +189,7 @@ fn discovery() -> Discovery {
             "session_listing": true,
             "harness_management": true,
             "idempotency": true,
+            "harness_idempotency": true,
             "environments": true
         }
     }))

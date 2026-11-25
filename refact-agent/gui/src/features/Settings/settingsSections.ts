@@ -5,6 +5,7 @@ import {
   Cat,
   Chrome,
   Gauge,
+  Network,
   Paintbrush,
   Plug,
   ScanSearch,
@@ -24,6 +25,7 @@ export type SettingsSectionId =
   | "browser"
   | "limits"
   | "buddy"
+  | "externalAgents"
   | "providers"
   | "models"
   | "customization"
@@ -46,6 +48,7 @@ export const SETTINGS_SECTIONS: SettingsSectionDef[] = [
   { id: "browser", label: "Browser", icon: Chrome },
   { id: "limits", label: "Limits & Budgets", icon: Gauge },
   { id: "buddy", label: "Buddy", icon: Cat },
+  { id: "externalAgents", label: "External agents", icon: Network },
   { id: "providers", label: "Providers", icon: Plug },
   { id: "models", label: "Models", icon: Bot },
   { id: "customization", label: "Customization", icon: Paintbrush },

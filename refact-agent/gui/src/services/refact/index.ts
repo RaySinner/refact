@@ -38,3 +38,4 @@ export * from "./shellPolicy";
 export * from "./indexingSettings";
 export * from "./skillsSettings";
 export * from "./performance";
+export * from "./externalAgents";

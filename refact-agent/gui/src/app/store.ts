@@ -39,6 +39,7 @@ import {
   performanceApi,
   skillsSettingsApi,
   backgroundAgentsApi,
+  externalAgentsApi,
 } from "../services/refact";
 import { daemonApi } from "../services/refact/daemon";
 import { chatModesApi } from "../services/refact/chatModes";
@@ -201,6 +202,7 @@ const rootReducer = combineSlices(
     [performanceApi.reducerPath]: performanceApi.reducer,
     [skillsSettingsApi.reducerPath]: skillsSettingsApi.reducer,
     [backgroundAgentsApi.reducerPath]: backgroundAgentsApi.reducer,
+    [externalAgentsApi.reducerPath]: externalAgentsApi.reducer,
   },
   historySlice,
   buddySlice,
@@ -347,6 +349,7 @@ export function setUpStore(preloadedState?: Partial<RootState>) {
           performanceApi.middleware,
           skillsSettingsApi.middleware,
           backgroundAgentsApi.middleware,
+          externalAgentsApi.middleware,
         )
         .prepend(historyMiddleware.middleware)
         .prepend(listenerMiddleware.middleware);

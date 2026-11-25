@@ -1,0 +1,228 @@
+.list {
+  display: grid;
+  gap: var(--rf-space-4, 16px);
+}
+
+.card {
+  display: grid;
+  gap: var(--rf-space-4, 16px);
+  padding: var(--rf-space-4, 16px);
+  border: 1px solid var(--rf-border, var(--gray-a5));
+  border-radius: var(--rf-radius-lg, 12px);
+  background: var(--rf-surface, var(--color-panel));
+}
+
+.cardHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--rf-space-4, 16px);
+}
+
+.cardTitle {
+  min-width: 0;
+}
+
+.cardTitle h3,
+.cardTitle p {
+  margin: 0;
+}
+
+.cardTitle p {
+  margin-top: var(--rf-space-2, 8px);
+  overflow-wrap: anywhere;
+}
+
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--rf-space-2, 8px);
+}
+
+.metadata {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--rf-space-3, 12px);
+  margin: 0;
+}
+
+.metadata div {
+  min-width: 0;
+}
+
+.metadata dt {
+  color: var(--rf-text-muted, var(--gray-11));
+  font-size: var(--rf-font-size-sm, 12px);
+}
+
+.metadata dd {
+  margin: var(--rf-space-1, 4px) 0 0;
+  overflow-wrap: anywhere;
+}
+
+.actions,
+.inlineActions,
+.formActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--rf-space-2, 8px);
+}
+
+.action {
+  display: inline-flex;
+  max-width: 280px;
+  flex-direction: column;
+  gap: var(--rf-space-1, 4px);
+}
+
+.actionReason {
+  color: var(--rf-text-muted, var(--gray-11));
+  font-size: var(--rf-font-size-xs, 11px);
+  line-height: 1.35;
+}
+
+.form {
+  display: grid;
+  gap: var(--rf-space-4, 16px);
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--rf-space-4, 16px);
+}
+
+.wide {
+  grid-column: 1 / -1;
+}
+
+.input {
+  width: 100%;
+  min-height: var(--rf-control-h, 36px);
+  padding: 0 var(--rf-space-3, 12px);
+  border: 1px solid var(--rf-border, var(--gray-a6));
+  border-radius: var(--rf-radius-md, 8px);
+  background: var(--rf-input-bg, var(--color-panel));
+  color: inherit;
+  font: inherit;
+}
+
+.input:focus-visible {
+  outline: 2px solid var(--rf-focus, var(--accent-9));
+  outline-offset: 2px;
+}
+
+.formActions {
+  justify-content: flex-end;
+}
+
+.error {
+  margin: 0;
+  color: var(--rf-danger, var(--red-11));
+  overflow-wrap: anywhere;
+}
+
+.muted {
+  color: var(--rf-text-muted, var(--gray-11));
+}
+
+.confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--rf-space-3, 12px);
+  padding: var(--rf-space-3, 12px);
+  border-radius: var(--rf-radius-md, 8px);
+  background: var(--rf-danger-soft, var(--red-a3));
+}
+
+.confirm span {
+  flex: 1 1 260px;
+}
+
+.details {
+  border-top: 1px solid var(--rf-border, var(--gray-a5));
+  padding-top: var(--rf-space-3, 12px);
+}
+
+.details summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.details summary:focus-visible {
+  outline: 2px solid var(--rf-focus, var(--accent-9));
+  outline-offset: 4px;
+}
+
+.detailsBody {
+  display: grid;
+  gap: var(--rf-space-4, 16px);
+  padding-top: var(--rf-space-4, 16px);
+}
+
+.detailsBody section {
+  display: grid;
+  gap: var(--rf-space-2, 8px);
+}
+
+.detailsBody h4,
+.detailsBody p {
+  margin: 0;
+}
+
+.operationRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--rf-space-3, 12px);
+  padding: var(--rf-space-2, 8px) 0;
+  overflow-wrap: anywhere;
+}
+
+.retryForm {
+  display: grid;
+  gap: var(--rf-space-3, 12px);
+  padding: var(--rf-space-3, 12px);
+  border-radius: var(--rf-radius-md, 8px);
+  background: var(--rf-surface-muted, var(--gray-a2));
+}
+
+.evidence {
+  display: grid;
+  gap: var(--rf-space-1, 4px);
+  padding: var(--rf-space-3, 12px);
+  border: 1px solid var(--rf-border, var(--gray-a5));
+  border-radius: var(--rf-radius-md, 8px);
+}
+
+.evidence ul {
+  margin: 0;
+  padding-left: var(--rf-space-5, 20px);
+}
+
+.evidence [data-status="fail"] {
+  color: var(--rf-danger, var(--red-11));
+}
+
+.evidence [data-status="pass"] {
+  color: var(--rf-success, var(--green-11));
+}
+
+@media (max-width: 720px) {
+  .formGrid,
+  .metadata {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .wide {
+    grid-column: auto;
+  }
+
+  .cardHeader,
+  .operationRow {
+    flex-direction: column;
+  }
+}

@@ -76,6 +76,12 @@ vi.mock("./BuddySettingsSection", () => ({
   BuddySettingsSection: () => <div data-testid="buddy-settings-section" />,
 }));
 
+vi.mock("./ExternalAgentsSettingsSection", () => ({
+  ExternalAgentsSettingsSection: () => (
+    <div data-testid="external-agents-settings-section" />
+  ),
+}));
+
 vi.mock("./IndexingSettingsSection", () => ({
   IndexingSettingsSection: () => <div data-testid="indexing-section" />,
 }));
@@ -170,6 +176,13 @@ describe("SettingsHub — section routing by page name", () => {
   it("shows Buddy section for buddy settings page", () => {
     renderHub({ name: "buddy settings" });
     expect(screen.getByTestId("buddy-settings-section")).toBeInTheDocument();
+  });
+
+  it("shows External agents section for external agents settings page", () => {
+    renderHub({ name: "external agents settings" });
+    expect(
+      screen.getByTestId("external-agents-settings-section"),
+    ).toBeInTheDocument();
   });
 
   it("shows Marketplace section for marketplace hub page", () => {

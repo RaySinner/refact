@@ -21,6 +21,7 @@ import { GeneralSettingsSection } from "./GeneralSettingsSection";
 import { IndexingSettingsSection } from "./IndexingSettingsSection";
 import { BrowserSettingsSection } from "./BrowserSettingsSection";
 import { BuddySettingsSection } from "./BuddySettingsSection";
+import { ExternalAgentsSettingsSection } from "./ExternalAgentsSettingsSection";
 import { TrajectorySettingsPanel } from "../Performance/TrajectorySettingsPanel";
 
 import styles from "./SettingsHub.module.css";
@@ -62,6 +63,8 @@ export const SettingsHub: React.FC<SettingsHubProps> = ({
         return <TrajectorySettingsPanel />;
       case "buddy":
         return <BuddySettingsSection />;
+      case "externalAgents":
+        return <ExternalAgentsSettingsSection />;
       case "providers":
         return (
           <Providers

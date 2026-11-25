@@ -129,6 +129,10 @@ export interface BuddySettingsPage {
   name: "buddy settings";
 }
 
+export interface ExternalAgentsSettingsPage {
+  name: "external agents settings";
+}
+
 export interface BuddyPage {
   name: "buddy";
   draftId?: string;
@@ -174,7 +178,8 @@ export type Page =
   | IndexingSettingsPage
   | BrowserSettingsPage
   | LimitsSettingsPage
-  | BuddySettingsPage;
+  | BuddySettingsPage
+  | ExternalAgentsSettingsPage;
 
 export function isIntegrationSetupPage(
   page: Page,

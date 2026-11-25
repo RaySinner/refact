@@ -17,6 +17,8 @@ export function settingsSectionToPage(section: SettingsSectionId): Page {
       return { name: "limits settings" };
     case "buddy":
       return { name: "buddy settings" };
+    case "externalAgents":
+      return { name: "external agents settings" };
     case "providers":
       return { name: "providers page" };
     case "models":
@@ -50,6 +52,8 @@ export function settingsPageToSection(page: Page): SettingsSectionId | null {
       return "limits";
     case "buddy settings":
       return "buddy";
+    case "external agents settings":
+      return "externalAgents";
     case "providers page":
       return "providers";
     case "default models":

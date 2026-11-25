@@ -579,7 +579,7 @@ async fn spawn_to_provider_room_delivery_preserves_privacy_scope_and_idempotency
         advisor_session.lock().await.pending_deliveries.len() == 1
     })
     .await;
-    assert_eq!(public_message_count(&advisor_session.lock().await), 0);
+    assert_eq!(public_message_count(&*advisor_session.lock().await), 0);
 
     let event_id = {
         let writer = writer_session.lock().await;
@@ -615,7 +615,7 @@ async fn spawn_to_provider_room_delivery_preserves_privacy_scope_and_idempotency
     let second_advisor_request = provider_request(&provider, "advisor", 2).await;
     assert_public_wire_request(&second_advisor_request, &writer_chat_id);
     wait_until("advisor delivered public message", || async {
-        public_message_count(&advisor_session.lock().await) == 1
+        public_message_count(&*advisor_session.lock().await) == 1
     })
     .await;
     wait_until("advisor idle after peer delivery", || async {
@@ -668,7 +668,7 @@ async fn spawn_to_provider_room_delivery_preserves_privacy_scope_and_idempotency
     .await
     .unwrap();
     assert!(retry.failed.is_empty(), "{retry:?}");
-    assert_eq!(public_message_count(&advisor_session.lock().await), 1);
+    assert_eq!(public_message_count(&*advisor_session.lock().await), 1);
 
     app.chat
         .facade
@@ -681,6 +681,6 @@ async fn spawn_to_provider_room_delivery_preserves_privacy_scope_and_idempotency
         advisor_session.lock().await.runtime.state == SessionState::Idle
     })
     .await;
-    assert_eq!(public_message_count(&advisor_session.lock().await), 1);
+    assert_eq!(public_message_count(&*advisor_session.lock().await), 1);
     assert!(provider.request_count("writer") >= 2);
 }

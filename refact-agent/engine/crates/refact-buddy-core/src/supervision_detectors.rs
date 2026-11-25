@@ -722,12 +722,24 @@ mod tests {
             ),
             message(2, MessageRole::Assistant, secret),
         ]);
-        let serialized =
-            serde_json::to_string(&detect_supervision_candidates(&projection, config(), 1_002))
-                .unwrap();
+        let candidates = detect_supervision_candidates(&projection, config(), 1_002);
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].candidate, InterventionCandidate::OffGoal);
+        assert_eq!(
+            candidates[0]
+                .evidence
+                .ids()
+                .iter()
+                .map(|id| id.seq)
+                .collect::<Vec<_>>(),
+            vec![1, 2]
+        );
+        let serialized = serde_json::to_string(&candidates).unwrap();
         assert!(!serialized.contains("SECRET-SUPERVISION-CANARY"));
+        assert!(!serialized.contains("Bearer"));
+        assert!(!serialized.contains("sk-"));
         assert!(!serialized.contains("reasoning"));
         assert!(!serialized.contains("tool_output"));
-        assert!(serialized.contains("REDACTED"));
+        assert!(projection.snapshot().unwrap().contains("REDACTED"));
     }
 }

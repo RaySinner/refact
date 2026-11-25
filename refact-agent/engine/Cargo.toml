@@ -404,6 +404,8 @@ dirs = "5.0"
 refact-test-support = { path = "crates/refact-test-support" }
 refact-perf = { path = "crates/refact-perf", features = ["bench"] }
 refact-buddy-core = { path = "crates/refact-buddy-core", features = ["test-util"] }
+refact-room = { path = "crates/refact-room" }
+refact-uhp = { path = "crates/refact-uhp" }
 refact-http = { path = "crates/refact-http", features = ["test-util"] }
 refact-privacy = { path = "crates/refact-privacy", features = ["test-util"] }
 refact-runtime-api = { path = "crates/refact-runtime-api", features = ["test-util"] }

@@ -651,7 +651,7 @@ impl ChatSession {
         }
         let from = goal.status;
         goal.apply_legacy_status(status);
-        if status == GoalStatus::Stopped {
+        if matches!(status, GoalStatus::Paused | GoalStatus::Stopped) {
             goal.stop_reason = (!reason.is_empty()).then(|| reason.to_string());
         } else if matches!(status, GoalStatus::Active | GoalStatus::Verifying) {
             goal.stop_reason = None;

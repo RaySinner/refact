@@ -832,6 +832,20 @@ mod tests {
             assert_eq!(goal.attempts[0].verdict, "inconclusive");
             assert_eq!(goal.progress.no_progress_turns, 0);
             assert_ne!(session.runtime.state, SessionState::Completed);
+            let replayed = crate::goal_ledger::reduce_goal_ledger(&session.goal_ledger).unwrap();
+            assert_eq!(replayed.status, GoalStatus::Paused);
+            assert_eq!(
+                replayed.stop_reason.as_deref(),
+                Some("verification_inconclusive")
+            );
+            session.goal = None;
+            session.rebuild_goal_projection_from_messages();
+            let rebuilt = session.goal.as_ref().unwrap();
+            assert_eq!(rebuilt.status, GoalStatus::Paused);
+            assert_eq!(
+                rebuilt.stop_reason.as_deref(),
+                Some("verification_inconclusive")
+            );
         }
     }
 

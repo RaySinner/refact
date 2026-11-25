@@ -285,7 +285,7 @@ fn apply_op(state: &mut GoalLedgerState, op: &GoalLedgerOp, at_ms: u64) {
         GoalLedgerOp::Installed { .. } => {}
         GoalLedgerOp::StatusChanged { to, reason, .. } => {
             state.apply_legacy_status(*to);
-            if *to == GoalStatus::Stopped {
+            if matches!(to, GoalStatus::Paused | GoalStatus::Stopped) {
                 state.stop_reason = (!reason.is_empty()).then(|| reason.clone());
             } else if matches!(to, GoalStatus::Active | GoalStatus::Verifying) {
                 state.stop_reason = None;

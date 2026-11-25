@@ -14,7 +14,7 @@ use axum::http::{Response, StatusCode};
 use hyper::Body;
 #[cfg(test)]
 #[allow(unused_imports)]
-use refact_chat_api::{GoalBudget, GoalLedgerOp, GoalSnapshot, SessionState};
+use refact_chat_api::{CompressionPhase, GoalBudget, GoalLedgerOp, GoalSnapshot, SessionState};
 #[cfg(test)]
 #[allow(unused_imports)]
 use refact_chat_history::trajectory_snapshot::TrajectorySnapshot;
@@ -518,6 +518,78 @@ mod tests {
         let session = session.lock().await;
         assert_eq!(session.runtime.state, SessionState::Idle);
         assert!(session.abort_flag.load(std::sync::atomic::Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn transform_apply_preserves_active_compression_and_applies_after_terminal_phase() {
+        let gcx = make_transform_test_gcx("compression-chat", SessionState::Generating).await;
+        let session_arc = gcx
+            .chat_sessions
+            .read()
+            .await
+            .get("compression-chat")
+            .cloned()
+            .unwrap();
+        let (before_messages, before_version, compression_abort) = {
+            let mut session = session_arc.lock().await;
+            session.active_compression_attempt = Some(7);
+            session.compression_abort_flag = Some(Arc::new(
+                std::sync::atomic::AtomicBool::new(false),
+            ));
+            session.is_compressing = true;
+            session.runtime.is_compressing = true;
+            session.compression_phase = Some(CompressionPhase::Running);
+            session.runtime.compression_phase = Some(CompressionPhase::Running);
+            (
+                serde_json::to_vec(&session.messages).unwrap(),
+                session.trajectory_version,
+                session.compression_abort_flag.clone().unwrap(),
+            )
+        };
+
+        let error = call_transform_apply(gcx.clone(), "compression-chat")
+            .await
+            .unwrap_err();
+        assert_eq!(error.status_code, StatusCode::CONFLICT);
+        assert!(error.message.contains("Compression already in progress"));
+        assert!(error.message.contains("retry later"));
+
+        {
+            let session = session_arc.lock().await;
+            assert_eq!(serde_json::to_vec(&session.messages).unwrap(), before_messages);
+            assert_eq!(session.trajectory_version, before_version);
+            assert_eq!(session.runtime.state, SessionState::Generating);
+            assert!(!session.abort_flag.load(std::sync::atomic::Ordering::SeqCst));
+            assert_eq!(session.active_compression_attempt, Some(7));
+            assert!(Arc::ptr_eq(
+                &compression_abort,
+                session.compression_abort_flag.as_ref().unwrap()
+            ));
+            assert!(!compression_abort.load(std::sync::atomic::Ordering::SeqCst));
+            assert!(session.is_compressing);
+            assert!(session.runtime.is_compressing);
+            assert_eq!(session.compression_phase, Some(CompressionPhase::Running));
+        }
+
+        {
+            let mut session = session_arc.lock().await;
+            refact_chat_api::context_rebuild::status(
+                &mut session,
+                CompressionPhase::Applied,
+                None,
+            );
+        }
+        let result = call_transform_apply(gcx, "compression-chat").await;
+        assert!(
+            result.is_ok(),
+            "transform apply should succeed after a terminal phase"
+        );
+        let session = session_arc.lock().await;
+        assert_eq!(session.runtime.state, SessionState::Idle);
+        assert_eq!(session.compression_phase, Some(CompressionPhase::Applied));
+        assert!(!refact_chat_api::compression_gate::compression_attempt_active(
+            &session
+        ));
     }
 
     #[test]

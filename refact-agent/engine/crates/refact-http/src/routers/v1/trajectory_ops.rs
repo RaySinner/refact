@@ -451,16 +451,19 @@ pub async fn handle_transform_apply(
             ));
         }
 
+        if compression_attempt_active(&session) {
+            return Err(ScratchError::new(
+                StatusCode::CONFLICT,
+                "Compression already in progress; retry later".to_string(),
+            ));
+        }
+
         if matches!(
             session.runtime.state,
             SessionState::Generating | SessionState::ExecutingTools
         ) {
             session.abort_stream();
             session.clear_pending_tool_calls_for_interruption();
-        }
-
-        if compression_attempt_active(&session) {
-            session.reset_compaction_runtime_state();
         }
 
         let stats = compress_in_place(&mut session.messages, &req.options)

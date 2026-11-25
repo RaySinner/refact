@@ -1,7 +1,16 @@
 import React, { useCallback } from "react";
 import classNames from "classnames";
-import { FileText, Link2, User } from "lucide-react";
+import { FileText, Link2, Network, User } from "lucide-react";
 import { Badge, Card, Icon } from "../../components/ui";
+import { useAppDispatch } from "../../hooks";
+import { push } from "../Pages/pagesSlice";
+import {
+  useGetExternalParticipantQuery,
+  useGetExternalParticipantsQuery,
+  type ExternalDeliveryRead,
+  type ExternalParticipantRead,
+} from "../../services/refact/externalAgents";
+import { getExternalEvidenceView } from "../Settings/externalAgentStatus";
 import type {
   TaskBoard,
   BoardCard,
@@ -50,6 +59,66 @@ interface RoomMemberProps {
   card: BoardCard;
   onAgentClick?: (card: BoardCard) => void;
 }
+
+function latestExternalDelivery(
+  deliveries: ExternalDeliveryRead[],
+): ExternalDeliveryRead | undefined {
+  return [...deliveries].sort(
+    (left, right) => right.updated_at - left.updated_at,
+  )[0];
+}
+
+const ExternalRoomMemberBadge: React.FC<{
+  member: TeamMember;
+  participant: ExternalParticipantRead;
+}> = ({ member, participant }) => {
+  const dispatch = useAppDispatch();
+  const { data: details } = useGetExternalParticipantQuery(participant.id);
+  const current = details?.participant ?? participant;
+  const latestDelivery = latestExternalDelivery(details?.deliveries ?? []);
+  const freshness =
+    member.source_freshness ?? latestDelivery?.source_freshness ?? "unknown";
+  const evidence = getExternalEvidenceView(current, details?.evidence ?? []);
+  const source = member.source_digest ?? latestDelivery?.source_digest;
+  const revision =
+    member.source_revision ?? latestDelivery?.source_revision ?? undefined;
+  const title = [
+    `External advisor: ${current.name}`,
+    `Base/model: ${current.base} / ${current.model}`,
+    `Evidence: ${evidence.label}`,
+    `Source: ${freshness}`,
+    revision ? `Revision: ${revision}` : null,
+    source ? `Digest: ${source}` : null,
+    current.last_error?.message ?? member.error?.message,
+    "Read-only; opens participant details and evidence",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  return (
+    <button
+      type="button"
+      className={`${styles.roomMember} ${styles.roomMemberClickable}`}
+      data-testid={`room-member-${member.role}`}
+      data-external-participant={current.id}
+      title={title}
+      aria-label={`Open external advisor ${current.name}`}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        dispatch(push({ name: "external agents settings" }));
+      }}
+    >
+      <Network aria-hidden="true" size={12} />
+      <span className={styles.roomMemberRole}>{current.name}</span>
+      <span className={styles.roomMemberStatus}>read-only</span>
+      <span className={styles.roomMemberStatus}>{evidence.label}</span>
+      <span className={styles.roomMemberStatus} data-freshness={freshness}>
+        {freshness}
+      </span>
+    </button>
+  );
+};
 
 const RoomMemberBadge: React.FC<RoomMemberProps> = ({
   member,
@@ -107,6 +176,11 @@ const RoomMemberBadge: React.FC<RoomMemberProps> = ({
       </span>
       <span className={styles.roomMemberRole}>{label}</span>
       <span className={styles.roomMemberStatus}>{status}</span>
+      {member.writes === true ? (
+        <span className={styles.roomMemberStatus}>writer</span>
+      ) : member.writes === false ? (
+        <span className={styles.roomMemberStatus}>advisor</span>
+      ) : null}
     </button>
   );
 };
@@ -121,20 +195,68 @@ const RoomRoster: React.FC<RoomRosterProps> = ({
   members,
   card,
   onAgentClick,
-}) => (
-  <div className={styles.roomRoster} data-testid="room-roster">
-    {members.map((member, index) => (
-      <RoomMemberBadge
-        key={
-          member.agent_chat_id ?? member.agent_id ?? `${member.role}-${index}`
+}) => {
+  const { data: registry, isLoading: registryLoading } =
+    useGetExternalParticipantsQuery(undefined);
+  return (
+    <div className={styles.roomRoster} data-testid="room-roster">
+      {members.map((member, index) => {
+        const participantId = member.participant_id ?? member.agent_id;
+        const participant = registry?.participants.find(
+          (candidate) =>
+            candidate.id === participantId &&
+            (member.kind === "external" ||
+              member.participant_id != null ||
+              (member.agent_chat_id == null && member.writes === false)),
+        );
+        const explicitlyExternal =
+          member.kind === "external" || member.participant_id != null;
+        const possiblyExternal =
+          explicitlyExternal ||
+          (member.agent_chat_id == null && member.writes === false);
+        const key =
+          participant?.id ??
+          member.agent_chat_id ??
+          member.agent_id ??
+          `${member.role}-${index}`;
+        if (
+          !participant &&
+          possiblyExternal &&
+          (explicitlyExternal || registryLoading)
+        ) {
+          return (
+            <span
+              key={key}
+              className={styles.roomMember}
+              data-testid={`room-member-${member.role}`}
+              title="Loading external advisor details"
+            >
+              <Network aria-hidden="true" size={12} />
+              <span className={styles.roomMemberRole}>
+                {roleLabel(member.role)}
+              </span>
+              <span className={styles.roomMemberStatus}>external</span>
+            </span>
+          );
         }
-        member={member}
-        card={card}
-        onAgentClick={onAgentClick}
-      />
-    ))}
-  </div>
-);
+        return participant ? (
+          <ExternalRoomMemberBadge
+            key={key}
+            member={member}
+            participant={participant}
+          />
+        ) : (
+          <RoomMemberBadge
+            key={key}
+            member={member}
+            card={card}
+            onAgentClick={onAgentClick}
+          />
+        );
+      })}
+    </div>
+  );
+};
 
 function roomMembersOf(card: BoardCard): TeamMember[] {
   return card.team_members ?? [];

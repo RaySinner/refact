@@ -5,6 +5,10 @@ import { screen, waitFor } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 
 import type { BackgroundAgentSummary } from "../../services/refact";
+import {
+  makeExternalDetails,
+  makeExternalParticipant,
+} from "../../__fixtures__/externalAgents";
 import { createDefaultChatState, render } from "../../utils/test-utils";
 import { server } from "../../utils/mockServer";
 import { AgentsSection } from "./AgentsPanel";
@@ -82,7 +86,172 @@ function panelState(agents: BackgroundAgentSummary[]) {
 
 describe("AgentsSection", () => {
   beforeEach(() => {
-    server.use(http.get("*/v1/background-agents", () => HttpResponse.json([])));
+    server.use(
+      http.get("*/v1/background-agents", () => HttpResponse.json([])),
+      http.get("*/v1/external-participants", () =>
+        HttpResponse.json({ mode: "internal_agents", participants: [] }),
+      ),
+    );
+  });
+
+  test("renders external operational state without a fake local chat or private fields", async () => {
+    const participant = makeExternalParticipant({
+      id: "advisor-1",
+      name: "Claude reviewer",
+      base: "claude-code",
+      model: "claude-sonnet",
+      state: "verified",
+      protocol_version: "2026-10-19",
+      server_version: "1.2.3",
+      credential_profile_ref: "SECRET-CREDENTIAL-CANARY",
+      prompt: "SECRET-PROMPT-CANARY",
+    });
+    const details = makeExternalDetails(participant, {
+      sessions: [
+        {
+          participant_id: participant.id,
+          session_id: "session-1",
+          last_response_id: "response-1",
+          last_terminal_status: null,
+          busy: true,
+          queued: true,
+          created_at: 1,
+          updated_at: 2,
+          replay_cursor: null,
+        },
+      ],
+      deliveries: [
+        {
+          delivery_id: "delivery-1",
+          room_id: "room-1",
+          event_id: "event-1",
+          participant_id: participant.id,
+          status: "busy",
+          request_state: "in_progress",
+          logical_attempt: 3,
+          response_id: "response-1",
+          session_id: "session-1",
+          source_revision: "rev-1",
+          source_digest: "digest-1",
+          source_freshness: "stale",
+          environment_version: 2,
+          error: null,
+          created_at: 1,
+          updated_at: 2,
+        },
+      ],
+      evidence: [
+        {
+          smoke_suite_id: "smoke-1",
+          server_version: "1.2.3",
+          cli_version: participant.cli_pin,
+          model_version: participant.model,
+          checks: [{ name: "read-only", status: "pass" }],
+          generated_at: 1,
+          sanitized_report_location: "evidence/smoke-1",
+        },
+      ],
+    });
+    server.use(
+      http.get("*/v1/external-participants", () =>
+        HttpResponse.json({
+          mode: "external_participants",
+          participants: [participant],
+        }),
+      ),
+      http.get(`*/v1/external-participants/${participant.id}`, () =>
+        HttpResponse.json(details),
+      ),
+    );
+    const { user, store } = render(<AgentsSection chatId={chatId} />, {
+      preloadedState: panelState([]),
+    });
+
+    expect(await screen.findByText("Claude reviewer")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("external-participant-advisor-1"),
+    ).toHaveAttribute("data-agent-chat-id", "none");
+    expect(screen.queryByTestId("agent-row-advisor-1")).not.toBeInTheDocument();
+    await user.click(screen.getByLabelText("Expand Claude reviewer"));
+    expect(screen.getByText("claude-code · claude-sonnet")).toBeInTheDocument();
+    expect(screen.getByText(/busy · queued/)).toBeInTheDocument();
+    expect(screen.getByText(/attempt 3/)).toBeInTheDocument();
+    expect(screen.getByText(/in_progress · stale/)).toBeInTheDocument();
+    expect(screen.getByText("Live verified")).toBeInTheDocument();
+    expect(
+      screen.getByText("1 records · 1/1 checks passed"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/SECRET-/)).not.toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("button", { name: "Participant details & evidence" }),
+    );
+    expect(store.getState().pages.at(-1)).toEqual({
+      name: "external agents settings",
+    });
+  });
+
+  test("confirms external session cancellation and retirement using server actions", async () => {
+    const participant = makeExternalParticipant({
+      id: "advisor-actions",
+      harness_id: "harness-actions",
+    });
+    const details = makeExternalDetails(participant, {
+      sessions: [
+        {
+          participant_id: participant.id,
+          session_id: "session-actions",
+          last_response_id: null,
+          last_terminal_status: null,
+          busy: true,
+          queued: false,
+          created_at: 1,
+          updated_at: 2,
+          replay_cursor: null,
+        },
+      ],
+    });
+    let cancelBody: unknown;
+    let deleted = false;
+    server.use(
+      http.get("*/v1/external-participants", () =>
+        HttpResponse.json({
+          mode: "external_participants",
+          participants: [participant],
+        }),
+      ),
+      http.get(`*/v1/external-participants/${participant.id}`, () =>
+        HttpResponse.json(details),
+      ),
+      http.post(
+        `*/v1/external-participants/${participant.id}/cancel`,
+        async ({ request }) => {
+          cancelBody = await request.json();
+          return HttpResponse.json(details);
+        },
+      ),
+      http.delete(`*/v1/external-participants/${participant.id}`, () => {
+        deleted = true;
+        return HttpResponse.json({
+          participant_id: participant.id,
+          deleted: false,
+          retired: true,
+        });
+      }),
+    );
+    const { user } = render(<AgentsSection chatId={chatId} />, {
+      preloadedState: panelState([]),
+    });
+
+    await user.click(await screen.findByLabelText("Expand Reviewer"));
+    await user.click(screen.getByRole("button", { name: "Cancel session" }));
+    await user.click(screen.getByRole("button", { name: "Confirm" }));
+    await waitFor(() =>
+      expect(cancelBody).toEqual({ kind: "session", id: "session-actions" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Retire" }));
+    await user.click(screen.getByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(deleted).toBe(true));
   });
 
   test("prompts for a chat when the dock has no focused chat", () => {

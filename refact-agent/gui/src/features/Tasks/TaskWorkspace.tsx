@@ -81,6 +81,7 @@ import {
   useDeleteWorktreeMutation,
   useListWorktreesQuery,
   useOpenWorktreeMutation,
+  useGetExternalParticipantsQuery,
   type MergeWorktreeResponse,
   type BackgroundAgentSummary,
 } from "../../services/refact";
@@ -886,6 +887,8 @@ const CardDetail: React.FC<CardDetailProps> = ({
   onDeleteWorktree,
   onOpenAgentChat,
 }) => {
+  const dispatch = useAppDispatch();
+  const { data: externalRegistry } = useGetExternalParticipantsQuery(undefined);
   const worktreeActionsDisabled = !worktree || !isActionableWorktree(worktree);
   const worktreeActionsTooltip = worktree?.legacy
     ? LEGACY_WORKTREE_TOOLTIP
@@ -1025,6 +1028,15 @@ const CardDetail: React.FC<CardDetailProps> = ({
               {roomMembers.map((member, index) => {
                 const accent = roleAccent(member.role);
                 const status = memberStatusText(member);
+                const participantId = member.participant_id ?? member.agent_id;
+                const participant = externalRegistry?.participants.find(
+                  (candidate) =>
+                    candidate.id === participantId &&
+                    (member.kind === "external" ||
+                      member.participant_id != null ||
+                      (member.agent_chat_id == null &&
+                        member.writes === false)),
+                );
                 const key =
                   member.agent_chat_id ??
                   member.agent_id ??
@@ -1057,9 +1069,38 @@ const CardDetail: React.FC<CardDetailProps> = ({
                           weight="medium"
                           className={styles.roomMemberRowRole}
                         >
-                          {roleLabel(member.role)}
+                          {participant?.name ?? roleLabel(member.role)}
                         </Text>
                         <Badge tone={memberStatusTone(status)}>{status}</Badge>
+                        {participant ? (
+                          <>
+                            <Badge tone="accent">External · read-only</Badge>
+                            <Badge
+                              tone={
+                                participant.state === "verified"
+                                  ? "success"
+                                  : participant.state === "failed"
+                                    ? "danger"
+                                    : "warning"
+                              }
+                            >
+                              {participant.state}
+                            </Badge>
+                            {member.source_freshness ? (
+                              <Badge
+                                tone={
+                                  member.source_freshness === "fresh"
+                                    ? "success"
+                                    : member.source_freshness === "stale"
+                                      ? "danger"
+                                      : "muted"
+                                }
+                              >
+                                {member.source_freshness}
+                              </Badge>
+                            ) : null}
+                          </>
+                        ) : null}
                       </div>
                       {member.mandate && (
                         <Text
@@ -1080,7 +1121,19 @@ const CardDetail: React.FC<CardDetailProps> = ({
                         </div>
                       )}
                     </div>
-                    {member.agent_chat_id && onOpenAgentChat ? (
+                    {participant ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className={styles.roomMemberRowAction}
+                        onClick={() =>
+                          dispatch(push({ name: "external agents settings" }))
+                        }
+                      >
+                        Details & evidence
+                      </Button>
+                    ) : member.agent_chat_id && onOpenAgentChat ? (
                       <Button
                         type="button"
                         size="sm"

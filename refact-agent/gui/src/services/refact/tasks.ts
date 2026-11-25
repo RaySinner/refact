@@ -1,6 +1,7 @@
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
 import { RootState } from "../../app/store";
 import { buildApiUrlFromState } from "./apiUrl";
+import type { SanitizedExternalError } from "./externalAgents";
 
 export interface TaskMeta {
   id: string;
@@ -71,6 +72,8 @@ export interface TeamMemberReport {
  */
 export interface TeamMember {
   role: string;
+  kind?: "internal" | "external";
+  participant_id?: string | null;
   agent_chat_id?: string | null;
   agent_branch?: string | null;
   status?: string | null;
@@ -81,6 +84,17 @@ export interface TeamMember {
   report?: TeamMemberReport | null;
   /** Tool names the member was actually spawned with. */
   tools?: string[];
+  writes?: boolean | null;
+  read_only?: boolean | null;
+  base?: string | null;
+  model?: string | null;
+  harness_id?: string | null;
+  source_revision?: string | null;
+  source_digest?: string | null;
+  source_freshness?: "unknown" | "fresh" | "stale" | null;
+  session_status?: string | null;
+  evidence_status?: string | null;
+  error?: SanitizedExternalError | null;
 }
 
 export interface BoardCard {

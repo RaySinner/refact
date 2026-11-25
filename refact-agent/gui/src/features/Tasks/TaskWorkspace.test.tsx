@@ -38,6 +38,7 @@ import type {
   WorktreeRecordView,
 } from "../../services/refact";
 import type { TeamMember } from "../../services/refact/tasks";
+import { makeExternalParticipant } from "../../__fixtures__/externalAgents";
 import { taskDocumentsApi } from "../../services/refact/taskDocumentsApi";
 import { taskMemoriesApi } from "../../services/refact/taskMemoriesApi";
 import { server } from "../../utils/mockServer";
@@ -2555,6 +2556,66 @@ describe("TaskWorkspace CardDetail dialog", () => {
       const state = store.getState();
       expect(state.chat.current_thread_id).toBe("coder-T-1");
     });
+  });
+
+  it("external_room_member_opens_participant_details_instead_of_a_local_chat", async () => {
+    const participant = makeExternalParticipant({
+      id: "advisor-detail",
+      name: "External reviewer",
+      state: "unverified",
+    });
+    const card = makeCard({
+      title: "Room card with external advisor",
+      agent_chat_id: "writer-chat",
+      team_members: [
+        {
+          role: "coder",
+          agent_chat_id: "writer-chat",
+          writes: true,
+        },
+        {
+          role: "reviewer",
+          kind: "external",
+          participant_id: participant.id,
+          agent_chat_id: null,
+          writes: false,
+          source_freshness: "stale",
+        },
+      ],
+    });
+    server.use(
+      ...taskWorkspaceHandlers(card, []),
+      http.get("*/v1/external-participants", () =>
+        HttpResponse.json({
+          mode: "external_participants",
+          participants: [participant],
+        }),
+      ),
+    );
+    const { user, store } = render(<TaskWorkspace taskId={TASK_ID} />, {
+      preloadedState: workspacePreloadedState(),
+    });
+
+    await user.click(await openCardDetail(card));
+    const members = await screen.findByTestId("card-detail-room-members");
+    expect(
+      await within(members).findByText("External reviewer"),
+    ).toBeInTheDocument();
+    expect(
+      within(members).getByText("External · read-only"),
+    ).toBeInTheDocument();
+    expect(within(members).getByText("stale")).toBeInTheDocument();
+    expect(
+      within(members).queryByTestId("room-member-open-advisor-detail"),
+    ).not.toBeInTheDocument();
+    const previousChat = store.getState().chat.current_thread_id;
+    await user.click(
+      within(members).getByRole("button", { name: "Details & evidence" }),
+    );
+    expect(store.getState().pages.at(-1)).toEqual({
+      name: "external agents settings",
+    });
+    expect(store.getState().chat.current_thread_id).toBe(previousChat);
   });
 });
 

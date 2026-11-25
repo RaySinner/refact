@@ -1,5 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "../../utils/test-utils";
+import { http, HttpResponse } from "msw";
+import { server } from "../../utils/mockServer";
+import {
+  makeExternalDetails,
+  makeExternalParticipant,
+} from "../../__fixtures__/externalAgents";
 import type {
   BoardCard,
   TaskBoard,
@@ -43,6 +49,14 @@ function renderBoard(card: BoardCard) {
 }
 
 describe("KanbanCard agent badge", () => {
+  beforeEach(() => {
+    server.use(
+      http.get("*/v1/external-participants", () =>
+        HttpResponse.json({ mode: "internal_agents", participants: [] }),
+      ),
+    );
+  });
+
   it("single_agent_card_renders_existing_badge", () => {
     renderBoard(
       makeCard({ assignee: "agent-abc123", agent_chat_id: "chat-1" }),
@@ -168,5 +182,172 @@ describe("KanbanCard agent badge", () => {
         agent_chat_id: "chat-coder",
       }),
     );
+  });
+
+  it("shows_one_writer_and_a_live_verified_external_advisor_without_chat_fallback", async () => {
+    const participant = makeExternalParticipant({
+      id: "external-reviewer",
+      name: "External reviewer",
+      state: "verified",
+      server_version: "1.2.3",
+    });
+    const details = makeExternalDetails(participant, {
+      deliveries: [
+        {
+          delivery_id: "delivery-fresh",
+          room_id: "room-1",
+          event_id: "event-1",
+          participant_id: participant.id,
+          status: "terminal",
+          request_state: "completed",
+          logical_attempt: 1,
+          response_id: "response-1",
+          session_id: "session-1",
+          source_revision: "rev-fresh",
+          source_digest: "digest-fresh",
+          source_freshness: "fresh",
+          environment_version: 1,
+          error: null,
+          created_at: 1,
+          updated_at: 2,
+        },
+      ],
+      evidence: [
+        {
+          smoke_suite_id: "smoke-1",
+          server_version: "1.2.3",
+          cli_version: participant.cli_pin,
+          model_version: participant.model,
+          checks: [{ name: "live", status: "pass" }],
+          generated_at: 1,
+          sanitized_report_location: "evidence/smoke-1",
+        },
+      ],
+    });
+    server.use(
+      http.get("*/v1/external-participants", () =>
+        HttpResponse.json({
+          mode: "external_participants",
+          participants: [participant],
+        }),
+      ),
+      http.get(`*/v1/external-participants/${participant.id}`, () =>
+        HttpResponse.json(details),
+      ),
+    );
+    const onAgentClick = vi.fn();
+    const { user, store } = render(
+      <KanbanBoard
+        board={makeBoard(
+          makeCard({
+            agent_chat_id: "writer-chat",
+            team_members: [
+              makeMember({
+                role: "coder",
+                agent_chat_id: "writer-chat",
+                writes: true,
+              }),
+              makeMember({
+                role: "reviewer",
+                kind: "external",
+                participant_id: participant.id,
+                agent_id: participant.id,
+                agent_chat_id: null,
+                writes: false,
+              }),
+            ],
+          }),
+        )}
+        onAgentClick={onAgentClick}
+      />,
+    );
+
+    expect(screen.getByTestId("room-member-coder")).toHaveTextContent("writer");
+    const external = await screen.findByLabelText(
+      "Open external advisor External reviewer",
+    );
+    expect(external).toHaveTextContent("read-only");
+    expect(external).toHaveTextContent("Live verified");
+    expect(external).toHaveTextContent("fresh");
+    expect(external).toHaveAttribute(
+      "title",
+      expect.stringContaining("rev-fresh"),
+    );
+    await user.click(external);
+    expect(onAgentClick).not.toHaveBeenCalled();
+    expect(store.getState().pages.at(-1)).toEqual({
+      name: "external agents settings",
+    });
+  });
+
+  it("distinguishes_staging_and_stale_external_evidence_from_live_verified", async () => {
+    const participant = makeExternalParticipant({
+      id: "staging-reviewer",
+      name: "Staging reviewer",
+      protocol_version: "2026-10-19",
+      harness_id: "harness-1",
+      environment_id: "environment-1",
+      environment_version: 4,
+    });
+    const details = makeExternalDetails(participant, {
+      deliveries: [
+        {
+          delivery_id: "delivery-stale",
+          room_id: "room-1",
+          event_id: "event-1",
+          participant_id: participant.id,
+          status: "terminal",
+          request_state: "failed",
+          logical_attempt: 2,
+          response_id: null,
+          session_id: "session-1",
+          source_revision: "rev-stale",
+          source_digest: "digest-stale",
+          source_freshness: "stale",
+          environment_version: 4,
+          error: {
+            code: "refact.room.stale_source",
+            message: "Source changed",
+          },
+          created_at: 1,
+          updated_at: 2,
+        },
+      ],
+    });
+    server.use(
+      http.get("*/v1/external-participants", () =>
+        HttpResponse.json({
+          mode: "external_participants",
+          participants: [participant],
+        }),
+      ),
+      http.get(`*/v1/external-participants/${participant.id}`, () =>
+        HttpResponse.json(details),
+      ),
+    );
+    renderBoard(
+      makeCard({
+        team_members: [
+          makeMember({
+            role: "reviewer",
+            participant_id: participant.id,
+            agent_chat_id: null,
+            writes: false,
+          }),
+          makeMember({
+            role: "coder",
+            agent_chat_id: "writer-chat",
+            writes: true,
+          }),
+        ],
+      }),
+    );
+
+    const external = await screen.findByLabelText(
+      "Open external advisor Staging reviewer",
+    );
+    expect(external).toHaveTextContent("Staging ready — not live verified");
+    expect(external).toHaveTextContent("stale");
+    expect(external).not.toHaveTextContent("Live verified");
   });
 });

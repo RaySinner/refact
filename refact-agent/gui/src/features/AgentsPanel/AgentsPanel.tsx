@@ -7,6 +7,7 @@ import { useAppDispatch, useAppSelector } from "../../hooks";
 import { useIsDocumentVisible } from "../../hooks/useIsDocumentVisible";
 import {
   useGetBackgroundAgentsQuery,
+  useGetExternalParticipantsQuery,
   type BackgroundAgentSummary,
 } from "../../services/refact";
 import {
@@ -18,6 +19,7 @@ import {
 } from "../Chat/Thread";
 import { selectAgentsPanelTab, tabChanged } from "./agentsPanelSlice";
 import { AgentTreeNode } from "./AgentTreeNode";
+import { ExternalParticipantNode } from "./ExternalParticipantNode";
 import styles from "./AgentsPanel.module.css";
 
 export type AgentsSectionProps = {
@@ -56,6 +58,14 @@ function AgentsSectionContents({
     pollingInterval: visible ? 30_000 : 0,
     refetchOnFocus: true,
   });
+  const { data: externalRegistry } = useGetExternalParticipantsQuery(
+    undefined,
+    {
+      pollingInterval: visible ? 30_000 : 0,
+      refetchOnFocus: true,
+    },
+  );
+  const externalParticipants = externalRegistry?.participants ?? [];
 
   const combinedAgents = useMemo(
     () => ({
@@ -86,7 +96,9 @@ function AgentsSectionContents({
       });
     return filter(tree);
   }, [activeAgents, tab, tree]);
-  const visibleCount = flattenBackgroundAgentTree(visibleTree).length;
+  const visibleCount =
+    flattenBackgroundAgentTree(visibleTree).length +
+    externalParticipants.length;
   const aggregate = aggregateBackgroundAgentUsage(
     flattenBackgroundAgentTree(tree),
   );
@@ -140,7 +152,8 @@ function AgentsSectionContents({
             title="No agents"
             variant="compact"
           />
-        ) : (
+        ) : null}
+        {visibleTree.length > 0 ? (
           <ul className={classNames(styles.tree, "rf-stagger")}>
             {visibleTree.map((node) => (
               <AgentTreeNode
@@ -151,7 +164,25 @@ function AgentsSectionContents({
               />
             ))}
           </ul>
-        )}
+        ) : null}
+        {externalParticipants.length > 0 ? (
+          <section
+            className={styles.externalSection}
+            aria-label="External advisors"
+          >
+            <h3 className={styles.externalHeading}>
+              External advisors ({externalParticipants.length})
+            </h3>
+            <ul className={classNames(styles.tree, "rf-stagger")}>
+              {externalParticipants.map((participant) => (
+                <ExternalParticipantNode
+                  key={participant.id}
+                  participant={participant}
+                />
+              ))}
+            </ul>
+          </section>
+        ) : null}
       </div>
     </>
   );

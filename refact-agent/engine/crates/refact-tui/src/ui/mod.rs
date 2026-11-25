@@ -739,7 +739,7 @@ help = "f1"
             .iter()
             .map(|cell| cell.symbol())
             .collect::<String>();
-        assert!(text.contains("Goal ACTIVE"));
+        assert!(text.contains("Goal IDLE"));
         assert!(text.contains("2 turns"));
         match previous {
             Some(value) => std::env::set_var("REFACT_TUI_SURFACES", value),

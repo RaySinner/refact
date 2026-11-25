@@ -4806,6 +4806,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "refact-room"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "hex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
 name = "refact-runtime-api"
 version = "0.1.0"
 dependencies = [
@@ -4892,19 +4905,6 @@ dependencies = [
  "uuid",
  "walkdir",
  "winreg 0.55.0",
-]
-
-[[package]]
-name = "refact-room"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "hex",
- "serde",
- "serde_json",
- "sha2",
- "thiserror 2.0.18",
- "tokio",
 ]
 
 [[package]]
@@ -5170,6 +5170,8 @@ name = "refact-uhp"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "eventsource-stream",
+ "futures",
  "hex",
  "reqwest",
  "serde",

@@ -247,23 +247,52 @@ fn static_driver_defaults_to_no_live_and_declares_every_gate() {
     }
 }
 
+#[cfg(windows)]
+fn sanitized_process_output(bytes: &[u8]) -> String {
+    let mut text = String::from_utf8_lossy(bytes).into_owned();
+    for name in [
+        "UHP_API_KEY",
+        "HR_SECRET_KEY",
+        "HR_AUTH_PASSWORD",
+        "ANTHROPIC_API_KEY",
+        "OPENAI_API_KEY",
+        "UHP_CREDENTIAL_CANARY",
+    ] {
+        if let Ok(secret) = std::env::var(name) {
+            if secret.len() >= 4 {
+                text = text.replace(&secret, "[REDACTED]");
+            }
+        }
+    }
+    if text.chars().count() > 4096 {
+        text = text.chars().take(4096).collect();
+        text.push_str("...[truncated]");
+    }
+    text
+}
+
 #[test]
 #[cfg(windows)]
 fn static_powershell_driver_writes_separate_no_go_reports_without_live_flag() {
     let directory = tempfile::tempdir().unwrap();
     let output = std::process::Command::new("powershell")
         .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
-        .arg(repo_root().join("tools/dev/uhp-live-smoke.ps1"))
+        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/dev/uhp-live-smoke.ps1"))
         .arg("-Suite")
         .arg("All")
         .arg("-EvidenceDirectory")
         .arg(directory.path())
+        .env_remove("REFACT_UHP_LIVE")
         .output()
         .unwrap();
+    let stdout = sanitized_process_output(&output.stdout);
+    let stderr = sanitized_process_output(&output.stderr);
     assert!(
         output.status.success(),
-        "static driver failed with sanitized exit status {}",
-        output.status
+        "static driver failed with sanitized exit status {}\nsanitized stdout:\n{}\nsanitized stderr:\n{}",
+        output.status,
+        stdout,
+        stderr
     );
     for suite in ["claudecode", "opencode", "combined"] {
         let bytes = std::fs::read(directory.path().join(format!("{suite}.static.json"))).unwrap();

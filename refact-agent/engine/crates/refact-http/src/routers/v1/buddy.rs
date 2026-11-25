@@ -9,9 +9,11 @@ use refact_runtime_api::buddy_diagnostics::{unavailable_model_id, DiagnosticCont
 use refact_buddy_core::events::DiagnosticBuddyEvent as BuddyEvent;
 use refact_runtime_api::buddy_pulse_inject::build_buddy_pulse_payload;
 use refact_buddy_core::settings::{
-    AutonomyLevel, BuddySettings, HumorLevel, ObserverToggles, MAX_PALETTE_INDEX,
+    AutonomyLevel, BuddySettings, HumorLevel, ObserverToggles, SupervisionMode, MAX_PALETTE_INDEX,
 };
-use refact_buddy_core::types::{BuddyActivity, BuddyCareAction, BuddyConversationEntry, BuddySuggestion};
+use refact_buddy_core::types::{
+    BuddyActivity, BuddyCareAction, BuddyConversationEntry, BuddySuggestion,
+};
 use refact_buddy_core::user_activity::time_of_day_pattern;
 use refact_buddy_core::user_action::UserAction;
 use refact_chat_history::trajectory_snapshot::TrajectorySnapshot;
@@ -95,10 +97,11 @@ pub async fn handle_v1_buddy_snapshot(
                 "now_playing": null,
                 "active_speech": null
             });
-            if let Some(project_root) = refact_runtime_api::files_correction::get_project_dirs(app.gcx.clone())
-                .await
-                .into_iter()
-                .next()
+            if let Some(project_root) =
+                refact_runtime_api::files_correction::get_project_dirs(app.gcx.clone())
+                    .await
+                    .into_iter()
+                    .next()
             {
                 attach_storage_metadata(&mut payload, &project_root);
             }
@@ -125,13 +128,15 @@ pub async fn handle_v1_buddy_settings_get(
         }
         None => {
             let mut payload =
-                serde_json::to_value(refact_buddy_core::settings::BuddySettings::default()).map_err(
-                    |e| ScratchError::new(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
-                )?;
-            if let Some(project_root) = refact_runtime_api::files_correction::get_project_dirs(app.gcx.clone())
-                .await
-                .into_iter()
-                .next()
+                serde_json::to_value(refact_buddy_core::settings::BuddySettings::default())
+                    .map_err(|e| {
+                        ScratchError::new(StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+                    })?;
+            if let Some(project_root) =
+                refact_runtime_api::files_correction::get_project_dirs(app.gcx.clone())
+                    .await
+                    .into_iter()
+                    .next()
             {
                 attach_storage_metadata(&mut payload, &project_root);
             }
@@ -226,6 +231,8 @@ pub struct BuddySettingsRequest {
     pub planner_backstop_enabled: Option<bool>,
     pub planner_backstop_after_secs: Option<u64>,
     pub stalled_turn_intervention: Option<bool>,
+    pub supervision_mode: Option<SupervisionMode>,
+    pub supervision_min_confidence: Option<u8>,
     pub stalled_turn_min_interval_secs: Option<u64>,
     pub stalled_turn_max_per_hour: Option<u32>,
     pub observers: Option<ObserverTogglesPatch>,
@@ -287,6 +294,14 @@ impl BuddySettingsRequest {
                 return Err(ScratchError::new(
                     StatusCode::BAD_REQUEST,
                     "stalled_turn_max_per_hour must be 0-1000".to_string(),
+                ));
+            }
+        }
+        if let Some(confidence) = self.supervision_min_confidence {
+            if confidence > 100 {
+                return Err(ScratchError::new(
+                    StatusCode::BAD_REQUEST,
+                    "supervision_min_confidence must be 0-100".to_string(),
                 ));
             }
         }
@@ -380,6 +395,12 @@ impl BuddySettingsRequest {
         }
         if let Some(v) = self.stalled_turn_intervention {
             settings.stalled_turn_intervention = v;
+        }
+        if let Some(v) = self.supervision_mode {
+            settings.supervision_mode = v;
+        }
+        if let Some(v) = self.supervision_min_confidence {
+            settings.supervision_min_confidence = v;
         }
         if let Some(v) = self.stalled_turn_min_interval_secs {
             settings.stalled_turn_min_interval_secs = v;
@@ -537,7 +558,11 @@ async fn refresh_completed_quest_with_voice(
         pulse,
     )
     .await;
-    refact_runtime_api::buddy_actor_runtime::buddy_update_speech_user(app.clone(), completed.speech).await;
+    refact_runtime_api::buddy_actor_runtime::buddy_update_speech_user(
+        app.clone(),
+        completed.speech,
+    )
+    .await;
     refact_runtime_api::buddy_runtime::buddy_apply(app.clone(), completed.mutation).await;
     if reward > 0 {
         let buddy_arc = app.buddy.buddy.clone();
@@ -864,7 +889,8 @@ pub async fn handle_v1_buddy_conversations_create(
         .filter(|v| !v.trim().is_empty())
         .unwrap_or_else(|| "New Conversation".to_string());
 
-    let model = refact_runtime_api::buddy_actor_runtime::resolve_buddy_chat_model(app.clone()).await;
+    let model =
+        refact_runtime_api::buddy_actor_runtime::resolve_buddy_chat_model(app.clone()).await;
     let snapshot = TrajectorySnapshot {
         pending_deliveries: Vec::new(),
         goal: None,
@@ -950,20 +976,24 @@ pub async fn handle_v1_buddy_investigation_context(
     )
     .await
     .unwrap_or_else(|e| format!("Investigation logs unavailable: {}", e));
-    let internal = refact_runtime_api::buddy_issue_runtime::investigation_internal_context(app.clone())
-        .await
-        .unwrap_or_else(|e| format!("Investigation context unavailable: {}", e));
-    let (repo_owner, repo_name) = match refact_runtime_api::files_correction::get_project_dirs(app.gcx.clone())
-        .await
-        .into_iter()
-        .next()
-    {
-        Some(project_root) => refact_runtime_api::buddy_issue_runtime::detect_repo_from_git(&project_root)
+    let internal =
+        refact_runtime_api::buddy_issue_runtime::investigation_internal_context(app.clone())
             .await
-            .map(|repo| (repo.owner, repo.repo))
-            .unwrap_or_else(|| (String::new(), String::new())),
-        None => (String::new(), String::new()),
-    };
+            .unwrap_or_else(|e| format!("Investigation context unavailable: {}", e));
+    let (repo_owner, repo_name) =
+        match refact_runtime_api::files_correction::get_project_dirs(app.gcx.clone())
+            .await
+            .into_iter()
+            .next()
+        {
+            Some(project_root) => {
+                refact_runtime_api::buddy_issue_runtime::detect_repo_from_git(&project_root)
+                    .await
+                    .map(|repo| (repo.owner, repo.repo))
+                    .unwrap_or_else(|| (String::new(), String::new()))
+            }
+            None => (String::new(), String::new()),
+        };
 
     Ok(axum::Json(BuddyInvestigationContextResponse {
         logs: log_lines,
@@ -1186,7 +1216,8 @@ pub async fn handle_v1_buddy_diagnostics_collect(
         DIAGNOSTICS_ERROR_MAX_CHARS,
     )
     .to_string();
-    let mut ctx = refact_runtime_api::buddy_diagnostics::collect_diagnostics(app.clone(), &error_text).await;
+    let mut ctx =
+        refact_runtime_api::buddy_diagnostics::collect_diagnostics(app.clone(), &error_text).await;
     ctx.source_file = req
         .source_file
         .as_deref()
@@ -1259,9 +1290,9 @@ pub async fn handle_v1_buddy_issues_create(
         && req.collected_at.is_none()
     {
         match &req.error {
-            Some(err) => {
-                Some(refact_runtime_api::buddy_diagnostics::collect_diagnostics(app.clone(), err).await)
-            }
+            Some(err) => Some(
+                refact_runtime_api::buddy_diagnostics::collect_diagnostics(app.clone(), err).await,
+            ),
             None => None,
         }
     } else {

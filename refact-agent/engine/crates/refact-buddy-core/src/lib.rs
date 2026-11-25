@@ -34,6 +34,7 @@ pub mod storage;
 pub mod supervision;
 pub mod supervision_detectors;
 pub mod supervision_journal;
+pub mod supervision_policy;
 pub mod types;
 pub mod user_action;
 pub mod user_activity;

@@ -104,6 +104,8 @@ const RUST_DEFAULT_BUDDY_SETTINGS: BuddySettings = {
   message_observation_enabled: true,
   chat_reactions_enabled: true,
   stalled_turn_intervention: true,
+  supervision_mode: "advise",
+  supervision_min_confidence: 80,
   stalled_turn_min_interval_secs: 300,
   stalled_turn_max_per_hour: 6,
   housekeeping_enabled: true,
@@ -266,6 +268,8 @@ describe("Buddy schema contract", () => {
     expect(settings.chat_reactions_enabled).toBe(true);
     expect(settings.message_observation_enabled).toBe(true);
     expect(settings.stalled_turn_intervention).toBe(true);
+    expect(settings.supervision_mode).toBe("advise");
+    expect(settings.supervision_min_confidence).toBe(80);
     expect(settings.stalled_turn_min_interval_secs).toBe(300);
     expect(settings.stalled_turn_max_per_hour).toBe(6);
     expect(settings.autonomy_level).toBe("propose");

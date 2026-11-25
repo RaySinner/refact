@@ -308,6 +308,8 @@ export function defaultBuddySettings(): BuddySettings {
     message_observation_enabled: true,
     chat_reactions_enabled: true,
     stalled_turn_intervention: true,
+    supervision_mode: "advise",
+    supervision_min_confidence: 80,
     stalled_turn_min_interval_secs: 300,
     stalled_turn_max_per_hour: 6,
     housekeeping_enabled: true,
@@ -425,6 +427,12 @@ function getBuddySettingsPatchFromSettings(
   }
   if (keys.includes("stalled_turn_intervention")) {
     patch.stalled_turn_intervention = settings.stalled_turn_intervention;
+  }
+  if (keys.includes("supervision_mode")) {
+    patch.supervision_mode = settings.supervision_mode;
+  }
+  if (keys.includes("supervision_min_confidence")) {
+    patch.supervision_min_confidence = settings.supervision_min_confidence;
   }
   if (keys.includes("stalled_turn_min_interval_secs")) {
     patch.stalled_turn_min_interval_secs =

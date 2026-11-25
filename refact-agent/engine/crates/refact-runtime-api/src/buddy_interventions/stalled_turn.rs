@@ -6,7 +6,7 @@ use serde_json::json;
 use tokio::sync::{Mutex as AMutex, RwLock as ARwLock};
 use uuid::Uuid;
 
-use refact_buddy_core::settings::BuddySettings;
+use refact_buddy_core::settings::{BuddySettings, SupervisionMode};
 use refact_buddy_core::stalled_turn::{
     classify_stalled_turn, last_message_snippet, stalled_turn_fact, StalledTurnSignal,
     StalledTurnVerdict, TurnContext,
@@ -14,6 +14,10 @@ use refact_buddy_core::stalled_turn::{
 use refact_chat_api::delivery::deliver_to_chat;
 use refact_chat_api::internal_roles::{event, EventSubkind};
 use refact_chat_api::types::{GoalStatus, PendingDelivery, PushMode, SessionState};
+use refact_chat_api::pursuit::{
+    arbitrate_pursuit, pursuit_evidence_seq, stamp_pursuit_message, PursuitArbitrationContext,
+    PursuitDecision, PursuitRequest, PursuitSource,
+};
 use refact_chat_api::{ChatMessage, ChatSession, SubchatParameters, ToolsPolicy};
 use refact_core::chat_types::ChatModelType;
 use refact_core::chat_types::CacheControl;
@@ -60,10 +64,7 @@ starting with ESCALATE_USER: followed by the question to relay to the user.";
 /// Collect everything the S-1 classifier needs about a finished assistant turn.
 /// Pure extraction from the session: no board loads, no LLM calls, no locks
 /// held beyond the session read itself.
-pub fn collect_turn_context(
-    session: &ChatSession,
-    tool_calls_count: usize,
-) -> TurnContext<'_> {
+pub fn collect_turn_context(session: &ChatSession, tool_calls_count: usize) -> TurnContext<'_> {
     let chat_mode = {
         let mode = session.thread.mode.trim();
         (!mode.is_empty()).then_some(mode)
@@ -202,7 +203,10 @@ async fn detect_and_record_stalled_turn(
         let buddy = app.buddy.buddy.lock().await;
         buddy
             .as_ref()
-            .map(|svc| svc.settings.stalled_turn_intervention)
+            .map(|svc| {
+                svc.settings.stalled_turn_intervention
+                    && svc.settings.supervision_mode != SupervisionMode::Off
+            })
             .unwrap_or(false)
     };
     if !stalled_turn_hook_applies(nudged_by_silent_tail, settings_enabled) {
@@ -322,13 +326,15 @@ pub async fn release_stalled_turn_slot(chat_id: &str, at: DateTime<Utc>) {
 }
 
 pub fn intervention_enabled(settings: &BuddySettings) -> bool {
-    settings.stalled_turn_intervention
+    crate::buddy_supervision_advisor::stalled_turn_enabled(settings)
 }
 
 /// The user has already written after the stalled turn: nudging the agent now
 /// would talk over a human. No assistant message at all counts as "moved on".
 pub fn user_spoke_after_last_assistant(messages: &[ChatMessage]) -> bool {
-    let Some(last_assistant) = messages.iter().rposition(|message| message.role == "assistant")
+    let Some(last_assistant) = messages
+        .iter()
+        .rposition(|message| message.role == "assistant")
     else {
         return true;
     };
@@ -405,8 +411,7 @@ pub fn parse_buddy_reply(reply: &str) -> Option<BuddyReply> {
     }
     if let Some(rest) = trimmed.strip_prefix(ESCALATE_USER_PREFIX) {
         let question = rest.trim();
-        return (!question.is_empty())
-            .then(|| BuddyReply::EscalateUser(cap_reply(question)));
+        return (!question.is_empty()).then(|| BuddyReply::EscalateUser(cap_reply(question)));
     }
     Some(BuddyReply::Nudge(cap_reply(trimmed)))
 }
@@ -444,13 +449,23 @@ pub fn build_buddy_user_prompt(prompt: &StalledTurnPrompt) -> String {
         "The agent's last message (that turn called no tools):\n\"\"\"\n{}\n\"\"\"",
         prompt.snippet
     ));
-    if let Some(plan) = prompt.plan.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
+    if let Some(plan) = prompt
+        .plan
+        .as_deref()
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+    {
         parts.push(format!(
             "Current plan:\n{}",
             safe_truncate(plan, MAX_PLAN_CHARS)
         ));
     }
-    if let Some(goal) = prompt.goal.as_deref().map(str::trim).filter(|g| !g.is_empty()) {
+    if let Some(goal) = prompt
+        .goal
+        .as_deref()
+        .map(str::trim)
+        .filter(|g| !g.is_empty())
+    {
         parts.push(format!(
             "Current goal:\n{}",
             safe_truncate(goal, MAX_GOAL_CHARS)
@@ -588,8 +603,7 @@ pub fn intervention_delivery(
     turn_index: u64,
     buddy_reply: &str,
 ) -> Option<PendingDelivery> {
-    parse_buddy_reply(buddy_reply)
-        .map(|reply| stalled_turn_delivery(chat_id, turn_index, &reply))
+    parse_buddy_reply(buddy_reply).map(|reply| stalled_turn_delivery(chat_id, turn_index, &reply))
 }
 
 /// The intervention itself: Buddy's own cheap model reads the stalled turn and
@@ -624,14 +638,7 @@ async fn run_stalled_turn_intervention(
         return Ok(());
     }
 
-    let Some(session_arc) = app
-        .chat
-        .sessions
-        .read()
-        .await
-        .get(&signal.chat_id)
-        .cloned()
-    else {
+    let Some(session_arc) = app.chat.sessions.read().await.get(&signal.chat_id).cloned() else {
         return Ok(());
     };
 
@@ -679,7 +686,7 @@ async fn run_stalled_turn_intervention(
             return Err(error);
         }
     };
-    let Some(delivery) = intervention_delivery(&signal.chat_id, turn_index, &reply_text) else {
+    let Some(mut delivery) = intervention_delivery(&signal.chat_id, turn_index, &reply_text) else {
         release_stalled_turn_slot(&signal.chat_id, reserved_at).await;
         tracing::info!(chat_id = %signal.chat_id, "stalled_turn: buddy replied with nothing usable");
         return Ok(());
@@ -698,8 +705,48 @@ async fn run_stalled_turn_intervention(
         return Ok(());
     }
 
+    let (decision, mut request, goal_revision) = {
+        let session = session_arc.lock().await;
+        let source = if session.goal.is_some() {
+            PursuitSource::Buddy
+        } else {
+            PursuitSource::SilentTail
+        };
+        let request = PursuitRequest::new(
+            source,
+            "stalled_turn",
+            pursuit_evidence_seq(&session),
+            delivery.wake,
+        );
+        let decision = arbitrate_pursuit(
+            &session,
+            &request,
+            PursuitArbitrationContext::new(chrono::Utc::now().timestamp_millis() as u64),
+        );
+        let goal_revision = session.goal.as_ref().map(|goal| goal.revision).unwrap_or(0);
+        (decision, request, goal_revision)
+    };
+    match decision {
+        PursuitDecision::StartTurn => {}
+        PursuitDecision::VisibleOnly => {
+            delivery.wake = false;
+            delivery.push = PushMode::WhenIdle;
+            request.wake_requested = false;
+        }
+        PursuitDecision::Suppress(_) => {
+            release_stalled_turn_slot(&signal.chat_id, reserved_at).await;
+            return Ok(());
+        }
+    }
+    for message in &mut delivery.messages {
+        stamp_pursuit_message(message, &request, goal_revision);
+    }
+
     let delivery_reference = delivery.id.clone();
-    let message_id = delivery.messages.first().map(|message| message.message_id.clone());
+    let message_id = delivery
+        .messages
+        .first()
+        .map(|message| message.message_id.clone());
     let outcome = match deliver_to_chat(app.clone(), &signal.chat_id, delivery).await {
         Ok(outcome) => outcome,
         Err(error) => {

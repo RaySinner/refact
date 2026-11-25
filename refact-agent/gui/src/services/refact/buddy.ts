@@ -61,6 +61,8 @@ const BUDDY_SETTINGS_PATCH_KEYS = [
   "message_observation_enabled",
   "chat_reactions_enabled",
   "stalled_turn_intervention",
+  "supervision_mode",
+  "supervision_min_confidence",
   "stalled_turn_min_interval_secs",
   "stalled_turn_max_per_hour",
   "housekeeping_enabled",
@@ -128,6 +130,12 @@ function getBuddySettingsRollbackPatch(
   }
   if (keys.includes("stalled_turn_intervention")) {
     patch.stalled_turn_intervention = settings.stalled_turn_intervention;
+  }
+  if (keys.includes("supervision_mode")) {
+    patch.supervision_mode = settings.supervision_mode;
+  }
+  if (keys.includes("supervision_min_confidence")) {
+    patch.supervision_min_confidence = settings.supervision_min_confidence;
   }
   if (keys.includes("stalled_turn_min_interval_secs")) {
     patch.stalled_turn_min_interval_secs =

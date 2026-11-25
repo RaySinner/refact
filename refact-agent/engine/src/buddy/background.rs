@@ -271,6 +271,9 @@ pub async fn buddy_background_task(app: AppState) {
         project_root.clone(),
         shutdown_flag.clone(),
     ));
+    let supervision_advisor_handle = tokio::spawn(
+        refact_runtime_api::buddy_supervision_advisor::run_supervision_advisor(app.clone()),
+    );
     let mut expiry_tick: u64 = 0;
 
     loop {
@@ -774,6 +777,11 @@ pub async fn buddy_background_task(app: AppState) {
     drop(service);
     let _ = tokio::time::timeout(std::time::Duration::from_secs(10), writer_handle).await;
     let _ = tokio::time::timeout(std::time::Duration::from_secs(10), commit_poller_handle).await;
+    let _ = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        supervision_advisor_handle,
+    )
+    .await;
 
     info!("buddy: background task stopped");
 }

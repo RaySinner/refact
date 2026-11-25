@@ -64,6 +64,7 @@ fn shadow_record(
         candidate,
         evidence: SupervisionEvidence::from_events(evidence_events).ok()?,
         detector_version: SupervisionReference::new(detector_version),
+        policy_key: None,
         verdict,
         delivery: InterventionDelivery::Suppressed {
             reason: SuppressionReason::ShadowMode,

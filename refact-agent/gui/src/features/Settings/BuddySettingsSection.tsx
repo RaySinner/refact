@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useAppSelector } from "../../hooks";
 import {
   FieldSwitch,
+  FieldSelect,
   FieldText,
   SaveStatus,
   SettingItem,
@@ -10,7 +11,7 @@ import {
 import type { SaveStatusState } from "../../components/ui";
 import { selectBuddySettings } from "../Buddy/buddySlice";
 import { useUpdateBuddySettingsMutation } from "../../services/refact/buddy";
-import type { BuddySettings } from "../Buddy/types";
+import type { BuddySettings, SupervisionMode } from "../Buddy/types";
 import { SettingsGroup, SettingsSection } from "./SettingsSection";
 import styles from "./BuddySettingsSection.module.css";
 
@@ -106,7 +107,9 @@ export const BuddySettingsSection: React.FC = () => {
     [updateSettingsMutation],
   );
 
-  const interventionEnabled = settings?.stalled_turn_intervention ?? false;
+  const interventionEnabled =
+    (settings?.stalled_turn_intervention ?? false) &&
+    settings?.supervision_mode === "advise";
 
   return (
     <SettingsSection
@@ -118,6 +121,33 @@ export const BuddySettingsSection: React.FC = () => {
         <p>Buddy settings are unavailable. Open a project and try again.</p>
       ) : (
         <SettingsGroup title="Stalled turn supervision">
+          <SettingItem
+            className="rf-enter"
+            title="Supervision mode"
+            description={
+              settings.supervision_mode === "off"
+                ? "Off: Buddy does not arbitrate or deliver supervision advice."
+                : settings.supervision_mode === "shadow"
+                  ? "Shadow: Buddy records candidates and stays silent. Use this to inspect the baseline without interventions."
+                  : "Advise: Buddy shows only evidence-backed, actionable advice. Goal autonomy controls whether it may wake the agent."
+            }
+            control={
+              <FieldSelect
+                aria-label="Supervision mode"
+                value={settings.supervision_mode}
+                options={[
+                  { value: "off", label: "Off" },
+                  { value: "shadow", label: "Shadow — record only" },
+                  { value: "advise", label: "Advise — visible guidance" },
+                ]}
+                onChange={(value) =>
+                  void autoSave({
+                    supervision_mode: value as SupervisionMode,
+                  })
+                }
+              />
+            }
+          />
           <SettingItem
             className="rf-enter"
             title="Intervene on stalled turns"

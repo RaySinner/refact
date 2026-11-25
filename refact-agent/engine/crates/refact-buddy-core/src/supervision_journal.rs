@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::supervision::{
     InterventionDelivery, InterventionRecord, InterventionVerdict, SupervisionHash,
-    SuppressionReason,
+    SupervisionPolicyKey, SuppressionReason,
 };
 
 pub const SUPERVISION_JOURNAL_VERSION: u16 = 1;
@@ -65,6 +65,12 @@ impl SupervisionJournalLimits {
 pub enum SupervisionJournalAppend {
     Appended(SupervisionHash),
     Duplicate(SupervisionHash),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SupervisionJournalBegin {
+    Reserved,
+    Duplicate,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -199,6 +205,75 @@ impl SupervisionJournal {
             compact_journal_file(&mut file, limits, Some(&id))?;
             write_journal_file(root, &file)?;
             Ok(SupervisionJournalAppend::Appended(id))
+        })
+        .await
+    }
+
+    pub async fn begin_candidate(
+        &self,
+        candidate: &InterventionRecord,
+        key: SupervisionPolicyKey,
+    ) -> Result<SupervisionJournalBegin, String> {
+        let original_id = candidate
+            .journal_id()
+            .map_err(|err| format!("Failed to identify supervision candidate: {err}"))?;
+        let mut reserved = candidate.clone();
+        reserved.policy_key = Some(key.clone());
+        reserved.delivery = InterventionDelivery::Suppressed {
+            reason: SuppressionReason::ArbiterFailed,
+        };
+        journal_transaction(&self.project_root, move |root| {
+            let mut file = read_journal_file(root)?;
+            validate_journal_file(&file)?;
+            if file
+                .records
+                .iter()
+                .any(|record| record.policy_key.as_ref() == Some(&key))
+            {
+                if let Some(index) = file
+                    .records
+                    .iter()
+                    .position(|record| record.journal_id().is_ok_and(|id| id == original_id))
+                {
+                    if !file.current_candidates.contains(&original_id) {
+                        file.records.remove(index);
+                        write_journal_file(root, &file)?;
+                    }
+                }
+                return Ok(SupervisionJournalBegin::Duplicate);
+            }
+            let Some(index) = file
+                .records
+                .iter()
+                .position(|record| record.journal_id().is_ok_and(|id| id == original_id))
+            else {
+                return Err("cannot reserve a missing supervision candidate".to_string());
+            };
+            file.records[index] = reserved;
+            write_journal_file(root, &file)?;
+            Ok(SupervisionJournalBegin::Reserved)
+        })
+        .await
+    }
+
+    pub async fn finalize_candidate(
+        &self,
+        key: &SupervisionPolicyKey,
+        resolved: InterventionRecord,
+    ) -> Result<(), String> {
+        let key = key.clone();
+        journal_transaction(&self.project_root, move |root| {
+            let mut file = read_journal_file(root)?;
+            validate_journal_file(&file)?;
+            let Some(index) = file
+                .records
+                .iter()
+                .position(|record| record.policy_key.as_ref() == Some(&key))
+            else {
+                return Err("cannot finalize an unreserved supervision candidate".to_string());
+            };
+            file.records[index] = resolved;
+            write_journal_file(root, &file)
         })
         .await
     }
@@ -400,6 +475,7 @@ mod tests {
             candidate: InterventionCandidate::Loop,
             evidence: SupervisionEvidence::from_events(&[event]).unwrap(),
             detector_version: SupervisionReference::new("loop.v1"),
+            policy_key: None,
             verdict,
             delivery,
             detected_at: 2_000 + index,
@@ -468,6 +544,61 @@ mod tests {
             InterventionDelivery::Suppressed {
                 reason: SuppressionReason::ShadowMode
             }
+        ));
+    }
+
+    #[tokio::test]
+    async fn supervision_policy_reservation_dedupes_after_restart_and_finalizes_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let journal = SupervisionJournal::new(dir.path());
+        let candidate = suppressed(
+            0,
+            InterventionVerdict::Inconclusive,
+            SuppressionReason::ShadowMode,
+        );
+        journal.append(candidate.clone()).await.unwrap();
+        let key = SupervisionPolicyKey::new("chat-0", 7, &candidate);
+        assert_eq!(
+            journal
+                .begin_candidate(&candidate, key.clone())
+                .await
+                .unwrap(),
+            SupervisionJournalBegin::Reserved
+        );
+
+        let restarted = SupervisionJournal::new(dir.path());
+        assert_eq!(
+            restarted
+                .begin_candidate(&candidate, key.clone())
+                .await
+                .unwrap(),
+            SupervisionJournalBegin::Duplicate
+        );
+        let mut delivered = sent(0);
+        delivered.policy_key = Some(key.clone());
+        restarted.finalize_candidate(&key, delivered).await.unwrap();
+
+        let restarted_again = SupervisionJournal::new(dir.path());
+        restarted_again.append(candidate.clone()).await.unwrap();
+        assert_eq!(
+            restarted_again
+                .begin_candidate(&candidate, key.clone())
+                .await
+                .unwrap(),
+            SupervisionJournalBegin::Duplicate
+        );
+        assert_eq!(
+            restarted_again
+                .begin_candidate(&candidate, key)
+                .await
+                .unwrap(),
+            SupervisionJournalBegin::Duplicate
+        );
+        let snapshot = restarted_again.load().await.unwrap();
+        assert_eq!(snapshot.records().len(), 1);
+        assert!(matches!(
+            snapshot.records()[0].delivery,
+            InterventionDelivery::Sent { .. }
         ));
     }
 
@@ -659,6 +790,7 @@ mod tests {
             candidate: InterventionCandidate::OffGoal,
             evidence: SupervisionEvidence::from_events(&[event]).unwrap(),
             detector_version: SupervisionReference::new(&format!("{} {}", raw, "🦀".repeat(200))),
+            policy_key: None,
             verdict: InterventionVerdict::Confirmed,
             delivery: InterventionDelivery::Sent {
                 delivery_id: SupervisionReference::new(raw),

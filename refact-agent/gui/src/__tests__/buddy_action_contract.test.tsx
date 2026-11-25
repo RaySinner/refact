@@ -102,6 +102,8 @@ function makeSnapshot(
       message_observation_enabled: false,
       chat_reactions_enabled: false,
       stalled_turn_intervention: true,
+      supervision_mode: "advise",
+      supervision_min_confidence: 80,
       stalled_turn_min_interval_secs: 300,
       stalled_turn_max_per_hour: 6,
       housekeeping_enabled: true,

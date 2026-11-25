@@ -80,7 +80,7 @@ impl SupervisionHash {
         Self::digest(domain, normalized.to_string().as_bytes())
     }
 
-    fn digest(domain: &str, bytes: &[u8]) -> Self {
+    pub(crate) fn digest(domain: &str, bytes: &[u8]) -> Self {
         let mut hasher = Sha256::new();
         hasher.update(domain.as_bytes());
         hasher.update([0]);
@@ -705,7 +705,35 @@ pub enum SuppressionReason {
     UnsafeBoundary,
     StaleEvidence,
     NotConfirmed,
+    NeedsConfirmation,
+    ArbiterFailed,
     DeliveryFailed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SupervisionPolicyKey {
+    pub chat_id: SupervisionReference,
+    pub goal_revision: u64,
+    pub trigger: InterventionCandidate,
+    pub evidence_hash: SupervisionHash,
+}
+
+impl SupervisionPolicyKey {
+    pub fn new(chat_id: &str, goal_revision: u64, record: &InterventionRecord) -> Self {
+        Self {
+            chat_id: SupervisionReference::new(chat_id),
+            goal_revision,
+            trigger: record.candidate,
+            evidence_hash: record.evidence.hash().clone(),
+        }
+    }
+
+    pub fn stable_id(&self) -> SupervisionReference {
+        let bytes = serde_json::to_vec(self).unwrap_or_default();
+        let hash = SupervisionHash::digest("supervision.policy.v1", &bytes);
+        SupervisionReference::new(&format!("buddy-supervision:{}", String::from(hash)))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -728,6 +756,8 @@ pub struct InterventionRecord {
     pub candidate: InterventionCandidate,
     pub evidence: SupervisionEvidence,
     pub detector_version: SupervisionReference,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub policy_key: Option<SupervisionPolicyKey>,
     pub verdict: InterventionVerdict,
     pub delivery: InterventionDelivery,
     pub detected_at: u64,
@@ -1120,6 +1150,7 @@ mod tests {
                 candidate: InterventionCandidate::Loop,
                 evidence: evidence.clone(),
                 detector_version: SupervisionReference::new("loop.v1"),
+                policy_key: None,
                 verdict: InterventionVerdict::Confirmed,
                 delivery,
                 detected_at: 1_003,

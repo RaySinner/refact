@@ -8,6 +8,9 @@ import { defaultBuddySettings, setBuddySnapshot } from "../Buddy/buddySlice";
 import type { BuddySettings, BuddySnapshot } from "../Buddy/types";
 import { BuddySettingsSection } from "./BuddySettingsSection";
 
+HTMLElement.prototype.hasPointerCapture = () => false;
+HTMLElement.prototype.releasePointerCapture = () => undefined;
+
 const CONFIG_STATE = {
   config: {
     apiKey: "test",
@@ -115,13 +118,16 @@ function renderSection() {
 }
 
 describe("BuddySettingsSection", () => {
-  it("renders the Buddy title and the three stalled-turn controls", () => {
+  it("renders the Buddy title and the supervision controls", () => {
     const store = setUpStore({ ...CONFIG_STATE });
     store.dispatch(setBuddySnapshot(makeSnapshot()));
 
     render(<BuddySettingsSection />, { store });
 
     expect(screen.getByRole("heading", { name: "Buddy" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", { name: "Supervision mode" }),
+    ).toBeInTheDocument();
     expect(
       screen.getByTestId("buddy-settings-stalled-turn-toggle"),
     ).toBeInTheDocument();
@@ -130,6 +136,26 @@ describe("BuddySettingsSection", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByTestId("buddy-settings-stalled-turn-max-per-hour"),
+    ).toBeInTheDocument();
+  });
+
+  it("posts only supervision_mode when shadow recording is selected", async () => {
+    const captured = installSettingsPostHandler();
+    const store = setUpStore({ ...CONFIG_STATE });
+    store.dispatch(setBuddySnapshot(makeSnapshot()));
+
+    const { user } = render(<BuddySettingsSection />, { store });
+    await user.click(
+      screen.getByRole("combobox", { name: "Supervision mode" }),
+    );
+    await user.click(
+      screen.getByRole("option", { name: "Shadow — record only" }),
+    );
+
+    await waitFor(() => expect(captured.count).toBe(1));
+    expect(captured.body).toEqual({ supervision_mode: "shadow" });
+    expect(
+      screen.getByText(/Shadow: Buddy records candidates and stays silent/),
     ).toBeInTheDocument();
   });
 

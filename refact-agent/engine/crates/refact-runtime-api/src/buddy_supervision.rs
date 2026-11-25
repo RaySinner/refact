@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use refact_buddy_core::supervision::{
     GoalFacts, MessageBody, MessageRole, PlanFacts, ProcessFacts, ProcessState, ProviderState,
-    StreamFacts, StreamState, SupervisionEvent, SupervisionKind, SupervisionProjection,
-    SupervisionReference,
+    InterventionRecord, StreamFacts, StreamState, SupervisionEvent, SupervisionKind,
+    SupervisionProjection, SupervisionReference,
 };
 use refact_buddy_core::supervision_detectors::{
     detect_supervision_candidates, SupervisionDetectorConfig,
@@ -25,6 +25,7 @@ pub struct BuddySupervisionCollector {
     states: Arc<AMutex<HashMap<String, ChatSupervisionState>>>,
     journal: SupervisionJournal,
     config: SupervisionDetectorConfig,
+    candidates_tx: tokio::sync::broadcast::Sender<InterventionRecord>,
 }
 
 struct ChatSupervisionState {
@@ -175,11 +176,21 @@ pub fn capture_session_supervision(session: &ChatSession, now: u64) -> SessionSu
 
 impl BuddySupervisionCollector {
     pub fn new(project_root: impl Into<PathBuf>) -> Self {
+        let (candidates_tx, _) = tokio::sync::broadcast::channel(128);
         Self {
             states: Arc::new(AMutex::new(HashMap::new())),
             journal: SupervisionJournal::new(project_root),
             config: SupervisionDetectorConfig::default(),
+            candidates_tx,
         }
+    }
+
+    pub fn subscribe(&self) -> tokio::sync::broadcast::Receiver<InterventionRecord> {
+        self.candidates_tx.subscribe()
+    }
+
+    pub fn journal(&self) -> &SupervisionJournal {
+        &self.journal
     }
 
     pub fn project_root(project_root: &Path, fallback: &Path) -> PathBuf {
@@ -220,7 +231,8 @@ impl BuddySupervisionCollector {
             candidates_for_state(state, self.config, now)
         };
         for candidate in candidates {
-            self.journal.append(candidate).await?;
+            self.journal.append(candidate.clone()).await?;
+            let _ = self.candidates_tx.send(candidate);
         }
         Ok(())
     }
@@ -317,7 +329,8 @@ impl BuddySupervisionCollector {
                 .collect::<Vec<_>>()
         };
         for candidate in candidates {
-            self.journal.append(candidate).await?;
+            self.journal.append(candidate.clone()).await?;
+            let _ = self.candidates_tx.send(candidate);
         }
         Ok(())
     }

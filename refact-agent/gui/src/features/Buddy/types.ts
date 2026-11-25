@@ -1227,6 +1227,8 @@ export interface BuddySettings {
   message_observation_enabled: boolean;
   chat_reactions_enabled: boolean;
   stalled_turn_intervention: boolean;
+  supervision_mode: SupervisionMode;
+  supervision_min_confidence: number;
   stalled_turn_min_interval_secs: number;
   stalled_turn_max_per_hour: number;
   housekeeping_enabled: boolean;
@@ -1243,6 +1245,8 @@ export interface BuddySettings {
   daily_llm_token_budget?: number | null;
   observers: ObserverToggles;
 }
+
+export type SupervisionMode = "off" | "shadow" | "advise";
 
 export interface BuddyStorageMetadata {
   project_root: string;

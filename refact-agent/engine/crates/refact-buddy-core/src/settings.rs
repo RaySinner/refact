@@ -97,6 +97,22 @@ impl Default for AutonomyLevel {
     }
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SupervisionMode {
+    Off,
+    Shadow,
+    Advise,
+}
+
+impl Default for SupervisionMode {
+    fn default() -> Self {
+        Self::Advise
+    }
+}
+
+pub const DEFAULT_SUPERVISION_MIN_CONFIDENCE: u8 = 80;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ObserverToggles {
     #[serde(default = "default_true")]
@@ -185,6 +201,10 @@ pub struct BuddySettings {
     /// while the task is still unfinished.
     #[serde(default = "default_true")]
     pub stalled_turn_intervention: bool,
+    #[serde(default)]
+    pub supervision_mode: SupervisionMode,
+    #[serde(default = "default_supervision_min_confidence")]
+    pub supervision_min_confidence: u8,
     /// Minimum seconds between two stalled-turn nudges in the same chat.
     #[serde(default = "default_stalled_turn_min_interval_secs")]
     pub stalled_turn_min_interval_secs: u64,
@@ -223,6 +243,10 @@ fn default_stalled_turn_max_per_hour() -> u32 {
     6
 }
 
+fn default_supervision_min_confidence() -> u8 {
+    DEFAULT_SUPERVISION_MIN_CONFIDENCE
+}
+
 impl Default for BuddySettings {
     fn default() -> Self {
         Self {
@@ -249,6 +273,8 @@ impl Default for BuddySettings {
             planner_backstop_enabled: false,
             planner_backstop_after_secs: default_planner_backstop_after_secs(),
             stalled_turn_intervention: true,
+            supervision_mode: SupervisionMode::Advise,
+            supervision_min_confidence: DEFAULT_SUPERVISION_MIN_CONFIDENCE,
             stalled_turn_min_interval_secs: default_stalled_turn_min_interval_secs(),
             stalled_turn_max_per_hour: default_stalled_turn_max_per_hour(),
             observers: ObserverToggles::default(),
@@ -281,6 +307,8 @@ mod tests {
             crate::planner_backstop::DEFAULT_PLANNER_BACKSTOP_AFTER_SECS
         );
         assert!(settings.stalled_turn_intervention);
+        assert_eq!(settings.supervision_mode, SupervisionMode::Advise);
+        assert_eq!(settings.supervision_min_confidence, 80);
         assert_eq!(settings.stalled_turn_min_interval_secs, 300);
         assert_eq!(settings.stalled_turn_max_per_hour, 6);
     }
@@ -298,6 +326,20 @@ mod tests {
         assert!(settings.observers.git_pressure);
         assert!(settings.observers.diagnostic_cluster);
         assert!(settings.observers.provider_health);
+    }
+
+    #[test]
+    fn supervision_defaults_survive_legacy_settings_roundtrip() {
+        let mut legacy = serde_json::to_value(BuddySettings::default()).unwrap();
+        let object = legacy.as_object_mut().unwrap();
+        object.remove("supervision_mode");
+        object.remove("supervision_min_confidence");
+        let restored: BuddySettings = serde_json::from_value(legacy).unwrap();
+        assert_eq!(restored.supervision_mode, SupervisionMode::Advise);
+        assert_eq!(restored.supervision_min_confidence, 80);
+        assert!(restored.stalled_turn_intervention);
+        assert_eq!(restored.stalled_turn_min_interval_secs, 300);
+        assert_eq!(restored.stalled_turn_max_per_hour, 6);
     }
 
     #[test]

@@ -258,6 +258,109 @@ async fn provider_request(provider: &FakeProvider, role: &str, ordinal: usize) -
     provider.request(role, ordinal).unwrap()
 }
 
+async fn writer_provider_request(app: &AppState, provider: &FakeProvider) -> Value {
+    let result = tokio::time::timeout(Duration::from_secs(20), async {
+        loop {
+            if provider.request("writer", 1).is_some() {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await;
+    if result.is_err() {
+        panic!(
+            "timed out waiting for writer provider request 1\n{}",
+            writer_timeout_diagnostics(app).await
+        );
+    }
+    provider.request("writer", 1).unwrap()
+}
+
+async fn writer_timeout_diagnostics(app: &AppState) -> String {
+    let gcx = app.gcx.clone();
+    let mut output = String::new();
+    let writer_chat_id =
+        match refact_runtime_api::task_storage::load_board(gcx.clone(), TASK_ID).await {
+            Ok(board) => {
+                let writer = board.get_card(CARD_ID).and_then(|card| {
+                    card.team_members
+                        .iter()
+                        .find(|member| member.role == "writer")
+                });
+                output.push_str(&format!("board writer member: {writer:#?}\n"));
+                writer.and_then(|member| member.agent_chat_id.clone())
+            }
+            Err(error) => {
+                output.push_str(&format!("board load error: {error}\n"));
+                None
+            }
+        };
+    let session = match writer_chat_id.as_deref() {
+        Some(writer_chat_id) => {
+            output.push_str(&format!("writer chat id: {writer_chat_id}\n"));
+            app.chat.sessions.read().await.get(writer_chat_id).cloned()
+        }
+        None => {
+            output.push_str("writer chat id: absent\n");
+            None
+        }
+    };
+    output.push_str(&format!(
+        "writer session existence: {}\n",
+        session.is_some()
+    ));
+    if let Some(session) = session {
+        match session.try_lock() {
+            Ok(session) => {
+                output.push_str(&format!("runtime.state: {:?}\n", session.runtime.state));
+                output.push_str(&format!("runtime.error: {:?}\n", session.runtime.error));
+                output.push_str(&format!("command_queue: {:#?}\n", session.command_queue));
+                output.push_str(&format!(
+                    "pending_deliveries: {:#?}\n",
+                    session.pending_deliveries
+                ));
+                output.push_str(&format!("thread.model: {:?}\n", session.thread.model));
+                output.push_str(&format!(
+                    "thread.task_meta: {:#?}\n",
+                    session.thread.task_meta
+                ));
+                let messages = session
+                    .messages
+                    .iter()
+                    .rev()
+                    .take(8)
+                    .rev()
+                    .cloned()
+                    .collect::<Vec<_>>();
+                output.push_str(&format!("last messages: {messages:#?}\n"));
+            }
+            Err(_) => output.push_str("writer session: locked at timeout\n"),
+        }
+    }
+    match gcx.caps_state.try_read() {
+        Ok(caps_state) => match caps_state.caps.as_ref() {
+            Some(caps) => {
+                output.push_str(&format!(
+                    "caps defaults: task_planner={:?}, chat_default={:?}\n",
+                    caps.defaults.task_planner_agent_model, caps.defaults.chat_default_model
+                ));
+                output.push_str(&format!(
+                    "caps models: {:?}\n",
+                    caps.chat_models.keys().collect::<Vec<_>>()
+                ));
+                output.push_str(&format!(
+                    "writer model record: {:#?}\n",
+                    caps.chat_models.get(MODEL_ID)
+                ));
+            }
+            None => output.push_str("caps: absent\n"),
+        },
+        Err(_) => output.push_str("caps: locked at timeout\n"),
+    }
+    output
+}
+
 fn run_git(root: &Path, args: &[&str]) -> String {
     let output = Command::new("git")
         .args(args)
@@ -375,6 +478,7 @@ async fn spawn_to_provider_room_delivery_preserves_privacy_scope_and_idempotency
                 id: MODEL_ID.to_string(),
                 name: "room-model".to_string(),
                 n_ctx: 32_768,
+                tokenizer: "fake".to_string(),
                 endpoint: provider.endpoint.clone(),
                 ..Default::default()
             },
@@ -503,7 +607,7 @@ async fn spawn_to_provider_room_delivery_preserves_privacy_scope_and_idempotency
         .unwrap();
 
     spawn_member(ccx.clone(), "writer", vec![]).await;
-    provider_request(&provider, "writer", 1).await;
+    writer_provider_request(&app, &provider).await;
     let board = refact_runtime_api::task_storage::load_board(gcx.clone(), TASK_ID)
         .await
         .unwrap();

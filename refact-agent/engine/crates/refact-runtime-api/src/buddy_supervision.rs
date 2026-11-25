@@ -12,8 +12,8 @@ use refact_buddy_core::supervision_detectors::{
 };
 use refact_buddy_core::supervision_journal::SupervisionJournal;
 use refact_chat_api::diagnostics::safe_provider_error_diagnostic;
-use refact_chat_api::types::{ChatMessage, ChatSession, SessionState};
-use refact_chat_api::{GoalAutonomy, GoalSnapshot};
+use refact_chat_api::types::{ChatSession, SessionState};
+use refact_chat_api::{ChatMessage, GoalAutonomy, GoalSnapshot};
 use refact_core::retry_policy::{classify_user_error, UserErrorCategory};
 use tokio::sync::Mutex as AMutex;
 

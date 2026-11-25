@@ -401,27 +401,48 @@ pub fn compress_duplicate_context_files(
 
             if !compressed_files.is_empty() {
                 let compressed_files_str = compressed_files.join(", ");
+                let original_content = messages[file.msg_idx].content.clone();
+                let original_role = messages[file.msg_idx].role.clone();
+                let before_text_len = original_content.content_text_only().len();
+                let before_tokens =
+                    crate::chat_compress::approx_tokens_for_message(&messages[file.msg_idx]);
                 if remaining_files.is_empty() {
                     let summary = format!(" Duplicate files compressed: '{}' files were shown earlier in the conversation history. Do not ask for these files again.", compressed_files_str);
                     messages[file.msg_idx].content = ChatContent::SimpleText(summary);
                     if messages[file.msg_idx].tool_call_id.is_empty() {
                         messages[file.msg_idx].role = "cd_instruction".to_string();
                     }
+                } else {
+                    let new_content = serde_json::to_string(&remaining_files)
+                        .expect("serialization of filtered ContextFiles failed");
+                    messages[file.msg_idx].content = ChatContent::SimpleText(new_content);
+                }
+
+                modified_messages.insert(file.msg_idx);
+                let after_text_len = messages[file.msg_idx].content.content_text_only().len();
+                let after_tokens =
+                    crate::chat_compress::approx_tokens_for_message(&messages[file.msg_idx]);
+                if after_text_len >= before_text_len || after_tokens >= before_tokens {
+                    messages[file.msg_idx].content = original_content;
+                    messages[file.msg_idx].role = original_role;
+                    tracing::info!(
+                        "Stage 0: Skipping ContextFile dedup at index {}: replacement does not reduce provider text and tokens",
+                        file.msg_idx
+                    );
+                    continue;
+                }
+
+                if remaining_files.is_empty() {
                     tracing::info!(
                         "Stage 0: Fully compressed ContextFile at index {}: all {} files removed",
                         file.msg_idx,
                         compressed_files.len()
                     );
                 } else {
-                    let new_content = serde_json::to_string(&remaining_files)
-                        .expect("serialization of filtered ContextFiles failed");
-                    messages[file.msg_idx].content = ChatContent::SimpleText(new_content);
                     tracing::info!("Stage 0: Partially compressed ContextFile at index {}: {} files removed, {} files kept",
                                   file.msg_idx, compressed_files.len(), remaining_files.len());
                 }
-
                 compressed_count += compressed_files.len();
-                modified_messages.insert(file.msg_idx);
             }
         }
     }
@@ -795,8 +816,10 @@ mod tests {
 
     #[test]
     fn newer_same_range_attachment_supersedes_older_copy() {
-        let older = make_context_file_msg("src/main.rs", "fn main() {}\nfn helper() {}\n");
-        let newer = make_context_file_msg("src/main.rs", "fn main() {}\n");
+        let older_content = "fn main() {}\nfn helper() {}\n".repeat(20);
+        let newer_content = "fn main() {}\n".repeat(20);
+        let older = make_context_file_msg("src/main.rs", &older_content);
+        let newer = make_context_file_msg("src/main.rs", &newer_content);
         let mut messages = vec![older, plain_user_msg("edited the file"), newer];
 
         let (compressed_count, _) =
@@ -1180,9 +1203,11 @@ mod tests {
     }
     #[test]
     fn test_dedup_keeps_context_file_role_for_tool_call_responses() {
-        let mut answered = make_context_file_msg("src/dup.rs", "line1\nline2\nline3");
+        let answered_content = "line1\nline2\nline3\n".repeat(40);
+        let standalone_content = format!("{answered_content}line4\n");
+        let mut answered = make_context_file_msg("src/dup.rs", &answered_content);
         answered.tool_call_id = "call_read".to_string();
-        let standalone = make_context_file_msg("src/dup.rs", "line1\nline2\nline3\nline4");
+        let standalone = make_context_file_msg("src/dup.rs", &standalone_content);
         let mut messages = vec![answered, standalone];
 
         let (count, _) = compress_duplicate_context_files(&mut messages).unwrap();
@@ -1199,14 +1224,106 @@ mod tests {
 
     #[test]
     fn test_dedup_swaps_role_for_unanswered_duplicates() {
-        let small = make_context_file_msg("src/dup.rs", "line1\nline2\nline3");
-        let large = make_context_file_msg("src/dup.rs", "line1\nline2\nline3\nline4");
+        let small_content = "line1\nline2\nline3\n".repeat(40);
+        let large_content = format!("{small_content}line4\n");
+        let small = make_context_file_msg("src/dup.rs", &small_content);
+        let large = make_context_file_msg("src/dup.rs", &large_content);
         let mut messages = vec![small, large];
 
         let (count, _) = compress_duplicate_context_files(&mut messages).unwrap();
 
         assert_eq!(count, 1);
         assert_eq!(messages[0].role, "cd_instruction");
+    }
+
+    #[test]
+    fn test_dedup_rolls_back_non_saving_small_duplicate() {
+        let filename = "src/a/very/long/path/whose/name/makes/the/dedup/summary/expensive/tiny.rs";
+        let small = make_context_file_msg(filename, "x");
+        let best = make_context_file_msg(filename, "xy");
+        let original = vec![small, best];
+        let mut messages = original.clone();
+
+        let (count, _) = compress_duplicate_context_files(&mut messages).unwrap();
+
+        assert_eq!(count, 0);
+        assert_eq!(
+            serde_json::to_value(&messages).unwrap(),
+            serde_json::to_value(&original).unwrap()
+        );
+    }
+
+    #[test]
+    fn test_dedup_keeps_saving_large_duplicate() {
+        let duplicate_content = "fn duplicated() { println!(\"duplicate\"); }\n".repeat(40);
+        let best_content = format!("{duplicate_content}fn newest() {{}}\n");
+        let duplicate = make_context_file_msg("src/large_duplicate.rs", &duplicate_content);
+        let best = make_context_file_msg("src/large_duplicate.rs", &best_content);
+        let original = vec![duplicate, best];
+        let mut messages = original.clone();
+        let before_tokens: usize = messages
+            .iter()
+            .map(crate::chat_compress::approx_tokens_for_message)
+            .sum();
+
+        let (count, _) = compress_duplicate_context_files(&mut messages).unwrap();
+
+        let after_tokens: usize = messages
+            .iter()
+            .map(crate::chat_compress::approx_tokens_for_message)
+            .sum();
+        assert_eq!(count, 1);
+        assert!(after_tokens < before_tokens);
+        assert!(
+            messages[0].content.content_text_only().len()
+                < original[0].content.content_text_only().len()
+        );
+        assert!(messages[0]
+            .content
+            .content_text_only()
+            .contains("Duplicate files compressed"));
+    }
+
+    #[test]
+    fn test_dedup_mixed_replacements_are_guarded_per_message() {
+        let small_filename = "src/a/very/long/path/whose/name/makes/the/dedup/summary/expensive/tiny.rs";
+        let small_duplicate = make_context_file_msg(small_filename, "x");
+        let small_best = make_context_file_msg(small_filename, "xy");
+        let large_content = "fn duplicated() { println!(\"duplicate\"); }\n".repeat(40);
+        let large_best_content = format!("{large_content}fn newest() {{}}\n");
+        let large_duplicate = make_context_file_msg("src/large_duplicate.rs", &large_content);
+        let large_best = make_context_file_msg("src/large_duplicate.rs", &large_best_content);
+        let original = vec![small_duplicate, small_best, large_duplicate, large_best];
+        let mut messages = original.clone();
+        let before_tokens: usize = messages
+            .iter()
+            .map(crate::chat_compress::approx_tokens_for_message)
+            .sum();
+
+        let (count, _) = compress_duplicate_context_files(&mut messages).unwrap();
+
+        let after_tokens: usize = messages
+            .iter()
+            .map(crate::chat_compress::approx_tokens_for_message)
+            .sum();
+        assert_eq!(count, 1);
+        assert!(after_tokens < before_tokens);
+        assert_eq!(
+            serde_json::to_value(&messages[0]).unwrap(),
+            serde_json::to_value(&original[0]).unwrap()
+        );
+        assert_eq!(
+            serde_json::to_value(&messages[1]).unwrap(),
+            serde_json::to_value(&original[1]).unwrap()
+        );
+        assert!(messages[2]
+            .content
+            .content_text_only()
+            .contains("Duplicate files compressed"));
+        assert_eq!(
+            serde_json::to_value(&messages[3]).unwrap(),
+            serde_json::to_value(&original[3]).unwrap()
+        );
     }
 
     #[test]

@@ -12,7 +12,6 @@ use tracing::info;
 use uuid::Uuid;
 use futures::future::join_all;
 
-
 use refact_runtime_api::app_state::AppState;
 use refact_runtime_api::AtCommandsContext;
 use refact_buddy_core::user_action::UserAction;
@@ -22,9 +21,7 @@ use refact_chat_api::SubchatParameters;
 use refact_core::constants::CHAT_TOP_N;
 use refact_runtime_api::pp_tool_results::{postprocess_tool_results, ToolBudget};
 use refact_perf::perf_diagnostics::{self, PerfComponent, PerfOutcome, ToolExecutionClass};
-use refact_runtime_api::customization_registry_gcx::{
-    get_mode_config, match_tool_confirm_action,
-};
+use refact_runtime_api::customization_registry_gcx::{get_mode_config, match_tool_confirm_action};
 use refact_chat_api::setparams::map_legacy_mode_to_id;
 use refact_ext::hooks::HookEvent;
 use refact_ext::hooks_payload::HookPayload;
@@ -135,15 +132,20 @@ use refact_core::chat_config::tokens;
 
 async fn get_effective_n_ctx(app: AppState, thread: &ThreadParams) -> usize {
     let default_n_ctx = tokens().default_n_ctx;
-    let model_n_ctx =
-        match refact_runtime_api::caps_loader::try_load_caps_quickly_if_not_present(app.gcx.clone(), 0).await
-        {
-            Ok(caps) => match refact_caps_core::model_resolve::resolve_chat_model(caps, &thread.model) {
+    let model_n_ctx = match refact_runtime_api::caps_loader::try_load_caps_quickly_if_not_present(
+        app.gcx.clone(),
+        0,
+    )
+    .await
+    {
+        Ok(caps) => {
+            match refact_caps_core::model_resolve::resolve_chat_model(caps, &thread.model) {
                 Ok(model_rec) if model_rec.base.n_ctx > 0 => model_rec.base.n_ctx,
                 _ => default_n_ctx,
-            },
-            Err(_) => default_n_ctx,
-        };
+            }
+        }
+        Err(_) => default_n_ctx,
+    };
     match thread.context_tokens_cap {
         Some(cap) if cap > 0 => cap.min(model_n_ctx),
         _ => model_n_ctx,
@@ -604,8 +606,6 @@ fn spawn_subchat_bridge(
         task: Some(task),
     }
 }
-
-
 
 pub async fn process_tool_calls_once(
     app: AppState,
@@ -2109,6 +2109,67 @@ async fn execute_tools_inner(
     let serial_registry = Arc::new(serial_registry);
     let max_parallel_tools = refact_chat_history::config::limits().max_parallel_tools;
 
+    let supervision_chat_id = ccx.lock().await.chat_id.clone();
+    let supervision_calls = tool_calls
+        .iter()
+        .map(|tool_call| {
+            let args = tool_call
+                .function
+                .parse_args()
+                .map(|args| serde_json::Value::Object(args.into_iter().collect()))
+                .unwrap_or_else(|_| {
+                    serde_json::Value::String(tool_call.function.arguments.clone())
+                });
+            let test_command =
+                matches!(tool_call.function.name.as_str(), "shell" | "process_start")
+                    && args.to_string().to_lowercase().contains("test");
+            (tool_call.clone(), args, test_command)
+        })
+        .collect::<Vec<_>>();
+    for (tool_call, args, test_command) in &supervision_calls {
+        app.buddy
+            .supervision
+            .observe_non_fatal(
+                &supervision_chat_id,
+                refact_buddy_core::supervision::SupervisionKind::ToolCall {
+                    tool_name: refact_buddy_core::supervision::SupervisionReference::new(
+                        &tool_call.function.name,
+                    ),
+                    normalized_args_hash:
+                        refact_buddy_core::supervision::SupervisionHash::normalized_arguments(args),
+                },
+            )
+            .await;
+        if *test_command {
+            app.buddy
+                .supervision
+                .observe_non_fatal(
+                    &supervision_chat_id,
+                    refact_buddy_core::supervision::SupervisionKind::Test {
+                        status: refact_buddy_core::supervision::TestStatus::Running,
+                    },
+                )
+                .await;
+        }
+    }
+    if !supervision_calls.is_empty() {
+        app.buddy
+            .supervision
+            .observe_non_fatal(
+                &supervision_chat_id,
+                refact_buddy_core::supervision::SupervisionKind::Process {
+                    facts: refact_buddy_core::supervision::ProcessFacts {
+                        process_id: refact_buddy_core::supervision::SupervisionReference::new(
+                            "chat-tools",
+                        ),
+                        state: refact_buddy_core::supervision::ProcessState::Running,
+                        heartbeat_at: refact_runtime_api::buddy_supervision::epoch_secs(),
+                    },
+                },
+            )
+            .await;
+    }
+
     let session_arc_opt: Option<Arc<AMutex<refact_chat_api::types::ChatSession>>> = {
         let cgcx = ccx.lock().await;
         let sessions = app.chat.sessions.read().await;
@@ -2149,7 +2210,8 @@ async fn execute_tools_inner(
                 let text = if hard_stopped {
                     "Repetitive tool calls blocked by the loop guard. Do not repeat the same calls — synthesize what you already have and complete or change your approach now.".to_string()
                 } else {
-                    refact_tool_api::tool_call_loop_guard::INVESTIGATION_BUDGET_EXHAUSTED_TEXT.to_string()
+                    refact_tool_api::tool_call_loop_guard::INVESTIGATION_BUDGET_EXHAUSTED_TEXT
+                        .to_string()
                 };
                 all_results.push((
                     idx,
@@ -2323,6 +2385,89 @@ async fn execute_tools_inner(
     )
     .await;
 
+    for (tool_call, _, test_command) in &supervision_calls {
+        let matching = results
+            .iter()
+            .filter(|message| message.tool_call_id == tool_call.id)
+            .collect::<Vec<_>>();
+        let failed = matching
+            .iter()
+            .any(|message| message.tool_failed == Some(true));
+        let result_payload = serde_json::json!({
+            "content": matching.iter().map(|message| message.content.content_text_only()).collect::<Vec<_>>(),
+            "failed": failed,
+        });
+        let status = if matching.is_empty() {
+            refact_buddy_core::supervision::ResultStatus::Cancelled
+        } else if failed {
+            refact_buddy_core::supervision::ResultStatus::Failed
+        } else {
+            refact_buddy_core::supervision::ResultStatus::Succeeded
+        };
+        app.buddy
+            .supervision
+            .observe_non_fatal(
+                &supervision_chat_id,
+                refact_buddy_core::supervision::SupervisionKind::ToolResult {
+                    tool_name: refact_buddy_core::supervision::SupervisionReference::new(
+                        &tool_call.function.name,
+                    ),
+                    result_hash: refact_buddy_core::supervision::SupervisionHash::normalized_result(
+                        &result_payload,
+                    ),
+                    status,
+                    error: failed.then(|| refact_buddy_core::supervision::ErrorFingerprint {
+                        category: refact_buddy_core::supervision::ErrorCategory::Tool,
+                        http_status: None,
+                    }),
+                },
+            )
+            .await;
+        if !failed && is_editing_tool(&tool_call.function.name) {
+            app.buddy
+                .supervision
+                .observe_non_fatal(
+                    &supervision_chat_id,
+                    refact_buddy_core::supervision::SupervisionKind::Diff {
+                        status: refact_buddy_core::supervision::DiffStatus::Changed,
+                    },
+                )
+                .await;
+        }
+        if *test_command {
+            app.buddy
+                .supervision
+                .observe_non_fatal(
+                    &supervision_chat_id,
+                    refact_buddy_core::supervision::SupervisionKind::Test {
+                        status: if failed {
+                            refact_buddy_core::supervision::TestStatus::Failed
+                        } else {
+                            refact_buddy_core::supervision::TestStatus::Passed
+                        },
+                    },
+                )
+                .await;
+        }
+    }
+    if !supervision_calls.is_empty() {
+        app.buddy
+            .supervision
+            .observe_non_fatal(
+                &supervision_chat_id,
+                refact_buddy_core::supervision::SupervisionKind::Process {
+                    facts: refact_buddy_core::supervision::ProcessFacts {
+                        process_id: refact_buddy_core::supervision::SupervisionReference::new(
+                            "chat-tools",
+                        ),
+                        state: refact_buddy_core::supervision::ProcessState::Finished,
+                        heartbeat_at: refact_runtime_api::buddy_supervision::epoch_secs(),
+                    },
+                },
+            )
+            .await;
+    }
+
     (results, any_corrections)
 }
 
@@ -2454,8 +2599,6 @@ pub fn fallback_tool_runtime_event_lines(
         )),
     )
 }
-
-
 
 pub async fn execute_tools(
     app: AppState,
@@ -2943,18 +3086,8 @@ mod investigation_tracker_tests {
         TurnInvestigationTracker::new()
     }
 
-    fn record(
-        t: &mut TurnInvestigationTracker,
-        name: &str,
-        key: &str,
-    ) -> Option<BlockReason> {
-        t.record(
-            name,
-            key,
-            BUDGET,
-            true,
-            STAGNATION_THRESHOLD,
-        )
+    fn record(t: &mut TurnInvestigationTracker, name: &str, key: &str) -> Option<BlockReason> {
+        t.record(name, key, BUDGET, true, STAGNATION_THRESHOLD)
     }
 
     #[test]
@@ -3062,7 +3195,13 @@ mod investigation_tracker_tests {
         t.record("cat", "cat\u{1}a", budget, true, stagnation_threshold);
         // A state mutation is real progress: it clears the stagnation window, so
         // the same target is fresh again ("no state mutation" is the precondition).
-        t.record("apply_patch", "patch\u{1}x", budget, true, stagnation_threshold);
+        t.record(
+            "apply_patch",
+            "patch\u{1}x",
+            budget,
+            true,
+            stagnation_threshold,
+        );
         assert_eq!(
             t.record("cat", "cat\u{1}a", budget, true, stagnation_threshold),
             None,

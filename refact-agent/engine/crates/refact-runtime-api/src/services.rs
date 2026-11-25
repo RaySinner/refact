@@ -107,5 +107,6 @@ pub struct BuddyServices {
     pub buddy: Arc<AMutex<Option<BuddyService>>>,
     pub buddy_events_tx: tokio::sync::broadcast::Sender<DiagnosticBuddyEvent>,
     pub user_activity: Arc<AMutex<UserActivityRing>>,
+    pub supervision: crate::buddy_supervision::BuddySupervisionCollector,
 }
 

@@ -45,6 +45,7 @@ pub fn start_generation(
         // Marks the whole turn (assistant plus the multi-step tool loop) as
         // in-flight, so `when_idle` deliveries do not land on a transient Idle.
         let mut turn_guard = TurnDepthGuard::enter(app.clone(), session_arc.clone()).await;
+        refact_runtime_api::buddy_supervision::collect_session_boundary(&app, &session_arc).await;
         loop {
             match refact_runtime_api::chat_context_rebuild::drain_pending(gcx.clone(), &session_arc).await {
                 Ok(true) => break,
@@ -262,6 +263,7 @@ pub fn start_generation(
                 }
             };
             let stream_prepare_started_at = perf_diagnostics::is_enabled().then(Instant::now);
+            refact_runtime_api::buddy_supervision::collect_session_boundary(&app, &session_arc).await;
 
             {
                 let mut ev = make_runtime_event(
@@ -315,6 +317,13 @@ pub fn start_generation(
                 let should_retry_network = error.should_retry(network_retry_attempt, &abort_flag);
                 let retry_reason = retry_decision.reason();
                 if should_retry_network {
+                    refact_runtime_api::buddy_supervision::collect_provider_error(
+                        &app,
+                        &chat_id,
+                        &error.message,
+                        true,
+                    )
+                    .await;
                     let delay =
                         refact_chat_history::retry_policy::retry_delay_for_attempt(network_retry_attempt);
                     network_retry_attempt += 1;
@@ -417,6 +426,13 @@ pub fn start_generation(
                     error.message = safe_error;
                 }
 
+                refact_runtime_api::buddy_supervision::collect_provider_error(
+                    &app,
+                    &chat_id,
+                    &error.message,
+                    false,
+                )
+                .await;
                 let error_message = error.message;
 
                 let task_meta_opt = {
@@ -498,6 +514,7 @@ pub fn start_generation(
             {
                 warn!("Failed to publish room assistant message: {error}");
             }
+            refact_runtime_api::buddy_supervision::collect_session_boundary(&app, &session_arc).await;
             network_retry_attempt = 0;
 
             {
@@ -730,6 +747,7 @@ pub fn start_generation(
         // deliveries (and any `append` ones still waiting).
         turn_guard.release().await;
         refact_runtime_api::chat_delivery_runtime::drain_deliveries_at_boundary(app.clone(), session_arc.clone()).await;
+        refact_runtime_api::buddy_supervision::collect_session_boundary(&app, &session_arc).await;
     })
 }
 

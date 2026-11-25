@@ -279,6 +279,9 @@ pub async fn buddy_background_task(app: AppState) {
         }
         tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
         expiry_tick += 1;
+        if expiry_tick % 30 == 0 {
+            app.buddy.supervision.evaluate_all_non_fatal().await;
+        }
         if expiry_tick % PET_DECAY_INTERVAL_SECS == 0 {
             let mut buddy = buddy_arc.lock().await;
             if let Some(svc) = buddy.as_mut() {

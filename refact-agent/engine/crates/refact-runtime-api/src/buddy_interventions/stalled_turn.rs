@@ -698,13 +698,22 @@ async fn run_stalled_turn_intervention(
         return Ok(());
     }
 
-    let outcome = match deliver_to_chat(app, &signal.chat_id, delivery).await {
+    let delivery_reference = delivery.id.clone();
+    let message_id = delivery.messages.first().map(|message| message.message_id.clone());
+    let outcome = match deliver_to_chat(app.clone(), &signal.chat_id, delivery).await {
         Ok(outcome) => outcome,
         Err(error) => {
             release_stalled_turn_slot(&signal.chat_id, reserved_at).await;
             return Err(error);
         }
     };
+    crate::buddy_supervision::collect_intervention(
+        &app,
+        &signal.chat_id,
+        &delivery_reference,
+        message_id.as_deref(),
+    )
+    .await;
     tracing::info!(chat_id = %signal.chat_id, ?outcome, "stalled_turn: buddy reply delivered");
     Ok(())
 }

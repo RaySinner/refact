@@ -135,6 +135,9 @@ mod tests {
                         200,
                     ),
                 )),
+                supervision: crate::buddy_supervision::BuddySupervisionCollector::new(
+                    dir.to_path_buf(),
+                ),
             },
             events_rx,
         )

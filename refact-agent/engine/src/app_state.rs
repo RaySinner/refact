@@ -172,6 +172,15 @@ impl ContextFactory for EngineContextFactory {
                     .clone()
                     .expect("buddy event sender is not initialized"),
                 user_activity: gcx.user_activity.clone(),
+                supervision: refact_runtime_api::buddy_supervision::BuddySupervisionCollector::new(
+                    gcx.documents_state
+                        .workspace_folders
+                        .lock()
+                        .unwrap()
+                        .first()
+                        .cloned()
+                        .unwrap_or_else(|| gcx.cache_dir.clone()),
+                ),
             },
             integrations: ChatIntegrationScope {
                 browser_runtimes: gcx.browser_runtimes.clone(),
@@ -241,6 +250,15 @@ impl ContextFactory for EngineContextFactory {
                     .clone()
                     .expect("buddy event sender is not initialized"),
                 user_activity: gcx.user_activity.clone(),
+                supervision: refact_runtime_api::buddy_supervision::BuddySupervisionCollector::new(
+                    gcx.documents_state
+                        .workspace_folders
+                        .lock()
+                        .unwrap()
+                        .first()
+                        .cloned()
+                        .unwrap_or_else(|| gcx.cache_dir.clone()),
+                ),
             })),
             integrations: IntegrationServices {
                 integration_sessions: gcx.integration_sessions.clone(),
@@ -395,13 +413,8 @@ impl FilesProvider for EngineFilesProvider {
 
     async fn file_repair_candidates(&self, value: &str, top_n: usize, fuzzy: bool) -> Vec<String> {
         let tool = self.gcx.tool_ctx(self.gcx.clone());
-        crate::at_commands::at_file::file_repair_candidates(
-            &tool,
-            &value.to_string(),
-            top_n,
-            fuzzy,
-        )
-        .await
+        crate::at_commands::at_file::file_repair_candidates(&tool, &value.to_string(), top_n, fuzzy)
+            .await
     }
 
     async fn project_dirs(&self) -> Vec<PathBuf> {

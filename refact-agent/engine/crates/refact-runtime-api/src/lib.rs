@@ -117,6 +117,7 @@ pub mod buddy_privacy_degraded;
 pub mod buddy_pulse_inject;
 pub mod buddy_pulse;
 pub mod buddy_interventions;
+pub mod buddy_supervision;
 pub mod buddy_voice_service;
 pub mod buddy_chat_reactions;
 pub mod buddy_runtime;

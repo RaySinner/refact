@@ -81,7 +81,7 @@ pub struct ExternalDeleteResponse {
     pub retirement: Option<ExternalRetirementRead>,
 }
 
-pub fn external_participants_router(api: ExternalParticipantApi) -> Router {
+pub fn external_participants_router(api: ExternalParticipantApi) -> Router<AppState> {
     Router::new()
         .route(
             "/external-participants",
@@ -468,7 +468,7 @@ mod tests {
     struct Fixture {
         _directory: TempDir,
         registry: Arc<ExternalParticipantRegistry>,
-        router: Router,
+        router: Router<AppState>,
         events: broadcast::Receiver<TaskEventEnvelope>,
         transport: Arc<MockTransport>,
     }
@@ -674,7 +674,7 @@ mod tests {
     }
 
     async fn request(
-        router: &Router,
+        router: &Router<AppState>,
         method: &str,
         uri: &str,
         body: Value,

@@ -232,9 +232,15 @@ describe("WorkspaceView", () => {
       renderWorkspaceView(store);
 
       expect(screen.queryByLabelText("Workspace dock")).not.toBeInTheDocument();
-      expect(
-        screen.queryByLabelText("Terminal workbench for chat-a"),
-      ).not.toBeInTheDocument();
+      if (host === "vscode") {
+        expect(
+          screen.getByLabelText("Terminal workbench for chat-a"),
+        ).toBeInTheDocument();
+      } else {
+        expect(
+          screen.queryByLabelText("Terminal workbench for chat-a"),
+        ).not.toBeInTheDocument();
+      }
 
       store.dispatch(setPanelsForced(true));
 
@@ -258,7 +264,7 @@ describe("WorkspaceView", () => {
     webView.unmount();
 
     const ideStore = createWorkspaceStore();
-    ideStore.dispatch(updateConfig({ host: "vscode" }));
+    ideStore.dispatch(updateConfig({ host: "ide" }));
     renderWorkspaceView(ideStore);
     expect(screen.queryByLabelText("Terminal drawer")).not.toBeInTheDocument();
     expect(

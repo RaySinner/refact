@@ -1,0 +1,46 @@
+name: refact-uhp-live-staging
+
+x-refact-live-evidence:
+  protocol-version: "2026-10-19"
+  ce-version: "0.41.25"
+  claude-code:
+    base: "claude-code"
+    cli-pin: "2.1.311"
+    harness-id-env: "UHP_CLAUDE_HARNESS_ID"
+    environment-id-env: "UHP_CLAUDE_ENVIRONMENT_ID"
+    model-env: "UHP_CLAUDE_MODEL"
+    provider-credential-ref-env: "UHP_CLAUDE_PROVIDER_CREDENTIAL_REF"
+  opencode:
+    base: "opencode"
+    cli-pin: "1.18.23"
+    harness-id-env: "UHP_OPENCODE_HARNESS_ID"
+    environment-id-env: "UHP_OPENCODE_ENVIRONMENT_ID"
+    model-env: "UHP_OPENCODE_MODEL"
+    provider-credential-ref-env: "UHP_OPENCODE_PROVIDER_CREDENTIAL_REF"
+
+services:
+  ce:
+    image: harnessrouter/harnessrouter:0.41.25@sha256:374709e16d6426ea58a1e238df40476bb56e53c9b1b20c3210bc3a934b79c53f
+    container_name: refact-uhp-live-ce
+    restart: unless-stopped
+    environment:
+      HR_BACKENDS: "claude,opencode"
+      HR_SESSION_LEASE: "enforce"
+      CLAUDE_CODE_VERSION: "2.1.311"
+      HR_OPENCODE_VERSION: "1.18.23"
+      HR_SECRET_KEY: "${HR_SECRET_KEY:?set HR_SECRET_KEY in the operator secret environment}"
+      HR_AUTH_PASSWORD: "${HR_AUTH_PASSWORD:?set HR_AUTH_PASSWORD in the operator secret environment}"
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - refact-uhp-live-data:/data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+
+volumes:
+  refact-uhp-live-data:
+    name: refact-uhp-live-data

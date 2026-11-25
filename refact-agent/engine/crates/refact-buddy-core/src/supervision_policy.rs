@@ -290,15 +290,29 @@ mod tests {
             "chat-1",
             1_100,
             300,
+            1
+        ));
+        assert!(!delivery_budget_allows(
+            &[record.clone()],
+            "chat-1",
+            1_200,
+            300,
             6
         ));
         assert!(delivery_budget_allows(
             &[record.clone()],
             "chat-1",
-            1_300,
+            1_400,
             300,
             6
         ));
-        assert!(!delivery_budget_allows(&[record], "chat-1", 4_700, 0, 1));
+        assert!(delivery_budget_allows(
+            &[record.clone()],
+            "chat-1",
+            4_600,
+            0,
+            1
+        ));
+        assert!(delivery_budget_allows(&[record], "chat-1", 4_700, 0, 1));
     }
 }

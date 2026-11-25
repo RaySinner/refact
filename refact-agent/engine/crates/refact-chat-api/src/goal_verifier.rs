@@ -15,8 +15,8 @@ use crate::ThreadParams;
 
 use crate::internal_roles::{self, EventSubkind};
 use crate::pursuit::{
-    arbitrate_pursuit, stamp_pursuit_message, PursuitArbitrationContext, PursuitDecision,
-    PursuitRequest, PursuitSource,
+    arbitrate_pursuit, pursuit_evidence_seq, stamp_pursuit_message, PursuitArbitrationContext,
+    PursuitDecision, PursuitRequest, PursuitSource,
 };
 use crate::types::epoch_ms_now;
 use crate::types::{
@@ -541,7 +541,7 @@ fn apply_goal_verdict_with_delivery(
         PursuitRequest::new(
             PursuitSource::VerifierRearm,
             "verification_gaps",
-            session.event_seq,
+            pursuit_evidence_seq(session),
             true,
         )
     });

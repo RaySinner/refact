@@ -14,8 +14,8 @@ use tokio::time::sleep;
 
 use refact_chat_api::internal_roles::{self, EventSubkind};
 use refact_chat_api::pursuit::{
-    arbitrate_pursuit, stamp_pursuit_message, PursuitArbitrationContext, PursuitDecision,
-    PursuitRequest, PursuitSource, PursuitSuppressReason,
+    arbitrate_pursuit, pursuit_evidence_seq, stamp_pursuit_message, PursuitArbitrationContext,
+    PursuitDecision, PursuitRequest, PursuitSource, PursuitSuppressReason,
 };
 use refact_chat_api::types::*;
 use refact_core::chat_types::ChatMessage;
@@ -261,7 +261,12 @@ pub fn try_apply_goal_nudge(
         GoalNudgeTrigger::Monitor => PursuitSource::GoalMonitor,
         GoalNudgeTrigger::InlineTurnEnd => PursuitSource::InlineTurnEnd,
     };
-    let request = PursuitRequest::new(source, trigger.as_str(), session.event_seq, true);
+    let request = PursuitRequest::new(
+        source,
+        trigger.as_str(),
+        pursuit_evidence_seq(session),
+        true,
+    );
     let decision = arbitrate_pursuit(
         session,
         &request,

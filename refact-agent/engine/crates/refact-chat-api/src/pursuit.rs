@@ -53,6 +53,10 @@ impl PursuitRequest {
     }
 }
 
+pub fn pursuit_evidence_seq(session: &ChatSession) -> u64 {
+    session.messages.len() as u64
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PursuitSuppressReason {
     Closed,

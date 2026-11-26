@@ -58,6 +58,11 @@ pub fn validate_arbiter_reply(
         if reply.suggested_action.as_str().trim().is_empty() {
             return Err("confirmed advice requires an actionable next step".to_string());
         }
+        if candidate.candidate == InterventionCandidate::MissingGoal
+            && !reply.suggested_action.as_str().contains("set_goal")
+        {
+            return Err("missing-goal advice must recommend set_goal".to_string());
+        }
     }
     Ok(ValidatedSupervisionAdvice {
         verdict: reply.verdict,
@@ -135,6 +140,7 @@ pub fn trigger_label(candidate: InterventionCandidate) -> &'static str {
         InterventionCandidate::StalledTurn => "stalled turn",
         InterventionCandidate::Loop => "repeated tool loop",
         InterventionCandidate::Stagnation => "stagnation",
+        InterventionCandidate::MissingGoal => "work without a goal",
         InterventionCandidate::OffGoal => "possible off-goal work",
         InterventionCandidate::ProviderDisconnect => "terminal provider disconnect",
     }
@@ -274,6 +280,19 @@ mod tests {
         assert!(off_goal_needs_confirmation(&[first.clone()], &changed_goal));
         assert!(off_goal_needs_confirmation(&[], &second));
         assert!(off_goal_needs_confirmation(&[], &second));
+    }
+
+    #[test]
+    fn missing_goal_confirmation_must_recommend_set_goal() {
+        let (projection, mut candidate, mut reply) = fixture();
+        candidate.candidate = InterventionCandidate::MissingGoal;
+        reply.suggested_action = MessageBody::new("Keep inspecting the parser.");
+        assert!(validate_arbiter_reply(&candidate, &projection, reply.clone(), 80).is_err());
+        reply.suggested_action =
+            MessageBody::new("Call set_goal with 'Fix the parser regression and verify it'.");
+        let advice = validate_arbiter_reply(&candidate, &projection, reply, 80).unwrap();
+        assert!(format_advice(&candidate, &advice).contains("set_goal"));
+        assert!(format_advice(&candidate, &advice).contains("work without a goal"));
     }
 
     #[test]

@@ -330,6 +330,81 @@ mod tests {
         }));
     }
 
+    #[tokio::test]
+    async fn missing_goal_tool_observation_does_not_require_buddy_or_block_execution() {
+        let gcx = crate::global_context::tests::make_test_gcx().await;
+        let base_app = crate::app_state::app_state_from_gcx(gcx).await;
+        let registry = DeterministicToolRegistry {
+            confirmation_result: MatchConfirmDenyResult::PASS,
+            runtime_failure: false,
+        };
+        let test_tools = registry.clone();
+        let app = AppState {
+            tool_registry: Arc::new(
+                crate::app_state::AppToolRegistry::with_fixture_tool_factory(
+                    base_app.gcx.clone(),
+                    Arc::new(move || test_tools.tools()),
+                ),
+            ),
+            ..base_app
+        };
+        assert!(app.buddy.buddy.lock().await.is_none());
+        let chat_id = "missing-goal-tools";
+        let session = Arc::new(AMutex::new(ChatSession::new(chat_id.to_string())));
+        {
+            let mut locked = session.lock().await;
+            locked.thread.model = "model".to_string();
+            locked.add_message(ChatMessage::new(
+                "user".to_string(),
+                "Inspect the parser".to_string(),
+            ));
+            let mut assistant = ChatMessage::new("assistant".to_string(), String::new());
+            assistant.tool_calls = Some(vec![deterministic_tool_call("tool-alpha", "alpha")]);
+            locked.add_message(assistant);
+        }
+        app.chat
+            .sessions
+            .write()
+            .await
+            .insert(chat_id.to_string(), session.clone());
+        let mut candidates = app.buddy.supervision.subscribe();
+        app.buddy
+            .supervision
+            .observe_non_fatal(
+                chat_id,
+                refact_buddy_core::supervision::SupervisionKind::Message {
+                    role: refact_buddy_core::supervision::MessageRole::User,
+                    message_id: refact_buddy_core::supervision::SupervisionReference::new(
+                        "missing-goal-user",
+                    ),
+                    body: Some(refact_buddy_core::supervision::MessageBody::new(
+                        "Inspect the parser",
+                    )),
+                },
+            )
+            .await;
+
+        let outcome = process_tool_calls_once(app.clone(), session.clone(), "agent", None).await;
+
+        assert!(matches!(outcome, ToolStepOutcome::Continue));
+        let candidate = tokio::time::timeout(std::time::Duration::from_secs(1), candidates.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            candidate.candidate,
+            refact_buddy_core::supervision::InterventionCandidate::MissingGoal
+        );
+        let locked = session.lock().await;
+        assert!(locked.messages.iter().any(|message| {
+            message.role == "tool"
+                && message.tool_call_id == "tool-alpha"
+                && message.content.content_text_only() == "deterministic result"
+                && message.tool_failed != Some(true)
+        }));
+        assert!(locked.goal.is_none());
+    }
+
     #[serial(trajectory_perf)]
     #[tokio::test]
     async fn more_than_thirty_two_parallel_safe_tools_start_together() {

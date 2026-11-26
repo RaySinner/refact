@@ -10,6 +10,23 @@ use crate::supervision::{
 pub const DEFAULT_LOOP_THRESHOLD: usize = 3;
 pub const DEFAULT_STAGNATION_AFTER_SECS: u64 = 300;
 const OFF_GOAL_EVIDENCE_EVENTS: usize = 8;
+const MISSING_GOAL_CONTROL_TOOLS: &[&str] = &[
+    "set_goal",
+    "set_goal_budget",
+    "get_goal",
+    "update_goal",
+    "validate_goal",
+    "goal_control",
+    "pause_goal",
+    "snooze_goal",
+    "set_plan",
+    "update_plan",
+    "get_plan",
+    "sleep",
+    "process_wait",
+    "agent_wait",
+    "wait_agents",
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SupervisionDetectorConfig {
@@ -293,6 +310,48 @@ fn detect_off_goal(projection: &SupervisionProjection, now: u64) -> Option<Inter
     )
 }
 
+fn detect_missing_goal(projection: &SupervisionProjection, now: u64) -> Option<InterventionRecord> {
+    if projection.goal().is_some() {
+        return None;
+    }
+    let events = projection.detection_events().collect::<Vec<_>>();
+    let trigger = *events.last()?;
+    let SupervisionKind::ToolCall { tool_name, .. } = &trigger.data else {
+        return None;
+    };
+    if MISSING_GOAL_CONTROL_TOOLS.contains(&tool_name.as_str()) {
+        return None;
+    }
+    let user_index = events.iter().rposition(|event| {
+        matches!(
+            event.data,
+            SupervisionKind::Message {
+                role: MessageRole::User,
+                ..
+            }
+        )
+    })?;
+    let turn = &events[user_index..events.len() - 1];
+    if turn.iter().any(|event| match &event.data {
+        SupervisionKind::Goal { facts: Some(_) } => true,
+        SupervisionKind::ToolCall { tool_name, .. } => {
+            !MISSING_GOAL_CONTROL_TOOLS.contains(&tool_name.as_str())
+        }
+        _ => false,
+    }) {
+        return None;
+    }
+    let mut evidence = vec![events[user_index].clone(), trigger.clone()];
+    evidence.dedup_by_key(|event| event.seq);
+    shadow_record(
+        InterventionCandidate::MissingGoal,
+        InterventionVerdict::Confirmed,
+        "bd2.missing_goal.v1",
+        &evidence,
+        now,
+    )
+}
+
 fn detect_provider(projection: &SupervisionProjection, now: u64) -> Option<InterventionRecord> {
     let event = projection
         .detection_events()
@@ -333,6 +392,7 @@ pub fn detect_supervision_candidates(
     [
         detect_loop(projection, config, now),
         detect_stagnation(projection, config, now),
+        detect_missing_goal(projection, now),
         detect_off_goal(projection, now),
         detect_provider(projection, now),
     ]
@@ -365,11 +425,30 @@ mod tests {
     }
 
     fn call(seq: u64, args: &str) -> SupervisionEvent {
+        named_call(seq, "search_pattern", args)
+    }
+
+    fn named_call(seq: u64, tool_name: &str, args: &str) -> SupervisionEvent {
         event(
             seq,
             SupervisionKind::ToolCall {
-                tool_name: SupervisionReference::new("search_pattern"),
+                tool_name: SupervisionReference::new(tool_name),
                 normalized_args_hash: SupervisionHash::normalized_arguments(&json!({"q": args})),
+            },
+        )
+    }
+
+    fn goal_event(seq: u64, active: bool) -> SupervisionEvent {
+        event(
+            seq,
+            SupervisionKind::Goal {
+                facts: Some(GoalFacts {
+                    revision: 1,
+                    active,
+                    autonomy: false,
+                    prompt_enabled: true,
+                    can_pursue: active,
+                }),
             },
         )
     }
@@ -644,6 +723,112 @@ mod tests {
         assert!(off_goal.evidence.ids().iter().any(|id| id.seq == 1));
         assert!(off_goal.evidence.ids().iter().any(|id| id.seq == 3));
         assert!(off_goal.evidence.ids().len() <= OFF_GOAL_EVIDENCE_EVENTS);
+    }
+
+    #[test]
+    fn missing_goal_fires_only_for_first_substantive_tool_in_each_user_turn() {
+        let first = replay(vec![
+            message(1, MessageRole::User, "Inspect the parser"),
+            call(2, "parser"),
+        ]);
+        let candidates = detect_supervision_candidates(&first, config(), 1_002);
+        let missing = candidates
+            .iter()
+            .find(|record| record.candidate == InterventionCandidate::MissingGoal)
+            .unwrap();
+        assert_eq!(missing.verdict, InterventionVerdict::Confirmed);
+        assert_eq!(missing.evidence.ids().len(), 2);
+        assert_eq!(missing.evidence.ids()[0].seq, 1);
+        assert_eq!(missing.evidence.ids()[1].seq, 2);
+        assert!(missing.evidence.ids().len() <= crate::supervision::MAX_EVIDENCE_IDS);
+
+        let second = replay(vec![
+            message(1, MessageRole::User, "Inspect the parser"),
+            call(2, "parser"),
+            named_call(3, "cat", "parser.rs"),
+        ]);
+        assert!(!detect_supervision_candidates(&second, config(), 1_003)
+            .iter()
+            .any(|record| record.candidate == InterventionCandidate::MissingGoal));
+
+        let rearmed = replay(vec![
+            message(1, MessageRole::User, "Inspect the parser"),
+            call(2, "parser"),
+            message(3, MessageRole::User, "Now inspect the renderer"),
+            named_call(4, "cat", "renderer.rs"),
+        ]);
+        assert_eq!(
+            detect_supervision_candidates(&rearmed, config(), 1_004)
+                .iter()
+                .filter(|record| record.candidate == InterventionCandidate::MissingGoal)
+                .count(),
+            1
+        );
+        assert!(detect_supervision_candidates(&rearmed, config(), 1_004)
+            .iter()
+            .all(|record| record.candidate != InterventionCandidate::OffGoal));
+    }
+
+    #[test]
+    fn missing_goal_ignores_casual_chat_control_tools_and_installed_goals() {
+        let casual = replay(vec![message(1, MessageRole::User, "Hello")]);
+        assert!(detect_supervision_candidates(&casual, config(), 1_001).is_empty());
+
+        for (index, tool_name) in MISSING_GOAL_CONTROL_TOOLS.iter().enumerate() {
+            let seq = index as u64 + 2;
+            let projection = replay(vec![
+                message(1, MessageRole::User, "Check the current state"),
+                named_call(seq, tool_name, "state"),
+            ]);
+            assert!(
+                !detect_supervision_candidates(&projection, config(), 1_000 + seq)
+                    .iter()
+                    .any(|record| record.candidate == InterventionCandidate::MissingGoal),
+                "unexpected missing-goal candidate for {tool_name}"
+            );
+        }
+
+        for active in [true, false] {
+            let projection = replay(vec![
+                message(1, MessageRole::User, "Inspect the parser"),
+                goal_event(2, active),
+                call(3, "parser"),
+            ]);
+            assert!(!detect_supervision_candidates(&projection, config(), 1_003)
+                .iter()
+                .any(|record| record.candidate == InterventionCandidate::MissingGoal));
+        }
+
+        let installed_this_turn = replay(vec![
+            message(1, MessageRole::User, "Start a focused repair"),
+            goal_event(2, true),
+            event(3, SupervisionKind::Goal { facts: None }),
+            call(4, "parser"),
+        ]);
+        assert!(
+            !detect_supervision_candidates(&installed_this_turn, config(), 1_004)
+                .iter()
+                .any(|record| record.candidate == InterventionCandidate::MissingGoal)
+        );
+    }
+
+    #[test]
+    fn missing_goal_evidence_is_bounded_and_redacted() {
+        let secret = "Bearer sk-MISSING-GOAL-CANARY";
+        let projection = replay(vec![
+            message(1, MessageRole::User, secret),
+            named_call(2, "search_pattern", secret),
+        ]);
+        let candidates = detect_supervision_candidates(&projection, config(), 1_002);
+        let missing = candidates
+            .iter()
+            .find(|record| record.candidate == InterventionCandidate::MissingGoal)
+            .unwrap();
+        assert_eq!(missing.evidence.ids().len(), 2);
+        let serialized = serde_json::to_string(missing).unwrap();
+        assert!(!serialized.contains("MISSING-GOAL-CANARY"));
+        assert!(!serialized.contains("Bearer"));
+        assert!(projection.snapshot().unwrap().contains("REDACTED"));
     }
 
     #[test]

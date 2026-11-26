@@ -26,6 +26,7 @@ use crate::buddy_supervision::epoch_secs;
 pub const BUDDY_SUPERVISION_SOURCE: &str = "buddy.supervision";
 const MAX_NEW_TOKENS: usize = 300;
 const SUPERVISION_ARBITER_PROMPT: &str = "You are Buddy's automated supervisor. Review only the supplied redacted supervision projection and candidate. Return exactly one JSON object with keys verdict, evidence_event_ids, confidence, suggested_action. verdict is confirmed, dismissed, or inconclusive. evidence_event_ids is a non-empty array of {chat_id,seq} objects copied only from the candidate evidence. confidence is an integer from 0 to 100. suggested_action is one short concrete next step. Confirm only when the evidence supports that trigger and the action is useful. Otherwise dismiss or return inconclusive. Never include reasoning, tool arguments, tool results, secrets, markdown, or extra keys. Do not propose edits, approvals, goal changes, provider retries, or process restarts.";
+const MISSING_GOAL_ARBITER_PROMPT: &str = " For this missing_goal candidate only, a confirmed suggested_action must explicitly recommend calling set_goal with a short concrete goal inferred from the recent user request and substantive tool. This is advice only: never mutate goal state, tell the model to stop or abort, or request preemption or tool denial. This trigger-specific rule overrides the general goal-change prohibition above.";
 
 pub async fn run_supervision_advisor(app: AppState) {
     let mut receiver = app.buddy.supervision.subscribe();
@@ -230,68 +231,95 @@ async fn process_candidate(app: &AppState, candidate: InterventionRecord) {
         .await;
         return;
     };
-    let (decision, request, session_goal_revision) = {
-        let session = session_arc.lock().await;
-        let request = PursuitRequest::new(
-            PursuitSource::Buddy,
-            format!("supervision:{:?}", candidate.candidate),
-            pursuit_evidence_seq(&session),
-            candidate.candidate != InterventionCandidate::ProviderDisconnect,
-        );
-        let decision = arbitrate_pursuit(
-            &session,
-            &request,
-            PursuitArbitrationContext::new(now.saturating_mul(1000)),
-        );
-        let revision = session.goal.as_ref().map(|goal| goal.revision).unwrap_or(0);
-        (decision, request, revision)
-    };
-    if revision_mismatch(goal_revision, session_goal_revision) {
-        finish(
-            app,
-            key,
-            candidate,
-            InterventionVerdict::Confirmed,
-            InterventionDelivery::Suppressed {
-                reason: SuppressionReason::StaleEvidence,
-            },
-        )
-        .await;
-        return;
-    }
-    let wake = match decision {
-        PursuitDecision::StartTurn => true,
-        PursuitDecision::VisibleOnly => false,
-        PursuitDecision::Suppress(reason) => {
-            let suppression = match reason {
-                PursuitSuppressReason::DuplicateEvidence => SuppressionReason::Duplicate,
-                PursuitSuppressReason::AutonomyOff => SuppressionReason::AutonomyOff,
-                _ => SuppressionReason::UnsafeBoundary,
-            };
+    let text = format_advice(&candidate, &advice);
+    let delivery = if candidate.candidate == InterventionCandidate::MissingGoal {
+        let stale = {
+            let session = session_arc.lock().await;
+            missing_goal_is_stale(&session)
+        };
+        if stale {
             finish(
                 app,
                 key,
                 candidate,
                 InterventionVerdict::Confirmed,
                 InterventionDelivery::Suppressed {
-                    reason: suppression,
+                    reason: SuppressionReason::StaleEvidence,
                 },
             )
             .await;
             return;
         }
+        missing_goal_delivery(
+            &key,
+            &candidate,
+            &advice.evidence_event_ids,
+            advice.confidence,
+            text,
+        )
+    } else {
+        let (decision, request, session_goal_revision) = {
+            let session = session_arc.lock().await;
+            let request = PursuitRequest::new(
+                PursuitSource::Buddy,
+                format!("supervision:{:?}", candidate.candidate),
+                pursuit_evidence_seq(&session),
+                candidate.candidate != InterventionCandidate::ProviderDisconnect,
+            );
+            let decision = arbitrate_pursuit(
+                &session,
+                &request,
+                PursuitArbitrationContext::new(now.saturating_mul(1000)),
+            );
+            let revision = session.goal.as_ref().map(|goal| goal.revision).unwrap_or(0);
+            (decision, request, revision)
+        };
+        if revision_mismatch(goal_revision, session_goal_revision) {
+            finish(
+                app,
+                key,
+                candidate,
+                InterventionVerdict::Confirmed,
+                InterventionDelivery::Suppressed {
+                    reason: SuppressionReason::StaleEvidence,
+                },
+            )
+            .await;
+            return;
+        }
+        let wake = match decision {
+            PursuitDecision::StartTurn => true,
+            PursuitDecision::VisibleOnly => false,
+            PursuitDecision::Suppress(reason) => {
+                let suppression = match reason {
+                    PursuitSuppressReason::DuplicateEvidence => SuppressionReason::Duplicate,
+                    PursuitSuppressReason::AutonomyOff => SuppressionReason::AutonomyOff,
+                    _ => SuppressionReason::UnsafeBoundary,
+                };
+                finish(
+                    app,
+                    key,
+                    candidate,
+                    InterventionVerdict::Confirmed,
+                    InterventionDelivery::Suppressed {
+                        reason: suppression,
+                    },
+                )
+                .await;
+                return;
+            }
+        };
+        supervision_delivery(
+            &key,
+            &candidate,
+            &advice.evidence_event_ids,
+            advice.confidence,
+            text,
+            wake,
+            &request,
+            session_goal_revision,
+        )
     };
-    let text = format_advice(&candidate, &advice);
-    let delivery = supervision_delivery(
-        &key,
-        &candidate,
-        &advice.evidence_event_ids,
-        advice.confidence,
-        text,
-        wake,
-        &request,
-        session_goal_revision,
-    );
     let delivery_reference = delivery.id.clone();
     let message_id = delivery
         .messages
@@ -340,6 +368,38 @@ async fn process_candidate(app: &AppState, candidate: InterventionRecord) {
 
 fn revision_mismatch(candidate_revision: u64, session_revision: u64) -> bool {
     candidate_revision != 0 && candidate_revision != session_revision
+}
+
+fn missing_goal_is_stale(session: &refact_chat_api::ChatSession) -> bool {
+    session.goal.is_some()
+}
+
+pub fn missing_goal_delivery(
+    key: &SupervisionPolicyKey,
+    candidate: &InterventionRecord,
+    evidence_event_ids: &[refact_buddy_core::supervision::EvidenceId],
+    confidence: u8,
+    text: String,
+) -> PendingDelivery {
+    let notice = event(
+        EventSubkind::SystemNotice,
+        BUDDY_SUPERVISION_SOURCE,
+        json!({
+            "kind": "buddy_supervision_advice",
+            "trigger": candidate.candidate,
+            "evidence_event_ids": evidence_event_ids,
+            "confidence": confidence,
+            "attribution": "Buddy automated supervisor",
+        }),
+        text,
+    );
+    PendingDelivery::with_id(
+        key.stable_id().as_str().to_string(),
+        vec![notice],
+        PushMode::Append,
+        BUDDY_SUPERVISION_SOURCE,
+        false,
+    )
 }
 
 pub fn supervision_delivery(
@@ -427,7 +487,7 @@ async fn ask_buddy_arbiter(
         "candidate": candidate,
     });
     let messages = vec![
-        ChatMessage::new("system".to_string(), SUPERVISION_ARBITER_PROMPT.to_string()),
+        ChatMessage::new("system".to_string(), supervision_arbiter_prompt(candidate)),
         ChatMessage::new("user".to_string(), input.to_string()),
     ];
     let result = app
@@ -443,6 +503,14 @@ async fn ask_buddy_arbiter(
         .map(|message| message.content.content_text_only())
         .ok_or_else(|| "buddy returned no assistant message".to_string())?;
     serde_json::from_str(reply.trim()).map_err(|error| format!("invalid arbiter JSON: {error}"))
+}
+
+fn supervision_arbiter_prompt(candidate: &InterventionRecord) -> String {
+    let mut prompt = SUPERVISION_ARBITER_PROMPT.to_string();
+    if candidate.candidate == InterventionCandidate::MissingGoal {
+        prompt.push_str(MISSING_GOAL_ARBITER_PROMPT);
+    }
+    prompt
 }
 
 pub fn stalled_turn_enabled(settings: &BuddySettings) -> bool {
@@ -522,6 +590,69 @@ mod tests {
         assert_eq!(
             first.messages[0].content.content_text_only(),
             second.messages[0].content.content_text_only()
+        );
+    }
+
+    #[test]
+    fn missing_goal_delivery_appends_without_wake_and_suppresses_stale_goals() {
+        let mut candidate = candidate();
+        candidate.candidate = InterventionCandidate::MissingGoal;
+        let key = SupervisionPolicyKey::new("chat-1", 0, &candidate);
+        let evidence = candidate.evidence.ids().to_vec();
+        let session = ChatSession::new("chat-1".to_string());
+        let request = PursuitRequest::new(PursuitSource::Buddy, "missing_goal", 8, false);
+        assert_eq!(
+            arbitrate_pursuit(&session, &request, PursuitArbitrationContext::new(1)),
+            PursuitDecision::Suppress(PursuitSuppressReason::NoGoal)
+        );
+        assert!(!missing_goal_is_stale(&session));
+
+        let first = missing_goal_delivery(
+            &key,
+            &candidate,
+            &evidence,
+            90,
+            "Buddy supervision: work without a goal. Next step: call set_goal.".to_string(),
+        );
+        let second = missing_goal_delivery(
+            &key,
+            &candidate,
+            &evidence,
+            90,
+            "Buddy supervision: work without a goal. Next step: call set_goal.".to_string(),
+        );
+        assert_eq!(first.id, second.id);
+        assert_eq!(first.push, PushMode::Append);
+        assert!(!first.wake);
+        assert_eq!(first.source, BUDDY_SUPERVISION_SOURCE);
+        assert_eq!(first.messages[0].role, "event");
+        assert_eq!(first.messages[0].extra["event"]["subkind"], "systemNotice");
+        assert_eq!(
+            first.messages[0].extra["event"]["source"],
+            BUDDY_SUPERVISION_SOURCE
+        );
+        assert!(first.messages[0].extra.get("pursuit").is_none());
+
+        let mut installed = session;
+        installed.install_goal("agent", "finish", true, GoalBudget::default());
+        assert!(missing_goal_is_stale(&installed));
+        installed.goal.as_mut().unwrap().active = false;
+        assert!(missing_goal_is_stale(&installed));
+    }
+
+    #[test]
+    fn missing_goal_arbiter_prompt_is_trigger_specific() {
+        let mut missing = candidate();
+        missing.candidate = InterventionCandidate::MissingGoal;
+        let prompt = supervision_arbiter_prompt(&missing);
+        assert!(prompt.starts_with(SUPERVISION_ARBITER_PROMPT));
+        assert!(prompt.contains("must explicitly recommend calling set_goal"));
+        assert!(prompt.contains("never mutate goal state"));
+
+        let off_goal = candidate();
+        assert_eq!(
+            supervision_arbiter_prompt(&off_goal),
+            SUPERVISION_ARBITER_PROMPT
         );
     }
 

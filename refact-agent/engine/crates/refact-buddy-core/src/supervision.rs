@@ -682,6 +682,7 @@ pub enum InterventionCandidate {
     StalledTurn,
     Loop,
     Stagnation,
+    MissingGoal,
     OffGoal,
     ProviderDisconnect,
 }

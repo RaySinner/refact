@@ -726,7 +726,7 @@ mod tests {
         let (gcx, app, ccx) = review_test_env("review-invalid-model").await;
         {
             let mut state = gcx.caps_state.write().await;
-            let mut caps = CodeAssistantCaps::default();
+            let mut caps = state.caps.as_ref().expect("test caps").as_ref().clone();
             caps.defaults.chat_default_model = "missing-provider/missing-model".to_string();
             state.caps = Some(Arc::new(caps));
         }

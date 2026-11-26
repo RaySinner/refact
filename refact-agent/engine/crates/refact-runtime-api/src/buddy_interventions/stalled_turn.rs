@@ -18,7 +18,7 @@ use refact_chat_api::pursuit::{
     arbitrate_pursuit, pursuit_evidence_seq, stamp_pursuit_message, PursuitArbitrationContext,
     PursuitDecision, PursuitRequest, PursuitSource,
 };
-use refact_chat_api::types::{GoalStatus, PendingDelivery, PushMode, SessionState};
+use refact_chat_api::types::{DeliveryOutcome, GoalStatus, PendingDelivery, PushMode, SessionState};
 use refact_chat_api::{ChatMessage, ChatSession, SubchatParameters, ToolsPolicy};
 use refact_core::chat_types::ChatModelType;
 use refact_core::chat_types::CacheControl;
@@ -287,6 +287,28 @@ pub async fn release_stalled_turn_slot(chat_id: &str, at: DateTime<Utc>) {
     if entries.last() == Some(&at) {
         entries.pop();
     }
+}
+
+pub async fn release_stalled_turn_slot_for_non_delivery(
+    session_arc: &Arc<AMutex<ChatSession>>,
+    chat_id: &str,
+    delivery_id: &str,
+    outcome: DeliveryOutcome,
+    reserved_at: DateTime<Utc>,
+) -> bool {
+    if outcome != DeliveryOutcome::Duplicate {
+        return false;
+    }
+    if session_arc
+        .lock()
+        .await
+        .delivered_delivery_ids
+        .contains(delivery_id)
+    {
+        return false;
+    }
+    release_stalled_turn_slot(chat_id, reserved_at).await;
+    true
 }
 
 pub fn intervention_enabled(settings: &BuddySettings) -> bool {
@@ -796,6 +818,17 @@ async fn run_stalled_turn_intervention(
             return Err(error);
         }
     };
+    if release_stalled_turn_slot_for_non_delivery(
+        &session_arc,
+        &signal.chat_id,
+        &delivery_reference,
+        outcome,
+        reserved_at,
+    )
+    .await
+    {
+        return Ok(());
+    }
     crate::buddy_supervision::collect_intervention(
         &app,
         &signal.chat_id,

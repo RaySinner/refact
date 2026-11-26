@@ -2,8 +2,12 @@ use std::time::{Duration, Instant};
 
 use serde_json::json;
 
+use refact_core::chat_types::delivery_id_of_message;
+
 use crate::goal_verifier::QUIESCENCE_NUDGES;
-use crate::types::{ChatSession, GoalAutonomy, GoalResolution, GoalStatus, SessionState};
+use crate::types::{
+    ChatSession, GoalAutonomy, GoalResolution, GoalStatus, PendingDelivery, PushMode, SessionState,
+};
 use crate::{ChatCommand, ChatMessage, GoalSnapshotBudgetExt};
 
 const DEFAULT_STALL_GRACE: Duration = Duration::from_secs(30);
@@ -113,12 +117,21 @@ pub fn arbitrate_pursuit(
     request: &PursuitRequest,
     context: PursuitArbitrationContext,
 ) -> PursuitDecision {
+    arbitrate_pursuit_excluding(session, request, context, None)
+}
+
+fn arbitrate_pursuit_excluding(
+    session: &ChatSession,
+    request: &PursuitRequest,
+    context: PursuitArbitrationContext,
+    excluded_delivery_id: Option<&str>,
+) -> PursuitDecision {
     if session.closed {
         return suppress(PursuitSuppressReason::Closed);
     }
     let Some(goal) = session.goal.as_ref() else {
         if request.source == PursuitSource::SilentTail {
-            return arbitrate_without_goal(session, request);
+            return arbitrate_without_goal(session, request, excluded_delivery_id);
         }
         return suppress(PursuitSuppressReason::NoGoal);
     };
@@ -186,7 +199,7 @@ pub fn arbitrate_pursuit(
         || session
             .pending_deliveries
             .iter()
-            .any(|delivery| delivery.wake)
+            .any(|delivery| Some(delivery.id.as_str()) != excluded_delivery_id && delivery.wake)
     {
         return suppress(PursuitSuppressReason::PendingCommand);
     }
@@ -199,13 +212,17 @@ pub fn arbitrate_pursuit(
     if session.goal_nudge_pending_for_current_goal() {
         return suppress(PursuitSuppressReason::PursuitPending);
     }
-    if duplicate_evidence(session, request, goal.revision) {
+    if duplicate_evidence(session, request, goal.revision, excluded_delivery_id) {
         return suppress(PursuitSuppressReason::DuplicateEvidence);
     }
     PursuitDecision::StartTurn
 }
 
-fn arbitrate_without_goal(session: &ChatSession, request: &PursuitRequest) -> PursuitDecision {
+fn arbitrate_without_goal(
+    session: &ChatSession,
+    request: &PursuitRequest,
+    excluded_delivery_id: Option<&str>,
+) -> PursuitDecision {
     if !request.wake_requested {
         return PursuitDecision::VisibleOnly;
     }
@@ -225,7 +242,7 @@ fn arbitrate_without_goal(session: &ChatSession, request: &PursuitRequest) -> Pu
     if !session.command_queue.is_empty() || !session.delivery_wake_sources.is_empty() {
         return suppress(PursuitSuppressReason::PendingCommand);
     }
-    if duplicate_evidence(session, request, 0) {
+    if duplicate_evidence(session, request, 0, excluded_delivery_id) {
         return suppress(PursuitSuppressReason::DuplicateEvidence);
     }
     PursuitDecision::StartTurn
@@ -315,14 +332,24 @@ fn goal_is_quiescent(session: &ChatSession) -> bool {
     })
 }
 
-fn duplicate_evidence(session: &ChatSession, request: &PursuitRequest, revision: u64) -> bool {
+fn duplicate_evidence(
+    session: &ChatSession,
+    request: &PursuitRequest,
+    revision: u64,
+    excluded_delivery_id: Option<&str>,
+) -> bool {
     session
         .messages
         .iter()
+        .filter(|message| {
+            excluded_delivery_id
+                .is_none_or(|excluded| delivery_id_of_message(message) != Some(excluded))
+        })
         .chain(
             session
                 .pending_deliveries
                 .iter()
+                .filter(|delivery| Some(delivery.id.as_str()) != excluded_delivery_id)
                 .flat_map(|delivery| delivery.messages.iter()),
         )
         .any(|message| {
@@ -357,4 +384,53 @@ pub fn stamp_pursuit_message(
             "wake_requested": request.wake_requested,
         }),
     );
+}
+
+pub fn revalidate_stalled_turn_delivery(
+    session: &ChatSession,
+    delivery: &mut PendingDelivery,
+    now_ms: u64,
+) -> Option<PursuitDecision> {
+    if delivery.source != "buddy.stalled_turn" {
+        return None;
+    }
+    let pursuit = delivery.messages.first()?.extra.get("pursuit")?;
+    if pursuit.get("reason").and_then(|value| value.as_str()) != Some("stalled_turn") {
+        return None;
+    }
+    let source = match pursuit.get("source").and_then(|value| value.as_str()) {
+        Some("buddy") => PursuitSource::Buddy,
+        Some("silent_tail") => PursuitSource::SilentTail,
+        _ => return None,
+    };
+    let mut request = PursuitRequest::new(
+        source,
+        "stalled_turn",
+        pursuit
+            .get("evidence_seq")
+            .and_then(|value| value.as_u64())?,
+        pursuit
+            .get("wake_requested")
+            .and_then(|value| value.as_bool())?,
+    );
+    let decision = arbitrate_pursuit_excluding(
+        session,
+        &request,
+        PursuitArbitrationContext::new(now_ms),
+        Some(delivery.id.as_str()),
+    );
+    match decision {
+        PursuitDecision::StartTurn => {}
+        PursuitDecision::VisibleOnly => {
+            delivery.push = PushMode::WhenIdle;
+            delivery.wake = false;
+            request.wake_requested = false;
+        }
+        PursuitDecision::Suppress(_) => return Some(decision),
+    }
+    let goal_revision = session.goal.as_ref().map(|goal| goal.revision).unwrap_or(0);
+    for message in &mut delivery.messages {
+        stamp_pursuit_message(message, &request, goal_revision);
+    }
+    Some(decision)
 }

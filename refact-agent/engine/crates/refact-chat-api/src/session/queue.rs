@@ -497,7 +497,7 @@ impl ChatSession {
             else {
                 break;
             };
-            let Some(delivery) = self.pending_deliveries.remove(index) else {
+            let Some(mut delivery) = self.pending_deliveries.remove(index) else {
                 break;
             };
             if self.delivered_delivery_ids.contains(&delivery.id) {
@@ -505,6 +505,21 @@ impl ChatSession {
             }
             if self.missing_goal_delivery_is_stale(&delivery) {
                 cancelled_stale = true;
+                continue;
+            }
+            if matches!(
+                crate::pursuit::revalidate_stalled_turn_delivery(
+                    self,
+                    &mut delivery,
+                    epoch_ms_now(),
+                ),
+                Some(crate::pursuit::PursuitDecision::Suppress(_))
+            ) {
+                cancelled_stale = true;
+                continue;
+            }
+            if !self.delivery_envelope_boundary_open(&delivery) {
+                self.pending_deliveries.insert(index, delivery);
                 continue;
             }
             if delivery.push == PushMode::Preempt {

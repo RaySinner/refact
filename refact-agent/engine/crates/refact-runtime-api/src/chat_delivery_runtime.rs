@@ -33,7 +33,7 @@ pub use refact_chat_api::delivery::deliver_to_chat;
 pub async fn deliver_pending(
     app: AppState,
     chat_id: &str,
-    delivery: PendingDelivery,
+    mut delivery: PendingDelivery,
 ) -> Result<DeliveryOutcome, String> {
     if delivery.messages.is_empty() {
         return Err("delivery must contain at least one message".to_string());
@@ -80,6 +80,16 @@ pub async fn deliver_pending(
         let mut session = session_arc.lock().await;
         if session.closed {
             return Err(format!("chat '{chat_id}' is closed"));
+        }
+        if matches!(
+            refact_chat_api::pursuit::revalidate_stalled_turn_delivery(
+                &session,
+                &mut delivery,
+                refact_chat_api::types::epoch_ms_now(),
+            ),
+            Some(refact_chat_api::pursuit::PursuitDecision::Suppress(_))
+        ) {
+            return Ok(DeliveryOutcome::Duplicate);
         }
         let wake = delivery.wake;
         let outcome = session.enqueue_delivery(delivery)?;

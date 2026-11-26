@@ -612,6 +612,52 @@ mod tests {
         })
     }
 
+    #[tokio::test(start_paused = true)]
+    async fn first_activity_timeout_reaps_pending_pre_stage_work() {
+        let (_activity_tx, activity_rx) = tokio::sync::watch::channel(false);
+        let abort = Arc::new(AtomicBool::new(false));
+        let run = tokio::spawn(run_with_first_activity(
+            std::future::pending::<Result<(), String>>(),
+            activity_rx,
+            Duration::from_millis(1),
+            abort.clone(),
+        ));
+
+        tokio::task::yield_now().await;
+        tokio::time::advance(MIN_IDLE_TIMEOUT).await;
+
+        let error = run.await.unwrap().unwrap_err();
+        assert_eq!(error, "no first activity after 30s");
+        assert!(abort.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn first_activity_disables_the_startup_deadline() {
+        let (activity_tx, activity_rx) = tokio::sync::watch::channel(false);
+        let abort = Arc::new(AtomicBool::new(false));
+        let run = tokio::spawn(run_with_first_activity(
+            async move {
+                tokio::time::sleep(Duration::from_secs(5)).await;
+                activity_tx.send_replace(true);
+                tokio::time::sleep(MIN_IDLE_TIMEOUT + Duration::from_secs(5)).await;
+                Ok::<_, String>(42)
+            },
+            activity_rx,
+            Duration::from_millis(1),
+            abort.clone(),
+        ));
+
+        tokio::time::advance(Duration::from_secs(5)).await;
+        tokio::task::yield_now().await;
+        tokio::time::advance(MIN_IDLE_TIMEOUT).await;
+        tokio::task::yield_now().await;
+        assert!(!run.is_finished());
+        assert!(!abort.load(Ordering::SeqCst));
+
+        tokio::time::advance(Duration::from_secs(5)).await;
+        assert_eq!(run.await.unwrap().unwrap(), 42);
+    }
+
     fn tool_result_message(results: &[ContextEnum]) -> &ChatMessage {
         results
             .iter()

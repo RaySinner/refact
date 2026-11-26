@@ -37,6 +37,31 @@ pub trait StageExecutor: Send + Sync {
     }
 }
 
+pub type ActivitySignal = Arc<dyn Fn() + Send + Sync>;
+
+pub struct ActivityStageExecutor {
+    inner: Arc<dyn StageExecutor>,
+    signal: ActivitySignal,
+}
+
+impl ActivityStageExecutor {
+    pub fn new(inner: Arc<dyn StageExecutor>, signal: ActivitySignal) -> Self {
+        Self { inner, signal }
+    }
+}
+
+#[async_trait]
+impl StageExecutor for ActivityStageExecutor {
+    async fn execute(&self, job: StageJob, activity: Arc<AtomicU64>) -> StageProduct {
+        (self.signal)();
+        self.inner.execute(job, activity).await
+    }
+
+    fn abort_flag(&self) -> Option<Arc<AtomicBool>> {
+        self.inner.abort_flag()
+    }
+}
+
 pub struct SubchatExecutor {
     pub gcx: Arc<GlobalContext>,
     pub ctx: StageCtx,

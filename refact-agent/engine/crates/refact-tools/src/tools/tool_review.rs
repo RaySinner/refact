@@ -7,7 +7,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use futures::FutureExt;
 use serde_json::{json, Value};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 use tokio::sync::Mutex as AMutex;
 
 use refact_runtime_api::tool_agent::ToolAgentHandle;
@@ -29,7 +29,8 @@ use crate::tools::review_agents::runner::{
 };
 use crate::tools::review_agents::stages::{load_stage_catalog, select_stages, StagePhase, StageSpec};
 use crate::tools::review_agents::{
-    run_stage_jobs, ScheduleParams, StageExecutor, SubchatExecutor, HARVEST_GRACE,
+    run_stage_jobs, ActivitySignal, ActivityStageExecutor, ScheduleParams, StageExecutor,
+    SubchatExecutor, HARVEST_GRACE, MIN_IDLE_TIMEOUT,
 };
 use crate::tools::review_evidence::verify_evidence;
 use refact_tool_api::review_merge::{merge_findings, rank_findings};
@@ -851,6 +852,7 @@ async fn run_review(
     progress: Option<ProgressSink>,
     agent: Option<Arc<ToolAgentHandle>>,
     steering: &SteeringInbox,
+    first_activity: ActivitySignal,
 ) -> Result<ReviewReport, String> {
     let review_cancelled = || {
         agent.as_ref().is_some_and(|agent| agent.aborted()) || ctx.abort_flag.load(Ordering::SeqCst)
@@ -945,6 +947,8 @@ async fn run_review(
             ctx: ctx.clone(),
         }),
     };
+    let executor: Arc<dyn StageExecutor> =
+        Arc::new(ActivityStageExecutor::new(executor, first_activity));
 
     let mut findings: Vec<ReviewFinding> = Vec::new();
     let mut scratch_written = false;
@@ -1081,6 +1085,30 @@ pub struct ReviewRunOutcome {
     pub metering: serde_json::Map<String, Value>,
 }
 
+pub async fn run_with_first_activity<T>(
+    run: impl std::future::Future<Output = Result<T, String>>,
+    mut first_activity: watch::Receiver<bool>,
+    idle_timeout: Duration,
+    abort: Arc<AtomicBool>,
+) -> Result<T, String> {
+    let idle_timeout = idle_timeout.max(MIN_IDLE_TIMEOUT);
+    tokio::pin!(run);
+    if *first_activity.borrow() {
+        return run.await;
+    }
+    tokio::select! {
+        result = &mut run => result,
+        _ = first_activity.changed() => run.await,
+        _ = tokio::time::sleep(idle_timeout) => {
+            if *first_activity.borrow() {
+                return run.await;
+            }
+            abort.store(true, Ordering::SeqCst);
+            Err(format!("no first activity after {}s", idle_timeout.as_secs()))
+        }
+    }
+}
+
 async fn run_review_tool(
     input: ReviewRunInput,
     agent: Option<(ToolAgentHandle, Arc<ToolAgentHandle>)>,
@@ -1098,10 +1126,17 @@ async fn run_review_tool(
         background,
     } = input;
 
+    let first_activity_timeout = Duration::from_secs(cfg.settings.idle_timeout_secs);
+    let (first_activity_tx, first_activity_rx) = watch::channel(false);
+    let first_activity: ActivitySignal = Arc::new(move || {
+        first_activity_tx.send_replace(true);
+    });
     let (progress_sink, progress_task) = match agent.as_ref().map(|(_, shared)| shared.clone()) {
         Some(shared) => {
             let (sender, mut receiver) = mpsc::unbounded_channel::<StageProgress>();
+            let first_activity = first_activity.clone();
             let sink: ProgressSink = Arc::new(move |progress| {
+                first_activity();
                 let _ = sender.send(progress);
             });
             let task = tokio::spawn(async move {
@@ -1119,7 +1154,11 @@ async fn run_review_tool(
             });
             (Some(sink), Some(task))
         }
-        None => (None, None),
+        None => {
+            let first_activity = first_activity.clone();
+            let sink: ProgressSink = Arc::new(move |_| first_activity());
+            (Some(sink), None)
+        }
     };
 
     let ctx_abort = ctx.abort_flag.clone();
@@ -1131,7 +1170,7 @@ async fn run_review_tool(
             .map(|(_, shared)| shared.agent_id().to_string()),
         session: session.clone(),
     };
-    let report = match run_review(
+    let report = run_review(
         gcx,
         &tool,
         ctx,
@@ -1142,6 +1181,13 @@ async fn run_review_tool(
         progress_sink.clone(),
         agent.as_ref().map(|(_, shared)| shared.clone()),
         &steering,
+        first_activity,
+    );
+    let report = match run_with_first_activity(
+        report,
+        first_activity_rx,
+        first_activity_timeout,
+        ctx_abort.clone(),
     )
     .await
     {

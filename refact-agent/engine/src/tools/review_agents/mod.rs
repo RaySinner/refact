@@ -164,6 +164,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn review_activity_executor_signals_when_stage_execution_starts() {
+        let signals = Arc::new(AtomicUsize::new(0));
+        let activity_signals = signals.clone();
+        let signal: ActivitySignal = Arc::new(move || {
+            activity_signals.fetch_add(1, Ordering::SeqCst);
+        });
+        let executor = Arc::new(ActivityStageExecutor::new(
+            Arc::new(CountingExecutor {
+                active: AtomicUsize::new(0),
+                peak: AtomicUsize::new(0),
+                delay: Duration::from_millis(1),
+            }),
+            signal,
+        ));
+
+        assert_eq!(signals.load(Ordering::SeqCst), 0);
+        let products = run_stage_jobs(executor, vec![job("diff", "diff")], params(1), None).await;
+
+        assert_eq!(signals.load(Ordering::SeqCst), 1);
+        assert_eq!(products[0].run.status, StageStatusKind::Ok);
+    }
+
+    #[tokio::test]
     async fn review_scheduler_turns_a_panicking_stage_into_a_failed_row() {
         let products = run_stage_jobs(
             Arc::new(PanickingExecutor),

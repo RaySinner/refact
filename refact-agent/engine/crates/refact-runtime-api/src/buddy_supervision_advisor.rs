@@ -626,7 +626,7 @@ mod tests {
         assert!(!first.wake);
         assert_eq!(first.source, BUDDY_SUPERVISION_SOURCE);
         assert_eq!(first.messages[0].role, "event");
-        assert_eq!(first.messages[0].extra["event"]["subkind"], "systemNotice");
+        assert_eq!(first.messages[0].extra["event"]["subkind"], "system_notice");
         assert_eq!(
             first.messages[0].extra["event"]["source"],
             BUDDY_SUPERVISION_SOURCE

@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use refact_buddy_core::supervision::{
-    GoalFacts, MessageBody, MessageRole, PlanFacts, ProcessFacts, ProcessState, ProviderState,
-    InterventionRecord, StreamFacts, StreamState, SupervisionEvent, SupervisionKind,
+    BoundaryFacts, GoalFacts, MessageBody, MessageRole, PlanFacts, ProcessFacts, ProcessState,
+    ProviderState, InterventionRecord, StreamFacts, StreamState, SupervisionEvent, SupervisionKind,
     SupervisionProjection, SupervisionReference,
 };
 use refact_buddy_core::supervision_detectors::{
@@ -35,6 +35,7 @@ struct ChatSupervisionState {
     goal: Option<GoalFacts>,
     plan: Option<PlanFacts>,
     task: Option<SupervisionReference>,
+    boundary: Option<BoundaryFacts>,
     runtime: Option<SupervisionKind>,
     candidate_keys: VecDeque<String>,
 }
@@ -48,6 +49,7 @@ impl ChatSupervisionState {
             goal: None,
             plan: None,
             task: None,
+            boundary: None,
             runtime: None,
             candidate_keys: VecDeque::new(),
         }
@@ -103,7 +105,33 @@ pub struct SessionSupervisionSnapshot {
     pub goal: Option<GoalSnapshot>,
     pub plan: Option<PlanFacts>,
     pub task: Option<SupervisionReference>,
+    pub boundary: BoundaryFacts,
     pub runtime: Option<SupervisionKind>,
+}
+
+fn correction_at_boundary(session: &ChatSession) -> bool {
+    let assistant = session
+        .messages
+        .iter()
+        .rposition(|message| message.role == "assistant")
+        .map(|index| index + 1)
+        .unwrap_or(0);
+    let correction = |message: &ChatMessage| {
+        (message.role == refact_chat_api::NUDGE_ROLE
+            && message.tool_call_id == refact_chat_api::NUDGE_MARKER)
+            || message
+                .extra
+                .get("event")
+                .and_then(|event| event.get("subkind"))
+                .and_then(|subkind| subkind.as_str())
+                == Some("goal_pursuit")
+    };
+    session.messages[assistant..].iter().any(&correction)
+        || session
+            .pending_deliveries
+            .iter()
+            .flat_map(|delivery| delivery.messages.iter())
+            .any(correction)
 }
 
 pub fn capture_session_supervision(session: &ChatSession, now: u64) -> SessionSupervisionSnapshot {
@@ -112,57 +140,65 @@ pub fn capture_session_supervision(session: &ChatSession, now: u64) -> SessionSu
         refact_chat_api::session_plan_role::current_base_plan(session).map(|plan| PlanFacts {
             reference: SupervisionReference::new(&plan.message_id),
             version: plan.extra["plan"]["version"].as_u64().unwrap_or(0),
-            has_pending: plan
-                .content
-                .content_text_only()
-                .lines()
-                .any(|line| line.trim_start().starts_with("- [ ]")),
+            has_pending: crate::buddy_interventions::stalled_turn::plan_has_unfinished_items(
+                &plan.content.content_text_only(),
+            ),
         });
     let task =
         session.thread.task_meta.as_ref().map(|meta| {
             SupervisionReference::new(meta.card_id.as_deref().unwrap_or(&meta.task_id))
         });
-    let runtime = match session.runtime.state {
-        SessionState::Generating => Some(SupervisionKind::Stream {
-            facts: StreamFacts {
-                state: StreamState::Streaming,
-                provider: ProviderState::Ready,
-            },
-            error: None,
-        }),
-        SessionState::ExecutingTools => Some(SupervisionKind::Process {
+    let runtime = if session.turn_depth > 0 {
+        Some(SupervisionKind::Process {
             facts: ProcessFacts {
-                process_id: SupervisionReference::new("chat-tools"),
+                process_id: SupervisionReference::new("chat-runtime"),
                 state: ProcessState::Running,
                 heartbeat_at: now,
             },
-        }),
-        SessionState::Paused => Some(SupervisionKind::Process {
-            facts: ProcessFacts {
-                process_id: SupervisionReference::new("chat-runtime"),
-                state: ProcessState::WaitingApproval,
-                heartbeat_at: now,
-            },
-        }),
-        SessionState::WaitingUserInput | SessionState::WaitingIde => {
-            Some(SupervisionKind::Process {
+        })
+    } else {
+        match session.runtime.state {
+            SessionState::Generating => Some(SupervisionKind::Stream {
+                facts: StreamFacts {
+                    state: StreamState::Streaming,
+                    provider: ProviderState::Ready,
+                },
+                error: None,
+            }),
+            SessionState::ExecutingTools => Some(SupervisionKind::Process {
                 facts: ProcessFacts {
-                    process_id: SupervisionReference::new("chat-runtime"),
-                    state: ProcessState::WaitingInput,
+                    process_id: SupervisionReference::new("chat-tools"),
+                    state: ProcessState::Running,
                     heartbeat_at: now,
                 },
-            })
-        }
-        SessionState::Idle | SessionState::Starting | SessionState::Completed => {
-            Some(SupervisionKind::Process {
+            }),
+            SessionState::Paused => Some(SupervisionKind::Process {
                 facts: ProcessFacts {
                     process_id: SupervisionReference::new("chat-runtime"),
-                    state: ProcessState::Finished,
+                    state: ProcessState::WaitingApproval,
                     heartbeat_at: now,
                 },
-            })
+            }),
+            SessionState::WaitingUserInput | SessionState::WaitingIde => {
+                Some(SupervisionKind::Process {
+                    facts: ProcessFacts {
+                        process_id: SupervisionReference::new("chat-runtime"),
+                        state: ProcessState::WaitingInput,
+                        heartbeat_at: now,
+                    },
+                })
+            }
+            SessionState::Idle | SessionState::Starting | SessionState::Completed => {
+                Some(SupervisionKind::Process {
+                    facts: ProcessFacts {
+                        process_id: SupervisionReference::new("chat-runtime"),
+                        state: ProcessState::Finished,
+                        heartbeat_at: now,
+                    },
+                })
+            }
+            SessionState::Error => None,
         }
-        SessionState::Error => None,
     };
     SessionSupervisionSnapshot {
         chat_id: session.chat_id.clone(),
@@ -170,6 +206,17 @@ pub fn capture_session_supervision(session: &ChatSession, now: u64) -> SessionSu
         goal,
         plan,
         task,
+        boundary: BoundaryFacts {
+            tools_enabled: !refact_buddy_core::stalled_turn::TOOLS_FORBIDDEN_MODES
+                .contains(&session.thread.mode.trim()),
+            card_agent: session
+                .thread
+                .task_meta
+                .as_ref()
+                .is_some_and(|meta| meta.role == "agents"),
+            task_chat: session.thread.task_meta.is_some(),
+            correction_present: correction_at_boundary(session),
+        },
         runtime,
     }
 }
@@ -266,16 +313,6 @@ impl BuddySupervisionCollector {
             let state = states
                 .entry(snapshot.chat_id.clone())
                 .or_insert_with(|| ChatSupervisionState::new(&snapshot.chat_id));
-            let message_start = snapshot.messages.len().saturating_sub(MAX_MESSAGE_IDS);
-            for message in &snapshot.messages[message_start..] {
-                if !state.remember_message(&message.message_id) {
-                    continue;
-                }
-                let Some(kind) = message_supervision_kind(message) else {
-                    continue;
-                };
-                pending.push(kind);
-            }
             let goal = snapshot.goal.as_ref().map(goal_facts);
             if state.goal != goal {
                 state.goal = goal.clone();
@@ -293,15 +330,45 @@ impl BuddySupervisionCollector {
                     reference: snapshot.task.clone(),
                 });
             }
+            if state.boundary.as_ref() != Some(&snapshot.boundary) {
+                state.boundary = Some(snapshot.boundary.clone());
+                pending.push(SupervisionKind::Boundary {
+                    facts: snapshot.boundary.clone(),
+                });
+            }
             if state.runtime != snapshot.runtime {
                 if let Some(runtime) = snapshot.runtime.clone() {
                     state.runtime = Some(runtime.clone());
                     pending.push(runtime);
                 }
             }
+            let message_start = snapshot.messages.len().saturating_sub(MAX_MESSAGE_IDS);
+            for message in &snapshot.messages[message_start..] {
+                if !state.remember_message(&message.message_id) {
+                    continue;
+                }
+                pending.extend(message_supervision_kinds(message));
+            }
         }
-        for kind in pending {
-            self.observe_at(&snapshot.chat_id, kind, now).await?;
+        let candidates = {
+            let mut states = self.states.lock().await;
+            let state = states
+                .get_mut(&snapshot.chat_id)
+                .ok_or_else(|| "supervision state disappeared".to_string())?;
+            for kind in pending {
+                let seq = state.next_seq;
+                let event = SupervisionEvent::new(seq, &snapshot.chat_id, now, kind);
+                state
+                    .projection
+                    .append(event)
+                    .map_err(|error| error.to_string())?;
+                state.next_seq = state.next_seq.saturating_add(1);
+            }
+            candidates_for_state(state, self.config, now)
+        };
+        for candidate in candidates {
+            self.journal.append(candidate.clone()).await?;
+            let _ = self.candidates_tx.send(candidate);
         }
         Ok(())
     }
@@ -343,33 +410,51 @@ impl BuddySupervisionCollector {
 }
 
 fn message_supervision_kind(message: &ChatMessage) -> Option<SupervisionKind> {
+    message_supervision_kinds(message).into_iter().next()
+}
+
+fn message_supervision_kinds(message: &ChatMessage) -> Vec<SupervisionKind> {
     if let Some(event) = message.extra.get("event") {
         let source = event
             .get("source")
             .and_then(|source| source.as_str())
             .unwrap_or("");
         if source.starts_with("buddy") {
-            return Some(SupervisionKind::Intervention {
+            return vec![SupervisionKind::Intervention {
                 delivery_reference: SupervisionReference::new(&message.message_id),
                 message_id: Some(SupervisionReference::new(&message.message_id)),
-            });
+            }];
         }
     }
     let role = match message.role.as_str() {
         "user" => MessageRole::User,
         "assistant" => MessageRole::Assistant,
         "event" => MessageRole::SystemNotice,
-        _ => return None,
+        _ => return Vec::new(),
     };
+    let mut kinds = Vec::new();
     let body = message.content.content_text_only();
-    if body.trim().is_empty() {
-        return None;
+    if !body.trim().is_empty() {
+        kinds.push(SupervisionKind::Message {
+            role,
+            message_id: SupervisionReference::new(&message.message_id),
+            body: Some(MessageBody::new(&body)),
+        });
     }
-    Some(SupervisionKind::Message {
-        role,
-        message_id: SupervisionReference::new(&message.message_id),
-        body: Some(MessageBody::new(&body)),
-    })
+    if message.role == "assistant" {
+        for call in message.tool_calls.iter().flatten() {
+            let arguments = serde_json::from_str(&call.function.arguments)
+                .unwrap_or_else(|_| serde_json::Value::String(call.function.arguments.clone()));
+            kinds.push(SupervisionKind::ToolCall {
+                tool_name: SupervisionReference::new(&call.function.name),
+                normalized_args_hash:
+                    refact_buddy_core::supervision::SupervisionHash::normalized_arguments(
+                        &arguments,
+                    ),
+            });
+        }
+    }
+    kinds
 }
 
 fn goal_facts(goal: &GoalSnapshot) -> GoalFacts {
@@ -521,6 +606,7 @@ mod tests {
             goal: None,
             plan: None,
             task: None,
+            boundary: BoundaryFacts::default(),
             runtime: None,
         }
     }
@@ -576,6 +662,66 @@ mod tests {
             .records()
             .iter()
             .all(|record| matches!(record.delivery, InterventionDelivery::Suppressed { .. })));
+    }
+
+    #[tokio::test]
+    async fn stalled_turn_finished_boundary_broadcasts_once_to_buddy_subscriber() {
+        let dir = tempfile::tempdir().unwrap();
+        let collector = BuddySupervisionCollector::new(dir.path());
+        let mut receiver = collector.subscribe();
+        let mut completed = snapshot(
+            "chat-1",
+            vec![message("m1", "assistant", "I stopped before finishing")],
+        );
+        completed.goal = Some(GoalSnapshot {
+            active: true,
+            can_pursue: true,
+            ..Default::default()
+        });
+        completed.runtime = Some(SupervisionKind::Process {
+            facts: ProcessFacts {
+                process_id: SupervisionReference::new("chat-runtime"),
+                state: ProcessState::Finished,
+                heartbeat_at: 1,
+            },
+        });
+        collector
+            .observe_session_at(completed.clone(), 1)
+            .await
+            .unwrap();
+        let candidate = receiver.try_recv().unwrap();
+        assert_eq!(candidate.candidate, InterventionCandidate::StalledTurn);
+        assert!(receiver.try_recv().is_err());
+        collector.observe_session_at(completed, 2).await.unwrap();
+        assert!(receiver.try_recv().is_err());
+    }
+
+    #[test]
+    fn stalled_turn_process_finished_requires_released_turn_depth() {
+        let mut session = ChatSession::new("chat-1".to_string());
+        session.set_runtime_state(SessionState::Idle, None);
+        session.turn_depth = 1;
+        let active = capture_session_supervision(&session, 1);
+        assert!(matches!(
+            active.runtime,
+            Some(SupervisionKind::Process {
+                facts: ProcessFacts {
+                    state: ProcessState::Running,
+                    ..
+                }
+            })
+        ));
+        session.turn_depth = 0;
+        let released = capture_session_supervision(&session, 1);
+        assert!(matches!(
+            released.runtime,
+            Some(SupervisionKind::Process {
+                facts: ProcessFacts {
+                    state: ProcessState::Finished,
+                    ..
+                }
+            })
+        ));
     }
 
     #[tokio::test]

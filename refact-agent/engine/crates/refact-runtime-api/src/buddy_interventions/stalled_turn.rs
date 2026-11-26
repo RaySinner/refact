@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, OnceLock};
 
 use chrono::{DateTime, Duration, Utc};
@@ -6,18 +6,15 @@ use serde_json::json;
 use tokio::sync::{Mutex as AMutex, RwLock as ARwLock};
 use uuid::Uuid;
 
-use refact_buddy_core::settings::{BuddySettings, SupervisionMode};
+use refact_buddy_core::settings::BuddySettings;
+use refact_buddy_core::supervision::InterventionRecord;
+use refact_buddy_core::supervision_detectors::stalled_turn_reason_context;
 use refact_buddy_core::stalled_turn::{
-    classify_stalled_turn, last_message_snippet, stalled_turn_fact, StalledTurnSignal,
-    StalledTurnVerdict, TurnContext,
+    last_message_snippet, stalled_turn_fact, StalledTurnSignal, TurnContext,
 };
 use refact_chat_api::delivery::deliver_to_chat;
 use refact_chat_api::internal_roles::{event, EventSubkind};
 use refact_chat_api::types::{GoalStatus, PendingDelivery, PushMode, SessionState};
-use refact_chat_api::pursuit::{
-    arbitrate_pursuit, pursuit_evidence_seq, stamp_pursuit_message, PursuitArbitrationContext,
-    PursuitDecision, PursuitRequest, PursuitSource,
-};
 use refact_chat_api::{ChatMessage, ChatSession, SubchatParameters, ToolsPolicy};
 use refact_core::chat_types::ChatModelType;
 use refact_core::chat_types::CacheControl;
@@ -49,6 +46,9 @@ pub const AGENT_FINISH_TOOL: &str = "agent_finish";
 const MAX_PLAN_CHARS: usize = 4_000;
 const MAX_GOAL_CHARS: usize = 2_000;
 const MAX_NEW_TOKENS: usize = 400;
+const MAX_RECENT_DIALOGUE_MESSAGES: usize = 6;
+const MAX_RECENT_DIALOGUE_MESSAGE_CHARS: usize = 768;
+const MAX_RECENT_DIALOGUE_CHARS: usize = 4_096;
 
 pub const BUDDY_STALLED_TURN_SYSTEM_PROMPT: &str = "\
 You are Buddy, a sleepy supervisor watching a coding agent work. \
@@ -163,88 +163,48 @@ fn checklist_state(line: &str) -> Option<bool> {
     }
 }
 
-/// Zero-latency stall hook: called straight from the turn-finalisation site.
-/// Never blocks generation, never panics: every failure is a warning line.
-pub async fn maybe_detect_stalled_turn(
-    app: AppState,
-    session_arc: Arc<AMutex<ChatSession>>,
-    tool_calls_count: usize,
-    turn_index: u64,
-    nudged_by_silent_tail: bool,
-) {
-    let result = detect_and_record_stalled_turn(
-        app,
-        &session_arc,
-        tool_calls_count,
-        turn_index,
-        nudged_by_silent_tail,
-    )
-    .await;
-    if let Err(error) = result {
-        tracing::warn!("stalled_turn: hook failed (ignored): {error}");
-    }
-}
-
-/// Whether the hook has anything to do at all. The engine's own silent-tail
-/// nudge has already told the agent to keep going, so that turn is not Buddy's
-/// business: no fact, no LLM call.
-pub fn stalled_turn_hook_applies(nudged_by_silent_tail: bool, settings_enabled: bool) -> bool {
-    settings_enabled && !nudged_by_silent_tail
-}
-
-async fn detect_and_record_stalled_turn(
-    app: AppState,
-    session_arc: &Arc<AMutex<ChatSession>>,
-    tool_calls_count: usize,
-    turn_index: u64,
-    nudged_by_silent_tail: bool,
-) -> Result<(), String> {
-    let settings_enabled = {
-        let buddy = app.buddy.buddy.lock().await;
-        buddy
-            .as_ref()
-            .map(|svc| {
-                svc.settings.stalled_turn_intervention
-                    && svc.settings.supervision_mode != SupervisionMode::Off
-            })
-            .unwrap_or(false)
+pub async fn handle_stalled_turn_candidate(app: AppState, candidate: InterventionRecord) {
+    let Some(chat_id) = candidate
+        .evidence
+        .ids()
+        .first()
+        .map(|id| id.chat_id.as_str().to_string())
+    else {
+        return;
     };
-    if !stalled_turn_hook_applies(nudged_by_silent_tail, settings_enabled) {
-        return Ok(());
-    }
-
-    let snippet = {
+    let Some(projection) = app.buddy.supervision.projection(&chat_id).await else {
+        return;
+    };
+    let Some(reason_context) = stalled_turn_reason_context(&projection) else {
+        return;
+    };
+    let signal = StalledTurnSignal {
+        chat_id: chat_id.clone(),
+        reason_context,
+    };
+    let Some(session_arc) = app.chat.sessions.read().await.get(&chat_id).cloned() else {
+        return;
+    };
+    let (snippet, turn_index) = {
         let session = session_arc.lock().await;
-        if session.abort_flag.load(std::sync::atomic::Ordering::SeqCst) {
-            return Ok(());
-        }
-        let ctx = collect_turn_context(&session, tool_calls_count);
-        match classify_stalled_turn(&ctx) {
-            StalledTurnVerdict::NotStalled(_) => return Ok(()),
-            StalledTurnVerdict::Stalled(signal) => {
-                let snippet = last_message_snippet(&last_assistant_text(&session));
-                tracing::info!(
-                    chat_id = %signal.chat_id,
-                    reason_context = signal.reason_context,
-                    turn_index,
-                    "stalled_turn: agent turn ended without tool calls while an objective is active"
-                );
-                (signal, snippet)
-            }
-        }
+        (
+            last_message_snippet(&last_assistant_text(&session)),
+            session
+                .messages
+                .iter()
+                .filter(|message| message.role == "assistant")
+                .count() as u64,
+        )
     };
-    let (signal, snippet) = snippet;
-
     let fact = stalled_turn_fact(&signal, turn_index, &snippet, Utc::now());
     {
         let mut buddy = app.buddy.buddy.lock().await;
         match buddy.as_mut() {
-            Some(svc) => svc.fact_store.ingest(fact),
-            None => return Err("buddy service is not running".to_string()),
+            Some(service) => service.fact_store.ingest(fact),
+            None => return,
         }
     }
     handle_stalled_turn(app, &signal, &snippet, turn_index).await;
-    Ok(())
 }
 
 pub fn last_assistant_text(session: &ChatSession) -> String {
@@ -434,6 +394,40 @@ pub struct StalledTurnPrompt {
     pub card_id: Option<String>,
     pub card_title: Option<String>,
     pub card_target_files: Vec<String>,
+    pub recent_dialogue: String,
+}
+
+pub fn recent_dialogue(session: &ChatSession) -> String {
+    let entries = session
+        .messages
+        .iter()
+        .filter(|message| matches!(message.role.as_str(), "user" | "assistant"))
+        .filter_map(|message| {
+            let text = message.content.content_text_only();
+            let text = text.trim();
+            (!text.is_empty()).then(|| {
+                format!(
+                    "{}: {}",
+                    message.role,
+                    refact_buddy_core::autonomous_redaction::redact_and_cap_text(
+                        text,
+                        MAX_RECENT_DIALOGUE_MESSAGE_CHARS
+                    )
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let mut selected = VecDeque::new();
+    let mut total = 0usize;
+    for entry in entries.into_iter().rev().take(MAX_RECENT_DIALOGUE_MESSAGES) {
+        let cost = entry.len() + 2;
+        if total + cost > MAX_RECENT_DIALOGUE_CHARS {
+            break;
+        }
+        total += cost;
+        selected.push_front(entry);
+    }
+    selected.into_iter().collect::<Vec<_>>().join("\n\n")
 }
 
 pub fn build_buddy_user_prompt(prompt: &StalledTurnPrompt) -> String {
@@ -449,6 +443,12 @@ pub fn build_buddy_user_prompt(prompt: &StalledTurnPrompt) -> String {
         "The agent's last message (that turn called no tools):\n\"\"\"\n{}\n\"\"\"",
         prompt.snippet
     ));
+    if !prompt.recent_dialogue.is_empty() {
+        parts.push(format!(
+            "Recent user/assistant dialogue (bounded):\n{}",
+            prompt.recent_dialogue
+        ));
+    }
     if let Some(plan) = prompt
         .plan
         .as_deref()
@@ -485,6 +485,14 @@ pub fn build_buddy_user_prompt(prompt: &StalledTurnPrompt) -> String {
             ));
         }
     }
+    if prompt.reason_context == "missing_goal" {
+        parts.push(
+            "Tell the agent to call set_goal with a short concrete goal inferred from this dialogue, then continue the work."
+                .to_string(),
+        );
+    } else {
+        parts.push("Tell the agent to finish the active objective now.".to_string());
+    }
     parts.push("Write the nudge now.".to_string());
     parts.join("\n\n")
 }
@@ -493,6 +501,7 @@ fn reason_context_hint(reason_context: &str) -> &'static str {
     match reason_context {
         "goal_active" => "the chat has an active goal that is not finished",
         "card_doing" => "the agent's task card is still in the doing column",
+        "missing_goal" => "this task chat has no installed goal",
         "plan_pending" => "the chat has a plan that is not finished",
         _ => "the turn ended without a tool call while work is still pending",
     }
@@ -519,6 +528,21 @@ pub fn collect_prompt_context(
         card_id: task_meta.and_then(|meta| meta.card_id.clone()),
         card_title: None,
         card_target_files: Vec::new(),
+        recent_dialogue: recent_dialogue(session),
+    }
+}
+
+fn objective_is_current(session: &ChatSession, reason_context: &str) -> bool {
+    match reason_context {
+        "goal_active" => session.goal.as_ref().is_some_and(|goal| {
+            goal.active
+                && goal.can_pursue
+                && matches!(goal.status, GoalStatus::Active | GoalStatus::Verifying)
+        }),
+        "card_doing" => is_task_agent_chat(session),
+        "missing_goal" => session.thread.task_meta.is_some() && session.goal.is_none(),
+        "plan_pending" => current_plan_has_unfinished_items(session),
+        _ => false,
     }
 }
 
@@ -660,6 +684,9 @@ async fn run_stalled_turn_intervention(
             tracing::info!(chat_id = %signal.chat_id, "stalled_turn: no progress since the last nudge, staying quiet");
             return Ok(());
         }
+        if !objective_is_current(&session, signal.reason_context) {
+            return Ok(());
+        }
         collect_prompt_context(&session, signal, snippet)
     };
     let card_column = attach_card_context(&app, &mut prompt).await;
@@ -686,7 +713,7 @@ async fn run_stalled_turn_intervention(
             return Err(error);
         }
     };
-    let Some(mut delivery) = intervention_delivery(&signal.chat_id, turn_index, &reply_text) else {
+    let Some(delivery) = intervention_delivery(&signal.chat_id, turn_index, &reply_text) else {
         release_stalled_turn_slot(&signal.chat_id, reserved_at).await;
         tracing::info!(chat_id = %signal.chat_id, "stalled_turn: buddy replied with nothing usable");
         return Ok(());
@@ -694,7 +721,9 @@ async fn run_stalled_turn_intervention(
 
     let chat_moved_on = {
         let session = session_arc.lock().await;
-        !agent_ready_for_nudge(&session) || user_spoke_after_last_assistant(&session.messages)
+        !agent_ready_for_nudge(&session)
+            || user_spoke_after_last_assistant(&session.messages)
+            || !objective_is_current(&session, signal.reason_context)
     };
     if chat_moved_on {
         release_stalled_turn_slot(&signal.chat_id, reserved_at).await;
@@ -703,43 +732,6 @@ async fn run_stalled_turn_intervention(
             "stalled_turn: chat moved on while buddy was thinking, dropping the reply"
         );
         return Ok(());
-    }
-
-    let (decision, mut request, goal_revision) = {
-        let session = session_arc.lock().await;
-        let source = if session.goal.is_some() {
-            PursuitSource::Buddy
-        } else {
-            PursuitSource::SilentTail
-        };
-        let request = PursuitRequest::new(
-            source,
-            "stalled_turn",
-            pursuit_evidence_seq(&session),
-            delivery.wake,
-        );
-        let decision = arbitrate_pursuit(
-            &session,
-            &request,
-            PursuitArbitrationContext::new(chrono::Utc::now().timestamp_millis() as u64),
-        );
-        let goal_revision = session.goal.as_ref().map(|goal| goal.revision).unwrap_or(0);
-        (decision, request, goal_revision)
-    };
-    match decision {
-        PursuitDecision::StartTurn => {}
-        PursuitDecision::VisibleOnly => {
-            delivery.wake = false;
-            delivery.push = PushMode::WhenIdle;
-            request.wake_requested = false;
-        }
-        PursuitDecision::Suppress(_) => {
-            release_stalled_turn_slot(&signal.chat_id, reserved_at).await;
-            return Ok(());
-        }
-    }
-    for message in &mut delivery.messages {
-        stamp_pursuit_message(message, &request, goal_revision);
     }
 
     let delivery_reference = delivery.id.clone();

@@ -624,31 +624,11 @@ pub fn start_generation(
                     {
                         continue;
                     }
-                    // The engine's own silent-tail nudge continues the turn, so
-                    // Buddy must not race it for the same step: the hook is told
-                    // the nudge already happened and stays quiet.
                     let nudged_by_silent_tail =
                         matches!(
                             maybe_nudge_after_silent_tail(app.clone(), &session_arc).await,
                             SilentTailNudge::Nudged
                         );
-                    let turn_index = {
-                        let session = session_arc.lock().await;
-                        session
-                            .messages
-                            .iter()
-                            .filter(|message| message.role == "assistant")
-                            .count() as u64
-                    };
-                    tokio::spawn(
-                        refact_runtime_api::buddy_interventions::stalled_turn::maybe_detect_stalled_turn(
-                            app.clone(),
-                            session_arc.clone(),
-                            0,
-                            turn_index,
-                            nudged_by_silent_tail,
-                        ),
-                    );
                     if nudged_by_silent_tail {
                         continue;
                     }

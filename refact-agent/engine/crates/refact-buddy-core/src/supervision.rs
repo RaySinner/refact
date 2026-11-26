@@ -311,6 +311,26 @@ pub struct ProcessFacts {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BoundaryFacts {
+    pub tools_enabled: bool,
+    pub card_agent: bool,
+    pub task_chat: bool,
+    pub correction_present: bool,
+}
+
+impl Default for BoundaryFacts {
+    fn default() -> Self {
+        Self {
+            tools_enabled: true,
+            card_agent: false,
+            task_chat: false,
+            correction_present: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SupervisionKind {
     Message {
@@ -349,6 +369,9 @@ pub enum SupervisionKind {
     },
     Process {
         facts: ProcessFacts,
+    },
+    Boundary {
+        facts: BoundaryFacts,
     },
     Intervention {
         delivery_reference: SupervisionReference,
@@ -424,6 +447,8 @@ struct CurrentFacts {
     goal: Option<GoalFacts>,
     plan: Option<PlanFacts>,
     task: Option<SupervisionReference>,
+    #[serde(default)]
+    boundary: Option<BoundaryFacts>,
     stream: Option<StreamFacts>,
     diff: Option<DiffStatus>,
     test: Option<TestStatus>,
@@ -533,6 +558,7 @@ impl SupervisionProjection {
                 SupervisionKind::Goal { facts } => self.current.goal = facts.clone(),
                 SupervisionKind::Plan { facts } => self.current.plan = facts.clone(),
                 SupervisionKind::Task { reference } => self.current.task = reference.clone(),
+                SupervisionKind::Boundary { facts } => self.current.boundary = Some(facts.clone()),
                 SupervisionKind::Stream { facts, .. } => self.current.stream = Some(facts.clone()),
                 SupervisionKind::Diff { status } => self.current.diff = Some(*status),
                 SupervisionKind::Test { status } => self.current.test = Some(*status),
@@ -585,6 +611,10 @@ impl SupervisionProjection {
 
     pub fn task(&self) -> Option<&SupervisionReference> {
         self.current.task.as_ref()
+    }
+
+    pub fn boundary(&self) -> Option<&BoundaryFacts> {
+        self.current.boundary.as_ref()
     }
 
     pub fn stream(&self) -> Option<&StreamFacts> {

@@ -28,6 +28,20 @@ const MAX_NEW_TOKENS: usize = 300;
 const SUPERVISION_ARBITER_PROMPT: &str = "You are Buddy's automated supervisor. Review only the supplied redacted supervision projection and candidate. Return exactly one JSON object with keys verdict, evidence_event_ids, confidence, suggested_action. verdict is confirmed, dismissed, or inconclusive. evidence_event_ids is a non-empty array of {chat_id,seq} objects copied only from the candidate evidence. confidence is an integer from 0 to 100. suggested_action is one short concrete next step. Confirm only when the evidence supports that trigger and the action is useful. Otherwise dismiss or return inconclusive. Never include reasoning, tool arguments, tool results, secrets, markdown, or extra keys. Do not propose edits, approvals, goal changes, provider retries, or process restarts.";
 const MISSING_GOAL_ARBITER_PROMPT: &str = " For this missing_goal candidate only, a confirmed suggested_action must explicitly recommend calling set_goal with a short concrete goal inferred from the recent user request and substantive tool. This is advice only: never mutate goal state, tell the model to stop or abort, or request preemption or tool denial. This trigger-specific rule overrides the general goal-change prohibition above.";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AdvisorRoute {
+    StalledTurn,
+    Generic,
+}
+
+fn advisor_route(candidate: &InterventionRecord) -> AdvisorRoute {
+    if candidate.candidate == InterventionCandidate::StalledTurn {
+        AdvisorRoute::StalledTurn
+    } else {
+        AdvisorRoute::Generic
+    }
+}
+
 pub async fn run_supervision_advisor(app: AppState) {
     let mut receiver = app.buddy.supervision.subscribe();
     loop {
@@ -89,6 +103,14 @@ async fn process_candidate(app: &AppState, candidate: InterventionRecord) {
     else {
         return;
     };
+    if advisor_route(&candidate) == AdvisorRoute::StalledTurn {
+        crate::buddy_interventions::stalled_turn::handle_stalled_turn_candidate(
+            app.clone(),
+            candidate,
+        )
+        .await;
+        return;
+    }
     let Some(projection) = app.buddy.supervision.projection(&chat_id).await else {
         return;
     };
@@ -708,5 +730,13 @@ mod tests {
         assert!(!stalled_turn_enabled(&settings));
         settings.supervision_mode = SupervisionMode::Off;
         assert!(!stalled_turn_enabled(&settings));
+    }
+
+    #[test]
+    fn stalled_turn_routes_to_legacy_buddy_advisor_not_generic_pursuit() {
+        let mut stalled = candidate();
+        stalled.candidate = InterventionCandidate::StalledTurn;
+        assert_eq!(advisor_route(&stalled), AdvisorRoute::StalledTurn);
+        assert_eq!(advisor_route(&candidate()), AdvisorRoute::Generic);
     }
 }

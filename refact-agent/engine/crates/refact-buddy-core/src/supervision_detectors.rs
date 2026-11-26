@@ -352,6 +352,77 @@ fn detect_missing_goal(projection: &SupervisionProjection, now: u64) -> Option<I
     )
 }
 
+pub fn stalled_turn_reason_context(projection: &SupervisionProjection) -> Option<&'static str> {
+    let boundary = projection.boundary()?;
+    if projection
+        .goal()
+        .is_some_and(|goal| goal.active && goal.can_pursue)
+    {
+        Some("goal_active")
+    } else if boundary.card_agent {
+        Some("card_doing")
+    } else if projection.goal().is_some() {
+        None
+    } else if boundary.task_chat && projection.goal().is_none() {
+        Some("missing_goal")
+    } else if projection.plan().is_some_and(|plan| plan.has_pending) {
+        Some("plan_pending")
+    } else {
+        None
+    }
+}
+
+pub fn detect_stalled_turn(
+    projection: &SupervisionProjection,
+    now: u64,
+) -> Option<InterventionRecord> {
+    let boundary = projection.boundary()?;
+    if !boundary.tools_enabled || boundary.correction_present {
+        return None;
+    }
+    let events = projection.detection_events().collect::<Vec<_>>();
+    let finished = events
+        .iter()
+        .rev()
+        .find(|event| matches!(&event.data, SupervisionKind::Process { facts } if facts.process_id.as_str() == "chat-runtime"))?;
+    if !matches!(
+        &finished.data,
+        SupervisionKind::Process { facts } if facts.state == ProcessState::Finished
+    ) {
+        return None;
+    }
+    let assistant_index = events.iter().rposition(|event| {
+        matches!(
+            &event.data,
+            SupervisionKind::Message {
+                role: MessageRole::Assistant,
+                body: Some(_),
+                ..
+            }
+        )
+    })?;
+    if events[assistant_index + 1..].iter().any(|event| {
+        matches!(
+            &event.data,
+            SupervisionKind::ToolCall { .. }
+                | SupervisionKind::Message {
+                    role: MessageRole::User,
+                    ..
+                }
+        )
+    }) {
+        return None;
+    }
+    stalled_turn_reason_context(projection)?;
+    shadow_record(
+        InterventionCandidate::StalledTurn,
+        InterventionVerdict::Confirmed,
+        "bd2.stalled_turn.v1",
+        &[events[assistant_index].clone()],
+        now,
+    )
+}
+
 fn detect_provider(projection: &SupervisionProjection, now: u64) -> Option<InterventionRecord> {
     let event = projection
         .detection_events()
@@ -389,11 +460,18 @@ pub fn detect_supervision_candidates(
     config: SupervisionDetectorConfig,
     now: u64,
 ) -> Vec<InterventionRecord> {
+    let stalled_turn = detect_stalled_turn(projection, now);
+    let off_goal = if stalled_turn.is_none() {
+        detect_off_goal(projection, now)
+    } else {
+        None
+    };
     [
         detect_loop(projection, config, now),
         detect_stagnation(projection, config, now),
         detect_missing_goal(projection, now),
-        detect_off_goal(projection, now),
+        stalled_turn,
+        off_goal,
         detect_provider(projection, now),
     ]
     .into_iter()
@@ -405,7 +483,7 @@ pub fn detect_supervision_candidates(
 mod tests {
     use super::*;
     use crate::supervision::{
-        GoalFacts, MessageBody, PlanFacts, ProcessFacts, ProcessState, StreamFacts,
+        BoundaryFacts, GoalFacts, MessageBody, PlanFacts, ProcessFacts, ProcessState, StreamFacts,
     };
     use serde_json::json;
 
@@ -477,6 +555,157 @@ mod tests {
         SupervisionDetectorConfig {
             loop_threshold: 3,
             stagnation_after_secs: 60,
+        }
+    }
+
+    fn stalled_projection(
+        goal: Option<GoalFacts>,
+        boundary: BoundaryFacts,
+        plan_pending: bool,
+    ) -> SupervisionProjection {
+        let mut events = vec![event(1, SupervisionKind::Boundary { facts: boundary })];
+        if let Some(facts) = goal {
+            events.push(event(2, SupervisionKind::Goal { facts: Some(facts) }));
+        }
+        if plan_pending {
+            events.push(event(
+                3,
+                SupervisionKind::Plan {
+                    facts: Some(PlanFacts {
+                        reference: SupervisionReference::new("plan-1"),
+                        version: 1,
+                        has_pending: true,
+                    }),
+                },
+            ));
+        }
+        events.push(message(4, MessageRole::Assistant, "I stopped here"));
+        events.push(event(
+            5,
+            SupervisionKind::Process {
+                facts: ProcessFacts {
+                    process_id: SupervisionReference::new("chat-runtime"),
+                    state: ProcessState::Finished,
+                    heartbeat_at: 1_005,
+                },
+            },
+        ));
+        replay(events)
+    }
+
+    fn active_goal() -> GoalFacts {
+        GoalFacts {
+            revision: 1,
+            active: true,
+            autonomy: true,
+            prompt_enabled: true,
+            can_pursue: true,
+        }
+    }
+
+    #[test]
+    fn stalled_turn_publishes_for_every_live_objective_without_off_goal_duplicate() {
+        for (goal, boundary, plan, reason) in [
+            (
+                Some(active_goal()),
+                BoundaryFacts::default(),
+                false,
+                "goal_active",
+            ),
+            (
+                None,
+                BoundaryFacts {
+                    card_agent: true,
+                    task_chat: true,
+                    ..BoundaryFacts::default()
+                },
+                false,
+                "card_doing",
+            ),
+            (
+                None,
+                BoundaryFacts {
+                    task_chat: true,
+                    ..BoundaryFacts::default()
+                },
+                false,
+                "missing_goal",
+            ),
+            (None, BoundaryFacts::default(), true, "plan_pending"),
+        ] {
+            let projection = stalled_projection(goal, boundary, plan);
+            assert_eq!(stalled_turn_reason_context(&projection), Some(reason));
+            let candidates = detect_supervision_candidates(&projection, config(), 1_005);
+            assert_eq!(
+                candidates
+                    .iter()
+                    .filter(|record| record.candidate == InterventionCandidate::StalledTurn)
+                    .count(),
+                1,
+                "{reason}"
+            );
+            assert!(!candidates
+                .iter()
+                .any(|record| record.candidate == InterventionCandidate::OffGoal));
+        }
+    }
+
+    #[test]
+    fn stalled_turn_ignores_tools_casual_terminal_and_corrected_boundaries() {
+        let mut with_tool =
+            stalled_projection(Some(active_goal()), BoundaryFacts::default(), false);
+        with_tool.append(call(6, "inspect")).unwrap();
+        with_tool
+            .append(event(
+                7,
+                SupervisionKind::Process {
+                    facts: ProcessFacts {
+                        process_id: SupervisionReference::new("chat-runtime"),
+                        state: ProcessState::Finished,
+                        heartbeat_at: 1_007,
+                    },
+                },
+            ))
+            .unwrap();
+        assert!(detect_stalled_turn(&with_tool, 1_007).is_none());
+
+        assert!(detect_stalled_turn(
+            &stalled_projection(None, BoundaryFacts::default(), false),
+            1_005
+        )
+        .is_none());
+        for (active, can_pursue) in [(false, false), (true, false)] {
+            let goal = GoalFacts {
+                active,
+                can_pursue,
+                ..active_goal()
+            };
+            assert!(detect_stalled_turn(
+                &stalled_projection(Some(goal.clone()), BoundaryFacts::default(), true),
+                1_005
+            )
+            .is_none());
+            assert!(detect_stalled_turn(
+                &stalled_projection(Some(goal), BoundaryFacts::default(), false),
+                1_005
+            )
+            .is_none());
+        }
+        for boundary in [
+            BoundaryFacts {
+                tools_enabled: false,
+                ..BoundaryFacts::default()
+            },
+            BoundaryFacts {
+                correction_present: true,
+                ..BoundaryFacts::default()
+            },
+        ] {
+            assert!(detect_stalled_turn(
+                &stalled_projection(Some(active_goal()), boundary, false),
+                1_005
+            )
+            .is_none());
         }
     }
 

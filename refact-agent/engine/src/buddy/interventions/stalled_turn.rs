@@ -280,6 +280,7 @@ mod tests {
             card_id: Some("S-3".to_string()),
             card_title: Some("Buddy intervention".to_string()),
             card_target_files: vec!["src/buddy/interventions/stalled_turn.rs".to_string()],
+            recent_dialogue: String::new(),
         };
 
         let text = build_buddy_user_prompt(&prompt);
@@ -307,6 +308,37 @@ mod tests {
         assert!(!text.contains("Current goal"), "{text}");
         assert!(!text.contains("Card:"), "{text}");
         assert!(text.contains("active goal"), "{text}");
+    }
+
+    #[test]
+    fn recent_dialogue_is_bounded_and_missing_goal_prompt_requests_set_goal() {
+        let mut session = ChatSession::new("chat-1".to_string());
+        for index in 0..10 {
+            session.messages.push(visible("user", &format!("request {index}")));
+            session.messages.push(visible(
+                "assistant",
+                &format!("answer {index} {}", "x".repeat(2_000)),
+            ));
+        }
+        session.messages.push(ChatMessage {
+            role: "tool".to_string(),
+            content: ChatContent::SimpleText("RAW_TOOL_SECRET".to_string()),
+            ..Default::default()
+        });
+        let dialogue = recent_dialogue(&session);
+        assert!(dialogue.len() <= 4_096);
+        assert_eq!(dialogue.matches("request ").count(), 3);
+        assert!(!dialogue.contains("request 6"));
+        assert!(!dialogue.contains("RAW_TOOL_SECRET"));
+
+        let prompt = StalledTurnPrompt {
+            reason_context: "missing_goal".to_string(),
+            recent_dialogue: dialogue,
+            ..Default::default()
+        };
+        let text = build_buddy_user_prompt(&prompt);
+        assert!(text.contains("call set_goal"));
+        assert!(text.contains("no installed goal"));
     }
 
     #[test]
@@ -581,13 +613,6 @@ mod tests {
             card_work_is_active(None),
             "an unreadable board must not silence the nudge"
         );
-    }
-
-    #[test]
-    fn silent_tail_nudge_leaves_nothing_for_the_hook_to_do() {
-        assert!(!stalled_turn_hook_applies(true, true));
-        assert!(stalled_turn_hook_applies(false, true));
-        assert!(!stalled_turn_hook_applies(false, false));
     }
 
     #[tokio::test]

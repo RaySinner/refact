@@ -1001,6 +1001,237 @@ mod subchat_tests {
         }));
     }
 
+    async fn runner_stalled_turn_fixture() -> (
+        Arc<tokio::sync::Mutex<crate::at_commands::at_commands::AtCommandsContext>>,
+        String,
+        Arc<tokio::sync::Mutex<crate::chat::types::ChatSession>>,
+        refact_chat_api::PendingDelivery,
+        refact_chat_api::PendingDelivery,
+    ) {
+        let ccx = abort_test_ccx().await;
+        let (app, chat_id) = {
+            let ccx = ccx.lock().await;
+            (ccx.app.clone(), ccx.chat_id.clone())
+        };
+        let (agent, _, _) = app
+            .agents
+            .create(crate::agents::types::CreateAgentRequest {
+                parent_chat_id: "parent".into(),
+                parent_root_chat_id: None,
+                parent_tool_call_id: None,
+                kind: crate::agents::types::BgAgentKind::Subagent,
+                config_name: "subagent".into(),
+                title: "stalled turn delivery test".into(),
+                prompt: "test".into(),
+                target_files: vec![],
+                model: "test".into(),
+                model_type: None,
+                goal_summary: None,
+                plan_present: false,
+                worktree_id: None,
+                worktree_branch: None,
+            })
+            .await
+            .unwrap();
+        app.agents
+            .mark_running(&agent.agent_id, chat_id.clone())
+            .await
+            .unwrap();
+        ccx.lock().await.background_agent_id = Some(agent.agent_id.clone());
+        let mut session = crate::chat::types::ChatSession::new(chat_id.clone());
+        session.install_goal(
+            "agent",
+            "finish the card",
+            true,
+            refact_chat_api::GoalBudget::default(),
+        );
+        let session = Arc::new(tokio::sync::Mutex::new(session));
+        app.chat
+            .sessions
+            .write()
+            .await
+            .insert(chat_id.clone(), session.clone());
+        let mut stalled = refact_runtime_api::buddy_interventions::stalled_turn::intervention_delivery(
+            &chat_id,
+            4,
+            "Finish the card.",
+        )
+        .unwrap();
+        assert_eq!(
+            refact_runtime_api::buddy_interventions::stalled_turn::arbitrate_stalled_turn_delivery(
+                &*session.lock().await,
+                &mut stalled,
+                1_000,
+            ),
+            refact_chat_api::pursuit::PursuitDecision::StartTurn
+        );
+        let unrelated = refact_chat_api::PendingDelivery::with_id(
+            "unrelated",
+            vec![ChatMessage::new("user".into(), "keep me".into())],
+            refact_chat_api::PushMode::Append,
+            "test",
+            true,
+        );
+        for delivery in [stalled.clone(), unrelated.clone()] {
+            app.agents
+                .enqueue_delivery(&agent.agent_id, delivery)
+                .await
+                .unwrap();
+        }
+        (ccx, agent.agent_id, session, stalled, unrelated)
+    }
+
+    #[tokio::test]
+    async fn runner_stalled_turn_pursuit_is_revalidated_at_every_live_drain() {
+        for (status, abort, idle, seal, normal) in [
+            (refact_chat_api::GoalStatus::Paused, false, false, false, true),
+            (refact_chat_api::GoalStatus::Verifying, false, true, true, false),
+            (refact_chat_api::GoalStatus::Paused, false, false, false, false),
+            (refact_chat_api::GoalStatus::Active, true, false, false, false),
+        ] {
+            let (ccx, agent_id, session, stalled, unrelated) =
+                runner_stalled_turn_fixture().await;
+            let app = ccx.lock().await.app.clone();
+            session.lock().await.goal_set_status(status);
+            if abort {
+                session
+                    .lock()
+                    .await
+                    .abort_flag
+                    .store(true, Ordering::SeqCst);
+            }
+            let mut messages = Vec::new();
+            if normal {
+                crate::subchat::drain_background_agent_inbox(&ccx, &mut messages).await;
+            } else {
+                let goal_session = session.lock().await;
+                let deliveries = crate::subchat::drain_runner_deliveries(
+                    &app,
+                    &agent_id,
+                    Some(&*goal_session),
+                    idle,
+                    seal,
+                )
+                .await
+                .unwrap();
+                drop(goal_session);
+                assert_eq!(deliveries.len(), 1);
+                assert_eq!(deliveries[0].id, unrelated.id);
+                assert!(crate::subchat::append_runner_deliveries(
+                    &mut messages,
+                    deliveries
+                ));
+            }
+            assert_eq!(
+                app.agents
+                    .pending_deliveries(&agent_id)
+                    .await
+                    .iter()
+                    .map(|delivery| delivery.id.as_str())
+                    .collect::<Vec<_>>(),
+                vec![unrelated.id.as_str()]
+            );
+            assert!(app.agents.get_any(&agent_id).await.unwrap().delivery_ids.is_empty());
+            assert_eq!(messages.len(), 1);
+            assert_eq!(messages[0].extra["delivery"]["id"], unrelated.id);
+            assert!(messages.iter().all(|message| {
+                refact_core::chat_types::delivery_id_of_message(message)
+                    != Some(stalled.id.as_str())
+            }));
+        }
+
+        let (ccx, agent_id, session, stalled, unrelated) = runner_stalled_turn_fixture().await;
+        let app = ccx.lock().await.app.clone();
+        session.lock().await.pending_deliveries.push_back(
+            refact_chat_api::PendingDelivery::with_id(
+                "new-correction",
+                vec![ChatMessage::new("user".into(), "correct course".into())],
+                refact_chat_api::PushMode::Append,
+                "test",
+                true,
+            ),
+        );
+        let goal_session = session.lock().await;
+        let deliveries = crate::subchat::drain_runner_deliveries(
+            &app,
+            &agent_id,
+            Some(&*goal_session),
+            false,
+            false,
+        )
+        .await
+        .unwrap();
+        drop(goal_session);
+        assert_eq!(deliveries.len(), 1);
+        assert_eq!(deliveries[0].id, unrelated.id);
+        assert_eq!(session.lock().await.pending_deliveries.len(), 1);
+        assert!(!app
+            .agents
+            .get_any(&agent_id)
+            .await
+            .unwrap()
+            .delivery_ids
+            .contains(&stalled.id));
+
+        let (ccx, agent_id, session, stalled, unrelated) = runner_stalled_turn_fixture().await;
+        let app = ccx.lock().await.app.clone();
+        let goal_session = session.lock().await;
+        let deliveries = crate::subchat::drain_runner_deliveries(
+            &app,
+            &agent_id,
+            Some(&*goal_session),
+            false,
+            false,
+        )
+        .await
+        .unwrap();
+        drop(goal_session);
+        assert_eq!(deliveries.len(), 2);
+        assert_eq!(deliveries[0].id, stalled.id);
+        assert_eq!(deliveries[1].id, unrelated.id);
+        assert!(deliveries[0].wake);
+        assert_eq!(deliveries[0].push, refact_chat_api::PushMode::Append);
+        assert_eq!(
+            deliveries[0].messages[0].extra["pursuit"]["wake_requested"],
+            true
+        );
+
+        let (ccx, agent_id, session, stalled, _) = runner_stalled_turn_fixture().await;
+        let app = ccx.lock().await.app.clone();
+        {
+            let mut session = session.lock().await;
+            let goal = session.goal.as_mut().unwrap();
+            goal.autonomy = refact_chat_api::GoalAutonomy::Off;
+            goal.revision += 1;
+        }
+        let goal_session = session.lock().await;
+        let deliveries = crate::subchat::drain_runner_deliveries(
+            &app,
+            &agent_id,
+            Some(&*goal_session),
+            true,
+            true,
+        )
+        .await
+        .unwrap();
+        drop(goal_session);
+        assert_eq!(deliveries[0].id, stalled.id);
+        assert!(!deliveries[0].wake);
+        assert_eq!(deliveries[0].push, refact_chat_api::PushMode::WhenIdle);
+        assert_eq!(
+            deliveries[0].messages[0].extra["pursuit"]["wake_requested"],
+            false
+        );
+        let pending = app.agents.pending_deliveries(&agent_id).await;
+        assert_eq!(pending[0].push, refact_chat_api::PushMode::WhenIdle);
+        assert!(!pending[0].wake);
+        assert_eq!(
+            pending[0].messages[0].extra["pursuit"]["wake_requested"],
+            false
+        );
+        assert!(app.agents.get_any(&agent_id).await.unwrap().delivery_ids.is_empty());
+    }
+
     fn aborted_config(soft_abort: bool) -> SubchatConfig {
         let mut config = test_subchat_config();
         config.abort_flag = Some(Arc::new(std::sync::atomic::AtomicBool::new(true)));

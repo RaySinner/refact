@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use chrono::{DateTime, TimeDelta, Utc};
 use tokio::sync::{Mutex, Notify, RwLock};
 use uuid::Uuid;
-use refact_chat_api::{DeliveryOutcome, PendingDelivery, PushMode};
+use refact_chat_api::{ChatSession, DeliveryOutcome, PendingDelivery, PushMode};
 
 use crate::storage;
 use crate::types::{
@@ -979,6 +979,7 @@ impl BackgroundAgentRegistry {
         seal: bool,
         filter: impl Fn(&PendingDelivery) -> bool,
         stale_missing_goal_ids: &[String],
+        stalled_turn_session: Option<&ChatSession>,
     ) -> Result<Vec<PendingDelivery>, String> {
         let runtime = self
             .runtime
@@ -988,6 +989,32 @@ impl BackgroundAgentRegistry {
             .cloned()
             .ok_or_else(|| "agent is not running in this process".to_string())?;
         let mut state = runtime.delivery_state.lock().await;
+        if let Some(session) = stalled_turn_session.filter(|_| !state.sealed) {
+            let now_ms = refact_chat_api::types::epoch_ms_now();
+            self.update_record(agent_id, |record, _| {
+                let mut suppressed = Vec::new();
+                for delivery in &mut record.pending_deliveries {
+                    if state.claimed.contains(&delivery.id) {
+                        continue;
+                    }
+                    if matches!(
+                        refact_chat_api::pursuit::revalidate_stalled_turn_delivery(
+                            session,
+                            delivery,
+                            now_ms,
+                        ),
+                        Some(refact_chat_api::pursuit::PursuitDecision::Suppress(_))
+                    ) {
+                        suppressed.push(delivery.id.clone());
+                    }
+                }
+                record.pending_deliveries.retain(|delivery| {
+                    state.claimed.contains(&delivery.id) || !suppressed.contains(&delivery.id)
+                });
+                Ok(())
+            })
+            .await?;
+        }
         let cancelled_stale = {
             let records = self.records.read().await;
             let record = records
@@ -1044,7 +1071,7 @@ impl BackgroundAgentRegistry {
     ) -> Result<Vec<PendingDelivery>, String> {
         self.claim_pending_deliveries(agent_id, false, |delivery| {
             idle || delivery.push != PushMode::WhenIdle
-        }, &[])
+        }, &[], None)
         .await
     }
 
@@ -1054,12 +1081,14 @@ impl BackgroundAgentRegistry {
         idle: bool,
         seal: bool,
         stale_missing_goal_ids: &[String],
+        stalled_turn_session: Option<&ChatSession>,
     ) -> Result<Vec<PendingDelivery>, String> {
         self.claim_pending_deliveries(
             agent_id,
             seal,
             |delivery| idle || delivery.push != PushMode::WhenIdle,
             stale_missing_goal_ids,
+            stalled_turn_session,
         )
         .await
     }
@@ -1070,7 +1099,7 @@ impl BackgroundAgentRegistry {
         &self,
         agent_id: &str,
     ) -> Result<Vec<PendingDelivery>, String> {
-        self.claim_pending_deliveries(agent_id, true, |_| true, &[])
+        self.claim_pending_deliveries(agent_id, true, |_| true, &[], None)
             .await
     }
 

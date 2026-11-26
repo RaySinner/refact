@@ -81,7 +81,13 @@ pub(crate) async fn drain_runner_deliveries(
         .map(|session| session.stale_missing_goal_runner_delivery_ids(&deliveries))
         .unwrap_or_default();
     app.agents
-        .drain_runner_deliveries(agent_id, idle, seal, &stale_missing_goal_ids)
+        .drain_runner_deliveries(
+            agent_id,
+            idle,
+            seal,
+            &stale_missing_goal_ids,
+            session,
+        )
         .await
 }
 

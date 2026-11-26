@@ -638,7 +638,6 @@ mod tests {
         let abort = Arc::new(AtomicBool::new(false));
         let run = tokio::spawn(run_with_first_activity(
             async move {
-                tokio::time::sleep(Duration::from_secs(5)).await;
                 activity_tx.send_replace(true);
                 release_rx.await.unwrap();
                 Ok::<_, String>(42)
@@ -648,7 +647,6 @@ mod tests {
             abort.clone(),
         ));
 
-        tokio::time::advance(Duration::from_secs(5)).await;
         tokio::task::yield_now().await;
         tokio::time::advance(MIN_IDLE_TIMEOUT).await;
         tokio::task::yield_now().await;

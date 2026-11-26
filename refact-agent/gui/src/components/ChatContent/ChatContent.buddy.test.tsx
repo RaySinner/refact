@@ -66,9 +66,7 @@ describe("Buddy transcript messages", () => {
     expect(body).toHaveTextContent("Please set a goal before continuing.");
     expect(body.querySelector("strong")).toHaveTextContent("a goal");
     expect(buddyFrame).toContainElement(body);
-    expect(buddyFrame.getAttribute("style")).toContain(
-      "var(--room-stripe-10)",
-    );
+    expect(buddyFrame.getAttribute("style")).toContain("var(--room-stripe-10)");
     expect(buddyFrame.getAttribute("style")).toContain("var(--room-label-10)");
     expect(
       buddyFrame.querySelector("[data-testid='room-attribution-byline']"),

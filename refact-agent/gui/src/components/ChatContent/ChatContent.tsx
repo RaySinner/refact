@@ -71,6 +71,8 @@ import { ErrorMessageCard } from "./ErrorMessage";
 import { SummarizationMessage as SummarizationMessageCard } from "./SummarizationMessage";
 import { PlanBanner } from "./PlanBanner";
 import { RoomAttributionFrame } from "./RoomAttribution/RoomAttributionFrame";
+import { BuddyMessage } from "./BuddyMessage";
+import { isBuddySystemNotice } from "./buddyNotice";
 import {
   displayItemExtra,
   displayItemTimestampFallbackMs,
@@ -392,6 +394,9 @@ export const ChatContent: React.FC<ChatContentProps> = ({
           return { chatId: "", role: "assistant", displayName: "Assistant" };
         }
         if (item.type === "event") {
+          if (isBuddySystemNotice(item.event)) {
+            return { chatId: "", role: "buddy", displayName: "Buddy" };
+          }
           const source = item.event.source;
           return {
             chatId: "",
@@ -560,7 +565,13 @@ export const ChatContent: React.FC<ChatContentProps> = ({
           );
 
         case "event":
-          return (
+          return isBuddySystemNotice(item.event) ? (
+            <BuddyMessage
+              key={item.key}
+              event={item.event}
+              onCopyClick={copyToClipboard}
+            />
+          ) : (
             <EventRow
               key={item.key}
               event={item.event}
@@ -579,6 +590,7 @@ export const ChatContent: React.FC<ChatContentProps> = ({
       collapsibleState,
       renderChatId,
       onRetryGeneration,
+      copyToClipboard,
     ],
   );
 
@@ -629,6 +641,8 @@ export const ChatContent: React.FC<ChatContentProps> = ({
                   .join("\n");
           copyToClipboard(text);
         };
+      } else if (item.type === "event" && isBuddySystemNotice(item.event)) {
+        onCopy = () => copyToClipboard(item.event.content);
       }
 
       return (

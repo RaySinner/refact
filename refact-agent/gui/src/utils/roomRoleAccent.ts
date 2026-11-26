@@ -30,6 +30,7 @@ const NAMED_ROLE_SLOTS: Record<string, number | undefined> = {
   user: 7,
   assistant: 1,
   event: 9,
+  buddy: 10,
 };
 
 /** First slot free for hash-assigned (unrecognised) roles. */
@@ -126,6 +127,7 @@ const ROLE_LABELS: Record<string, string | undefined> = {
   planner: "planner",
   user: "user",
   assistant: "assistant",
+  buddy: "Buddy",
 };
 
 /** Short, human-readable role; unknown roles keep their raw text. */

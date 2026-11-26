@@ -74,7 +74,7 @@ mod tests {
         for status in [GoalStatus::Paused, GoalStatus::Verifying] {
             let chat_id = format!("stalled-turn-enqueue-{status:?}");
             let session = stalled_turn_session(&app, &chat_id).await;
-            let delivery = stalled_turn_delivery(&session.lock().await, &chat_id);
+            let delivery = stalled_turn_delivery(&*session.lock().await, &chat_id);
             session.lock().await.goal_set_status(status);
 
             assert_eq!(
@@ -93,7 +93,7 @@ mod tests {
         for status in [GoalStatus::Paused, GoalStatus::Verifying] {
             let chat_id = format!("stalled-turn-drain-{status:?}");
             let session = stalled_turn_session(&app, &chat_id).await;
-            let delivery = stalled_turn_delivery(&session.lock().await, &chat_id);
+            let delivery = stalled_turn_delivery(&*session.lock().await, &chat_id);
             session.lock().await.draft_message =
                 Some(ChatMessage::new("assistant".into(), "working".into()));
             assert_eq!(
@@ -116,7 +116,7 @@ mod tests {
         }
 
         let session = stalled_turn_session(&app, "stalled-turn-valid").await;
-        let delivery = stalled_turn_delivery(&session.lock().await, "stalled-turn-valid");
+        let delivery = stalled_turn_delivery(&*session.lock().await, "stalled-turn-valid");
         {
             let mut locked = session.lock().await;
             locked.pending_deliveries.push_back(delivery.clone());
@@ -149,7 +149,7 @@ mod tests {
         }
 
         let session = stalled_turn_session(&app, "stalled-turn-autonomy-off").await;
-        let delivery = stalled_turn_delivery(&session.lock().await, "stalled-turn-autonomy-off");
+        let delivery = stalled_turn_delivery(&*session.lock().await, "stalled-turn-autonomy-off");
         {
             let mut session = session.lock().await;
             let goal = session.goal.as_mut().unwrap();
@@ -172,7 +172,7 @@ mod tests {
         }
 
         let session = stalled_turn_session(&app, "stalled-turn-other-pending").await;
-        let delivery = stalled_turn_delivery(&session.lock().await, "stalled-turn-other-pending");
+        let delivery = stalled_turn_delivery(&*session.lock().await, "stalled-turn-other-pending");
         {
             let mut session = session.lock().await;
             session.draft_message = Some(ChatMessage::new("assistant".into(), "working".into()));
@@ -208,7 +208,7 @@ mod tests {
             max_per_hour: 1,
         };
         let session = stalled_turn_session(&app, "stalled-turn-slot-release").await;
-        let delivery = stalled_turn_delivery(&session.lock().await, "stalled-turn-slot-release");
+        let delivery = stalled_turn_delivery(&*session.lock().await, "stalled-turn-slot-release");
         let reserved_at = chrono::Utc::now();
         assert!(
             refact_runtime_api::buddy_interventions::stalled_turn::reserve_stalled_turn_slot(
@@ -243,7 +243,7 @@ mod tests {
         );
 
         let session = stalled_turn_session(&app, "stalled-turn-real-duplicate").await;
-        let delivery = stalled_turn_delivery(&session.lock().await, "stalled-turn-real-duplicate");
+        let delivery = stalled_turn_delivery(&*session.lock().await, "stalled-turn-real-duplicate");
         assert_eq!(
             deliver_to_chat(app.clone(), "stalled-turn-real-duplicate", delivery.clone(),)
                 .await

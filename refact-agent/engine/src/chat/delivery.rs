@@ -205,6 +205,9 @@ mod tests {
     #[tokio::test]
     async fn stalled_turn_non_delivered_outcome_releases_reserved_slot() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
+        let workspace = tempfile::tempdir().unwrap();
+        *gcx.documents_state.workspace_folders.lock().unwrap() =
+            vec![workspace.path().to_path_buf()];
         let app = crate::app_state::app_state_from_gcx(gcx).await;
         let budget = refact_runtime_api::buddy_interventions::stalled_turn::StalledTurnBudget {
             min_interval_secs: 3_600,

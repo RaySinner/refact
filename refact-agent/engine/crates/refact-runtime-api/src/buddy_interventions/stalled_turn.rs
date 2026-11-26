@@ -771,11 +771,14 @@ async fn run_stalled_turn_intervention(
         return Ok(());
     }
 
-    let decision = arbitrate_stalled_turn_delivery(
-        &session_arc.lock().await,
-        &mut delivery,
-        Utc::now().timestamp_millis() as u64,
-    );
+    let decision = {
+        let session = session_arc.lock().await;
+        arbitrate_stalled_turn_delivery(
+            &session,
+            &mut delivery,
+            Utc::now().timestamp_millis() as u64,
+        )
+    };
     if matches!(decision, PursuitDecision::Suppress(_)) {
         release_stalled_turn_slot(&signal.chat_id, reserved_at).await;
         return Ok(());

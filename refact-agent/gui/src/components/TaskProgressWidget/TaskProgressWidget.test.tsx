@@ -1,7 +1,7 @@
 import { http, HttpResponse } from "msw";
 import { describe, expect, test } from "vitest";
 
-import { render, screen, waitFor } from "../../utils/test-utils";
+import { render, screen, waitFor, within } from "../../utils/test-utils";
 import { server } from "../../utils/mockServer";
 import type {
   Chat,
@@ -9,7 +9,12 @@ import type {
   TodoItem,
   ToolUse,
 } from "../../features/Chat/Thread/types";
-import type { ChatMessages, GoalSnapshot } from "../../services/refact/types";
+import type {
+  ChatMessages,
+  EventMessage,
+  GoalSnapshot,
+  PlanMessage,
+} from "../../services/refact/types";
 import { TaskProgressWidget } from "./TaskProgressWidget";
 
 const threadId = "goal-widget-chat";
@@ -90,6 +95,29 @@ function taskMessages(tasks: TodoItem[]): ChatMessages {
       tool_failed: false,
     },
   ];
+}
+
+function planMessages(deltas: string[] = []): ChatMessages {
+  const base: PlanMessage = {
+    role: "plan",
+    message_id: "plan-3",
+    content: "## Execution route\n\n- Inspect existing plan state",
+    extra: {
+      plan: {
+        mode: "task_planner",
+        version: 3,
+        created_at_ms: 1_700_000_000_000,
+      },
+    },
+  };
+  const events: EventMessage[] = deltas.map((content, index) => ({
+    role: "event",
+    message_id: `plan-delta-${index + 1}`,
+    content,
+    subkind: "plan_delta",
+    source: "test",
+  }));
+  return [base, ...events];
 }
 
 function makeRuntime(options: {
@@ -792,5 +820,154 @@ describe("TaskProgressWidget goal projection", () => {
     );
     expect(screen.getByText("Ship the frog pond")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Pause" })).toBeEnabled();
+  });
+});
+
+describe("TaskProgressWidget plan projection", () => {
+  test("omits the Plan section when no base plan exists", () => {
+    renderWidget(
+      makeRuntime({
+        goal: makeGoal(),
+        expanded: true,
+        messages: taskMessages([
+          {
+            id: "task-1",
+            content: "Keep the existing layout",
+            status: "pending",
+          },
+        ]),
+      }),
+    );
+
+    expect(screen.queryByTestId("task-plan-section")).not.toBeInTheDocument();
+    expect(screen.getByText("Goal")).toBeInTheDocument();
+    expect(screen.getByText("Keep the existing layout")).toBeInTheDocument();
+  });
+
+  test("opens a base-only plan with its version and current body", async () => {
+    const { user } = renderWidget(
+      makeRuntime({ expanded: true, messages: planMessages() }),
+    );
+
+    const trigger = screen.getByRole("button", {
+      name: "Plan v3 · 0 updates",
+    });
+    expect(screen.queryByTestId("task-plan-body")).not.toBeInTheDocument();
+
+    await user.click(trigger);
+
+    expect(screen.getByTestId("task-plan-body")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Execution route" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Inspect existing plan state")).toBeInTheDocument();
+  });
+
+  test("synthesizes the base plan and two deltas in order", async () => {
+    const { user } = renderWidget(
+      makeRuntime({
+        expanded: true,
+        messages: planMessages([
+          "First route adjustment",
+          "Second route adjustment",
+        ]),
+      }),
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "Plan v3 · 2 updates" }),
+    );
+
+    const body = screen.getByTestId("task-plan-body");
+    expect(
+      within(body).getByRole("heading", { name: "Plan updates" }),
+    ).toBeInTheDocument();
+    expect(body).toHaveTextContent("First route adjustment");
+    expect(body).toHaveTextContent("Second route adjustment");
+    expect(body.textContent?.indexOf("First route adjustment")).toBeLessThan(
+      body.textContent?.indexOf("Second route adjustment") ?? -1,
+    );
+  });
+
+  test("opens existing history with the base plan and deltas", async () => {
+    const { user } = renderWidget(
+      makeRuntime({
+        expanded: true,
+        messages: planMessages([
+          "First route adjustment",
+          "Second route adjustment",
+        ]),
+      }),
+    );
+
+    await user.click(
+      within(screen.getByTestId("task-plan-section")).getByRole("button", {
+        name: "History",
+      }),
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: "Plan history" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("📋 Base plan — task_planner · v3"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("📋 Plan update 1")).toBeInTheDocument();
+    expect(screen.getByText("📋 Plan update 2")).toBeInTheDocument();
+    expect(screen.getByText("First route adjustment")).toBeInTheDocument();
+    expect(screen.getByText("Second route adjustment")).toBeInTheDocument();
+  });
+
+  test("collapses the plan body without hiding history", async () => {
+    const { user } = renderWidget(
+      makeRuntime({ expanded: true, messages: planMessages() }),
+    );
+    const trigger = screen.getByRole("button", {
+      name: "Plan v3 · 0 updates",
+    });
+
+    await user.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByTestId("task-plan-body")).toBeInTheDocument();
+
+    await user.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByTestId("task-plan-body")).not.toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("task-plan-section")).getByRole("button", {
+        name: "History",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  test("keeps Goal, Plan, and Tasks semantically distinct", async () => {
+    const { user } = renderWidget(
+      makeRuntime({
+        goal: makeGoal({ content: "Ship a verified outcome" }),
+        expanded: true,
+        messages: [
+          ...planMessages(),
+          ...taskMessages([
+            {
+              id: "task-1",
+              content: "Implement the Plan section",
+              status: "in_progress",
+            },
+          ]),
+        ],
+      }),
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "Plan v3 · 0 updates" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Goal Idle" }));
+
+    expect(screen.getByText("Ship a verified outcome")).toBeInTheDocument();
+    expect(
+      screen.getByText("Execution route and updates, not the goal."),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Inspect existing plan state")).toBeInTheDocument();
+    expect(screen.getByText("Implement the Plan section")).toBeInTheDocument();
   });
 });

@@ -3,6 +3,7 @@ import * as Collapsible from "@radix-ui/react-collapsible";
 import classNames from "classnames";
 import {
   Ban,
+  ClipboardList,
   Pause,
   Play,
   Square,
@@ -18,6 +19,7 @@ import {
   selectCurrentTasksById,
   selectGoalById,
   selectHasTasksById,
+  selectPlanBannerState,
   selectTaskGoalExpandedById,
   selectTaskProgressById,
   selectTasksEverUsedById,
@@ -37,6 +39,7 @@ import type {
   GoalSnapshot,
   GoalStatus,
 } from "../../services/refact/types";
+import { getPlanMetadata } from "../../services/refact/types";
 import type {
   GoalAutonomyCommand,
   GoalBudgetCommand,
@@ -47,6 +50,8 @@ import { Badge, Button, Icon, IconButton } from "../ui";
 import { Chevron } from "../Collapsible";
 import { CircularProgress } from "../CircularProgress/CircularProgress";
 import { Markdown } from "../Markdown";
+import { PlanHistoryModal } from "../ChatContent/PlanBanner/PlanHistoryModal";
+import { normalizePlanContent } from "../ChatContent/PlanBanner/planContent";
 import { StatusDot, type StatusDotState } from "../StatusDot";
 import {
   addBuddyCrashBreadcrumb,
@@ -795,6 +800,92 @@ const GoalSection: React.FC<GoalSectionProps> = ({
   );
 };
 
+type PlanSectionProps = {
+  planState: ReturnType<typeof selectPlanBannerState>;
+};
+
+const PlanSection: React.FC<PlanSectionProps> = ({ planState }) => {
+  const [expanded, setExpanded] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const { base, synthesizedText, history } = planState;
+  const metadata = useMemo(
+    () => (base ? getPlanMetadata(base) : undefined),
+    [base],
+  );
+
+  if (!base) return null;
+
+  const version =
+    metadata?.version !== undefined ? `v${metadata.version}` : "v?";
+  const deltaCount = Math.max(0, history.length - 1);
+
+  return (
+    <>
+      <Collapsible.Root open={expanded} onOpenChange={setExpanded}>
+        <Flex
+          direction="column"
+          gap="2"
+          className={styles.goalBlock}
+          data-testid="task-plan-section"
+        >
+          <Flex align="center" className={styles.goalHeaderRow}>
+            <Collapsible.Trigger asChild>
+              <button className={styles.goalHeader} type="button">
+                <Flex
+                  align="center"
+                  gap="2"
+                  className={styles.goalHeaderContent}
+                >
+                  <Icon icon={ClipboardList} size="sm" tone="accent" />
+                  <Text size="1" weight="medium" className={styles.goalTitle}>
+                    Plan
+                  </Text>
+                  <Badge tone="muted" size="xs" variant="soft">
+                    {version} · {deltaCount}{" "}
+                    {deltaCount === 1 ? "update" : "updates"}
+                  </Badge>
+                </Flex>
+                <Chevron open={expanded} />
+              </button>
+            </Collapsible.Trigger>
+            <Button
+              size="sm"
+              variant="ghost"
+              className={styles.planHistoryButton}
+              onClick={() => setHistoryOpen(true)}
+            >
+              History
+            </Button>
+          </Flex>
+
+          <Collapsible.Content>
+            <Flex
+              direction="column"
+              gap="2"
+              className={styles.goalBody}
+              data-testid="task-plan-body"
+            >
+              <Text size="1" color="gray">
+                Execution route and updates, not the goal.
+              </Text>
+              <Box className={styles.planContent}>
+                <Markdown>
+                  {normalizePlanContent(synthesizedText ?? base.content)}
+                </Markdown>
+              </Box>
+            </Flex>
+          </Collapsible.Content>
+        </Flex>
+      </Collapsible.Root>
+      <PlanHistoryModal
+        open={historyOpen}
+        onOpenChange={setHistoryOpen}
+        items={history}
+      />
+    </>
+  );
+};
+
 type GoalBudgetEditorProps = {
   draft: GoalBudgetDraft;
   showApply: boolean;
@@ -1004,6 +1095,9 @@ export const TaskProgressWidget: React.FC = () => {
     selectCurrentTasksById(state, chatId),
   );
   const goal = useAppSelector((state) => selectGoalById(state, chatId));
+  const planState = useAppSelector((state) =>
+    selectPlanBannerState(state, chatId),
+  );
   const isExpanded = useAppSelector((state) =>
     selectTaskWidgetExpandedById(state, chatId),
   );
@@ -1230,6 +1324,8 @@ export const TaskProgressWidget: React.FC = () => {
               onApplyBudget={handleGoalBudgetApply}
               onControl={handleGoalControl}
             />
+
+            <PlanSection key={chatId} planState={planState} />
 
             {hasTasks ? (
               <>

@@ -116,6 +116,30 @@
   padding: var(--rf-space-2);
 }
 
+.planHistoryButton {
+  flex-shrink: 0;
+  margin-right: var(--rf-space-2);
+}
+
+.planContent {
+  composes: scrollbarThin from "../shared/scrollbar.module.css";
+  min-width: 0;
+  max-width: 100%;
+  max-height: 240px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+
+.planContent > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.planContent pre {
+  max-width: 100%;
+  overflow: auto;
+}
+
 .goalLabel {
   color: var(--rf-color-muted);
   font-size: var(--rf-text-1);

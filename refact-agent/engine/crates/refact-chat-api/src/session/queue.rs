@@ -18,6 +18,17 @@ impl ChatSession {
         self.goal.is_some() && is_missing_goal_supervision_delivery(delivery)
     }
 
+    pub fn stale_missing_goal_runner_delivery_ids(
+        &self,
+        deliveries: &[PendingDelivery],
+    ) -> Vec<String> {
+        deliveries
+            .iter()
+            .filter(|delivery| self.missing_goal_delivery_is_stale(delivery))
+            .map(|delivery| delivery.id.clone())
+            .collect()
+    }
+
     pub(super) fn cancel_pending_missing_goal_deliveries(&mut self) {
         let before = self.pending_deliveries.len();
         let goal_is_installed = self.goal.is_some();
@@ -599,8 +610,10 @@ impl ChatSession {
             return;
         }
         let previous = std::mem::take(&mut self.runner_pending_deliveries);
+        let stale_ids = self.stale_missing_goal_runner_delivery_ids(&deliveries);
         let new_wake_worthy = deliveries.iter().any(|delivery| {
-            !previous.iter().any(|existing| existing.id == delivery.id)
+            !stale_ids.contains(&delivery.id)
+                && !previous.iter().any(|existing| existing.id == delivery.id)
                 && delivery.push != PushMode::Preempt
                 && delivery.after_tool_call_id.is_none()
         });

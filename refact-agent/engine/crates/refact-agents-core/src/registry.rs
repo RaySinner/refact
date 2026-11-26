@@ -978,6 +978,7 @@ impl BackgroundAgentRegistry {
         agent_id: &str,
         seal: bool,
         filter: impl Fn(&PendingDelivery) -> bool,
+        stale_missing_goal_ids: &[String],
     ) -> Result<Vec<PendingDelivery>, String> {
         let runtime = self
             .runtime
@@ -987,6 +988,36 @@ impl BackgroundAgentRegistry {
             .cloned()
             .ok_or_else(|| "agent is not running in this process".to_string())?;
         let mut state = runtime.delivery_state.lock().await;
+        let cancelled_stale = {
+            let records = self.records.read().await;
+            let record = records
+                .get(agent_id)
+                .ok_or_else(|| "agent not found".to_string())?;
+            if state.sealed {
+                Vec::new()
+            } else {
+                record
+                    .pending_deliveries
+                    .iter()
+                    .filter(|delivery| {
+                        filter(delivery)
+                            && !state.claimed.contains(&delivery.id)
+                            && stale_missing_goal_ids.contains(&delivery.id)
+                    })
+                    .map(|delivery| delivery.id.clone())
+                    .collect::<Vec<_>>()
+            }
+        };
+        if !cancelled_stale.is_empty() {
+            self.update_record(agent_id, |record, _| {
+                record.pending_deliveries.retain(|delivery| {
+                    state.claimed.contains(&delivery.id)
+                        || !cancelled_stale.contains(&delivery.id)
+                });
+                Ok(())
+            })
+            .await?;
+        }
         let records = self.records.read().await;
         let record = records
             .get(agent_id)
@@ -1013,7 +1044,23 @@ impl BackgroundAgentRegistry {
     ) -> Result<Vec<PendingDelivery>, String> {
         self.claim_pending_deliveries(agent_id, false, |delivery| {
             idle || delivery.push != PushMode::WhenIdle
-        })
+        }, &[])
+        .await
+    }
+
+    pub async fn drain_runner_deliveries(
+        &self,
+        agent_id: &str,
+        idle: bool,
+        seal: bool,
+        stale_missing_goal_ids: &[String],
+    ) -> Result<Vec<PendingDelivery>, String> {
+        self.claim_pending_deliveries(
+            agent_id,
+            seal,
+            |delivery| idle || delivery.push != PushMode::WhenIdle,
+            stale_missing_goal_ids,
+        )
         .await
     }
 
@@ -1023,7 +1070,7 @@ impl BackgroundAgentRegistry {
         &self,
         agent_id: &str,
     ) -> Result<Vec<PendingDelivery>, String> {
-        self.claim_pending_deliveries(agent_id, true, |_| true)
+        self.claim_pending_deliveries(agent_id, true, |_| true, &[])
             .await
     }
 

@@ -732,6 +732,274 @@ mod subchat_tests {
         ))
     }
 
+    async fn runner_missing_goal_fixture(
+        push: refact_chat_api::PushMode,
+    ) -> (
+        Arc<tokio::sync::Mutex<crate::at_commands::at_commands::AtCommandsContext>>,
+        String,
+        Arc<tokio::sync::Mutex<crate::chat::types::ChatSession>>,
+        refact_chat_api::PendingDelivery,
+        refact_chat_api::PendingDelivery,
+    ) {
+        use refact_chat_api::PendingDelivery;
+        let ccx = abort_test_ccx().await;
+        let (app, chat_id) = {
+            let ccx = ccx.lock().await;
+            (ccx.app.clone(), ccx.chat_id.clone())
+        };
+        let (agent, _, _) = app
+            .agents
+            .create(crate::agents::types::CreateAgentRequest {
+                parent_chat_id: "parent".into(),
+                parent_root_chat_id: None,
+                parent_tool_call_id: None,
+                kind: crate::agents::types::BgAgentKind::Subagent,
+                config_name: "subagent".into(),
+                title: "missing goal delivery test".into(),
+                prompt: "test".into(),
+                target_files: vec![],
+                model: "test".into(),
+                model_type: None,
+                goal_summary: None,
+                plan_present: false,
+                worktree_id: None,
+                worktree_branch: None,
+            })
+            .await
+            .unwrap();
+        app.agents
+            .mark_running(&agent.agent_id, chat_id.clone())
+            .await
+            .unwrap();
+        ccx.lock().await.background_agent_id = Some(agent.agent_id.clone());
+        let session = Arc::new(tokio::sync::Mutex::new(
+            crate::chat::types::ChatSession::new(chat_id.clone()),
+        ));
+        app.chat
+            .sessions
+            .write()
+            .await
+            .insert(chat_id, session.clone());
+        let stale = PendingDelivery::with_id(
+            "missing-goal",
+            vec![crate::chat::internal_roles::event(
+                crate::chat::internal_roles::EventSubkind::SystemNotice,
+                "buddy.supervision",
+                serde_json::json!({"trigger": "missing_goal"}),
+                "set a goal".into(),
+            )],
+            push,
+            "buddy.supervision",
+            false,
+        );
+        let unrelated = PendingDelivery::with_id(
+            "unrelated",
+            vec![crate::chat::internal_roles::event(
+                crate::chat::internal_roles::EventSubkind::SystemNotice,
+                "buddy.supervision",
+                serde_json::json!({"trigger": "off_goal"}),
+                "keep me".into(),
+            )],
+            push,
+            "buddy.supervision",
+            true,
+        );
+        for delivery in [stale.clone(), unrelated.clone()] {
+            app.agents
+                .enqueue_delivery(&agent.agent_id, delivery)
+                .await
+                .unwrap();
+        }
+        (ccx, agent.agent_id, session, stale, unrelated)
+    }
+
+    #[tokio::test]
+    async fn runner_missing_goal_is_revalidated_at_every_live_drain() {
+        use refact_chat_api::PushMode;
+
+        let (ccx, agent_id, session, stale, unrelated) =
+            runner_missing_goal_fixture(PushMode::WhenIdle).await;
+        let app = ccx.lock().await.app.clone();
+        {
+            let mut session = session.lock().await;
+            session.install_goal(
+                "agent",
+                "ship it",
+                false,
+                refact_chat_api::GoalBudget::default(),
+            );
+            session.goal_set_status(refact_chat_api::GoalStatus::Stopped);
+            session.begin_interruptible_wait();
+            session.set_runner_pending_deliveries(vec![stale.clone()]);
+        }
+        assert!(
+            session
+                .lock()
+                .await
+                .runner_pending_deliveries
+                .iter()
+                .any(|delivery| delivery.id == stale.id)
+        );
+        assert!(!session
+            .lock()
+            .await
+            .wait_interrupt_flag
+            .load(Ordering::SeqCst));
+        crate::agents::delivery::deliver_to_agent(app.clone(), &agent_id, stale.clone())
+            .await
+            .unwrap();
+        assert!(
+            session.lock().await.wait_delivery_boundary,
+            "the unrelated delivery must retain its wait-opening behavior"
+        );
+        let mut messages = Vec::new();
+        crate::subchat::drain_background_agent_inbox(&ccx, &mut messages).await;
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].extra["delivery"]["id"], unrelated.id);
+        assert_eq!(
+            app.agents
+                .pending_deliveries(&agent_id)
+                .await
+                .iter()
+                .map(|delivery| delivery.id.as_str())
+                .collect::<Vec<_>>(),
+            vec![unrelated.id.as_str()]
+        );
+        assert!(app.agents.get_any(&agent_id).await.unwrap().delivery_ids.is_empty());
+        session.lock().await.end_interruptible_wait();
+        session.lock().await.begin_interruptible_wait();
+        let mut advisor = stale.clone();
+        advisor.push = PushMode::Append;
+        assert_eq!(
+            crate::agents::delivery::deliver_to_agent(app.clone(), &agent_id, advisor)
+                .await
+                .unwrap(),
+            refact_chat_api::DeliveryOutcome::Queued
+        );
+        assert!(!session
+            .lock()
+            .await
+            .wait_interrupt_flag
+            .load(Ordering::SeqCst));
+        crate::subchat::drain_background_agent_inbox(&ccx, &mut messages).await;
+        assert_eq!(messages.len(), 1);
+        assert_eq!(
+            app.agents
+                .pending_deliveries(&agent_id)
+                .await
+                .iter()
+                .map(|delivery| delivery.id.as_str())
+                .collect::<Vec<_>>(),
+            vec![unrelated.id.as_str()]
+        );
+        session.lock().await.end_interruptible_wait();
+        session.lock().await.set_goal_projection(None);
+        let mut future = stale.clone();
+        future.push = PushMode::Append;
+        crate::agents::delivery::deliver_to_agent(app.clone(), &agent_id, future)
+            .await
+            .unwrap();
+        crate::subchat::drain_background_agent_inbox(&ccx, &mut messages).await;
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[1].extra["delivery"]["id"], stale.id);
+
+        let (_ccx, agent_id, session, stale, unrelated) =
+            runner_missing_goal_fixture(PushMode::WhenIdle).await;
+        let app = _ccx.lock().await.app.clone();
+        session.lock().await.install_goal(
+            "agent",
+            "ship it",
+            true,
+            refact_chat_api::GoalBudget::default(),
+        );
+        let goal_session = session.lock().await;
+        let deliveries = crate::subchat::drain_runner_deliveries(
+            &app,
+            &agent_id,
+            Some(&*goal_session),
+            true,
+            true,
+        )
+        .await
+        .unwrap();
+        drop(goal_session);
+        assert_eq!(deliveries.len(), 1);
+        assert_eq!(deliveries[0].id, unrelated.id);
+        let mut messages = Vec::new();
+        assert!(crate::subchat::append_runner_deliveries(&mut messages, deliveries));
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].extra["delivery"]["id"], unrelated.id);
+        assert_eq!(
+            app.agents
+                .pending_deliveries(&agent_id)
+                .await
+                .iter()
+                .map(|delivery| delivery.id.as_str())
+                .collect::<Vec<_>>(),
+            vec![unrelated.id.as_str()]
+        );
+        session.lock().await.set_goal_projection(None);
+        crate::agents::delivery::deliver_to_agent(app.clone(), &agent_id, stale.clone())
+            .await
+            .unwrap();
+        let goal_session = session.lock().await;
+        let deliveries = crate::subchat::drain_runner_deliveries(
+            &app,
+            &agent_id,
+            Some(&*goal_session),
+            true,
+            true,
+        )
+        .await
+        .unwrap();
+        drop(goal_session);
+        assert_eq!(deliveries.len(), 1);
+        assert_eq!(deliveries[0].id, stale.id);
+        assert!(!crate::subchat::append_runner_deliveries(&mut messages, deliveries));
+
+        let (_ccx, agent_id, session, stale, unrelated) =
+            runner_missing_goal_fixture(PushMode::Preempt).await;
+        let app = _ccx.lock().await.app.clone();
+        session.lock().await.install_goal(
+            "agent",
+            "ship it",
+            true,
+            refact_chat_api::GoalBudget::default(),
+        );
+        let goal_session = session.lock().await;
+        let deliveries = crate::subchat::drain_runner_deliveries(
+            &app,
+            &agent_id,
+            Some(&*goal_session),
+            false,
+            false,
+        )
+        .await
+        .unwrap();
+        drop(goal_session);
+        assert_eq!(deliveries.len(), 1);
+        assert_eq!(deliveries[0].id, unrelated.id);
+        let mut messages = Vec::new();
+        assert!(crate::subchat::append_runner_deliveries(&mut messages, deliveries));
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[1].extra["delivery"]["id"], unrelated.id);
+        assert!(app.agents.has_preempt(&agent_id).await);
+        assert_eq!(
+            app.agents
+                .pending_deliveries(&agent_id)
+                .await
+                .iter()
+                .map(|delivery| delivery.id.as_str())
+                .collect::<Vec<_>>(),
+            vec![unrelated.id.as_str()]
+        );
+        assert!(app.agents.get_any(&agent_id).await.unwrap().delivery_ids.is_empty());
+        assert!(messages.iter().all(|message| {
+            refact_core::chat_types::delivery_id_of_message(message)
+                != Some(stale.id.as_str())
+        }));
+    }
+
     fn aborted_config(soft_abort: bool) -> SubchatConfig {
         let mut config = test_subchat_config();
         config.abort_flag = Some(Arc::new(std::sync::atomic::AtomicBool::new(true)));

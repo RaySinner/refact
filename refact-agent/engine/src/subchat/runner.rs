@@ -69,6 +69,22 @@ pub(crate) fn runner_tool_window_closed(messages: &[ChatMessage]) -> bool {
     })
 }
 
+pub(crate) async fn drain_runner_deliveries(
+    app: &AppState,
+    agent_id: &str,
+    session: Option<&refact_chat_api::ChatSession>,
+    idle: bool,
+    seal: bool,
+) -> Result<Vec<refact_chat_api::PendingDelivery>, String> {
+    let deliveries = app.agents.pending_deliveries(agent_id).await;
+    let stale_missing_goal_ids = session
+        .map(|session| session.stale_missing_goal_runner_delivery_ids(&deliveries))
+        .unwrap_or_default();
+    app.agents
+        .drain_runner_deliveries(agent_id, idle, seal, &stale_missing_goal_ids)
+        .await
+}
+
 pub(crate) async fn import_runner_local_deliveries(
     app: &AppState,
     agent_id: &str,
@@ -151,10 +167,14 @@ pub(crate) async fn drain_background_agent_inbox(
         let include_when_idle = session
             .as_ref()
             .is_some_and(|session| session.wait_delivery_boundary);
-        match app
-            .agents
-            .drain_deliveries(&agent_id, include_when_idle)
-            .await
+        match drain_runner_deliveries(
+            &app,
+            &agent_id,
+            session.as_deref(),
+            include_when_idle,
+            false,
+        )
+        .await
         {
             Ok(deliveries) => {
                 append_runner_deliveries(messages, deliveries);
@@ -479,7 +499,20 @@ pub async fn run_subchat(
             // with this drain so a successful enqueue cannot be stranded on exit.
             let wake = if let Some(agent_id) = config.background_agent_id.as_deref() {
                 import_runner_local_deliveries(&app, agent_id, &chat_id, &completed).await;
-                let deliveries = app.agents.finish_delivery_turn(agent_id).await?;
+                let session = app.chat.sessions.read().await.get(&chat_id).cloned();
+                let session = match session.as_ref() {
+                    Some(session) => Some(session.lock().await),
+                    None => None,
+                };
+                let deliveries = drain_runner_deliveries(
+                    &app,
+                    agent_id,
+                    session.as_deref(),
+                    true,
+                    true,
+                )
+                .await?;
+                drop(session);
                 let wake = append_runner_deliveries(&mut completed, deliveries);
                 crate::agents::delivery::publish_runner_queue(&app, agent_id).await;
                 wake
@@ -769,7 +802,20 @@ pub(crate) async fn runner_model_turn(
             if app.agents.has_preempt(agent_id).await {
                 // A concurrent new preemption can retry, but never busy-spin on
                 // a failed durable drain: let the registry error reach the caller.
-                let deliveries = app.agents.drain_deliveries(agent_id, false).await?;
+                let session = app.chat.sessions.read().await.get(&chat_id).cloned();
+                let session = match session.as_ref() {
+                    Some(session) => Some(session.lock().await),
+                    None => None,
+                };
+                let deliveries = drain_runner_deliveries(
+                    &app,
+                    agent_id,
+                    session.as_deref(),
+                    false,
+                    false,
+                )
+                .await?;
+                drop(session);
                 append_runner_deliveries(messages, deliveries);
                 crate::agents::delivery::publish_runner_queue(&app, agent_id).await;
             }

@@ -76,7 +76,7 @@ use crate::tools::review_agents::stages::{load_stage_catalog, select_stages, Sta
 #[cfg(test)]
 #[allow(unused_imports)]
 use crate::tools::review_agents::{
-    run_stage_jobs, ScheduleParams, StageExecutor, SubchatExecutor, HARVEST_GRACE,
+    run_stage_jobs, ScheduleParams, StageExecutor, SubchatExecutor, HARVEST_GRACE, MIN_IDLE_TIMEOUT,
 };
 #[cfg(test)]
 #[allow(unused_imports)]

@@ -4241,7 +4241,7 @@ dependencies = [
 
 [[package]]
 name = "refact-daemon"
-version = "8.10.1"
+version = "8.10.2"
 dependencies = [
  "async-stream",
  "axum",
@@ -4558,7 +4558,7 @@ dependencies = [
 
 [[package]]
 name = "refact-lsp"
-version = "8.10.1"
+version = "8.10.2"
 dependencies = [
  "astral-tokio-tar",
  "async-stream",
@@ -5137,7 +5137,7 @@ dependencies = [
 
 [[package]]
 name = "refact-tui"
-version = "8.10.1"
+version = "8.10.2"
 dependencies = [
  "base64 0.22.1",
  "chrono",

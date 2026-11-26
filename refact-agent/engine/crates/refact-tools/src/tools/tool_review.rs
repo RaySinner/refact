@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use futures::FutureExt;
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
 use tokio::sync::Mutex as AMutex;
@@ -1253,6 +1254,38 @@ async fn push_review_completion(app: &AppState, agent_id: &str) {
     }
 }
 
+pub async fn run_background_review(
+    app: AppState,
+    agent_id: String,
+    child_chat_id: String,
+    handle: Option<ToolAgentHandle>,
+    run: impl std::future::Future<Output = Result<ReviewRunOutcome, String>> + Send,
+) {
+    let panic_error = match std::panic::AssertUnwindSafe(run).catch_unwind().await {
+        Ok(Ok(_)) => None,
+        Ok(Err(error)) => {
+            tracing::warn!("review: background run failed: {error}");
+            None
+        }
+        Err(payload) => {
+            let detail = payload
+                .downcast_ref::<&str>()
+                .map(|message| (*message).to_string())
+                .or_else(|| payload.downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "unknown panic payload".to_string());
+            Some(format!("review background task panicked: {detail}"))
+        }
+    };
+    if let Some(error) = panic_error {
+        tracing::warn!("review: background run failed: {error}");
+        if let Some(handle) = handle {
+            let _ = handle.fail(error).await;
+        }
+        close_review_chat(&app, &child_chat_id).await;
+    }
+    push_review_completion(&app, &agent_id).await;
+}
+
 fn review_started_tool_result(
     tool_call_id: &str,
     focus: &str,
@@ -1403,7 +1436,7 @@ impl Tool for ToolCodeReview {
         let focus = review_agent_focus(&args);
         let model = slot_model_id(gcx.clone(), cfg.settings.model_slot)
             .await
-            .unwrap_or_default();
+            .map_err(|error| format!("cannot start review: {error}"))?;
         let review_thread = review_chat_thread(
             &ctx,
             &child_chat_id,
@@ -1474,12 +1507,15 @@ impl Tool for ToolCodeReview {
                 .map(|(_, shared)| shared.extras("running", None))
                 .unwrap_or_default();
             extra.insert("review_started".to_string(), Value::Bool(true));
-            tokio::spawn(async move {
-                if let Err(error) = run_review_tool(input, agent).await {
-                    tracing::warn!("review: background run failed: {error}");
-                }
-                push_review_completion(&app, &agent_id).await;
-            });
+            let child_chat_id = input.child_chat_id.clone();
+            let handle = agent.as_ref().map(|(handle, _)| handle.clone());
+            tokio::spawn(run_background_review(
+                app,
+                agent_id,
+                child_chat_id,
+                handle,
+                run_review_tool(input, agent),
+            ));
             return Ok((
                 false,
                 review_started_tool_result(tool_call_id, &focus, extra),

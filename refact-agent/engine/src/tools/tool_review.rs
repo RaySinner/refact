@@ -677,6 +677,46 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn review_invalid_model_fails_before_creating_child_or_agent() {
+        let (gcx, app, ccx) = review_test_env("review-invalid-model").await;
+        {
+            let mut state = gcx.caps_state.write().await;
+            let mut caps = CodeAssistantCaps::default();
+            caps.defaults.chat_default_model = "missing-provider/missing-model".to_string();
+            state.caps = Some(Arc::new(caps));
+        }
+        let executor = fake_executor(None);
+        let mut tool = review_tool(Some(executor.clone()));
+
+        let error = tool
+            .tool_execute(
+                ccx,
+                &"review-invalid-model-call".to_string(),
+                &HashMap::new(),
+            )
+            .await
+            .unwrap_err();
+
+        assert!(error.contains("cannot start review"), "{error}");
+        assert!(error.contains("no usable model configured"), "{error}");
+        assert!(error.contains("slot 'chat'"), "{error}");
+        assert_eq!(executor.executed.load(Ordering::SeqCst), 0);
+        assert!(app
+            .agents
+            .list_all()
+            .await
+            .iter()
+            .all(|record| record.config_name != "review"));
+        assert!(app
+            .chat
+            .sessions
+            .read()
+            .await
+            .keys()
+            .all(|id| !id.starts_with("subchat-rv-")));
+    }
+
+    #[tokio::test]
     async fn review_result_extras_carry_the_tool_agent_contract() {
         let (_gcx, _app, ccx) = review_test_env("review-extras").await;
         let mut tool = review_tool(Some(fake_executor(None)));
@@ -1250,6 +1290,100 @@ mod tests {
             );
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
+    }
+
+    #[tokio::test]
+    async fn background_panic_fails_closes_chat_and_pushes_one_completion() {
+        let dir = tempfile::tempdir().unwrap();
+        let parent_chat_id = "review-background-panic";
+        let (_gcx, app, _ccx) = review_test_env_in(parent_chat_id, Some(dir.path())).await;
+        let parent = Arc::new(AMutex::new(ChatSession::new(parent_chat_id.to_string())));
+        parent
+            .lock()
+            .await
+            .queue_processor_running
+            .store(true, Ordering::SeqCst);
+        app.chat
+            .sessions
+            .write()
+            .await
+            .insert(parent_chat_id.to_string(), parent.clone());
+        let child_chat_id = "subchat-rv-panic".to_string();
+        let thread = ThreadParams {
+            id: child_chat_id.clone(),
+            model: "test-provider/test-model".to_string(),
+            parent_id: Some(parent_chat_id.to_string()),
+            root_chat_id: Some(parent_chat_id.to_string()),
+            link_type: Some("tool".to_string()),
+            ..Default::default()
+        };
+        let request = ChatMessage::new("user".to_string(), "Review request".to_string());
+        open_review_chat(&app, &thread, &request).await;
+        let handle = ToolAgentHandle::begin(
+            &app,
+            parent_chat_id,
+            parent_chat_id,
+            ToolAgentSpec {
+                tool_name: "review".to_string(),
+                title: "Review".to_string(),
+                prompt: "Review".to_string(),
+                model: "test-provider/test-model".to_string(),
+                model_type: None,
+                target_files: vec![],
+                child_chat_id: child_chat_id.clone(),
+                parent_tool_call_id: "panic-call".to_string(),
+            },
+        )
+        .await
+        .unwrap();
+        let agent_id = handle.agent_id().to_string();
+
+        run_background_review(
+            app.clone(),
+            agent_id.clone(),
+            child_chat_id.clone(),
+            Some(handle),
+            async { panic!("injected review panic") },
+        )
+        .await;
+
+        let record = app.agents.get_any(&agent_id).await.expect("agent record");
+        assert_eq!(record.status, BgAgentStatus::Failed);
+        let error = record.error.as_deref().expect("panic error");
+        assert!(error.contains("review background task panicked"), "{error}");
+        assert!(error.contains("injected review panic"), "{error}");
+        assert!(app.chat.sessions.read().await.get(&child_chat_id).is_none());
+        assert!(record
+            .completion_message_id
+            .as_deref()
+            .is_some_and(|id| id != "pending" && id != "deferred"));
+        let completion_count = {
+            let parent = parent.lock().await;
+            let landed = parent
+                .messages
+                .iter()
+                .filter(|message| {
+                    message
+                        .content
+                        .content_text_only()
+                        .contains(COMPLETION_PUSH_TEXT)
+                })
+                .count();
+            let queued = parent
+                .pending_deliveries
+                .iter()
+                .filter(|delivery| {
+                    delivery.messages.iter().any(|message| {
+                        message
+                            .content
+                            .content_text_only()
+                            .contains(COMPLETION_PUSH_TEXT)
+                    })
+                })
+                .count();
+            landed + queued
+        };
+        assert_eq!(completion_count, 1);
     }
 
     #[tokio::test]

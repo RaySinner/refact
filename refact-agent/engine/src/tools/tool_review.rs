@@ -634,12 +634,13 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn first_activity_disables_the_startup_deadline() {
         let (activity_tx, activity_rx) = tokio::sync::watch::channel(false);
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel();
         let abort = Arc::new(AtomicBool::new(false));
         let run = tokio::spawn(run_with_first_activity(
             async move {
                 tokio::time::sleep(Duration::from_secs(5)).await;
                 activity_tx.send_replace(true);
-                tokio::time::sleep(MIN_IDLE_TIMEOUT + Duration::from_secs(5)).await;
+                release_rx.await.unwrap();
                 Ok::<_, String>(42)
             },
             activity_rx,
@@ -654,7 +655,7 @@ mod tests {
         assert!(!run.is_finished());
         assert!(!abort.load(Ordering::SeqCst));
 
-        tokio::time::advance(Duration::from_secs(5)).await;
+        release_tx.send(()).unwrap();
         assert_eq!(run.await.unwrap().unwrap(), 42);
     }
 

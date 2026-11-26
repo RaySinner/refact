@@ -912,7 +912,6 @@ mod subchat_tests {
             true,
             refact_chat_api::GoalBudget::default(),
         );
-        assert!(app.agents.has_preempt(&agent_id).await);
         let goal_session = session.lock().await;
         let deliveries = crate::subchat::drain_runner_deliveries(
             &app,
@@ -967,6 +966,7 @@ mod subchat_tests {
             true,
             refact_chat_api::GoalBudget::default(),
         );
+        assert!(app.agents.has_preempt(&agent_id).await);
         let goal_session = session.lock().await;
         let deliveries = crate::subchat::drain_runner_deliveries(
             &app,

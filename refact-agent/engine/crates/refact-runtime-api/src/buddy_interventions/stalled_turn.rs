@@ -14,6 +14,10 @@ use refact_buddy_core::stalled_turn::{
 };
 use refact_chat_api::delivery::deliver_to_chat;
 use refact_chat_api::internal_roles::{event, EventSubkind};
+use refact_chat_api::pursuit::{
+    arbitrate_pursuit, pursuit_evidence_seq, stamp_pursuit_message, PursuitArbitrationContext,
+    PursuitDecision, PursuitRequest, PursuitSource,
+};
 use refact_chat_api::types::{GoalStatus, PendingDelivery, PushMode, SessionState};
 use refact_chat_api::{ChatMessage, ChatSession, SubchatParameters, ToolsPolicy};
 use refact_core::chat_types::ChatModelType;
@@ -630,6 +634,39 @@ pub fn intervention_delivery(
     parse_buddy_reply(buddy_reply).map(|reply| stalled_turn_delivery(chat_id, turn_index, &reply))
 }
 
+pub fn arbitrate_stalled_turn_delivery(
+    session: &ChatSession,
+    delivery: &mut PendingDelivery,
+    now_ms: u64,
+) -> PursuitDecision {
+    let source = if session.goal.is_some() {
+        PursuitSource::Buddy
+    } else {
+        PursuitSource::SilentTail
+    };
+    let mut request = PursuitRequest::new(
+        source,
+        "stalled_turn",
+        pursuit_evidence_seq(session),
+        delivery.wake,
+    );
+    let decision = arbitrate_pursuit(session, &request, PursuitArbitrationContext::new(now_ms));
+    let goal_revision = session.goal.as_ref().map(|goal| goal.revision).unwrap_or(0);
+    match decision {
+        PursuitDecision::StartTurn => {}
+        PursuitDecision::VisibleOnly => {
+            delivery.push = PushMode::WhenIdle;
+            delivery.wake = false;
+            request.wake_requested = false;
+        }
+        PursuitDecision::Suppress(_) => return decision,
+    }
+    for message in &mut delivery.messages {
+        stamp_pursuit_message(message, &request, goal_revision);
+    }
+    decision
+}
+
 /// The intervention itself: Buddy's own cheap model reads the stalled turn and
 /// either goads the agent onward or hands a human-only question to the user.
 /// Every failure is a warning line; nothing here may break the generation that
@@ -713,7 +750,7 @@ async fn run_stalled_turn_intervention(
             return Err(error);
         }
     };
-    let Some(delivery) = intervention_delivery(&signal.chat_id, turn_index, &reply_text) else {
+    let Some(mut delivery) = intervention_delivery(&signal.chat_id, turn_index, &reply_text) else {
         release_stalled_turn_slot(&signal.chat_id, reserved_at).await;
         tracing::info!(chat_id = %signal.chat_id, "stalled_turn: buddy replied with nothing usable");
         return Ok(());
@@ -731,6 +768,16 @@ async fn run_stalled_turn_intervention(
             chat_id = %signal.chat_id,
             "stalled_turn: chat moved on while buddy was thinking, dropping the reply"
         );
+        return Ok(());
+    }
+
+    let decision = arbitrate_stalled_turn_delivery(
+        &session_arc.lock().await,
+        &mut delivery,
+        Utc::now().timestamp_millis() as u64,
+    );
+    if matches!(decision, PursuitDecision::Suppress(_)) {
+        release_stalled_turn_slot(&signal.chat_id, reserved_at).await;
         return Ok(());
     }
 
@@ -822,4 +869,113 @@ async fn ask_buddy_model(app: &AppState, prompt: &StalledTurnPrompt) -> Result<S
         .filter(|message| message.role == "assistant")
         .map(|message| message.content.content_text_only())
         .ok_or_else(|| "buddy returned no assistant message".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use refact_chat_api::{GoalAutonomy, GoalBudget};
+
+    fn session_with_goal() -> ChatSession {
+        let mut session = ChatSession::new("chat-1".to_string());
+        session.install_goal("agent", "finish", true, GoalBudget::default());
+        session
+    }
+
+    fn nudge() -> PendingDelivery {
+        intervention_delivery("chat-1", 4, "Finish the card.").unwrap()
+    }
+
+    #[test]
+    fn stalled_turn_autonomy_off_is_visible_without_wake() {
+        let mut session = session_with_goal();
+        session.goal.as_mut().unwrap().autonomy = GoalAutonomy::Off;
+        let mut delivery = nudge();
+
+        assert_eq!(
+            arbitrate_stalled_turn_delivery(&session, &mut delivery, 1_000),
+            PursuitDecision::VisibleOnly
+        );
+        assert_eq!(delivery.push, PushMode::WhenIdle);
+        assert!(!delivery.wake);
+        let pursuit = &delivery.messages[0].extra["pursuit"];
+        assert_eq!(pursuit["source"], "buddy");
+        assert_eq!(pursuit["reason"], "stalled_turn");
+        assert_eq!(pursuit["evidence_seq"], 1);
+        assert_eq!(pursuit["goal_revision"], 1);
+        assert_eq!(pursuit["wake_requested"], false);
+    }
+
+    #[test]
+    fn stalled_turn_verifying_and_paused_do_not_deliver() {
+        let mut verifying = session_with_goal();
+        verifying.goal_set_status(GoalStatus::Verifying);
+        assert!(matches!(
+            arbitrate_stalled_turn_delivery(&verifying, &mut nudge(), 1_000),
+            PursuitDecision::Suppress(_)
+        ));
+
+        let mut paused = session_with_goal();
+        paused.goal_set_status(GoalStatus::Paused);
+        let mut delivery = nudge();
+        assert!(matches!(
+            arbitrate_stalled_turn_delivery(&paused, &mut delivery, 1_000),
+            PursuitDecision::Suppress(_)
+        ));
+        assert!(delivery.messages[0].extra.get("pursuit").is_none());
+        assert!(delivery.wake);
+    }
+
+    #[test]
+    fn stalled_turn_without_goal_uses_silent_tail_and_wakes() {
+        let session = ChatSession::new("chat-1".to_string());
+        let mut delivery = nudge();
+
+        assert_eq!(
+            arbitrate_stalled_turn_delivery(&session, &mut delivery, 1_000),
+            PursuitDecision::StartTurn
+        );
+        assert_eq!(delivery.id, "stalled-turn:chat-1:4");
+        assert_eq!(delivery.push, PushMode::Append);
+        assert!(delivery.wake);
+        let pursuit = &delivery.messages[0].extra["pursuit"];
+        assert_eq!(pursuit["source"], "silent_tail");
+        assert_eq!(pursuit["goal_revision"], 0);
+        assert_eq!(pursuit["wake_requested"], true);
+    }
+
+    #[test]
+    fn stalled_turn_pursuit_metadata_and_duplicate_evidence_are_preserved() {
+        let mut session = session_with_goal();
+        session.goal.as_mut().unwrap().revision = 3;
+        let mut first = nudge();
+        assert_eq!(
+            arbitrate_stalled_turn_delivery(&session, &mut first, 1_000),
+            PursuitDecision::StartTurn
+        );
+        assert_eq!(first.id, "stalled-turn:chat-1:4");
+        assert_eq!(first.messages[0].extra["pursuit"]["source"], "buddy");
+        assert_eq!(first.messages[0].extra["pursuit"]["reason"], "stalled_turn");
+        assert_eq!(first.messages[0].extra["pursuit"]["evidence_seq"], 1);
+        assert_eq!(first.messages[0].extra["pursuit"]["goal_revision"], 3);
+        assert_eq!(first.messages[0].extra["pursuit"]["wake_requested"], true);
+
+        let mut prior = nudge();
+        let prior_request = PursuitRequest::new(
+            PursuitSource::Buddy,
+            "stalled_turn",
+            session.messages.len() as u64 + 1,
+            true,
+        );
+        stamp_pursuit_message(&mut prior.messages[0], &prior_request, 3);
+        session.messages.push(prior.messages[0].clone());
+        let mut duplicate = nudge();
+        assert_eq!(
+            arbitrate_stalled_turn_delivery(&session, &mut duplicate, 1_000),
+            PursuitDecision::Suppress(
+                refact_chat_api::pursuit::PursuitSuppressReason::DuplicateEvidence
+            )
+        );
+        assert!(duplicate.messages[0].extra.get("pursuit").is_none());
+    }
 }

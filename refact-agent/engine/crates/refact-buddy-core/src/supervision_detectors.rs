@@ -2,7 +2,8 @@ use std::collections::BTreeMap;
 
 use crate::supervision::{
     DiffStatus, ErrorCategory, ErrorFingerprint, InterventionCandidate, InterventionDelivery,
-    InterventionRecord, InterventionVerdict, MessageRole, ProviderState, ResultStatus, StreamState,
+    InterventionRecord, InterventionVerdict, MessageRole, ProcessState, ProviderState, ResultStatus,
+    StreamState,
     SupervisionEvidence, SupervisionEvent, SupervisionHash, SupervisionKind, SupervisionProjection,
     SupervisionReference, SupervisionVersion, SuppressionReason, TestStatus,
 };

@@ -418,6 +418,9 @@ impl ChatSession {
 
     pub fn set_goal_projection(&mut self, goal: Option<GoalSnapshot>) {
         self.goal = goal;
+        if self.goal.is_some() {
+            self.cancel_pending_missing_goal_deliveries();
+        }
         self.refresh_goal_runtime_mirror();
     }
 
@@ -824,8 +827,8 @@ impl ChatSession {
 
     pub fn rebuild_goal_projection_from_messages(&mut self) {
         let existing = self.goal.clone();
-        self.goal = goal_snapshot_from_messages(&self.messages, existing.as_ref());
-        self.refresh_goal_runtime_mirror();
+        let rebuilt = goal_snapshot_from_messages(&self.messages, existing.as_ref());
+        self.set_goal_projection(rebuilt);
         self.ensure_goal_ledger_installed();
     }
 

@@ -6,6 +6,111 @@ use crate::call_validation::{ChatToolCall, ChatToolFunction};
 use serde_json::json;
 use std::time::Instant;
 
+    fn buddy_supervision_delivery(id: &str, trigger: &str, push: PushMode) -> PendingDelivery {
+        PendingDelivery::with_id(
+            id,
+            vec![event(
+                EventSubkind::SystemNotice,
+                "buddy.supervision",
+                json!({"trigger": trigger}),
+                id.to_string(),
+            )],
+            push,
+            "buddy.supervision",
+            true,
+        )
+    }
+
+    #[test]
+    fn goal_install_cancels_only_stale_pending_missing_goal_deliveries() {
+        for push in [PushMode::Append, PushMode::WhenIdle] {
+            let mut session = make_session();
+            session.turn_depth = 1;
+            session.start_stream().unwrap();
+            let stale = buddy_supervision_delivery("missing-goal", "missing_goal", push);
+            let mut other_supervision =
+                buddy_supervision_delivery("other-supervision", "off_goal", push);
+            other_supervision.wake = false;
+            let mut unrelated = delivery_fixture("unrelated", push);
+            unrelated.wake = false;
+            for delivery in [stale.clone(), other_supervision, unrelated] {
+                assert_eq!(
+                    session.enqueue_delivery(delivery).unwrap(),
+                    DeliveryOutcome::Queued
+                );
+            }
+
+            session.install_goal("agent", "ship it", false, GoalBudget::default());
+
+            assert_eq!(
+                session
+                    .pending_deliveries
+                    .iter()
+                    .map(|delivery| delivery.id.as_str())
+                    .collect::<Vec<_>>(),
+                vec!["other-supervision", "unrelated"]
+            );
+            assert!(!session.delivered_delivery_ids.contains("missing-goal"));
+            session.restore_pending_deliveries(vec![stale]);
+            session.finish_stream(Some("stop".into()));
+            if push == PushMode::WhenIdle {
+                session.turn_depth = 0;
+            }
+            assert_eq!(
+                session.drain_pending_deliveries(),
+                (
+                    vec!["other-supervision".to_string(), "unrelated".to_string()],
+                    false
+                )
+            );
+            assert!(session.delivery_wake_sources.is_empty());
+            assert!(session
+                .messages
+                .iter()
+                .all(|message| message.content.content_text_only() != "missing-goal"));
+            assert_eq!(
+                session
+                    .messages
+                    .iter()
+                    .filter(|message| message.role == "goal")
+                    .count(),
+                1
+            );
+        }
+    }
+
+    #[test]
+    fn installed_goal_revalidates_missing_goal_at_open_delivery_boundary() {
+        for push in [PushMode::Append, PushMode::WhenIdle] {
+            for status in [GoalStatus::Active, GoalStatus::Stopped] {
+                let mut session = make_session();
+                session.install_goal("agent", "ship it", true, GoalBudget::default());
+                session.goal_set_status(status);
+                let accepted_history = serde_json::to_value(&session.messages).unwrap();
+                let stale = buddy_supervision_delivery("missing-goal", "missing_goal", push);
+
+                assert_eq!(
+                    session.enqueue_delivery(stale.clone()).unwrap(),
+                    DeliveryOutcome::Duplicate
+                );
+                assert!(session.pending_deliveries.is_empty());
+                assert!(session.delivery_wake_sources.is_empty());
+                assert!(!session.delivered_delivery_ids.contains("missing-goal"));
+                assert_eq!(
+                    serde_json::to_value(&session.messages).unwrap(),
+                    accepted_history
+                );
+
+                session.set_goal_projection(None);
+                assert_eq!(
+                    session.enqueue_delivery(stale).unwrap(),
+                    DeliveryOutcome::Delivered
+                );
+                assert!(session.delivered_delivery_ids.contains("missing-goal"));
+            }
+        }
+    }
+
     #[test]
     fn delivery_goal_purge_preserves_unrelated_landed_wake() {
         for reverse in [false, true] {

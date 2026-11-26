@@ -1,6 +1,37 @@
 use super::*;
 
+fn is_missing_goal_supervision_delivery(delivery: &PendingDelivery) -> bool {
+    delivery.source == "buddy.supervision"
+        && delivery.messages.iter().any(|message| {
+            message
+                .extra
+                .get("event")
+                .and_then(|event| event.get("payload"))
+                .and_then(|payload| payload.get("trigger"))
+                .and_then(|trigger| trigger.as_str())
+                == Some("missing_goal")
+        })
+}
+
 impl ChatSession {
+    fn missing_goal_delivery_is_stale(&self, delivery: &PendingDelivery) -> bool {
+        self.goal.is_some() && is_missing_goal_supervision_delivery(delivery)
+    }
+
+    pub(super) fn cancel_pending_missing_goal_deliveries(&mut self) {
+        let before = self.pending_deliveries.len();
+        let goal_is_installed = self.goal.is_some();
+        self.pending_deliveries.retain(|delivery| {
+            !(goal_is_installed && is_missing_goal_supervision_delivery(delivery))
+        });
+        let cancelled = before - self.pending_deliveries.len();
+        if cancelled > 0 {
+            self.clear_settled_wait_delivery_boundary();
+            self.emit_queue_update();
+            self.mark_persisted_runtime_changed();
+        }
+    }
+
     pub fn is_duplicate_request(&mut self, request_id: &str) -> bool {
         if self.recent_request_ids_set.contains(request_id) {
             return true;
@@ -395,6 +426,9 @@ impl ChatSession {
         if self.knows_delivery_id(&delivery.id) {
             return Ok(DeliveryOutcome::Duplicate);
         }
+        if self.missing_goal_delivery_is_stale(&delivery) {
+            return Ok(DeliveryOutcome::Duplicate);
+        }
         if delivery
             .messages
             .iter()
@@ -443,6 +477,7 @@ impl ChatSession {
         }
         let mut delivered_ids = Vec::new();
         let mut wake = false;
+        let mut cancelled_stale = false;
         loop {
             let Some(index) = self
                 .pending_deliveries
@@ -457,6 +492,10 @@ impl ChatSession {
             if self.delivered_delivery_ids.contains(&delivery.id) {
                 continue;
             }
+            if self.missing_goal_delivery_is_stale(&delivery) {
+                cancelled_stale = true;
+                continue;
+            }
             if delivery.push == PushMode::Preempt {
                 self.preempt_for_delivery(&delivery.source);
             }
@@ -464,7 +503,7 @@ impl ChatSession {
             delivered_ids.push(delivery.id);
             wake |= delivery.wake;
         }
-        if !delivered_ids.is_empty() {
+        if !delivered_ids.is_empty() || cancelled_stale {
             self.emit_queue_update();
             self.mark_persisted_runtime_changed();
         }

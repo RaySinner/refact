@@ -912,6 +912,7 @@ mod subchat_tests {
             true,
             refact_chat_api::GoalBudget::default(),
         );
+        assert!(app.agents.has_preempt(&agent_id).await);
         let goal_session = session.lock().await;
         let deliveries = crate::subchat::drain_runner_deliveries(
             &app,
@@ -983,7 +984,7 @@ mod subchat_tests {
         assert!(crate::subchat::append_runner_deliveries(&mut messages, deliveries));
         assert_eq!(messages.len(), 2);
         assert_eq!(messages[1].extra["delivery"]["id"], unrelated.id);
-        assert!(app.agents.has_preempt(&agent_id).await);
+        assert!(!app.agents.has_preempt(&agent_id).await);
         assert_eq!(
             app.agents
                 .pending_deliveries(&agent_id)

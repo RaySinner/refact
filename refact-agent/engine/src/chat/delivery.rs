@@ -69,6 +69,9 @@ mod tests {
     #[tokio::test]
     async fn stalled_turn_pursuit_is_revalidated_at_actual_enqueue() {
         let gcx = crate::global_context::tests::make_test_gcx().await;
+        let workspace = tempfile::tempdir().unwrap();
+        *gcx.documents_state.workspace_folders.lock().unwrap() =
+            vec![workspace.path().to_path_buf()];
         let app = crate::app_state::app_state_from_gcx(gcx).await;
 
         for status in [GoalStatus::Paused, GoalStatus::Verifying] {
